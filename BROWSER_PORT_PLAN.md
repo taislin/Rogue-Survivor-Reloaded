@@ -435,7 +435,7 @@ async function gameLoop(ui: IRogueUI): Promise<void> {
 
 | Item | Where it stands today |
 |------|-----------------------|
-| `main.ts` | Still the Phase 1 splash screen (temporary key loop: **O** opens the options screen). `RogueGame.Run()` is ported but not wired yet — it reaches `HandleMainMenu`, which needs the slice-8 drawing helpers (`DrawHeader`, `DrawMenuOrOptions`) before the real flow can boot. |
+| `main.ts` | Still the Phase 1 splash screen (temporary key loop: **O** opens the options screen). `RogueGame.Run()` now loads options/keys/hints/hiscores/manual and reaches a drawable `HandleMainMenu` (drawing helpers ported) — wiring is held back until slice 1 ports `HandleNewCharacter`, otherwise **New Game** throws from the menu. |
 | `OPTIONS_MODE` command | C# `case PlayerCommand.OPTIONS_MODE: HandleOptions(true); ApplyOptions(true);` (RogueGame.cs ≈5645). Ported screen is called manually from `main.ts` instead. |
 | `ApplyOptions` side update | C# re-derives `Scoring.Side` from the player (`m_Player.Model.Abilities.IsUndead`); `OptionsScreen.applyOptions()` refreshes the rating only, until a player exists. |
 | `HandleRedefineKeys` | Still in `RogueGame.cs` (`KEYBINDING_MODE`) → goes to the Phase 4 `GameUI` module. |

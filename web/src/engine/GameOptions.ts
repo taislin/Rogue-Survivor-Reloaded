@@ -989,6 +989,7 @@ export class GameOptions {
   static readonly STORAGE_KEY = "rogue-survivor-options";
 
   static save(options: GameOptions): void {
+    if (typeof localStorage === "undefined") return;
     const data: Record<string, unknown> = {
       DEV_ShowActorsStats: options.DEV_ShowActorsStats,
     };

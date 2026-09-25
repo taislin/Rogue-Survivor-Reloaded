@@ -20,7 +20,7 @@ import { DiceRoller } from "@engine/DiceRoller";
 import { WorldTime, DayPhase } from "@engine/WorldTime";
 import { Rules } from "@engine/Rules";
 import { Session, RaidType, UniqueActor, UniqueMap, UniqueItem } from "@engine/Session";
-import { AchievementIDs } from "@engine/Scoring";
+import { AchievementIDs, Scoring, DifficultySide } from "@engine/Scoring";
 import { MessageManager } from "@engine/MessageManager";
 import { GameSaveManager } from "@engine/GameSave";
 import { GameImages } from "@gameplay/GameImages";
@@ -80,6 +80,14 @@ import { NullMusicManager } from "@engine/audio/NullMusicManager";
 
 /** C# `System.TimeSpan` — not ported yet; `TimeSpanToString` gets it in Phase 4 slice 6. */
 type TimeSpan = number;
+
+/** C# `SetupConfig.GAME_VERSION` (also duplicated in `ui/OptionsScreen.ts`). */
+const GAME_VERSION = "alpha 10.1";
+
+/** C# `Color.FromArgb(c.A, c.R / 2, c.G / 2, c.B / 2)` — used for text shadows. */
+function shadowColorOf(c: Color): Color {
+  return Color.fromArgb(Math.floor(c.r / 2), Math.floor(c.g / 2), Math.floor(c.b / 2), c.a);
+}
 
 // ── C# Constants (module level so initializers and static methods can see them)
 export const MAP_MAX_HEIGHT: number = 100;
@@ -477,7 +485,7 @@ export class RogueGame {
   m_PlayedIntro!: boolean;
   m_MusicManager!: IMusicManager;
   m_CharGen!: CharGen;
-  m_Manual!: TextFile;
+  m_Manual: TextFile | null = null;
   m_ManualLine!: number;
   m_GameFactions!: GameFactions;
   m_GameActors!: GameActors;
@@ -1091,7 +1099,37 @@ export class RogueGame {
 
   // C# LoadManual — RogueGame.cs:2034
   async LoadManual(): Promise<void> {
-    throw new Error("not yet ported: LoadManual (RogueGame.cs:2034)");
+    this.m_UI.UI_Clear(Color.Black);
+    let gy = 0;
+    this.m_UI.UI_DrawStringBold(Color.White, "Loading game manual...", 0, 0);
+    gy += BOLD_LINE_SPACING;
+    this.m_UI.UI_Repaint();
+
+    this.m_Manual = new TextFile();
+    this.m_ManualLine = 0;
+    if (!(await this.m_Manual.load(this.GetUserManualFilePath()))) {
+      // error.
+      this.m_UI.UI_DrawStringBold(Color.Red, "Error while loading the manual.", 0, gy);
+      gy += BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBold(Color.Red, "The manual won't be available ingame.", 0, gy);
+      gy += BOLD_LINE_SPACING;
+      this.m_UI.UI_Repaint();
+      this.DrawFootnote(Color.White, "press ENTER");
+      await this.WaitEnter();
+
+      // delete manual.
+      this.m_Manual = null;
+      return;
+    }
+
+    this.m_UI.UI_DrawStringBold(Color.White, "Parsing game manual...", 0, gy);
+    gy += BOLD_LINE_SPACING;
+    this.m_UI.UI_Repaint();
+    this.m_Manual.formatLines(TEXTFILE_CHARS_PER_LINE);
+
+    this.m_UI.UI_Clear(Color.Black);
+    this.m_UI.UI_DrawStringBold(Color.White, "Game manual... done!", 0, gy);
+    this.m_UI.UI_Repaint();
   }
 
   // C# HandleHiScores — RogueGame.cs:2072
@@ -1102,12 +1140,29 @@ export class RogueGame {
 
   // C# LoadHiScoreTable — RogueGame.cs:2146
   async LoadHiScoreTable(): Promise<void> {
-    throw new Error("not yet ported: LoadHiScoreTable (RogueGame.cs:2146)");
+    this.m_UI.UI_Clear(Color.Black);
+    this.m_UI.UI_DrawStringBold(Color.White, "Loading hiscores table...", 0, 0);
+    this.m_UI.UI_Repaint();
+
+    this.m_HiScoreTable =
+      HiScoreTable.load() ?? new HiScoreTable(HiScoreTable.DEFAULT_MAX_ENTRIES);
+
+    this.m_UI.UI_Clear(Color.Black);
+    this.m_UI.UI_DrawStringBold(Color.White, "Loading hiscores table... done!", 0, 0);
+    this.m_UI.UI_Repaint();
   }
 
   // C# SaveHiScoreTable — RogueGame.cs:2164
   SaveHiScoreTable(): void {
-    throw new Error("not yet ported: SaveHiScoreTable (RogueGame.cs:2164)");
+    this.m_UI.UI_Clear(Color.Black);
+    this.m_UI.UI_DrawStringBold(Color.White, "Saving hiscores table...", 0, 0);
+    this.m_UI.UI_Repaint();
+
+    HiScoreTable.save(this.m_HiScoreTable);
+
+    this.m_UI.UI_Clear(Color.Black);
+    this.m_UI.UI_DrawStringBold(Color.White, "Saving hiscores table... done!", 0, 0);
+    this.m_UI.UI_Repaint();
   }
 
   // C# StartNewGame — RogueGame.cs:2178
@@ -3539,64 +3594,135 @@ export class RogueGame {
 
   // C# LoadOptions — RogueGame.cs:19843
   async LoadOptions(): Promise<void> {
-    throw new Error("not yet ported: LoadOptions (RogueGame.cs:19843)");
+    // load. (C# `s_Options = GameOptions.Load(path)` — s_Options *is* the
+    // shared Options singleton, so copy into it instead of replacing it.)
+    s_Options.copyFrom(GameOptions.load());
   }
 
   // C# SaveOptions — RogueGame.cs:19849
   SaveOptions(): void {
-    throw new Error("not yet ported: SaveOptions (RogueGame.cs:19849)");
+    // save
+    GameOptions.save(s_Options);
   }
 
   // C# ApplyOptions — RogueGame.cs:19855
-  ApplyOptions(ingame: boolean): void {
-    void ingame;
-    throw new Error("not yet ported: ApplyOptions (RogueGame.cs:19855)");
+  ApplyOptions(_ingame: boolean): void {
+    // m_MusicManager.IsMusicEnabled = Options.PlayMusic;
+    // m_MusicManager.Volume = Options.MusicVolume;   (C# volume is 0..100, WebAudio is 0..1)
+    this.m_MusicManager.setVolume(s_Options.musicVolume / 100);
+
+    // update difficulty.
+    if (this.m_Session != null && this.m_Session.scoring != null) {
+      this.m_Session.scoring.side =
+        this.m_Player == null || !this.m_Player.model.abilities.isUndead
+          ? DifficultySide.FOR_SURVIVOR
+          : DifficultySide.FOR_UNDEAD;
+      this.m_Session.scoring.difficultyRating = Scoring.computeDifficultyRating(
+        s_Options,
+        this.m_Session.scoring.side,
+        this.m_Session.scoring.reincarnationNumber
+      );
+    }
+
+    if (!s_Options.playMusic) this.m_MusicManager.stop();
   }
 
   // C# LoadKeybindings — RogueGame.cs:19873
   async LoadKeybindings(): Promise<void> {
-    throw new Error("not yet ported: LoadKeybindings (RogueGame.cs:19873)");
+    this.m_UI.UI_Clear(Color.Black);
+    this.m_UI.UI_DrawStringBold(Color.White, "Loading keybindings...", 0, 0);
+    this.m_UI.UI_Repaint();
+
+    s_KeyBindings.loadFromStorage();
+
+    this.m_UI.UI_Clear(Color.Black);
+    this.m_UI.UI_DrawStringBold(Color.White, "Loading keybindings... done!", 0, 0);
+    this.m_UI.UI_Repaint();
   }
 
   // C# SaveKeybindings — RogueGame.cs:19887
   SaveKeybindings(): void {
-    throw new Error("not yet ported: SaveKeybindings (RogueGame.cs:19887)");
+    this.m_UI.UI_Clear(Color.Black);
+    this.m_UI.UI_DrawStringBold(Color.White, "Saving keybindings...", 0, 0);
+    this.m_UI.UI_Repaint();
+
+    s_KeyBindings.saveToStorage();
+
+    this.m_UI.UI_Clear(Color.Black);
+    this.m_UI.UI_DrawStringBold(Color.White, "Saving keybindings... done!", 0, 0);
+    this.m_UI.UI_Repaint();
   }
 
   // C# LoadHints — RogueGame.cs:19902
   async LoadHints(): Promise<void> {
-    throw new Error("not yet ported: LoadHints (RogueGame.cs:19902)");
+    this.m_UI.UI_Clear(Color.Black);
+    this.m_UI.UI_DrawStringBold(Color.White, "Loading hints...", 0, 0);
+    this.m_UI.UI_Repaint();
+
+    s_Hints = GameHintsStatus.loadFromStorage();
+
+    this.m_UI.UI_Clear(Color.Black);
+    this.m_UI.UI_DrawStringBold(Color.White, "Loading hints... done!", 0, 0);
+    this.m_UI.UI_Repaint();
   }
 
   // C# SaveHints — RogueGame.cs:19915
   SaveHints(): void {
-    throw new Error("not yet ported: SaveHints (RogueGame.cs:19915)");
+    s_Hints.saveToStorage();
   }
 
   // C# DrawMenuOrOptions — RogueGame.cs:19932
-  DrawMenuOrOptions(currentChoice: number, entriesColor: Color, entries: string[], valuesColor: Color, values: string[] | null, gx: number, gy: { value: number }, valuesOnNewLine?: boolean, rightPadding?: number): void {
-    void currentChoice;
-    void entriesColor;
-    void entries;
-    void valuesColor;
-    void values;
-    void gx;
-    void gy;
-    void valuesOnNewLine;
-    void rightPadding;
-    throw new Error("not yet ported: DrawMenuOrOptions (RogueGame.cs:19932)");
+  DrawMenuOrOptions(
+    currentChoice: number,
+    entriesColor: Color,
+    entries: string[],
+    valuesColor: Color,
+    values: string[] | null,
+    gx: number,
+    gy: { value: number },
+    valuesOnNewLine = false,
+    rightPadding = 256
+  ): void {
+    const right = gx + rightPadding;
+
+    if (values != null && entries.length !== values.length)
+      throw new RangeError("values length!= choices length");
+
+    // display.
+    const entriesShadowColor = shadowColorOf(entriesColor);
+    for (let i = 0; i < entries.length; i++) {
+      const choiceStr = i === currentChoice ? `---> ${entries[i]}` : `     ${entries[i]}`;
+      this.m_UI.UI_DrawStringBold(entriesColor, choiceStr, gx, gy.value, entriesShadowColor);
+
+      if (values != null) {
+        const valueStr = i === currentChoice && !valuesOnNewLine ? `${values[i]} <---` : values[i];
+
+        if (valuesOnNewLine) {
+          gy.value += BOLD_LINE_SPACING;
+          this.m_UI.UI_DrawStringBold(valuesColor, valueStr, gx + right, gy.value);
+        } else {
+          this.m_UI.UI_DrawStringBold(valuesColor, valueStr, right, gy.value);
+        }
+      }
+
+      gy.value += BOLD_LINE_SPACING;
+    }
   }
 
   // C# DrawHeader — RogueGame.cs:19975
   DrawHeader(): void {
-    throw new Error("not yet ported: DrawHeader (RogueGame.cs:19975)");
+    this.m_UI.UI_DrawStringBold(Color.Red, `ROGUE SURVIVOR - ${GAME_VERSION}`, 0, 0, Color.DarkRed);
   }
 
   // C# DrawFootnote — RogueGame.cs:19980
   DrawFootnote(color: Color, text: string): void {
-    void color;
-    void text;
-    throw new Error("not yet ported: DrawFootnote (RogueGame.cs:19980)");
+    this.m_UI.UI_DrawStringBold(
+      color,
+      `<${text}>`,
+      0,
+      CANVAS_HEIGHT - BOLD_LINE_SPACING,
+      shadowColorOf(color)
+    );
   }
 
   // C# GetUserBasePath — RogueGame.cs:19988
@@ -3682,8 +3808,9 @@ export class RogueGame {
   }
 
   // C# GetUserManualFilePath — RogueGame.cs:20127
+  // Browser: the manual ships as a static asset (web/public/assets/manual.txt).
   GetUserManualFilePath(): string {
-    throw new Error("not yet ported: GetUserManualFilePath (RogueGame.cs:20127)");
+    return "assets/manual.txt";
   }
 
   // C# GetUserHiScorePath — RogueGame.cs:20132
@@ -4070,22 +4197,27 @@ export class RogueGame {
 
   // C# LoadData — RogueGame.cs:23104
   async LoadData(): Promise<void> {
-    throw new Error("not yet ported: LoadData (RogueGame.cs:23104)");
+    await this.LoadDataSkills();
+    await this.LoadDataItems();
+    await this.LoadDataActors();
   }
 
   // C# LoadDataActors — RogueGame.cs:23111
-  LoadDataActors(): void {
-    throw new Error("not yet ported: LoadDataActors (RogueGame.cs:23111)");
+  // C# read the model tables from CSVs; the TS data classes build them in their
+  // constructors (see GameActors/GameItems/Skills), so there is nothing to load.
+  async LoadDataActors(): Promise<void> {
   }
 
   // C# LoadDataItems — RogueGame.cs:23116
-  LoadDataItems(): void {
-    throw new Error("not yet ported: LoadDataItems (RogueGame.cs:23116)");
+  // C# read the model tables from CSVs; the TS data classes build them in their
+  // constructors (see GameActors/GameItems/Skills), so there is nothing to load.
+  async LoadDataItems(): Promise<void> {
   }
 
   // C# LoadDataSkills — RogueGame.cs:23137
-  LoadDataSkills(): void {
-    throw new Error("not yet ported: LoadDataSkills (RogueGame.cs:23137)");
+  // C# read the model tables from CSVs; the TS data classes build them in their
+  // constructors (see GameActors/GameItems/Skills), so there is nothing to load.
+  async LoadDataSkills(): Promise<void> {
   }
 
   // C# UpdateBgMusic — RogueGame.cs:23145
