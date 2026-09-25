@@ -14,7 +14,7 @@ import type { AIController } from "./AIController";
 import type { Corpse } from "./Corpse";
 import type { Item } from "./Item";
 import { DollPart } from "./Doll";
-import { ItemMeleeWeapon } from "@engine/items/ItemWeapon";
+import { ItemMeleeWeapon, ItemRangedWeapon } from "@engine/items/ItemWeapon";
 
 export const enum ActorFlags {
   NONE = 0,
@@ -76,6 +76,7 @@ export class Actor {
   killsCount: number = 0;
   private aggressorOfList: Actor[] | null = null;
   private selfDefenceFromList: Actor[] | null = null;
+  private boringItemsList: Item[] | null = null;
   murdersCounter: number = 0;
   infection: number = 0;
   draggedCorpse: Corpse | null = null;
@@ -355,6 +356,20 @@ export class Actor {
     }
   }
 
+  // ── Boring items ─────────────────────────────────────────────────────────
+  // alpha10 moved this out of Actor into ItemEntertainment; C# keeps the block
+  // under #if false. Ported for fidelity (BaseAI.isJunkItem still calls it).
+
+  addBoringItem(it: Item): void {
+    if (!this.boringItemsList) this.boringItemsList = [];
+    if (this.boringItemsList.includes(it)) return;
+    this.boringItemsList.push(it);
+  }
+
+  isBoredOf(it: Item): boolean {
+    return this.boringItemsList !== null && this.boringItemsList.includes(it);
+  }
+
   // ── Equipment helpers ────────────────────────────────────────────────────
 
   /** Returns the equipped item on the given doll part, or null. */
@@ -375,6 +390,12 @@ export class Actor {
   getEquippedMeleeWeapon(): ItemMeleeWeapon | null {
     const it = this.getEquippedItem(DollPart.RIGHT_HAND);
     return it instanceof ItemMeleeWeapon ? it : null;
+  }
+
+  /** C# GetEquippedRangedWeapon – `GetEquippedItem(RIGHT_HAND) as ItemRangedWeapon`. */
+  getEquippedRangedWeapon(): ItemRangedWeapon | null {
+    const it = this.getEquippedItem(DollPart.RIGHT_HAND);
+    return it instanceof ItemRangedWeapon ? it : null;
   }
 }
 

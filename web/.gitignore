@@ -3,3 +3,6 @@ dist/
 dist-server/
 .env
 *.local
+
+# BaseAI porting scratch (fragments + merge script)
+.porting/

@@ -1,6 +1,6 @@
 # Rogue Survivor Reloaded — TypeScript / Browser Port: Full Implementation Plan
 
-> **Status:** Phase 1 & 2 complete. Phase 3 & 5 in progress.  
+> **Status:** Phase 1 & 2 complete. Phase 3 complete except `ui/OptionsScreen.ts`. Phase 5 in progress — `BaseAI` (184/184 methods) done; 9 AI controllers + generators pending.  
 > **Last updated:** 2026-09-25
 
 ---
@@ -312,21 +312,21 @@ Map.getActorAt / getExitAt / etc. return correct types
 |---------|------|-----------|-------|--------|
 | `Engine/Rules.cs` | 147 KB | `engine/Rules.ts` | Pure logic, no deps — direct port | ✅ Done |
 | `Engine/LOS.cs` | 14 KB | `engine/LOS.ts` | Bresenham line-trace, FOV — direct port | ✅ Done |
-| `Engine/Session.cs` | 25 KB | `engine/Session.ts` | Drop XML serialization; use plain JS object. `GameMode`/`ScriptStage`/`RaidType` enums ported; `Session` class still to do | 🔄 Next |
-| `Engine/Scoring.cs` | 24 KB | `engine/Scoring.ts` | | ⏳ Planned |
-| `Engine/HiScoreTable.cs` | 6 KB | `engine/HiScoreTable.ts` | Persist to localStorage | ⏳ Planned |
-| `Engine/MessageManager.cs` | 3 KB | `engine/MessageManager.ts` | | ⏳ Planned |
+| `Engine/Session.cs` | 25 KB | `engine/Session.ts` | Drop XML serialization; use localStorage JSON (world graph deferred to Phase 4) | ✅ Done |
+| `Engine/Scoring.cs` | 24 KB | `engine/Scoring.ts` | `Achievement`, `DifficultySide`, `Scoring` | ✅ Done |
+| `Engine/HiScoreTable.cs` | 6 KB | `engine/HiScoreTable.ts` | Persist to localStorage JSON | ✅ Done |
+| `Engine/MessageManager.cs` | 3 KB | `engine/MessageManager.ts` | | ✅ Done |
 | `Engine/PlayerCommand.cs` | 1 KB | `engine/PlayerCommand.ts` | Enum | ✅ Done |
-| `Engine/InputTranslator.cs` | 3 KB | `engine/InputTranslator.ts` | Map browser keys → PlayerCommand | ⏳ Planned |
+| `Engine/InputTranslator.cs` | 3 KB | `engine/Keybindings.ts` (`InputTranslator`) | Map browser keys → PlayerCommand; merged into Keybindings.ts | ✅ Done |
 | `Engine/Keybindings.cs` | 8 KB | `engine/Keybindings.ts` | Persist to localStorage | ✅ Done |
 | `Engine/GameHints.cs` | 3 KB | `engine/GameHints.ts` | | ✅ Done |
-| `Gameplay/GameOptions.cs` | 39 KB | `engine/GameOptions.ts` (data) + `ui/OptionsScreen.ts` (UI) | Split | ⏳ Planned |
+| `Engine/GameOptions.cs` | 39 KB | `engine/GameOptions.ts` (data) + `ui/OptionsScreen.ts` (UI) | Data part done; UI screen still planned | 🔄 In progress |
 | `Engine/AI/MemorizedSensor.cs` | 3 KB | `engine/ai/Sensors.ts` | Combined into Sensors.ts | ✅ Done |
 | `Engine/AI/Percept.cs` | 1 KB | `engine/ai/Sensors.ts` | Combined into Sensors.ts | ✅ Done |
 | `Engine/AI/Sensor.cs` | 0.3 KB | `engine/ai/Sensors.ts` | Abstract base | ✅ Done |
 | `Engine/Actions/*.cs` | ~35 KB total | `engine/actions/Actions.ts` | 38 action classes | ✅ Done |
-| `Engine/Tasks/TaskRemoveDecoration.cs` | 0.6 KB | `engine/tasks/TaskRemoveDecoration.ts` | | ⏳ Planned |
-| `Engine/TextFile.cs` | 3 KB | `engine/TextFile.ts` | Reads text pages | ⏳ Planned |
+| `Engine/Tasks/TaskRemoveDecoration.cs` | 0.6 KB | `engine/tasks/TaskRemoveDecoration.ts` | | ✅ Done |
+| `Engine/TextFile.cs` | 3 KB | `engine/TextFile.ts` | `fetch()` instead of `File.OpenText` | ✅ Done |
 | `Engine/CSVParser.cs` | 6 KB | `web/scripts/convert-csv.js` | Converted to JSON build pipeline | ✅ Done |
 
 ### Key design change: `Rules.cs`
@@ -422,18 +422,27 @@ async function gameLoop(ui: IRogueUI): Promise<void> {
 
 #### BaseAI decomposition
 
-`BaseAI.cs` (245 KB) will be split:
+**As implemented:** `BaseAI.cs` (6 422 lines / 245 KB) is ported as a **single**
+`gameplay/ai/BaseAI.ts` (4 402 lines, all 184 methods), rather than being split into
+`behaviours/` files. The subclass split (`ZombieAI`, `CivilianAI`, …) already gives the
+useful separation; a further split would only add cross-file plumbing for the many
+`protected` members and the `m_Taboo*` / `m_RouteFinder` state they share.
 
-| Sub-module | Contents |
-|------------|---------|
-| `gameplay/ai/BaseAI.ts` | Core behaviour selection loop + shared helpers |
-| `gameplay/ai/behaviours/BehaviourFlee.ts` | Flee logic |
-| `gameplay/ai/behaviours/BehaviourFight.ts` | Combat selection |
-| `gameplay/ai/behaviours/BehaviourForage.ts` | Looting / food seeking |
-| `gameplay/ai/behaviours/BehaviourFollow.ts` | Leader following |
-| `gameplay/ai/behaviours/BehaviourSleep.ts` | Sleep seeking |
-| `gameplay/ai/behaviours/BehaviourTrade.ts` | Trading |
-| `gameplay/ai/behaviours/BehaviourExplore.ts` | Exploration / wandering |
+The port was produced in 13 contiguous slices (`web/.porting/baseAI_part*.ts`, gitignored)
+and spliced in by `web/.porting/merge.ps1`, which also de-duplicates the imports.
+
+#### Known gaps left by the BaseAI port
+
+These are the only symbols `BaseAI.ts` could not resolve; everything else type-checks.
+
+| Gap | Owner |
+|-----|-------|
+| `game.DoEmote` / `game.DoMakeAggression` / `game.DoSay` | Phase 4 — `RogueGame` |
+| `game.GameItems.MEDIKIT` / `game.GameItems.EMPTY_CAN` | Phase 4 — needs a `GameItems` singleton on the game object |
+| `isSoldier()` uses a `faction.id === FactionID.TheArmy` fallback | resolved once `SoldierAI.ts` exists |
+| `Map.isOnMapBorder` / `trimToBounds` / `countAdjacentInMap` | inlined at the 3 call sites instead of added to `data/Map.ts` |
+| `Actor.isBoredOf` / `addBoringItem` / `getEquippedRangedWeapon` | ✅ added to `data/Actor.ts` |
+| `Actions.SayFlags`, `Actions.FireMode` | ✅ corrected to match `RogueGame.Sayflags` / `Data/Attack.cs` |
 
 ### Generator files
 
@@ -634,9 +643,9 @@ No image conversion is needed — all sprites are already PNG.
 |-------|-------|-----------|--------|
 | 1 | Scaffold + primitives | Dev server, `CanvasUI`, type-safe foundation | ✅ Complete |
 | 2 | Data layer | All game objects typed, `Map`/`Actor` working | ✅ Complete |
-| 3 | Engine core | Rules, LOS, Session — game logic without a loop | 🔄 In Progress |
+| 3 | Engine core | Rules, LOS, Session, Scoring, GameOptions — all but the Options UI screen | 🔄 In Progress |
 | 4 | Game loop | **Playable game** (new game, move, attack, die) | ⏳ Planned |
-| 5 | AI + generators | Full world with all factions and AI | 🔄 In Progress |
+| 5 | AI + generators | `BaseAI` + Zombie/Skeleton AI done; 9 controllers + generators pending | 🔄 In Progress |
 | 6 | Audio | Sound effects and music | ⏳ Planned |
 | 7 | Save / load | Persistent saves via localStorage / IndexedDB | ⏳ Planned |
 | 8 | Polish | PWA, CI, performance, deployment | ⏳ Planned |

@@ -13,6 +13,7 @@
 
 import { Actor } from '@data/Actor';
 import { ActorAction } from '@data/ActorAction';
+import { FireMode } from '@data/Attack';
 import { Corpse } from '@data/Corpse';
 import { Item } from '@data/Item';
 import { Location } from '@data/Location';
@@ -147,11 +148,8 @@ export class ActionMeleeAttack extends ActorAction {
 // ActionRangedAttack
 // ────────────────────────────────────────────────────────────────────────────
 
-export enum FireMode {
-  DEFAULT = 0,
-  SINGLE = 1,
-  BURST = 2,
-}
+// C# declares FireMode once, in Data/Attack.cs - reuse that definition.
+export { FireMode };
 
 export class ActionRangedAttack extends ActorAction {
   readonly target: Actor;
@@ -751,11 +749,12 @@ export class ActionChat extends ActorAction {
 // SayFlags – mirrors RogueGame.Sayflags
 // ────────────────────────────────────────────────────────────────────────────
 
+// Mirrors RogueGame.Sayflags (IS_FREE_ACTION = does not cost action points).
 export enum SayFlags {
   NONE = 0,
   IS_IMPORTANT = 1 << 0,
-  INTERRUPT_SLEEP = 1 << 1,
-  UNIQUE = 1 << 2,
+  IS_FREE_ACTION = 1 << 1,
+  IS_DANGER = 1 << 2,
 }
 
 // ────────────────────────────────────────────────────────────────────────────
