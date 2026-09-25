@@ -1,10 +1,12 @@
 import { CanvasUI }     from "@ui/CanvasUI";
 import { InputHandler }  from "@ui/InputHandler";
+import { OptionsScreen } from "@ui/OptionsScreen";
 import { Color }         from "@engine/Color";
 import { Rect }          from "@engine/Rect";
 import { WorldTime }     from "@engine/WorldTime";
 import { DiceRoller }    from "@engine/DiceRoller";
 import { Direction }     from "@engine/Direction";
+import { GameOptions, Options } from "@engine/GameOptions";
 
 async function main(): Promise<void> {
   // ── Bootstrap ──────────────────────────────────────────────────────────────
@@ -19,19 +21,29 @@ async function main(): Promise<void> {
   const loading = document.getElementById("loading");
   if (loading) loading.classList.add("hidden");
 
+  // Load persisted options (C# RogueGame.LoadOptions() at startup).
+  Options.copyFrom(GameOptions.load());
+
   // ── Splash screen — proves the full stack is operational ──────────────────
   drawSplash(ui);
-
-  // Log key events to console until we have a real game loop
-  console.log("[RogueSurvivor] Press any key (output goes to console for now)");
 
   // Self-test: DiceRoller, WorldTime, Direction
   selfTest();
 
-  // Wait for a key then show a second frame
-  const key = await ui.UI_WaitKey();
-  console.log("[RogueSurvivor] Got key:", key.key);
-  drawSplash(ui, `Last key: "${key.key}"`);
+  // Temporary input loop until Phase 4 wires the real game loop / main menu.
+  const optionsScreen = new OptionsScreen(ui);
+  let lastKey: string | undefined;
+  for (;;) {
+    const key = await ui.UI_WaitKey();
+    if (key.key === "o" || key.key === "O") {
+      await optionsScreen.run(true); // C# PlayerCommand.OPTIONS_MODE handler
+      drawSplash(ui, lastKey);
+      continue;
+    }
+    lastKey = `Last key: "${key.key}"`;
+    console.log("[RogueSurvivor] Got key:", key.key);
+    drawSplash(ui, lastKey);
+  }
 }
 
 function drawSplash(ui: CanvasUI, subtitle?: string): void {
@@ -60,6 +72,7 @@ function drawSplash(ui: CanvasUI, subtitle?: string): void {
     { label: "IRogueUI interface",    ok: true },
     { label: "InputHandler",          ok: true },
     { label: "CanvasUI (Canvas 2D)",  ok: true },
+    { label: "OptionsScreen",         ok: true },
   ];
 
   let y = 290;
@@ -87,11 +100,11 @@ function drawSplash(ui: CanvasUI, subtitle?: string): void {
   if (subtitle) {
     ui.UI_DrawString(Color.Cyan, subtitle, 450, 560);
   } else {
-    ui.UI_DrawString(Color.DarkGray, "Press any key…", 450, 560);
+    ui.UI_DrawString(Color.DarkGray, "Press O for options · any other key logs to console", 360, 560);
   }
 
   // Version footer
-  ui.UI_DrawString(Color.DarkGray, "Phase 1 scaffold complete", 420, 730);
+  ui.UI_DrawString(Color.DarkGray, "Phases 1-3 complete (Phase 4 next)", 420, 730);
 }
 
 function selfTest(): void {

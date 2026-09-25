@@ -1,6 +1,6 @@
 # Rogue Survivor Reloaded — TypeScript / Browser Port: Full Implementation Plan
 
-> **Status:** Phase 1 & 2 complete. Phase 3 complete except `ui/OptionsScreen.ts`. Phase 5 complete — `BaseAI` (184/184 methods), all 11 AI controllers, and all 4 generator files done (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator`, `StdTownGenerator`) with `npm run type-check` clean. Phase 6 & 7 complete.  
+> **Status:** Phase 1, 2 & 3 complete (Phase 3 includes `ui/OptionsScreen.ts`). Phase 5 complete — `BaseAI` (184/184 methods), all 11 AI controllers, and all 4 generator files done (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator`, `StdTownGenerator`) with `npm run type-check` clean. Phase 6 & 7 complete.  
 > **Last updated:** 2026-09-25
 
 ---
@@ -320,7 +320,7 @@ Map.getActorAt / getExitAt / etc. return correct types
 | `Engine/InputTranslator.cs` | 3 KB | `engine/Keybindings.ts` (`InputTranslator`) | Map browser keys → PlayerCommand; merged into Keybindings.ts | ✅ Done |
 | `Engine/Keybindings.cs` | 8 KB | `engine/Keybindings.ts` | Persist to localStorage | ✅ Done |
 | `Engine/GameHints.cs` | 3 KB | `engine/GameHints.ts` | | ✅ Done |
-| `Engine/GameOptions.cs` | 39 KB | `engine/GameOptions.ts` (data) + `ui/OptionsScreen.ts` (UI) | Data part done; UI screen still planned | 🔄 In progress |
+| `Engine/GameOptions.cs` | 39 KB | `engine/GameOptions.ts` (data) + `ui/OptionsScreen.ts` (UI) | Data + UI done. The C# project has no `OptionsScreen.cs`: the screen is `RogueGame.HandleOptions(bool)` (RogueGame.cs ≈2294), so that method was ported as `ui/OptionsScreen.ts` | ✅ Done |
 | `Engine/AI/MemorizedSensor.cs` | 3 KB | `engine/ai/Sensors.ts` | Combined into Sensors.ts | ✅ Done |
 | `Engine/AI/Percept.cs` | 1 KB | `engine/ai/Sensors.ts` | Combined into Sensors.ts | ✅ Done |
 | `Engine/AI/Sensor.cs` | 0.3 KB | `engine/ai/Sensors.ts` | Abstract base | ✅ Done |
@@ -390,6 +390,16 @@ async function gameLoop(ui: IRogueUI): Promise<void> {
 - New game starts, map generates, player can move with arrow keys
 - At least one full day cycle runs without crash
 - Zombie spawning and combat work
+
+### Leftovers earlier phases parked for Phase 4
+
+| Item | Where it stands today |
+|------|-----------------------|
+| `main.ts` | Still the Phase 1 splash screen (temporary key loop: **O** opens the options screen). Needs the real new-game / main-menu flow. |
+| `OPTIONS_MODE` command | C# `case PlayerCommand.OPTIONS_MODE: HandleOptions(true); ApplyOptions(true);` (RogueGame.cs ≈5645). Ported screen is called manually from `main.ts` instead. |
+| `ApplyOptions` side update | C# re-derives `Scoring.Side` from the player (`m_Player.Model.Abilities.IsUndead`); `OptionsScreen.applyOptions()` refreshes the rating only, until a player exists. |
+| `HandleRedefineKeys` | Still in `RogueGame.cs` (`KEYBINDING_MODE`) → goes to the Phase 4 `GameUI` module. |
+| Music manager wiring | `OptionsScreen` takes an optional `IMusicManager`; pass `WebAudioMusicManager` when Phase 4 owns the audio lifecycle. |
 
 ---
 
@@ -654,7 +664,7 @@ No image conversion is needed — all sprites are already PNG.
 |-------|-------|-----------|--------|
 | 1 | Scaffold + primitives | Dev server, `CanvasUI`, type-safe foundation | ✅ Complete |
 | 2 | Data layer | All game objects typed, `Map`/`Actor` working | ✅ Complete |
-| 3 | Engine core | Rules, LOS, Session, Scoring, GameOptions — all but the Options UI screen | 🔄 In Progress |
+| 3 | Engine core | Rules, LOS, Session, Scoring, GameOptions + `ui/OptionsScreen.ts` (from `RogueGame.HandleOptions`) | ✅ Complete |
 | 4 | Game loop | **Playable game** (new game, move, attack, die) | ⏳ Planned |
 | 5 | AI + generators | `BaseAI`, all 11 AI controllers, all 4 generator files (5 814-line `BaseTownGenerator`) | ✅ Complete |
 | 6 | Audio | Sound effects and music | ✅ Complete |

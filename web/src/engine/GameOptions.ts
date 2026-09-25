@@ -543,6 +543,25 @@ export class GameOptions {
     this.DEV_ShowActorsStats = false;
   }
 
+  // ── Value-copy (C# GameOptions is a struct) ──────────────────────────────
+
+  /** Deep value copy of every option field into `this`. */
+  copyFrom(src: GameOptions): void {
+    const dst = this as unknown as Record<string, unknown>;
+    const from = src as unknown as Record<string, unknown>;
+    for (const key of Object.keys(from)) {
+      if (key.startsWith("m_")) dst[key] = from[key];
+    }
+    dst.DEV_ShowActorsStats = from.DEV_ShowActorsStats;
+  }
+
+  /** Returns a new instance holding a copy of this option set. */
+  clone(): GameOptions {
+    const copy = new GameOptions();
+    copy.copyFrom(this);
+    return copy;
+  }
+
   // ── Helpers ─────────────────────────────────────────────────────────────
   static optionName(option: OptionIDs): string {
     switch (option) {
