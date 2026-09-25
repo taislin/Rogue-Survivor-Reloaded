@@ -1,0 +1,122 @@
+[
+  {
+    "ID": "RANGED_ARMY_PISTOL",
+    "NAME": "army pistol",
+    "PLURAL": "army pistols",
+    "ATK": 24,
+    "RAPID1": 12,
+    "RAPID2": 6,
+    "DMG": 24,
+    "RANGE": 6,
+    "MAXAMMO": 12,
+    "FLAVOR": "Bang bang!"
+  },
+  {
+    "ID": "RANGED_ARMY_RIFLE",
+    "NAME": "army rifle",
+    "PLURAL": "army rifles",
+    "ATK": 30,
+    "RAPID1": 15,
+    "RAPID2": 7,
+    "DMG": 40,
+    "RANGE": 8,
+    "MAXAMMO": 10,
+    "FLAVOR": "Aim. Shoot. Kill."
+  },
+  {
+    "ID": "RANGED_HUNTING_CROSSBOW",
+    "NAME": "hunting crossbow",
+    "PLURAL": "hunting crossbows",
+    "ATK": 20,
+    "RAPID1": 10,
+    "RAPID2": 5,
+    "DMG": 16,
+    "RANGE": 5,
+    "MAXAMMO": 20,
+    "FLAVOR": "Aim between the eyes."
+  },
+  {
+    "ID": "RANGED_HUNTING_RIFLE",
+    "NAME": "hunting rifle",
+    "PLURAL": "hunting rifles",
+    "ATK": 30,
+    "RAPID1": 15,
+    "RAPID2": 10,
+    "DMG": 20,
+    "RANGE": 8,
+    "MAXAMMO": 7,
+    "FLAVOR": "Good hunting!"
+  },
+  {
+    "ID": "RANGED_PISTOL",
+    "NAME": "pistol",
+    "PLURAL": "pistols",
+    "ATK": 20,
+    "RAPID1": 18,
+    "RAPID2": 16,
+    "DMG": 18,
+    "RANGE": 6,
+    "MAXAMMO": 10,
+    "FLAVOR": "Bang!"
+  },
+  {
+    "ID": "RANGED_KOLT_REVOLVER",
+    "NAME": "Kolt revolver",
+    "PLURAL": "Kolt revolvers",
+    "ATK": 20,
+    "RAPID1": 10,
+    "RAPID2": 5,
+    "DMG": 26,
+    "RANGE": 6,
+    "MAXAMMO": 6,
+    "FLAVOR": "K for Kolt."
+  },
+  {
+    "ID": "RANGED_PRECISION_RIFLE",
+    "NAME": "precision rifle",
+    "PLURAL": "precision rifles",
+    "ATK": 80,
+    "RAPID1": 10,
+    "RAPID2": 5,
+    "DMG": 20,
+    "RANGE": 8,
+    "MAXAMMO": 2,
+    "FLAVOR": "Precise death."
+  },
+  {
+    "ID": "RANGED_SHOTGUN",
+    "NAME": "shotgun",
+    "PLURAL": "shotguns",
+    "ATK": 60,
+    "RAPID1": 40,
+    "RAPID2": 15,
+    "DMG": 30,
+    "RANGE": 3,
+    "MAXAMMO": 5,
+    "FLAVOR": "Devastating at close range."
+  },
+  {
+    "ID": "UNIQUE_SANTAMAN_SHOTGUN",
+    "NAME": "Santaman shotgun",
+    "PLURAL": "Santaman shotgun",
+    "ATK": 60,
+    "RAPID1": 40,
+    "RAPID2": 15,
+    "DMG": 30,
+    "RANGE": 4,
+    "MAXAMMO": 5,
+    "FLAVOR": "Merry Shotmas!"
+  },
+  {
+    "ID": "UNIQUE_HANS_VON_HANZ_PISTOL",
+    "NAME": "Hans von Hanz pistol",
+    "PLURAL": "Hans von Hanz pistol",
+    "ATK": 40,
+    "RAPID1": 30,
+    "RAPID2": 20,
+    "DMG": 22,
+    "RANGE": 6,
+    "MAXAMMO": 14,
+    "FLAVOR": "Feuer!"
+  }
+]

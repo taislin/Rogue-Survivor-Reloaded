@@ -1,0 +1,11 @@
+export enum Activity {
+  IDLE = 0,
+  CHASING = 1,
+  FIGHTING = 2,
+  TRACKING = 3,
+  FLEEING = 4,
+  FOLLOWING = 5,
+  SLEEPING = 6,
+  FOLLOWING_ORDER = 7,
+  FLEEING_FROM_EXPLOSIVE = 8,
+}

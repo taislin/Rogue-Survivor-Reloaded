@@ -1,0 +1,10 @@
+[
+  {
+    "ID": "SCENT_SPRAY_STENCH_KILLER",
+    "NAME": "stench killer",
+    "PLURAL": "stench killers",
+    "QUANTITY": 40,
+    "STRENGTH in hours": 3,
+    "FLAVOR": "Smells like nothing."
+  }
+]

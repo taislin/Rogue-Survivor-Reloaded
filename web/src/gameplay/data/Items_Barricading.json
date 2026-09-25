@@ -1,0 +1,10 @@
+[
+  {
+    "ID": "BAR_WOODEN_PLANK",
+    "NAME": "wooden plank",
+    "PLURAL": "wooden planks",
+    "VALUE": 20,
+    "STACKINGLIMIT": 4,
+    "FLAVOR": "Carpentry."
+  }
+]

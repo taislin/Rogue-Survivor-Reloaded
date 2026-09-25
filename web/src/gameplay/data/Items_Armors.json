@@ -1,0 +1,72 @@
+[
+  {
+    "ID": "ARMOR_ARMY_BODYARMOR",
+    "NAME": "army body armor",
+    "PLURAL": "army body armors",
+    "PRO_HIT": 6,
+    "PRO_SHOT": 8,
+    "ENC": 6,
+    "WEIGHT": 10,
+    "FLAVOR": "You look manly!"
+  },
+  {
+    "ID": "ARMOR_CHAR_LIGHT_BODYARMOR",
+    "NAME": "CHAR body armor",
+    "PLURAL": "CHAR body armors",
+    "PRO_HIT": 4,
+    "PRO_SHOT": 4,
+    "ENC": 4,
+    "WEIGHT": 10,
+    "FLAVOR": "Oh! Suits you sir!"
+  },
+  {
+    "ID": "ARMOR_HELLS_SOULS_JACKET",
+    "NAME": "Hell's Souls jacket",
+    "PLURAL": "Hell's Souls jackets",
+    "PRO_HIT": 3,
+    "PRO_SHOT": 0,
+    "ENC": 0,
+    "WEIGHT": 0,
+    "FLAVOR": "Rock'n'roll."
+  },
+  {
+    "ID": "ARMOR_FREE_ANGELS_JACKET",
+    "NAME": "Free Angels jacket",
+    "PLURAL": "Free Angels jackets",
+    "PRO_HIT": 2,
+    "PRO_SHOT": 1,
+    "ENC": 0,
+    "WEIGHT": 0,
+    "FLAVOR": "Rock'n'roll."
+  },
+  {
+    "ID": "ARMOR_POLICE_JACKET",
+    "NAME": "police padded jacket",
+    "PLURAL": "police padded jackets",
+    "PRO_HIT": 2,
+    "PRO_SHOT": 2,
+    "ENC": 0,
+    "WEIGHT": 0,
+    "FLAVOR": "Law, Order and Padded Jackets."
+  },
+  {
+    "ID": "ARMOR_POLICE_RIOT",
+    "NAME": "anti-riot armor",
+    "PLURAL": "anti-riot armors",
+    "PRO_HIT": 3,
+    "PRO_SHOT": 3,
+    "ENC": 2,
+    "WEIGHT": 0,
+    "FLAVOR": "Standard Anti Zombie Riots Gear."
+  },
+  {
+    "ID": "ARMOR_HUNTER_VEST",
+    "NAME": "hunter vest",
+    "PLURAL": "hunter vests",
+    "PRO_HIT": 1,
+    "PRO_SHOT": 1,
+    "ENC": 0,
+    "WEIGHT": 0,
+    "FLAVOR": "It's pretty wild out there."
+  }
+]

@@ -1,0 +1,18 @@
+[
+  {
+    "ID": "LIGHT_FLASHLIGHT",
+    "NAME": "flashlight",
+    "PLURAL": "flashlights",
+    "FOV bonus": 1,
+    "BATTERIES in hours": 24,
+    "FLAVOR": "Let There Be Light!"
+  },
+  {
+    "ID": "LIGHT_BIG_FLASHLIGHT",
+    "NAME": "big flashlight",
+    "PLURAL": "big flashlights",
+    "FOV bonus": 2,
+    "BATTERIES in hours": 8,
+    "FLAVOR": "Let There Be MORE Light!"
+  }
+]

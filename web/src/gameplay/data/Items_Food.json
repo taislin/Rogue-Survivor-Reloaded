@@ -1,0 +1,29 @@
+[
+  {
+    "ID": "FOOD_ARMY_RATION",
+    "NAME": "army ration",
+    "PLURAL": "army rations",
+    "NUTRITION ratio of base food points": 0.25,
+    "BESTBEFORE in days": 5,
+    "STACKINGLIMIT": 1,
+    "FLAVOR": "Eat like a good soldier!"
+  },
+  {
+    "ID": "FOOD_CANNED_FOOD",
+    "NAME": "canned food",
+    "PLURAL": "canned food",
+    "NUTRITION ratio of base food points": 0.11,
+    "BESTBEFORE in days": -1,
+    "STACKINGLIMIT": 3,
+    "FLAVOR": "Better than dog food."
+  },
+  {
+    "ID": "FOOD_GROCERIES",
+    "NAME": "groceries",
+    "PLURAL": "groceries",
+    "NUTRITION ratio of base food points": 0.33,
+    "BESTBEFORE in days": 3,
+    "STACKINGLIMIT": 1,
+    "FLAVOR": "They eat brains, you eat vegetables."
+  }
+]

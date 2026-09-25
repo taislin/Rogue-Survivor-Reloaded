@@ -1,0 +1,74 @@
+[
+  {
+    "ID": "MEDICINE_BANDAGES",
+    "NAME": "bandages",
+    "PLURAL": "bandages",
+    "HP": 2,
+    "STA": 0,
+    "SLP": 0,
+    "INF": 0,
+    "SAN": 0,
+    "STACKING": 5,
+    "FLAVOR": "Nothing. A little blood."
+  },
+  {
+    "ID": "MEDICINE_MEDIKIT",
+    "NAME": "medikit",
+    "PLURAL": "medikit",
+    "HP": 10,
+    "STA": 0,
+    "SLP": 0,
+    "INF": 4,
+    "SAN": 0,
+    "STACKING": 0,
+    "FLAVOR": "Saves lives. Especially yours."
+  },
+  {
+    "ID": "MEDICINE_PILLS_STA",
+    "NAME": "green pills",
+    "PLURAL": "green pills",
+    "HP": 0,
+    "STA": 20,
+    "SLP": 0,
+    "INF": 0,
+    "SAN": 0,
+    "STACKING": 20,
+    "FLAVOR": "Gives a good kick in the ass."
+  },
+  {
+    "ID": "MEDICINE_PILLS_SLP",
+    "NAME": "blue pills",
+    "PLURAL": "blue pills",
+    "HP": 0,
+    "STA": 0,
+    "SLP": 120,
+    "INF": 0,
+    "SAN": 0,
+    "STACKING": 20,
+    "FLAVOR": "HEY! WAKE UP!"
+  },
+  {
+    "ID": "MEDICINE_PILLS_SAN",
+    "NAME": "orange pills",
+    "PLURAL": "orange pills",
+    "HP": 0,
+    "STA": 0,
+    "SLP": 0,
+    "INF": 0,
+    "SAN": 30,
+    "STACKING": 20,
+    "FLAVOR": "Everything will be fine."
+  },
+  {
+    "ID": "MEDICINE_PILLS_ANTIVIRAL",
+    "NAME": "antiviral pills",
+    "PLURAL": "antiviral pills",
+    "HP": 0,
+    "STA": 0,
+    "SLP": 0,
+    "INF": 12,
+    "SAN": 0,
+    "STACKING": 6,
+    "FLAVOR": "Kill it with pills."
+  }
+]

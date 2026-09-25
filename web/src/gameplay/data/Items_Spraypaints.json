@@ -1,0 +1,30 @@
+[
+  {
+    "ID": "SPRAY_PAINT1",
+    "NAME": "spray paint can",
+    "PLURAL": "spray paint cans",
+    "QUANTITY": 10,
+    "FLAVOR": "Yo Yellow!"
+  },
+  {
+    "ID": "SPRAY_PAINT2",
+    "NAME": "spray paint can",
+    "PLURAL": "spray paint cans",
+    "QUANTITY": 10,
+    "FLAVOR": "Yo Blue!"
+  },
+  {
+    "ID": "SPRAY_PAINT3",
+    "NAME": "spray paint can",
+    "PLURAL": "spray paint cans",
+    "QUANTITY": 10,
+    "FLAVOR": "Yo Red!"
+  },
+  {
+    "ID": "SPRAY_PAINT4",
+    "NAME": "spray paint can",
+    "PLURAL": "spray paint cans",
+    "QUANTITY": 10,
+    "FLAVOR": "Yo... Pink!?"
+  }
+]

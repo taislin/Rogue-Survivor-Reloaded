@@ -1,0 +1,18 @@
+[
+  {
+    "ID": "EXPLOSIVE_GRENADE",
+    "NAME": "grenade",
+    "PLURAL": "grenades",
+    "FUSE": 2,
+    "MAXTHROW": 5,
+    "STACKINGLIMIT": 6,
+    "RADIUS": 2,
+    "BLAST0": 120,
+    "BLAST1": 60,
+    "BLAST2": 40,
+    "BLAST3": 0,
+    "BLAST4": 0,
+    "BLAST5": 0,
+    "FLAVOR": "Fire in the hole!"
+  }
+]

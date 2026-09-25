@@ -1,0 +1,234 @@
+[
+  {
+    "ID": "_FIRST_LIVING",
+    "NAME": "Agile",
+    "VALUE1": 2,
+    "VALUE2": 4,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "AWAKE",
+    "NAME": "Awake",
+    "VALUE1": 0.1,
+    "VALUE2": 0.15,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "BOWS",
+    "NAME": "Bows",
+    "VALUE1": 10,
+    "VALUE2": 4,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "CARPENTRY",
+    "NAME": "Carpentry",
+    "VALUE1": 0.15,
+    "VALUE2": 1,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "CHARISMATIC",
+    "NAME": "Charismatic",
+    "VALUE1": 2,
+    "VALUE2": 10,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "FIREARMS",
+    "NAME": "Firearms",
+    "VALUE1": 10,
+    "VALUE2": 2,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "HARDY",
+    "NAME": "Hardy",
+    "VALUE1": 1,
+    "VALUE2": 0,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "HAULER",
+    "NAME": "Hauler",
+    "VALUE1": 1,
+    "VALUE2": 0,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "HIGH_STAMINA",
+    "NAME": "High Stamina",
+    "VALUE1": 8,
+    "VALUE2": 0,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "LEADERSHIP",
+    "NAME": "Leadership",
+    "VALUE1": 1,
+    "VALUE2": 0,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "LIGHT_EATER",
+    "NAME": "Light Eater",
+    "VALUE1": 0.15,
+    "VALUE2": 0.1,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "LIGHT_FEET",
+    "NAME": "Light Feet",
+    "VALUE1": 15,
+    "VALUE2": 0,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "LIGHT_SLEEPER",
+    "NAME": "Light Sleeper",
+    "VALUE1": 20,
+    "VALUE2": 0,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "MARTIAL_ARTS",
+    "NAME": "Martial Arts",
+    "VALUE1": 6,
+    "VALUE2": 2,
+    "VALUE3": 10,
+    "VALUE4": 0
+  },
+  {
+    "ID": "MEDIC",
+    "NAME": "Medic",
+    "VALUE1": 0.15,
+    "VALUE2": 10,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "NECROLOGY",
+    "NAME": "Necrology",
+    "VALUE1": 2,
+    "VALUE2": 4,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "STRONG",
+    "NAME": "Strong",
+    "VALUE1": 3,
+    "VALUE2": 1,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "STRONG_PSYCHE",
+    "NAME": "Strong Psyche",
+    "VALUE1": 0.15,
+    "VALUE2": 0,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "TOUGH",
+    "NAME": "Tough",
+    "VALUE1": 6,
+    "VALUE2": 0,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "UNSUSPICIOUS",
+    "NAME": "Unsuspicious",
+    "VALUE1": 20,
+    "VALUE2": 0,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "_FIRST_UNDEAD",
+    "NAME": "Z-Agile",
+    "VALUE1": 1,
+    "VALUE2": 2,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "Z_EATER",
+    "NAME": "Z-Eater",
+    "VALUE1": 0.15,
+    "VALUE2": 0,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "Z_GRAB",
+    "NAME": "Z-Grab",
+    "VALUE1": 2,
+    "VALUE2": 0,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "Z_INFECTOR",
+    "NAME": "Z-Infector",
+    "VALUE1": 0.15,
+    "VALUE2": 0,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "Z_LIGHT_EATER",
+    "NAME": "Z-Light Eater",
+    "VALUE1": 0.15,
+    "VALUE2": 0.1,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "Z_LIGHT_FEET",
+    "NAME": "Z-Light Feet",
+    "VALUE1": 3,
+    "VALUE2": 0,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "Z_STRONG",
+    "NAME": "Z-Strong",
+    "VALUE1": 2,
+    "VALUE2": 0,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "Z_TOUGH",
+    "NAME": "Z-Tough",
+    "VALUE1": 3,
+    "VALUE2": 0,
+    "VALUE3": 0,
+    "VALUE4": 0
+  },
+  {
+    "ID": "Z_TRACKER",
+    "NAME": "Z-Tracker",
+    "VALUE1": 0.04,
+    "VALUE2": 0,
+    "VALUE3": 0,
+    "VALUE4": 0
+  }
+]

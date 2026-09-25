@@ -1,0 +1,20 @@
+[
+  {
+    "ID": "ENT_BOOK",
+    "NAME": "book",
+    "PLURAL": "books",
+    "STACKING": 1,
+    "VALUE": 120,
+    "BORE CHANCE per use": 10,
+    "FLAVOR": "Read while you still can."
+  },
+  {
+    "ID": "ENT_MAGAZINE",
+    "NAME": "magazine",
+    "PLURAL": "magazines",
+    "STACKING": 10,
+    "VALUE": 60,
+    "BORE CHANCE per use": 100,
+    "FLAVOR": "Emergency toilet paper."
+  }
+]
