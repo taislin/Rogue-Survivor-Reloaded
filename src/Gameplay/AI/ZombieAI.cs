@@ -104,7 +104,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                         float distance = game.Rules.GridDistance(m_Actor.Location.Position, enemyP.Location.Position);
                         if (distance < closest)
                         {
-                            ActorAction bumpAction = BehaviorStupidBumpToward(game, enemyP.Location.Position);
+                            ActorAction bumpAction = BehaviorStupidBumpToward(game, enemyP.Location.Position, true, true);
                             if (bumpAction != null)
                             {
                                 closest = distance;
@@ -135,7 +135,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                         float distance = game.Rules.GridDistance(m_Actor.Location.Position, enemyP.Location.Position);
                         if (distance < closest)
                         {
-                            ActorAction bumpAction = BehaviorStupidBumpToward(game, enemyP.Location.Position);
+                            ActorAction bumpAction = BehaviorStupidBumpToward(game, enemyP.Location.Position, true, true);
                             if (bumpAction != null)
                             {
                                 closest = distance;
@@ -190,7 +190,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 Percept nearestMaster = FilterNearest(game, FilterActors(game, mapPercepts, (a) => a.Model.Abilities.IsUndeadMaster));
                 if (nearestMaster != null)
                 {
-                    ActorAction bumpAction = BehaviorStupidBumpToward(game, RandomPositionNear(game.Rules, m_Actor.Location.Map, nearestMaster.Location.Position, 3));
+                    ActorAction bumpAction = BehaviorStupidBumpToward(game, RandomPositionNear(game.Rules, m_Actor.Location.Map, nearestMaster.Location.Position, 3), true, true);
                     if (bumpAction != null)
                     {
                         // MAASTEERRR!
@@ -275,7 +275,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
 
             // 9 wander
             m_Actor.Activity = Activity.IDLE;
-            return BehaviorWander(game);
+            return BehaviorWander(game, null);
         }
         #endregion
     }

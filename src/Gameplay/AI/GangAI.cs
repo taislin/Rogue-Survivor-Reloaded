@@ -9,6 +9,7 @@ using djack.RogueSurvivor.Engine;
 using djack.RogueSurvivor.Engine.Actions;
 using djack.RogueSurvivor.Engine.AI;
 using djack.RogueSurvivor.Gameplay.AI.Sensors;
+using djack.RogueSurvivor.Gameplay.AI.Tools;
 
 namespace djack.RogueSurvivor.Gameplay.AI
 {
@@ -33,7 +34,10 @@ namespace djack.RogueSurvivor.Gameplay.AI
             "Fuck you",
             "Fuck it I'm trapped!",
             "Come on"
-        };  
+        };
+
+        // alpha10
+        const string CANT_GET_ITEM_EMOTE = "Fuck can't get that shit!";
         #endregion
 
         #region Fields
@@ -41,6 +45,9 @@ namespace djack.RogueSurvivor.Gameplay.AI
         MemorizedSensor m_MemorizedSensor;
 
         ExplorationData m_Exploration;
+
+        // alpha10 needed as ref param to a new behavior but unused
+        Percept m_DummyPerceptLastItemsSaw = null;
         #endregion
 
         #region BaseAI
@@ -67,11 +74,23 @@ namespace djack.RogueSurvivor.Gameplay.AI
             HashSet<Point> FOV = m_LOSSensor.FOV;
             List<Percept> mapPercepts = FilterSameMap(game, percepts);
 
+            // alpha10
+            // don't run by default.
+            m_Actor.IsRunning = false;
+
+            // 0. Equip best item
+            ActorAction bestEquip = BehaviorEquipBestItems(game, true, true);
+            if (bestEquip != null)
+            {
+                return bestEquip;
+            }
+            // end alpha10
+
             // 1. Follow order
             #region
             if (this.Order != null)
             {
-                ActorAction orderAction = ExecuteOrder(game, this.Order, mapPercepts);
+                ActorAction orderAction = ExecuteOrder(game, this.Order, mapPercepts, m_Exploration);
                 if (orderAction == null)
                     SetOrder(null);
                 else
@@ -88,16 +107,16 @@ namespace djack.RogueSurvivor.Gameplay.AI
             // - FLAGS
             // "courageous" : always if not tired.
             // - RULES
-            // 1 equip weapon/armor
+            // alpha10 OBSOLETE 1 equip weapon/armor
             // 2 fire at nearest.
             // 3 shout, fight or flee.
             // 4 use medecine
             // 5 rest if tired
-            // 6 charge enemy if courageous
+            // // alpa10 obsolete and redundant with rule 3!! 6 charge enemy if courageous 
             // 7 eat when hungry (also eat corpses)
             // 8 sleep.
             // 9 drop light/tracker with no batteries
-            // 10 equip light/tracker
+            // alpa10 OBSOLETE 10 equip light/tracker
             // 11 get nearby item (not if seeing enemy)
             // 12 steal item from someone.
             // 13 tear down barricade
@@ -107,9 +126,6 @@ namespace djack.RogueSurvivor.Gameplay.AI
             // 17 explore
             // 18 wander
             //////////////////////////////////////////////////////////////////////
-
-            // don't run by default.
-            m_Actor.IsRunning = false;
 
             // get data.
             List<Percept> allEnemies = FilterEnemies(game, mapPercepts);
@@ -124,21 +140,30 @@ namespace djack.RogueSurvivor.Gameplay.AI
             // exploration.
             m_Exploration.Update(m_Actor.Location);
 
+            // alpha10 needed due to uggraded get item behavior
+            // clear taboo tiles : periodically or when changing maps.
+            if (m_Actor.Location.Map.LocalTime.TurnCounter % WorldTime.TURNS_PER_HOUR == 0 ||
+                (PrevLocation != null && PrevLocation.Map != m_Actor.Location.Map))
+            {
+                ClearTabooTiles();
+            }
+
             // 1 equip weapon/armor
-            #region
-            ActorAction equipWpnAction = BehaviorEquipWeapon(game);
-            if (equipWpnAction != null)
-            {
-                m_Actor.Activity = Activity.IDLE;
-                return equipWpnAction;
-            }
-            ActorAction equipArmAction = BehaviorEquipBodyArmor(game);
-            if (equipArmAction != null)
-            {
-                m_Actor.Activity = Activity.IDLE;
-                return equipArmAction;
-            }
-            #endregion
+            // alpha10 obsolete
+            //#region
+            //ActorAction equipWpnAction = BehaviorEquipWeapon(game);
+            //if (equipWpnAction != null)
+            //{
+            //    m_Actor.Activity = Activity.IDLE;
+            //    return equipWpnAction;
+            //}
+            //ActorAction equipArmAction = BehaviorEquipBestBodyArmor(game);
+            //if (equipArmAction != null)
+            //{
+            //    m_Actor.Activity = Activity.IDLE;
+            //    return equipArmAction;
+            //}
+            //#endregion
 
             // 2 fire at nearest enemy (always if has leader, half of the time if not)
             #region
@@ -177,8 +202,12 @@ namespace djack.RogueSurvivor.Gameplay.AI
                         }
                     }
                 }
+
                 // fight or flee.
-                ActorAction fightOrFlee = BehaviorFightOrFlee(game, currentEnemies, seeLeader, isLeaderFighting, ActorCourage.COURAGEOUS, FIGHT_EMOTES);
+                RouteFinder.SpecialActions allowedChargeActions = RouteFinder.SpecialActions.JUMP | RouteFinder.SpecialActions.DOORS; // alpha10
+                // gangs are allowed to make a mess :)
+                allowedChargeActions |= RouteFinder.SpecialActions.BREAK | RouteFinder.SpecialActions.PUSH;
+                ActorAction fightOrFlee = BehaviorFightOrFlee(game, currentEnemies, seeLeader, isLeaderFighting, ActorCourage.COURAGEOUS, FIGHT_EMOTES, allowedChargeActions);
                 if (fightOrFlee != null)
                 {
                     return fightOrFlee;
@@ -206,20 +235,22 @@ namespace djack.RogueSurvivor.Gameplay.AI
             }
             #endregion
 
-            // 6 charge enemy if courageous
-            #region
-            if (hasCurrentEnemies && isCourageous)
-            {
-                Percept nearestEnemy = FilterNearest(game, currentEnemies);
-                ActorAction chargeAction = BehaviorChargeEnemy(game, nearestEnemy);
-                if (chargeAction != null)
-                {
-                    m_Actor.Activity = Activity.FIGHTING;
-                    m_Actor.TargetActor = nearestEnemy.Percepted as Actor;
-                    return chargeAction;
-                }
-            }
-            #endregion
+            // alpa10 obsolete and redundant with rule 3!!
+            //// 6 charge enemy if courageous
+            //#region
+            //if (hasCurrentEnemies && isCourageous)
+            //{
+            //    Percept nearestEnemy = FilterNearest(game, currentEnemies);
+            //    // alpha10 Gangs can make a mess :)
+            //    ActorAction chargeAction = BehaviorChargeEnemy(game, nearestEnemy, true, true);
+            //    if (chargeAction != null)
+            //    {
+            //        m_Actor.Activity = Activity.FIGHTING;
+            //        m_Actor.TargetActor = nearestEnemy.Percepted as Actor;
+            //        return chargeAction;
+            //    }
+            //}
+            //#endregion
 
             // 7 eat when hungry (also eat corpses)
             #region
@@ -277,49 +308,59 @@ namespace djack.RogueSurvivor.Gameplay.AI
             #endregion
 
             // 10 equip light/tracker
-            #region
-            // tracker : if has leader or is a leader.
-            bool needCellPhone = checkOurLeader || m_Actor.CountFollowers > 0;
-            // then light.
-            bool needLight = NeedsLight(game);
-            // if tracker or light useless, unequip it.
-            if (!needCellPhone && !needLight)
-            {
-                ActorAction unequipUselessLeftItem = BehaviorUnequipLeftItem(game);
-                if (unequipUselessLeftItem != null)
-                {
-                    m_Actor.Activity = Activity.IDLE;
-                    return unequipUselessLeftItem;
-                }
-            }
-            // tracker?
-            if (needCellPhone)
-            {
-                ActorAction eqTrackerAction = BehaviorEquipCellPhone(game);
-                if (eqTrackerAction != null)
-                {
-                    m_Actor.Activity = Activity.IDLE;
-                    return eqTrackerAction;
-                }
-            }
-            // ...or light?
-            else if (needLight)
-            {
-                ActorAction eqLightAction = BehaviorEquipLight(game);
-                if (eqLightAction != null)
-                {
-                    m_Actor.Activity = Activity.IDLE;
-                    return eqLightAction;
-                }
+            // alpha10 obsolete
+            //#region
+            //// tracker : if has leader or is a leader.
+            //bool needCellPhone = checkOurLeader || m_Actor.CountFollowers > 0;
+            //// then light.
+            //bool needLight = NeedsLight(game);
+            //// if tracker or light useless, unequip it.
+            //if (!needCellPhone && !needLight)
+            //{
+            //    ActorAction unequipUselessLeftItem = BehaviorUnequipLeftItem(game);
+            //    if (unequipUselessLeftItem != null)
+            //    {
+            //        m_Actor.Activity = Activity.IDLE;
+            //        return unequipUselessLeftItem;
+            //    }
+            //}
+            //// tracker?
+            //if (needCellPhone)
+            //{
+            //    ActorAction eqTrackerAction = BehaviorEquipCellPhone(game);
+            //    if (eqTrackerAction != null)
+            //    {
+            //        m_Actor.Activity = Activity.IDLE;
+            //        return eqTrackerAction;
+            //    }
+            //}
+            //// ...or light?
+            //else if (needLight)
+            //{
+            //    ActorAction eqLightAction = BehaviorEquipLight(game);
+            //    if (eqLightAction != null)
+            //    {
+            //        m_Actor.Activity = Activity.IDLE;
+            //        return eqLightAction;
+            //    }
 
-            }
-            #endregion
+            //}
+            //#endregion
 
             // 11 get nearby item (not if seeing enemy)
             // ignore not currently visible items & blocked items.
+            // alpha10 upgraded rule to use the same new core behavior as CivilianAI with custom params
             #region
             if (!hasCurrentEnemies)
             {
+                // alpha10 new common behaviour code, also used by CivilianAI, but Gangs can break and push
+                ActorAction getItemAction = BehaviorGoGetInterestingItems(game, mapPercepts,
+                     true, true, CANT_GET_ITEM_EMOTE, false, ref m_DummyPerceptLastItemsSaw);
+
+                if (getItemAction != null)
+                    return getItemAction;
+
+                /* prev gang code, much simpler, grabbed any item it could
                 Map map = m_Actor.Location.Map;
                 List<Percept> stacks = FilterOut(game, FilterStacks(game, mapPercepts),
                     (p) => (p.Turn != map.LocalTime.TurnCounter) || IsOccupiedByOther(map, p.Location.Position));
@@ -333,6 +374,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                         return grabAction;
                     }
                 }
+                */
             }
             #endregion
 
@@ -353,23 +395,34 @@ namespace djack.RogueSurvivor.Gameplay.AI
                             // unnoticed.
                             return false;
                         }
-                        return HasAnyInterestingItem(game, a.Inventory);
+                        return HasAnyInterestingItem(game, a.Inventory, ItemSource.ANOTHER_ACTOR);
                     });
+
                 if (mayStealFrom != null)
                 {
-                    // get data.
-                    Percept nearest = FilterNearest(game, mayStealFrom);
-                    Actor victim = nearest.Percepted as Actor;
-                    Item wantIt = FirstInterestingItem(game, victim.Inventory);
+                    // alpha10 make sure to consider only reachable victims
+                    RouteFinder.SpecialActions allowedActions;
+                    allowedActions = RouteFinder.SpecialActions.ADJ_TO_DEST_IS_GOAL | RouteFinder.SpecialActions.JUMP | RouteFinder.SpecialActions.DOORS;
+                    // gangs can break & push stuff
+                    allowedActions |= RouteFinder.SpecialActions.BREAK | RouteFinder.SpecialActions.PUSH;
+                    FilterOutUnreachablePercepts(game, ref mayStealFrom, allowedActions);
 
-                    // make an enemy of him.
-                    game.DoMakeAggression(m_Actor, victim);
+                    if (mayStealFrom.Count > 0)
+                    {
+                        // get data.
+                        Percept nearest = FilterNearest(game, mayStealFrom);
+                        Actor victim = nearest.Percepted as Actor;
+                        Item wantIt = FirstInterestingItem(game, victim.Inventory, ItemSource.ANOTHER_ACTOR);
 
-                    // declare my evil intentions.
-                    m_Actor.Activity = Activity.CHASING;
-                    m_Actor.TargetActor = victim;
-                    return new ActionSay(m_Actor, game, victim, 
-                        String.Format("Hey! That's some nice {0} you have here!", wantIt.Model.SingleName), RogueGame.Sayflags.IS_IMPORTANT);
+                        // make an enemy of him.
+                        game.DoMakeAggression(m_Actor, victim);
+
+                        // declare my evil intentions.
+                        m_Actor.Activity = Activity.CHASING;
+                        m_Actor.TargetActor = victim;
+                        return new ActionSay(m_Actor, game, victim,
+                            String.Format("Hey! That's some nice {0} you have here!", wantIt.Model.SingleName), RogueGame.Sayflags.IS_IMPORTANT | RogueGame.Sayflags.IS_DANGER);
+                    }
                 }
             }
             #endregion
@@ -454,7 +507,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
 
             // 18 wander
             m_Actor.Activity = Activity.IDLE;
-            return BehaviorWander(game);
+            return BehaviorWander(game, m_Exploration);
         }
         #endregion
     }

@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Text;
 using System.Drawing;   // Point
 
 using djack.RogueSurvivor.Data;
@@ -8,8 +7,8 @@ using djack.RogueSurvivor.Engine;
 using djack.RogueSurvivor.Engine.Actions;
 using djack.RogueSurvivor.Engine.AI;
 using djack.RogueSurvivor.Engine.Items;
-using djack.RogueSurvivor.Engine.MapObjects;
 using djack.RogueSurvivor.Gameplay.AI.Sensors;
+using djack.RogueSurvivor.Gameplay.AI.Tools;
 
 namespace djack.RogueSurvivor.Gameplay.AI
 {
@@ -24,7 +23,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
         const int FOLLOW_PLAYERLEADER_MAXDIST = 1;
 
         const int EXPLORATION_MAX_LOCATIONS = 30;
-        const int EXPLORATION_MAX_ZONES = 3;
+        const int EXPLORATION_MAX_ZONES = 6;  // alpha10.1 doubled from 3 to 6
 
         const int USE_EXIT_CHANCE = 20;
 
@@ -54,7 +53,10 @@ namespace djack.RogueSurvivor.Gameplay.AI
             "Go away",                  // flee
             "Damn it I'm trapped!",     // trapped
             "I'm not afraid"            // fight
-        };      
+        };
+
+        // alpha10
+        const string CANT_GET_ITEM_EMOTE = "Mmmh. Looks like I can't reach what I want.";
 
         // Unique emotes.
         static string[] BIG_BEAR_EMOTES =
@@ -160,16 +162,41 @@ namespace djack.RogueSurvivor.Gameplay.AI
         {
             List<Percept> mapPercepts = FilterSameMap(game, percepts);
 
+            // DEBUG BOT
+#if DEBUG
+            bool botBreakpoint = false;
+            bool verboseBotExploreWander = false;
+            if (m_Actor.IsBotPlayer)
+            {
+                botBreakpoint = false; // true;
+                verboseBotExploreWander = false; // true;
+            }
+#endif
+            // END DEBUG BOT
+
             ///////////////////////
+            // 0. Equip best item.  // alpha10
             // 1. Follow order
             // 2. Normal behavior.
             ///////////////////////
+
+            // alpha10
+            // don't run by default.
+            m_Actor.IsRunning = false;
+
+            // 0. Equip best item
+            ActorAction bestEquip = BehaviorEquipBestItems(game, true, true);
+            if (bestEquip != null)
+            {
+                return bestEquip;
+            }
+            // end alpha10
 
             // 1. Follow order
             #region
             if (this.Order != null)
             {
-                ActorAction orderAction = ExecuteOrder(game, this.Order, mapPercepts);
+                ActorAction orderAction = ExecuteOrder(game, this.Order, mapPercepts, m_Exploration);
                 if (orderAction == null)
                     SetOrder(null);
                 else
@@ -189,16 +216,16 @@ namespace djack.RogueSurvivor.Gameplay.AI
             // - RULES
             // 0 run away from primed explosives.
             // 1 throw grenades at enemies.
-            // 2 equip weapon/armor
+            // alpha10 OBSOLETE 2 equip weapon/armor
             // 3 fire at nearest (always if has leader, half of the time if not)  - check directives
             // 4 fight or flee, shout
             // 5 use medicine
             // 6 rest if tired
-            // 7 charge enemy if courageous
+            // alpha10 obsolete and redundant with rule 4! 7 charge enemy if courageous
             // 8 eat when hungry (also eat corpses)
             // 9 sleep when almost sleepy and safe.
             // 10 drop light/tracker with no batteries
-            // 11 equip light/tracker/scent spray
+            // alpha10 OBSOLETE 11 equip light/tracker/scent spray
             // 12 make room for food items if needed.
             // 13 get nearby item/trade (not if seeing enemy) - check directives.
             // 14 if hungry and no food, charge at people for food (option, not follower or law enforcer)
@@ -220,9 +247,6 @@ namespace djack.RogueSurvivor.Gameplay.AI
             // 30 explore.
             // 31 wander.
             //////////////////////////////////////////////////////////////////////
-
-            // don't run by default.
-            m_Actor.IsRunning = false;
 
             // get data.
             List<Percept> enemies = FilterEnemies(game, mapPercepts);
@@ -295,21 +319,22 @@ namespace djack.RogueSurvivor.Gameplay.AI
             }
             #endregion
 
-            // 2 equip weapon/armor
-            #region
-            ActorAction equipWpnAction = BehaviorEquipWeapon(game);
-            if (equipWpnAction != null)
-            {
-                m_Actor.Activity = Activity.IDLE;
-                return equipWpnAction;
-            }
-            ActorAction equipArmAction = BehaviorEquipBodyArmor(game);
-            if (equipArmAction != null)
-            {
-                m_Actor.Activity = Activity.IDLE;
-                return equipArmAction;
-            }
-            #endregion
+            // alpha10 obsolete
+            //// 2 equip weapon/armor
+            //#region
+            //ActorAction equipWpnAction = BehaviorEquipWeapon(game);
+            //if (equipWpnAction != null)
+            //{
+            //    m_Actor.Activity = Activity.IDLE;
+            //    return equipWpnAction;
+            //}
+            //ActorAction equipArmAction = BehaviorEquipBodyArmor(game);
+            //if (equipArmAction != null)
+            //{
+            //    m_Actor.Activity = Activity.IDLE;
+            //    return equipArmAction;
+            //}
+            //#endregion
 
             // 3 fire at nearest enemy
             #region
@@ -368,7 +393,8 @@ namespace djack.RogueSurvivor.Gameplay.AI
                     }
                 }
                 // fight or flee.
-                ActorAction fightOrFlee = BehaviorFightOrFlee(game, enemies, seeLeader, isLeaderFighting, Directives.Courage, m_Emotes);
+                RouteFinder.SpecialActions allowedChargeActions = RouteFinder.SpecialActions.JUMP | RouteFinder.SpecialActions.DOORS; // alpha10
+                ActorAction fightOrFlee = BehaviorFightOrFlee(game, enemies, seeLeader, isLeaderFighting, Directives.Courage, m_Emotes, allowedChargeActions);
                 if (fightOrFlee != null)
                 {
                     return fightOrFlee;
@@ -396,20 +422,21 @@ namespace djack.RogueSurvivor.Gameplay.AI
             }
             #endregion
 
-            // 7 charge enemy if courageous
-            #region
-            if (hasEnemies && isCourageous)
-            {
-                Percept nearestEnemy = FilterNearest(game, enemies);
-                ActorAction chargeAction = BehaviorChargeEnemy(game, nearestEnemy);
-                if (chargeAction != null)
-                {
-                    m_Actor.Activity = Activity.FIGHTING;
-                    m_Actor.TargetActor = nearestEnemy.Percepted as Actor;
-                    return chargeAction;
-                }
-            }
-            #endregion
+            // alpha10 obsolete and redundant with rule 4!
+            //// 7 charge enemy if courageous
+            //#region
+            //if (hasEnemies && isCourageous)
+            //{
+            //    Percept nearestEnemy = FilterNearest(game, enemies);
+            //    ActorAction chargeAction = BehaviorChargeEnemy(game, nearestEnemy, false, false);
+            //    if (chargeAction != null)
+            //    {
+            //        m_Actor.Activity = Activity.FIGHTING;
+            //        m_Actor.TargetActor = nearestEnemy.Percepted as Actor;
+            //        return chargeAction;
+            //    }
+            //}
+            //#endregion
 
             // 8 eat when hungry (also eat corpses)
             #region
@@ -467,56 +494,57 @@ namespace djack.RogueSurvivor.Gameplay.AI
             }
             #endregion
 
+            // alpha10 obsolete
             // 11 equip light/tracker/spray.
-            #region
-            // tracker : if has leader or is a leader.
-            bool needCellPhone = m_Actor.HasLeader || m_Actor.CountFollowers > 0;
-            // then light.
-            bool needLight = NeedsLight(game);
-            // finally spray.
-            bool needSpray = IsGoodStenchKillerSpot(game, m_Actor.Location.Map, m_Actor.Location.Position);
-            // if tracker/light/spray useless, unequip it.
-            if (!needCellPhone && !needLight && !needSpray)
-            {
-                ActorAction unequipUselessLeftItem = BehaviorUnequipLeftItem(game);
-                if (unequipUselessLeftItem != null)
-                {
-                    m_Actor.Activity = Activity.IDLE;
-                    return unequipUselessLeftItem;
-                }
-            }
-            // tracker?
-            if(needCellPhone)
-            {
-                ActorAction eqTrackerAction = BehaviorEquipCellPhone(game);
-                if (eqTrackerAction != null)
-                {
-                    m_Actor.Activity = Activity.IDLE;
-                    return eqTrackerAction;
-                }
-            }
-            // ...or light?
-            else if (needLight)
-            {
-                ActorAction eqLightAction = BehaviorEquipLight(game);
-                if (eqLightAction != null)
-                {
-                    m_Actor.Activity = Activity.IDLE;
-                    return eqLightAction;
-                }
+            //#region
+            //// tracker : if has leader or is a leader.
+            //bool needCellPhone = m_Actor.HasLeader || m_Actor.CountFollowers > 0;
+            //// then light.
+            //bool needLight = NeedsLight(game);
+            //// finally spray.
+            //bool needSpray = IsGoodStenchKillerSpot(game, m_Actor.Location.Map, m_Actor.Location.Position);
+            //// if tracker/light/spray useless, unequip it.
+            //if (!needCellPhone && !needLight && !needSpray)
+            //{
+            //    ActorAction unequipUselessLeftItem = BehaviorUnequipLeftItem(game);
+            //    if (unequipUselessLeftItem != null)
+            //    {
+            //        m_Actor.Activity = Activity.IDLE;
+            //        return unequipUselessLeftItem;
+            //    }
+            //}
+            //// tracker?
+            //if(needCellPhone)
+            //{
+            //    ActorAction eqTrackerAction = BehaviorEquipCellPhone(game);
+            //    if (eqTrackerAction != null)
+            //    {
+            //        m_Actor.Activity = Activity.IDLE;
+            //        return eqTrackerAction;
+            //    }
+            //}
+            //// ...or light?
+            //else if (needLight)
+            //{
+            //    ActorAction eqLightAction = BehaviorEquipLight(game);
+            //    if (eqLightAction != null)
+            //    {
+            //        m_Actor.Activity = Activity.IDLE;
+            //        return eqLightAction;
+            //    }
 
-            }
-            // ... scent spray?
-            else if (needSpray)
-            {
-                ActorAction eqScentSpray = BehaviorEquipStenchKiller(game);
-                if (eqScentSpray != null)
-                {
-                    m_Actor.Activity = Activity.IDLE;
-                    return eqScentSpray;
-                }
-            }
-            #endregion
+            //}
+            //// ... scent spray?
+            //else if (needSpray)
+            //{
+            //    ActorAction eqScentSpray = BehaviorEquipStenchKiller(game);
+            //    if (eqScentSpray != null)
+            //    {
+            //        m_Actor.Activity = Activity.IDLE;
+            //        return eqScentSpray;
+            //    }
+            //}
+            //#endregion
 
             // 12 make room for food items if needed.
             // &&
@@ -527,41 +555,13 @@ namespace djack.RogueSurvivor.Gameplay.AI
             {
                 Map map = m_Actor.Location.Map;
 
-                #region Get nearby item
-                // list visible items.
-                List<Percept> interestingStacks = FilterOut(game, FilterStacks(game, mapPercepts),
-                    (p) => (p.Turn != map.LocalTime.TurnCounter) || 
-                            IsOccupiedByOther(map, p.Location.Position) || 
-                            IsTileTaboo(p.Location.Position) ||
-                            !HasAnyInterestingItem(game, p.Percepted as Inventory));
+                #region Get items
+                // alpha10 new common behaviour code, also used by GangAI
+                ActorAction getItemAction = BehaviorGoGetInterestingItems(game, mapPercepts,
+                    false, false, CANT_GET_ITEM_EMOTE, true, ref m_LastItemsSaw);
 
-                // if some items...
-                if (interestingStacks != null)
-                {
-                    // update last percept saw.
-                    Percept nearestStack = FilterNearest(game, interestingStacks);
-                    m_LastItemsSaw = nearestStack;
-
-                    // 12: make room for food if needed.
-                    ActorAction makeRoomForFood = BehaviorMakeRoomForFood(game, interestingStacks);
-                    if (makeRoomForFood != null)
-                    {
-                        m_Actor.Activity = Activity.IDLE;
-                        return makeRoomForFood;
-                    }
-
-                    // 13: try to grab.
-                    ActorAction grabAction = BehaviorGrabFromStack(game, nearestStack.Location.Position, nearestStack.Percepted as Inventory);
-                    if (grabAction != null)
-                    {
-                        m_Actor.Activity = Activity.IDLE;
-                        return grabAction;
-                    }
-                    // we can't grab the item. mark the tile as taboo.
-                    MarkTileAsTaboo(nearestStack.Location.Position);
-                    // emote
-                    game.DoEmote(m_Actor, "Mmmh. Looks like I can't reach what I want.");
-                }
+                if (getItemAction != null)
+                    return getItemAction;
                 #endregion
 
                 #region Trade
@@ -577,9 +577,15 @@ namespace djack.RogueSurvivor.Gameplay.AI
                             if (other.IsPlayer) return true;
                             if (!game.Rules.CanActorInitiateTradeWith(m_Actor, other)) return true;
                             if (IsActorTabooTrade(other)) return true;
+                            // alpha10 dont bother someone who is fighting or fleeing
+                            if (other.Activity == Activity.CHASING || other.Activity == Activity.FIGHTING || other.Activity == Activity.FLEEING || other.Activity == Activity.FLEEING_FROM_EXPLOSIVE)
+                                return true;
                             // dont bother if no interesting items.
-                            if (!HasAnyInterestingItem(game, other.Inventory)) return true;
-                            if (!((other.Controller as BaseAI).HasAnyInterestingItem(game, m_Actor.Inventory))) return true;
+                            if (!HasAnyInterestingItem(game, other.Inventory, ItemSource.ANOTHER_ACTOR)) return true;
+                            if (!((other.Controller as BaseAI).HasAnyInterestingItem(game, m_Actor.Inventory, ItemSource.ANOTHER_ACTOR))) return true;
+                            // alpha10 reject if unreachable by baseai simple behaviours
+                            if (!CanReachSimple(game, other.Location.Position, Tools.RouteFinder.SpecialActions.DOORS | Tools.RouteFinder.SpecialActions.JUMP))
+                                return true;
                             // don't reject.
                             return false;
                         });
@@ -601,9 +607,13 @@ namespace djack.RogueSurvivor.Gameplay.AI
                         }
                         else
                         {
-                            ActorAction bump = BehaviorIntelligentBumpToward(game, tradeTarget.Location.Position);
+                            ActorAction bump = BehaviorIntelligentBumpToward(game, tradeTarget.Location.Position, false, false);
                             if (bump != null)
                             {
+                                // alpha10 announce it to make it clear to the player whats happening but dont spend AP (free action)
+                                // might spam for a few turns, but its better than not understanding whats going on.
+                                game.DoSay(m_Actor, tradeTarget, String.Format("Hey {0}, let's make a deal!", tradeTarget.Name), RogueGame.Sayflags.IS_FREE_ACTION);
+
                                 m_Actor.Activity = Activity.FOLLOWING;
                                 m_Actor.TargetActor = tradeTarget;
                                 return bump;
@@ -639,12 +649,13 @@ namespace djack.RogueSurvivor.Gameplay.AI
 
                 if (targetForFood != null)
                 {
-                    ActorAction chargeAction = BehaviorChargeEnemy(game, targetForFood);
+                    // alpha10 hungry civs can break and push
+                    ActorAction chargeAction = BehaviorChargeEnemy(game, targetForFood, true, true);
                     if (chargeAction != null)
                     {
                         // randomly emote.
                         if (game.Rules.RollChance(HUNGRY_CHARGE_EMOTE_CHANCE))
-                            game.DoSay(m_Actor, targetForFood.Percepted as Actor, "HEY! YOU! SHARE SOME FOOD!", RogueGame.Sayflags.IS_FREE_ACTION);
+                            game.DoSay(m_Actor, targetForFood.Percepted as Actor, "HEY! YOU! SHARE SOME FOOD!", RogueGame.Sayflags.IS_FREE_ACTION | RogueGame.Sayflags.IS_DANGER);
 
                         // chaaarge!
                         m_Actor.Activity = Activity.FIGHTING;
@@ -691,6 +702,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                         return entAction;
                     }
                 }
+                // TODO -- consider moving this to DropUselessItems()
                 ActorAction dropEnt = BehaviorDropBoringEntertainment(game);
                 if (dropEnt != null)
                 {
@@ -700,98 +712,8 @@ namespace djack.RogueSurvivor.Gameplay.AI
             }
             #endregion
 
-            // 18 follow leader
-            #region
-            if (checkOurLeader)
-            {
-                Point lastKnownLeaderPosition = m_Actor.Leader.Location.Position;
-                bool isLeaderVisible = m_LOSSensor.FOV.Contains(m_Actor.Leader.Location.Position);
-                int maxDist = m_Actor.Leader.IsPlayer ? FOLLOW_PLAYERLEADER_MAXDIST : FOLLOW_NPCLEADER_MAXDIST;
-                ActorAction followAction = BehaviorFollowActor(game, m_Actor.Leader, lastKnownLeaderPosition, isLeaderVisible, maxDist);
-                if (followAction != null)
-                {
-                    m_Actor.Activity = Activity.FOLLOWING;
-                    m_Actor.TargetActor = m_Actor.Leader;
-                    return followAction;
-                }
-            }
-            #endregion
-
-            // 19 take lead (if leadership)
-            #region
-            bool hasLeadership = m_Actor.Sheet.SkillTable.GetSkillLevel((int)Skills.IDs.LEADERSHIP) >= 1;
-            if (hasLeadership)
-            {
-                bool canLead = !checkOurLeader && m_Actor.CountFollowers < game.Rules.ActorMaxFollowers(m_Actor);
-                if (canLead)
-                {
-                    Percept nearestFriend = FilterNearest(game, FilterNonEnemies(game, mapPercepts));
-                    if (nearestFriend != null)
-                    {
-                        ActorAction leadAction = BehaviorLeadActor(game, nearestFriend);
-                        if (leadAction != null)
-                        {
-                            m_Actor.Activity = Activity.IDLE;
-                            m_Actor.TargetActor = nearestFriend.Percepted as Actor;
-                            return leadAction;
-                        }
-                    }
-                }
-            }
-            #endregion
-
-            // 20 if hungry, tear down barricades & push objects.
-            #region
-            if (game.Rules.IsActorHungry(m_Actor))
-            {
-                ActorAction attackBarricadeAction = BehaviorAttackBarricade(game);
-                if (attackBarricadeAction != null)
-                {
-                    // emote.
-                    game.DoEmote(m_Actor, "Open damn it! I know there is food there!");
-
-                    // go!
-                    m_Actor.Activity = Activity.IDLE;
-                    return attackBarricadeAction;
-                }
-                if (game.Rules.RollChance(HUNGRY_PUSH_OBJECTS_CHANCE))
-                {
-                    ActorAction pushAction = BehaviorPushNonWalkableObject(game);
-                    if (pushAction != null)
-                    {
-                        // emote.
-                        game.DoEmote(m_Actor, "Where is all the damn food?!");
-
-                        // go!
-                        m_Actor.Activity = Activity.IDLE;
-                        return pushAction;
-                    }
-                }
-            }
-            #endregion
-
-            // 21 go revive corpse.
-            ActorAction revive = BehaviorGoReviveCorpse(game, FilterCorpses(game, mapPercepts));
-            if (revive != null)
-            {
-                m_Actor.Activity = Activity.IDLE;
-                return revive;
-            }
-
-            // 22 use exit.
-            #region
-            if (game.Rules.RollChance(USE_EXIT_CHANCE))
-            {
-                ActorAction useExit = BehaviorUseExit(game, UseExitFlags.DONT_BACKTRACK);
-                if (useExit != null)
-                {
-                    m_Actor.Activity = Activity.IDLE;
-                    return useExit;
-                }
-            }
-            #endregion
-
-            // 23 build trap or fortification.
+            // 18 build trap or fortification.
+            // alpha10.1 moved trap/fortification rule before following leader rule so they will do it much more often
             #region
             if (game.Rules.RollChance(BUILD_TRAP_CHANCE))
             {
@@ -820,6 +742,105 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 {
                     m_Actor.Activity = Activity.IDLE;
                     return buildAction;
+                }
+            }
+            #endregion
+
+            // 19 follow leader
+            #region
+            if (checkOurLeader)
+            {
+                Point lastKnownLeaderPosition = m_Actor.Leader.Location.Position;
+                bool isLeaderVisible = m_LOSSensor.FOV.Contains(m_Actor.Leader.Location.Position);
+                int maxDist = m_Actor.Leader.IsPlayer ? FOLLOW_PLAYERLEADER_MAXDIST : FOLLOW_NPCLEADER_MAXDIST;
+                ActorAction followAction = BehaviorFollowActor(game, m_Actor.Leader, lastKnownLeaderPosition, isLeaderVisible, maxDist);
+                if (followAction != null)
+                {
+                    m_Actor.Activity = Activity.FOLLOWING;
+                    m_Actor.TargetActor = m_Actor.Leader;
+                    return followAction;
+                }
+            }
+            #endregion
+
+            // 20 take lead (if leadership)
+            #region
+            bool hasLeadership = m_Actor.Sheet.SkillTable.GetSkillLevel((int)Skills.IDs.LEADERSHIP) >= 1;
+            if (hasLeadership)
+            {
+                bool canLead = !checkOurLeader && m_Actor.CountFollowers < game.Rules.ActorMaxFollowers(m_Actor);
+                if (canLead)
+                {
+                    Percept nearestFriend = FilterNearest(game, FilterNonEnemies(game, mapPercepts));
+                    if (nearestFriend != null)
+                    {
+                        // alpha10 only if unreachable by baseai simple behaviours
+                        if (CanReachSimple(game, nearestFriend.Location.Position, Tools.RouteFinder.SpecialActions.DOORS | Tools.RouteFinder.SpecialActions.JUMP))
+                        {
+                            ActorAction leadAction = BehaviorLeadActor(game, nearestFriend);
+                            if (leadAction != null)
+                            {
+                                m_Actor.Activity = Activity.IDLE;
+                                m_Actor.TargetActor = nearestFriend.Percepted as Actor;
+                                return leadAction;
+                            }
+                        }
+                    }
+                }
+            }
+            #endregion
+
+            // 21 if hungry, tear down barricades & push objects.
+            #region
+            if (game.Rules.IsActorHungry(m_Actor))
+            {
+                ActorAction attackBarricadeAction = BehaviorAttackBarricade(game);
+                if (attackBarricadeAction != null)
+                {
+                    // emote.
+                    game.DoEmote(m_Actor, "Open damn it! I know there is food there!", true);
+
+                    // go!
+                    m_Actor.Activity = Activity.IDLE;
+                    return attackBarricadeAction;
+                }
+                if (game.Rules.RollChance(HUNGRY_PUSH_OBJECTS_CHANCE))
+                {
+                    // alpha10.1 do that only inside where food is more likely to be hidden, pushing cars outside is stupid -_-
+                    if (m_Actor.Location.Map.GetTileAt(m_Actor.Location.Position).IsInside)
+                    {
+                        ActorAction pushAction = BehaviorPushNonWalkableObject(game);
+                        if (pushAction != null)
+                        {
+                            // emote.
+                            game.DoEmote(m_Actor, "Where is all the damn food?!", true);
+
+                            // go!
+                            m_Actor.Activity = Activity.IDLE;
+                            return pushAction;
+                        }
+                    }
+                }
+            }
+            #endregion
+
+            // 22 go revive corpse.
+            ActorAction revive = BehaviorGoReviveCorpse(game, FilterCorpses(game, mapPercepts));
+            if (revive != null)
+            {
+                m_Actor.Activity = Activity.IDLE;
+                return revive;
+            }
+
+            // 23 use exit.
+            #region
+            if (game.Rules.RollChance(USE_EXIT_CHANCE))
+            {
+                ActorAction useExit = BehaviorUseExit(game, UseExitFlags.DONT_BACKTRACK);
+                if (useExit != null)
+                {
+                    m_Actor.Activity = Activity.IDLE;
+                    return useExit;
                 }
             }
             #endregion
@@ -934,9 +955,24 @@ namespace djack.RogueSurvivor.Gameplay.AI
 
             // 30 explore
             #region
+
+            // DEBUG BOT
+#if DEBUG
+            if (botBreakpoint)
+                Console.Out.WriteLine("test bot exploration breakpoint");
+#endif
+            // END DEBUG BOT
+
             ActorAction exploreAction = BehaviorExplore(game, m_Exploration);
             if (exploreAction != null)
             {
+                // VERBOSE BOT
+#if DEBUG
+                if (verboseBotExploreWander)
+                    game.AddMessage(new Message(">> Bot is Exploring", m_Actor.Location.Map.LocalTime.TurnCounter));
+#endif
+                // END VERBOSE BOT
+
                 m_Actor.Activity = Activity.IDLE;
                 return exploreAction;
             }
@@ -944,8 +980,15 @@ namespace djack.RogueSurvivor.Gameplay.AI
 
             // 31 wander.
             #region
+            // VERBOSE BOT
+#if DEBUG
+            if (verboseBotExploreWander)
+                game.AddMessage(new Message(">> Bot is Wandering", m_Actor.Location.Map.LocalTime.TurnCounter));
+#endif
+            // END VERBOSE BOT
+
             m_Actor.Activity = Activity.IDLE;
-            return BehaviorWander(game);
+            return BehaviorWander(game, m_Exploration);
             #endregion
 
             #endregion

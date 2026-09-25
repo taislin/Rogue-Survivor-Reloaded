@@ -19,7 +19,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
     class InsaneHumanAI : BaseAI
     {
         #region Constants
-        const int ATTACK_CHANCE = 80;
+        // const int ATTACK_CHANCE = 80;  // alpha10.1 obsolete
         const int SHOUT_CHANCE = 80;
         const int USE_EXIT_CHANCE = 50;
 
@@ -106,24 +106,35 @@ namespace djack.RogueSurvivor.Gameplay.AI
             List<Percept> mapPercepts = FilterSameMap(game, percepts);
 
             ///////////////////////////////////////////////////////////////////////
-            // 1 equip weapon
+            // alpha10 OBSOLETE 1 equip weapon
+            // alpha10 1 equip best items
             // 2 (chance) move closer to an enemy, nearest & visible enemies first
             // 3 (chance) shout insanities.
             // 4 (chance) use exit.
             // 5 wander
             ///////////////////////////////////////////////////////////////////////
 
-            // 1 equip weapon
-            ActorAction equipWpnAction = BehaviorEquipWeapon(game);
-            if (equipWpnAction != null)
+            // alpha10
+            m_Actor.IsRunning = false;
+
+            // 1 equip best items
+            ActorAction bestEquip = BehaviorEquipBestItems(game, false, false);
+            if (bestEquip != null)
             {
-                m_Actor.Activity = Activity.IDLE;
-                return equipWpnAction;
+                return bestEquip;
             }
+
+            //// 1 equip weapon
+            //ActorAction equipWpnAction = BehaviorEquipWeapon(game);
+            //if (equipWpnAction != null)
+            //{
+            //    m_Actor.Activity = Activity.IDLE;
+            //    return equipWpnAction;
+            //}
 
             // 2 (chance) move closer to an enemy, nearest & visible enemies first
             #region
-            if (game.Rules.RollChance(ATTACK_CHANCE))
+            // alpha10.1 always try to attack if (game.Rules.RollChance(ATTACK_CHANCE))
             {
                 List<Percept> enemies = FilterEnemies(game, mapPercepts);
                 if (enemies != null)
@@ -141,7 +152,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                             float distance = game.Rules.GridDistance(m_Actor.Location.Position, enemyP.Location.Position);
                             if (distance < closest)
                             {
-                                ActorAction bumpAction = BehaviorStupidBumpToward(game, enemyP.Location.Position);
+                                ActorAction bumpAction = BehaviorStupidBumpToward(game, enemyP.Location.Position, true, true);
                                 if (bumpAction != null)
                                 {
                                     closest = distance;
@@ -172,7 +183,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                             float distance = game.Rules.GridDistance(m_Actor.Location.Position, enemyP.Location.Position);
                             if (distance < closest)
                             {
-                                ActorAction bumpAction = BehaviorStupidBumpToward(game, enemyP.Location.Position);
+                                ActorAction bumpAction = BehaviorStupidBumpToward(game, enemyP.Location.Position, true, true);
                                 if (bumpAction != null)
                                 {
                                     closest = distance;
@@ -199,7 +210,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             {
                 string insanity = INSANITIES[game.Rules.Roll(0, INSANITIES.Length)];
                 m_Actor.Activity = Activity.IDLE;
-                game.DoEmote(m_Actor, insanity);
+                game.DoEmote(m_Actor, insanity, true);
             }
             #endregion
 
@@ -216,7 +227,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
 
             // 5 wander
             m_Actor.Activity = Activity.IDLE;
-            return BehaviorWander(game);
+            return BehaviorWander(game, null);
         }
         #endregion
     }

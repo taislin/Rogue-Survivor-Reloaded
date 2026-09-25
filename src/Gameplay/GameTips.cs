@@ -11,7 +11,7 @@ namespace djack.RogueSurvivor.Gameplay
         {
             // livings
             "...livings tire faster at night?",
-            "...some people will wreck havoc and attack others for food?",
+            "...some people will wreak havoc and attack others for food?",
             "...livings vision deteriorates when sleepy, under the rain or during the night?",
             "...you might stumble on some unique characters?",
             // undeads
@@ -26,11 +26,10 @@ namespace djack.RogueSurvivor.Gameplay
             "...eating or butchering corpses is OK?",
             "...you can try to revive people with the medic skill?",
             // misc rules
-        	"...odors decay faster under the rain and in the sewers?",
+        	"...odors decay faster under the rain?",
         	"...firearms are more likely to jam under the rain?",
             "...rain will put out fires?", // semi-trolling there
             "...wearing some outfits change the chances to get noticed by cops and gangs?",
-            "...books, magazines and friends are good for your sanity?",
             // followers
             "...you can use cellphones to keep contact with your followers?",
             "...followers will help you push objects?",

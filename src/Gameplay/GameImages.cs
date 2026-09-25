@@ -25,10 +25,12 @@ namespace djack.RogueSurvivor.Gameplay
         public const string ACTIVITY_FOLLOWING = @"Activities\following";
         public const string ACTIVITY_FOLLOWING_ORDER = @"Activities\following_order";
         public const string ACTIVITY_FOLLOWING_PLAYER = @"Activities\following_player";
+        public const string ACTIVITY_FOLLOWING_LEADER = @"Activities\following_leader";  // alpha10
         public const string ACTIVITY_SLEEPING = @"Activities\sleeping";
 
         public const string ICON_BLAST = @"Icons\blast";
         public const string ICON_CAN_TRADE = @"Icons\can_trade";
+        public const string ICON_HAS_VITAL_ITEM = @"Icons\has_vital_item";  // alpha10.1
         public const string ICON_THREAT_SAFE = @"Icons\threat_safe";
         public const string ICON_THREAT_DANGER = @"Icons\threat_danger";
         public const string ICON_THREAT_HIGH_DANGER = @"Icons\threat_high_danger";
@@ -40,11 +42,14 @@ namespace djack.RogueSurvivor.Gameplay
         public const string ICON_HEALING = @"Icons\healing";
         public const string ICON_IS_TARGET = @"Icons\is_target";
         public const string ICON_IS_TARGETTED = @"Icons\is_targetted";
+        public const string ICON_IS_TARGETING = @"Icons\is_targeting";  // alpha10
+        public const string ICON_IS_IN_GROUP = @"Icons\is_in_group";  // alpha10
         public const string ICON_KILLED = @"Icons\killed";
         public const string ICON_LEADER = @"Icons\leader";
         public const string ICON_MELEE_ATTACK = @"Icons\melee_attack";
         public const string ICON_MELEE_MISS = @"Icons\melee_miss";
         public const string ICON_MELEE_DAMAGE = @"Icons\melee_damage";
+        public const string ICON_ODOR_SUPPRESSED = @"Icons\odor_suppressed";  // alpha10
         public const string ICON_OUT_OF_AMMO = @"Icons\out_of_ammo";
         public const string ICON_OUT_OF_BATTERIES = @"Icons\out_of_batteries";
         public const string ICON_RANGED_ATTACK = @"Icons\ranged_attack";
@@ -64,16 +69,21 @@ namespace djack.RogueSurvivor.Gameplay
         public const string ICON_LINE_BAD = @"Icons\line_bad";
         public const string ICON_SCENT_LIVING = @"Icons\scent_living";
         public const string ICON_SCENT_ZOMBIEMASTER = @"Icons\scent_zm";
-        public const string ICON_SCENT_LIVING_SUPRESSOR = @"Icons\scent_living_supressor";
+        //alpha10 obsolete public const string ICON_SCENT_LIVING_SUPRESSOR = @"Icons\scent_living_supressor";
         public const string ICON_AGGRESSOR = @"Icons\enemy_you_aggressor";
         public const string ICON_INDIRECT_ENEMIES = @"Icons\enemy_indirect";
         public const string ICON_SELF_DEFENCE = @"Icons\enemy_you_self_defence";
         public const string ICON_TRAP_ACTIVATED = @"Icons\trap_activated";
+        public const string ICON_TRAP_ACTIVATED_SAFE_GROUP = @"Icons\trap_activated_safe_group";  // alpha10
+        public const string ICON_TRAP_ACTIVATED_SAFE_PLAYER = @"Icons\trap_activated_safe_player";  // alpha10
         public const string ICON_TRAP_TRIGGERED = @"Icons\trap_triggered";
+        public const string ICON_TRAP_TRIGGERED_SAFE_GROUP = @"Icons\trap_triggered_safe_group";  // alpha10
+        public const string ICON_TRAP_TRIGGERED_SAFE_PLAYER = @"Icons\trap_triggered_safe_player";  // alpha10
         public const string ICON_SANITY_DISTURBED = @"Icons\sanity_disturbed";
         public const string ICON_SANITY_INSANE = @"Icons\sanity_insane";
         public const string ICON_BORING_ITEM = @"Icons\boring_item";
-                          
+        public const string ICON_ZGRAB = @"Icons\zgrab";  // alpha10
+
         #endregion
 
         #region Tiles
@@ -219,6 +229,10 @@ namespace djack.RogueSurvivor.Gameplay
         public const string OBJ_HOSPITAL_DOOR_OPEN = @"MapObjects\hospital_door_open";
         public const string OBJ_HOSPITAL_DOOR_CLOSED = @"MapObjects\hospital_door_closed";
         public const string OBJ_HOSPITAL_DOOR_BROKEN = @"MapObjects\hospital_door_broken";
+
+        // alpha10
+        public const string OBJ_GARDEN_FENCE = @"MapObjects\garden_fence";
+        public const string OBJ_WIRE_FENCE = @"MapObjects\wire_fence";
         #endregion
 
         #region Actors
@@ -493,6 +507,7 @@ namespace djack.RogueSurvivor.Gameplay
             Load(ACTIVITY_FOLLOWING);
             Load(ACTIVITY_FOLLOWING_ORDER);
             Load(ACTIVITY_FOLLOWING_PLAYER);
+            Load(ACTIVITY_FOLLOWING_LEADER); // alpha10
             Load(ACTIVITY_SLEEPING);
 
             Load(ICON_EXPIRED_FOOD);
@@ -508,6 +523,7 @@ namespace djack.RogueSurvivor.Gameplay
             Load(ICON_RUNNING);
             Load(ICON_CANT_RUN);
             Load(ICON_CAN_TRADE);
+            Load(ICON_HAS_VITAL_ITEM);  // alpha10.1
             Load(ICON_OUT_OF_AMMO);
             Load(ICON_OUT_OF_BATTERIES);
             Load(ICON_SLEEP_ALMOST_SLEEPY);
@@ -524,23 +540,31 @@ namespace djack.RogueSurvivor.Gameplay
             Load(ICON_HEALING);
             Load(ICON_IS_TARGET);
             Load(ICON_IS_TARGETTED);
+            Load(ICON_IS_TARGETING); // alpha10
+            Load(ICON_IS_IN_GROUP);  // alpha10
             Load(ICON_THREAT_DANGER);
             Load(ICON_THREAT_HIGH_DANGER);
             Load(ICON_THREAT_SAFE);
             Load(ICON_SCENT_LIVING);
             Load(ICON_SCENT_ZOMBIEMASTER);
-            Load(ICON_SCENT_LIVING_SUPRESSOR);
+            //Load(ICON_SCENT_LIVING_SUPRESSOR); // alpha10 obsolete
+            Load(ICON_ODOR_SUPPRESSED);  // alpha10
             Load(ICON_SELF_DEFENCE);
             Load(ICON_INDIRECT_ENEMIES);
             Load(ICON_AGGRESSOR);
             Load(ICON_TRAP_ACTIVATED);
+            Load(ICON_TRAP_ACTIVATED_SAFE_GROUP);  // alpha10
+            Load(ICON_TRAP_ACTIVATED_SAFE_PLAYER);  // alpha10
             Load(ICON_TRAP_TRIGGERED);
+            Load(ICON_TRAP_TRIGGERED_SAFE_GROUP);  // alpha10
+            Load(ICON_TRAP_TRIGGERED_SAFE_PLAYER);  // alpha10
             Load(ICON_ROT_ALMOST_HUNGRY);
             Load(ICON_ROT_HUNGRY);
             Load(ICON_ROT_STARVING);
             Load(ICON_SANITY_INSANE);
             Load(ICON_SANITY_DISTURBED);
             Load(ICON_BORING_ITEM);
+            Load(ICON_ZGRAB);  // alpha10
             #endregion
 
             #region Tiles
@@ -691,6 +715,10 @@ namespace djack.RogueSurvivor.Gameplay
             Load(OBJ_HOSPITAL_DOOR_OPEN);
             Load(OBJ_HOSPITAL_NIGHT_TABLE);
             Load(OBJ_HOSPITAL_WARDROBE);
+
+            // alpha10
+            Load(OBJ_GARDEN_FENCE);
+            Load(OBJ_WIRE_FENCE);
             #endregion
 
             #region Actors

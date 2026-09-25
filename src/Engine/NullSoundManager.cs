@@ -5,11 +5,15 @@ using System.Text;
 
 namespace djack.RogueSurvivor.Engine
 {
-    class NullSoundManager : ISoundManager
+    class NullSoundManager : IMusicManager
     {
         #region Properties
         public bool IsMusicEnabled { get; set; }
         public int Volume { get; set; }
+        public int Priority { get; private set; }
+        public string Music { get; private set; }
+        public bool IsPlaying { get { return false; } }
+        public bool HasEnded { get { return true; } }
         #endregion
 
         #region Init
@@ -24,23 +28,25 @@ namespace djack.RogueSurvivor.Engine
 
         #region Playing music
 
-        public void Play(string musicname) { }
+        public void Play(string musicname, int priority) { }
 
-        public void PlayIfNotAlreadyPlaying(string musicname) { }
+        //public void PlayIfNotAlreadyPlaying(string musicname) { }
 
-        public void PlayLooping(string musicname) { }
+        public void PlayLooping(string musicname, int priority) { }
 
-        public void ResumeLooping(string musicname) { }
+        public void Stop() { }
 
-        public void Stop(string musicname) { }
+        //public void ResumeLooping(string musicname) { }
 
-        public void StopAll() { }
+        //public void Stop(string musicname) { }
 
-        public bool IsPlaying(string musicname) { return false; }
+        //public void StopAll() { }
 
-        public bool IsPaused(string musicname) { return false;  }
+        //public bool IsPlaying(string musicname) { return false; }
 
-        public bool HasEnded(string musicname) { return true;  }
+        //public bool IsPaused(string musicname) { return false;  }
+
+        //public bool HasEnded(string musicname) { return true;  }
         #endregion
 
         #region IDisposable

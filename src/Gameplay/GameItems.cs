@@ -208,13 +208,16 @@ namespace djack.RogueSurvivor.Gameplay
         #region Melee weapons
         struct MeleeWeaponData
         {
-            public const int COUNT_FIELDS = 9;
+            public const int COUNT_FIELDS = 12;  // alpha10
 
             public string NAME { get; set; }
             public string PLURAL { get; set; }
             public int ATK { get; set; }
             public int DMG { get; set; }
             public int STA { get; set; }
+            public int DISARM { get; set; }  // alpha10
+            public int TOOLBASHDMGBONUS { get; set; }  // alpha10
+            public float TOOLBUILDBONUS { get; set; } // alpha10
             public int STACKINGLIMIT { get; set; }
             public bool ISFRAGILE { get; set; }
             public string FLAVOR { get; set; }
@@ -228,9 +231,12 @@ namespace djack.RogueSurvivor.Gameplay
                     ATK = line[3].ParseInt(),
                     DMG = line[4].ParseInt(),
                     STA = line[5].ParseInt(),
-                    STACKINGLIMIT = line[6].ParseInt(),
-                    ISFRAGILE = line[7].ParseBool(),
-                    FLAVOR = line[8].ParseText()
+                    DISARM = line[6].ParseInt(),  // alpha10
+                    TOOLBASHDMGBONUS = line[7].ParseInt(), // alpha10
+                    TOOLBUILDBONUS = line[8].ParseFloat(),  // alpha10
+                    STACKINGLIMIT = line[9].ParseInt(),
+                    ISFRAGILE = line[10].ParseBool(),
+                    FLAVOR = line[11].ParseText()
                 };
             }
         }
@@ -273,11 +279,13 @@ namespace djack.RogueSurvivor.Gameplay
         #region Ranged weapons
         struct RangedWeaponData
         {
-            public const int COUNT_FIELDS = 8;
+            public const int COUNT_FIELDS = 10; // alpha10
 
             public string NAME { get; set; }
             public string PLURAL { get; set; }
             public int ATK { get; set; }
+            public int RAPID1 { get; set; } // alpha10
+            public int RAPID2 { get; set; } // alpha10
             public int DMG { get; set; }
             public int RANGE { get; set; }
             public int MAXAMMO { get; set; }
@@ -290,10 +298,12 @@ namespace djack.RogueSurvivor.Gameplay
                     NAME = line[1].ParseText(),
                     PLURAL = line[2].ParseText(),
                     ATK = line[3].ParseInt(),
-                    DMG = line[4].ParseInt(),
-                    RANGE = line[5].ParseInt(),
-                    MAXAMMO = line[6].ParseInt(),
-                    FLAVOR = line[7].ParseText()
+                    RAPID1 = line[4].ParseInt(),
+                    RAPID2 = line[5].ParseInt(),
+                    DMG = line[6].ParseInt(),
+                    RANGE = line[7].ParseInt(),
+                    MAXAMMO = line[8].ParseInt(),
+                    FLAVOR = line[9].ParseText()
                 };
             }
         }
@@ -445,11 +455,12 @@ namespace djack.RogueSurvivor.Gameplay
         #region Trackers
         struct TrackerData
         {
-            public const int COUNT_FIELDS = 5;
+            public const int COUNT_FIELDS = 6;
 
             public string NAME { get; set; }
             public string PLURAL { get; set; }
             public int BATTERIES { get; set; }
+            public bool HASCLOCK { get; set; }  // alpha10
             public string FLAVOR { get; set; }
 
             public static TrackerData FromCSVLine(CSVLine line)
@@ -459,7 +470,8 @@ namespace djack.RogueSurvivor.Gameplay
                     NAME = line[1].ParseText(),
                     PLURAL = line[2].ParseText(),
                     BATTERIES = line[3].ParseInt(),
-                    FLAVOR = line[4].ParseText()
+                    HASCLOCK = line[4].ParseBool(),  // alpha10
+                    FLAVOR = line[5].ParseText()
                 };
             }
         }
@@ -764,176 +776,221 @@ namespace djack.RogueSurvivor.Gameplay
             #endregion
 
             #region Melee weapons
-            this[IDs.MELEE_BASEBALLBAT] = new ItemMeleeWeaponModel(DATA_MELEE_BASEBALLBAT.NAME, DATA_MELEE_BASEBALLBAT.PLURAL, GameImages.ITEM_BASEBALL_BAT,
-                new Attack(AttackKind.PHYSICAL, new Verb("smash", "smashes"), DATA_MELEE_BASEBALLBAT.ATK, DATA_MELEE_BASEBALLBAT.DMG, DATA_MELEE_BASEBALLBAT.STA))
+            // alpha10 disarm chance added to attack, tool bonuses added to properties
+            MeleeWeaponData mwdata;
+
+            mwdata = DATA_MELEE_BASEBALLBAT;
+            this[IDs.MELEE_BASEBALLBAT] = new ItemMeleeWeaponModel(mwdata.NAME, mwdata.PLURAL, GameImages.ITEM_BASEBALL_BAT,
+                Attack.MeleeAttack(new Verb("smash", "smashes"), mwdata.ATK, mwdata.DMG, mwdata.STA, mwdata.DISARM))
             {
                 EquipmentPart = DollPart.RIGHT_HAND,
-                IsStackable = (DATA_MELEE_BASEBALLBAT.STACKINGLIMIT > 1),
-                StackingLimit = DATA_MELEE_BASEBALLBAT.STACKINGLIMIT,
-                FlavorDescription = DATA_MELEE_BASEBALLBAT.FLAVOR,
-                IsFragile = DATA_MELEE_BASEBALLBAT.ISFRAGILE
+                IsStackable = (mwdata.STACKINGLIMIT > 1),
+                StackingLimit = mwdata.STACKINGLIMIT,
+                FlavorDescription = mwdata.FLAVOR,
+                IsFragile = mwdata.ISFRAGILE,
+                ToolBashDamageBonus = mwdata.TOOLBASHDMGBONUS, // alpha10
+                ToolBuildBonus = mwdata.TOOLBUILDBONUS  // alpha10
             };
 
-            this[IDs.MELEE_COMBAT_KNIFE] = new ItemMeleeWeaponModel(DATA_MELEE_COMBAT_KNIFE.NAME, DATA_MELEE_COMBAT_KNIFE.PLURAL, GameImages.ITEM_COMBAT_KNIFE,
-                new Attack(AttackKind.PHYSICAL, new Verb("stab", "stabs"), DATA_MELEE_COMBAT_KNIFE.ATK, DATA_MELEE_COMBAT_KNIFE.DMG, DATA_MELEE_COMBAT_KNIFE.STA))
+            mwdata = DATA_MELEE_COMBAT_KNIFE;
+            this[IDs.MELEE_COMBAT_KNIFE] = new ItemMeleeWeaponModel(mwdata.NAME, mwdata.PLURAL, GameImages.ITEM_COMBAT_KNIFE,
+                Attack.MeleeAttack(new Verb("stab", "stabs"), mwdata.ATK, mwdata.DMG, mwdata.STA, mwdata.DISARM))
             {
                 EquipmentPart = DollPart.RIGHT_HAND,
                 IsStackable = true,
-                StackingLimit = DATA_MELEE_COMBAT_KNIFE.STACKINGLIMIT,
-                FlavorDescription = DATA_MELEE_COMBAT_KNIFE.FLAVOR,
-                IsFragile = DATA_MELEE_COMBAT_KNIFE.ISFRAGILE
+                StackingLimit = mwdata.STACKINGLIMIT,
+                FlavorDescription = mwdata.FLAVOR,
+                IsFragile = mwdata.ISFRAGILE,
+                ToolBashDamageBonus = mwdata.TOOLBASHDMGBONUS, // alpha10
+                ToolBuildBonus = mwdata.TOOLBUILDBONUS  // alpha10
             };
 
-            this[IDs.MELEE_CROWBAR] = new ItemMeleeWeaponModel(DATA_MELEE_CROWBAR.NAME, DATA_MELEE_CROWBAR.PLURAL, GameImages.ITEM_CROWBAR,
-                new Attack(AttackKind.PHYSICAL, new Verb("strike"), DATA_MELEE_CROWBAR.ATK, DATA_MELEE_CROWBAR.DMG, DATA_MELEE_CROWBAR.STA))
+            mwdata = DATA_MELEE_CROWBAR;
+            this[IDs.MELEE_CROWBAR] = new ItemMeleeWeaponModel(mwdata.NAME, mwdata.PLURAL, GameImages.ITEM_CROWBAR,
+                Attack.MeleeAttack(new Verb("strike"), mwdata.ATK, mwdata.DMG, mwdata.STA, mwdata.DISARM))
             {
                 EquipmentPart = DollPart.RIGHT_HAND,
                 IsStackable = true,
-                StackingLimit = DATA_MELEE_CROWBAR.STACKINGLIMIT,
-                FlavorDescription = DATA_MELEE_CROWBAR.FLAVOR,
-                IsFragile = DATA_MELEE_CROWBAR.ISFRAGILE
+                StackingLimit = mwdata.STACKINGLIMIT,
+                FlavorDescription = mwdata.FLAVOR,
+                IsFragile = mwdata.ISFRAGILE,
+                ToolBashDamageBonus = mwdata.TOOLBASHDMGBONUS, // alpha10
+                ToolBuildBonus = mwdata.TOOLBUILDBONUS  // alpha10
             };
 
-            this[IDs.UNIQUE_JASON_MYERS_AXE] = new ItemMeleeWeaponModel(DATA_MELEE_UNIQUE_JASON_MYERS_AXE.NAME, DATA_MELEE_UNIQUE_JASON_MYERS_AXE.PLURAL, GameImages.ITEM_JASON_MYERS_AXE,
-                new Attack(AttackKind.PHYSICAL, new Verb("slash", "slashes"), DATA_MELEE_UNIQUE_JASON_MYERS_AXE.ATK, DATA_MELEE_UNIQUE_JASON_MYERS_AXE.DMG, DATA_MELEE_UNIQUE_JASON_MYERS_AXE.STA))
+            mwdata = DATA_MELEE_UNIQUE_JASON_MYERS_AXE;
+            this[IDs.UNIQUE_JASON_MYERS_AXE] = new ItemMeleeWeaponModel(mwdata.NAME, mwdata.PLURAL, GameImages.ITEM_JASON_MYERS_AXE,
+                Attack.MeleeAttack(new Verb("slash", "slashes"), mwdata.ATK, mwdata.DMG, mwdata.STA, mwdata.DISARM))
             {
                 EquipmentPart = DollPart.RIGHT_HAND,
                 IsProper = true,
-                FlavorDescription = DATA_MELEE_UNIQUE_JASON_MYERS_AXE.FLAVOR,
-                IsUnbreakable = true
+                FlavorDescription = mwdata.FLAVOR,
+                IsUnbreakable = true,
+                ToolBashDamageBonus = mwdata.TOOLBASHDMGBONUS, // alpha10
+                ToolBuildBonus = mwdata.TOOLBUILDBONUS  // alpha10
             };
 
-            this[IDs.MELEE_GOLFCLUB] = new ItemMeleeWeaponModel(DATA_MELEE_GOLFCLUB.NAME, DATA_MELEE_GOLFCLUB.PLURAL, GameImages.ITEM_GOLF_CLUB,
-                new Attack(AttackKind.PHYSICAL, new Verb("strike"), DATA_MELEE_GOLFCLUB.ATK, DATA_MELEE_GOLFCLUB.DMG, DATA_MELEE_GOLFCLUB.STA))
+            mwdata = DATA_MELEE_GOLFCLUB;
+            this[IDs.MELEE_GOLFCLUB] = new ItemMeleeWeaponModel(mwdata.NAME, mwdata.PLURAL, GameImages.ITEM_GOLF_CLUB,
+                Attack.MeleeAttack(new Verb("strike"), mwdata.ATK, mwdata.DMG, mwdata.STA, mwdata.DISARM))
             {
                 EquipmentPart = DollPart.RIGHT_HAND,
-                IsStackable = (DATA_MELEE_GOLFCLUB.STACKINGLIMIT > 1),
-                StackingLimit = DATA_MELEE_GOLFCLUB.STACKINGLIMIT,
-                FlavorDescription = DATA_MELEE_GOLFCLUB.FLAVOR,
-                IsFragile = DATA_MELEE_GOLFCLUB.ISFRAGILE
+                IsStackable = (mwdata.STACKINGLIMIT > 1),
+                StackingLimit = mwdata.STACKINGLIMIT,
+                FlavorDescription = mwdata.FLAVOR,
+                IsFragile = mwdata.ISFRAGILE,
+                ToolBashDamageBonus = mwdata.TOOLBASHDMGBONUS, // alpha10
+                ToolBuildBonus = mwdata.TOOLBUILDBONUS  // alpha10
             };
 
-            this[IDs.MELEE_IRON_GOLFCLUB] = new ItemMeleeWeaponModel(DATA_MELEE_IRON_GOLFCLUB.NAME, DATA_MELEE_IRON_GOLFCLUB.PLURAL, GameImages.ITEM_IRON_GOLF_CLUB,
-                new Attack(AttackKind.PHYSICAL, new Verb("strike"), DATA_MELEE_IRON_GOLFCLUB.ATK, DATA_MELEE_IRON_GOLFCLUB.DMG, DATA_MELEE_IRON_GOLFCLUB.STA))
+            mwdata = DATA_MELEE_IRON_GOLFCLUB;
+            this[IDs.MELEE_IRON_GOLFCLUB] = new ItemMeleeWeaponModel(mwdata.NAME, mwdata.PLURAL, GameImages.ITEM_IRON_GOLF_CLUB,
+                Attack.MeleeAttack(new Verb("strike"), mwdata.ATK, mwdata.DMG, mwdata.STA, mwdata.DISARM))
             {
                 EquipmentPart = DollPart.RIGHT_HAND,
-                IsStackable = (DATA_MELEE_IRON_GOLFCLUB.STACKINGLIMIT > 1),
-                StackingLimit = DATA_MELEE_IRON_GOLFCLUB.STACKINGLIMIT,
-                FlavorDescription = DATA_MELEE_IRON_GOLFCLUB.FLAVOR,
-                IsFragile = DATA_MELEE_IRON_GOLFCLUB.ISFRAGILE
+                IsStackable = (mwdata.STACKINGLIMIT > 1),
+                StackingLimit = mwdata.STACKINGLIMIT,
+                FlavorDescription = mwdata.FLAVOR,
+                IsFragile = mwdata.ISFRAGILE,
+                ToolBashDamageBonus = mwdata.TOOLBASHDMGBONUS, // alpha10
+                ToolBuildBonus = mwdata.TOOLBUILDBONUS  // alpha10
             };
 
-            this[IDs.MELEE_HUGE_HAMMER] = new ItemMeleeWeaponModel(DATA_MELEE_HUGE_HAMMER.NAME, DATA_MELEE_HUGE_HAMMER.PLURAL, GameImages.ITEM_HUGE_HAMMER,
-                new Attack(AttackKind.PHYSICAL, new Verb("smash", "smashes"), DATA_MELEE_HUGE_HAMMER.ATK, DATA_MELEE_HUGE_HAMMER.DMG, DATA_MELEE_HUGE_HAMMER.STA))
+            mwdata = DATA_MELEE_HUGE_HAMMER;
+            this[IDs.MELEE_HUGE_HAMMER] = new ItemMeleeWeaponModel(mwdata.NAME, mwdata.PLURAL, GameImages.ITEM_HUGE_HAMMER,
+                Attack.MeleeAttack(new Verb("smash", "smashes"), mwdata.ATK, mwdata.DMG, mwdata.STA, mwdata.DISARM))
             {
                 EquipmentPart = DollPart.RIGHT_HAND,
-                IsStackable = (DATA_MELEE_HUGE_HAMMER.STACKINGLIMIT > 1),
-                StackingLimit = DATA_MELEE_HUGE_HAMMER.STACKINGLIMIT,
-                FlavorDescription = DATA_MELEE_HUGE_HAMMER.FLAVOR,
-                IsFragile = DATA_MELEE_HUGE_HAMMER.ISFRAGILE
+                IsStackable = (mwdata.STACKINGLIMIT > 1),
+                StackingLimit = mwdata.STACKINGLIMIT,
+                FlavorDescription = mwdata.FLAVOR,
+                IsFragile = mwdata.ISFRAGILE,
+                ToolBashDamageBonus = mwdata.TOOLBASHDMGBONUS, // alpha10
+                ToolBuildBonus = mwdata.TOOLBUILDBONUS  // alpha10
             };
 
-            this[IDs.MELEE_SHOVEL] = new ItemMeleeWeaponModel(DATA_MELEE_SHOVEL.NAME, DATA_MELEE_SHOVEL.PLURAL, GameImages.ITEM_SHOVEL,
-                new Attack(AttackKind.PHYSICAL, new Verb("strike"), DATA_MELEE_SHOVEL.ATK, DATA_MELEE_SHOVEL.DMG, DATA_MELEE_SHOVEL.STA))
+            mwdata = DATA_MELEE_SHOVEL;
+            this[IDs.MELEE_SHOVEL] = new ItemMeleeWeaponModel(mwdata.NAME, mwdata.PLURAL, GameImages.ITEM_SHOVEL,
+                Attack.MeleeAttack(new Verb("strike"), mwdata.ATK, mwdata.DMG, mwdata.STA, mwdata.DISARM))
             {
                 EquipmentPart = DollPart.RIGHT_HAND,
-                IsStackable = (DATA_MELEE_SHOVEL.STACKINGLIMIT > 1),
-                StackingLimit = DATA_MELEE_SHOVEL.STACKINGLIMIT,
-                FlavorDescription = DATA_MELEE_SHOVEL.FLAVOR,
-                IsFragile = DATA_MELEE_SHOVEL.ISFRAGILE
+                IsStackable = (mwdata.STACKINGLIMIT > 1),
+                StackingLimit = mwdata.STACKINGLIMIT,
+                FlavorDescription = mwdata.FLAVOR,
+                IsFragile = mwdata.ISFRAGILE,
+                ToolBashDamageBonus = mwdata.TOOLBASHDMGBONUS, // alpha10
+                ToolBuildBonus = mwdata.TOOLBUILDBONUS  // alpha10
             };
 
-            this[IDs.MELEE_SHORT_SHOVEL] = new ItemMeleeWeaponModel(DATA_MELEE_SHORT_SHOVEL.NAME, DATA_MELEE_SHORT_SHOVEL.PLURAL, GameImages.ITEM_SHORT_SHOVEL,
-                new Attack(AttackKind.PHYSICAL, new Verb("strike"), DATA_MELEE_SHORT_SHOVEL.ATK, DATA_MELEE_SHORT_SHOVEL.DMG, DATA_MELEE_SHORT_SHOVEL.STA))
+            mwdata = DATA_MELEE_SHORT_SHOVEL;
+            this[IDs.MELEE_SHORT_SHOVEL] = new ItemMeleeWeaponModel(mwdata.NAME, mwdata.PLURAL, GameImages.ITEM_SHORT_SHOVEL,
+                 Attack.MeleeAttack(new Verb("strike"), mwdata.ATK, mwdata.DMG, mwdata.STA, mwdata.DISARM))
             {
                 EquipmentPart = DollPart.RIGHT_HAND,
-                IsStackable = (DATA_MELEE_SHORT_SHOVEL.STACKINGLIMIT > 1),
-                StackingLimit = DATA_MELEE_SHORT_SHOVEL.STACKINGLIMIT,
-                FlavorDescription = DATA_MELEE_SHORT_SHOVEL.FLAVOR,
-                IsFragile = DATA_MELEE_SHORT_SHOVEL.ISFRAGILE
+                IsStackable = (mwdata.STACKINGLIMIT > 1),
+                StackingLimit = mwdata.STACKINGLIMIT,
+                FlavorDescription = mwdata.FLAVOR,
+                IsFragile = mwdata.ISFRAGILE,
+                ToolBashDamageBonus = mwdata.TOOLBASHDMGBONUS, // alpha10
+                ToolBuildBonus = mwdata.TOOLBUILDBONUS  // alpha10
             };
 
-            this[IDs.MELEE_TRUNCHEON] = new ItemMeleeWeaponModel(DATA_MELEE_TRUNCHEON.NAME, DATA_MELEE_TRUNCHEON.PLURAL, GameImages.ITEM_TRUNCHEON,
-                new Attack(AttackKind.PHYSICAL, new Verb("strike"), DATA_MELEE_TRUNCHEON.ATK, DATA_MELEE_TRUNCHEON.DMG, DATA_MELEE_TRUNCHEON.STA))
+            mwdata = DATA_MELEE_TRUNCHEON;
+            this[IDs.MELEE_TRUNCHEON] = new ItemMeleeWeaponModel(mwdata.NAME, mwdata.PLURAL, GameImages.ITEM_TRUNCHEON,
+                Attack.MeleeAttack(new Verb("strike"), mwdata.ATK, mwdata.DMG, mwdata.STA, mwdata.DISARM))
             {
                 EquipmentPart = DollPart.RIGHT_HAND,
                 IsStackable = true,
-                StackingLimit = DATA_MELEE_TRUNCHEON.STACKINGLIMIT,
-                FlavorDescription = DATA_MELEE_TRUNCHEON.FLAVOR,
-                IsFragile = DATA_MELEE_TRUNCHEON.ISFRAGILE
+                StackingLimit = mwdata.STACKINGLIMIT,
+                FlavorDescription = mwdata.FLAVOR,
+                IsFragile = mwdata.ISFRAGILE,
+                ToolBashDamageBonus = mwdata.TOOLBASHDMGBONUS, // alpha10
+                ToolBuildBonus = mwdata.TOOLBUILDBONUS  // alpha10
             };
 
-            MeleeWeaponData mwData;
-            mwData = DATA_MELEE_IMPROVISED_CLUB;
-            this[IDs.MELEE_IMPROVISED_CLUB] = new ItemMeleeWeaponModel(mwData.NAME, mwData.PLURAL, GameImages.ITEM_IMPROVISED_CLUB,
-                new Attack(AttackKind.PHYSICAL, new Verb("strike"), mwData.ATK, mwData.DMG, mwData.STA))
+            mwdata = DATA_MELEE_IMPROVISED_CLUB;
+            this[IDs.MELEE_IMPROVISED_CLUB] = new ItemMeleeWeaponModel(mwdata.NAME, mwdata.PLURAL, GameImages.ITEM_IMPROVISED_CLUB,
+                Attack.MeleeAttack(new Verb("strike"), mwdata.ATK, mwdata.DMG, mwdata.STA, mwdata.DISARM))
             {
                 EquipmentPart = DollPart.RIGHT_HAND,
-                IsStackable = (mwData.STACKINGLIMIT > 1),
-                StackingLimit = mwData.STACKINGLIMIT,
-                FlavorDescription = mwData.FLAVOR,
-                IsFragile = mwData.ISFRAGILE
+                IsStackable = (mwdata.STACKINGLIMIT > 1),
+                StackingLimit = mwdata.STACKINGLIMIT,
+                FlavorDescription = mwdata.FLAVOR,
+                IsFragile = mwdata.ISFRAGILE,
+                ToolBashDamageBonus = mwdata.TOOLBASHDMGBONUS, // alpha10
+                ToolBuildBonus = mwdata.TOOLBUILDBONUS  // alpha10
             };
 
-            mwData = DATA_MELEE_IMPROVISED_SPEAR;
-            this[IDs.MELEE_IMPROVISED_SPEAR] = new ItemMeleeWeaponModel(mwData.NAME, mwData.PLURAL, GameImages.ITEM_IMPROVISED_SPEAR,
-                new Attack(AttackKind.PHYSICAL, new Verb("pierce"), mwData.ATK, mwData.DMG, mwData.STA))
+            mwdata = DATA_MELEE_IMPROVISED_SPEAR;
+            this[IDs.MELEE_IMPROVISED_SPEAR] = new ItemMeleeWeaponModel(mwdata.NAME, mwdata.PLURAL, GameImages.ITEM_IMPROVISED_SPEAR,
+                Attack.MeleeAttack(new Verb("pierce"), mwdata.ATK, mwdata.DMG, mwdata.STA, mwdata.DISARM))
             {
                 EquipmentPart = DollPart.RIGHT_HAND,
-                IsStackable = (mwData.STACKINGLIMIT > 1),
-                StackingLimit = mwData.STACKINGLIMIT,
-                FlavorDescription = mwData.FLAVOR,
-                IsFragile = mwData.ISFRAGILE
+                IsStackable = (mwdata.STACKINGLIMIT > 1),
+                StackingLimit = mwdata.STACKINGLIMIT,
+                FlavorDescription = mwdata.FLAVOR,
+                IsFragile = mwdata.ISFRAGILE,
+                ToolBashDamageBonus = mwdata.TOOLBASHDMGBONUS, // alpha10
+                ToolBuildBonus = mwdata.TOOLBUILDBONUS  // alpha10
             };
 
-            mwData = DATA_MELEE_SMALL_HAMMER;
-            this[IDs.MELEE_SMALL_HAMMER] = new ItemMeleeWeaponModel(mwData.NAME, mwData.PLURAL, GameImages.ITEM_SMALL_HAMMER,
-                new Attack(AttackKind.PHYSICAL, new Verb("smash"), mwData.ATK, mwData.DMG, mwData.STA))
+            mwdata = DATA_MELEE_SMALL_HAMMER;
+            this[IDs.MELEE_SMALL_HAMMER] = new ItemMeleeWeaponModel(mwdata.NAME, mwdata.PLURAL, GameImages.ITEM_SMALL_HAMMER,
+                Attack.MeleeAttack(new Verb("smash"), mwdata.ATK, mwdata.DMG, mwdata.STA, mwdata.DISARM))
             {
                 EquipmentPart = DollPart.RIGHT_HAND,
-                IsStackable = (mwData.STACKINGLIMIT > 1),
-                StackingLimit = mwData.STACKINGLIMIT,
-                FlavorDescription = mwData.FLAVOR,
-                IsFragile = mwData.ISFRAGILE
+                IsStackable = (mwdata.STACKINGLIMIT > 1),
+                StackingLimit = mwdata.STACKINGLIMIT,
+                FlavorDescription = mwdata.FLAVOR,
+                IsFragile = mwdata.ISFRAGILE,
+                ToolBashDamageBonus = mwdata.TOOLBASHDMGBONUS, // alpha10
+                ToolBuildBonus = mwdata.TOOLBUILDBONUS  // alpha10
             };
 
-            mwData = DATA_MELEE_UNIQUE_FAMU_FATARU_KATANA;
-            this[IDs.UNIQUE_FAMU_FATARU_KATANA] = new ItemMeleeWeaponModel(mwData.NAME, mwData.PLURAL, GameImages.ITEM_FAMU_FATARU_KATANA,
-                new Attack(AttackKind.PHYSICAL, new Verb("slash", "slashes"), mwData.ATK, mwData.DMG, mwData.STA))
+            mwdata = DATA_MELEE_UNIQUE_FAMU_FATARU_KATANA;
+            this[IDs.UNIQUE_FAMU_FATARU_KATANA] = new ItemMeleeWeaponModel(mwdata.NAME, mwdata.PLURAL, GameImages.ITEM_FAMU_FATARU_KATANA,
+                Attack.MeleeAttack(new Verb("slash", "slashes"), mwdata.ATK, mwdata.DMG, mwdata.STA, mwdata.DISARM))
             {
                 EquipmentPart = DollPart.RIGHT_HAND,
-                FlavorDescription = mwData.FLAVOR,
+                FlavorDescription = mwdata.FLAVOR,
                 IsProper = true,
-                IsUnbreakable = true
+                IsUnbreakable = true,
+                ToolBashDamageBonus = mwdata.TOOLBASHDMGBONUS, // alpha10
+                ToolBuildBonus = mwdata.TOOLBUILDBONUS  // alpha10
             };
 
-            mwData = DATA_MELEE_UNIQUE_BIGBEAR_BAT;
-            this[IDs.UNIQUE_BIGBEAR_BAT] = new ItemMeleeWeaponModel(mwData.NAME, mwData.PLURAL, GameImages.ITEM_BIGBEAR_BAT,
-                new Attack(AttackKind.PHYSICAL, new Verb("smash", "smashes"), mwData.ATK, mwData.DMG, mwData.STA))
+            mwdata = DATA_MELEE_UNIQUE_BIGBEAR_BAT;
+            this[IDs.UNIQUE_BIGBEAR_BAT] = new ItemMeleeWeaponModel(mwdata.NAME, mwdata.PLURAL, GameImages.ITEM_BIGBEAR_BAT,
+                Attack.MeleeAttack(new Verb("smash", "smashes"), mwdata.ATK, mwdata.DMG, mwdata.STA, mwdata.DISARM))
             {
                 EquipmentPart = DollPart.RIGHT_HAND,
-                FlavorDescription = mwData.FLAVOR,
+                FlavorDescription = mwdata.FLAVOR,
                 IsProper = true,
-                IsUnbreakable = true
+                IsUnbreakable = true,
+                ToolBashDamageBonus = mwdata.TOOLBASHDMGBONUS, // alpha10
+                ToolBuildBonus = mwdata.TOOLBUILDBONUS  // alpha10
             };
 
-            mwData = DATA_MELEE_UNIQUE_ROGUEDJACK_KEYBOARD;
-            this[IDs.UNIQUE_ROGUEDJACK_KEYBOARD] = new ItemMeleeWeaponModel(mwData.NAME, mwData.PLURAL, GameImages.ITEM_ROGUEDJACK_KEYBOARD,
-                new Attack(AttackKind.PHYSICAL, new Verb("bash", "bashes"), mwData.ATK, mwData.DMG, mwData.STA))
+            mwdata = DATA_MELEE_UNIQUE_ROGUEDJACK_KEYBOARD;
+            this[IDs.UNIQUE_ROGUEDJACK_KEYBOARD] = new ItemMeleeWeaponModel(mwdata.NAME, mwdata.PLURAL, GameImages.ITEM_ROGUEDJACK_KEYBOARD,
+                Attack.MeleeAttack(new Verb("bash", "bashes"), mwdata.ATK, mwdata.DMG, mwdata.STA, mwdata.DISARM))
             {
                 EquipmentPart = DollPart.RIGHT_HAND,
-                FlavorDescription = mwData.FLAVOR,
+                FlavorDescription = mwdata.FLAVOR,
                 IsProper = true,
-                IsUnbreakable = true
+                IsUnbreakable = true,
+                ToolBashDamageBonus = mwdata.TOOLBASHDMGBONUS, // alpha10
+                ToolBuildBonus = mwdata.TOOLBUILDBONUS  // alpha10
             };
             #endregion
 
             #region Ranged weapons
+            // alpha10 rapid fire property
             RangedWeaponData rwp;
 
             rwp = DATA_RANGED_ARMY_PISTOL;
             this[IDs.RANGED_ARMY_PISTOL] = new ItemRangedWeaponModel(rwp.NAME, rwp.FLAVOR, GameImages.ITEM_ARMY_PISTOL,
-                new Attack(AttackKind.FIREARM, new Verb("shoot"), rwp.ATK, rwp.DMG, 0, rwp.RANGE), 
+                Attack.RangedAttack(AttackKind.FIREARM, new Verb("shoot"), rwp.ATK, rwp.RAPID1, rwp.RAPID2, rwp.DMG, rwp.RANGE), 
                     rwp.MAXAMMO, AmmoType.HEAVY_PISTOL)
             {
                 EquipmentPart = DollPart.RIGHT_HAND,
@@ -943,7 +1000,7 @@ namespace djack.RogueSurvivor.Gameplay
 
             rwp = DATA_RANGED_ARMY_RIFLE;
             this[IDs.RANGED_ARMY_RIFLE] = new ItemRangedWeaponModel(rwp.NAME, rwp.FLAVOR, GameImages.ITEM_ARMY_RIFLE,
-                new Attack(AttackKind.FIREARM, new Verb("fire a salvo at", "fires a salvo at"), rwp.ATK, rwp.DMG, 0, rwp.RANGE), 
+                Attack.RangedAttack(AttackKind.FIREARM, new Verb("fire a salvo at", "fires a salvo at"), rwp.ATK, rwp.RAPID1, rwp.RAPID2, rwp.DMG, rwp.RANGE), 
                      rwp.MAXAMMO, AmmoType.HEAVY_RIFLE) 
             {
                 EquipmentPart = DollPart.RIGHT_HAND,
@@ -953,7 +1010,7 @@ namespace djack.RogueSurvivor.Gameplay
 
             rwp = DATA_RANGED_HUNTING_CROSSBOW;
             this[IDs.RANGED_HUNTING_CROSSBOW] = new ItemRangedWeaponModel(rwp.NAME, rwp.FLAVOR, GameImages.ITEM_HUNTING_CROSSBOW,
-                new Attack(AttackKind.BOW, new Verb("shoot"), rwp.ATK, rwp.DMG, 0, rwp.RANGE),
+                Attack.RangedAttack(AttackKind.BOW, new Verb("shoot"), rwp.ATK, rwp.RAPID1, rwp.RAPID2, rwp.DMG, rwp.RANGE),
                     rwp.MAXAMMO, AmmoType.BOLT)
             {
                 EquipmentPart = DollPart.RIGHT_HAND,
@@ -962,7 +1019,7 @@ namespace djack.RogueSurvivor.Gameplay
 
             rwp = DATA_RANGED_HUNTING_RIFLE;
             this[IDs.RANGED_HUNTING_RIFLE] = new ItemRangedWeaponModel(rwp.NAME, rwp.FLAVOR, GameImages.ITEM_HUNTING_RIFLE,
-                new Attack(AttackKind.FIREARM, new Verb("shoot"), rwp.ATK, rwp.DMG, 0, rwp.RANGE),
+                Attack.RangedAttack(AttackKind.FIREARM, new Verb("shoot"), rwp.ATK, rwp.RAPID1, rwp.RAPID2, rwp.DMG, rwp.RANGE),
                     rwp.MAXAMMO, AmmoType.LIGHT_RIFLE)
                 {
                     EquipmentPart = DollPart.RIGHT_HAND,
@@ -971,7 +1028,7 @@ namespace djack.RogueSurvivor.Gameplay
 
             rwp = DATA_RANGED_PISTOL;
             this[IDs.RANGED_PISTOL] = new ItemRangedWeaponModel(rwp.NAME, rwp.FLAVOR, GameImages.ITEM_PISTOL,
-                new Attack(AttackKind.FIREARM, new Verb("shoot"), rwp.ATK, rwp.DMG, 0, rwp.RANGE),
+                Attack.RangedAttack(AttackKind.FIREARM, new Verb("shoot"), rwp.ATK, rwp.RAPID1, rwp.RAPID2, rwp.DMG, rwp.RANGE),
                     rwp.MAXAMMO, AmmoType.LIGHT_PISTOL)
                 {
                     EquipmentPart = DollPart.RIGHT_HAND,
@@ -980,7 +1037,7 @@ namespace djack.RogueSurvivor.Gameplay
 
             rwp = DATA_RANGED_KOLT_REVOLVER;
             this[IDs.RANGED_KOLT_REVOLVER] = new ItemRangedWeaponModel(rwp.NAME, rwp.FLAVOR, GameImages.ITEM_KOLT_REVOLVER,
-                new Attack(AttackKind.FIREARM, new Verb("shoot"), rwp.ATK, rwp.DMG, 0, rwp.RANGE),
+                Attack.RangedAttack(AttackKind.FIREARM, new Verb("shoot"), rwp.ATK, rwp.RAPID1, rwp.RAPID2, rwp.DMG, rwp.RANGE),
                     rwp.MAXAMMO, AmmoType.LIGHT_PISTOL)
             {
                 EquipmentPart = DollPart.RIGHT_HAND,
@@ -989,7 +1046,7 @@ namespace djack.RogueSurvivor.Gameplay
 
             rwp = DATA_RANGED_PRECISION_RIFLE;
             this[IDs.RANGED_PRECISION_RIFLE] = new ItemRangedWeaponModel(rwp.NAME, rwp.FLAVOR, GameImages.ITEM_PRECISION_RIFLE,
-                new Attack(AttackKind.FIREARM, new Verb("shoot"), rwp.ATK, rwp.DMG, 0, rwp.RANGE),
+                Attack.RangedAttack(AttackKind.FIREARM, new Verb("shoot"), rwp.ATK, rwp.RAPID1, rwp.RAPID2, rwp.DMG, rwp.RANGE),
                     rwp.MAXAMMO, AmmoType.HEAVY_RIFLE)
             {
                 EquipmentPart = DollPart.RIGHT_HAND,
@@ -998,7 +1055,7 @@ namespace djack.RogueSurvivor.Gameplay
 
             rwp = DATA_RANGED_SHOTGUN;
             this[IDs.RANGED_SHOTGUN] = new ItemRangedWeaponModel(rwp.NAME, rwp.FLAVOR, GameImages.ITEM_SHOTGUN,
-                new Attack(AttackKind.FIREARM, new Verb("shoot"), rwp.ATK, rwp.DMG, 0, rwp.RANGE),
+                Attack.RangedAttack(AttackKind.FIREARM, new Verb("shoot"), rwp.ATK, rwp.RAPID1, rwp.RAPID2, rwp.DMG, rwp.RANGE),
                     rwp.MAXAMMO, AmmoType.SHOTGUN)
                 {
                     EquipmentPart = DollPart.RIGHT_HAND,
@@ -1007,7 +1064,7 @@ namespace djack.RogueSurvivor.Gameplay
 
             rwp = DATA_UNIQUE_SANTAMAN_SHOTGUN;
             this[IDs.UNIQUE_SANTAMAN_SHOTGUN] = new ItemRangedWeaponModel(rwp.NAME, rwp.FLAVOR, GameImages.ITEM_SANTAMAN_SHOTGUN,
-                new Attack(AttackKind.FIREARM, new Verb("shoot"), rwp.ATK, rwp.DMG, 0, rwp.RANGE),
+                Attack.RangedAttack(AttackKind.FIREARM, new Verb("shoot"), rwp.ATK, rwp.RAPID1, rwp.RAPID2, rwp.DMG, rwp.RANGE),
                     rwp.MAXAMMO, AmmoType.SHOTGUN)
             {
                 EquipmentPart = DollPart.RIGHT_HAND,
@@ -1018,7 +1075,7 @@ namespace djack.RogueSurvivor.Gameplay
 
             rwp = DATA_UNIQUE_HANS_VON_HANZ_PISTOL;
             this[IDs.UNIQUE_HANS_VON_HANZ_PISTOL] = new ItemRangedWeaponModel(rwp.NAME, rwp.FLAVOR, GameImages.ITEM_HANS_VON_HANZ_PISTOL,
-                new Attack(AttackKind.FIREARM, new Verb("shoot"), rwp.ATK, rwp.DMG, 0, rwp.RANGE),
+                Attack.RangedAttack(AttackKind.FIREARM, new Verb("shoot"), rwp.ATK, rwp.RAPID1, rwp.RAPID2, rwp.DMG, rwp.RANGE),
                     rwp.MAXAMMO, AmmoType.LIGHT_PISTOL)
             {
                 EquipmentPart = DollPart.RIGHT_HAND,
@@ -1170,12 +1227,15 @@ namespace djack.RogueSurvivor.Gameplay
             #endregion
 
             #region Trackers
+            // alpha10 added clock prop to trackers
+
             TrackerData traData;
 
             traData = DATA_TRACKER_CELL_PHONE;
             this[IDs.TRACKER_CELL_PHONE] = new ItemTrackerModel(traData.NAME, traData.PLURAL, GameImages.ITEM_CELL_PHONE,
                 ItemTrackerModel.TrackingFlags.FOLLOWER_AND_LEADER,
-                traData.BATTERIES * WorldTime.TURNS_PER_HOUR)
+                traData.BATTERIES * WorldTime.TURNS_PER_HOUR,
+                traData.HASCLOCK)
             {
                 EquipmentPart = DollPart.LEFT_HAND,
                 FlavorDescription = traData.FLAVOR
@@ -1184,7 +1244,8 @@ namespace djack.RogueSurvivor.Gameplay
             traData = DATA_TRACKER_ZTRACKER;
             this[IDs.TRACKER_ZTRACKER] = new ItemTrackerModel(traData.NAME, traData.PLURAL, GameImages.ITEM_ZTRACKER,
                 ItemTrackerModel.TrackingFlags.UNDEADS,
-                traData.BATTERIES * WorldTime.TURNS_PER_HOUR)
+                traData.BATTERIES * WorldTime.TURNS_PER_HOUR,
+                traData.HASCLOCK)
                 {
                     EquipmentPart = DollPart.LEFT_HAND,
                     FlavorDescription = traData.FLAVOR
@@ -1193,7 +1254,8 @@ namespace djack.RogueSurvivor.Gameplay
             traData = DATA_TRACKER_BLACKOPS_GPS;
             this[IDs.TRACKER_BLACKOPS] = new ItemTrackerModel(traData.NAME, traData.PLURAL, GameImages.ITEM_BLACKOPS_GPS,
                 ItemTrackerModel.TrackingFlags.BLACKOPS_FACTION,
-                traData.BATTERIES * WorldTime.TURNS_PER_HOUR)
+                traData.BATTERIES * WorldTime.TURNS_PER_HOUR,
+                traData.HASCLOCK)
             {
                 EquipmentPart = DollPart.LEFT_HAND,
                 FlavorDescription = traData.FLAVOR
@@ -1202,7 +1264,8 @@ namespace djack.RogueSurvivor.Gameplay
             traData = DATA_TRACKER_POLICE_RADIO;
             this[IDs.TRACKER_POLICE_RADIO] = new ItemTrackerModel(traData.NAME, traData.PLURAL, GameImages.ITEM_POLICE_RADIO,
                 ItemTrackerModel.TrackingFlags.POLICE_FACTION,
-                traData.BATTERIES * WorldTime.TURNS_PER_HOUR)
+                traData.BATTERIES * WorldTime.TURNS_PER_HOUR,
+                traData.HASCLOCK)
             {
                 EquipmentPart = DollPart.LEFT_HAND,
                 FlavorDescription = traData.FLAVOR
@@ -1263,9 +1326,10 @@ namespace djack.RogueSurvivor.Gameplay
             #region Scent sprays
             ScentSprayData sspData;
 
+            // alpha10 new way of using stench killer
             sspData = DATA_SCENT_SPRAY_STENCH_KILLER;
             this[IDs.SCENT_SPRAY_STENCH_KILLER] = new ItemSprayScentModel(sspData.NAME, sspData.PLURAL, GameImages.ITEM_STENCH_KILLER, 
-                sspData.QUANTITY, Odor.PERFUME_LIVING_SUPRESSOR, sspData.STRENGTH * WorldTime.TURNS_PER_HOUR)
+                sspData.QUANTITY, Odor.SUPPRESSOR, sspData.STRENGTH * WorldTime.TURNS_PER_HOUR)
             {
                 EquipmentPart = DollPart.LEFT_HAND,
                 FlavorDescription = sspData.FLAVOR
@@ -1355,7 +1419,6 @@ namespace djack.RogueSurvivor.Gameplay
                 // IsStackable
                 model.IsStackable = model.StackingLimit > 1;
             }
-
             #endregion
         }
 

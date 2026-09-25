@@ -246,11 +246,17 @@ namespace djack.RogueSurvivor.Gameplay
             #region Undeads
 
             #region Skeleton branch
+            // alpha10 new disarm mechanic, Skeletons cannot disarm but can use exits.
             this[IDs.UNDEAD_SKELETON] = new ActorModel(GameImages.ACTOR_SKELETON,
                 DATA_SKELETON.NAME, DATA_SKELETON.PLURAL,
                 DATA_SKELETON.SCORE,
                 new DollBody(true, DATA_SKELETON.SPD),
-                new Abilities() { IsUndead = true },
+                new Abilities()
+                {
+                    IsUndead = true,
+                    CanDisarm = false, // alpha10
+                    AI_CanUseAIExits = true  // alpha10
+                },
                 new ActorSheet(DATA_SKELETON.HP, DATA_SKELETON.STA, NO_FOOD, NO_SLEEP, NO_SANITY,
                     new Attack(AttackKind.PHYSICAL, new Verb("claw"), DATA_SKELETON.ATK, DATA_SKELETON.DMG),
                     new Defence(DATA_SKELETON.DEF, DATA_SKELETON.PRO_HIT, DATA_SKELETON.PRO_SHOT),
@@ -264,7 +270,12 @@ namespace djack.RogueSurvivor.Gameplay
                 DATA_RED_EYED_SKELETON.NAME, DATA_RED_EYED_SKELETON.PLURAL,
                 DATA_RED_EYED_SKELETON.SCORE,
                 new DollBody(true, DATA_RED_EYED_SKELETON.SPD),
-                new Abilities() { IsUndead = true },
+                new Abilities()
+                {
+                    IsUndead = true,
+                    CanDisarm = false, // alpha10
+                    AI_CanUseAIExits = true  // alpha10
+                },
                 new ActorSheet(DATA_RED_EYED_SKELETON.HP, DATA_RED_EYED_SKELETON.STA, NO_FOOD, NO_SLEEP, NO_SANITY,
                     new Attack(AttackKind.PHYSICAL, new Verb("claw"), DATA_RED_EYED_SKELETON.ATK, DATA_RED_EYED_SKELETON.DMG),
                     new Defence(DATA_RED_EYED_SKELETON.DEF, DATA_RED_EYED_SKELETON.PRO_HIT, DATA_RED_EYED_SKELETON.PRO_SHOT),
@@ -278,7 +289,12 @@ namespace djack.RogueSurvivor.Gameplay
                 DATA_RED_SKELETON.NAME, DATA_RED_SKELETON.PLURAL,
                 DATA_RED_SKELETON.SCORE,
                 new DollBody(true, DATA_RED_SKELETON.SPD),
-                new Abilities() { IsUndead = true },
+                new Abilities()
+                {
+                    IsUndead = true,
+                    CanDisarm = false, // alpha10
+                    AI_CanUseAIExits = true  // alpha10
+                },
                 new ActorSheet(DATA_RED_SKELETON.HP, DATA_RED_SKELETON.STA, NO_FOOD, NO_SLEEP, NO_SANITY,
                     new Attack(AttackKind.PHYSICAL, new Verb("claw"), DATA_RED_SKELETON.ATK, DATA_RED_SKELETON.DMG),
                     new Defence(DATA_RED_SKELETON.DEF, DATA_RED_SKELETON.PRO_HIT, DATA_RED_SKELETON.PRO_SHOT),
@@ -421,7 +437,7 @@ namespace djack.RogueSurvivor.Gameplay
                         CanBashDoors = true,
                         CanBreakObjects = true,
                         CanPush = true,
-                        ZombieAI_AssaultBreakables = true,
+                        // alpha10 obsolete and was unused anyway ZombieAI_AssaultBreakables = true,
                         ZombieAI_Explore = true,
                         AI_CanUseAIExits = true
                     },
@@ -446,7 +462,7 @@ namespace djack.RogueSurvivor.Gameplay
                         CanBashDoors = true,
                         CanBreakObjects = true,
                         CanPush = true,
-                        ZombieAI_AssaultBreakables = true,
+                        // alpha10 obsolete and was unused anyway ZombieAI_AssaultBreakables = true,
                         ZombieAI_Explore = true,
                         AI_CanUseAIExits = true
                     },
@@ -471,7 +487,7 @@ namespace djack.RogueSurvivor.Gameplay
                         CanBashDoors = true,
                         CanBreakObjects = true,
                         CanPush = true,
-                        ZombieAI_AssaultBreakables = true,
+                        // alpha10 obsolete and was unused anyway ZombieAI_AssaultBreakables = true,
                         ZombieAI_Explore = true,
                         AI_CanUseAIExits = true
                     },
@@ -496,7 +512,7 @@ namespace djack.RogueSurvivor.Gameplay
                         CanBashDoors = true,
                         CanBreakObjects = true,
                         CanPush = true,
-                        ZombieAI_AssaultBreakables = true,
+                        // alpha10 obsolete and was unused anyway ZombieAI_AssaultBreakables = true,
                         ZombieAI_Explore = true,
                         AI_CanUseAIExits = true
                     },
@@ -555,7 +571,7 @@ namespace djack.RogueSurvivor.Gameplay
                         CanJump = true,
                         CanJumpStumble = true,
                         CanPush = true,
-                        ZombieAI_AssaultBreakables = true,
+                        // alpha10 obsolete and was unused anyway ZombieAI_AssaultBreakables = true,
                         ZombieAI_Explore = true,
                         AI_CanUseAIExits = true
                     },
@@ -584,7 +600,7 @@ namespace djack.RogueSurvivor.Gameplay
                         CanJump = true,
                         CanJumpStumble = true,
                         CanPush = true,
-                        ZombieAI_AssaultBreakables = true,
+                        // alpha10 obsolete and was unused anyway ZombieAI_AssaultBreakables = true,
                         ZombieAI_Explore = true,
                         AI_CanUseAIExits = true
                     },
@@ -600,18 +616,19 @@ namespace djack.RogueSurvivor.Gameplay
             #endregion
 
             #region Rats
+            // alpha10 new disarm mechanic, Rats cannot disarm
             this[IDs.UNDEAD_RAT_ZOMBIE] = new ActorModel(GameImages.ACTOR_RAT_ZOMBIE,
                DATA_RAT_ZOMBIE.NAME, DATA_RAT_ZOMBIE.PLURAL,
                DATA_RAT_ZOMBIE.SCORE,
                 new DollBody(true, DATA_RAT_ZOMBIE.SPD),
-                new Abilities() { IsUndead = true, IsSmall = true, AI_CanUseAIExits = true },
+                new Abilities() { IsUndead = true, IsSmall = true, AI_CanUseAIExits = true, CanDisarm = false },
                 new ActorSheet(DATA_RAT_ZOMBIE.HP, DATA_RAT_ZOMBIE.STA, NO_FOOD, NO_SLEEP, NO_SANITY,
                     new Attack(AttackKind.PHYSICAL, new Verb("bite"), DATA_RAT_ZOMBIE.ATK, DATA_RAT_ZOMBIE.DMG),
                     new Defence(DATA_RAT_ZOMBIE.DEF, DATA_RAT_ZOMBIE.PRO_HIT, DATA_RAT_ZOMBIE.PRO_SHOT),
                     DATA_RAT_ZOMBIE.FOV, NO_AUDIO, DATA_RAT_ZOMBIE.SMELL, NO_INVENTORY),
                 typeof(RatAI))
             {
-                FlavorDescription = DATA_RAT_ZOMBIE.FLAVOR
+                FlavorDescription = DATA_RAT_ZOMBIE.FLAVOR,
             };
             #endregion
             #endregion
@@ -648,10 +665,11 @@ namespace djack.RogueSurvivor.Gameplay
                         HasInventory = true,
                         HasToEat = true,
                         HasToSleep = true,
-                        HasSanity = true,                         
+                        HasSanity = true,
                         CanTalk = true,
                         CanUseMapObjects = true,
                         CanBreakObjects = true,
+                        CanBashDoors = true, // alpha10.1 necessary to avoid getting stuck in some rare cases
                         CanJump = true,
                         CanTire = true,
                         CanRun = true,
@@ -666,7 +684,7 @@ namespace djack.RogueSurvivor.Gameplay
                         new Attack(AttackKind.PHYSICAL, VERB_PUNCH, DATA_MALE_CIVILIAN.ATK, DATA_MALE_CIVILIAN.DMG),
                         new Defence(DATA_MALE_CIVILIAN.DEF, DATA_MALE_CIVILIAN.PRO_HIT, DATA_MALE_CIVILIAN.PRO_SHOT),
                         DATA_MALE_CIVILIAN.FOV, DATA_MALE_CIVILIAN.AUDIO, NO_SMELL, HUMAN_INVENTORY),
-                    null)
+                    typeof(CivilianAI)) // alpha10.1
                     {
                         FlavorDescription = DATA_MALE_CIVILIAN.FLAVOR
                     };
@@ -684,6 +702,7 @@ namespace djack.RogueSurvivor.Gameplay
                         CanTalk = true,
                         CanUseMapObjects = true,
                         CanBreakObjects = true,
+                        CanBashDoors = true, // alpha10.1 necessary to avoid getting stuck in some rare cases
                         CanJump = true,
                         CanTire = true,
                         CanRun = true,
@@ -698,7 +717,7 @@ namespace djack.RogueSurvivor.Gameplay
                         new Attack(AttackKind.PHYSICAL, VERB_PUNCH, DATA_FEMALE_CIVILIAN.ATK, DATA_FEMALE_CIVILIAN.DMG),
                         new Defence(DATA_FEMALE_CIVILIAN.DEF, DATA_FEMALE_CIVILIAN.PRO_HIT, DATA_FEMALE_CIVILIAN.PRO_SHOT),
                         DATA_FEMALE_CIVILIAN.FOV, DATA_FEMALE_CIVILIAN.AUDIO, NO_SMELL, HUMAN_INVENTORY),
-                    null)
+                    typeof(CivilianAI))  // alpha10.1
             {
                 FlavorDescription = DATA_FEMALE_CIVILIAN.FLAVOR
             };
@@ -862,7 +881,7 @@ namespace djack.RogueSurvivor.Gameplay
                         new Attack(AttackKind.PHYSICAL, VERB_PUNCH, DATA_POLICEMAN.ATK, DATA_POLICEMAN.DMG),
                         new Defence(DATA_POLICEMAN.DEF, DATA_POLICEMAN.PRO_HIT, DATA_POLICEMAN.PRO_SHOT),
                         DATA_POLICEMAN.FOV, DATA_POLICEMAN.AUDIO, NO_SMELL, HUMAN_INVENTORY),
-                    null)
+                    typeof(CivilianAI)) // alpha10.1
             {
                 FlavorDescription = DATA_POLICEMAN.FLAVOR
             };

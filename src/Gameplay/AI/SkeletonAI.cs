@@ -52,7 +52,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             Percept nearestEnemy = FilterNearest(game, FilterEnemies(game, mapPercepts));
             if (nearestEnemy != null)
             {
-                ActorAction bumpAction = BehaviorStupidBumpToward(game, nearestEnemy.Location.Position);
+                ActorAction bumpAction = BehaviorStupidBumpToward(game, nearestEnemy.Location.Position, true, false);
                 if (bumpAction != null)
                 {
                     m_Actor.Activity = Activity.CHASING;
@@ -70,7 +70,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
 
             // 3 wander
             m_Actor.Activity = Activity.IDLE;
-            return BehaviorWander(game);
+            return BehaviorWander(game, null);
         }
         #endregion
     }

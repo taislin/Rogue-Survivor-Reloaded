@@ -26,7 +26,7 @@ namespace djack.RogueSurvivor.Data
     {
         #region Blank attack
         [NonSerialized]
-        public static readonly Attack BLANK = new Attack(AttackKind.PHYSICAL, new Verb("<blank>"), 0, 0, 0, 0);
+        public static readonly Attack BLANK = new Attack(AttackKind.PHYSICAL, new Verb("<blank>"), 0, 0, 0, 0, 0, 0, 0);
         #endregion
 
         #region Properties
@@ -55,10 +55,26 @@ namespace djack.RogueSurvivor.Data
         {
             get { return this.Range / 2; }
         }
+
+        // alpha10
+
+        public int DisarmChance { get; private set; }
+
+        /// <summary>
+        /// Secondary hit roll value.
+        /// Eg: rapid fire 1st shot
+        /// </summary>
+        public int Hit2Value { get; private set; }
+
+        /// <summary>
+        /// Tertiary hit roll value.
+        /// Eg: rapid fire 2nd shot
+        /// </summary>
+        public int Hit3Value { get; private set; }
         #endregion
 
         #region Init
-        public Attack(AttackKind kind, Verb verb, int hitValue, int damageValue, int staminaPenalty, int range)
+        public Attack(AttackKind kind, Verb verb, int hitValue, int hit2Value, int hit3Value, int damageValue, int staminaPenalty, int disarmChance, int range)
             : this()
         {
             if (verb == null)
@@ -67,19 +83,36 @@ namespace djack.RogueSurvivor.Data
             this.Kind = kind;
             this.Verb = verb;
             this.HitValue = hitValue;
+            this.Hit2Value = hit2Value;
+            this.Hit3Value = hit3Value;
             this.DamageValue = damageValue;
             this.StaminaPenalty = staminaPenalty;
+            this.DisarmChance = disarmChance;
             this.Range = range;
         }
 
+        /// <summary>
+        /// Constructor for actor base melee attacks.
+        /// </summary>
+        /// <param name="kind"></param>
+        /// <param name="verb"></param>
+        /// <param name="hitValue"></param>
+        /// <param name="damageValue"></param>
         public Attack(AttackKind kind, Verb verb, int hitValue, int damageValue)
-            : this(kind, verb, hitValue, damageValue, 0, 0)
+            : this(kind, verb, hitValue, hitValue, hitValue, damageValue, 0, 0, 0)
         {
         }
 
-        public Attack(AttackKind kind, Verb verb, int hitValue, int damageValue, int staminaPenalty)
-            : this(kind, verb, hitValue, damageValue, staminaPenalty, 0)
+        // alpha10 removed other constructors to avoid confusion and replaced with static methods
+
+        public static Attack MeleeAttack(Verb verb, int hitValue, int damageValue, int staminaPenalty, int disarmChance)
         {
+            return new Attack(AttackKind.PHYSICAL, verb, hitValue, hitValue, hitValue, damageValue, staminaPenalty, disarmChance, 0);
+        }
+
+        public static Attack RangedAttack(AttackKind kind, Verb verb, int normalHitValue, int rapidFire1HitValue, int rapidFire2HitValue, int damageValue, int range)
+        {
+            return new Attack(kind, verb, normalHitValue, rapidFire1HitValue, rapidFire2HitValue, damageValue, 0, 0, range);
         }
         #endregion
     }

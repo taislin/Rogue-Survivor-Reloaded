@@ -77,5 +77,9 @@ namespace djack.RogueSurvivor.Gameplay
 
         public static readonly string SURVIVORS = "survivors";
         public static readonly string SURVIVORS_FILE = PATH + "RS - Survivors";
+
+        // alpha10
+        public static readonly string SURFACE = "surface";
+        public static readonly string SURFACE_FILE = PATH + "RS - Surface";
     }
 }

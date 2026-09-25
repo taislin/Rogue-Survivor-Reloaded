@@ -51,6 +51,7 @@ namespace djack.RogueSurvivor.Data
         int m_Seed;
         District m_District;
         string m_Name;
+        string m_BgMusic;  // alpha10
         Lighting m_Lighting;
         WorldTime m_LocalTime;
 
@@ -116,6 +117,12 @@ namespace djack.RogueSurvivor.Data
         public int Seed
         {
             get { return m_Seed; }
+        }
+
+        public string BgMusic // alpha10
+        {
+            get { return m_BgMusic; }
+            set { m_BgMusic = value; }
         }
 
         public bool IsSecret
@@ -1225,6 +1232,8 @@ namespace djack.RogueSurvivor.Data
             m_Lighting = (Lighting)info.GetValue("m_Lighting", typeof(Lighting));
             m_Scents = (List<OdorScent>)info.GetValue("m_Scents", typeof(List<OdorScent>));
             m_Timers = (List<TimedTask>)info.GetValue("m_Timers", typeof(List<TimedTask>));
+            // alpha10
+            m_BgMusic = (string)info.GetValue("m_BgMusic", typeof(string));
         }
 
         public void ReconstructAuxiliaryFields()
@@ -1246,7 +1255,7 @@ namespace djack.RogueSurvivor.Data
 
             m_aux_ScentsByPosition = new Dictionary<Point, List<OdorScent>>();
             foreach (OdorScent scent in m_Scents)
-            {
+            {                
                 List<OdorScent> listHere;
                 if (m_aux_ScentsByPosition.TryGetValue(scent.Position, out listHere))
                     listHere.Add(scent);
@@ -1290,6 +1299,8 @@ namespace djack.RogueSurvivor.Data
             info.AddValue("m_Lighting", m_Lighting);
             info.AddValue("m_Scents", m_Scents);
             info.AddValue("m_Timers", m_Timers);
+            // alpha10
+            info.AddValue("m_BgMusic", m_BgMusic);
         }
 
         #region Pre-saving
@@ -1299,6 +1310,10 @@ namespace djack.RogueSurvivor.Data
             for (int x = 0; x < m_Width; x++)
                 for (int y = 0; y < m_Height; y++)
                     m_Tiles[x, y].OptimizeBeforeSaving();
+
+            // alpha10 items stacks
+            foreach (Inventory stack in m_GroundItemsByPosition.Values)
+                stack.OptimizeBeforeSaving();
 
             // actors
             foreach (Actor a in m_ActorsList)

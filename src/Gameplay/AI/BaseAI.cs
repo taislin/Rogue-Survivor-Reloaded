@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Drawing;
 
 using djack.RogueSurvivor.Data;
@@ -11,6 +9,7 @@ using djack.RogueSurvivor.Engine.AI;
 using djack.RogueSurvivor.Engine.Items;
 using djack.RogueSurvivor.Engine.MapObjects;
 using djack.RogueSurvivor.Gameplay.AI.Sensors;
+using djack.RogueSurvivor.Gameplay.AI.Tools;
 
 namespace djack.RogueSurvivor.Gameplay.AI
 {
@@ -37,7 +36,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
         #endregion
 
         #region Constants
-        const int FLEE_THROUGH_EXIT_CHANCE = 50;
+        const int FLEE_THROUGH_EXIT_CHANCE = 90;  // alpha10 increased from 50%
 
         const int EMOTE_GRAB_ITEM_CHANCE = 30;
         const int EMOTE_FLEE_CHANCE = 30;
@@ -45,8 +44,9 @@ namespace djack.RogueSurvivor.Gameplay.AI
         const int EMOTE_CHARGE_CHANCE = 30;
 
         const float MOVE_DISTANCE_PENALTY = 0.42f;  // slightly > to diagonal distance (sqrt(2))
+        const float MOVE_INTO_TRAPS_PENALTY = 1;  // alpha10
 
-        const float LEADER_LOF_PENALTY = 1;
+        const int IN_LEADER_LOF_SAFETY_PENALTY = 1;  // alpha10 int
         #endregion
 
         #region Fields
@@ -56,6 +56,9 @@ namespace djack.RogueSurvivor.Gameplay.AI
         List<Item> m_TabooItems;    // list is better than dictionary since we expect it to be very small.
         List<Point> m_TabooTiles;
         List<Actor> m_TabooTrades;
+        // alpha10
+        [NonSerialized] RouteFinder m_RouteFinder;
+        int m_ReservedEquipmentSlots;
         #endregion
 
         #region Properties
@@ -66,11 +69,11 @@ namespace djack.RogueSurvivor.Gameplay.AI
 
         public override ActorDirective Directives
         {
-            get 
+            get
             {
                 if (m_Directive == null)
                     m_Directive = new ActorDirective();
-                return m_Directive; 
+                return m_Directive;
             }
             set { m_Directive = value; }
         }
@@ -184,7 +187,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 Actor other = p.Percepted as Actor;
                 if (other != null && other != m_Actor)
                 {
-                    if (game.Rules.IsEnemyOf(m_Actor, other))
+                    if (game.Rules.AreEnemies(m_Actor, other))
                     {
                         if (list == null)
                             list = new List<Percept>(percepts.Count);
@@ -208,7 +211,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 Actor other = p.Percepted as Actor;
                 if (other != null && other != m_Actor)
                 {
-                    if (!game.Rules.IsEnemyOf(m_Actor, other))
+                    if (!game.Rules.AreEnemies(m_Actor, other))
                     {
                         if (list == null)
                             list = new List<Percept>(percepts.Count);
@@ -401,7 +404,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
 
         protected List<Percept> FilterFireTargets(RogueGame game, List<Percept> percepts)
         {
-            return Filter(game, percepts, 
+            return Filter(game, percepts,
                 (p) =>
                 {
                     Actor other = p.Percepted as Actor;
@@ -530,9 +533,16 @@ namespace djack.RogueSurvivor.Gameplay.AI
         #region Common behaviors
 
         #region Movement
-        protected ActorAction BehaviorWander(RogueGame game, Predicate<Location> goodWanderLocFn)
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="game"></param>
+        /// <param name="goodWanderLocFn"></param>
+        /// <param name="exploration">can be null for ais with no exploration</param>
+        /// <returns></returns>
+        protected ActorAction BehaviorWander(RogueGame game, Predicate<Location> goodWanderLocFn, ExplorationData exploration)
         {
-            ChoiceEval<Direction> chooseRandomDir = Choose<Direction>(game,
+            ChoiceEval<Direction> chooseDir = Choose<Direction>(game,
                 Direction.COMPASS_LIST,
                 (dir) =>
                 {
@@ -540,39 +550,103 @@ namespace djack.RogueSurvivor.Gameplay.AI
                     if (goodWanderLocFn != null && !goodWanderLocFn(next))
                         return false;
                     ActorAction bumpAction = game.Rules.IsBumpableFor(m_Actor, game, next);
-                    return isValidWanderAction(game, bumpAction);
+                    return IsValidWanderAction(game, bumpAction);
                 },
                 (dir) =>
                 {
-                    int score = game.Rules.Roll(0, 666); 
+                    Location next = m_Actor.Location + dir;
+
+                    int score = 0;
+
+                    // alpha10.1
+                    const int BREAKING_OBJ = -50000;
+                    const int BACKTRACKING = -10000;
+                    const int BREAKING_BARRICADES = -1000;
+                    const int AVOID_TRAPS = -1000;
+                    const int UNEXPLORED_LOC = 1000;  // should not happen, see below
+                    const int DOORWINDOWS = 100;
+                    const int EXITS = 50;
+                    const int INSIDE_WHEN_ALMOST_SLEEPY = 100;
+                    const int WANDER_RANDOM = 10;  // alpha10.1 much smaller random factor
+
+                    if (next == m_prevLocation)
+                        score += BACKTRACKING;
+
                     if (m_Actor.Model.Abilities.IsIntelligent)
                     {
-                        if (IsAnyActivatedTrapThere(m_Actor.Location.Map, (m_Actor.Location + dir).Position))
-                            score -= 1000;
+                        if (IsAnyUnsafeDamagingTrapThere(game, m_Actor.Location.Map, next.Position))
+                            score += AVOID_TRAPS;
                     }
+
+                    // alpha10.1 allowing break action prevent rare cases of getting stuck or going back and forth but we penalize it
+                    if (next.Map.GetMapObjectAt(next.Position) != null)
+                    {
+                        ActorAction bumpObjAction = game.Rules.IsBumpableFor(m_Actor, game, next);
+                        if (bumpObjAction != null && (bumpObjAction is ActionBreak || bumpObjAction is ActionBashDoor))
+                        {
+                            if (bumpObjAction is ActionBashDoor)
+                                score += BREAKING_BARRICADES;
+                            else
+                                score += BREAKING_OBJ;
+                            // if we have to break things, prefer objs we can break more quickly
+                            score -= GetObjectHitPoints(next.Map.GetMapObjectAt(next.Position));
+                        }
+                    }
+
+                    // alpha10.1 prefer unexplored/oldest
+                    // unexplored should not happen because exploration rule is tested before wander rule but just to be more robust...
+                    if (exploration != null)
+                    {
+                        int locAge = exploration.GetExploredAge(next);
+                        if (locAge == 0)
+                            score += UNEXPLORED_LOC;
+                        else
+                            score += locAge;
+                    }
+
+                    // alpha10.1 prefer wandering to doorwindows and exits. 
+                    // helps civs ai getting stuck in semi-infinite loop when running out of new exploration to do.
+                    // as a side effect, make ais with no exploration data (eg zombies) more eager to visit door/windows and exits.
+                    DoorWindow doorWindow = next.Map.GetMapObjectAt(next.Position) as DoorWindow;
+                    if (doorWindow != null)
+                        score += DOORWINDOWS;
+                    if (next.Map.GetExitAt(next.Position) != null)
+                        score += EXITS;
+
+                    // alpha10.1 prefer inside when almost sleepy
+                    if (game.Rules.IsAlmostSleepy(m_Actor) && next.Map.GetTileAt(next.Position).IsInside)
+                        score += INSIDE_WHEN_ALMOST_SLEEPY;
+
+                    // alpha10.1 add random factor
+                    score += game.Rules.Roll(0, WANDER_RANDOM);
+
+                    // done
                     return score;
                 },
                 (a, b) => a > b);
 
-            if (chooseRandomDir != null)
-                return new ActionBump(m_Actor, game, chooseRandomDir.Choice);
+            if (chooseDir != null)
+                return new ActionBump(m_Actor, game, chooseDir.Choice);
             else
                 return null;
         }
 
-        protected ActorAction BehaviorWander(RogueGame game)
+        protected ActorAction BehaviorWander(RogueGame game, ExplorationData exploration)
         {
-            return BehaviorWander(game, null);
+            return BehaviorWander(game, null, exploration);
         }
 
+        // alpha10 added break & push
         /// <summary>
         /// 
         /// </summary>
         /// <param name="game"></param>
         /// <param name="goal"></param>
+        /// <param name="canCheckBreak">if blocked by mapobject, can check if can break it?</param>
+        /// <param name="canCheckPush">if blocked by mapobject, can check if can push it?</param>
         /// <param name="distanceFn">float.Nan to forbid a move</param>
         /// <returns></returns>
-        protected ActorAction BehaviorBumpToward(RogueGame game, Point goal, Func<Point, Point, float> distanceFn)
+        protected ActorAction BehaviorBumpToward(RogueGame game, Point goal, bool canCheckBreak, bool canCheckPush, Func<Point, Point, float> distanceFn)
         {
             ChoiceEval<ActorAction> bestCloserDir = ChooseExtended<Direction, ActorAction>(game,
                 Direction.COMPASS_LIST,
@@ -597,6 +671,36 @@ namespace djack.RogueSurvivor.Gameplay.AI
                             }
                         }
 
+                        // alpha10 check special actions
+                        if (canCheckBreak)
+                        {
+                            MapObject obj = m_Actor.Location.Map.GetMapObjectAt(next.Position);
+                            if (obj != null)
+                            {
+                                if (game.Rules.IsBreakableFor(m_Actor, obj))
+                                    return new ActionBreak(m_Actor, game, obj);
+                            }
+                        }
+                        if (canCheckPush)
+                        {
+                            MapObject obj = m_Actor.Location.Map.GetMapObjectAt(next.Position);
+                            if (obj != null)
+                            {
+                                if (game.Rules.CanActorPush(m_Actor, obj))
+                                {
+                                    // push in a valid direction at random
+                                    List<Direction> validPushes = new List<Direction>(8);
+                                    foreach (Direction pushDir in Direction.COMPASS)
+                                    {
+                                        if (game.Rules.CanPushObjectTo(obj, obj.Location.Position + pushDir))
+                                            validPushes.Add(pushDir);
+                                    }
+                                    if (validPushes.Count > 0)
+                                        return new ActionPush(m_Actor, game, obj, validPushes[game.Rules.Roll(0, validPushes.Count)]);
+                                }
+                            }
+                        }
+
                         // failed.
                         return null;
                     }
@@ -607,13 +711,19 @@ namespace djack.RogueSurvivor.Gameplay.AI
                     else
                         return null;
                 },
-                (dir) =>
+                (dir, action) =>
                 {
                     Location next = m_Actor.Location + dir;
-                    if (distanceFn != null)
-                        return distanceFn(next.Position, goal);
-                    else
-                        return game.Rules.StdDistance(next.Position, goal);
+                    float cost = (distanceFn != null ? distanceFn(next.Position, goal) : game.Rules.StdDistance(next.Position, goal));
+
+                    // alpha10 add action cost heuristic if npc is intelligent
+                    if (!float.IsNaN(cost))
+                    {
+                        if (m_Actor.Model.Abilities.IsIntelligent)
+                            cost += EstimateBumpActionCost(game, next, action);
+                    }
+
+                    return cost;
                 },
                 (a, b) => !float.IsNaN(a) && a < b);
 
@@ -623,9 +733,48 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 return null;
         }
 
-        protected ActorAction BehaviorStupidBumpToward(RogueGame game, Point goal)
+        // alpha10
+        /// <summary>
+        /// For intelligent npcs, additional cost to distance cost when chosing which adj tile to bump to.
+        /// </summary>
+        /// <param name="game"></param>
+        /// <param name="loc"></param>
+        /// <param name="action"></param>
+        /// <returns></returns>
+        /// <see cref="BehaviorBumpToward(RogueGame, Point, bool, bool, Func{Point, Point, float})"/>
+        protected float EstimateBumpActionCost(RogueGame game, Location loc, ActorAction action)
+        {
+            float cost = 0;
+
+            if (action is ActionBump)
+                action = (action as ActionBump).ConcreteAction;
+
+            // Consuming additional sta
+            if (m_Actor.Model.Abilities.CanTire)
+            {
+                // jumping
+                if (action is ActionMoveStep)
+                {
+                    MapObject mobj = loc.Map.GetMapObjectAt(loc.Position);
+                    if (mobj != null && mobj.IsJumpable)
+                        cost = MOVE_DISTANCE_PENALTY;
+                }
+
+                // actions that always consume sta or may take more than one turn
+                if (action is ActionBashDoor ||
+                    action is ActionBreak ||
+                    action is ActionPush)
+                    cost = MOVE_DISTANCE_PENALTY;
+            }
+
+            return cost;
+        }
+
+        // alpha10 can check break and push
+        protected ActorAction BehaviorStupidBumpToward(RogueGame game, Point goal, bool canCheckBreak, bool canCheckPush)
         {
             return BehaviorBumpToward(game, goal,
+                canCheckBreak, canCheckPush,
                 (ptA, ptB) =>
                 {
                     if (ptA == ptB) return 0;
@@ -640,12 +789,15 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 });
         }
 
-        protected ActorAction BehaviorIntelligentBumpToward(RogueGame game, Point goal)
+        // alpha10 added break & push
+        protected ActorAction BehaviorIntelligentBumpToward(RogueGame game, Point goal,
+            bool canCheckBreak, bool canCheckPush)
         {
             float currentDistance = game.Rules.StdDistance(m_Actor.Location.Position, goal);
             bool imStarvingOrCourageous = game.Rules.IsActorStarving(m_Actor) || Directives.Courage == ActorCourage.COURAGEOUS;
 
             ActorAction bump = BehaviorBumpToward(game, goal,
+                canCheckBreak, canCheckPush,
                 (ptA, ptB) =>
                 {
                     if (ptA == ptB) return 0;
@@ -659,14 +811,14 @@ namespace djack.RogueSurvivor.Gameplay.AI
                     // avoid stepping on damaging traps, unless starving or courageous.
                     if (!imStarvingOrCourageous)
                     {
-                        int trapsDamage = ComputeTrapsMaxDamage(m_Actor.Location.Map, ptA);
+                        int trapsDamage = ComputeTrapsMaxDamageForMe(game, m_Actor.Location.Map, ptA);
                         if (trapsDamage > 0)
                         {
-                            // if death, don't do it.
+                            // if instant death, don't do it.
                             if (trapsDamage >= m_Actor.HitPoints)
                                 return float.NaN;
                             // avoid.
-                            distance += MOVE_DISTANCE_PENALTY;
+                            distance += MOVE_INTO_TRAPS_PENALTY;
                         }
                     }
 
@@ -710,18 +862,19 @@ namespace djack.RogueSurvivor.Gameplay.AI
                     // Heuristic value:
                     // - Safety from dangers.
                     // - If follower, stay close to leader but avoid stepping into leader LoF.
-                    float safetyValue = SafetyFrom(game.Rules, next.Position, goals);
+                    int safetyValue = SafetyFrom(game, next.Position, goals);
                     if (m_Actor.HasLeader)
                     {
                         // stay close to leader.
-                        safetyValue -= game.Rules.StdDistance(next.Position, m_Actor.Leader.Location.Position);
+                        safetyValue -= 100 * game.Rules.GridDistance(next.Position, m_Actor.Leader.Location.Position);
                         // don't step into leader LoF.
                         if (checkLeaderLoF)
                         {
                             if (leaderLoF.Contains(next.Position))
-                                safetyValue -= LEADER_LOF_PENALTY;
+                                safetyValue -= 100 * IN_LEADER_LOF_SAFETY_PENALTY;
                         }
                     }
+
                     return safetyValue;
                 },
                 (a, b) => a > b);
@@ -757,18 +910,37 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 throw new ArgumentException("percepted is not an actor");
 
             // if illegal cant.
-            if (!game.Rules.CanActorFireAt(m_Actor,targetActor))
+            if (!game.Rules.CanActorFireAt(m_Actor, targetActor))
                 return null;
 
+            // alpha10
+            // select rapid fire if one shot is not enough to kill target, has more than one ammo loaded and chances to hit good enough.
+            FireMode fireMode = FireMode.DEFAULT;
+            if ((GetEquippedWeapon() as ItemRangedWeapon).Ammo >= 2)
+            {
+                Attack rangedAttack = game.Rules.ActorRangedAttack(m_Actor, m_Actor.CurrentRangedAttack, game.Rules.GridDistance(m_Actor.Location.Position, targetActor.Location.Position), targetActor);
+                if (rangedAttack.DamageValue < targetActor.HitPoints)
+                {
+                    int rapidHit1Chance = game.Rules.ComputeChancesRangedHit(m_Actor, targetActor, 1);
+                    int rapidHit2Chance = game.Rules.ComputeChancesRangedHit(m_Actor, targetActor, 2);
+                    // "good chances" = both hits at least 50%
+                    if (rapidHit1Chance >= 50 && rapidHit2Chance >= 50)
+                        fireMode = FireMode.RAPID;
+                }
+            }
+
             // fire!
-            return new ActionRangedAttack(m_Actor, game, targetActor);
+            return new ActionRangedAttack(m_Actor, game, targetActor, fireMode);
         }
         #endregion
 
         #region Equiping items
+        // alpha10 BehaviorEquipWeapon obsolete
+#if false
+        [Obsolete]
         protected ActorAction BehaviorEquipWeapon(RogueGame game)
         {
-            #region Ranged first
+        #region Ranged first
             // If already equiped a ranged weapon, we might want to reload it.
             Item eqWpn = GetEquippedWeapon();
             if (eqWpn != null && eqWpn is ItemRangedWeapon)
@@ -803,9 +975,9 @@ namespace djack.RogueSurvivor.Gameplay.AI
                         return new ActionEquipItem(m_Actor, game, newRanged);
                 }
             }
-            #endregion
+        #endregion
 
-            #region Melee second
+        #region Melee second
             // Get best melee weapon in inventory.
             ItemMeleeWeapon bestMeleeWeapon = GetBestMeleeWeapon(game, (it) => !IsItemTaboo(it));
 
@@ -834,13 +1006,14 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 else
                     return null;
             }
-            #endregion
+        #endregion
 
             // Fail.
             return null;
         }
+#endif
 
-        protected ActorAction BehaviorEquipBodyArmor(RogueGame game)
+        protected ActorAction BehaviorEquipBestBodyArmor(RogueGame game)
         {
             // Get best armor available.
             ItemBodyArmor bestArmor = GetBestBodyArmor(game, (it) => !IsItemTaboo(it));
@@ -900,7 +1073,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             Item eqTrack = GetEquippedCellPhone();
             if (eqTrack != null)
             {
-                if (!wantTracker)
+                if (!wantTracker && game.Rules.CanActorUnequipItem(m_Actor, eqTrack))
                     return new ActionUnequipItem(m_Actor, game, eqTrack);
                 else
                     return null;
@@ -924,6 +1097,11 @@ namespace djack.RogueSurvivor.Gameplay.AI
 
         protected ActorAction BehaviorUnequipCellPhoneIfLeaderHasNot(RogueGame game)
         {
+            // alpha10
+            // if we are leader, dont unequip.
+            if (m_Actor.CountFollowers > 0)
+                return null;
+
             // get left eq item.
             ItemTracker tr = m_Actor.GetEquippedItem(DollPart.LEFT_HAND) as ItemTracker;
             if (tr == null)
@@ -945,46 +1123,6 @@ namespace djack.RogueSurvivor.Gameplay.AI
             return null;
         }
 
-        protected ActorAction BehaviorEquipLight(RogueGame game)
-        {
-            // If already equiped a light, nothing to do.
-            Item eqLight = GetEquippedLight();
-            if (eqLight != null)
-                return null;
-
-            // Equip first available light.
-            Item newLight = GetFirstLight((it) => !IsItemTaboo(it));
-            if (newLight != null)
-            {
-                // equip new.
-                if (game.Rules.CanActorEquipItem(m_Actor, newLight))
-                    return new ActionEquipItem(m_Actor, game, newLight);
-            }
-
-            // Fail.
-            return null;
-        }
-
-        protected ActorAction BehaviorEquipStenchKiller(RogueGame game)
-        {
-            // If already equiped a suitable one, nothing to do.
-            Item eqStench = GetEquippedStenchKiller();
-            if (eqStench != null)
-                return null;
-
-            // Equip first available.
-            ItemSprayScent newStench = GetFirstStenchKiller((it) => !IsItemTaboo(it));
-            if (newStench != null)
-            {
-                // equip new.
-                if (game.Rules.CanActorEquipItem(m_Actor, newStench))
-                    return new ActionEquipItem(m_Actor, game, newStench);
-            }
-
-            // Fail.
-            return null;
-        }
-
         protected ActorAction BehaviorUnequipLeftItem(RogueGame game)
         {
             // get left eq item.
@@ -999,10 +1137,312 @@ namespace djack.RogueSurvivor.Gameplay.AI
             // fail.
             return null;
         }
+
+        // alpha10
+        /// <summary>
+        /// Get action to perform to manage the best ranged weapon we have.
+        /// - equip a new best ranged weapon
+        /// - reload the one we have equiped
+        /// - unequip a completly out of ammo weapon
+        /// - nothing if we already have equiped the best we have
+        /// </summary>
+        /// <param name="game"></param>
+        /// <returns>null if not wanting an action</returns>
+        protected ActorAction BehaviorEquipBestRangedWeapon(RogueGame game)
+        {
+            // get best range weapon with ammo we have
+            ItemRangedWeapon best = GetBestRangedWeaponWithAmmo((it) => !IsItemTaboo(it));
+
+            if (best == null)
+            {
+                // useless equipped rw we should unequip (best is null in this case since no ammo in inv):
+                // if we have a rw equiped but out of ammo and no ammo to reload it, unequip, leave hand free for melee weapon.
+                ItemRangedWeapon eqRw = m_Actor.GetEquippedRangedWeapon();
+                if (eqRw != null && eqRw.Ammo == 0 && GetCompatibleAmmoItem(game, eqRw, false) == null)
+                    return new ActionUnequipItem(m_Actor, game, eqRw);
+
+                // no rw with ammo to equip
+                return null;
+            }
+
+            if (best.IsEquipped)
+            {
+                // if out of ammo try to reload, else unequip to make room for a melee weapon
+                if (best.Ammo == 0)
+                {
+                    ItemAmmo ammo = GetCompatibleAmmoItem(game, best, true);
+                    if (ammo != null)
+                        return new ActionUseItem(m_Actor, game, ammo);
+                    else
+                        return new ActionUnequipItem(m_Actor, game, best);
+                }
+
+                // best ranged weapon equiped & has ammo, we're fine.
+                return null;
+            }
+
+            // if not equiped but out of ammo and no ammo to reload it, dont equip, leave hand free for melee weapon.
+            if (best.Ammo == 0 && GetCompatibleAmmoItem(game, best, false) == null)
+                return null;
+
+            // replace current weapon with best one
+            return BehaviourReplaceEquipped(game, m_Actor.GetEquippedWeapon(), best);
+        }
+
+        protected ActorAction BehaviorEquipBestMeleeWeapon(RogueGame game)
+        {
+            Item best = GetBestMeleeWeapon(game, (it) => !IsItemTaboo(it));
+
+            if (best == null)
+                return null;
+            if (best.IsEquipped)
+                return null;
+
+            return BehaviourReplaceEquipped(game, m_Actor.GetEquippedWeapon(), best);
+        }
+
+        protected ActorAction BehaviorEquipBestLight(RogueGame game)
+        {
+            ItemLight best = GetBestLight(game, (it) => !IsItemTaboo(it));
+
+            if (best == null)
+                return null;
+            if (best.IsEquipped)
+            {
+                // unequip if light out of batteries
+                if (best.Batteries <= 0)
+                    return new ActionUnequipItem(m_Actor, game, best);
+                // already got best light equiped
+                return null;
+            }
+            // don't equip if out of batteries
+            if (best.Batteries <= 0)
+                return null;
+
+            // replace current left hand item with best one
+            return BehaviourReplaceEquipped(game, m_Actor.GetEquippedItem(DollPart.LEFT_HAND), best);
+        }
+
+        protected ActorAction BehaviorEquipBestCellPhone(RogueGame game)
+        {
+            ItemTracker best = GetBestCellPhone(game, (it) => !IsItemTaboo(it));
+
+            if (best == null)
+                return null;
+            if (best.IsEquipped)
+            {
+                // unequip if phone out of batteries
+                if (best.Batteries <= 0)
+                    return new ActionUnequipItem(m_Actor, game, best);
+                // already got best spray equiped
+                return null;
+            }
+            // don't equip if out of batteries
+            if (best.Batteries <= 0)
+                return null;
+
+            // replace current left hand item with best one
+            return BehaviourReplaceEquipped(game, m_Actor.GetEquippedItem(DollPart.LEFT_HAND), best);
+        }
+
+        protected ActorAction BehaviorEquipBestStenchKiller(RogueGame game)
+        {
+            ItemSprayScent best = GetBestStenchKiller(game, (it) => !IsItemTaboo(it));
+
+            if (best == null)
+                return null;
+            if (best.IsEquipped)
+            {
+                // unequip if out of spray
+                if (best.SprayQuantity <= 0)
+                    return new ActionUnequipItem(m_Actor, game, best);
+                return null;
+            }
+            // don't equip if out of spray
+            if (best.SprayQuantity <= 0)
+                return null;
+
+            // replace current left hand item with best one
+            return BehaviourReplaceEquipped(game, m_Actor.GetEquippedItem(DollPart.LEFT_HAND), best);
+        }
+
+        protected bool WantsCellPhoneEquipped(RogueGame game)
+        {
+            // follower wants if leader has one equipped,
+            // leader wants if any follower has one with batteries in its inventory
+            if (m_Actor.HasLeader)
+            {
+                ItemTracker leaderPhone = m_Actor.Leader.GetEquippedItem(DollPart.LEFT_HAND) as ItemTracker;
+                if (leaderPhone != null && leaderPhone.CanTrackFollowersOrLeader)
+                    return true;
+                return false;
+            }
+            else if (m_Actor.CountFollowers > 0)
+            {
+                foreach (Actor follower in m_Actor.Followers)
+                {
+                    if (follower.Inventory.HasItemMatching((it) =>
+                        {
+                            ItemTracker followerPhone = it as ItemTracker;
+                            if (followerPhone != null && followerPhone.CanTrackFollowersOrLeader && followerPhone.Batteries > 0)
+                                return true;
+                            return false;
+                        }))
+                        return true;
+                }
+                return false;
+            }
+            else
+                return false;
+        }
+
+        /// <summary>
+        /// Will try to unequip old item first, then equip the new one.
+        /// </summary>
+        /// <param name="game"></param>
+        /// <param name="equipped">can be null</param>
+        /// <param name="replaceWith">can be null</param>
+        /// <returns></returns>
+        protected ActorAction BehaviourReplaceEquipped(RogueGame game, Item equipped, Item replaceWith)
+        {
+            if (equipped != null)
+            {
+                if (game.Rules.CanActorUnequipItem(m_Actor, equipped))
+                    return new ActionUnequipItem(m_Actor, game, equipped);
+                return null;
+            }
+            if (replaceWith != null)
+            {
+                if (game.Rules.CanActorEquipItem(m_Actor, replaceWith))
+                    return new ActionEquipItem(m_Actor, game, replaceWith);
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Equip best items available : armors, weapons, lights/sprays/phones.
+        /// Will ignore an equipment slot that is reserved by other behaviors (taboo).
+        /// Actions:
+        /// - equip an item
+        /// - unequip an item
+        /// - reload a weapon
+        /// </summary>
+        /// <param name="game"></param>
+        /// <param name="allowCellPhones"></param>
+        /// <param name="allowStenchKiller"></param>
+        /// <returns></returns>
+        /// <see cref="IsEquipmentSlotTaboo(DollPart)"/>
+        protected ActorAction BehaviorEquipBestItems(RogueGame game, bool allowCellPhones, bool allowStenchKiller)
+        {
+            ActorAction action;
+
+            // keep in mind which equipment slots are reserved by other behaviors and dont mess with them
+            bool canUseTorso = !IsEquipmentSlotTaboo(DollPart.TORSO);
+            bool canUseRightHand = !IsEquipmentSlotTaboo(DollPart.RIGHT_HAND);
+            bool canUseLeftHand = !IsEquipmentSlotTaboo(DollPart.LEFT_HAND);
+
+            // armor
+            if (canUseTorso)
+            {
+                action = BehaviorEquipBestBodyArmor(game);
+                if (action != null)
+                    return action;
+            }
+
+            // right hand weapons, prefering ranged weapon over melee in most cases.
+            if (canUseRightHand)
+            {
+                // equip best ranged weapon only if not forbidden by directives or ai
+                if (Directives.CanFireWeapons && !(m_Actor.Model as ActorModel).Abilities.AI_NotInterestedInRangedWeapons)
+                {
+                    action = BehaviorEquipBestRangedWeapon(game);
+                    if (action != null)
+                        return action;
+                }
+                else
+                {
+                    ItemRangedWeapon equippedRw = GetEquippedWeapon() as ItemRangedWeapon;
+                    if (equippedRw != null)
+                        return new ActionUnequipItem(m_Actor, game, equippedRw);
+                }
+
+                // equip melee only if no ranged weapon equiped and not skilled martial artist
+                if (!HasEquipedRangedWeapon(m_Actor) && m_Actor.Sheet.SkillTable.GetSkillLevel((int)Skills.IDs.MARTIAL_ARTS) < 3)
+                {
+                    action = BehaviorEquipBestMeleeWeapon(game);
+                    if (action != null)
+                        return action;
+                }
+                else
+                {
+                    ItemMeleeWeapon equippedMw = GetEquippedWeapon() as ItemMeleeWeapon;
+                    if (equippedMw != null)
+                        return new ActionUnequipItem(m_Actor, game, equippedMw);
+                }
+            }
+
+            // left-hand items
+            if (canUseLeftHand)
+            {
+                // ordered by priority: cellphone -> lights -> spray
+                ItemTracker eqCellphone = GetEquippedCellPhone();
+                ItemLight eqLight = GetEquippedLight();
+                ItemSprayScent eqStenchKiller = GetEquippedStenchKiller();
+
+                // cellphone 
+                if (allowCellPhones && WantsCellPhoneEquipped(game))
+                {
+                    action = BehaviorEquipBestCellPhone(game);
+                    if (action != null)
+                        return action;
+                }
+                else
+                {
+                    if (eqCellphone != null)
+                        return new ActionUnequipItem(m_Actor, game, eqCellphone);
+                }
+
+                // lights, if no cellphone equipped
+                if (eqCellphone == null)
+                {
+                    if (NeedsLight(game))
+                    {
+                        action = BehaviorEquipBestLight(game);
+                        if (action != null)
+                            return action;
+                    }
+                    else
+                    {
+                        // doesnt need light, unequip if equipped.
+                        if (eqLight != null)
+                            return new ActionUnequipItem(m_Actor, game, eqLight);
+                    }
+                }
+
+                // spray scent, if no cellphone or light equipped
+                if (eqCellphone == null && eqLight == null)
+                {
+                    if (allowStenchKiller)
+                    {
+                        action = BehaviorEquipBestStenchKiller(game);
+                        if (action != null)
+                            return action;
+                    }
+                    else
+                    {
+                        if (eqStenchKiller != null)
+                            return new ActionUnequipItem(m_Actor, game, eqStenchKiller);
+                    }
+                }
+            }
+
+            // no equipement action to do
+            return null;
+        }
         #endregion
 
         #region Getting items
-        protected ActorAction BehaviorGrabFromStack(RogueGame game, Point position, Inventory stack)
+        protected ActorAction BehaviorGrabFromStack(RogueGame game, Point position, Inventory stack, bool canBreak, bool canPush)
         {
             // ignore empty stacks.
             if (stack == null || stack.IsEmpty)
@@ -1030,7 +1470,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 if (!game.Rules.CanActorGetItem(m_Actor, it))
                     continue;
                 // if not interesting, ignore.
-                if (!IsInterestingItem(game, it))
+                if (!IsInterestingItemToOwn(game, it, ItemSource.GROUND_STACK))
                     continue;
                 // gettable and interesting, get it.
                 goodItem = it;
@@ -1052,7 +1492,67 @@ namespace djack.RogueSurvivor.Gameplay.AI
             if (position == m_Actor.Location.Position)
                 return new ActionTakeItem(m_Actor, game, position, takeIt);
             else
-                return BehaviorIntelligentBumpToward(game, position);
+                return BehaviorIntelligentBumpToward(game, position, canBreak, canPush);
+        }
+
+        // alpha10 made improved get item rule into a new behaviour; need taboo tile upkeep by caller though!
+        protected ActorAction BehaviorGoGetInterestingItems(RogueGame game, List<Percept> mapPercepts, bool canBreak, bool canPush, string cantGetItemEmote, bool setLastItemsSaw, ref Percept lastItemsSaw)
+        {
+            RouteFinder.SpecialActions allowedActions = RouteFinder.SpecialActions.JUMP | RouteFinder.SpecialActions.DOORS;
+
+            Map map = m_Actor.Location.Map;
+
+            List<Percept> interestingReachableStacks = FilterOut(game, FilterStacks(game, mapPercepts),
+                (p) =>
+                {
+                    if (p.Turn != map.LocalTime.TurnCounter)
+                        return true;
+                    if (IsOccupiedByOther(map, p.Location.Position))
+                        return true;
+                    if (IsTileTaboo(p.Location.Position))
+                        return true;
+                    if (!HasAnyInterestingItem(game, p.Percepted as Inventory, ItemSource.GROUND_STACK))
+                        return true;
+                    // alpha10 check reachability
+                    RouteFinder.SpecialActions a = allowedActions;
+                    if (IsContainerAt(p.Location))
+                        a |= RouteFinder.SpecialActions.ADJ_TO_DEST_IS_GOAL;
+                    if (!CanReachSimple(game, p.Location.Position, a))
+                        return true;
+                    // can and wants to get it
+                    return false;
+                });
+
+            if (interestingReachableStacks == null)
+                return null;
+
+            // update last percept saw.
+            Percept nearestStack = FilterNearest(game, interestingReachableStacks);
+            if (setLastItemsSaw)
+                lastItemsSaw = nearestStack;
+
+            // make room for food if needed.
+            ActorAction makeRoomForFood = BehaviorMakeRoomForFood(game, interestingReachableStacks);
+            if (makeRoomForFood != null)
+            {
+                m_Actor.Activity = Activity.IDLE;
+                return makeRoomForFood;
+            }
+
+            // try to grab.
+            ActorAction grabAction = BehaviorGrabFromStack(game, nearestStack.Location.Position, nearestStack.Percepted as Inventory, canBreak, canPush);
+            if (grabAction != null)
+            {
+                m_Actor.Activity = Activity.IDLE;
+                return grabAction;
+            }
+
+            // we can't grab the item. mark the tile as taboo.
+            MarkTileAsTaboo(nearestStack.Location.Position);
+            // emote
+            game.DoEmote(m_Actor, cantGetItemEmote);
+            // failed
+            return null;
         }
         #endregion
 
@@ -1086,13 +1586,17 @@ namespace djack.RogueSurvivor.Gameplay.AI
             return null;
         }
 
-
         protected ActorAction BehaviorDropUselessItem(RogueGame game)
         {
             if (m_Actor.Inventory.IsEmpty)
                 return null;
 
             // unequip/drop first light/tracker/spray out of batteries/quantity.
+            // alpha10 ammo with no compatible ranged weapon and inventory full
+            // alpha10 duplicate ranged weapon with no ammo if inventory 50% full
+            // alpha10 empty cans!
+            bool isInvFull = m_Actor.Inventory.IsFull;
+            bool isInv50Full = m_Actor.Inventory.CountItems >= (m_Actor.Inventory.MaxCapacity / 2);
             foreach (Item it in m_Actor.Inventory.Items)
             {
                 bool dropIt = false;
@@ -1105,6 +1609,40 @@ namespace djack.RogueSurvivor.Gameplay.AI
                     dropIt = (it as ItemSprayPaint).PaintQuantity <= 0;
                 else if (it is ItemSprayScent)
                     dropIt = (it as ItemSprayScent).SprayQuantity <= 0;
+                // alpha10 ammo with no compatible ranged weapon and inventory full
+                else if (isInvFull && it is ItemAmmo)
+                {
+                    if (GetCompatibleRangedWeapon(game, it as ItemAmmo) == null)
+                        dropIt = true;
+                }
+                // alpha10 duplicate ranged weapon with no ammo if inventory 50% full
+                else if (isInv50Full && it is ItemRangedWeapon)
+                {
+                    ItemRangedWeapon rw = it as ItemRangedWeapon;
+                    if (rw.Ammo == 0)
+                    {
+                        // if we have the same rw with ammo, this one is useless as rw dont break.
+                        // there is still the risk we get disarmed and would have loved a spare rw,
+                        // so we are a bit conservative and drop it only if 50% inv full as we prob need
+                        // the item slot for something else.
+                        foreach (Item otherIt in m_Actor.Inventory.Items)
+                        {
+                            if (otherIt != it && otherIt.Model == it.Model)
+                            {
+                                if ((otherIt as ItemRangedWeapon).Ammo > 0)
+                                {
+                                    dropIt = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                // alpha10 empty cans!
+                else if (it.Model == game.GameItems.EMPTY_CAN) // comparing model instead of attributes is bad but makes sense in this case
+                {
+                    dropIt = true;
+                }
 
                 if (dropIt)
                     return BehaviorDropItem(game, it);
@@ -1136,7 +1674,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             // i can haz it?
             if (!game.Rules.CanActorUseItem(m_Actor, it))
                 return null;
-            
+
             // eat it!
             return new ActionUseItem(m_Actor, game, it);
         }
@@ -1152,8 +1690,9 @@ namespace djack.RogueSurvivor.Gameplay.AI
             if (map.HasAnyAdjacentInMap(m_Actor.Location.Position, (pt) => map.GetMapObjectAt(pt) is DoorWindow))
             {
                 // wander where there is no door/window and not adjacent to a door window.
-                ActorAction wanderAwayFromDoor = BehaviorWander(game, 
-                    (loc) => map.GetMapObjectAt(loc.Position) as DoorWindow == null && !map.HasAnyAdjacentInMap(loc.Position, (pt) => loc.Map.GetMapObjectAt(pt) is DoorWindow));
+                ActorAction wanderAwayFromDoor = BehaviorWander(game,
+                    (loc) => map.GetMapObjectAt(loc.Position) as DoorWindow == null && !map.HasAnyAdjacentInMap(loc.Position, (pt) => loc.Map.GetMapObjectAt(pt) is DoorWindow),
+                    null);
                 if (wanderAwayFromDoor != null)
                     return wanderAwayFromDoor;
                 // no good spot, just try normal sleep behavior.
@@ -1183,7 +1722,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             // if we have a couch, try to get there.
             if (couchPos != null)
             {
-                ActorAction moveThere = BehaviorIntelligentBumpToward(game, couchPos.Value);
+                ActorAction moveThere = BehaviorIntelligentBumpToward(game, couchPos.Value, false, false);
                 if (moveThere != null)
                 {
                     return moveThere;
@@ -1197,18 +1736,19 @@ namespace djack.RogueSurvivor.Gameplay.AI
 
         #region Barricading & Building & Traps
 
-        protected int ComputeTrapsMaxDamage(Map map, Point pos)
+        protected int ComputeTrapsMaxDamageForMe(RogueGame game, Map map, Point pos)
         {
             Inventory inv = map.GetItemsAt(pos);
             if (inv == null) return 0;
 
             int sum = 0;
-            ItemTrap trp=null;
+            ItemTrap trp = null;
             foreach (Item it in inv.Items)
             {
                 trp = it as ItemTrap;
                 if (trp == null) continue;
-                sum += trp.TrapModel.Damage;
+                if (!game.Rules.IsSafeFromTrap(trp, m_Actor))  // alpha10 ignore safe traps we can't trigger them
+                    sum += trp.TrapModel.Damage;
             }
             return sum;
         }
@@ -1230,7 +1770,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 return new ActionUseItem(m_Actor, game, trap);
 
             // trap ready to setup, do it!
-            game.DoEmote(m_Actor, String.Format("{0} {1}!", reason, trap.AName));
+            game.DoEmote(m_Actor, String.Format("{0} {1}!", reason, trap.AName), true);
             return new ActionDropItem(m_Actor, game, trap);
         }
 
@@ -1290,7 +1830,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                     if (trap == null) return false;
                     return trap.IsActivated;
                 });
-                if (countActivated > 3) 
+                if (countActivated > 3)
                     return false;
             }
             // TODO Need at least 2 neighbouring non adjacent tiles free of activated traps.
@@ -1298,7 +1838,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             // ok!
             return true;
         }
-        
+
         protected ActorAction BehaviorBuildSmallFortification(RogueGame game)
         {
             // don't bother if no carpentry skill or not enough material.
@@ -1489,7 +2029,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             }
 
             // not adjacent, try to get there.
-            return BehaviorIntelligentBumpToward(game, nearest.Location.Position);
+            return BehaviorIntelligentBumpToward(game, nearest.Location.Position, true, true);
         }
 
         #endregion
@@ -1545,7 +2085,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             bool needSLP = m_Actor.Model.Abilities.HasToSleep && WouldLikeToSleep(game, m_Actor);
             bool needCure = m_Actor.Infection > 0;
             bool needSan = m_Actor.Model.Abilities.HasSanity && m_Actor.Sanity < (int)(0.75f * game.Rules.ActorMaxSanity(m_Actor));
-            
+
             // if no need, don't.
             if (!needHP && !needSTA && !needSLP && !needCure && !needSan)
                 return null;
@@ -1576,11 +2116,11 @@ namespace djack.RogueSurvivor.Gameplay.AI
             // if no suitable items or best item scores zero, do not want!
             if (bestMedChoice == null || bestMedChoice.Value <= 0)
                 return null;
-                
+
             // use med.
             return new ActionUseItem(m_Actor, game, bestMedChoice.Choice);
         }
-        
+
         protected ActorAction BehaviorUseEntertainment(RogueGame game)
         {
             Inventory inv = m_Actor.Inventory;
@@ -1603,7 +2143,8 @@ namespace djack.RogueSurvivor.Gameplay.AI
 
             foreach (Item it in inv.Items)
             {
-                if (it is ItemEntertainment && m_Actor.IsBoredOf(it))
+                ItemEntertainment ent = it as ItemEntertainment;
+                if (ent != null && ent.IsBoringFor(m_Actor))  // alpha10 boring items item centric
                     return new ActionDropItem(m_Actor, game, it);
             }
 
@@ -1636,7 +2177,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             }
 
             // try to get close.
-            ActorAction bumpAction = BehaviorIntelligentBumpToward(game, otherPosition);
+            ActorAction bumpAction = BehaviorIntelligentBumpToward(game, otherPosition, false, false);
             if (bumpAction != null && bumpAction.IsLegal())
             {
                 // run if other is running.
@@ -1646,7 +2187,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 // done.
                 return bumpAction;
             }
-            
+
             // fail.
             return null;
         }
@@ -1669,9 +2210,9 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 m_Actor.Location.Map.TrimToBounds(ref hangSpot);
             }
             while (game.Rules.GridDistance(hangSpot, otherPosition) < minDist && ++tries < maxTries);
-            
+
             // try to get close.
-            ActorAction bumpAction = BehaviorIntelligentBumpToward(game, hangSpot);
+            ActorAction bumpAction = BehaviorIntelligentBumpToward(game, hangSpot, false, false);
             if (bumpAction != null && IsValidMoveTowardGoalAction(bumpAction) && bumpAction.IsLegal())
             {
                 // run if other is running.
@@ -1716,7 +2257,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
 
             // 2. Best scent is adjacent.
             // try to bump there.
-            ActorAction bump = BehaviorIntelligentBumpToward(game, best.Location.Position);
+            ActorAction bump = BehaviorIntelligentBumpToward(game, best.Location.Position, false, false);
             if (bump != null)
                 return bump;
             #endregion
@@ -1727,7 +2268,8 @@ namespace djack.RogueSurvivor.Gameplay.AI
         #endregion
 
         #region Charging enemy
-        protected ActorAction BehaviorChargeEnemy(RogueGame game, Percept target)
+        // alpha10 added break and push
+        protected ActorAction BehaviorChargeEnemy(RogueGame game, Percept target, bool canCheckBreak, bool canCheckPush)
         {
             // try melee attack first.
             ActorAction attack = BehaviorMeleeAttack(game, target);
@@ -1749,7 +2291,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             }
 
             // then try getting closer.
-            ActorAction bumpAction = BehaviorIntelligentBumpToward(game, target.Location.Position);
+            ActorAction bumpAction = BehaviorIntelligentBumpToward(game, target.Location.Position, canCheckBreak, canCheckPush);
             if (bumpAction != null)
             {
                 // do we rush? 
@@ -1782,7 +2324,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             }
 
             // then try getting closer.
-            ActorAction bumpAction = BehaviorIntelligentBumpToward(game, other.Location.Position);
+            ActorAction bumpAction = BehaviorIntelligentBumpToward(game, other.Location.Position, false, false);
             if (bumpAction != null)
                 return bumpAction;
 
@@ -1794,6 +2336,11 @@ namespace djack.RogueSurvivor.Gameplay.AI
         protected ActorAction BehaviorDontLeaveFollowersBehind(RogueGame game, int distance, out Actor target)
         {
             target = null;
+
+            // alpha10.1 dont always check for lagging followers, prevent leader from getting stuck waiting too much.
+            // side effect is more occurence of followers lagging behind.
+            if (game.Rules.RollChance(25))
+                return null;
 
             // Scan the group:
             // - Find farthest member of the group.
@@ -1829,13 +2376,13 @@ namespace djack.RogueSurvivor.Gameplay.AI
             // try to move toward farther dude.
             if (target == null)
                 return null;
-            return BehaviorIntelligentBumpToward(game, target.Location.Position);
+            return BehaviorIntelligentBumpToward(game, target.Location.Position, false, false);
         }
         #endregion
 
         #region Fight or Flee
         /// <summary>
-        /// 
+        /// Engage in mele fight with the nearest reachable enemy or flee from him.
         /// </summary>
         /// <param name="game"></param>
         /// <param name="enemies"></param>
@@ -1845,8 +2392,18 @@ namespace djack.RogueSurvivor.Gameplay.AI
         /// <param name="emotes">0 = flee; 1 = trapped; 2 = charge</param>
         /// <returns></returns>
         protected ActorAction BehaviorFightOrFlee(RogueGame game, List<Percept> enemies, bool hasVisibleLeader, bool isLeaderFighting, ActorCourage courage,
-            string[] emotes)
+            string[] emotes,
+            RouteFinder.SpecialActions allowedChargeActions)
         {
+            // alpha10 filter out unreachables if no ranged weapon equipped
+            // (we shouldnt be here anyway if we have a ranged weapon)
+            if (m_Actor.GetEquippedRangedWeapon() == null)
+            {
+                FilterOutUnreachablePercepts(game, ref enemies, allowedChargeActions);
+                if (enemies.Count == 0)
+                    return null;
+            }
+
             Percept nearestEnemy = FilterNearest(game, enemies);
 
             bool decideToFlee;
@@ -1854,10 +2411,31 @@ namespace djack.RogueSurvivor.Gameplay.AI
 
             Actor enemy = nearestEnemy.Percepted as Actor;
 
+            // alpha10
+            // get enemy attack
+            Attack enemyAttack = GetActorAttack(game, enemy);
+
+            // always try to heal if enemy next attack could kill us
+            if (m_Actor.HitPoints - enemyAttack.DamageValue <= 0)
+            {
+                ActorAction healAction = BehaviorUseMedecine(game, 10, 0, 0, 0, 0);
+                if (healAction != null)
+                {
+                    m_Actor.Activity = Activity.FIGHTING;
+                    m_Actor.TargetActor = enemy;
+                    return healAction;
+                }
+            }
+
+            // get safe range from enemy, just out of his reach.
+            int safeRange = Math.Max(2, enemyAttack.Range + 1);  // melee attack range is 0 not 1!
+            int distToEnemy = game.Rules.GridDistance(m_Actor.Location.Position, enemy.Location.Position);
+            bool inSafeRange = distToEnemy >= safeRange;
+
             // Cases that are a no brainer, in this order:
             // 1. Always fight if he has a ranged weapon.
             // 2. Always fight if law enforcer vs murderer.
-            // 3. Always flee melee if tired.
+            // 3. Always flee melee if tired
 
             // 1. Always fight if enemy has ranged weapon.
             // if we are here, it means we can't shoot him, cause firing behavior has priority.
@@ -1868,8 +2446,8 @@ namespace djack.RogueSurvivor.Gameplay.AI
             // do our duty.
             else if (m_Actor.Model.Abilities.IsLawEnforcer && enemy.MurdersCounter > 0)
                 decideToFlee = false;
-            // 3. Always flee melee if tired.
-            else if (game.Rules.IsActorTired(m_Actor) && game.Rules.IsAdjacent(m_Actor.Location, enemy.Location))
+            // 3. Always flee melee if tired 
+            else if (game.Rules.IsActorTired(m_Actor) && distToEnemy == 1)
                 decideToFlee = true;
             // Case need more analysis.
             else
@@ -1938,6 +2516,42 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 }
             }
 
+            // alpha10
+            // Improve STA management a bit.
+            // Cancel running if this would make us tired and we don't have equipped a ranged weapon so keeping
+            // TODO -- consider other cases were running would be a waste of STA.
+            if (doRun && WillTireAfterRunning(game, m_Actor))
+            {
+                if (!HasEquipedRangedWeapon(m_Actor))
+                    doRun = false;
+            }
+
+            // alpha10 
+            // If we have no ranged weapon and target is unreachable, no point charging him as we can't get into
+            // melee contact. Flee if enemy has equipped a ranged weapon and do nothing if not.
+            if (!decideToFlee)
+            {
+                if (!HasAnyRangedWeaponWithAmmo())
+                {
+                    // check route
+                    if (!CanReachSimple(game, enemy.Location.Position, allowedChargeActions))
+                    {
+                        ItemRangedWeapon enemyWpn = enemy.GetEquippedWeapon() as ItemRangedWeapon;
+                        if (enemyWpn != null)
+                        {
+                            // even if out of ammo assumes he will reload or find ammo, better be safe.
+                            decideToFlee = true;
+                        }
+                        else
+                        {
+                            // enemy has no ranged weapon and unreachable, possibly no threat to us better
+                            // do something else instead.
+                            return null;
+                        }
+                    }
+                }
+            }
+
             // flee or fight?
             if (decideToFlee)
             {
@@ -1948,8 +2562,9 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 // 2. Barricade door between me and the enemy.
                 // 3. Use exit?
                 // 4. Use medecine?
-                // 5. Walk/run away.
-                // 6. Blocked, turn to fight.
+                // 5. Rest if tired and at safe distance  // alpha10
+                // 6. Walk/run away.
+                // 7. Blocked, turn to fight.
                 ////////////////////////////////////////////////////////////////////////////////////////
 
                 // emote?
@@ -2048,8 +2663,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 // 4. Use medecine?
                 #region
                 // when to use medecine? only when fighting vs an unranged enemy and not in contact.
-                ItemRangedWeapon rngEnemy = enemy.GetEquippedWeapon() as ItemRangedWeapon;
-                if (rngEnemy == null && !game.Rules.IsAdjacent(m_Actor.Location, enemy.Location))
+                if (enemy.GetEquippedRangedWeapon() == null && !game.Rules.IsAdjacent(m_Actor.Location, enemy.Location))
                 {
                     ActorAction medAction = BehaviorUseMedecine(game, 2, 2, 1, 0, 0);
                     if (medAction != null)
@@ -2060,7 +2674,20 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 }
                 #endregion
 
-                // 5. Walk/run away.
+                // alpha10
+                // 5. Rest if tired and at safe distance
+                #region
+                if (game.Rules.IsActorTired(m_Actor))
+                {
+                    if (game.Rules.GridDistance(m_Actor.Location.Position, enemy.Location.Position) >= safeRange)
+                    {
+                        m_Actor.Activity = Activity.FLEEING;
+                        return new ActionWait(m_Actor, game);
+                    }
+                }
+                #endregion
+
+                // 6. Walk/run away.
                 #region
                 ActorAction bumpAction = BehaviorWalkAwayFrom(game, enemies);
                 if (bumpAction != null)
@@ -2072,7 +2699,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 }
                 #endregion
 
-                // 6. Blocked, turn to fight.
+                // 7. Blocked, turn to fight.
                 #region
                 if (bumpAction == null)
                 {
@@ -2081,7 +2708,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                     {
                         // emote?
                         if (m_Actor.Model.Abilities.CanTalk && game.Rules.RollChance(EMOTE_FLEE_TRAPPED_CHANCE))
-                            game.DoEmote(m_Actor, emotes[1]);
+                            game.DoEmote(m_Actor, emotes[1], true);
 
                         return BehaviorMeleeAttack(game, nearestEnemy);
                     }
@@ -2093,12 +2720,12 @@ namespace djack.RogueSurvivor.Gameplay.AI
             else
             {
                 #region Fight
-                ActorAction attackAction = BehaviorChargeEnemy(game, nearestEnemy);
+                ActorAction attackAction = BehaviorChargeEnemy(game, nearestEnemy, true, true);
                 if (attackAction != null)
                 {
                     // emote?
                     if (m_Actor.Model.Abilities.CanTalk && game.Rules.RollChance(EMOTE_CHARGE_CHANCE))
-                        game.DoEmote(m_Actor, String.Format("{0} {1}!", emotes[2], enemy.Name));
+                        game.DoEmote(m_Actor, String.Format("{0} {1}!", emotes[2], enemy.Name, true));
 
                     // chaaarge!
                     m_Actor.Activity = Activity.FIGHTING;
@@ -2135,9 +2762,9 @@ namespace djack.RogueSurvivor.Gameplay.AI
                     continue;
                 if (!other.IsSleeping)
                     continue;
-                if (game.Rules.IsEnemyOf(m_Actor, other))
+                if (game.Rules.AreEnemies(m_Actor, other))
                     continue;
-                if (!game.Rules.IsEnemyOf(other, nearestEnemy))
+                if (!game.Rules.AreEnemies(other, nearestEnemy))
                     continue;
 
                 // friend sleeping, wake up!
@@ -2161,7 +2788,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                         return false;
                     if (otherActor.IsSleeping)
                         return false;
-                    if (game.Rules.IsEnemyOf(m_Actor, otherActor))
+                    if (game.Rules.AreEnemies(m_Actor, otherActor))
                         return false;
                     return true;
                 });
@@ -2219,7 +2846,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             else
                 return null;
         }
-        
+
         #endregion
 
         #region Exploring
@@ -2228,16 +2855,31 @@ namespace djack.RogueSurvivor.Gameplay.AI
             // prepare data.
             Direction prevDirection = Direction.FromVector(m_Actor.Location.Position.X - m_prevLocation.Position.X, m_Actor.Location.Position.Y - m_prevLocation.Position.Y);
             bool imStarvingOrCourageous = game.Rules.IsActorStarving(m_Actor) || Directives.Courage == ActorCourage.COURAGEOUS;
+            bool isIntelligent = m_Actor.Model.Abilities.IsIntelligent;
 
             // eval all adjacent tiles for exploration utility and get the best one.
+
             ChoiceEval<Direction> chooseExploreDir = Choose<Direction>(game,
                 Direction.COMPASS_LIST,
                 (dir) =>
                 {
                     Location next = m_Actor.Location + dir;
+
+                    // alpha10.1 bot mode fix
+#if DEBUG
+                    if (!next.Map.IsInBounds(next.Position))
+                        return false;
+#endif
+
                     if (exploration.HasExplored(next))
                         return false;
-                    return IsValidMoveTowardGoalAction(game.Rules.IsBumpableFor(m_Actor, game, next));
+
+                    // alpha10.1 dont break stuff to explore
+                    ActorAction bumpAction = game.Rules.IsBumpableFor(m_Actor, game, next);
+                    if (bumpAction != null && (bumpAction is ActionBreak || bumpAction is ActionBashDoor))
+                        return false;
+
+                    return IsValidMoveTowardGoalAction(bumpAction);
                 },
                 (dir) =>
                 {
@@ -2248,45 +2890,69 @@ namespace djack.RogueSurvivor.Gameplay.AI
                     // intelligent NPC: forbid stepping on deadly traps, unless starving or courageous (desperate).
                     if (m_Actor.Model.Abilities.IsIntelligent && !imStarvingOrCourageous)
                     {
-                        int trapsDamage = ComputeTrapsMaxDamage(map, pos);
+                        int trapsDamage = ComputeTrapsMaxDamageForMe(game, map, pos);
                         if (trapsDamage >= m_Actor.HitPoints)
                             return float.NaN;
                     }
 
                     // Heuristic scoring:
+                    // 0st Punish backtracking // alpha10.1
                     // 1st Prefer unexplored zones.
                     // 2nd Prefer unexplored locs.
                     // 3rd Prefer doors and barricades (doors/windows, pushables)
-                    // 4th Punish stepping on activated traps.
-                    // 5th Prefer inside during the night vs outside during the day.
+                    // 4th If intelligent punish stepping on unsafe traps. // alpha10
+                    // 5th Prefer inside during the night vs outside during the day, and inside if sleepy // alpha10.1
                     // 6th Prefer continue in same direction.
                     // 7th Small randomness.
+                    const int BACKTRACKING = -10000;  // alpha10.1
                     const int EXPLORE_ZONES = 1000;
                     const int EXPLORE_LOCS = 500;
                     const int EXPLORE_BARRICADES = 100;
-                    const int AVOID_TRAPS = -50;
+                    const int AVOID_TRAPS = -1000; // alpha10 greatly increase penalty and x by potential damage; was -50
                     const int EXPLORE_INOUT = 50;
+                    const int EXPLORE_IN_ALMOST_SLEEPY = 100; // alpha10.1
                     const int EXPLORE_DIRECTION = 25;
                     const int EXPLORE_RANDOM = 10;
 
                     int score = 0;
+                    // 0st Punish backtracking // alpha10.1
+                    if (next.Map == m_prevLocation.Map && pos == m_prevLocation.Position)
+                        score += BACKTRACKING;
                     // 1st Prefer unexplored zones.
-                    if (!exploration.HasExplored(map.GetZonesAt(pos.X, pos.Y)))
+                    // alpha10.1 use age to prefer older zones
+                    int zoneAge = exploration.GetExploredAge(map.GetZonesAt(pos.X, pos.Y));
+                    if (zoneAge == 0)  // unexplored (or expired)
                         score += EXPLORE_ZONES;
+                    else
+                        score += zoneAge;
+                    //if (!exploration.HasExplored(map.GetZonesAt(pos.X, pos.Y)))
+                    //    score += EXPLORE_ZONES;
                     // 2nd Prefer unexplored locs.
-                    if (!exploration.HasExplored(next))
+                    // alpha10.1 use age to prefer older locs
+                    int locAge = exploration.GetExploredAge(next);
+                    if (locAge == 0)  // unexplored (or expired)
                         score += EXPLORE_LOCS;
+                    else
+                        score += 2 * locAge;
+                    //if (!exploration.HasExplored(next))
+                    //    score += EXPLORE_LOCS;
                     // 3rd Prefer doors and barricades (doors/windows, pushables)
                     MapObject mapObj = map.GetMapObjectAt(pos);
                     if (mapObj != null && (mapObj.IsMovable || mapObj is DoorWindow))
                         score += EXPLORE_BARRICADES;
-                    // 4th Punish stepping on activated traps.
-                    if (IsAnyActivatedTrapThere(map, pos))
-                        score += AVOID_TRAPS;
-                    // 5th Prefer inside during the night vs outside during the day.
+                    // 4th If intelligent punish stepping on unsafe traps. // alpha10
+                    if (isIntelligent)
+                    {
+                        int trapsDmg = ComputeTrapsMaxDamageForMe(game, map, pos);
+                        if (trapsDmg > 0)
+                            score += trapsDmg * AVOID_TRAPS;
+                    }
+                    // 5th Prefer inside during the night vs outside during the day, and inside if sleepy // alpha10.1
                     bool isInside = map.GetTileAt(pos.X, pos.Y).IsInside;
                     if (isInside)
                     {
+                        if (game.Rules.IsAlmostSleepy(m_Actor))
+                            score += EXPLORE_IN_ALMOST_SLEEPY;
                         if (map.LocalTime.IsNight)
                             score += EXPLORE_INOUT;
                     }
@@ -2339,7 +3005,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             foreach (Point pt in fov)
             {
                 MapObject mapObj = map.GetMapObjectAt(pt);
-                if (mapObj == null) 
+                if (mapObj == null)
                     continue;
                 DoorWindow door = mapObj as DoorWindow;
                 if (door == null)
@@ -2351,16 +3017,16 @@ namespace djack.RogueSurvivor.Gameplay.AI
                     if (game.Rules.IsAdjacent(door.Location.Position, m_Actor.Location.Position))
                         return new ActionCloseDoor(m_Actor, game, door);
                     else
-                        return BehaviorIntelligentBumpToward(game, door.Location.Position);
+                        return BehaviorIntelligentBumpToward(game, door.Location.Position, false, false);
                 }
 
                 // 2. Barricade unbarricaded windows.
-                if (door.IsWindow && !door.IsBarricaded && game.Rules.CanActorBarricadeDoor(m_Actor,door))
+                if (door.IsWindow && !door.IsBarricaded && game.Rules.CanActorBarricadeDoor(m_Actor, door))
                 {
                     if (game.Rules.IsAdjacent(door.Location.Position, m_Actor.Location.Position))
                         return new ActionBarricadeDoor(m_Actor, game, door);
                     else
-                        return BehaviorIntelligentBumpToward(game, door.Location.Position);                    
+                        return BehaviorIntelligentBumpToward(game, door.Location.Position, false, false);
                 }
             }
 
@@ -2420,7 +3086,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             if ((useFlags & UseExitFlags.ATTACK_BLOCKING_ENEMIES) != 0)
             {
                 Actor blockingActor = exit.ToMap.GetActorAt(exit.ToPosition);
-                if (blockingActor != null && game.Rules.IsEnemyOf(m_Actor, blockingActor) && game.Rules.CanActorMeleeAttack(m_Actor, blockingActor))
+                if (blockingActor != null && game.Rules.AreEnemies(m_Actor, blockingActor) && game.Rules.CanActorMeleeAttack(m_Actor, blockingActor))
                     return new ActionMeleeAttack(m_Actor, game, blockingActor);
             }
 
@@ -2449,7 +3115,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 return null;
 
             // filter stacks that have primed explosives.
-            List<Percept> primedExplosives = Filter(game, itemStacks, 
+            List<Percept> primedExplosives = Filter(game, itemStacks,
                 (p) =>
                 {
                     Inventory stack = p.Percepted as Inventory;
@@ -2537,7 +3203,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                         // other actor within blast radius.
                         // - if friend, abort and never throw there.
                         // - if enemy, increase score.
-                        if (game.Rules.IsEnemyOf(m_Actor, otherActor))
+                        if (game.Rules.AreEnemies(m_Actor, otherActor))
                         {
                             // score = damage inflicted vs target toughness(max hp).
                             // -> means it is better to hurt badly one big enemy than a few scratch on a group of weaklings.
@@ -2571,6 +3237,9 @@ namespace djack.RogueSurvivor.Gameplay.AI
             // equip then throw.
             if (!grenade.IsEquipped)
             {
+                // alpha10 mark right hand as taboo so behavior BehaviorEquipBestItems will not undo us and loop forever
+                MarkEquipmentSlotAsTaboo(DollPart.RIGHT_HAND);
+
                 Item otherEquipped = m_Actor.GetEquippedWeapon();
                 if (otherEquipped != null)
                     return new ActionUnequipItem(m_Actor, game, otherEquipped);
@@ -2579,6 +3248,9 @@ namespace djack.RogueSurvivor.Gameplay.AI
             }
             else
             {
+                // alpha10 release right hand from taboo so behavior BehaviorEquipBestItems can use right hand
+                UnmarkEquipmentSlotAsTaboo(DollPart.RIGHT_HAND);
+
                 ActorAction throwAction = new ActionThrowGrenade(m_Actor, game, bestSpot.Value);
                 if (!throwAction.IsLegal())
                     return null;
@@ -2626,12 +3298,13 @@ namespace djack.RogueSurvivor.Gameplay.AI
             // 2. get rid of barricading material.
             // 3. get rid of light & sprays.
             // 4. get rid of ammo.
-            // 5. get rid of medecine.
-            // 6. last resort, get rid of random item.
+            // 5. get rid of entertainment  // alpha10
+            // 6. get rid of medecine.
+            // 7. last resort, get rid of random item.
             Inventory myInv = m_Actor.Inventory;
 
             // 1. get rid of not interesting item.
-            Item notInteresting = myInv.GetFirstMatching((it) => !IsInterestingItem(game, it));
+            Item notInteresting = myInv.GetFirstMatching((it) => !IsInterestingItemToOwn(game, it, ItemSource.OWNED));
             if (notInteresting != null)
                 return BehaviorDropItem(game, notInteresting);
 
@@ -2656,12 +3329,17 @@ namespace djack.RogueSurvivor.Gameplay.AI
             if (ammo != null)
                 return BehaviorDropItem(game, ammo);
 
-            // 5. get rid of medecine.
+            // 5. get rid of entertainment  // alpha10
+            Item ent = myInv.GetFirstMatching((it) => it is ItemEntertainment);
+            if (ent != null)
+                return BehaviorDropItem(game, ent);
+
+            // 6. get rid of medecine.
             Item med = myInv.GetFirstMatching((it) => it is ItemMedicine);
             if (med != null)
                 return BehaviorDropItem(game, med);
 
-            // 6. last resort, get rid of random item.
+            // 7. last resort, get rid of random item.
             Item anyItem = myInv[game.Rules.Roll(0, myInv.CountItems)];
             return BehaviorDropItem(game, anyItem);
         }
@@ -2679,17 +3357,68 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 return null;
             // if not proper odor, nope.
             ItemSprayScentModel model = spray.Model as ItemSprayScentModel;
-            if (model.Odor != Odor.PERFUME_LIVING_SUPRESSOR)
+            if (model.Odor != Odor.SUPPRESSOR)  // alpha10
                 return null;
 
-            // spot must be interesting to spray.
-            if (!IsGoodStenchKillerSpot(game, m_Actor.Location.Map, m_Actor.Location.Position))
-                return null;
+            // alpha10
+            // first check if wants to use it on self, then check on adj leader/follower
+            Actor sprayOn = null;
 
-            // good spot, try to do it.
-            ActionUseItem sprayIt = new ActionUseItem(m_Actor, game, spray);
-            if (sprayIt.IsLegal())
-                return sprayIt;
+            bool WantsToSprayOn(Actor a)
+            {
+                // never spray on player, could mess with his tactics
+                if (a.IsPlayer)
+                    return false;
+
+                // only if self or adjacent
+                if (!(a == m_Actor || game.Rules.IsAdjacent(m_Actor.Location, a.Location)))
+                    return false;
+
+                // dont spray if already suppressed for 2h or more
+                if (a.OdorSuppressorCounter >= 2 * WorldTime.TURNS_PER_HOUR)
+                    return false;
+
+                // spot must be interesting to spray for either us or the target.
+                if (IsGoodStenchKillerSpot(game, m_Actor.Location.Map, m_Actor.Location.Position))
+                    return true;
+                if (IsGoodStenchKillerSpot(game, a.Location.Map, a.Location.Position))
+                    return true;
+                return false;
+            }
+
+            // self?...
+            if (WantsToSprayOn(m_Actor))
+                sprayOn = m_Actor;
+            else
+            {
+                // ...adj leader/mates/followers
+                if (m_Actor.HasLeader)
+                {
+                    if (WantsToSprayOn(m_Actor.Leader))
+                        sprayOn = m_Actor.Leader;
+                    else
+                    {
+                        foreach (Actor mate in m_Actor.Leader.Followers)
+                            if (sprayOn == null && mate != m_Actor && WantsToSprayOn(mate))
+                                sprayOn = mate;
+                    }
+                }
+
+                if (sprayOn == null && m_Actor.CountFollowers > 0)
+                {
+                    foreach (Actor follower in m_Actor.Followers)
+                        if (sprayOn == null && WantsToSprayOn(follower))
+                            sprayOn = follower;
+                }
+            }
+
+            //  spray?
+            if (sprayOn != null)
+            {
+                ActionSprayOdorSuppressor sprayIt = new ActionSprayOdorSuppressor(m_Actor, game, spray, sprayOn);
+                if (sprayIt.IsLegal())
+                    return sprayIt;
+            }
 
             // nope.
             return null;
@@ -2697,21 +3426,21 @@ namespace djack.RogueSurvivor.Gameplay.AI
 
         protected bool IsGoodStenchKillerSpot(RogueGame game, Map map, Point pos)
         {
-            // 1. Don't spray at an already sprayed spot.
+            // alpha10 obsolete 1. Don't spray at an already sprayed spot.
             // 2. Spray in a good position:
             //    2.1 entering or leaving a building.
             //    2.2 a door/window.
             //    2.3 an exit.
 
-            // 1. Don't spray at an already sprayed spot.
-            if (map.GetScentByOdorAt(Odor.PERFUME_LIVING_SUPRESSOR, pos) > 0)
-                return false;
+            // alpha10 obsolete 1. Don't spray at an already sprayed spot.
+            //if (map.GetScentByOdorAt(Odor.PERFUME_LIVING_SUPRESSOR, pos) > 0)
+            //    return false;
 
             // 2. Spray in a good position:
-            
+
             //    2.1 entering or leaving a building.
             bool wasInside = m_prevLocation.Map.GetTileAt(m_prevLocation.Position).IsInside;
-            bool isInside  = map.GetTileAt(pos).IsInside;
+            bool isInside = map.GetTileAt(pos).IsInside;
             if (wasInside != isInside)
                 return true;
             //    2.2 a door/window.
@@ -2737,10 +3466,10 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 return null;
             if (percepts == null)
                 return null;
-            
+
             // filter murderers that are not our enemies yet.
             List<Percept> murderers = FilterActors(game, percepts,
-                (a) => a.MurdersCounter > 0 && !game.Rules.IsEnemyOf(m_Actor, a));
+                (a) => a.MurdersCounter > 0 && !game.Rules.AreEnemies(m_Actor, a));
 
             // if none, nothing to do.
             if (murderers == null || murderers.Count == 0)
@@ -2772,8 +3501,8 @@ namespace djack.RogueSurvivor.Gameplay.AI
 
             // make him our enemy and tell him!
             game.DoMakeAggression(m_Actor, target);
-            return new ActionSay(m_Actor, game, target, 
-                String.Format("HEY! YOU ARE WANTED FOR {0} MURDER{1}!", target.MurdersCounter, target.MurdersCounter > 1 ? "s" : ""), RogueGame.Sayflags.IS_IMPORTANT);
+            return new ActionSay(m_Actor, game, target,
+                String.Format("HEY! YOU ARE WANTED FOR {0} MURDER{1}!", target.MurdersCounter, target.MurdersCounter > 1 ? "s" : ""), RogueGame.Sayflags.IS_IMPORTANT | RogueGame.Sayflags.IS_DANGER);
         }
         #endregion
 
@@ -2807,7 +3536,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             }
             // 2) go to nearest food.
             Percept nearest = FilterNearest(game, foodStacks);
-            return BehaviorStupidBumpToward(game, nearest.Location.Position);
+            return BehaviorStupidBumpToward(game, nearest.Location.Position, false, false);
         }
         #endregion
 
@@ -2835,9 +3564,9 @@ namespace djack.RogueSurvivor.Gameplay.AI
             }
             // 2) go to nearest corpses.
             Percept nearest = FilterNearest(game, corpsesPercepts);
-            return m_Actor.Model.Abilities.IsIntelligent ? 
-                    BehaviorIntelligentBumpToward(game, nearest.Location.Position) : 
-                    BehaviorStupidBumpToward(game, nearest.Location.Position);
+            return m_Actor.Model.Abilities.IsIntelligent ?
+                    BehaviorIntelligentBumpToward(game, nearest.Location.Position, true, true) :
+                    BehaviorStupidBumpToward(game, nearest.Location.Position, true, true);
         }
 
         /// <summary>
@@ -2865,7 +3594,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                     foreach (Corpse c in corpsesThere)
                     {
                         // dont revive enemies!
-                        if (game.Rules.CanActorReviveCorpse(m_Actor, c) && !game.Rules.IsEnemyOf(m_Actor,c.DeadGuy))
+                        if (game.Rules.CanActorReviveCorpse(m_Actor, c) && !game.Rules.AreEnemies(m_Actor, c.DeadGuy))
                             return true;
                     }
                     return false;
@@ -2882,15 +3611,15 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 // get the first corpse we can revive.
                 foreach (Corpse c in corpses)
                 {
-                    if (game.Rules.CanActorReviveCorpse(m_Actor, c) && !game.Rules.IsEnemyOf(m_Actor,c.DeadGuy))
+                    if (game.Rules.CanActorReviveCorpse(m_Actor, c) && !game.Rules.AreEnemies(m_Actor, c.DeadGuy))
                         return new ActionReviveCorpse(m_Actor, game, c);
                 }
             }
             // 2) go to nearest revivable.
             Percept nearest = FilterNearest(game, revivables);
             return m_Actor.Model.Abilities.IsIntelligent ?
-                    BehaviorIntelligentBumpToward(game, nearest.Location.Position) :
-                    BehaviorStupidBumpToward(game, nearest.Location.Position);
+                    BehaviorIntelligentBumpToward(game, nearest.Location.Position, false, false) :
+                    BehaviorStupidBumpToward(game, nearest.Location.Position, false, false);
         }
 
         #endregion
@@ -2948,12 +3677,17 @@ namespace djack.RogueSurvivor.Gameplay.AI
             return null;
         }
 
-        protected Item GetBestRangedWeaponWithAmmo(Predicate<Item> fn)
+        /// <summary>
+        /// Get best ranged weapon in our inventory that has ammo loaded or we have ammo to reload it.
+        /// </summary>
+        /// <param name="fn"></param>
+        /// <returns></returns>
+        protected ItemRangedWeapon GetBestRangedWeaponWithAmmo(Predicate<Item> fn = null)
         {
             if (m_Actor.Inventory == null || m_Actor.Inventory.IsEmpty)
                 return null;
 
-            Item best = null;
+            ItemRangedWeapon best = null;
             int bestSc = 0;
             foreach (Item it in m_Actor.Inventory.Items)
             {
@@ -2997,10 +3731,16 @@ namespace djack.RogueSurvivor.Gameplay.AI
             return best;
         }
 
-        protected int ScoreRangedWeapon(ItemRangedWeapon w)
+        /// <summary>
+        /// Score this rw over others. Prefer range then attack then ammo loaded.
+        /// </summary>
+        /// <param name="rWp"></param>
+        /// <returns></returns>
+        protected int ScoreRangedWeapon(ItemRangedWeapon rWp)
         {
-            ItemRangedWeaponModel m = w.Model as ItemRangedWeaponModel;
-            return 1000 * m.Attack.Range + m.Attack.DamageValue;
+            // prefer range then damage
+            Attack a = (rWp.Model as ItemRangedWeaponModel).Attack;
+            return 10000 * a.Range + 100 * a.DamageValue + rWp.Ammo;
         }
 
         protected Item GetFirstMeleeWeapon(Predicate<Item> fn)
@@ -3057,7 +3797,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             return null;
         }
 
-        protected Item GetEquippedCellPhone()
+        protected ItemTracker GetEquippedCellPhone()
         {
             if (m_Actor.Inventory == null || m_Actor.Inventory.IsEmpty)
                 return null;
@@ -3067,7 +3807,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 {
                     ItemTracker t = it as ItemTracker;
                     if (t.CanTrackFollowersOrLeader)
-                        return it;
+                        return t;
                 }
 
             return null;
@@ -3088,14 +3828,14 @@ namespace djack.RogueSurvivor.Gameplay.AI
             return null;
         }
 
-        protected Item GetEquippedLight()
+        protected ItemLight GetEquippedLight()
         {
             if (m_Actor.Inventory == null || m_Actor.Inventory.IsEmpty)
                 return null;
 
             foreach (Item it in m_Actor.Inventory.Items)
                 if (it.IsEquipped && it is ItemLight)
-                    return it;
+                    return it as ItemLight;
 
             return null;
         }
@@ -3123,7 +3863,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 if (it.IsEquipped && it is ItemSprayScent)
                 {
                     ItemSprayScentModel m = (it as ItemSprayScent).Model as ItemSprayScentModel;
-                    if (m.Odor == Odor.PERFUME_LIVING_SUPRESSOR)
+                    if (m.Odor == Odor.SUPPRESSOR)  // alpha10
                         return it as ItemSprayScent;
                 }
 
@@ -3203,8 +3943,71 @@ namespace djack.RogueSurvivor.Gameplay.AI
             return bestFood;
         }
 
-        public bool IsInterestingItem(RogueGame game, Item it)
+        // alpha10.1 added item/inventory source
+        public enum ItemSource
         {
+            /// <summary>
+            /// Item is in a ground stack (could be a container, which is the same thing)
+            /// </summary>
+            GROUND_STACK,
+            /// <summary>
+            /// Item is in the actor own inventory.
+            /// </summary>
+            OWNED,
+            /// <summary>
+            /// Item is in another actor inventory.
+            /// </summary>
+            ANOTHER_ACTOR
+        }
+
+        /// <summary>
+        /// Check if item is ok to have in inventory. 
+        /// Uses cases:
+        /// - pickup: checking to pickup an item or not.
+        /// - steal: gangs check to agress an npc to steal his item or not.
+        /// - gift: how cool is it to be gifted this item by another actor.
+        /// - drop: when dropping the item to make room for a food item.
+        /// DO NOT USE FOR TRADING use RateItem() and RateTradeOffer() instead.
+        /// </summary>
+        /// <param name="game"></param>
+        /// <param name="it"></param>
+        /// <param name="itemSrc">where does the item comes from?</param>
+        /// <returns></returns>
+        /// <see cref="RateItem(RogueGame, Item, bool)"/>
+        /// <see cref="RateTradeOffer(RogueGame, Actor, Item, Item)"/>
+        public bool IsInterestingItemToOwn(RogueGame game, Item it, ItemSource itemSrc)
+        {
+            // alpha10 base idea is any non-junk non-taboo item is interesting.
+            // using itemrating is consistent with new trade logic.
+            // exception:
+            // - reject anything new not food if no food and only one one slot left; needed to be consistent
+            // with BehaviorMakeRoomForFood() or the npc will cycle drop-take-drop...
+
+            // taboo
+            if (IsItemTaboo(it))
+                return false;
+
+            // consistent with BehaviorMakeRoomForFood (was already in alpha9)
+            if (itemSrc != ItemSource.OWNED && m_Actor.Inventory.CountItems >= m_Actor.Inventory.MaxCapacity - 1)
+            {
+                if (!(it is ItemFood) && (CountItemQuantityOfType(typeof(ItemFood)) == 0))
+                    return false;
+            }
+
+            // alpha10.1 not interested in picking up safe traps from the ground : dont undo your or your friends traps!
+            if (itemSrc == ItemSource.GROUND_STACK && it is ItemTrap)
+            {
+                ItemTrap itTrap = it as ItemTrap;
+                if (game.Rules.IsSafeFromTrap(itTrap, m_Actor))
+                    return false;
+            }
+
+            // then use normal rating as if was trading and accept anything non-junk.
+            ItemRating rating = RateItem(game, it, false);
+            return rating != ItemRating.JUNK;
+
+#if false
+            pre alpha10 logic, kept for reference.
             /////////////////////////////////////////////////////////////////////////////
             // Interesting items:
             // 0 Reject anything not food if only one slot left.
@@ -3326,27 +4129,1201 @@ namespace djack.RogueSurvivor.Gameplay.AI
 
             // 11 Rest : if has less than one full stack.
             return !HasAtLeastFullStackOfItemTypeOrModel(it, 1);
+#endif
         }
 
-        public bool HasAnyInterestingItem(RogueGame game, Inventory inv)
+        public bool HasAnyInterestingItem(RogueGame game, Inventory inv, ItemSource inventorySrc)
         {
             if (inv == null)
                 return false;
+            bool owned = (inv == m_Actor.Inventory);
             foreach (Item it in inv.Items)
-                if (IsInterestingItem(game, it))
+                if (IsInterestingItemToOwn(game, it, inventorySrc))
                     return true;
             return false;
         }
 
-        protected Item FirstInterestingItem(RogueGame game, Inventory inv)
+        protected Item FirstInterestingItem(RogueGame game, Inventory inv, ItemSource inventorySrc)
         {
             if (inv == null)
                 return null;
+            bool owned = (inv == m_Actor.Inventory);
             foreach (Item it in inv.Items)
-                if (IsInterestingItem(game, it))
+                if (IsInterestingItemToOwn(game, it, inventorySrc))
                     return it;
             return null;
         }
+
+        // alpha10 new helpers
+
+        public bool IsContainerAt(Location loc)
+        {
+            MapObject mobj = loc.Map.GetMapObjectAt(loc.Position);
+            return mobj != null && mobj.IsContainer;
+        }
+
+        protected ItemMeleeWeapon GetBestMeleeWeapon(RogueGame game, Predicate<Item> fn = null)
+        {
+            ItemMeleeWeapon best = null;
+            int bestScore = -1;
+
+            foreach (Item it in m_Actor.Inventory.Items)
+            {
+                if (fn == null || fn(it))
+                {
+                    ItemMeleeWeapon mWp = it as ItemMeleeWeapon;
+                    if (mWp != null)
+                    {
+                        int score = ScoreMeleeWeapon(mWp);
+                        if (best == null || score > bestScore)
+                        {
+                            best = mWp;
+                            bestScore = score;
+                        }
+                    }
+                }
+            }
+
+            return best;
+        }
+
+        protected int ScoreMeleeWeapon(ItemMeleeWeapon mWp)
+        {
+            // prefer weapon with more dmg, then atk, then disarm, then less sta loss.
+            Attack a = (mWp.Model as ItemMeleeWeaponModel).Attack;
+            return 100000 * a.DamageValue + 1000 * a.HitValue + a.DisarmChance - a.StaminaPenalty;
+        }
+
+        /// <summary>
+        /// Get best light in inventory with preference for currently equipped light to avoid infinite equip-unequip loops.
+        /// Note that the returned light might have 0 batteries!
+        /// </summary>
+        /// <param name="game"></param>
+        /// <param name="fn"></param>
+        /// <returns></returns>
+        protected ItemLight GetBestLight(RogueGame game, Predicate<Item> fn = null)
+        {
+            ItemLight equippedLight;
+            ItemLight bestScoringLight = null;
+            int bestScore = -1;
+            ItemLight bestFovLight = null;
+            int bestFov = -1;
+
+            // keep using currently equipped light if it has the best fov and batteries left,
+            // otherwise pick best scoring one.
+            // we need to check equipped light because equipping a light actually consumes one battery
+            // point (see RogueGame OnEquipItem, was added as an anti player fov exploit) and it will 
+            // make the ai loop forever switching between lights constantly since equip/unequip is a free ap action.
+
+            equippedLight = GetEquippedLight();
+            if (equippedLight != null)
+            {
+                bestFovLight = equippedLight;
+                bestFov = (bestFovLight.Model as ItemLightModel).FovBonus;
+                bestScore = ScoreLight(equippedLight);
+                bestScoringLight = equippedLight;
+            }
+
+            foreach (Item it in m_Actor.Inventory.Items)
+            {
+                if (fn == null || fn(it))
+                {
+                    ItemLight light = it as ItemLight;
+                    if (light != null && !light.IsEquipped) // skip equiped because we already scored it
+                    {
+                        int fov = (light.Model as ItemLightModel).FovBonus;
+                        if (fov > bestFov)
+                        {
+                            bestFovLight = light;
+                            bestFov = fov;
+                        }
+
+                        int score = ScoreLight(light);
+                        if (bestScoringLight == null || score > bestScore)
+                        {
+                            bestScoringLight = light;
+                            bestScore = score;
+                        }
+                    }
+                }
+            }
+
+            if (bestFovLight == equippedLight)
+                return equippedLight;
+            return bestScoringLight;
+        }
+
+        protected int ScoreLight(ItemLight light)
+        {
+            // out of batteries sucks
+            if (light.Batteries <= 0)
+                return 0;
+
+            // prefer range then batteries
+            return 10000 * (light.Model as ItemLightModel).FovBonus + light.Batteries;
+        }
+
+        protected ItemTracker GetBestCellPhone(RogueGame game, Predicate<Item> fn = null)
+        {
+            // if one equipped with batteries, that's it.
+            ItemTracker eqPhone = GetEquippedCellPhone();
+            if (eqPhone != null && eqPhone.Batteries > 0 && (fn == null || fn(eqPhone)))
+                return eqPhone;
+
+            // find first phone with batteries
+            return m_Actor.Inventory.GetFirstMatching((it) =>
+                {
+                    if (fn != null && !fn(it))
+                        return false;
+                    ItemTracker phone = it as ItemTracker;
+                    return phone != null && phone.Batteries > 0 && phone.CanTrackFollowersOrLeader;
+                }) as ItemTracker;
+        }
+
+        protected ItemSprayScent GetBestStenchKiller(RogueGame game, Predicate<Item> fn = null)
+        {
+            ItemSprayScent best = null;
+            int bestScore = -1;
+
+            foreach (Item it in m_Actor.Inventory.Items)
+            {
+                if (fn == null || fn(it))
+                {
+                    ItemSprayScent spray = it as ItemSprayScent;
+                    if (spray != null)
+                    {
+                        int score = ScoreStenchKiller(spray);
+                        if (best == null || score > bestScore)
+                        {
+                            best = spray;
+                            bestScore = score;
+                        }
+                    }
+                }
+            }
+
+            return best;
+        }
+
+        protected int ScoreStenchKiller(ItemSprayScent spray)
+        {
+            // out of spray sucks
+            if (spray.SprayQuantity <= 0)
+                return 0;
+
+            ItemSprayScentModel mSpray = spray.Model as ItemSprayScentModel;
+
+            // must be stench killer
+            if (mSpray.Odor != Odor.SUPPRESSOR)  // alpha10
+                return -1;
+
+            // prefer stronger strength then spray quantity
+            return 10000 * mSpray.Strength + spray.SprayQuantity;
+        }
+
+        protected int GetItemNutritionValue(RogueGame game, Item it)
+        {
+            ItemFood itFood = it as ItemFood;
+            if (itFood == null)
+                return 0;
+            return game.Rules.ActorItemNutritionValue(m_Actor, itFood.Nutrition);
+        }
+
+        protected int GetTotalNutritionInInventory(RogueGame game)
+        {
+            int total = 0;
+
+            foreach (Item it in m_Actor.Inventory.Items)
+                total += GetItemNutritionValue(game, it);
+
+            return total;
+        }
+
+        protected int CountFullAmmoStacksInInventoryFor(ItemRangedWeapon rWp)
+        {
+            int count = 0;
+
+            foreach (Item it in m_Actor.Inventory.Items)
+            {
+                ItemAmmo itAmmo = it as ItemAmmo;
+                if ((itAmmo != null) && (itAmmo.AmmoType == rWp.AmmoType))
+                {
+                    if (itAmmo.Quantity >= itAmmo.Model.StackingLimit)
+                        count++;
+                }
+            }
+
+            return count;
+        }
+
+        /// <summary>
+        /// Total ammo for this weapon in our inventory, including ammo in the weapon.
+        /// </summary>
+        /// <param name="rWp"></param>
+        /// <returns></returns>
+        protected int CountTotalAmmoInInventoryFor(ItemRangedWeapon rWp)
+        {
+            int ammo = 0;
+
+            // add weapon ammo
+            ammo += rWp.Ammo;
+
+            // add ammo from inventory
+            foreach (Item it in m_Actor.Inventory.Items)
+            {
+                ItemAmmo itAmmo = it as ItemAmmo;
+                if ((itAmmo != null) && (itAmmo.AmmoType == rWp.AmmoType))
+                    ammo += itAmmo.Quantity;
+            }
+
+            return ammo;
+        }
+
+        protected int CountItemsFullStacksOfSameType(Type tt, Item excludingThisOne = null)
+        {
+            if (m_Actor.Inventory == null || m_Actor.Inventory.IsEmpty)
+                return 0;
+
+            int count = 0;
+            foreach (Item otherIt in m_Actor.Inventory.Items)
+            {
+                if (otherIt != excludingThisOne && !otherIt.CanStackMore && otherIt.GetType() == tt)
+                    count++;
+            }
+
+            return count;
+        }
+
+        // alpha10 new item rating and trading logic
+
+        public enum ItemRating
+        {
+            JUNK = 0,   // dont want it at all, the lowest possible rating.
+            OKAY = 1,
+            NEED = 2    // wants it to cover a need, the highest possible rating.
+        };
+
+        /// <summary>
+        /// Rate item when trading for another item of a different type and in most some cases if checking is interesting to pick up/steal/not drop.
+        /// 
+        /// Items of same type MUST be checked with RateItemExhange instead, as a new item might be
+        /// an improvement over an old one, even if individually it would be rated as junk by RateItem.
+        /// This is because items come from different sources : pick up new items (it replaces nothing and only its
+        /// own worth is important), trade/replace items (it replace an old item and need to be compared to the
+        /// one we lost).
+        /// Eg: picking up another spray scent is junk if we have already one with spray left (rated Junk by RateItem)
+        /// BUT exhanging a spray scent with more spray is better (exhange rated Accept by RateItemExhange). 
+        /// 
+        /// FIXME -- ideally we would like the AI to be able to go pickup say a better melee weapon and drop the worse
+        /// one it had previously; but this needs a new behaviour; implement that BehaviorImproveOnItems() later...
+        /// 
+        /// </summary>
+        /// <param name="game"></param>
+        /// <param name="it"></param>
+        /// <param name="owned"></param>
+        /// <returns></returns>
+        /// <see cref="RateTradeOffer(RogueGame, Actor, Item, Item)"/>
+        /// <see cref="IsInterestingItemToOwn(RogueGame, Item, bool)"/>
+        /// <see cref="RateItemExhange(RogueGame, Item, Item)"/>
+        public ItemRating RateItem(RogueGame game, Item it, bool owned)
+        {
+            //////////////////////////////////////////////////////
+            // Junk :
+            // j1 AI forbidden items.
+            // **disabled; handled preventively in IsInterestingItemToOwn* Anything new not food if only one slot left.**
+            // j3 Spray paint (ai never use it)
+            // j4 Melee weapons if martial arts or enough.
+            // j5 Unsafe activated traps and empty cans
+            // j6 Primed explosives.
+            // j7 Light/Tracker/Spray scent out of batteries/paint or if has already enough
+            // j8 Entertainment: boring or already enough
+            // j9 Ammo with no compatible ranged weapon.
+            // j10 Ranged weapons 
+            //     - ai not interested in rw
+            //     - no ammo for it
+            //     - has already same model with more potential ammo
+            //     - has already better scoring rw with ammo
+            // j11 Barricading material if has already enough.
+            // Need :
+            // n1 Food if hungry or not enough food in inventory.
+            // n2 Ammo for ranged weapon if not enough.
+            // n3 Melee weapon if no ranged weapon with ammo.
+            // n4 Ranged weapon if none with ammo.
+            // n5 Any meds if none. Other meds if need it.
+            // n6 Barricade material if none.
+            // **disabled** n7 Light if bad fov.
+            // n8 (Unprimed) Explosive if none.
+            // n9 Armor if none.
+            // n10 Entertainment if not sane.
+            // Okay:
+            // - Anything else.
+            /////////////////////////////////////////////////////
+
+            // Junk :
+            // j1 AI forbidden items.
+            if (it.IsForbiddenToAI)
+                return ItemRating.JUNK;
+
+            // j2 Anything new not food if only one slot left.
+            //if (!owned && (m_Actor.Inventory.CountItems >= game.Rules.ActorMaxInv(m_Actor) - 1) && !(it is ItemFood))
+            //    return ItemRating.JUNK;
+
+            // j3 Spray paint.
+            if (it is ItemSprayPaint)
+                return ItemRating.JUNK;
+
+            // j4 Melee weapons if martial arts or enough.
+            if (it is ItemMeleeWeapon)
+            {
+                if (m_Actor.Sheet.SkillTable.GetSkillLevel((int)Skills.IDs.MARTIAL_ARTS) > 0)
+                    return ItemRating.JUNK;
+
+                // one melee weapon is enough
+                if (CountItemsOfSameType(typeof(ItemMeleeWeapon), it) >= 1)
+                    return ItemRating.JUNK;
+            }
+
+            // j5 Unsafe activated traps and empty cans
+            if (it is ItemTrap)
+            {
+                ItemTrap tr = it as ItemTrap;
+                if (tr.Model == game.GameItems.EMPTY_CAN)
+                    return ItemRating.JUNK;
+                if (tr.IsActivated && !game.Rules.IsSafeFromTrap(tr, m_Actor))
+                    return ItemRating.JUNK;
+            }
+
+            // j6 Primed explosives.
+            if (it is ItemPrimedExplosive)
+                return ItemRating.JUNK;
+
+            // j7 Light/Tracker/Spray scent out of batteries/paint or if has already enough
+            if (it is ItemLight)
+            {
+                ItemLight itLight = it as ItemLight;
+
+                if (itLight.Batteries <= 0)
+                    return ItemRating.JUNK;
+
+                // light is junk if already has 6 hours of batteries worth.
+                int totalLightsBatteries = 0;
+                m_Actor.Inventory.ForEach((i) =>
+                    {
+                        if (i == it)
+                            return;
+                        ItemLight l = i as ItemLight;
+                        if (l == null)
+                            return;
+                        totalLightsBatteries += l.Batteries;
+                    });
+
+                if (totalLightsBatteries >= 6 * WorldTime.TURNS_PER_HOUR)
+                    return ItemRating.JUNK;
+            }
+
+            if (it is ItemTracker)
+            {
+                if ((it as ItemTracker).Batteries <= 0)
+                    return ItemRating.JUNK;
+
+                // don't hoard trackers, one with batteries is enough.
+                bool enough = false;
+                enough = m_Actor.Inventory.HasItemMatching((i) =>
+                {
+                    if (i == it)
+                        return false;
+                    ItemTracker t = i as ItemTracker;
+                    return t != null && t.Batteries > 0;
+                });
+                if (enough)
+                    return ItemRating.JUNK;
+            }
+
+            if (it is ItemSprayScent)
+            {
+                if ((it as ItemSprayScent).SprayQuantity <= 0)
+                    return ItemRating.JUNK;
+
+                // don't hoard spray scent, one with spray left is enough.
+                bool enough;
+                enough = m_Actor.Inventory.HasItemMatching((i) =>
+                {
+                    if (i == it)
+                        return false;
+                    ItemSprayScent t = i as ItemSprayScent;
+                    return t != null && t.SprayQuantity > 0;
+                });
+                if (enough)
+                    return ItemRating.JUNK;
+            }
+
+            // j8 Entertainment: boring or already enough
+            if (it is ItemEntertainment)
+            {
+                if ((it as ItemEntertainment).IsBoringFor(m_Actor))
+                    return ItemRating.JUNK;
+
+                // one full stack of entertainment is enough if sane
+                if (!game.Rules.IsActorDisturbed(m_Actor) && CountItemsFullStacksOfSameType(typeof(ItemEntertainment), it) >= 1)
+                    return ItemRating.JUNK;
+            }
+
+            // j9 Ammo with no compatible ranged weapon.
+            if (it is ItemAmmo)
+            {
+                if (GetCompatibleRangedWeapon(game, it as ItemAmmo) == null)
+                    return ItemRating.JUNK;
+            }
+
+            // j10 Ranged weapons 
+            //     - ai not interested in rw
+            //     - no ammo for it
+            //     - has already same model with at least more potential ammo
+            //     - has already better scoring rw with ammo
+            if (it is ItemRangedWeapon)
+            {
+                ItemRangedWeapon itRw = it as ItemRangedWeapon;
+
+                // ai not interested in rw
+                if (m_Actor.Model.Abilities.AI_NotInterestedInRangedWeapons)
+                    return ItemRating.JUNK;
+
+                // no ammo for it
+                int ammoInInv = CountTotalAmmoInInventoryFor(itRw);
+                if (ammoInInv == 0)
+                    return ItemRating.JUNK;
+
+                // has already same model with at least more potential ammo
+                // has already at least better scoring rw with ammo
+                int scoreIt = ScoreRangedWeapon(itRw);
+                foreach (Item invIt in m_Actor.Inventory.Items)
+                {
+                    if (invIt != itRw)
+                    {
+                        ItemRangedWeapon invRw = invIt as ItemRangedWeapon;
+                        if (invRw != null)
+                        {
+                            if (invRw.Model == it.Model && CountTotalAmmoInInventoryFor(invRw) >= itRw.Ammo)
+                                return ItemRating.JUNK;
+                            if (invRw.Ammo > 0 && ScoreRangedWeapon(invRw) >= scoreIt)
+                                return ItemRating.JUNK;
+                        }
+                    }
+                }
+            }
+
+            // j11 Barricading material if has already enough.
+            if (it is ItemBarricadeMaterial)
+            {
+                // one full stack of barricading material is enough
+                if (CountItemsFullStacksOfSameType(typeof(ItemBarricadeMaterial), it) >= 1)
+                    return ItemRating.JUNK;
+            }
+
+            // Need :
+
+            // n1 Food if hungry or not enough food in inventory.
+            if (it is ItemFood)
+            {
+                if (game.Rules.IsActorHungry(m_Actor))
+                    return ItemRating.NEED;
+                int nutritionPoints = GetTotalNutritionInInventory(game);
+                if (owned)
+                    nutritionPoints -= GetItemNutritionValue(game, it as ItemFood);
+                // rule of thumb: has to cover 25% more than hungry level
+                if (nutritionPoints <= ((5 * Rules.FOOD_HUNGRY_LEVEL) / 4))
+                    return ItemRating.NEED;
+            }
+
+            // n2 Ammo for ranged weapon if not enough.
+            if (it is ItemAmmo)
+            {
+                ItemAmmo itAmmo = it as ItemAmmo;
+                ItemRangedWeapon rWp = GetCompatibleRangedWeapon(game, itAmmo);
+                if (rWp != null)
+                {
+                    // we want 2 full stacks of ammo
+                    if (CountFullAmmoStacksInInventoryFor(rWp) < 2)
+                        return ItemRating.NEED;
+                }
+            }
+
+            // n3 Melee weapon if no ranged weapon with ammo.
+            if (it is ItemMeleeWeapon)
+            {
+                if (!HasAnyRangedWeaponWithAmmo())
+                    return ItemRating.NEED;
+            }
+
+            // n4 Ranged weapon if none with ammo.
+            if (it is ItemRangedWeapon)
+            {
+                if (!HasAnyRangedWeaponWithAmmo(it))
+                    return ItemRating.NEED;
+            }
+
+            // n5 Any meds if none. Other meds if need (or could) it.
+            if (it is ItemMedicine)
+            {
+                ItemMedicine itMed = it as ItemMedicine;
+                if (CountItemsOfSameType(typeof(ItemMedicine), it) == 0)
+                    return ItemRating.NEED;
+
+                // be lenient and consider we need a med if the corresponding stat is about 75% or less.
+                // exception: always want to cure health and infection.
+                // this is will allow the player to trade meds for other items, which will increase the
+                // value of meds players mostly ignored previously (eg: sta healers).
+                if ((itMed.Healing > 0) && (m_Actor.HitPoints < game.Rules.ActorMaxHPs(m_Actor)))
+                    return ItemRating.NEED;
+                if ((itMed.StaminaBoost > 0) && (m_Actor.StaminaPoints < 0.75f * game.Rules.ActorMaxSTA(m_Actor)))
+                    return ItemRating.NEED;
+                if ((itMed.SleepBoost > 0) && (m_Actor.SleepPoints < 0.75f * game.Rules.ActorMaxSleep(m_Actor)))
+                    return ItemRating.NEED;
+                if ((itMed.SanityCure > 0) && (m_Actor.Sanity < 0.75f * game.Rules.ActorMaxSanity(m_Actor)))
+                    return ItemRating.NEED;
+                if ((itMed.InfectionCure > 0) && (m_Actor.Infection > 0)) // always want to cure infection
+                    return ItemRating.NEED;
+            }
+
+            // n6 Barricade material if none.
+            if (it is ItemBarricadeMaterial)
+            {
+                if (CountItemsOfSameType(typeof(ItemBarricadeMaterial), it) == 0)
+                    return ItemRating.NEED;
+            }
+
+            // **disabled; was willing to eg trade away a weapon for a light during the night! **
+            //// n7 Light if bad fov
+            //// already handled lights out of batteries as junk
+            //if (it is ItemLight)
+            //{
+            //    WorldTime time = m_Actor.Location.Map.LocalTime;
+            //    if (game.Rules.NightFovPenalty(m_Actor, time) > 0)
+            //        return ItemRating.NEED;
+            //    Weather weather = game.Session.World.Weather;
+            //    if (game.Rules.WeatherFovPenalty(m_Actor, weather) > 0)
+            //        return ItemRating.NEED;
+            //}
+
+            // n8 (Unprimed) Explosive if none.
+            if (it is ItemExplosive)
+            {
+                if (CountItemsOfSameType(typeof(ItemExplosive), it) == 0)
+                    return ItemRating.NEED;
+            }
+
+            // n9 Armor if none.
+            if (it is ItemBodyArmor)
+            {
+                if (CountItemsOfSameType(typeof(ItemBodyArmor), it) == 0)
+                    return ItemRating.NEED;
+            }
+
+            // n10 Entertainment if not sane.
+            if (it is ItemEntertainment)
+            {
+                if (game.Rules.IsActorDisturbed(m_Actor))
+                    return ItemRating.NEED;
+            }
+
+            // Okay:
+            // - Anything else.
+            return ItemRating.OKAY;
+        }
+
+        public enum TradeRating
+        {
+            REFUSE = 0,
+            MAYBE = 1,  // will need a charisma roll, accept if success refuse if failed.
+            ACCEPT = 3
+        };
+
+        // offeredRating X askedRating => tradeRating
+        private static readonly TradeRating[,] TRADE_RATING_MATRIX = new TradeRating[3, 3]
+        {
+            // asked JUNK,        asked OKAY,         asked NEED
+            { TradeRating.ACCEPT, TradeRating.MAYBE,  TradeRating.REFUSE },  // offered JUNK
+            { TradeRating.ACCEPT, TradeRating.ACCEPT, TradeRating.REFUSE },  // offered OKAY
+            { TradeRating.ACCEPT, TradeRating.ACCEPT, TradeRating.MAYBE }   // offered NEED
+        };
+
+        /// <summary>
+        /// Rates a trade offer by another actor.
+        /// Check for trusted leader but do not check for charisma here, handled by the caller on "Maybe" answers.
+        /// Mostly wants to get an item of equal or better value, unless the item asked is needed, see the matrix.
+        /// Some additional rules are used for special tricky cases.
+        /// </summary>
+        /// <param name="game"></param>
+        /// <param name="tradingWith"></param>
+        /// <param name="offered">the item the other actor is offering</param>
+        /// <param name="asked">the item the other actor wants from us</param>
+        /// <returns></returns>
+        /// <see cref="RateItem(RogueGame, Item, bool)"/>
+        /// <see cref="RateItemExhange(RogueGame, Item, Item)"/>
+        /// <see cref="TRADE_RATING_MATRIX"/>
+        public TradeRating RateTradeOffer(RogueGame game, Actor tradingWith, Item offered, Item asked)
+        {
+            // always accept deals with trusted leader
+            if (tradingWith == m_Actor.Leader && game.Rules.IsActorTrustingLeader(m_Actor))
+                return TradeRating.ACCEPT;
+
+            // handle special case of trading items of the same type. eg: trading melee weapons.
+            if (offered.GetType() == asked.GetType())
+                return RateItemExhange(game, asked, offered);
+
+            // special case of asking a rw and offering compatible ammo.
+            // eg: offering light rifle bullets but asking the rifle.
+            // due to items individual ratings this could be accepted 
+            // (eg: both rated as needed and rolling charisma), which is silly.
+            // always refuse such trades!
+            if (asked is ItemRangedWeapon && offered is ItemAmmo)
+            {
+                if ((asked as ItemRangedWeapon).AmmoType == (offered as ItemAmmo).AmmoType)
+                    return TradeRating.REFUSE;
+            }
+
+            // alpha10.1 never trade away a unique item, unless for another unique item
+            if (asked.IsUnique && !offered.IsUnique)
+                return TradeRating.REFUSE;
+
+            // not a special case, compare item ratings.
+            ItemRating offeredRating = RateItem(game, offered, false);
+            ItemRating askedRating = RateItem(game, asked, true);
+            // compare ratings with matrix (lazy way of doing lots of if/else)
+            return TRADE_RATING_MATRIX[(int)offeredRating, (int)askedRating];
+        }
+
+        #region Rating exhange of items of same type
+        /// <summary>
+        /// Compare items of the same type for trading. Items MUST be of the same type.
+        /// Needs to be handled differently than trading items of different types.
+        /// Wants to exhange items if get an improvement over the old one eg: a ranged weapon with better range.
+        /// TODO -- should also be used when considering picking up items
+        /// </summary>
+        /// <param name="game"></param>
+        /// <param name="oIt">item we are losing</param>
+        /// <param name="nIt">item we are getting</param>
+        /// <returns></returns>
+        /// <see cref="RateTradeOffer(RogueGame, Actor, Item, Item)"/>
+        protected TradeRating RateItemExhange(RogueGame game, Item oIt, Item nIt)
+        {
+            // first reject/accept if one is junk and not the other
+            ItemRating oRating = RateItem(game, oIt, true);
+            ItemRating nRating = RateItem(game, nIt, false);
+            if (nRating == ItemRating.JUNK && oRating != ItemRating.JUNK) return TradeRating.REFUSE;
+            if (oRating == ItemRating.JUNK && nRating != ItemRating.JUNK) return TradeRating.ACCEPT;
+
+            // then compare items value
+
+            if (oIt is ItemAmmo)
+            {
+                // just compare quantity
+                return nIt.Quantity > oIt.Quantity ? TradeRating.ACCEPT :
+                    nIt.Quantity < oIt.Quantity ? TradeRating.REFUSE :
+                    TradeRating.MAYBE;
+            }
+
+            if (oIt is ItemBarricadeMaterial)
+            {
+                // just compare quantity
+                return nIt.Quantity > oIt.Quantity ? TradeRating.ACCEPT :
+                    nIt.Quantity < oIt.Quantity ? TradeRating.REFUSE :
+                    TradeRating.MAYBE;
+            }
+
+            if (oIt is ItemBodyArmor)
+            {
+                ItemBodyArmor oArm = oIt as ItemBodyArmor;
+                ItemBodyArmor nArm = nIt as ItemBodyArmor;
+
+                // prefer better overal protection
+                int oScore = oArm.Protection_Hit + oArm.Protection_Shot;
+                int nScore = nArm.Protection_Hit + nArm.Protection_Shot;
+
+                return nScore > oScore ? TradeRating.ACCEPT :
+                    nScore < oScore ? TradeRating.REFUSE :
+                    TradeRating.MAYBE;
+            }
+
+            if (oIt is ItemEntertainment)
+            {
+                ItemEntertainment oEnt = oIt as ItemEntertainment;
+                ItemEntertainment nEnt = nIt as ItemEntertainment;
+
+                // prefer non-boring ent first. if both are boring then maybe.
+                bool oBored = oEnt.IsBoringFor(m_Actor);
+                bool nBored = nEnt.IsBoringFor(m_Actor);
+                if (!nBored && oBored) return TradeRating.ACCEPT;
+                if (nBored && !nBored) return TradeRating.REFUSE;
+                if (nBored && oBored) return TradeRating.MAYBE;
+
+                // then prefer ent with more sanity potential
+                int oScore = (oEnt.Quantity * 100 * oEnt.EntertainmentModel.Value) / (1 + oEnt.EntertainmentModel.BoreChance);
+                int nScore = (nEnt.Quantity * 100 * nEnt.EntertainmentModel.Value) / (1 + nEnt.EntertainmentModel.BoreChance);
+
+                return nScore > oScore ? TradeRating.ACCEPT :
+                    nScore < oScore ? TradeRating.REFUSE :
+                    TradeRating.MAYBE;
+            }
+
+            if (oIt is ItemExplosive)  // also ItemGrenade
+            {
+                ItemExplosiveModel oEx = (oIt as ItemExplosive).Model as ItemExplosiveModel;
+                ItemExplosiveModel nEx = (nIt as ItemExplosive).Model as ItemExplosiveModel;
+
+                // prefer explosive with more range 0 damage
+                return nEx.BlastAttack.Damage[0] > oEx.BlastAttack.Damage[0] ? TradeRating.ACCEPT :
+                     nEx.BlastAttack.Damage[0] < oEx.BlastAttack.Damage[0] ? TradeRating.REFUSE :
+                     TradeRating.MAYBE;
+            }
+
+            if (oIt is ItemFood)
+            {
+                ItemFood oFood = oIt as ItemFood;
+                ItemFood nFood = nIt as ItemFood;
+
+                // prefer food with more nutrition
+                int oNut = GetItemNutritionValue(game, oFood);
+                int nNut = GetItemNutritionValue(game, nFood);
+
+                return nNut > oNut ? TradeRating.ACCEPT :
+                    nNut < oNut ? TradeRating.REFUSE :
+                    TradeRating.MAYBE;
+            }
+
+            if (oIt is ItemLight)
+            {
+                ItemLight oLt = oIt as ItemLight;
+                ItemLight nLt = nIt as ItemLight;
+
+                // score
+                int oScore = ScoreLight(oLt);
+                int nScore = ScoreLight(nLt);
+
+                return nScore > oScore ? TradeRating.ACCEPT :
+                    nScore < oScore ? TradeRating.REFUSE :
+                    TradeRating.MAYBE;
+            }
+
+            if (oIt is ItemMedicine)
+            {
+                ItemMedicine oMed = oIt as ItemMedicine;
+                ItemMedicine nMed = nIt as ItemMedicine;
+
+                // first prefer med we need the most (basically re-use the med logic from item rating)
+                if (nRating > oRating) return TradeRating.ACCEPT;
+                if (oRating < nRating) return TradeRating.REFUSE;
+
+                // for other cases, prefer in order: hp, inf, slp, san, sta
+                // use scoring.
+                int oScore = 10000 * oMed.Healing + 1000 * oMed.InfectionCure + 100 * oMed.SleepBoost + 10 * oMed.SanityCure + oMed.StaminaBoost;
+                int nScore = 10000 * nMed.Healing + 1000 * nMed.InfectionCure + 100 * nMed.SleepBoost + 10 * nMed.SanityCure + nMed.StaminaBoost;
+
+                return nScore > oScore ? TradeRating.ACCEPT :
+                    nScore < oScore ? TradeRating.REFUSE :
+                    TradeRating.MAYBE;
+            }
+
+            if (oIt is ItemMeleeWeapon)
+            {
+                ItemMeleeWeapon oMw = oIt as ItemMeleeWeapon;
+                ItemMeleeWeapon nMw = nIt as ItemMeleeWeapon;
+
+                // score
+                int oScore = ScoreMeleeWeapon(oMw);
+                int nScore = ScoreMeleeWeapon(nMw);
+
+                return nScore > oScore ? TradeRating.ACCEPT :
+                    nScore < oScore ? TradeRating.REFUSE :
+                    TradeRating.MAYBE;
+            }
+
+            if (oIt is ItemPrimedExplosive) // also ItemGrenadePrimed
+            {
+                // refuse any primed explosive
+                return TradeRating.REFUSE;
+            }
+
+            if (oIt is ItemRangedWeapon)
+            {
+                ItemRangedWeapon oRw = oIt as ItemRangedWeapon;
+                ItemRangedWeapon nRw = nIt as ItemRangedWeapon;
+
+                // score
+                int oScore = ScoreRangedWeapon(oRw);
+                int nScore = ScoreRangedWeapon(nRw);
+
+                return nScore > oScore ? TradeRating.ACCEPT :
+                    nScore < oScore ? TradeRating.REFUSE :
+                    TradeRating.MAYBE;
+            }
+
+            if (oIt is ItemSprayPaint)
+            {
+                ItemSprayPaint oSp = oIt as ItemSprayPaint;
+                ItemSprayPaint nSp = nIt as ItemSprayPaint;
+
+                // useless items for ai, but prefer one with more spray left...
+                return nSp.PaintQuantity > oSp.PaintQuantity ? TradeRating.ACCEPT :
+                    nSp.PaintQuantity < oSp.PaintQuantity ? TradeRating.REFUSE :
+                    TradeRating.MAYBE;
+            }
+
+            if (oIt is ItemSprayScent)
+            {
+                ItemSprayScent oSp = oIt as ItemSprayScent;
+                ItemSprayScent nSp = nIt as ItemSprayScent;
+
+                // prefer spray scent with more spray left
+                return nSp.SprayQuantity > oSp.SprayQuantity ? TradeRating.ACCEPT :
+                    nSp.SprayQuantity < oSp.SprayQuantity ? TradeRating.REFUSE :
+                    TradeRating.MAYBE;
+            }
+
+            if (oIt is ItemTrap)
+            {
+                ItemTrap oTr = oIt as ItemTrap;
+                ItemTrap nTr = nIt as ItemTrap;
+
+                // prefer trap with more potential damage then blocking.
+                // use scoring
+                ItemTrapModel oMtr = oTr.TrapModel;
+                ItemTrapModel nMtr = nTr.TrapModel;
+
+                int oScore = 100 * oMtr.Damage * oMtr.TriggerChance + oMtr.BlockChance * oMtr.TriggerChance;
+                int nScore = 100 * nMtr.Damage * nMtr.TriggerChance + nMtr.BlockChance * nMtr.TriggerChance;
+
+                return nScore > oScore ? TradeRating.ACCEPT :
+                    nScore < oScore ? TradeRating.REFUSE :
+                    TradeRating.MAYBE;
+            }
+
+            // unhandled items! should not happen!
+            throw new Exception("RateItemExhange: unhandled item type" + oIt.GetType());
+        }
+        #endregion
+#if false
+            alpha10 previous attempt, use scoring, not satisfying hard to balance
+        protected bool IsJunkItem(RogueGame game, Item it)
+        {
+            ////////////////////////////////////////////////
+            // Junk items:
+            // 0 Anything not food if only one slot left.
+            // 1 AI forbidden items.
+            // 2 Spray paint.
+            // 3 Activated traps!
+            // 4 Melee weapons if martial arts
+            // 5 Lights out of batteries.
+            // 9 Primed explosives!
+            // 10 Boring items.
+            ///////////////////////////////////////////////
+
+            // 0 Anything not food if only one slot left.
+            bool onlyOneSlotLeft = (m_Actor.Inventory.CountItems == game.Rules.ActorMaxInv(m_Actor) - 1);
+            if (onlyOneSlotLeft)
+                return !(it is ItemFood);
+
+            // 1 AI forbidden items.
+            if (it.IsForbiddenToAI)
+                return true;
+
+            // 2 Spray paint.
+            if (it is ItemSprayPaint)
+                return true;
+
+            // 3 Activated traps!
+            if (it is ItemTrap)
+            {
+                if ((it as ItemTrap).IsActivated)
+                    return true;
+            }
+
+            // 4 Melee weapons if martial arts
+            // Reject medecine if we alredy have full stacks.
+            if (it is ItemMeleeWeapon)
+            {
+                if (m_Actor.Sheet.SkillTable.GetSkillLevel((int)Skills.IDs.MARTIAL_ARTS) > 0)
+                    return true;
+            }
+
+            // 5 Lights out of batteries.
+            if (IsLightOutOfBatteries(it))
+                return true;
+
+            // 6 Primed explosives!
+            if (it is ItemPrimedExplosive)
+                return true;
+
+            // 10 Boring items!
+            if (m_Actor.IsBoredOf(it))
+                return true;
+
+                // not junk
+                return false;
+        }
+
+        // alpha10 previous attempt
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="game"></param>
+        /// <param name="it"></param>
+        /// <param name="fromOwnInventory"></param>
+        /// <returns></returns>
+        public int ScoreItemValue(RogueGame game, Item it, bool fromOwnInventory)
+        {
+            // First we reject "junk" items and give them a score of 0.
+            if (IsJunkItem(game, it))
+                return 0;
+
+            Rules rules = game.Rules;
+            float score;
+
+            bool isLastOfItsTypeInMyInventory = false;
+            if (fromOwnInventory)
+            {
+                if (CountItemsOfSameType(it.GetType()) == 1)
+                    isLastOfItsTypeInMyInventory = true;
+            }
+
+            // Score item ranking in its category (type). Average should be around 1000 so items from different
+            // categories can be compared fairly.
+            // Then score need for this type for item.
+            // Final score is ranking score modified by need.
+            // Eg of heuristics:
+            // A food item
+            // ranking score: nutrition of the food relative to our food bar
+            // need: high if we are hungry
+            float rankingScore = 1000;
+            float needFactor = 1f;
+
+            if (it is ItemFood)
+            {
+                // -- Food item ranking score
+
+                ItemFood itFood = it as ItemFood;
+                int turn = m_Actor.Location.Map.LocalTime.TurnCounter;
+                int maxFood = rules.ActorMaxFood(m_Actor);
+
+                // score food nutrition respective to our half our food bar.
+                int nutritionScore1000 = (2 * 1000 * rules.FoodItemNutrition(itFood, turn)) / maxFood;
+
+                // score duration.
+                // consider non-perishable food as lasting 7 days.
+                // consider 3 days as average (1000)
+                int duration;
+                if (!itFood.IsPerishable)
+                    duration = 7 * WorldTime.TURNS_PER_DAY;
+                else
+                    duration = (itFood.BestBefore.TurnCounter - turn);
+                int durationScore1000 = (1000 * duration) / (3 * WorldTime.TURNS_PER_DAY);
+
+                // base score is nutrition and duration
+                rankingScore = nutritionScore1000 + durationScore1000;
+
+                // penalize even more spoiled/expired
+                if (rules.IsFoodExpired(itFood, turn))
+                    rankingScore /= 4;
+                else if (rules.IsFoodSpoiled(itFood, turn))
+                    rankingScore /= 2;
+
+                // -- Need for food
+
+                // base need if starved/hungry
+                if (rules.IsActorStarving(m_Actor))
+                    needFactor = 10;
+                else if (rules.IsActorHungry(m_Actor))
+                    needFactor = 2;
+
+                // need food if not enough stockpiled to cover our needs
+                // FIXME -- including last means the ai is not willing to trade for a better food!
+                if (!HasEnoughFoodFor(game, maxFood - Rules.FOOD_HUNGRY_LEVEL) || isLastOfItsTypeInMyInventory)
+                    needFactor += 0.5f;
+
+            }
+            else if (it is ItemRangedWeapon)
+            {
+                // -- Ranged weapon ranking score
+                ItemRangedWeapon itRw = it as ItemRangedWeapon;
+
+                // ranking score is just range with 5 considered average
+                rankingScore = (1000 * (itRw.Model as ItemRangedWeaponModel).Attack.Range) / 5;
+
+                // small bonus for ammo left (to sort identical weapons)
+                rankingScore += itRw.Ammo;
+
+                // -- Need for ranged weapon
+
+                // need ranged weapon if none yet/last
+                // FIXME -- including last means the ai is not willing to trade for a better ranged weapon!
+                if (CountItemsOfSameType(typeof(ItemRangedWeapon)) == 0 || isLastOfItsTypeInMyInventory)
+                    needFactor = 4f;
+
+                // less need for a weapon we have no ammo for                
+                if (GetCompatibleAmmoItem(game, itRw) == null)
+                    needFactor *= 2f / 3f;
+            }
+            else if (it is ItemAmmo)
+            {
+                // -- Ammo ranking score
+                ItemAmmo itAmmo = it as ItemAmmo;
+                // quantity to helping sort but misleading (eg: bolts have larger stacks and will be valued more than shotgun shells)
+                rankingScore = 1000 + itAmmo.Quantity;
+
+                // -- Need for ammo
+
+                // need ammo if compatible weapon and even more if not 2 full stacks of it
+                if (GetCompatibleRangedWeapon(game, itAmmo) != null)
+                {
+                    needFactor = 2f;
+                    if (!HasAtLeastFullStackOfItemTypeOrModel(it, 2))
+                        needFactor += 1f;
+                }
+                else
+                    // ammo are really not valuable if no ranged weapon for it
+                    needFactor = 0.1f;
+            }
+            else if (it is ItemMeleeWeapon)
+            {
+                // -- Melee weapon ranking score
+                ItemMeleeWeapon itMw = it as ItemMeleeWeapon;
+                ItemMeleeWeaponModel mMw = itMw.Model as ItemMeleeWeaponModel;
+
+                // base is damage, consider 6 as average (1000)
+                rankingScore = (1000 * mMw.Attack.DamageValue) / 6;
+
+                // small penalty for stamina
+                rankingScore -= mMw.Attack.StaminaPenalty;
+
+                // -- Melee weapon need
+
+                // need melee weapon if none/last and has no ranged weapon with ammo
+                // FIXME -- including last means the ai is not willing to trade for a better melee weapon!
+                if (CountItemsOfSameType(typeof(ItemMeleeWeapon)) == 0 || isLastOfItsTypeInMyInventory)
+                {
+                    if (!HasAnyRangedWeaponWithAmmo())
+                        needFactor = 2;
+                }
+            }
+            else if (it is ItemMedicine)
+            {
+                // -- Medecine ranking score
+                ItemMedicine itMed = it as ItemMedicine;
+
+                // base is heal value, consider 2 as average (1000)
+                rankingScore = (1000 * itMed.Healing) / 2;
+
+                // in games with infection, big bonus for infection cure
+                if (game.Session.HasInfection)
+                    rankingScore += 100 * itMed.InfectionCure;
+
+                // smaller bonus for sleep
+                rankingScore += 10 * itMed.SleepBoost;
+
+                // small bonuses for other effects
+                rankingScore += 2*itMed.SanityCure + itMed.StaminaBoost;
+
+                // bigger stacks are better
+                rankingScore += it.Quantity;
+
+                // -- Need for medecine
+
+                // need medecine if none or last
+                // FIXME -- including last means the ai is not willing to trade for a better medecine!
+                if (CountItemsOfSameType(typeof(ItemMedicine)) == 0 || isLastOfItsTypeInMyInventory)
+                    needFactor = 2;
+
+                // need healing if hurt / sleep if sleepy / stamina if tired etc...
+                if (m_Actor.HitPoints < rules.ActorMaxHPs(m_Actor) && itMed.Healing > 0)
+                    needFactor += 1;
+                if (rules.IsActorSleepy(m_Actor) && itMed.SleepBoost > 0)
+                    needFactor += 1;
+                if (rules.IsActorTired(m_Actor) && itMed.StaminaBoost > 0)
+                    needFactor += 1;
+                if (rules.IsActorInsane(m_Actor) && itMed.SanityCure > 0)
+                    needFactor += 1;
+                if (m_Actor.Infection > 0 && itMed.InfectionCure > 0)
+                    needFactor += 1;
+            }
+            else if (it is ItemExplosive)
+            {
+                // TODO -- refine explosive scoring, basically stupid now. also explosive vs primed is a mess.
+
+                // -- Explosive ranking score
+                ItemExplosive itEx = it as ItemExplosive;
+                rankingScore = 1000;
+                rankingScore += it.Quantity;
+
+                // -- Need for explosive
+
+                // need explosive if none or last
+                // FIXME -- including last means the ai is not willing to trade for a better explosive!
+                if (CountItemsOfSameType(typeof(ItemExplosive)) == 0 || isLastOfItsTypeInMyInventory)
+                    needFactor = 2;
+            }
+            else if (it is ItemBarricadeMaterial)
+            {
+                // -- Barricade material ranking
+                rankingScore = 1000;
+                rankingScore += it.Quantity;
+
+                // -- Need for barricade
+
+                // need barricade if none or last
+                // FIXME -- including last means the ai is not willing to trade for a better ranged weapon!
+                if (CountItemsOfSameType(typeof(ItemBarricadeMaterial)) == 0 || isLastOfItsTypeInMyInventory)
+                    needFactor = 2;
+            }
+            else if (it is ItemEntertainment)
+            {
+                // -- Entertainment ranking
+                ItemEntertainment itEnt = it as ItemEntertainment;
+                ItemEntertainmentModel mEnt = it.Model as ItemEntertainmentModel;
+
+                rankingScore = 1000;
+                rankingScore += it.Quantity;
+                rankingScore += mEnt.Value;
+
+                // -- Entertainment need
+
+                // need of entertainment if turning insane
+                // mostly ignore entertainment altogether if san high enough
+                if (rules.IsActorDisturbed(m_Actor))
+                    needFactor = 4;
+                else if (rules.IsActorInsane(m_Actor))
+                    needFactor = 10;
+                else if (rules.SanityToHoursUntilUnstable(m_Actor) >= 6)
+                    needFactor /= 10;
+            }
+            else if (it is ItemLight)
+            {
+                // -- Light ranking
+                ItemLight itLight = it as ItemLight;
+
+                rankingScore = 1000;
+                rankingScore += 10 * itLight.FovBonus;
+                rankingScore += itLight.Batteries / WorldTime.TURNS_PER_HOUR;
+
+                // -- Light need
+
+                // need for light if dark / no need at all if lit
+                Lighting mapL = m_Actor.Location.Map.Lighting;
+                if (mapL == Lighting.DARKNESS)
+                    needFactor = 2;
+                else if (mapL == Lighting.LIT)
+                    needFactor = 0;
+            }
+            // TODO -- other items
+
+            // final score
+            score = rankingScore * needFactor;
+
+            // make sure scoring is above zero as the item is not junk.
+            return Math.Max((int)score, 1);
+        }
+#endif
+
+        // end alpha10
 
         protected bool HasEnoughFoodFor(RogueGame game, int nutritionNeed)
         {
@@ -3368,6 +5345,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             return false;
         }
 
+        [Obsolete]
         protected bool HasAtLeastFullStackOfItemTypeOrModel(Item it, int n)
         {
             if (m_Actor.Inventory == null || m_Actor.Inventory.IsEmpty)
@@ -3420,7 +5398,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             return m_Actor.Inventory.HasItemOfType(tt);
         }
 
-        protected int CountItemQuantityOfType(Type tt)
+        protected int CountItemQuantityOfType(Type tt, Item excludingThisOne = null)
         {
             if (m_Actor.Inventory == null || m_Actor.Inventory.IsEmpty)
                 return 0;
@@ -3428,14 +5406,14 @@ namespace djack.RogueSurvivor.Gameplay.AI
             int quantity = 0;
             foreach (Item otherIt in m_Actor.Inventory.Items)
             {
-                if (otherIt.GetType() == tt)
+                if (otherIt != excludingThisOne && otherIt.GetType() == tt)
                     quantity += otherIt.Quantity;
             }
 
             return quantity;
         }
 
-        protected int CountItemsOfSameType(Type tt)
+        protected int CountItemsOfSameType(Type tt, Item excludingThisOne = null)
         {
             if (m_Actor.Inventory == null || m_Actor.Inventory.IsEmpty)
                 return 0;
@@ -3443,20 +5421,42 @@ namespace djack.RogueSurvivor.Gameplay.AI
             int count = 0;
             foreach (Item otherIt in m_Actor.Inventory.Items)
             {
-                if (otherIt.GetType() == tt)
+                if ((otherIt != excludingThisOne) && (otherIt.GetType() == tt))
                     ++count;
             }
 
             return count;
         }
 
+        // alpha10
+        protected bool HasAnyRangedWeaponWithAmmo(Item excludingThisRangedWeapon = null)
+        {
+            foreach (Item it in m_Actor.Inventory.Items)
+            {
+                if ((it != excludingThisRangedWeapon) && (it is ItemRangedWeapon))
+                {
+                    ItemRangedWeapon itRw = it as ItemRangedWeapon;
+                    if (itRw.Ammo > 0)
+                        return true;
+                    foreach (Item otherIt in m_Actor.Inventory.Items)
+                    {
+                        if (otherIt is ItemAmmo)
+                        {
+                            if (itRw.AmmoType == (otherIt as ItemAmmo).AmmoType)
+                                return true;
+                        }
+                    }
+                }
+            }
+
+            return false;
+        }
         #endregion
 
         #region Running
         protected void RunIfPossible(Rules rules)
         {
-            if (rules.CanActorRun(m_Actor))
-                m_Actor.IsRunning = true;
+            m_Actor.IsRunning = rules.CanActorRun(m_Actor);  // alpha10 fix
         }
         #endregion
 
@@ -3469,43 +5469,69 @@ namespace djack.RogueSurvivor.Gameplay.AI
             return sum;
         }
 
+        // alpha10 new safety scoring
         /// <summary>
         /// Compute safety from a list of dangers at a given position.
         /// </summary>
         /// <param name="rules"></param>
         /// <param name="from">position to compute the safety</param>
         /// <param name="dangers">dangers to avoid</param>
-        /// <returns>a heuristic value, the higher the better the safety from the dangers</returns>
-        protected float SafetyFrom(Rules rules, Point from, List<Percept> dangers)
+        /// <returns>a heuristic value, the higher the better the safety from the dangers; base 100</returns>
+        protected int SafetyFrom(RogueGame game, Point from, List<Percept> dangers)
         {
+            Rules rules = game.Rules;
             Map map = m_Actor.Location.Map;
+            int distFromDangers = GridDistancesSum(rules, from, dangers);
+            int currentDistFromDangers = GridDistancesSum(rules, m_Actor.Location.Position, dangers);
 
-            // Heuristics:
-            // Primary: Get away from dangers.
-            // Weighting factors:
-            // 1 Avoid getting in corners.
-            // 2 Prefer going outside/inside if majority of dangers are inside/outside.
-            // 3 If can tire, prefer not jumping.
+            int score = 0;
 
-            // Primary: Get away from dangers.
-            #region
-            float avgDistance = GridDistancesSum(rules, from, dangers) / (1 + dangers.Count);
-            #endregion
+            // Base score is 100*distance to danger then add minor heuristics.
+            if (dangers.Count > 0)
+                score = (100 * distFromDangers) / dangers.Count;
 
-            // 1 Avoid getting in corners.
-            #region
-            int countFreeSquares = 0;
+            // Heuristics
+            // 1. Reward more potential escape tiles.
+            // 2. Reward going outside/inside if majority of dangers are inside/outside.
+            // 3. Reward ladder/stairs exits.
+            // 4. If can tire, prefer not jumping.
+            // 5. Punish stepping into traps.
+            // 6. Punish moving on or adj to explosives.
+
+            // 1. Reward more potential escape tiles.
+            // "Escape tile" = we can walk into it or open a door.
+            // Better if it is farther to dangers. Better if ladders/stairs exit.
             foreach (Direction d in Direction.COMPASS)
             {
                 Point to = from + d;
-                if (to == m_Actor.Location.Position || rules.IsWalkableFor(m_Actor, map, to.X, to.Y))
-                    ++countFreeSquares;
+                bool isEscape = rules.IsWalkableFor(m_Actor, map, to.X, to.Y);
+                if (!isEscape && m_Actor.Model.Abilities.CanUseMapObjects)
+                {
+                    DoorWindow door = map.GetMapObjectAt(to) as DoorWindow;
+                    if (door != null && !door.IsBarricaded)
+                        isEscape = true;
+                }
+                if (isEscape)
+                {
+                    score += 20;
+                    if (distFromDangers >= currentDistFromDangers)
+                    {
+                        score += 20;
+                    }
+                    else if (distFromDangers == currentDistFromDangers)
+                    {
+                        score += 10;
+                    }
+                    if (m_Actor.Model.Abilities.AI_CanUseAIExits)
+                    {
+                        Exit adjExit = map.GetExitAt(to);
+                        if (adjExit != null)
+                            score += 10;
+                    }
+                }
             }
-            float avoidCornerBonus = countFreeSquares * 0.1f;   // [0,+0.8]
-            #endregion
 
-            // 2 Prefer going outside/inside if majority of dangers are inside/outside.
-            #region
+            // 2. Reward going outside/inside if majority of dangers are inside/outside.
             bool isFromInside = map.GetTileAt(from).IsInside;
             int majorityDangersInside = 0;
             foreach (Percept p in dangers)
@@ -3515,41 +5541,65 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 else
                     --majorityDangersInside;
             }
-            const float inOutFactor = 1.25f;
-            float inOutBonus = 0;
             if (isFromInside)
             {
                 // from is inside, want that if majority dangers are outside.
-                if (majorityDangersInside < 0) inOutBonus = inOutFactor;
+                if (majorityDangersInside < 0) score += 100;
             }
             else
             {
                 // from is outside, want that if majority dangers are inside.                              
-                if (majorityDangersInside > 0) inOutBonus = inOutFactor;
+                if (majorityDangersInside > 0) score += 100;
             }
-            #endregion
 
-            // 3 If can tire, prefer not jumping.
-            #region
-            float jumpPenalty = 0;
+            // 3. Reward ladder/stairs exits.
+            if (m_Actor.Model.Abilities.AI_CanUseAIExits)
+            {
+                Exit exitThere = map.GetExitAt(from);
+                if (exitThere != null && exitThere.IsAnAIExit && exitThere.ToMap.District == map.District)
+                {
+                    score += 200;
+                }
+            }
+
+            // 4. If can tire, prefer not jumping.
             if (m_Actor.Model.Abilities.CanTire && m_Actor.Model.Abilities.CanJump)
             {
                 MapObject obj = map.GetMapObjectAt(from);
                 if (obj != null && obj.IsJumpable)
-                    jumpPenalty = 0.1f;
+                {
+                    score -= 50;
+                }
             }
-            #endregion
 
-            // Final Safety = getting away * heuristics weights.
-            float heursticFactorBonus = 1f + avoidCornerBonus + inOutBonus - jumpPenalty;
-            return avgDistance * heursticFactorBonus;
+            // 5. Punish stepping into traps.
+            // Less if has Light Feet
+            if (IsAnyUnsafeDamagingTrapThere(game, map, from))
+            {
+                int lightFeetSkill = m_Actor.Sheet.SkillTable.GetSkillLevel((int)Skills.IDs.LIGHT_FEET);
+                score -= 100 / (1 + lightFeetSkill);
+            }
+
+            // 6. Punish moving on or adj to explosives.
+            if (IsAnyPrimedExplosiveThere(map, from))
+                score -= 100;
+            foreach (Direction d in Direction.COMPASS)
+            {
+                Point to = from + d;
+                if (IsAnyPrimedExplosiveThere(map, to))
+                    score -= 50;
+            }
+
+            // done
+            return score;
         }
         #endregion
 
+
         #region Choice making
-        protected ChoiceEval<_T_> Choose<_T_>(RogueGame game, List<_T_> listOfChoices, 
+        protected ChoiceEval<_T_> Choose<_T_>(RogueGame game, List<_T_> listOfChoices,
             Func<_T_, bool> isChoiceValidFn,
-            Func<_T_, float> evalChoiceFn, 
+            Func<_T_, float> evalChoiceFn,
             Func<float, float, bool> isBetterEvalThanFn)
         {
             //Console.Out.WriteLine("Evaluating choices");
@@ -3565,9 +5615,9 @@ namespace djack.RogueSurvivor.Gameplay.AI
             bool hasValue = false;
             float bestValue = 0;    // irrevelant for 1st value, use flag hasValue instead.
             List<ChoiceEval<_T_>> validChoices = new List<ChoiceEval<_T_>>(listOfChoices.Count);
-            for(int i = 0; i < listOfChoices.Count; i++)
+            for (int i = 0; i < listOfChoices.Count; i++)
             {
-                if(!isChoiceValidFn(listOfChoices[i]))
+                if (!isChoiceValidFn(listOfChoices[i]))
                     continue;
 
                 float value_i = evalChoiceFn(listOfChoices[i]);
@@ -3619,9 +5669,11 @@ namespace djack.RogueSurvivor.Gameplay.AI
             return candidates[iChoice];
         }
 
-        protected ChoiceEval<_DATA_> ChooseExtended<_T_, _DATA_>(RogueGame game, List<_T_> listOfChoices,
+        // alpha10 evalChoiceFn now also accepts data param from isChoiceValidFn; eg: an action
+        protected ChoiceEval<_DATA_> ChooseExtended<_T_, _DATA_>(RogueGame game,
+            List<_T_> listOfChoices,
             Func<_T_, _DATA_> isChoiceValidFn,
-            Func<_T_, float> evalChoiceFn,
+            Func<_T_, _DATA_, float> evalChoiceFn,
             Func<float, float, bool> isBetterEvalThanFn)
         {
             //Console.Out.WriteLine("Evaluating choices");
@@ -3643,7 +5695,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 if (choiceData == null)
                     continue;
 
-                float value_i = evalChoiceFn(listOfChoices[i]);
+                float value_i = evalChoiceFn(listOfChoices[i], choiceData);
 
                 if (float.IsNaN(value_i))
                     continue;
@@ -3714,16 +5766,18 @@ namespace djack.RogueSurvivor.Gameplay.AI
         /// </summary>
         /// <param name="a"></param>
         /// <returns></returns>
-        protected bool isValidWanderAction(RogueGame game, ActorAction a)
+        protected bool IsValidWanderAction(RogueGame game, ActorAction a)
         {
-            return a != null && 
-                (a is ActionMoveStep || 
+            return a != null &&
+                (a is ActionMoveStep ||
                 a is ActionSwitchPlace ||
                 a is ActionPush ||
-                a is ActionOpenDoor || 
-                (a is ActionChat && (this.Directives.CanTrade || (a as ActionChat).Target == m_Actor.Leader)) || 
-                a is ActionBashDoor || 
-                (a is ActionGetFromContainer && IsInterestingItem(game, (a as ActionGetFromContainer).Item)) ||
+                a is ActionOpenDoor ||
+                (a is ActionChat && (this.Directives.CanTrade || (a as ActionChat).Target == m_Actor.Leader)) ||
+                a is ActionBashDoor ||
+                a is ActionBreak ||  // alpha10.1 prevent rare cases of getting stuck or going back and forth but we rate it very very low
+                a is ActionBashDoor || // alpha10.1 prevent rare cases of getting stuck or going back and forth but we rate it very low
+                (a is ActionGetFromContainer && IsInterestingItemToOwn(game, (a as ActionGetFromContainer).Item, ItemSource.GROUND_STACK)) ||
                 a is ActionBarricadeDoor);
         }
 
@@ -3778,7 +5832,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                     Actor other = map.GetActorAt(pt);
                     if (other == null)
                         return false;
-                    return game.Rules.IsEnemyOf(actor, other);
+                    return game.Rules.AreEnemies(actor, other);
                 });
         }
 
@@ -3795,7 +5849,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             return (actor.GetEquippedWeapon() as ItemRangedWeapon) != null;
         }
 
-        protected ItemAmmo GetCompatibleAmmoItem(RogueGame game, ItemRangedWeapon rw)
+        protected ItemAmmo GetCompatibleAmmoItem(RogueGame game, ItemRangedWeapon rw, bool checkForUseNow)
         {
             if (m_Actor.Inventory == null)
                 return null;
@@ -3806,7 +5860,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 ItemAmmo ammoIt = it as ItemAmmo;
                 if (ammoIt == null)
                     continue;
-                if (ammoIt.AmmoType == rw.AmmoType && game.Rules.CanActorUseItem(m_Actor, ammoIt))
+                if (ammoIt.AmmoType == rw.AmmoType && (!checkForUseNow || game.Rules.CanActorUseItem(m_Actor, ammoIt)))
                     return ammoIt;
             }
 
@@ -3831,39 +5885,6 @@ namespace djack.RogueSurvivor.Gameplay.AI
 
             // failed.
             return null;
-        }
-
-        protected ItemMeleeWeapon GetBestMeleeWeapon(RogueGame game, Predicate<Item> fn)
-        {
-            if (m_Actor.Inventory == null)
-                return null;
-
-            // best = score = most damage 1st, most attack 2nd, less stamina penalty 3rd.
-            int bestScore = 0;
-            ItemMeleeWeapon bestWeapon = null;
-
-            foreach (Item it in m_Actor.Inventory.Items)
-            {
-                if (fn != null && !fn(it))
-                    continue;
-
-                ItemMeleeWeapon weapon = it as ItemMeleeWeapon;
-                if (weapon == null)
-                    continue;
-                ItemMeleeWeaponModel model = weapon.Model as ItemMeleeWeaponModel;
-
-                int score = 10000 * model.Attack.DamageValue + 
-                            100 * model.Attack.HitValue + 
-                            -model.Attack.StaminaPenalty;
-                if (score > bestScore)
-                {
-                    bestScore = score;
-                    bestWeapon = weapon;
-                }
-            }
-
-            // done.
-            return bestWeapon;
         }
 
         protected ItemBodyArmor GetBestBodyArmor(RogueGame game, Predicate<Item> fn)
@@ -3900,19 +5921,21 @@ namespace djack.RogueSurvivor.Gameplay.AI
         {
             ///////////////////////////////////////////////////////
             // Targets to evade or not:
-            // 1. Yes : if fighting makes me tired.
+            // 1. Yes : if fighting makes me tired vs a slower target (so i will lose my speed advantage by tiring) // alpha10 added slower target condition
             // 2. Yes : slower targets that will act next turn (kiting) and are targetting us.
             // 3. No  : target is weaker.
             // 4. Yes : actor is weaker.
             // 5. Unclear cases, utimately decide on courage.
             ///////////////////////////////////////////////////////
 
-            // 1. Always if fighting makes me tired.
-            if (WillTireAfterAttack(game, actor))
+            bool hasSpeedAdvantage = game.Rules.ActorSpeed(actor) > game.Rules.ActorSpeed(target);
+
+            // 1. Yes : if fighting makes me tired vs a slower target (so i will lose my speed advantage by tiring) // alpha10 added slower target condition
+            if (hasSpeedAdvantage && WillTireAfterAttack(game, actor))
                 return true;
 
             // 2. Yes : slower targets that will act next turn (kiting) and are targetting us.
-            if (game.Rules.ActorSpeed(actor) > game.Rules.ActorSpeed(target))
+            if (hasSpeedAdvantage)
             {
                 // don't evade if we're gonna act again.
                 if (game.Rules.WillActorActAgainBefore(actor, target))
@@ -3946,10 +5969,27 @@ namespace djack.RogueSurvivor.Gameplay.AI
         /// <returns>weaker actor, null if they are equal.</returns>
         protected Actor FindWeakerInMelee(RogueGame game, Actor a, Actor b)
         {
+            // alpha10 count how many hits it would take to kill each other
+            // the actor that dies faster is the weaker one
+
+            // silly cases of peope already dead, you never know -_-
+            if (a.IsDead)
+                return a;
+            if (b.IsDead)
+                return b;
+
+            // count hits, lowest hit dies first
+            int hitsToKillA = (int)Math.Ceiling((double)a.HitPoints / (double)b.CurrentMeleeAttack.DamageValue);
+            int hitsToKillB = (int)Math.Ceiling((double)b.HitPoints / (double)a.CurrentMeleeAttack.DamageValue);
+
+            return hitsToKillA < hitsToKillB ? a :
+                hitsToKillA > hitsToKillB ? b :
+                null;
+
+            /* previous bizarre logic, what was I thinking? -_-
             int value_A = a.HitPoints + a.CurrentMeleeAttack.DamageValue;
             int value_B = b.HitPoints + b.CurrentMeleeAttack.DamageValue;
-
-            return value_A < value_B ? a : value_A > value_B ? b : null;
+            return value_A < value_B ? a : value_A > value_B ? b : null; */
         }
 
         protected bool WillTireAfterAttack(RogueGame game, Actor actor)
@@ -3974,7 +6014,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             int targetSpeed = game.Rules.ActorSpeed(target);
 
             // if better speed, yes.
-            if (actorSpeed > targetSpeed) 
+            if (actorSpeed > targetSpeed)
                 return true;
 
             // if we can run and the target can't and that would make us faster without tiring us, then yes!
@@ -3996,9 +6036,12 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 case Lighting.LIT:
                     return false;
                 case Lighting.OUTSIDE:
-                    // Needs only if At Night & (Outside or Heavy Rain).
-                    return m_Actor.Location.Map.LocalTime.IsNight &&
-                        (game.Session.World.Weather == Weather.HEAVY_RAIN || !m_Actor.Location.Map.GetTileAt(m_Actor.Location.Position.X, m_Actor.Location.Position.Y).IsInside);
+                    // alpha10 outside, lights have an effect only during the night.
+                    return m_Actor.Location.Map.LocalTime.IsNight;
+                // pre alpha10 more conservative usage of lights
+                //// Needs only if At Night & (Outside or Heavy Rain).
+                //return m_Actor.Location.Map.LocalTime.IsNight &&
+                //    (game.Session.World.Weather == Weather.HEAVY_RAIN || !m_Actor.Location.Map.GetTileAt(m_Actor.Location.Position.X, m_Actor.Location.Position.Y).IsInside);
                 default:
                     throw new ArgumentOutOfRangeException("unhandled lighting");
             }
@@ -4031,7 +6074,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             ///////////////////////////////////////
 
             bool wall = !map.GetTileAt(pos).Model.IsWalkable;
-            if(wall)
+            if (wall)
                 return false;
 
             Point N = pos + Direction.N;
@@ -4070,7 +6113,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
         /// <returns></returns>
         protected bool IsFriendOf(RogueGame game, Actor other)
         {
-            return !game.Rules.IsEnemyOf(m_Actor, other) && m_Actor.Faction == other.Faction;
+            return !game.Rules.AreEnemies(m_Actor, other) && m_Actor.Faction == other.Faction;
         }
 
         protected Actor GetNearestTargetFor(RogueGame game, Actor actor)
@@ -4084,7 +6127,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             {
                 if (a.IsDead) continue;
                 if (a == actor) continue;
-                if (!game.Rules.IsEnemyOf(actor, a)) continue;
+                if (!game.Rules.AreEnemies(actor, a)) continue;
 
                 int d = game.Rules.GridDistance(a.Location.Position, actor.Location.Position);
                 if (d < best)
@@ -4098,6 +6141,12 @@ namespace djack.RogueSurvivor.Gameplay.AI
             }
 
             return nearest;
+        }
+
+        // alpha10
+        protected Attack GetActorAttack(RogueGame game, Actor actor)
+        {
+            return actor.GetEquippedRangedWeapon() != null ? actor.CurrentRangedAttack : actor.CurrentMeleeAttack;
         }
         #endregion
 
@@ -4134,11 +6183,24 @@ namespace djack.RogueSurvivor.Gameplay.AI
         #endregion
 
         #region Map
-        public static bool IsAnyActivatedTrapThere(Map map, Point pos)
+        // alpha10
+        public bool IsAnyUnsafeDamagingTrapThere(RogueGame game, Map map, Point pos)
         {
             Inventory inv = map.GetItemsAt(pos);
             if (inv == null || inv.IsEmpty) return false;
-            return inv.GetFirstMatching((it) => { ItemTrap trap = it as ItemTrap; return trap != null && trap.IsActivated; }) != null;
+            return inv.GetFirstMatching((it) =>
+            {
+                ItemTrap trap = it as ItemTrap;
+                return trap != null && trap.IsActivated && trap.TrapModel.Damage > 0 && !game.Rules.IsSafeFromTrap(trap, m_Actor);
+            }) != null;
+        }
+
+        // alpha10
+        public static bool IsAnyPrimedExplosiveThere(Map map, Point pos)
+        {
+            Inventory inv = map.GetItemsAt(pos);
+            if (inv == null || inv.IsEmpty) return false;
+            return inv.GetFirstMatching((it) => { ItemPrimedExplosive ex = it as ItemPrimedExplosive; return ex != null; }) != null;
         }
 
         public static bool IsZoneChange(Map map, Point pos)
@@ -4158,7 +6220,6 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 return false;
             });
         }
-        #endregion
 
         protected Point RandomPositionNear(Rules rules, Map map, Point goal, int range)
         {
@@ -4169,6 +6230,66 @@ namespace djack.RogueSurvivor.Gameplay.AI
 
             return new Point(x, y);
         }
+        
+        // alpha10.1
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="mobj">can be null (will return 0)</param>
+        /// <returns>0 for null objs, total hitpoints for breakable objects, a silly large amount for unbreakable objs</returns>
+        protected int GetObjectHitPoints(MapObject mobj)
+        {
+            if (mobj == null)
+                return 0;
+
+            if (!mobj.IsBreakable)
+                return 100000;
+
+            int hp = mobj.HitPoints;
+
+            // add barricade hps
+            DoorWindow dw = mobj as DoorWindow;
+            if (dw != null)
+            {
+                if (dw.IsBarricaded)
+                    hp += dw.BarricadePoints;
+            }
+
+            return hp;
+        }
+        #endregion
+
+        // alpha10
+        #region Route checking
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="game"></param>
+        /// <param name="dest"></param>
+        /// <param name="allowedActions"></param>
+        /// <returns></returns>
+        /// <see cref="RouteFinder.CanReachSimple(RogueGame, Point, int, Func{Point, Point, int})"/>
+        protected bool CanReachSimple(RogueGame game, Point dest, RouteFinder.SpecialActions allowedActions)
+        {
+            if (m_RouteFinder == null)
+                m_RouteFinder = new RouteFinder(this);
+            m_RouteFinder.AllowedActions = allowedActions;
+            int maxDist = game.Rules.GridDistance(m_Actor.Location.Position, dest);
+            return m_RouteFinder.CanReachSimple(game, dest, maxDist, game.Rules.GridDistance);
+        }
+
+        protected void FilterOutUnreachablePercepts(RogueGame game, ref List<Percept> percepts, RouteFinder.SpecialActions allowedActions)
+        {
+            int i = 0;
+            while (i < percepts.Count)
+            {
+                if (CanReachSimple(game, percepts[i].Location.Position, allowedActions))
+                    i++;
+                else
+                    percepts.RemoveAt(i);
+            }
+        }
+        #endregion
         #endregion
 
         #region Taboo items
@@ -4240,6 +6361,61 @@ namespace djack.RogueSurvivor.Gameplay.AI
         protected void ClearTabooTrades()
         {
             m_TabooTrades = null;
+        }
+        #endregion
+
+        // alpha10 Taboo Equipment slots
+        // Simple solution to cases of ai getting stuck in an infinite unequip-equip loop.
+        // Typically caused by conflicting behaviors that will "compete" for an equipment slot and will keep doing
+        // infinite cycle of equip-unequip, each behavior trying to get "his" item equiped on the same doll part.
+        // Current solution is to temporaly reserve a doll part by using taboo doll parts until the behavior is done with it.
+        // Eg of cycle in SoldierAI (fixed now with taboo doll part)
+        // - BehaviorThrowGrenade wants to equip the grenade, so unequip rifle (free action)
+        // - but at next ai tick BehaviorEquipBestItems wants the rifle equiped, so equip rifle (free action)
+        // - next ai tick BehaviorThrowGrenade triggers again
+        // - etc...
+        //
+        // It relies on each competing behavior checking and setting taboo slots correctly.
+        //
+        // There are conceptually probably better solutions but I don't have time.
+        // TODO -- could be improved by adding which behavior is reserving which slot and add safety code that
+        //         barks when the wrong behavior wants to release or is marking.
+        #region Taboo equipment slots
+
+        /// <summary>
+        /// A Behavior wants to reserve en equipment slot for use in the next ai ticks.
+        /// The same Behavior can keep reserving the same slot over many ticks until it is done. 
+        /// It must then release the slot by unmarking it.
+        /// Must reserve slots ONLY FOR AP FREE actions like Equip and Unequip.
+        /// </summary>
+        /// <param name="part"></param>
+        /// <see cref="UnmarkEquipmentSlotAsTaboo(DollPart)"/>
+        protected void MarkEquipmentSlotAsTaboo(DollPart part)
+        {
+            m_ReservedEquipmentSlots |= (1 << (int)part);
+        }
+
+        /// <summary>
+        /// A Behavior release an equipment slot for use by other behaviors.
+        /// MUST RELEASE an equipment slot before returning an NON-AP FREE action or the lock will persist
+        /// for next turn.
+        /// </summary>
+        /// <param name="part"></param>
+        /// <see cref="MarkEquipmentSlotAsTaboo(DollPart)"/>
+        protected void UnmarkEquipmentSlotAsTaboo(DollPart part)
+        {
+            m_ReservedEquipmentSlots &= ~(1 << (int)part);
+        }
+
+        /// <summary>
+        /// A Behavior checks if an equipment slot is reserved and it should not do anything with it.
+        /// </summary>
+        /// <param name="part"></param>
+        /// <returns></returns>
+        /// <see cref="MarkEquipmentSlotAsTaboo(DollPart)"/>
+        protected bool IsEquipmentSlotTaboo(DollPart part)
+        {
+            return (m_ReservedEquipmentSlots & (1 << (int)part)) != 0;
         }
         #endregion
     }

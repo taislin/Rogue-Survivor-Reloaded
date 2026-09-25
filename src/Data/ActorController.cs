@@ -14,6 +14,10 @@ namespace djack.RogueSurvivor.Data
         protected Actor m_Actor;
         #endregion
 
+        #region Properties
+        public Actor ControlledActor { get { return m_Actor; } } // alpha10
+        #endregion
+
         #region Taking control
         public virtual void TakeControl(Actor actor)
         {

@@ -32,7 +32,11 @@ namespace djack.RogueSurvivor.Engine.Actions
 
         public override void Perform()
         {
-            m_Game.DoTakeLead(m_Actor, m_Target);
+            // alpha10.1 steal lead vs take lead
+            if (m_Target.HasLeader)
+                m_Game.DoStealLead(m_Actor, m_Target);
+            else
+                m_Game.DoTakeLead(m_Actor, m_Target);
         }
         #endregion
     }

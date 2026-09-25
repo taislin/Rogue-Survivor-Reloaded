@@ -1,19 +1,19 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Text;
 
 using djack.RogueSurvivor.Data;
 
 namespace djack.RogueSurvivor.Gameplay.AI
 {
+    // alpha10.1 added Age concept, changed implementation from Queue to List (LinkedList is probably not worth it)
     [Serializable]
     class ExplorationData
     {
         #region Fields
         int m_LocationsQueueSize;
-        Queue<Location> m_LocationsQueue;
+        List<Location> m_LocationsQueue;  // from oldest to most recent
         int m_ZonesQueueSize;
-        Queue<Zone> m_ZonesQueue;
+        List<Zone> m_ZonesQueue;  // from oldest to most recent
         #endregion
 
         #region Properties
@@ -28,9 +28,9 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 throw new ArgumentOutOfRangeException("zonesQueueSize < 1");
 
             m_LocationsQueueSize = locationsToRemember;
-            m_LocationsQueue = new Queue<Location>(locationsToRemember);
+            m_LocationsQueue = new List<Location>(locationsToRemember);
             m_ZonesQueueSize = zonesToRemember;
-            m_ZonesQueue = new Queue<Zone>(zonesToRemember);
+            m_ZonesQueue = new List<Zone>(zonesToRemember);
         }
 
         public void Clear()
@@ -49,8 +49,25 @@ namespace djack.RogueSurvivor.Gameplay.AI
         public void AddExplored(Location loc)
         {
             if (m_LocationsQueue.Count >= m_LocationsQueueSize)
-                m_LocationsQueue.Dequeue();
-            m_LocationsQueue.Enqueue(loc);
+                m_LocationsQueue.RemoveAt(0);
+            m_LocationsQueue.Add(loc);
+        }
+
+        // alpha10.1
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="loc"></param>
+        /// <returns>0 for locs not explored</returns>
+        public int GetExploredAge(Location loc)
+        {
+            int n = m_LocationsQueue.Count;
+            for (int i = n - 1; i >= 0; i--)
+            {
+                if (m_LocationsQueue[i].Equals(loc))
+                    return n - i;
+            }
+            return 0;
         }
 
         public bool HasExplored(Zone zone)
@@ -76,8 +93,47 @@ namespace djack.RogueSurvivor.Gameplay.AI
         public void AddExplored(Zone zone)
         {
             if (m_ZonesQueue.Count >= m_ZonesQueueSize)
-                m_ZonesQueue.Dequeue();
-            m_ZonesQueue.Enqueue(zone);
+                m_ZonesQueue.RemoveAt(0);
+            m_ZonesQueue.Add(zone);
+        }
+
+        // alpha10.1
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="zone"></param>
+        /// <returns>0 for zones not explored</returns>
+        public int GetExploredAge(Zone zone)
+        {
+            int n = m_ZonesQueue.Count;
+            for (int i = n - 1; i >= 0; i--)
+            {
+                if (m_ZonesQueue[i] == zone)
+                    return n - i;
+            }
+            return 0;
+        }
+
+        /// <summary>
+        /// Get age of most recently explored from list ("youngest")
+        /// </summary>
+        /// <param name="zones">can be null or empty, will return 0</param>
+        /// <returns></returns>
+        public int GetExploredAge(List<Zone> zones)
+        {
+            if (zones == null)
+                return 0;
+            if (zones.Count == 0)
+                return 0;
+
+            int youngestAge = int.MaxValue;  // its bad hey but it works
+            foreach (Zone z in zones)
+            {
+                int age = GetExploredAge(z);
+                if (age < youngestAge)
+                    youngestAge = age;
+            }
+            return youngestAge;
         }
         #endregion
 
@@ -86,6 +142,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
         {
             // location.
             //**disabled** if (!HasExplored(location))
+            if (!HasExplored(location))  // alpha10.1
                 AddExplored(location);
 
             // zones.

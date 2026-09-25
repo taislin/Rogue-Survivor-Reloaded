@@ -40,10 +40,11 @@ namespace djack.RogueSurvivor.Engine
         EAT_CORPSE,
         FIRE_MODE,
         GIVE_ITEM,
-        INITIATE_TRADE,
+        NEGOCIATE_TRADE,
         LEAD_MODE,
         MARK_ENEMIES_MODE,
         ORDER_MODE,
+        PULL_MODE,  // alpha10
         PUSH_MODE,
         REVIVE_CORPSE,
         SHOUT,

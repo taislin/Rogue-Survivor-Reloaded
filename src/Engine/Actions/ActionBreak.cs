@@ -1,10 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 
 using djack.RogueSurvivor.Data;
-using djack.RogueSurvivor.Engine.MapObjects;
 
 namespace djack.RogueSurvivor.Engine.Actions
 {
@@ -12,6 +8,11 @@ namespace djack.RogueSurvivor.Engine.Actions
     {
         #region Fields
         MapObject m_Obj;
+        #endregion
+
+        #region Properties
+        // alpha10.1 needed by RogueGame to ask player if he really wants to break
+        public MapObject MapObject { get { return m_Obj; } }
         #endregion
 
         #region Init

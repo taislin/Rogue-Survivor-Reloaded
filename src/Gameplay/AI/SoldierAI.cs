@@ -9,6 +9,7 @@ using djack.RogueSurvivor.Engine;
 using djack.RogueSurvivor.Engine.Actions;
 using djack.RogueSurvivor.Engine.AI;
 using djack.RogueSurvivor.Gameplay.AI.Sensors;
+using djack.RogueSurvivor.Gameplay.AI.Tools;
 
 namespace djack.RogueSurvivor.Gameplay.AI
 {
@@ -70,11 +71,23 @@ namespace djack.RogueSurvivor.Gameplay.AI
         {
             List<Percept> mapPercepts = FilterSameMap(game, percepts);
 
+            // alpha10
+            // don't run by default.
+            m_Actor.IsRunning = false;
+
+            // 0. Equip best item
+            ActorAction bestEquip = BehaviorEquipBestItems(game, false, true);
+            if (bestEquip != null)
+            {
+                return bestEquip;
+            }
+            // end alpha10
+
             // 1. Follow order
             #region
             if (this.Order != null)
             {
-                ActorAction orderAction = ExecuteOrder(game, this.Order, mapPercepts);
+                ActorAction orderAction = ExecuteOrder(game, this.Order, mapPercepts, m_Exploration);
                 if (orderAction == null)
                     SetOrder(null);
                 else
@@ -88,10 +101,10 @@ namespace djack.RogueSurvivor.Gameplay.AI
             /////////////////////////////////////
             // 0 run away from primed explosives.
             // 1 throw grenades at enemies.
-            // 2 equip weapon/armor.
+            // alpha10 OBSOLETE 2 equip weapon/armor.
             // 3 shout, fire/hit at nearest enemy.
             // 4 rest if tired
-            // 5 charge enemy.
+            // alpha10 obsolete and redundant with rule 3! 5 charge enemy.
             // 6 use med.
             // 7 sleep.
             // 8 chase old enemy.
@@ -101,9 +114,6 @@ namespace djack.RogueSurvivor.Gameplay.AI
             // 12 explore.
             // 13 wander.
             ////////////////////////////////////
-
-            // don't run by default.
-            m_Actor.IsRunning = false;
 
             // get data.
             List<Percept> allEnemies = FilterEnemies(game, mapPercepts);
@@ -137,21 +147,22 @@ namespace djack.RogueSurvivor.Gameplay.AI
             }
             #endregion
 
+            // alpha10 obsolete
             // 2 equip weapon/armor
-            #region
-            ActorAction equipWpnAction = BehaviorEquipWeapon(game);
-            if (equipWpnAction != null)
-            {
-                m_Actor.Activity = Activity.IDLE;
-                return equipWpnAction;
-            }
-            ActorAction equipArmAction = BehaviorEquipBodyArmor(game);
-            if (equipArmAction != null)
-            {
-                m_Actor.Activity = Activity.IDLE;
-                return equipArmAction;
-            }
-            #endregion
+            //#region
+            //ActorAction equipWpnAction = BehaviorEquipWeapon(game);
+            //if (equipWpnAction != null)
+            //{
+            //    m_Actor.Activity = Activity.IDLE;
+            //    return equipWpnAction;
+            //}
+            //ActorAction equipArmAction = BehaviorEquipBestBodyArmor(game);
+            //if (equipArmAction != null)
+            //{
+            //    m_Actor.Activity = Activity.IDLE;
+            //    return equipArmAction;
+            //}
+            //#endregion
 
             // 3 shout, fire/hit at nearest enemy.
             #region
@@ -187,7 +198,8 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 }
 
                 // fight or flee?
-                ActorAction fightOrFlee = BehaviorFightOrFlee(game, currentEnemies, true, true, ActorCourage.COURAGEOUS, FIGHT_EMOTES);
+                RouteFinder.SpecialActions allowedChargeActions = RouteFinder.SpecialActions.JUMP | RouteFinder.SpecialActions.DOORS; // alpha10
+                ActorAction fightOrFlee = BehaviorFightOrFlee(game, currentEnemies, true, true, ActorCourage.COURAGEOUS, FIGHT_EMOTES, allowedChargeActions);
                 if (fightOrFlee != null)
                 {
                     return fightOrFlee;
@@ -205,20 +217,21 @@ namespace djack.RogueSurvivor.Gameplay.AI
             }
             #endregion
 
-            // 5 charge enemy
-            #region
-            if (hasAnyEnemies)
-            {
-                Percept nearestEnemy = FilterNearest(game, allEnemies);
-                ActorAction chargeAction = BehaviorChargeEnemy(game, nearestEnemy);
-                if (chargeAction != null)
-                {
-                    m_Actor.Activity = Activity.FIGHTING;
-                    m_Actor.TargetActor = nearestEnemy.Percepted as Actor;
-                    return chargeAction;
-                }
-            }
-            #endregion
+            // alpha10 obsolete and redundant with rule 3!
+            //// 5 charge enemy
+            //#region
+            //if (hasAnyEnemies)
+            //{
+            //    Percept nearestEnemy = FilterNearest(game, allEnemies);
+            //    ActorAction chargeAction = BehaviorChargeEnemy(game, nearestEnemy, false, false);
+            //    if (chargeAction != null)
+            //    {
+            //        m_Actor.Activity = Activity.FIGHTING;
+            //        m_Actor.TargetActor = nearestEnemy.Percepted as Actor;
+            //        return chargeAction;
+            //    }
+            //}
+            //#endregion
 
             // 6 use medicine
             #region
@@ -269,7 +282,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 }
 
                 // chase.
-                ActorAction chargeAction = BehaviorChargeEnemy(game, chasePercept);
+                ActorAction chargeAction = BehaviorChargeEnemy(game, chasePercept, false, false);
                 if (chargeAction != null)
                 {
                     m_Actor.Activity = Activity.FIGHTING;
@@ -360,7 +373,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             // 13 wander
             #region
             m_Actor.Activity = Activity.IDLE;
-            return BehaviorWander(game);
+            return BehaviorWander(game, m_Exploration);
             #endregion
         }
         #endregion

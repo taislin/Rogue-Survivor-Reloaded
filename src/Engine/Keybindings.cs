@@ -56,7 +56,7 @@ namespace djack.RogueSurvivor.Engine
             Set(PlayerCommand.EAT_CORPSE, Keys.E | Keys.Shift);
             Set(PlayerCommand.GIVE_ITEM, Keys.G);
             Set(PlayerCommand.HINTS_SCREEN_MODE, Keys.H | Keys.Control);
-            Set(PlayerCommand.INITIATE_TRADE, Keys.E);
+            Set(PlayerCommand.NEGOCIATE_TRADE, Keys.E);
             Set(PlayerCommand.LOAD_GAME, Keys.L | Keys.Shift);
             Set(PlayerCommand.MARK_ENEMIES_MODE, Keys.E | Keys.Control);
             Set(PlayerCommand.MESSAGE_LOG, Keys.M | Keys.Shift);
@@ -70,6 +70,7 @@ namespace djack.RogueSurvivor.Engine
             Set(PlayerCommand.MOVE_W, Keys.NumPad4);
             Set(PlayerCommand.OPTIONS_MODE, Keys.O | Keys.Shift);
             Set(PlayerCommand.ORDER_MODE, Keys.O);
+            Set(PlayerCommand.PULL_MODE, Keys.P | Keys.Control); // alpha10
             Set(PlayerCommand.PUSH_MODE, Keys.P);
             Set(PlayerCommand.QUIT_GAME, Keys.Q | Keys.Shift);
             Set(PlayerCommand.REVIVE_CORPSE, Keys.R | Keys.Shift);

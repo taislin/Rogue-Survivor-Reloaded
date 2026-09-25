@@ -42,7 +42,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             m_ReportStage = 0;
         }
 
-        protected ActorAction ExecuteOrder(RogueGame game, ActorOrder order, List<Percept> percepts)
+        protected ActorAction ExecuteOrder(RogueGame game, ActorOrder order, List<Percept> percepts, ExplorationData exploration)
         {
             // cancel if leader is dead!
             if (m_Actor.Leader == null || m_Actor.Leader.IsDead)
@@ -64,7 +64,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 case ActorTasks.GUARD:
                     return ExecuteGuard(game, order.Location, percepts);
                 case ActorTasks.PATROL:
-                    return ExecutePatrol(game, order.Location, percepts);
+                    return ExecutePatrol(game, order.Location, percepts, exploration);
                 case ActorTasks.REPORT_EVENTS:
                     return ExecuteReport(game, percepts);
                 case ActorTasks.SLEEP_NOW:
@@ -117,7 +117,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             }
 
             // 2.2 Move closer.
-            ActorAction moveAction = BehaviorIntelligentBumpToward(game, location.Position);
+            ActorAction moveAction = BehaviorIntelligentBumpToward(game, location.Position, false, false);
             if (moveAction != null)
             {
                 RunIfPossible(game.Rules);
@@ -160,7 +160,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             }
 
             // 2.2 Move closer.
-            ActorAction moveAction = BehaviorIntelligentBumpToward(game, location.Position);
+            ActorAction moveAction = BehaviorIntelligentBumpToward(game, location.Position, false, false);
             if (moveAction != null)
             {
                 RunIfPossible(game.Rules);
@@ -217,7 +217,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             // 2. Move to guard position.
             if (m_Actor.Location.Position != location.Position)
             {
-                ActorAction bumpAction = BehaviorIntelligentBumpToward(game, location.Position);
+                ActorAction bumpAction = BehaviorIntelligentBumpToward(game, location.Position, false, false);
                 if (bumpAction != null)
                 {
                     m_Actor.Activity = Activity.IDLE;
@@ -251,7 +251,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
         #endregion
 
         #region Patrolling
-        ActorAction ExecutePatrol(RogueGame game, Location location, List<Percept> percepts)
+        ActorAction ExecutePatrol(RogueGame game, Location location, List<Percept> percepts, ExplorationData exploration)
         {
             ////////////////////////////////
             // Interrupt patrol
@@ -303,7 +303,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             // 2. Move to patrol position.
             if (!m_ReachedPatrolPoint)
             {
-                ActorAction bumpAction = BehaviorIntelligentBumpToward(game, location.Position);
+                ActorAction bumpAction = BehaviorIntelligentBumpToward(game, location.Position, false, false);
                 if (bumpAction != null)
                 {
                     m_Actor.Activity = Activity.IDLE;
@@ -342,7 +342,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
                         if (zHere == zPatrol)
                             return true;
                 return false;
-            }
+            }, exploration
             );
         }
         #endregion
@@ -354,12 +354,27 @@ namespace djack.RogueSurvivor.Gameplay.AI
             if (m_Actor.Inventory.IsEmpty)
                 return null;
 
+            // alpha10.1 bugfix followers drop all was looping
+            // use drop item behaviour on the first item it can.
+            for (int i = 0; i < m_Actor.Inventory.CountItems; i++)
+            {
+                ActorAction dropAction = BehaviorDropItem(game, m_Actor.Inventory[i]);
+                if (dropAction != null)
+                    return dropAction;
+            }
+
+            // we still have at least one item but cannot drop it for some reason,
+            // consider the order done.
+            return null;
+
+            /* bugged code, did mark item to be dropped as taboo (causing loop bug) and could illegaly drop an item
             // drop next item.
             Item dropIt = m_Actor.Inventory[0];
             if (dropIt.IsEquipped)
                 return new ActionUnequipItem(m_Actor, game, dropIt);
             else
                 return new ActionDropItem(m_Actor, game, dropIt);
+            */
         }
         #endregion
 

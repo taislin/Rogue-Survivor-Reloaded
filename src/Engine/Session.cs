@@ -187,7 +187,7 @@ namespace djack.RogueSurvivor.Engine
         DOORWINDOW_CLOSE,
 
         /// <summary>
-        /// Pushing objects.
+        /// Pushing/Pulling objects/actors.
         /// </summary>
         OBJECT_PUSH,
 
@@ -271,25 +271,33 @@ namespace djack.RogueSurvivor.Engine
         /// </summary>
         CITY_INFORMATION,
 
+        // alpha10 merge corpse hints
         /// <summary>
-        /// Butchering corpses.
+        /// Corpse actions.
         /// </summary>
-        CORPSE_BUTCHER,
+        CORPSE,
 
         /// <summary>
-        /// Eating corpses.
+        /// Eating corpses (undead).
         /// </summary>
         CORPSE_EAT,
 
-        /// <summary>
-        /// Dragging corpses.
-        /// </summary>
-        CORPSE_DRAG_START,
+        // alpha10 new hints
 
         /// <summary>
-        /// Moving dragged corpses.
+        /// Sanity.
         /// </summary>
-        CORPSE_DRAG_MOVE,
+        SANITY,
+
+        /// <summary>
+        /// Infection.
+        /// </summary>
+        INFECTION,
+
+        /// <summary>
+        /// Traps.
+        /// </summary>
+        TRAPS,
 
         _COUNT
     }
@@ -312,14 +320,23 @@ namespace djack.RogueSurvivor.Engine
         public UniqueActor FamuFataru { get; set; }
         public UniqueActor HansVonHanz { get; set; }
         public UniqueActor JasonMyers { get; set; }
-        public UniqueActor PoliceStationPrisonner { get; set; }
+        public UniqueActor PoliceStationPrisoner { get; set; }
         public UniqueActor Roguedjack { get; set; }
         public UniqueActor Santaman { get; set; }
         public UniqueActor TheSewersThing { get; set; }
 
+        /// <summary>
+        /// Allocate a new array each call don't overuse it...
+        /// TODO -- consider caching it.
+        /// </summary>
+        /// <returns></returns>
         public UniqueActor[] ToArray()
         {
-            return new UniqueActor[] { BigBear, Duckman, FamuFataru, HansVonHanz, PoliceStationPrisonner, Roguedjack, Santaman, TheSewersThing };
+            return new UniqueActor[] {
+                BigBear, Duckman, FamuFataru, HansVonHanz, Roguedjack, Santaman,
+                PoliceStationPrisoner,  TheSewersThing,
+                JasonMyers  // alpha10
+            };
         }
     }
 
@@ -395,6 +412,11 @@ namespace djack.RogueSurvivor.Engine
 
         #endregion
 
+        // alpha10.1
+        #region AutoSave
+        int m_NextAutoSaveTime;
+        #endregion
+
         [NonSerialized]
         static Session s_TheSession;
         #endregion
@@ -440,6 +462,13 @@ namespace djack.RogueSurvivor.Engine
             get { return m_Scoring; }
         }
 
+        // alpha10.01
+        public int NextAutoSaveTime
+        {
+            get { return m_NextAutoSaveTime; }
+            set { m_NextAutoSaveTime = value; }
+        }
+
         #region Uniques
 
         public UniqueActors UniqueActors { get; set; }
@@ -467,11 +496,16 @@ namespace djack.RogueSurvivor.Engine
             set;
         }
 
-        public ScriptStage ScriptStage_PoliceStationPrisonner
+        public ScriptStage ScriptStage_PoliceStationPrisoner
         {
             get;
             set;
         }
+
+        // alpha10
+        public FireMode Player_CurrentFireMode { get; set; }
+
+        public int Player_TurnCharismaRoll { get; set; }
         #endregion
 
         #endregion
@@ -507,10 +541,15 @@ namespace djack.RogueSurvivor.Engine
             this.CHARUndergroundFacility_Activated = false;
             this.PlayerKnows_CHARUndergroundFacilityLocation = false;
             this.PlayerKnows_TheSewersThingLocation = false;
-            this.ScriptStage_PoliceStationPrisonner = ScriptStage.STAGE_0;
+            this.ScriptStage_PoliceStationPrisoner = ScriptStage.STAGE_0;
             this.UniqueActors = new UniqueActors();
             this.UniqueItems = new UniqueItems();
             this.UniqueMaps = new UniqueMaps();
+            // alpha10
+            this.Player_CurrentFireMode = FireMode.DEFAULT;
+            this.Player_TurnCharismaRoll = 0;
+            // alpha10.1
+            m_NextAutoSaveTime = 0;
         }
         #endregion
 
@@ -818,6 +857,19 @@ namespace djack.RogueSurvivor.Engine
                 case GameMode.GM_VINTAGE: return "VTG";
                 default: throw new Exception("unhandled game mode");
             }
+        }
+        
+        // alpha10
+        public UniqueActor ActorToUniqueActor(Actor a)
+        {
+            if (!a.IsUnique)
+                throw new ArgumentException("actor is not unique");
+            foreach(UniqueActor unique in UniqueActors.ToArray())
+            {
+                if (unique.TheActor == a)
+                    return unique;
+            }
+            throw new ArgumentException("actor is flaged as unique but did not find it!");
         }
         #endregion
 

@@ -1,16 +1,10 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Drawing;
 
 using djack.RogueSurvivor.Data;
 using djack.RogueSurvivor.Engine;
 using djack.RogueSurvivor.Engine.Items;
 using djack.RogueSurvivor.Engine.MapObjects;
-using djack.RogueSurvivor.Gameplay;
-using djack.RogueSurvivor.Gameplay.AI;
-using djack.RogueSurvivor.UI;
 
 namespace djack.RogueSurvivor.Gameplay.Generators
 {
@@ -136,7 +130,7 @@ namespace djack.RogueSurvivor.Gameplay.Generators
             actor.Doll.AddDecoration(DollPart.LEGS, GameImages.GANGSTA_PANTS);
             actor.Doll.AddDecoration(DollPart.FEET, MALE_SHOES[roller.Roll(0, MALE_SHOES.Length)]);
         }
-        
+
         public void DressCHARGuard(DiceRoller roller, Actor actor)
         {
             actor.Doll.RemoveAllDecorations();
@@ -162,93 +156,96 @@ namespace djack.RogueSurvivor.Gameplay.Generators
         #endregion
 
         #region Actor naming helpers
-        static readonly string[] MALE_FIRST_NAMES = 
+        // alpha10.1 added new male first names
+        static readonly string[] MALE_FIRST_NAMES =
         {
-            "Alan", "Albert", "Alex", "Alexander", "Andrew", "Andy", "Anton", "Anthony", "Ashley", "Axel",
-            "Ben", "Bill", "Bob", "Brad", "Brandon", "Brian", "Bruce",
-            "Caine", "Carl", "Carlton", "Charlie", "Clark", "Cody", "Cris", "Cristobal",
-            "Dan", "Danny", "Dave", "David", "Dirk", "Don", "Donovan", "Doug", "Dustin",
-            "Ed", "Eddy", "Edward", "Elias", "Elie", "Elmer", "Elton", "Eric", "Eugene",
-            "Francis", "Frank", "Fred",
-            "Garry", "Georges", "Greg", "Guy", "Gordon",
-            "Hank", "Harold", "Harvey", "Henry", "Hubert",
-            "Indy",
-            "Jack", "Jake", "James", "Jarvis", "Jason", "Jeff", "Jeffrey", "Jeremy", "Jessie", "Jesus", "Jim", "John", "Johnny", "Jonas", "Joseph", "Julian",
-            "Karl", "Keith", "Ken", 
-            "Larry", "Lars", "Lee", "Lennie", "Lewis",
-            "Mark", "Mathew", "Max", "Michael", "Mickey", "Mike", "Mitch",
-            "Ned", "Neil", "Nick", "Norman",
+            "Aaron", "Adam", "Adrian", "Alan", "Albert", "Alberto", "Alex", "Alexander", "Alfred", "Alfredo", "Allan", "Allen", "Alvin", "Andre", "Andrew", "Andy", "Angel", "Anton", "Antonio", "Anthony", "Armando", "Arnold", "Arthur", "Ashley", "Axel",
+            "Barry", "Ben", "Benjamin", "Bernard", "Bill", "Billy", "Bob", "Bobby", "Brad", "Brandon", "Bradley", "Brent", "Brett", "Brian", "Bryan", "Bruce", "Byron",
+            "Caine", "Calvin", "Carl", "Carlos", "Carlton", "Casey", "Cecil", "Chad", "Charles", "Charlie", "Chester", "Chris", "Christian", "Christopher", "Clarence", "Clark", "Claude", "Clayton", "Clifford", "Clifton", "Clinton", "Clyde", "Cody", "Corey", "Cory", "Craig", "Cris", "Cristobal", "Curtis",
+            "Dan", "Daniel", "Danny", "Dale", "Darrell", "Darren", "Darryl", "Dave", "David", "Dean", "Dennis", "Derek", "Derrick", "Dirk", "Don", "Donald", "Donovan", "Doug", "Douglas", "Duane", "Dustin", "Dwayne", "Dwight",
+            "Earl", "Ed", "Eddie", "Eddy", "Edgar", "Eduardo", "Edward", "Edwin", "Elias", "Elie", "Elmer", "Elton", "Enrique", "Eric", "Erik", "Ernest", "Eugene", "Everett",
+            "Felix", "Fernando", "Floyd", "Francis", "Francisco", "Frank", "Franklin", "Fred", "Frederick", "Freddie",
+            "Gabriel", "Gary", "Gene", "George", "Georges", "Gerald", "Gilbert", "Glenn", "Gordon", "Greg", "Gregory", "Guy",
+            "Hank", "Harold", "Harvey", "Harry", "Hector", "Henry", "Herbert", "Herman", "Howard", "Hubert", "Hugh", "Hughie",
+            "Ian", "Indy", "Isaac", "Ivan",
+            "Jack", "Jacob", "Jaime", "Jake", "James", "Jamie", "Jared", "Jarvis", "Jason", "Javier", "Jay", "Jeff", "Jeffrey", "Jeremy", "Jerome", "Jerry", "Jesse", "Jessie", "Jesus", "Jim", "Jimmie", "Jimmy", "Joe", "Joel", "John", "Johnnie", "Johnny", "Jon", "Jonas", "Jonathan", "Jordan", "Jorge", "Jose", "Joseph", "Joshua", "Juan", "Julian", "Julio", "Justin",
+            "Karl", "Keith", "Kelly", "Ken", "Kenneth", "Kent", "Kevin", "Kirk", "Kurt", "Kyle",
+            "Lance", "Larry", "Lars", "Lawrence", "Lee", "Lennie", "Leo", "Leon", "Leonard", "Leroy", "Leslie", "Lester", "Lewis", "Lloyd", "Lonnie", "Louis", "Luis",
+            "Manuel", "Marc", "Marcus", "Mario", "Mark", "Marshall", "Martin", "Marvin", "Maurice", "Matthew", "Max", "Melvin", "Michael", "Mickey", "Miguel", "Mike", "Milton", "Mitch", "Mitchell", "Morris",
+            "Nathan", "Nathaniel", "Ned", "Neil", "Nelson", "Nicholas", "Nick", "Norman",
             "Oliver", "Orlando", "Oscar",
-            "Pablo", "Patrick", "Pete", "Peter", "Phil", "Philip", "Preston",
+            "Pablo", "Patrick", "Paul", "Pedro", "Perry", "Pete", "Peter", "Phil", "Phillip", "Preston",
             "Quentin",
-            "Randy", "Rick", "Rob", "Ron", "Ross", "Robert", "Roberto", "Rudy", "Ryan",
-            "Sam", "Samuel", "Saul", "Scott", "Shane", "Shaun", "Stan", "Stanley", "Stephen", "Steve", "Stuart",
-            "Ted", "Tim", "Toby", "Tom", "Tommy", "Tony", "Travis", "Trevor",
+            "Rafael", "Ralph", "Ramon", "Randall", "Randy", "Raul", "Ray", "Raymond", "Reginald", "Rene", "Ricardo", "Richard", "Rick", "Ricky", "Rob", "Robert", "Roberto", "Rodney", "Roger", "Roland", "Ron", "Ronald", "Ronnie", "Ross", "Roy", "Ruben", "Rudy", "Russell", "Ryan",
+            "Salvador", "Sam", "Samuel", "Saul", "Scott", "Sean", "Seth", "Sergio", "Shane", "Shaun", "Shawn", "Sidney", "Stan", "Stanley", "Stephen", "Steve", "Steven", "Stuart",
+            "Ted", "Terrance", "Terrence", "Terry", "Theodore", "Thomas", "Tim", "Timothy", "Toby", "Todd", "Tom", "Tommy", "Tony", "Tracy", "Travis", "Trevor", "Troy", "Tyler", "Tyrone",
             "Ulrich",
-            "Val", "Vince", "Vincent", "Vinnie",
-            "Walter", "Wayne",
-            "Xavier"
+            "Val", "Vernon", "Vince", "Vincent", "Vinnie", "Victor", "Virgil",
+            "Wade", "Wallace", "Walter", "Warren", "Wayne", "Wesley", "Willard", "William", "Willie",
+            "Xavier",
             // Y
-            // Z
+            "Zachary"
         };
 
-        static readonly string[] FEMALE_FIRST_NAMES = 
+        // alpha10.1 added new female first names
+        static readonly string[] FEMALE_FIRST_NAMES =
         {
-            "Abigail", "Amanda", "Ali", "Alice", "Alicia", "Alison", "Amy", "Angela", "Ann", "Annie", "Audrey",
-            "Belinda", "Beth", "Brenda",
-            "Carla", "Carolin", "Carrie", "Cassie", "Cherie", "Cheryl", "Claire", "Connie", "Cris", "Crissie", "Christina",
-            "Dana", "Debbie", "Deborah", "Debrah", "Diana", "Dona",
-            "Elayne", "Eleonor", "Elizabeth", "Ester",
-            "Felicia", "Fiona", "Fran",
-            "Gina", "Ginger", "Gloria", "Grace",
-            "Helen", "Helena", "Hilary", "Holy",
-            "Ingrid", "Isabela",
-            "Jackie", "Jennifer", "Jess", "Jill", "Joana",
-            "Kate", "Kathleen", "Kathy", "Katrin", "Kim", "Kira",
-            "Leonor", "Leslie", "Linda", "Lindsay", "Lisa", "Liz", "Lorraine", "Lucia", "Lucy",
-            "Maggie", "Margareth", "Maria", "Mary", "Mary-Ann", "Marylin", "Michelle", "Millie", "Molly", "Monica",
-            "Nancy",
-            "Ophelia",
-            "Paquita", "Page", "Patricia", "Patty", "Paula",
+            "Abigail", "Agnes", "Ali", "Alice", "Alicia", "Allison", "Alma", "Amanda", "Amber", "Amy", "Andrea", "Angela", "Anita", "Ana", "Ann", "Anna", "Anne", "Annette", "Annie", "April", "Arlene", "Ashley", "Audrey",
+            "Barbara", "Beatrice", "Becky", "Belinda", "Bernice", "Bertha", "Bessie", "Beth", "Betty", "Beverly", "Billie", "Bobbie", "Bonnie", "Brandy", "Brenda", "Britanny",
+            "Carla", "Carmen", "Carol", "Carole", "Caroline", "Carolyn", "Carrie", "Cassandra", "Cassie", "Cathy", "Catherine", "Charlene", "Charlotte", "Cherie", "Cheryl", "Christina", "Christine", "Christy", "Cindy", "Claire", "Clara", "Claudia", "Colleen", "Connie", "Constance", "Courtney", "Cris", "Crissie", "Crystal",  "Cynthia",
+            "Daisy", "Dana", "Danielle", "Darlene", "Dawn", "Deanna", "Debbie", "Deborah", "Debrah", "Delores", "Denise", "Diana", "Diane", "Donna", "Dolores", "Dora", "Doris", "Dorothy",
+            "Edith", "Edna", "Eileen", "Elaine", "Elayne", "Eleanor", "Eleonor", "Elizabeth", "Ella", "Ellen", "Elsie", "Emily", "Emma", "Erica", "Erika", "Erin", "Esther", "Ethel", "Eva", "Evelyn",
+            "Felicia", "Fiona", "Florence", "Fran", "Frances",
+            "Gail", "Georgia", "Geraldine", "Gertrude", "Gina", "Ginger", "Gladys", "Glenda", "Gloria", "Grace", "Gwendolyn",
+            "Hazel", "Heather", "Heidi", "Helen", "Helena", "Hilary", "Hilda", "Holly", "Holy",
+            "Ida", "Ingrid", "Irene", "Irma", "Isabela",
+            "Jackie", "Jacqueline", "Jamie", "Jane", "Janet", "Janice", "Jean", "Jeanne", "Jeanette", "Jennie", "Jennifer", "Jenny", "Jess", "Jessica", "Jessie", "Jill", "Jo", "Joan", "Joana", "Joanne", "Josephine", "Joy", "Joyce", "Juanita", "Judith", "Judy", "Julia", "Julie", "June",
+            "Karen", "Kate", "Katherine", "Kathleen", "Kathy", "Kathryn", "Katie", "Katrina", "Kay", "Kelly", "Kim", "Kimberly", "Kira", "Kristen", "Kristin", "Kristina",
+            "Laura", "Lauren", "Laurie", "Lea", "Lena", "Leona", "Leonor", "Leslie", "Lillian", "Lillie", "Linda", "Lindsay", "Lisa", "Liz", "Lois", "Loretta", "Lori", "Lorraine", "Louise", "Lucia", "Lucille", "Lucy", "Lydia", "Lynn",
+            "Mabel", "Mae", "Maggie", "Marcia", "Margaret", "Margie", "Maria", "Marian", "Marie", "Marion", "Marjorie", "Marlene", "Marsha", "Martha", "Mary", "Marylin", "Mary-Ann", "Mattie", "Maureen", "Maxine", "Megan", "Melanie", "Melinda", "Melissa", "Michele", "Mildred", "Millie", "Minnie", "Miriam", "Misty", "Molly", "Monica", "Myrtle",
+            "Naomi", "Nancy", "Natalie", "Nelly", "Nicole", "Nina", "Nora", "Norma",
+            "Olga", "Ophelia",
+            "Paquita", "Page", "Pamela", "Patricia", "Patsy", "Patty", "Paula", "Pauline", "Pearl", "Peggy", "Penny", "Phyllis", "Priscilla",
             // Q
-            "Rachel", "Raquel", "Regina", "Roberta", "Ruth",
-            "Sabrina", "Samantha", "Sandra", "Sarah", "Sofia", "Sue", "Susan",
-            "Tabatha", "Tanya", "Teresa", "Tess", "Tifany", "Tori",
+            "Rachel", "Ramona", "Raquel", "Rebecca", "Regina", "Renee", "Rhonda", "Rita", "Roberta", "Robin", "Rosa", "Rose", "Rosemary", "Ruby", "Ruth",
+            "Sabrina", "Sally", "Samantha", "Sandra", "Sara", "Sarah", "Shannon", "Sharon", "Sheila", "Shelly", "Sherry", "Shirley", "Sofia", "Sonia", "Stacey", "Stacy", "Stella", "Stephanie", "Sue", "Susan", "Suzanne", "Sylvia",
+            "Tabatha", "Tamara", "Tammy", "Tanya", "Tara", "Terri", "Terry", "Tess", "Thelma", "Theresa", "Tiffany", "Tina", "Toni", "Tonya", "Tori", "Tracey", "Tracy",
             // U
-            "Veronica", "Victoria", "Vivian",
-            "Wendy", "Winona",
+            "Valerie", "Vanessa", "Velma", "Vera", "Veronica", "Vickie", "Victoria", "Viola", "Violet", "Virginia", "Vivian",
+            "Wanda", "Wendy", "Willie", "Wilma", "Winona",
             // X
-            // Y
+            "Yolanda", "Yvone",
             "Zora"
         };
 
-        static readonly string[] LAST_NAMES = 
+        // alpha10.1 added new names
+        static readonly string[] LAST_NAMES =
         {
-            "Anderson", "Austin",
-            "Bent", "Black", "Bradley", "Brown", "Bush",
-            "Carpenter", "Carter", "Collins", "Cordell",
-            "Dobbs",
-            "Engels",
-            "Finch", "Ford", "Forrester",
-            "Gates",
-            "Hewlett", "Holtz",
+            "Adams", "Alexander", "Allen", "Anderson", "Austin",
+            "Bailey", "Baker", "Barnes", "Bell", "Bennett", "Bent", "Black", "Bradley", "Brown", "Brooks", "Bryant", "Bush", "Butler",
+            "Campbell", "Carpenter", "Carter", "Clark", "Coleman", "Collins", "Cook", "Cooper", "Cordell", "Cox",
+            "Davis", "Diaz", "Dobbs",
+            "Edwards", "Engels", "Evans",
+            "Finch", "Flores", "Ford", "Forrester", "Foster",
+            "Garcia", "Gates", "Gonzales", "Gonzalez", "Gray", "Green", "Griffin",
+            "Hall", "Harris", "Hayes", "Henderson", "Hernandez", "Hewlett", "Hill", "Holtz", "Howard", "Hughes",
             "Irvin",
-            "Jones",
-            "Kennedy",
-            "Lambert", "Lesaint", "Lee", "Lewis",
-            "McAllister", "Malory", "McGready",
-            "Norton",
+            "Jackson", "James", "Jenkins", "Johnson", "Jones",
+            "Kelly", "Kennedy", "King",
+            "Lambert", "Lesaint", "Lee", "Lewis", "Long", "Lopez",
+            "Malory", "Martin", "Martinez", "McAllister", "McGready", "Miller", "Mitchell", "Moore", "Morgan", "Morris", "Murphy",
+            "Nelson", "Norton",
             "O'Brien", "Oswald",
-            "Patterson", "Paul", "Pitt",
+            "Parker", "Patterson", "Paul", "Perez", "Perry", "Peterson", "Phillips", "Pitt", "Powell", "Price",
             "Quinn",
-            "Ramirez", "Reeves", "Rockwell", "Rogers", "Robertson",
-            "Sanchez", "Smith", "Stevens", "Steward",
-            "Tarver", "Taylor",
+            "Ramirez", "Reed", "Reeves", "Richardson", "Rivera", "Roberts", "Robinson", "Rockwell", "Rodriguez", "Rogers", "Robertson", "Ross", "Russell",
+            "Sanchez", "Sanders", "Scott", "Simmons", "Smith", "Stevens", "Steward", "Stewart",
+            "Tarver", "Taylor", "Thomas", "Thompson", "Torres", "Turner",
             "Ulrich",
             "Vance",
-            "Washington", "Walters", "White"
+            "Walker", "Ward", "Walters", "Washington", "Watson", "White", "Williams", "Wilson", "Wood", "Wright",
             // X
-            // Y
+            "Young"
             // Z
         };
 
@@ -359,13 +356,24 @@ namespace djack.RogueSurvivor.Gameplay.Generators
             };
         }
 
-        protected MapObject MakeObjFence(string fenceImageID)
+        protected MapObject MakeObjFence(string fenceImageID, MapObject.Fire burnable = MapObject.Fire.UNINFLAMMABLE, int hitPoints = DoorWindow.BASE_HITPOINTS * 10)
         {
-            return new MapObject("fence", fenceImageID, MapObject.Break.BREAKABLE, MapObject.Fire.UNINFLAMMABLE, DoorWindow.BASE_HITPOINTS * 10)
+            return new MapObject("fence", fenceImageID, MapObject.Break.BREAKABLE, burnable, hitPoints)
             {
                 IsMaterialTransparent = true,
                 JumpLevel = 1,
                 GivesWood = true,
+                StandOnFovBonus = true
+            };
+        }
+
+        // alpha10
+        protected MapObject MakeObjWireFence(string fenceImageID, MapObject.Fire burnable = MapObject.Fire.UNINFLAMMABLE, int hitPoints = DoorWindow.BASE_HITPOINTS)
+        {
+            return new MapObject("fence", fenceImageID, MapObject.Break.BREAKABLE, burnable, hitPoints)
+            {
+                IsMaterialTransparent = true,
+                JumpLevel = 1,
                 StandOnFovBonus = true
             };
         }
@@ -379,9 +387,12 @@ namespace djack.RogueSurvivor.Gameplay.Generators
             };
         }
 
-        protected MapObject MakeObjIronGate(string gateImageID)
+        protected MapObject MakeObjIronGate(string gateImageID, bool isBreakable = true)  // alpha10.1 added param isBreakable
         {
-            return new MapObject("iron gate", gateImageID, MapObject.Break.BREAKABLE, MapObject.Fire.UNINFLAMMABLE, DoorWindow.BASE_HITPOINTS * 20)
+            return new MapObject("iron gate", gateImageID, 
+                isBreakable ? MapObject.Break.BREAKABLE : MapObject.Break.UNBREAKABLE, 
+                MapObject.Fire.UNINFLAMMABLE, 
+                isBreakable ? DoorWindow.BASE_HITPOINTS * 20 : 0)
             {
                 IsMaterialTransparent = true,
                 IsAn = true

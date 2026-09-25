@@ -13,13 +13,15 @@ namespace djack.RogueSurvivor.Engine.Items
         #region Fields
         bool m_IsActivated;
         bool m_IsTriggered;
+        // alpha10
+        Actor m_Owner;
         #endregion
 
         #region Properties
         public bool IsActivated
         {
             get { return m_IsActivated;}
-            set { m_IsActivated=value;}
+            //alpha10 set { m_IsActivated=value;}
         }
 
         public bool IsTriggered
@@ -29,6 +31,19 @@ namespace djack.RogueSurvivor.Engine.Items
         }
 
         public ItemTrapModel TrapModel { get { return Model as ItemTrapModel; } }
+
+        // alpha10
+        public Actor Owner
+        {
+            get
+            {
+                // cleanup dead owner reference
+                if (m_Owner != null && m_Owner.IsDead)
+                    m_Owner = null;
+
+                return m_Owner;
+            }
+        }
         #endregion
 
         #region Init
@@ -41,10 +56,41 @@ namespace djack.RogueSurvivor.Engine.Items
         #endregion
 
         #region Cloning
+        /// <summary>
+        /// A new trap of the same model, un-activated, no owner, un-triggered.
+        /// </summary>
+        /// <returns></returns>
         public ItemTrap Clone()
         {
             ItemTrap c = new ItemTrap(TrapModel);
             return c;
+        }
+        #endregion
+
+        // alpha10
+        #region Activating/Desactivating
+        public void Activate(Actor owner)
+        {
+            m_Owner = owner;
+            m_IsActivated = true;
+        }
+
+        public void Desactivate()
+        {
+            m_Owner = null;
+            m_IsActivated = false;
+        }
+        #endregion
+
+        // alpha10
+        #region Pre-saving
+        public override void OptimizeBeforeSaving()
+        {
+            base.OptimizeBeforeSaving();
+
+            // cleanup dead owner ref
+            if (m_Owner != null && m_Owner.IsDead)
+                m_Owner = null;
         }
         #endregion
     }

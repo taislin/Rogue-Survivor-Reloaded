@@ -7,13 +7,16 @@ using Microsoft.DirectX;
 
 namespace djack.RogueSurvivor.Engine
 {
-    class MDXSoundManager : ISoundManager
+    // alpha10 updated to IMusicManager
+    class MDXSoundManager : IMusicManager
     {
         #region Fields
         bool m_IsMusicEnabled;
         int m_Volume;
         int m_Attenuation;
         Dictionary<string, Audio> m_Musics;
+        // alpha10
+        Audio m_CurrentAudio;
         #endregion
 
         #region Properties
@@ -31,6 +34,25 @@ namespace djack.RogueSurvivor.Engine
                 OnVolumeChange();
             }
         }
+        // alpha10
+        public string Music { get; private set; }
+        public int Priority { get; private set; }
+
+        public bool IsPlaying
+        {
+            get
+            {
+                return m_CurrentAudio != null && MdxIsPlaying(m_CurrentAudio);
+            }
+        }
+    
+        public bool HasEnded
+        {
+            get
+            {
+                return m_CurrentAudio != null && MdxHasEnded(m_CurrentAudio);
+            }
+        }
         #endregion
 
         #region Init
@@ -38,6 +60,7 @@ namespace djack.RogueSurvivor.Engine
         {
             m_Musics = new Dictionary<string, Audio>();
             this.Volume = 100;
+            this.Priority = MusicPriority.PRIORITY_NULL;
         }
 
         string FullName(string fileName)
@@ -104,7 +127,7 @@ namespace djack.RogueSurvivor.Engine
         /// Restart playing a music from the beginning if music is enabled.
         /// </summary>
         /// <param name="musicname"></param>
-        public void Play(string musicname)
+        public void Play(string musicname, int priority)
         {
             if (!m_IsMusicEnabled)
                 return;
@@ -113,10 +136,13 @@ namespace djack.RogueSurvivor.Engine
             if (m_Musics.TryGetValue(musicname, out music))
             {
                 Logger.WriteLine(Logger.Stage.RUN_SOUND, String.Format("playing music {0}.", musicname));
-                Play(music);
+                MdxPlay(music);
+                this.Music = musicname;
+                this.Priority = priority;
             }
         }
 
+#if false
         /// <summary>
         /// Start playing a music from the beginning if not already playing and if music is enabled.
         /// </summary>
@@ -133,12 +159,13 @@ namespace djack.RogueSurvivor.Engine
                     Play(music);
             }
         }
+#endif
 
         /// <summary>
         /// Restart playing in a loop a music from the beginning if music is enabled.
         /// </summary>
         /// <param name="musicname"></param>
-        public void PlayLooping(string musicname)
+        public void PlayLooping(string musicname, int priority)
         {
             if (!m_IsMusicEnabled)
                 return;
@@ -147,11 +174,15 @@ namespace djack.RogueSurvivor.Engine
             if (m_Musics.TryGetValue(musicname, out music))
             {
                 Logger.WriteLine(Logger.Stage.RUN_SOUND, String.Format("playing looping music {0}.", musicname));
-                music.Ending += new EventHandler(music_Ending);
-                Play(music);
+                music.Ending += new EventHandler(OnLoopingMusicEnding);
+                MdxPlay(music);
+                this.Music = musicname;
+                this.Priority = priority;
             }
         }
 
+
+#if false
         public void ResumeLooping(string musicname)
         {
             if (!m_IsMusicEnabled)
@@ -164,13 +195,23 @@ namespace djack.RogueSurvivor.Engine
                 Resume(music);
             }
         }
+#endif
 
-        void music_Ending(object sender, EventArgs e)
+        void OnLoopingMusicEnding(object sender, EventArgs e)
         {
             Audio music = (Audio)sender;
-            Play(music);
+            MdxPlay(music);
         }
 
+        public void Stop()
+        {
+            if (m_CurrentAudio != null)
+                MdxStop(m_CurrentAudio);
+            this.Music = "";
+            this.Priority = MusicPriority.PRIORITY_NULL;
+        }
+
+#if false
         public void Stop(string musicname)
         {
             Audio music;
@@ -222,45 +263,55 @@ namespace djack.RogueSurvivor.Engine
             else
                 return false;
         }
+#endif
 
-        void Stop(Audio audio)
+        void MdxStop(Audio audio)
         {
-            audio.Ending -= music_Ending;
-            audio.Pause();
+            audio.Ending -= OnLoopingMusicEnding;
+            //audio.Pause();
+            audio.Stop();  // alpha10.1
+            m_CurrentAudio = null;
         }
 
-        void Play(Audio audio)
+        void MdxPlay(Audio audio)
         {
             audio.Stop();
             audio.SeekCurrentPosition(0, SeekPositionFlags.AbsolutePositioning);
             audio.Volume = -m_Attenuation;
             audio.Play();
+            m_CurrentAudio = audio;
         }
 
+#if false
         void Resume(Audio audio)
         {
             audio.Play();
         }
+#endif
 
-        bool IsPlaying(Audio audio)
+        bool MdxIsPlaying(Audio audio)
         {
             return audio.CurrentPosition > 0 && audio.CurrentPosition < audio.Duration && audio.State == StateFlags.Running;
         }
 
+#if false
         bool IsPaused(Audio audio)
         {
             return (audio.State & StateFlags.Paused) != 0;
         }
+#endif
 
-        bool HasEnded(Audio audio)
+        bool MdxHasEnded(Audio audio)
         {
             return audio.CurrentPosition >= audio.Duration;
         }
-        #endregion
+#endregion
 
-        #region IDisposable
+#region IDisposable
         public void Dispose()
         {
+            Stop(); // alpha10
+
             Logger.WriteLine(Logger.Stage.CLEAN_SOUND, "disposing MDXMusicManager...");
             foreach (string musicname in m_Musics.Keys)
             {
@@ -271,12 +322,13 @@ namespace djack.RogueSurvivor.Engine
                     continue;
                 }
                 Logger.WriteLine(Logger.Stage.CLEAN_SOUND, String.Format("disposing music {0}.", musicname));
+                music.Stop(); // alpha10
                 music.Dispose();
             }
 
             m_Musics.Clear();
             Logger.WriteLine(Logger.Stage.CLEAN_SOUND, "disposing MDXMusicManager done.");
         }
-        #endregion
+#endregion
     }
 }

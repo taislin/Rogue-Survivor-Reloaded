@@ -9,6 +9,7 @@ using djack.RogueSurvivor.Engine;
 using djack.RogueSurvivor.Engine.Actions;
 using djack.RogueSurvivor.Engine.AI;
 using djack.RogueSurvivor.Gameplay.AI.Sensors;
+using djack.RogueSurvivor.Gameplay.AI.Tools;
 
 namespace djack.RogueSurvivor.Gameplay.AI
 {
@@ -55,11 +56,23 @@ namespace djack.RogueSurvivor.Gameplay.AI
         {
             List<Percept> mapPercepts = FilterSameMap(game, percepts);
 
+            // alpha10
+            // don't run by default.
+            m_Actor.IsRunning = false;
+
+            // 0. Equip best item
+            ActorAction bestEquip = BehaviorEquipBestItems(game, true, true);
+            if (bestEquip != null)
+            {
+                return bestEquip;
+            }
+            // end alpha10
+
             // 1. Follow order
             #region
             if (this.Order != null)
             {
-                ActorAction orderAction = ExecuteOrder(game, this.Order, mapPercepts);
+                ActorAction orderAction = ExecuteOrder(game, this.Order, mapPercepts, null);
                 if (orderAction == null)
                     SetOrder(null);
                 else
@@ -71,8 +84,8 @@ namespace djack.RogueSurvivor.Gameplay.AI
             #endregion
 
             ///////////////////////////////////////
-            // 1 equip weapon
-            // 2 equip armor
+            // alpha10 OBSOLETE 1 equip weapon
+            // alpha10 OBSOLETE 2 equip armor
             // 3 fire at nearest enemy.
             // 4 hit adjacent enemy.
             // 5 warn trepassers.
@@ -94,21 +107,22 @@ namespace djack.RogueSurvivor.Gameplay.AI
             bool checkOurLeader = m_Actor.HasLeader && !DontFollowLeader;
             bool hasAnyEnemies = allEnemies != null;
 
-            // 1 equip weapon
-            ActorAction equipWpnAction = BehaviorEquipWeapon(game);
-            if (equipWpnAction != null)
-            {
-                m_Actor.Activity = Activity.IDLE;
-                return equipWpnAction;
-            }
+            //// 1 equip weapon
+            //// alpha 10 OBSOLETE
+            //ActorAction equipWpnAction = BehaviorEquipWeapon(game);
+            //if (equipWpnAction != null)
+            //{
+            //    m_Actor.Activity = Activity.IDLE;
+            //    return equipWpnAction;
+            //}
 
-            // 2 equip armor
-            ActorAction equipArmAction = BehaviorEquipBodyArmor(game);
-            if (equipArmAction != null)
-            {
-                m_Actor.Activity = Activity.IDLE;
-                return equipArmAction;
-            }
+            //// 2 equip armor
+            //ActorAction equipArmAction = BehaviorEquipBestBodyArmor(game);
+            //if (equipArmAction != null)
+            //{
+            //    m_Actor.Activity = Activity.IDLE;
+            //    return equipArmAction;
+            //}
 
             // 3 fire at nearest enemy.
             if (currentEnemies != null)
@@ -136,7 +150,8 @@ namespace djack.RogueSurvivor.Gameplay.AI
                 Actor targetActor = nearestEnemy.Percepted as Actor;
 
                 // fight or flee?
-                ActorAction fightOrFlee = BehaviorFightOrFlee(game, currentEnemies, true, true, ActorCourage.COURAGEOUS, FIGHT_EMOTES);
+                RouteFinder.SpecialActions allowedChargeActions = RouteFinder.SpecialActions.JUMP | RouteFinder.SpecialActions.DOORS; // alpha10
+                ActorAction fightOrFlee = BehaviorFightOrFlee(game, currentEnemies, true, true, ActorCourage.COURAGEOUS, FIGHT_EMOTES, allowedChargeActions);
                 if (fightOrFlee != null)
                 {
                     return fightOrFlee;
@@ -152,6 +167,11 @@ namespace djack.RogueSurvivor.Gameplay.AI
                     Actor other = (p.Percepted as Actor);
                     if (other.Faction == game.GameFactions.TheCHARCorporation)
                         return false;
+
+                    // alpha10 bug fix only if visible right now!
+                    if (p.Turn != m_Actor.Location.Map.LocalTime.TurnCounter)
+                        return false;
+
                     return game.IsInCHARProperty(other.Location);
                 });
                 if (trespassers != null)
@@ -163,7 +183,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
 
                     m_Actor.Activity = Activity.FIGHTING;
                     m_Actor.TargetActor = trespasser;
-                    return new ActionSay(m_Actor, game, trespasser, "Hey YOU!", RogueGame.Sayflags.IS_IMPORTANT);
+                    return new ActionSay(m_Actor, game, trespasser, "Hey YOU!", RogueGame.Sayflags.IS_IMPORTANT | RogueGame.Sayflags.IS_DANGER);
                 }
             }
 
@@ -202,13 +222,17 @@ namespace djack.RogueSurvivor.Gameplay.AI
                     chasePercept = new Percept(chasedActor, m_Actor.Location.Map.LocalTime.TurnCounter, chasedActor.Location);
                 }
 
-                // chase.
-                ActorAction chargeAction = BehaviorChargeEnemy(game, chasePercept);
-                if (chargeAction != null)
+                // alpha10 chase only if reachable
+                if (CanReachSimple(game, chasePercept.Location.Position, RouteFinder.SpecialActions.DOORS | RouteFinder.SpecialActions.JUMP))
                 {
-                    m_Actor.Activity = Activity.FIGHTING;
-                    m_Actor.TargetActor = chasePercept.Percepted as Actor;
-                    return chargeAction;
+                    // chase.
+                    ActorAction chargeAction = BehaviorChargeEnemy(game, chasePercept, false, false);
+                    if (chargeAction != null)
+                    {
+                        m_Actor.Activity = Activity.FIGHTING;
+                        m_Actor.TargetActor = chasePercept.Percepted as Actor;
+                        return chargeAction;
+                    }
                 }
             }
 
@@ -241,7 +265,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
             #endregion
 
             // 11 wander in CHAR office.
-            ActorAction wanderInOfficeAction = BehaviorWander(game, (loc) => RogueGame.IsInCHAROffice(loc));
+            ActorAction wanderInOfficeAction = BehaviorWander(game, (loc) => RogueGame.IsInCHAROffice(loc), null);
             if (wanderInOfficeAction != null)
             {
                 m_Actor.Activity = Activity.IDLE;
@@ -250,7 +274,7 @@ namespace djack.RogueSurvivor.Gameplay.AI
 
             // 12 wander
             m_Actor.Activity = Activity.IDLE;
-            return BehaviorWander(game);
+            return BehaviorWander(game, null);
         }
         #endregion
     }

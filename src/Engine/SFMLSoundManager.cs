@@ -9,12 +9,15 @@ using SFMLMusic = SFML.Audio.Music;
 
 namespace djack.RogueSurvivor.Engine
 {
-    class SFMLSoundManager : ISoundManager
+    // alpha10 updated to IMusicManager
+    class SFMLSoundManager : IMusicManager
     {
         #region Fields
         bool m_IsMusicEnabled;
         int m_Volume;
         Dictionary<string, SFMLMusic> m_Musics;
+        // alpha10
+        SFMLMusic m_CurrentMusic;
         #endregion
 
         #region Properties
@@ -33,6 +36,26 @@ namespace djack.RogueSurvivor.Engine
                 OnVolumeChange();
             }
         }
+
+        // alpha10
+        public string Music { get; private set; }
+        public int Priority { get; private set; }
+
+        public bool IsPlaying
+        {
+            get
+            {
+                return m_CurrentMusic != null && SfmlIsPlaying(m_CurrentMusic);
+            }
+        }
+
+        public bool HasEnded
+        {
+            get
+            {
+                return m_CurrentMusic != null && SfmlHasEnded(m_CurrentMusic);
+            }
+        }
         #endregion
 
         #region Init
@@ -40,6 +63,7 @@ namespace djack.RogueSurvivor.Engine
         {
             m_Musics = new Dictionary<string, SFMLMusic>();
             m_Volume = 100;
+            this.Priority = MusicPriority.PRIORITY_NULL;
         }
 
         string FullName(string fileName)
@@ -85,7 +109,7 @@ namespace djack.RogueSurvivor.Engine
         /// Restart playing a music from the beginning if music is enabled.
         /// </summary>
         /// <param name="musicname"></param>
-        public void Play(string musicname)
+        public void Play(string musicname, int priority)
         {
             if (!m_IsMusicEnabled)
                 return;
@@ -94,10 +118,34 @@ namespace djack.RogueSurvivor.Engine
             if (m_Musics.TryGetValue(musicname, out music))
             {
                 Logger.WriteLine(Logger.Stage.RUN_SOUND, String.Format("playing music {0}.", musicname));
-                Play(music);
+                SfmlPlay(music);
+                this.Music = musicname;
+                this.Priority = priority;
             }
         }
 
+        /// <summary>
+        /// Restart playing in a loop a music from the beginning if music is enabled.
+        /// </summary>
+        /// <param name="musicname"></param>
+        public void PlayLooping(string musicname, int priority)
+        {
+            if (!m_IsMusicEnabled)
+                return;
+
+            SFMLMusic music;
+            if (m_Musics.TryGetValue(musicname, out music))
+            {
+                Logger.WriteLine(Logger.Stage.RUN_SOUND, String.Format("playing looping music {0}.", musicname));
+                music.Loop = true;
+                SfmlPlay(music);
+                this.Music = musicname;
+                this.Priority = priority;
+            }
+        }
+
+
+#if false
         /// <summary>
         /// Start playing a music from the beginning if not already playing and if music is enabled.
         /// </summary>
@@ -112,24 +160,6 @@ namespace djack.RogueSurvivor.Engine
             {
                 if (!IsPlaying(music))
                     Play(music);
-            }
-        }
-
-        /// <summary>
-        /// Restart playing in a loop a music from the beginning if music is enabled.
-        /// </summary>
-        /// <param name="musicname"></param>
-        public void PlayLooping(string musicname)
-        {
-            if (!m_IsMusicEnabled)
-                return;
-
-            SFMLMusic music;
-            if (m_Musics.TryGetValue(musicname, out music))
-            {
-                Logger.WriteLine(Logger.Stage.RUN_SOUND, String.Format("playing looping music {0}.", musicname));
-                music.Loop = true;
-                Play(music);
             }
         }
 
@@ -197,43 +227,61 @@ namespace djack.RogueSurvivor.Engine
             else
                 return false;
         }
+#endif
 
-        void Stop(SFMLMusic audio)
+        public void Stop()
         {
-            audio.Stop();
+            if (m_CurrentMusic != null)
+                SfmlStop(m_CurrentMusic);
+            this.Music = "";
+            this.Priority = MusicPriority.PRIORITY_NULL;
         }
 
-        void Play(SFMLMusic audio)
+        void SfmlStop(SFMLMusic audio)
+        {
+            audio.Stop();
+            m_CurrentMusic = null;
+        }
+
+        void SfmlPlay(SFMLMusic audio)
         {
             audio.Stop();
             audio.Volume = m_Volume;
             audio.Play();
+            m_CurrentMusic = audio;
         }
 
+#if false
         void Resume(SFMLMusic audio)
         {
             audio.Play();
         }
+#endif
 
-        bool IsPlaying(SFMLMusic audio)
+        bool SfmlIsPlaying(SFMLMusic audio)
         {
             return audio.Status == SoundStatus.Playing;
         }
 
+#if false
         bool IsPaused(SFMLMusic audio)
         {
             return audio.Status == SoundStatus.Paused;
         }
+#endif
 
-        bool HasEnded(SFMLMusic audio)
+        bool SfmlHasEnded(SFMLMusic audio)
         {
             return audio.Status == SoundStatus.Stopped || audio.PlayingOffset >= audio.Duration;
         }
+
         #endregion
 
         #region IDisposable
         public void Dispose()
         {
+            Stop(); // alpha10
+
             Logger.WriteLine(Logger.Stage.CLEAN_SOUND, "disposing SFMLMusicManager...");
             foreach (string musicname in m_Musics.Keys)
             {
@@ -244,12 +292,13 @@ namespace djack.RogueSurvivor.Engine
                     continue;
                 }
                 Logger.WriteLine(Logger.Stage.CLEAN_SOUND, String.Format("disposing music {0}.", musicname));
+                music.Stop(); // alpha10
                 music.Dispose();
             }
 
             m_Musics.Clear();
             Logger.WriteLine(Logger.Stage.CLEAN_SOUND, "disposing SFMLMusicManager done.");
         }
-        #endregion
+#endregion
     }
 }

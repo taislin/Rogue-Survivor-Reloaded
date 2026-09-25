@@ -54,7 +54,8 @@ namespace djack.RogueSurvivor.Engine
             GAME_UNDEADS_UPGRADE_DAYS,
             GAME_RATS_UPGRADE,
             GAME_SKELETONS_UPGRADE,
-            GAME_SHAMBLERS_UPGRADE
+            GAME_SHAMBLERS_UPGRADE,
+            GAME_AUTOSAVE_PERIOD  // alpha10.1
         };
         #endregion
 
@@ -105,10 +106,10 @@ namespace djack.RogueSurvivor.Engine
         #endregion
 
         #region Default values
-        public const int DEFAULT_DISTRICT_SIZE = 50; 
+        public const int DEFAULT_DISTRICT_SIZE = 50;
         public const int DEFAULT_MAX_CIVILIANS = 25;
-        public const int DEFAULT_MAX_DOGS = 0;// 5;
-        public const int DEFAULT_MAX_UNDEADS = 100; 
+        public const int DEFAULT_MAX_DOGS = 0; // 5
+        public const int DEFAULT_MAX_UNDEADS = 100;
         public const int DEFAULT_SPAWN_SKELETON_CHANCE = 60;
         public const int DEFAULT_SPAWN_ZOMBIE_CHANCE = 30;
         public const int DEFAULT_SPAWN_ZOMBIE_MASTER_CHANCE = 10;
@@ -122,6 +123,7 @@ namespace djack.RogueSurvivor.Engine
         public const int DEFAULT_NATGUARD_FACTOR = 100;
         public const int DEFAULT_SUPPLIESDROP_FACTOR = 100;
         public const ZupDays DEFAULT_ZOMBIFIEDS_UPGRADE_DAYS = ZupDays.THREE;
+        public const int DEFAULT_AUTOSAVE_PERIOD = 24; // alpha10.1
         #endregion
 
         #region Fields
@@ -142,7 +144,7 @@ namespace djack.RogueSurvivor.Engine
         bool m_ShowPlayerTagsOnMinimap;
         int m_SpawnSkeletonChance;
         int m_SpawnZombieChance;
-        int m_SpawnZombieMasterChance;        
+        int m_SpawnZombieMasterChance;
         int m_CitySize;
         bool m_NPCCanStarveToDeath;
         int m_ZombificationChance;
@@ -166,6 +168,7 @@ namespace djack.RogueSurvivor.Engine
         bool m_RatsUpgrade;
         bool m_SkeletonsUpgrade;
         bool m_ShamblersUpgrade;
+        int m_AutoSavePeriodInHours;  // alpha10.1
         #endregion
 
         #region Properties
@@ -180,8 +183,8 @@ namespace djack.RogueSurvivor.Engine
             get { return m_MusicVolume; }
             set
             {
-                if (value < 0) value = 0; 
-                if (value > 100) value = 100; 
+                if (value < 0) value = 0;
+                if (value > 100) value = 100;
                 m_MusicVolume = value;
             }
         }
@@ -219,15 +222,15 @@ namespace djack.RogueSurvivor.Engine
         public int CitySize
         {
             get { return m_CitySize; }
-            set 
+            set
             {
                 if (value < 3) value = 3;
-                if (value > 6) value = 6;
-                m_CitySize = value; 
+                if (value > 7) value = 7;
+                m_CitySize = value;
             }
         }
 
-        public int MaxCivilians 
+        public int MaxCivilians
         {
             get { return m_MaxCivilians; }
             set
@@ -249,7 +252,7 @@ namespace djack.RogueSurvivor.Engine
             }
         }
 
-        public int MaxUndeads 
+        public int MaxUndeads
         {
             get { return m_MaxUndeads; }
             set
@@ -257,7 +260,7 @@ namespace djack.RogueSurvivor.Engine
                 if (value < 10) value = 10;
                 if (value > 200) value = 200;
                 m_MaxUndeads = value;
-            } 
+            }
         }
 
         public int SpawnSkeletonChance
@@ -502,6 +505,18 @@ namespace djack.RogueSurvivor.Engine
             get { return m_ShamblersUpgrade; }
             set { m_ShamblersUpgrade = value; }
         }
+
+        // alpha10.1
+        public int AutoSavePeriodInHours
+        {
+            get { return m_AutoSavePeriodInHours; }
+            set
+            {
+                if (value < 0) value = 0;
+                if (value > 7 * 24) value = 7 * 24;
+                m_AutoSavePeriodInHours = value;
+            }
+        }
         #endregion
 
         #region Dev only options (hidden)
@@ -551,6 +566,7 @@ namespace djack.RogueSurvivor.Engine
             m_RatsUpgrade = false;
             m_SkeletonsUpgrade = false;
             m_ShamblersUpgrade = false;
+            m_AutoSavePeriodInHours = DEFAULT_AUTOSAVE_PERIOD; // alpha10.1
         }
         #endregion
 
@@ -559,49 +575,143 @@ namespace djack.RogueSurvivor.Engine
         {
             switch (option)
             {
-                case IDs.GAME_AGGRESSIVE_HUNGRY_CIVILIANS:      return "(Living) Aggressive Hungry Civs.";
-                case IDs.GAME_ALLOW_UNDEADS_EVOLUTION:          return "(Undead) Allow Undeads Evolution";
-                case IDs.GAME_CITY_SIZE:                        return "   (Map) City Size";
-                case IDs.GAME_DAY_ZERO_UNDEADS_PERCENT:         return "(Undead) Day 0 Undeads";
-                case IDs.GAME_DEATH_SCREENSHOT:                 return " (Death) Death Screenshot";
-                case IDs.GAME_DISTRICT_SIZE:                    return "   (Map) District Map Size";
-                case IDs.GAME_MAX_CIVILIANS:                    return "(Living) Max Civilians";
-                case IDs.GAME_MAX_DOGS:                         return "(Living) Max Dogs";
-                case IDs.GAME_MAX_REINCARNATIONS:               return " (Reinc) Max Reincarnations";
-                case IDs.GAME_MAX_UNDEADS:                      return "(Undead) Max Undeads";
-                case IDs.GAME_NATGUARD_FACTOR:                  return " (Event) National Guard";
-                case IDs.GAME_NPC_CAN_STARVE_TO_DEATH:          return "(Living) NPCs can starve to death";
-                case IDs.GAME_PERMADEATH:                       return " (Death) Permadeath";
-                case IDs.GAME_RATS_UPGRADE:                     return "(Undead) Rats Skill Upgrade";
-                case IDs.GAME_REVEAL_STARTING_DISTRICT:         return "   (Map) Reveal Starting District";
-                case IDs.GAME_REINC_LIVING_RESTRICTED:          return " (Reinc) Civilians only Reinc.";
-                case IDs.GAME_REINCARNATE_AS_RAT:               return " (Reinc) Can Reincarnate as Rat";
-                case IDs.GAME_REINCARNATE_TO_SEWERS:            return " (Reinc) Can Reincarnate to Sewers";
-                case IDs.GAME_SHAMBLERS_UPGRADE:                return "(Undead) Shamblers Skill Upgrade";
-                case IDs.GAME_SKELETONS_UPGRADE:                return "(Undead) Skeletons Skill Upgrade";
-                case IDs.GAME_SIMULATE_DISTRICTS:               return "   (Sim) Districts Simulation";
-                case IDs.GAME_SIMULATE_SLEEP:                   return "   (Sim) Simulate when Sleeping";
-                case IDs.GAME_SIM_THREAD:                       return "   (Sim) Synchronous Simulation";
-                case IDs.GAME_SPAWN_SKELETON_CHANCE:            return "(Undead) Spawn Skeleton chance";
-                case IDs.GAME_SPAWN_ZOMBIE_CHANCE:              return "(Undead) Spawn Zombie chance";
-                case IDs.GAME_SPAWN_ZOMBIE_MASTER_CHANCE:       return "(Undead) Spawn Zombie Master chance";
-                case IDs.GAME_STARVED_ZOMBIFICATION_CHANCE:     return "(Living) Starved Zombification";
-                case IDs.GAME_SUPPLIESDROP_FACTOR:              return " (Event) Supplies Drop";
-                case IDs.GAME_UNDEADS_UPGRADE_DAYS:             return "(Undead) Undeads Skills Upgrade Days";
-                case IDs.GAME_ZOMBIFICATION_CHANCE:             return "(Living) Zombification Chance";
-                case IDs.GAME_ZOMBIE_INVASION_DAILY_INCREASE:   return "(Undead) Invasion Daily Increase";
-                case IDs.UI_ANIM_DELAY:                         return "   (Gfx) Animations Delay";
-                case IDs.UI_MUSIC:                              return "   (Sfx) Music";
-                case IDs.UI_MUSIC_VOLUME:                       return "   (Sfx) Music Volume";
-                case IDs.UI_SHOW_MINIMAP:                       return "   (Gfx) Show Minimap";
-                case IDs.UI_SHOW_PLAYER_TAG_ON_MINIMAP:         return "   (Gfx) Show Tags on Minimap";
-                case IDs.UI_ADVISOR:                            return "  (Help) Enable Advisor";
-                case IDs.UI_COMBAT_ASSISTANT:                   return "  (Help) Combat Assistant";
-                case IDs.UI_SHOW_TARGETS:                       return "  (Help) Show Actor Targets";
-                case IDs.UI_SHOW_PLAYER_TARGETS:                return "  (Help) Always Show Player Targets";
+                case IDs.GAME_AGGRESSIVE_HUNGRY_CIVILIANS: return "(Living) Aggressive Hungry Civs";
+                case IDs.GAME_ALLOW_UNDEADS_EVOLUTION: return "(Undead) Allow Undeads Evolution";
+                case IDs.GAME_CITY_SIZE: return "   (Map) City Size";
+                case IDs.GAME_DAY_ZERO_UNDEADS_PERCENT: return "(Undead) Day 0 Undeads";
+                case IDs.GAME_DEATH_SCREENSHOT: return " (Death) Death Screenshot";
+                case IDs.GAME_DISTRICT_SIZE: return "   (Map) District Map Size";
+                case IDs.GAME_MAX_CIVILIANS: return "(Living) Max Civilians";
+                case IDs.GAME_MAX_DOGS: return "(Living) Max Dogs";
+                case IDs.GAME_MAX_REINCARNATIONS: return " (Reinc) Max Reincarnations";
+                case IDs.GAME_MAX_UNDEADS: return "(Undead) Max Undeads";
+                case IDs.GAME_NATGUARD_FACTOR: return " (Event) National Guard";
+                case IDs.GAME_NPC_CAN_STARVE_TO_DEATH: return "(Living) NPCs can starve to death";
+                case IDs.GAME_PERMADEATH: return " (Death) Permadeath";
+                case IDs.GAME_RATS_UPGRADE: return "(Undead) Rats Skill Upgrade";
+                case IDs.GAME_REVEAL_STARTING_DISTRICT: return "   (Map) Reveal Starting District";
+                case IDs.GAME_REINC_LIVING_RESTRICTED: return " (Reinc) Civilians only Reinc.";
+                case IDs.GAME_REINCARNATE_AS_RAT: return " (Reinc) Can Reincarnate as Rat";
+                case IDs.GAME_REINCARNATE_TO_SEWERS: return " (Reinc) Can Reincarnate to Sewers";
+                case IDs.GAME_SHAMBLERS_UPGRADE: return "(Undead) Shamblers Skill Upgrade";
+                case IDs.GAME_SKELETONS_UPGRADE: return "(Undead) Skeletons Skill Upgrade";
+                case IDs.GAME_SIMULATE_DISTRICTS: return "   (Sim) Districts Simulation";
+                case IDs.GAME_SIMULATE_SLEEP: return "   (Sim) Simulate when Sleeping";
+                case IDs.GAME_SIM_THREAD: return "   (Sim) Synchronous Simulation";
+                case IDs.GAME_SPAWN_SKELETON_CHANCE: return "(Undead) Spawn Skeleton chance";
+                case IDs.GAME_SPAWN_ZOMBIE_CHANCE: return "(Undead) Spawn Zombie chance";
+                case IDs.GAME_SPAWN_ZOMBIE_MASTER_CHANCE: return "(Undead) Spawn Zombie Master chance";
+                case IDs.GAME_STARVED_ZOMBIFICATION_CHANCE: return "(Living) Starved Zombification";
+                case IDs.GAME_SUPPLIESDROP_FACTOR: return " (Event) Supplies Drop";
+                case IDs.GAME_UNDEADS_UPGRADE_DAYS: return "(Undead) Undeads Skills Upgrade Days";
+                case IDs.GAME_ZOMBIFICATION_CHANCE: return "(Living) Zombification Chance";
+                case IDs.GAME_ZOMBIE_INVASION_DAILY_INCREASE: return "(Undead) Invasion Daily Increase";
+                case IDs.UI_ANIM_DELAY: return "   (Gfx) Animations Delay";
+                case IDs.UI_MUSIC: return "   (Sfx) Music";
+                case IDs.UI_MUSIC_VOLUME: return "   (Sfx) Music Volume";
+                case IDs.UI_SHOW_MINIMAP: return "   (Gfx) Show Minimap";
+                case IDs.UI_SHOW_PLAYER_TAG_ON_MINIMAP: return "   (Gfx) Show Tags on Minimap";
+                case IDs.UI_ADVISOR: return "  (Help) Enable Advisor";
+                case IDs.UI_COMBAT_ASSISTANT: return "  (Help) Combat Assistant";
+                case IDs.UI_SHOW_TARGETS: return "  (Help) Show Other Actors Targets";
+                case IDs.UI_SHOW_PLAYER_TARGETS: return "  (Help) Show Player Targets";
+                case IDs.GAME_AUTOSAVE_PERIOD: return "  (Save) AutoSave Period";  // alpha10.1
 
                 default:
                     throw new ArgumentOutOfRangeException("unhandled option");
+            }
+        }
+
+        // alpha10
+        public static string Describe(IDs option)
+        {
+            switch (option)
+            {
+                case IDs.GAME_AGGRESSIVE_HUNGRY_CIVILIANS:
+                    return "Allows hungry civilians to attack other people for food.";
+                case IDs.GAME_ALLOW_UNDEADS_EVOLUTION:
+                    return "ALWAYS OFF IN VTG-VINTAGE MODE.\nAllows undeads to evolve into stronger forms.";
+                case IDs.GAME_CITY_SIZE:
+                    return "Size of the city grid. The city is a square grid of districts.\nLarger cities are more fun but rapidly increases game saves size and loading time.";
+                case IDs.GAME_DAY_ZERO_UNDEADS_PERCENT:
+                    return "Percentage of max undeads spawned when the game starts.";
+                case IDs.GAME_DEATH_SCREENSHOT:
+                    return "Takes a screenshot when you die and save it to the game Config\\Screenshot folder.";
+                case IDs.GAME_DISTRICT_SIZE:
+                    return "How large are the maps in tiles. Larger maps are more fun but increase game saves size and loading time.";
+                case IDs.GAME_MAX_CIVILIANS:
+                    return "Maximum number of civilians on a map. More civilians makes the game easier for livings, but slows the game down.";
+                case IDs.GAME_MAX_DOGS:
+                    return "OPTION IS UNUSED YOU SHOULDNT BE READING THIS :)";
+                case IDs.GAME_MAX_REINCARNATIONS:
+                    return "Number of times you can reincarnate in a game after your character dies.\nSet it to 0 to disable reincarnation altogether.";
+                case IDs.GAME_MAX_UNDEADS:
+                    return "Maximum number of undeads on a map. More undeads makes the game more challenging for livings, but slows the game down.";
+                case IDs.GAME_NATGUARD_FACTOR:
+                    return "Affects how likely the National Guard event happens.\n100 is default, 0 to disable.";
+                case IDs.GAME_NPC_CAN_STARVE_TO_DEATH:
+                    return "When NPCs are starving they can die. When disabled ai characters will never die from hunger.";
+                case IDs.GAME_PERMADEATH:
+                    return "Deletes your saved game when you die so you can't reload your way out. Extra challenge and tension.";
+                case IDs.GAME_RATS_UPGRADE:
+                    return "ALWAYS OFF IN VTG-VINTAGE MODE.\nCan Rats type of undeads upgrade their skills like other undeads.\nNot recommended unless you want super annoying rats.";
+                case IDs.GAME_REVEAL_STARTING_DISTRICT:
+                    return "You start the game with knowing parts of the map you start in.";
+                case IDs.GAME_REINC_LIVING_RESTRICTED:
+                    return "Limit choices of reincarnations as livings to civilians only. If disabled allow you to reincarnte into all kinds of livings.";
+                case IDs.GAME_REINCARNATE_AS_RAT:
+                    return "Enables the possibility to reincarnate into a zombie rat.";
+                case IDs.GAME_REINCARNATE_TO_SEWERS:
+                    return "Enables the possibility to reincarnate into the sewers.";
+                case IDs.GAME_SHAMBLERS_UPGRADE:
+                    return "ALWAYS OFF IN VTG-VINTAGE MODE.\nCan Shamblers type of undeads upgrade their skills like other undeads.";
+                case IDs.GAME_SKELETONS_UPGRADE:
+                    return "ALWAYS OFF IN VTG-VINTAGE MODE.\nCan Skeletons type of undeads upgrade their skills like other undeads.";
+                case IDs.GAME_SIMULATE_DISTRICTS:
+                    return "The game simulates what is happening in districts around you. You should keep this option maxed for better gameplay.\nWhen the simulation happens depends on other sim options.";
+                case IDs.GAME_SIMULATE_SLEEP:
+                    return "Performs simulation when you are sleeping. Recommended if synchronous sim is off.";
+                case IDs.GAME_SIM_THREAD:
+                    return "Performs simulation in a separate thread while you are playing. Recommended unless the game is unstable.";
+                case IDs.GAME_SPAWN_SKELETON_CHANCE:
+                    return "YOU SHOULDNT BE READING THIS :)";
+                case IDs.GAME_SPAWN_ZOMBIE_CHANCE:
+                    return "YOU SHOULDNT BE READING THIS :)";
+                case IDs.GAME_SPAWN_ZOMBIE_MASTER_CHANCE:
+                    return "YOU SHOULDNT BE READING THIS :)";
+                case IDs.GAME_STARVED_ZOMBIFICATION_CHANCE:
+                    return "ONLY IN STD-STANDARD MODE.\nIf NPCs can starve to death, chances of turning into a zombie.";
+                case IDs.GAME_SUPPLIESDROP_FACTOR:
+                    return "Affects how likely the supplies drop event happens.\n100 is default, 0 to disable.";
+                case IDs.GAME_UNDEADS_UPGRADE_DAYS:
+                    return "How often can undeads upgrade their skills. They usually upgrade at a slower pace than livings.";
+                case IDs.GAME_ZOMBIFICATION_CHANCE:
+                    return "ONLY IN STD-STANDARD MODE.\nSome undeads have the ability to turn their living victims into zombies after killing them.\nThis option control the chances of zombification. Changing this value has a large impact on game difficulty.\nException: the player is always checked for zombification when killed in all game modes.";
+                case IDs.GAME_ZOMBIE_INVASION_DAILY_INCREASE:
+                    return "The zombies invasion increases in size each day, to fill up to Max Undeads on a map.";
+                case IDs.UI_ANIM_DELAY:
+                    return "Enable or disable delays when showing actions or events on the map.\nYou should keep it on when learning the game and then disable it for a faster play.";
+                case IDs.UI_MUSIC:
+                    return "Enable or disable ingame musics. Musics are not essential for gameplay. If you can't hear music, try the configuration program.";
+                case IDs.UI_MUSIC_VOLUME:
+                    return "Music volume.";
+                case IDs.UI_SHOW_MINIMAP:
+                    return "Display or hide the minimap.\nThe minimap could potentially crash the game on some very old graphics cards.";
+                case IDs.UI_SHOW_PLAYER_TAG_ON_MINIMAP:
+                    return "Highlight tags painted by the player as yellow dots in the minimap.";
+                case IDs.UI_ADVISOR:
+                    return "Enable or disable the ingame hints system. The advisor helps you learn the game for the living side.\nIt will only tell you hints it didn't already tell you.\nAll hints are also available from the main menu.";
+                case IDs.UI_COMBAT_ASSISTANT:
+                    return "When enabled draws a colored circle icon on your enemies.\nGreen = you can safely act twice before your enemy\nYellow = your enemy will act after you\nRed = your enemy will act twice after you";
+                case IDs.UI_SHOW_TARGETS:
+                    return "When mouse over an actor, will draw icons on actors that are targeting, are targeted or are in group with this actor.";
+                case IDs.UI_SHOW_PLAYER_TARGETS:
+                    return "Will draw icons on actors that are targeting you.";
+                case IDs.GAME_AUTOSAVE_PERIOD:  // alpha10.1
+                    return "Will autosave at regular intervals when you start sleeping, start a long wait or change map.\nManually saving the game will reschedule the next autosave.";
+                default:
+                    throw new ArgumentOutOfRangeException("unhandled option");
+
             }
         }
 
@@ -681,7 +791,7 @@ namespace djack.RogueSurvivor.Engine
                 case ZupDays.FIVE: return day % 5 == 0;
                 case ZupDays.SIX: return day % 6 == 0;
                 case ZupDays.SEVEN: return day % 7 == 0;
-                case ZupDays.OFF: 
+                case ZupDays.OFF:
                 default:
                     return false;
             }
@@ -694,10 +804,7 @@ namespace djack.RogueSurvivor.Engine
                 case IDs.GAME_AGGRESSIVE_HUNGRY_CIVILIANS:
                     return IsAggressiveHungryCiviliansOn ? "ON    (default ON)" : "OFF   (default ON)";
                 case IDs.GAME_ALLOW_UNDEADS_EVOLUTION:
-                    if (mode == GameMode.GM_VINTAGE)
-                        return "---";
-                    else
-                        return AllowUndeadsEvolution ? "YES   (default YES)" : "NO    (default YES)";
+                    return AllowUndeadsEvolution ? "YES   (default YES)" : "NO    (default YES)";
                 case IDs.GAME_CITY_SIZE:
                     return String.Format("{0:D2}*   (default {1:D2})", CitySize, GameOptions.DEFAULT_CITY_SIZE);
                 case IDs.GAME_DAY_ZERO_UNDEADS_PERCENT:
@@ -721,9 +828,6 @@ namespace djack.RogueSurvivor.Engine
                 case IDs.GAME_PERMADEATH:
                     return IsPermadeathOn ? "YES   (default NO)" : "NO    (default NO)";
                 case IDs.GAME_RATS_UPGRADE:
-                    if (mode == GameMode.GM_VINTAGE)
-                        return "---";
-                    else
                         return RatsUpgrade ? "YES   (default NO)" : "NO    (default NO)";
                 case IDs.GAME_REINC_LIVING_RESTRICTED:
                     return IsLivingReincRestricted ? "YES   (default NO)" : "NO    (default NO)";
@@ -734,14 +838,8 @@ namespace djack.RogueSurvivor.Engine
                 case IDs.GAME_REVEAL_STARTING_DISTRICT:
                     return RevealStartingDistrict ? "YES   (default YES)" : "NO    (default YES)";
                 case IDs.GAME_SHAMBLERS_UPGRADE:
-                    if (mode == GameMode.GM_VINTAGE)
-                        return "---";
-                    else
                         return ShamblersUpgrade ? "YES   (default NO)" : "NO    (default NO)";
                 case IDs.GAME_SKELETONS_UPGRADE:
-                    if (mode == GameMode.GM_VINTAGE)
-                        return "---";
-                    else
                         return SkeletonsUpgrade ? "YES   (default NO)" : "NO    (default NO)";
                 case IDs.GAME_SIM_THREAD:
                     return SimThread ? "YES*  (default YES)" : "NO*   (default YES)";
@@ -777,6 +875,10 @@ namespace djack.RogueSurvivor.Engine
                     return ShowPlayerTargets ? "ON    (default ON)" : "OFF   (default ON)";
                 case IDs.UI_SHOW_TARGETS:
                     return ShowTargets ? "ON    (default ON)" : "OFF   (default ON)";
+                case IDs.GAME_AUTOSAVE_PERIOD:  // alpha10.1
+                    return String.Format("{0,-4}  (default {1}h)",
+                        m_AutoSavePeriodInHours == 0 ? "OFF" : m_AutoSavePeriodInHours.ToString()+"h",
+                        GameOptions.DEFAULT_AUTOSAVE_PERIOD);
                 default:
                     return "???";
             }

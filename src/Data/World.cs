@@ -12,7 +12,7 @@ namespace djack.RogueSurvivor.Data
         District[,] m_DistrictsGrid;
         int m_Size;
         Weather m_Weather;
-
+        int m_NextWeatherCheckTurn;  // alpha10
         #endregion
 
         #region Properties
@@ -46,6 +46,12 @@ namespace djack.RogueSurvivor.Data
             get { return m_Weather; }
             set { m_Weather = value; }
         }
+
+        public int NextWeatherCheckTurn
+        {
+            get { return m_NextWeatherCheckTurn; }
+            set { m_NextWeatherCheckTurn = value; }
+        }
         #endregion
 
         #region Init
@@ -57,6 +63,7 @@ namespace djack.RogueSurvivor.Data
             m_DistrictsGrid = new District[size, size];
             m_Size = size;
             m_Weather = Weather.CLEAR;
+            m_NextWeatherCheckTurn = 0;
         }
         #endregion
 

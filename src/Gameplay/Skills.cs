@@ -42,7 +42,7 @@ namespace djack.RogueSurvivor.Gameplay
             CARPENTRY,
 
             /// <summary>
-            /// Bonus to trust gain.
+            /// Bonus to trust gain, trade and can steal followers.
             /// </summary>
             CHARISMATIC,
 
@@ -375,6 +375,7 @@ namespace djack.RogueSurvivor.Gameplay
             s = data[(int)IDs.MARTIAL_ARTS];
             Rules.SKILL_MARTIAL_ARTS_ATK_BONUS = (int)s.VALUE1;
             Rules.SKILL_MARTIAL_ARTS_DMG_BONUS = (int)s.VALUE2;
+            Rules.SKILL_MARTIAL_ARTS_DISARM_BONUS = (int)s.VALUE3;
 
             s = data[(int)IDs.MEDIC];
             Rules.SKILL_MEDIC_BONUS = s.VALUE1;
@@ -390,7 +391,6 @@ namespace djack.RogueSurvivor.Gameplay
 
             s = data[(int)IDs.STRONG_PSYCHE];
             Rules.SKILL_STRONG_PSYCHE_LEVEL_BONUS = s.VALUE1;
-            Rules.SKILL_STRONG_PSYCHE_ENT_BONUS = s.VALUE2;
 
             s = data[(int)IDs.TOUGH];
             Rules.SKILL_TOUGH_HP_BONUS = (int)s.VALUE1;

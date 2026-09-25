@@ -347,7 +347,8 @@ namespace djack.RogueSurvivor.Engine
         /// Remove all Actors, MapOjects, Items, Decorations and Zones in a rect.
         /// </summary>
         /// <param name="rect"></param>
-        protected void ClearRectangle(Map map, Rectangle rect)
+        /// <param name="clearZones"></param>  // alpha10
+        protected void ClearRectangle(Map map, Rectangle rect, bool clearZones=true)
         {
             for(int x = rect.Left; x <rect.Right;x++)
                 for (int y = rect.Top; y < rect.Bottom; y++)
@@ -363,7 +364,8 @@ namespace djack.RogueSurvivor.Engine
 
                     map.GetTileAt(x, y).RemoveAllDecorations();
 
-                    map.RemoveAllZonesAt(x, y);
+                    if (clearZones)
+                        map.RemoveAllZonesAt(x, y);
 
                     Actor actorThere = map.GetActorAt(x, y);
                     if (actorThere != null)
@@ -437,6 +439,12 @@ namespace djack.RogueSurvivor.Engine
         public int CountAdjDoors(Map map, int x, int y)
         {
             return CountForEachAdjacent(map, x, y, (pt) => map.GetMapObjectAt(pt.X, pt.Y) as DoorWindow != null);
+        }
+
+        // alpha10.1
+        public int CountAdjMapObjects(Map map, int x, int y)
+        {
+            return CountForEachAdjacent(map, x, y, (pt) => map.GetMapObjectAt(pt.X, pt.Y) != null);
         }
 
         public void PlaceIf(Map map, int x, int y, TileModel floor, Func<int, int, bool> predicateFn, Func<int, int, MapObject> createFn)
