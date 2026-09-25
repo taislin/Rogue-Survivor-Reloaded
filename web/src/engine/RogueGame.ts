@@ -22,6 +22,10 @@ import { Rules } from "@engine/Rules";
 import { Session, RaidType, UniqueActor, UniqueMap, UniqueItem } from "@engine/Session";
 import { AchievementIDs } from "@engine/Scoring";
 import { MessageManager } from "@engine/MessageManager";
+import { GameSaveManager } from "@engine/GameSave";
+import { GameImages } from "@gameplay/GameImages";
+import { GameMusics } from "@gameplay/GameSounds";
+import { OptionsScreen } from "@ui/OptionsScreen";
 import { HiScoreTable } from "@engine/HiScoreTable";
 import { Keybindings } from "@engine/Keybindings";
 import { GameHintsStatus, AdvisorHint } from "@engine/GameHints";
@@ -335,6 +339,9 @@ function logInit(text: string): void {
 }
 
 export class RogueGame {
+  /** Browser save slot used by the C# "current save file" (`GetUserSave`). */
+  static readonly CURRENT_SAVE_SLOT = 0;
+
 
   readonly POPUP_FILLCOLOR: Color = Color.withAlpha(192, Color.CornflowerBlue);
   readonly CLOSE_DOOR_MODE_TEXT: string[] = [ "CLOSE MODE - directions to close, ESC cancels" ];
@@ -627,160 +634,419 @@ export class RogueGame {
 
   // C# AddMessage — RogueGame.cs:833
   AddMessage(msg: Message): void {
-    void msg;
-    throw new Error("not yet ported: AddMessage (RogueGame.cs:833)");
+    // ignore empty messages
+    if (msg.text.length === 0) return;
+
+    // Clear if too much messages.
+    if (this.m_MessageManager.count >= MAX_MESSAGES) this.m_MessageManager.clear();
+
+    // Format message: <turn> <Text>
+    msg.text = `${this.m_Session.worldTime.turnCounter} ${this.Capitalize(msg.text)}`;
+
+    // Add.
+    this.m_MessageManager.add(msg);
   }
 
   // C# AddMessageIfAudibleForPlayer — RogueGame.cs:853
   AddMessageIfAudibleForPlayer(location: Location, msg: Message): void {
-    void location;
-    void msg;
-    throw new Error("not yet ported: AddMessageIfAudibleForPlayer (RogueGame.cs:853)");
+    if (msg == null) throw new TypeError("msg");
+
+    // 1. Audible to player?
+    if (this.m_Player != null) {
+      // if sleeping can't hear.
+      if (this.m_Player.isSleeping) return;
+
+      // can't hear if not same map.
+      if (location.map !== this.m_Player.location.map) return;
+
+      // can hear if close enough.
+      if (this.m_Rules.stdDistance(this.m_Player.location.position, location.position) <= this.m_Player.audioRange) {
+        // hear.
+        msg.color = this.PLAYER_AUDIO_COLOR;
+        this.AddMessage(msg);
+
+        // if waiting, interupt.
+        if (this.m_IsPlayerLongWait) this.m_IsPlayerLongWaitForcedStop = true;
+
+        // redraw.
+        this.RedrawPlayScreen();
+      }
+    }
   }
 
   // C# MakePlayerCentricMessage — RogueGame.cs:892
   MakePlayerCentricMessage(eventText: string, position: Point): Message {
-    void eventText;
-    void position;
-    throw new Error("not yet ported: MakePlayerCentricMessage (RogueGame.cs:892)");
+    const playerPos = this.m_Player.location.position;
+    const vDir = new Point(position.x - playerPos.x, position.y - playerPos.y);
+    const text =
+      `${eventText} ${Math.floor(this.m_Rules.stdDistanceOf(vDir))} tiles to the ` +
+      `${Direction.approximateFromVector(vDir.x, vDir.y)}.`;
+    return new Message(text, this.m_Session.worldTime.turnCounter);
   }
 
   // C# MakeErrorMessage — RogueGame.cs:899
   MakeErrorMessage(text: string): Message {
-    void text;
-    throw new Error("not yet ported: MakeErrorMessage (RogueGame.cs:899)");
+    return new Message(text, this.m_Session.worldTime.turnCounter, Color.Red);
   }
 
   // C# MakeYesNoMessage — RogueGame.cs:904
   MakeYesNoMessage(question: string): Message {
-    void question;
-    throw new Error("not yet ported: MakeYesNoMessage (RogueGame.cs:904)");
+    return new Message(
+      `${question}? Y to confirm, N to cancel`,
+      this.m_Session.worldTime.turnCounter,
+      Color.Yellow
+    );
   }
 
   // C# ActorVisibleIdentity — RogueGame.cs:914
   ActorVisibleIdentity(actor: Actor): string {
-    void actor;
-    throw new Error("not yet ported: ActorVisibleIdentity (RogueGame.cs:914)");
+    return this.IsVisibleToPlayer(actor) ? actor.theName : "someone";
   }
 
   // C# ObjectVisibleIdentity — RogueGame.cs:924
   ObjectVisibleIdentity(mapObj: MapObject): string {
-    void mapObj;
-    throw new Error("not yet ported: ObjectVisibleIdentity (RogueGame.cs:924)");
+    return this.IsVisibleToPlayer(mapObj) ? mapObj.theName : "something";
   }
 
   // C# MakeMessage — RogueGame.cs:929 (+7 overloads)
-  MakeMessage(actor: Actor, doWhat: string, color?: Color | Actor | MapObject | Item, phraseEnd?: string): Message {
-    void actor;
-    void doWhat;
-    void color;
-    void phraseEnd;
-    throw new Error("not yet ported: MakeMessage (RogueGame.cs:929)");
+  MakeMessage(actor: Actor, doWhat: string): Message;
+  MakeMessage(actor: Actor, doWhat: string, color: Color): Message;
+  MakeMessage(actor: Actor, doWhat: string, target: Actor, phraseEnd?: string): Message;
+  MakeMessage(actor: Actor, doWhat: string, target: MapObject, phraseEnd?: string): Message;
+  MakeMessage(actor: Actor, doWhat: string, target: Item, phraseEnd?: string): Message;
+  MakeMessage(
+    actor: Actor,
+    doWhat: string,
+    third?: Color | Actor | MapObject | Item,
+    phraseEnd?: string
+  ): Message {
+    const turn = this.m_Session.worldTime.turnCounter;
+
+    if (third === undefined || third instanceof Color) {
+      const msg = new Message(`${this.ActorVisibleIdentity(actor)} ${doWhat}`, turn);
+      msg.color = actor.isPlayer ? this.PLAYER_ACTION_COLOR : (third ?? this.OTHER_ACTION_COLOR);
+      return msg;
+    }
+
+    const target = third;
+    const targetText =
+      target instanceof Actor ? this.ActorVisibleIdentity(target)
+      : target instanceof MapObject ? this.ObjectVisibleIdentity(target)
+      : target.theName;
+
+    const msg = new Message(
+      `${this.ActorVisibleIdentity(actor)} ${doWhat} ${targetText}${phraseEnd ?? "."}`,
+      turn
+    );
+    const involvesPlayer = actor.isPlayer || (target instanceof Actor && target.isPlayer);
+    msg.color = involvesPlayer ? this.PLAYER_ACTION_COLOR : this.OTHER_ACTION_COLOR;
+    return msg;
   }
 
   // C# ClearMessages — RogueGame.cs:1022
   ClearMessages(): void {
-    throw new Error("not yet ported: ClearMessages (RogueGame.cs:1022)");
+    this.m_MessageManager.clear();
   }
 
   // C# ClearMessagesHistory — RogueGame.cs:1027
   ClearMessagesHistory(): void {
-    throw new Error("not yet ported: ClearMessagesHistory (RogueGame.cs:1027)");
+    this.m_MessageManager.clearHistory();
   }
 
   // C# RemoveLastMessage — RogueGame.cs:1032
   RemoveLastMessage(): void {
-    throw new Error("not yet ported: RemoveLastMessage (RogueGame.cs:1032)");
+    this.m_MessageManager.removeLastMessage();
   }
 
   // C# DrawMessages — RogueGame.cs:1037
   DrawMessages(): void {
-    throw new Error("not yet ported: DrawMessages (RogueGame.cs:1037)");
+    this.m_MessageManager.draw(this.m_UI, this.m_Session.lastTurnPlayerActed, MESSAGES_X, MESSAGES_Y);
   }
 
   // C# AddMessagePressEnter — RogueGame.cs:1043
-  AddMessagePressEnter(): void {
-    throw new Error("not yet ported: AddMessagePressEnter (RogueGame.cs:1043)");
+  // alpha10.1 caller handle bot : check for IsBotPlayer and dont call this
+  async AddMessagePressEnter(): Promise<void> {
+    this.AddMessage(new Message("<press ENTER>", this.m_Session.worldTime.turnCounter, Color.Yellow));
+    this.RedrawPlayScreen();
+    await this.WaitEnter();
+    this.RemoveLastMessage();
+    this.RedrawPlayScreen();
   }
 
   // C# Conjugate — RogueGame.cs:1052 (+1 overloads)
+  Conjugate(actor: Actor, verb: string): string;
+  Conjugate(actor: Actor, verb: Verb): string;
   Conjugate(actor: Actor, verb: string | Verb): string {
-    void actor;
-    void verb;
-    throw new Error("not yet ported: Conjugate (RogueGame.cs:1052)");
+    const isSoloSubject = actor.isProperName && !actor.isPluralName;
+    if (typeof verb === "string") return isSoloSubject ? verb + "s" : verb;
+    return isSoloSubject ? verb.heForm : verb.youForm;
   }
 
   // C# Capitalize — RogueGame.cs:1062
   Capitalize(text: string): string {
-    void text;
-    throw new Error("not yet ported: Capitalize (RogueGame.cs:1062)");
+    if (text == null) return "";
+    if (text.length === 1) return text[0].toUpperCase();
+    return text[0].toUpperCase() + text.substring(1);
   }
 
   // C# HisOrHer — RogueGame.cs:1072
   HisOrHer(actor: Actor): string {
-    void actor;
-    throw new Error("not yet ported: HisOrHer (RogueGame.cs:1072)");
+    return actor.model.dollBody.isMale ? "his" : "her";
   }
 
   // C# HeOrShe — RogueGame.cs:1077
   HeOrShe(actor: Actor): string {
-    void actor;
-    throw new Error("not yet ported: HeOrShe (RogueGame.cs:1077)");
+    return actor.model.dollBody.isMale ? "he" : "she";
   }
 
   // C# HimOrHer — RogueGame.cs:1082
   HimOrHer(actor: Actor): string {
-    void actor;
-    throw new Error("not yet ported: HimOrHer (RogueGame.cs:1082)");
+    return actor.model.dollBody.isMale ? "him" : "her";
   }
 
   // C# HimselfOrHerself — RogueGame.cs:1088
   HimselfOrHerself(actor: Actor): string {
-    void actor;
-    throw new Error("not yet ported: HimselfOrHerself (RogueGame.cs:1088)");
+    return actor.model.dollBody.isMale ? "himself" : "herself";
   }
 
   // C# AorAn — RogueGame.cs:1096
   AorAn(name: string): string {
-    void name;
-    throw new Error("not yet ported: AorAn (RogueGame.cs:1096)");
+    const c = name[0];
+    return ("aeiou".indexOf(c) !== -1 ? "an " : "a ") + name;
   }
 
   // C# TruncateString — RogueGame.cs:1102
   TruncateString(s: string, maxLength: number): string {
-    void s;
-    void maxLength;
-    throw new Error("not yet ported: TruncateString (RogueGame.cs:1102)");
+    return s.length <= maxLength ? s : s.substring(0, maxLength);
   }
 
   // C# AnimDelay — RogueGame.cs:1109
-  AnimDelay(msecs: number): void {
-    void msecs;
-    throw new Error("not yet ported: AnimDelay (RogueGame.cs:1109)");
+  // C# blocks the sim thread; the browser loop awaits this instead.
+  async AnimDelay(msecs: number): Promise<void> {
+    if (s_Options.isAnimDelayOn) await this.m_UI.UI_Wait(msecs);
   }
 
   // C# Run — RogueGame.cs:1121
-  Run(): void {
-    throw new Error("not yet ported: Run (RogueGame.cs:1121)");
+  async Run(): Promise<void> {
+    // first run inits.
+    await this.InitDirectories();
+
+    // load data.
+    await this.LoadData();
+
+    // load options.
+    await this.LoadOptions();
+
+    // load hints.
+    await this.LoadHints();
+
+    // apply options.
+    this.ApplyOptions(false);
+
+    // load keys.
+    await this.LoadKeybindings();
+
+    // load music & sfxs.
+    this.m_UI.UI_Clear(Color.Black);
+    this.m_UI.UI_DrawStringBold(Color.White, "Loading music...", 0, 0);
+    this.m_UI.UI_Repaint();
+    // C# preloaded every GameMusics/GameSounds file here; the Web Audio
+    // manager fetches tracks by id on demand (see WebAudioMusicManager).
+
+    this.m_UI.UI_Clear(Color.Black);
+    this.m_UI.UI_DrawStringBold(Color.White, "Loading music... done!", 0, 0);
+    this.m_UI.UI_Repaint();
+
+    this.m_UI.UI_Clear(Color.Black);
+    this.m_UI.UI_DrawStringBold(Color.White, "Loading sfxs...", 0, 0);
+    this.m_UI.UI_Repaint();
+
+    this.m_UI.UI_Clear(Color.Black);
+    this.m_UI.UI_DrawStringBold(Color.White, "Loading sfxs... done!", 0, 0);
+    this.m_UI.UI_Repaint();
+
+    // load and parse manual.
+    await this.LoadManual();
+
+    // load hi score table.
+    await this.LoadHiScoreTable();
+
+    // loop.
+    while (this.m_IsGameRunning) {
+      await this.GameLoop();
+    }
+
+    // stop music.
+    this.m_MusicManager.stop();
+
+    // quit.
+    this.m_UI.UI_DoQuit();
   }
 
   // C# GameLoop — RogueGame.cs:1209
-  GameLoop(): void {
-    throw new Error("not yet ported: GameLoop (RogueGame.cs:1209)");
+  async GameLoop(): Promise<void> {
+    // main menu.
+    await this.HandleMainMenu();
+
+    // play until player dies or quits.
+    while (this.m_Player != null && !this.m_Player.isDead && this.m_IsGameRunning) {
+      // timer.
+      const timeBefore = Date.now();
+
+      // alpha10
+      // roll player charisma for this turn
+      this.m_Session.player_TurnCharismaRoll = this.m_Rules.roll(0, 100);
+
+      // play.
+      this.m_HasLoadedGame = false;
+      this.AdvancePlay(this.m_Session.currentMap!.district!, SimFlags.NOT_SIMULATING);
+
+      // if quit, don't bother.
+      if (!this.m_IsGameRunning) break;
+
+      // timer.
+      const timeAfter = Date.now();
+      this.m_Session.scoring.realLifePlayingTimeSeconds += (timeAfter - timeBefore) / 1000;
+
+      // alpha10
+      // check background music every N game hours
+      if (this.m_Session.worldTime.turnCounter % BGMUSIC_UPDATE_TURNS === 0) this.UpdateBgMusic();
+    }
   }
 
   // C# InitDirectories — RogueGame.cs:1243
-  InitDirectories(): void {
-    throw new Error("not yet ported: InitDirectories (RogueGame.cs:1243)");
+  async InitDirectories(): Promise<void> {
+    // Browser port: no user directories. Options/keybindings live in
+    // localStorage, saves in IndexedDB (GameSaveManager), the manual and hi
+    // scores in bundled/localStorage data — so there is nothing to create.
+    logInit("InitDirectories: using browser storage.");
   }
 
   // C# HandleMainMenu — RogueGame.cs:1283
-  HandleMainMenu(): void {
-    throw new Error("not yet ported: HandleMainMenu (RogueGame.cs:1283)");
+  async HandleMainMenu(): Promise<void> {
+    let loop = true;
+    // C#: File.Exists(GetUserSave()) — saves are IndexedDB slots (see GetUserSave).
+    const isLoadEnabled = await GameSaveManager.hasSave(RogueGame.CURRENT_SAVE_SLOT);
+
+    const menuEntries: string[] = [
+      "New Game",                                    // 0
+      isLoadEnabled ? "Load Game" : "(Load Game)",   // 1
+      "Redefine keys",                               // 2
+      "Options",                                     // 3
+      "Game Manual",                                 // 4
+      "All Hints",                                   // 5
+      "Hi Scores",                                   // 6
+      "Credits",                                     // 7
+      "Quit Game",                                   // 8
+    ];
+    let selected = 0;
+    do {
+      // music.
+      if (!this.m_PlayedIntro) {
+        this.m_MusicManager.stop();
+        this.m_MusicManager.play(GameMusics.INTRO);
+        this.m_PlayedIntro = true;
+      }
+
+      // display.
+      const gx = 0;
+      let gy = 0;
+      this.m_UI.UI_Clear(Color.Black);
+      this.DrawHeader();
+      gy += BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBold(Color.Yellow, "Main Menu", 0, gy);
+      gy += 2 * BOLD_LINE_SPACING;
+      const gyRef = { value: gy };
+      this.DrawMenuOrOptions(selected, Color.White, menuEntries, Color.White, null, gx, gyRef);
+      gy = gyRef.value;
+      this.DrawFootnote(Color.White, "cursor to move, ENTER to select");
+
+      // christmas special.
+      const dateNow = new Date();
+      if (dateNow.getMonth() === 11 && dateNow.getDate() >= 24 && dateNow.getDate() <= 26) {
+        const NB_SANTAS = 10;
+        for (let i = 0; i < NB_SANTAS; i++) {
+          const santax = this.m_Rules.roll(0, 1024);
+          const santay = this.m_Rules.roll(0, 768);
+          this.m_UI.UI_DrawImage(GameImages.ACTOR_SANTAMAN, santax, santay);
+          this.m_UI.UI_DrawStringBold(Color.Snow, "* Merry Christmas *", santax - 60, santay - 10);
+        }
+      }
+
+      // repaint.
+      this.m_UI.UI_Repaint();
+
+      // get menu action.
+      const key = await this.m_UI.UI_WaitKey();
+      switch (key.key) {
+        case "ArrowUp": // move up
+          if (selected > 0) --selected;
+          else selected = menuEntries.length - 1;
+          break;
+        case "ArrowDown": // move down
+          selected = (selected + 1) % menuEntries.length;
+          break;
+
+        case "Enter": // validate
+          switch (selected) {
+            case 0:
+              if (await this.HandleNewCharacter()) {
+                this.StartNewGame();
+                loop = false;
+              }
+              break;
+
+            case 1:
+              if (!isLoadEnabled) break;
+              gy += 2 * BOLD_LINE_SPACING;
+              this.m_UI.UI_DrawStringBold(Color.Yellow, "Loading game, please wait...", gx, gy);
+              this.m_UI.UI_Repaint();
+              await this.LoadGame(this.GetUserSave());
+              loop = false;
+              // alpha10
+              if (s_Options.isSimON && s_Options.simThread) this.StartSimThread();
+              break;
+
+            case 2:
+              await this.HandleRedefineKeys();
+              break;
+
+            case 3:
+              await this.HandleOptions(false);
+              this.ApplyOptions(false);
+              break;
+
+            case 4:
+              await this.HandleHelpMode();
+              break;
+
+            case 5:
+              await this.HandleHintsScreen();
+              break;
+
+            case 6:
+              await this.HandleHiScores(true);
+              break;
+
+            case 7:
+              await this.HandleCredits();
+              break;
+
+            case 8:
+              this.m_IsGameRunning = false;
+              loop = false;
+              break;
+
+            default:
+              break;
+          } // switch selected
+          break;
+      }
+    } while (loop);
   }
 
   // C# HandleNewCharacter — RogueGame.cs:1415
-  HandleNewCharacter(): boolean {
+  async HandleNewCharacter(): Promise<boolean> {
     throw new Error("not yet ported: HandleNewCharacter (RogueGame.cs:1415)");
   }
 
@@ -824,18 +1090,18 @@ export class RogueGame {
   }
 
   // C# LoadManual — RogueGame.cs:2034
-  LoadManual(): void {
+  async LoadManual(): Promise<void> {
     throw new Error("not yet ported: LoadManual (RogueGame.cs:2034)");
   }
 
   // C# HandleHiScores — RogueGame.cs:2072
-  HandleHiScores(saveToTextfile: boolean): void {
+  async HandleHiScores(saveToTextfile: boolean): Promise<void> {
     void saveToTextfile;
     throw new Error("not yet ported: HandleHiScores (RogueGame.cs:2072)");
   }
 
   // C# LoadHiScoreTable — RogueGame.cs:2146
-  LoadHiScoreTable(): void {
+  async LoadHiScoreTable(): Promise<void> {
     throw new Error("not yet ported: LoadHiScoreTable (RogueGame.cs:2146)");
   }
 
@@ -850,18 +1116,18 @@ export class RogueGame {
   }
 
   // C# HandleCredits — RogueGame.cs:2248
-  HandleCredits(): void {
+  async HandleCredits(): Promise<void> {
     throw new Error("not yet ported: HandleCredits (RogueGame.cs:2248)");
   }
 
   // C# HandleOptions — RogueGame.cs:2295
-  HandleOptions(ingame: boolean): void {
-    void ingame;
-    throw new Error("not yet ported: HandleOptions (RogueGame.cs:2295)");
+  // The modal options loop is ported as `ui/OptionsScreen` (Phase 3).
+  async HandleOptions(ingame: boolean): Promise<void> {
+    await new OptionsScreen(this.m_UI, this.m_MusicManager).run(ingame);
   }
 
   // C# HandleRedefineKeys — RogueGame.cs:2570
-  HandleRedefineKeys(): void {
+  async HandleRedefineKeys(): Promise<void> {
     throw new Error("not yet ported: HandleRedefineKeys (RogueGame.cs:2570)");
   }
 
@@ -1337,12 +1603,12 @@ export class RogueGame {
   }
 
   // C# HandleHelpMode — RogueGame.cs:6173
-  HandleHelpMode(): void {
+  async HandleHelpMode(): Promise<void> {
     throw new Error("not yet ported: HandleHelpMode (RogueGame.cs:6173)");
   }
 
   // C# HandleHintsScreen — RogueGame.cs:6286
-  HandleHintsScreen(): void {
+  async HandleHintsScreen(): Promise<void> {
     throw new Error("not yet ported: HandleHintsScreen (RogueGame.cs:6286)");
   }
 
@@ -1850,7 +2116,8 @@ export class RogueGame {
   }
 
   // C# WaitEnter — RogueGame.cs:11284
-  WaitEnter(): void {
+  // Blocking in C#; async here (Phase 4 slice 5 fills the body).
+  async WaitEnter(): Promise<void> {
     throw new Error("not yet ported: WaitEnter (RogueGame.cs:11284)");
   }
 
@@ -3265,13 +3532,13 @@ export class RogueGame {
   }
 
   // C# LoadGame — RogueGame.cs:19819
-  LoadGame(saveName: string): boolean {
+  async LoadGame(saveName: string): Promise<boolean> {
     void saveName;
     throw new Error("not yet ported: LoadGame (RogueGame.cs:19819)");
   }
 
   // C# LoadOptions — RogueGame.cs:19843
-  LoadOptions(): void {
+  async LoadOptions(): Promise<void> {
     throw new Error("not yet ported: LoadOptions (RogueGame.cs:19843)");
   }
 
@@ -3287,7 +3554,7 @@ export class RogueGame {
   }
 
   // C# LoadKeybindings — RogueGame.cs:19873
-  LoadKeybindings(): void {
+  async LoadKeybindings(): Promise<void> {
     throw new Error("not yet ported: LoadKeybindings (RogueGame.cs:19873)");
   }
 
@@ -3297,7 +3564,7 @@ export class RogueGame {
   }
 
   // C# LoadHints — RogueGame.cs:19902
-  LoadHints(): void {
+  async LoadHints(): Promise<void> {
     throw new Error("not yet ported: LoadHints (RogueGame.cs:19902)");
   }
 
@@ -3307,7 +3574,7 @@ export class RogueGame {
   }
 
   // C# DrawMenuOrOptions — RogueGame.cs:19932
-  DrawMenuOrOptions(currentChoice: number, entriesColor: Color, entries: string[], valuesColor: Color, values: string[], gx: number, gy: { value: number }, valuesOnNewLine?: boolean, rightPadding?: number): void {
+  DrawMenuOrOptions(currentChoice: number, entriesColor: Color, entries: string[], valuesColor: Color, values: string[] | null, gx: number, gy: { value: number }, valuesOnNewLine?: boolean, rightPadding?: number): void {
     void currentChoice;
     void entriesColor;
     void entries;
@@ -3343,8 +3610,9 @@ export class RogueGame {
   }
 
   // C# GetUserSave — RogueGame.cs:20002
+  // C# returns a filesystem path; the browser port keys saves by IndexedDB slot.
   GetUserSave(): string {
-    throw new Error("not yet ported: GetUserSave (RogueGame.cs:20002)");
+    return String(RogueGame.CURRENT_SAVE_SLOT);
   }
 
   // C# GetUserDocsPath — RogueGame.cs:20007
@@ -3801,7 +4069,7 @@ export class RogueGame {
   }
 
   // C# LoadData — RogueGame.cs:23104
-  LoadData(): void {
+  async LoadData(): Promise<void> {
     throw new Error("not yet ported: LoadData (RogueGame.cs:23104)");
   }
 

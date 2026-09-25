@@ -65,6 +65,7 @@ export class Color {
   static readonly Orange         = new Color(255, 165, 0);
   static readonly Brown          = new Color(165, 42, 42);
   static readonly CornflowerBlue = new Color(100, 149, 237);
+  static readonly Snow            = new Color(255, 250, 250);
   static readonly LightBlue      = new Color(173, 216, 230);
   static readonly Pink           = new Color(255, 192, 203);
   static readonly Purple         = new Color(128, 0, 128);

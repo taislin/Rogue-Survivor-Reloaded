@@ -375,7 +375,7 @@ combines them with the hand-ported overlay types, constructor and getters into
 
 | # | C# lines | Contents | Status |
 |---|----------|----------|--------|
-| scaffold | 1–1414 | Constants, fields, properties, init, messaging, `Run`/`GameLoop`, main menu | ✅ Generated (stubs throw) |
+| scaffold | 1–1414 | Constants, fields, properties, init, messaging, `Run`/`GameLoop`, main menu | ✅ Ported (stubs for input/drawing helpers it calls) |
 | 1 | 1415–2876 | Character creation, `StartNewGame`, credits, options, redefine keys | ⬜ |
 | 2 | 2877–4154 | `AdvancePlay`, `NextMapTurn`, actor regen/counts, scents | ⬜ |
 | 3 | 4156–5366 | Events (invasions, refugees, raids, drops) + spawning | ⬜ |
@@ -435,7 +435,7 @@ async function gameLoop(ui: IRogueUI): Promise<void> {
 
 | Item | Where it stands today |
 |------|-----------------------|
-| `main.ts` | Still the Phase 1 splash screen (temporary key loop: **O** opens the options screen). Needs the real new-game / main-menu flow. |
+| `main.ts` | Still the Phase 1 splash screen (temporary key loop: **O** opens the options screen). `RogueGame.Run()` is ported but not wired yet — it reaches `HandleMainMenu`, which needs the slice-8 drawing helpers (`DrawHeader`, `DrawMenuOrOptions`) before the real flow can boot. |
 | `OPTIONS_MODE` command | C# `case PlayerCommand.OPTIONS_MODE: HandleOptions(true); ApplyOptions(true);` (RogueGame.cs ≈5645). Ported screen is called manually from `main.ts` instead. |
 | `ApplyOptions` side update | C# re-derives `Scoring.Side` from the player (`m_Player.Model.Abilities.IsUndead`); `OptionsScreen.applyOptions()` refreshes the rating only, until a player exists. |
 | `HandleRedefineKeys` | Still in `RogueGame.cs` (`KEYBINDING_MODE`) → goes to the Phase 4 `GameUI` module. |

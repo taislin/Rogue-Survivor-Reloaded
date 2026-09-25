@@ -221,6 +221,11 @@ export class Actor {
     return this.sheet.baseSanity;
   }
 
+  /** C# `public int AudioRange`. */
+  get audioRange(): number {
+    return this.sheet.baseAudioRange + this.audioRangeMod;
+  }
+
   private setFlag(flag: ActorFlags, value: boolean): void {
     if (value) this.flags |= flag;
     else this.flags &= ~flag;
