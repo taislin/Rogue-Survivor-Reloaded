@@ -1,6 +1,6 @@
 # Rogue Survivor Reloaded — TypeScript / Browser Port: Full Implementation Plan
 
-> **Status:** Phase 1 & 2 complete. Phase 3 complete except `ui/OptionsScreen.ts`. Phase 5 in progress — `BaseAI` (184/184 methods) done; 9 AI controllers + generators pending.  
+> **Status:** Phase 1 & 2 complete. Phase 3 complete except `ui/OptionsScreen.ts`. Phase 5 in progress — `BaseAI` (184/184 methods) + all 11 AI controllers done; generators pending.  
 > **Last updated:** 2026-09-25
 
 ---
@@ -404,15 +404,15 @@ async function gameLoop(ui: IRogueUI): Promise<void> {
 | `Gameplay/AI/BaseAI.cs` | 245 KB | `gameplay/ai/BaseAI.ts` | Core AI behavior framework & algorithms | ✅ Done |
 | `Gameplay/AI/ZombieAI.cs` | 11 KB | `gameplay/ai/ZombieAI.ts` | Complete zombie AI (scents, corpse-eating, chasing) | ✅ Done |
 | `Gameplay/AI/SkeletonAI.cs` | 2 KB | `gameplay/ai/SkeletonAI.ts` | Skeleton AI (chasing, idle, wander) | ✅ Done |
-| `Gameplay/AI/CivilianAI.cs` | 39 KB | `gameplay/ai/CivilianAI.ts` | | ⏳ Planned |
-| `Gameplay/AI/OrderableAI.cs` | 20 KB | `gameplay/ai/OrderableAI.ts` | | ⏳ Planned |
-| `Gameplay/AI/GangAI.cs` | 20 KB | `gameplay/ai/GangAI.ts` | | ⏳ Planned |
-| `Gameplay/AI/SoldierAI.cs` | 14 KB | `gameplay/ai/SoldierAI.ts` | | ⏳ Planned |
-| `Gameplay/AI/CHARGuardAI.cs` | 10 KB | `gameplay/ai/CHARGuardAI.ts` | | ⏳ Planned |
-| `Gameplay/AI/InsaneHumanAI.cs` | 9 KB | `gameplay/ai/InsaneHumanAI.ts` | | ⏳ Planned |
-| `Gameplay/AI/FeralDogAI.cs` | 7 KB | `gameplay/ai/FeralDogAI.ts` | | ⏳ Planned |
-| `Gameplay/AI/RatAI.cs` | 6 KB | `gameplay/ai/RatAI.ts` | | ⏳ Planned |
-| `Gameplay/AI/SewersThingAI.cs` | 5 KB | `gameplay/ai/SewersThingAI.ts` | | ⏳ Planned |
+| `Gameplay/AI/CivilianAI.cs` | 39 KB | `gameplay/ai/CivilianAI.ts` | | ✅ Done |
+| `Gameplay/AI/OrderableAI.cs` | 20 KB | `gameplay/ai/OrderableAI.ts` | | ✅ Done |
+| `Gameplay/AI/GangAI.cs` | 20 KB | `gameplay/ai/GangAI.ts` | | ✅ Done |
+| `Gameplay/AI/SoldierAI.cs` | 14 KB | `gameplay/ai/SoldierAI.ts` | | ✅ Done |
+| `Gameplay/AI/CHARGuardAI.cs` | 10 KB | `gameplay/ai/CHARGuardAI.ts` | | ✅ Done |
+| `Gameplay/AI/InsaneHumanAI.cs` | 9 KB | `gameplay/ai/InsaneHumanAI.ts` | | ✅ Done |
+| `Gameplay/AI/FeralDogAI.cs` | 7 KB | `gameplay/ai/FeralDogAI.ts` | | ✅ Done |
+| `Gameplay/AI/RatAI.cs` | 6 KB | `gameplay/ai/RatAI.ts` | | ✅ Done |
+| `Gameplay/AI/SewersThingAI.cs` | 5 KB | `gameplay/ai/SewersThingAI.ts` | | ✅ Done |
 | `Gameplay/AI/LOSSensor.cs` | 2 KB | `gameplay/ai/GameplaySensors.ts` | Combined into GameplaySensors.ts | ✅ Done |
 | `Gameplay/AI/SmellSensor.cs` | 2 KB | `gameplay/ai/GameplaySensors.ts` | Combined into GameplaySensors.ts | ✅ Done |
 | `Gameplay/AI/ExplorationData.cs` | 5 KB | `gameplay/ai/ExplorationData.ts` | Visited location/zone tracking | ✅ Done |
@@ -439,7 +439,7 @@ These are the only symbols `BaseAI.ts` could not resolve; everything else type-c
 |-----|-------|
 | `game.DoEmote` / `game.DoMakeAggression` / `game.DoSay` | Phase 4 — `RogueGame` |
 | `game.GameItems.MEDIKIT` / `game.GameItems.EMPTY_CAN` | Phase 4 — needs a `GameItems` singleton on the game object |
-| `isSoldier()` uses a `faction.id === FactionID.TheArmy` fallback | resolved once `SoldierAI.ts` exists |
+| `isSoldier()` uses a `faction.id === FactionID.TheArmy` fallback | ✅ resolved — `SoldierAI.ts` now exists |
 | `Map.isOnMapBorder` / `trimToBounds` / `countAdjacentInMap` | inlined at the 3 call sites instead of added to `data/Map.ts` |
 | `Actor.isBoredOf` / `addBoringItem` / `getEquippedRangedWeapon` | ✅ added to `data/Actor.ts` |
 | `Actions.SayFlags`, `Actions.FireMode` | ✅ corrected to match `RogueGame.Sayflags` / `Data/Attack.cs` |
@@ -645,7 +645,7 @@ No image conversion is needed — all sprites are already PNG.
 | 2 | Data layer | All game objects typed, `Map`/`Actor` working | ✅ Complete |
 | 3 | Engine core | Rules, LOS, Session, Scoring, GameOptions — all but the Options UI screen | 🔄 In Progress |
 | 4 | Game loop | **Playable game** (new game, move, attack, die) | ⏳ Planned |
-| 5 | AI + generators | `BaseAI` + Zombie/Skeleton AI done; 9 controllers + generators pending | 🔄 In Progress |
+| 5 | AI + generators | `BaseAI` + all 11 AI controllers done; generators pending | 🔄 In Progress |
 | 6 | Audio | Sound effects and music | ⏳ Planned |
 | 7 | Save / load | Persistent saves via localStorage / IndexedDB | ⏳ Planned |
 | 8 | Polish | PWA, CI, performance, deployment | ⏳ Planned |

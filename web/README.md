@@ -58,9 +58,9 @@ public/assets/MapObjects/wooden_door_closed.png
 | Phase | Status | Scope |
 |-------|--------|-------|
 | 1 | ✅ Complete | Scaffold, primitives, Canvas UI, HTTP server |
-| 2 | ⬜ Pending | Data layer (Map, Actor, Item, Tile, World) |
-| 3 | ⬜ Pending | Engine (Rules, LOS) |
+| 2 | ✅ Complete | Data layer (Map, Actor, Item, Tile, World) |
+| 3 | 🔄 In progress | Engine core — all but `ui/OptionsScreen.ts` |
 | 4 | ⬜ Pending | RogueGame core loop |
-| 5 | ⬜ Pending | AI + World generators |
+| 5 | 🔄 In progress | AI controllers done; world generators pending |
 | 6 | ⬜ Pending | Audio (Web Audio API) |
 | 7 | ⬜ Pending | Save/load (IndexedDB) |
