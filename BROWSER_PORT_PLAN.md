@@ -1,7 +1,8 @@
 # Rogue Survivor Reloaded — TypeScript / Browser Port: Full Implementation Plan
 
-> **Status:** Phase 1, 2 & 3 complete (Phase 3 includes `ui/OptionsScreen.ts`). Phase 5 complete — `BaseAI` (184/184 methods), all 11 AI controllers, and all 4 generator files done (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator`, `StdTownGenerator`) with `npm run type-check` clean. Phase 6 & 7 complete.  
-> **Last updated:** 2026-09-25
+> **Status:** Phase 1, 2 & 3 complete (Phase 3 includes `ui/OptionsScreen.ts`). Phase 5 complete — `BaseAI` (184/184 methods), all 11 AI controllers, and all 4 generator files done (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator`, `StdTownGenerator`). Phase 6 & 7 complete.  
+> **Phase 4 in progress:** `engine/RogueGame.ts` scaffold generated (4 044 lines: constants, fields, properties, constructor, 492 method stubs, 38 camelCase call-site aliases); slices 1–10 still to fill. `npm run type-check` + `npm run build` clean.  
+> **Last updated:** 2026-09-26
 
 ---
 
@@ -351,6 +352,45 @@ C# maps `System.Windows.Forms.Keys` enum values. In TypeScript we map browser `K
 **Goal:** `RogueGame.cs` (955 KB, 23 233 lines) ported and running. The game is playable.  
 **This is the largest single task in the whole project.**
 
+### As implemented: one `engine/RogueGame.ts` class
+
+The original decomposition table below was written before looking at how the
+regions actually call each other. During porting (same argument that applied to
+`BaseTownGenerator` and `BaseAI`), `RogueGame` is ported as a **single class**
+in `web/src/engine/RogueGame.ts`, assembled from contiguous C# line-range slices:
+
+* every `DoXXX` action, every `HandlePlayerXXX` command and every `Draw*` method
+  reads/writes the same private fields (`m_Player`, `m_Session`, `m_Overlays`,
+  `m_ViewRect`, …) — a split would make most of that state public and thread a
+  `game` reference through ~500 call sites;
+* player input → actions → rendering form a cycle (`DoTrade` waits for keys,
+  `DoMeleeAttack` redraws), which would mean circular module imports.
+
+**Tooling** (all gitignored, in `web/.porting/`): `roguegame-methods.txt` lists
+all 516 top-level members with C# line numbers; `gen_stubs.py` turns the C# source into
+`rg_consts.txt` / `rg_fields.txt` / `rg_stubs.txt` (signature-accurate TS stubs with
+`out`-param returns, overload merges and the `game.doXxx()` aliases); `assemble_roguegame.py`
+combines them with the hand-ported overlay types, constructor and getters into
+`src/engine/RogueGame.ts`. Re-run both after regenerating, then `npm run type-check`.
+
+| # | C# lines | Contents | Status |
+|---|----------|----------|--------|
+| scaffold | 1–1414 | Constants, fields, properties, init, messaging, `Run`/`GameLoop`, main menu | ✅ Generated (stubs throw) |
+| 1 | 1415–2876 | Character creation, `StartNewGame`, credits, options, redefine keys | ⬜ |
+| 2 | 2877–4154 | `AdvancePlay`, `NextMapTurn`, actor regen/counts, scents | ⬜ |
+| 3 | 4156–5366 | Events (invasions, refugees, raids, drops) + spawning | ⬜ |
+| 4 | 5367–10255 | FOV, `HandlePlayerActor` and all `HandlePlayerXXX` commands | ⬜ |
+| 5 | 10256–12658 | AI actor handling, advisor, input helpers, describe-* | ⬜ |
+| 6 | 12660–16790 | Action primitives `DoMoveActor` … `KillActor`, blood/corpses | ⬜ |
+| 7 | 16791–17986 | Player death, new day/night, skills, infection/zombification | ⬜ |
+| 8 | 17987–19723 | View, drawing, overlays, coordinates, visibility helpers | ⬜ |
+| 9 | 19724–21381 | Save/load, paths, `GenerateWorld`, district maps, map switching | ⬜ |
+| 10 | 21382–23233 | Sim thread, achievements, special events, reincarnation, dev/data | ⬜ |
+
+The module table below is therefore **deferred to a post-Phase-4 refactor**
+(Phase 8) — it stays as the target shape once the game runs and the real
+cross-method dependencies are known.
+
 ### Decomposition plan
 
 `RogueGame.cs` is a God class. During porting, split it into focused modules:
@@ -540,9 +580,9 @@ Large saves (> 5 MB) overflow to **IndexedDB**.
 
 ---
 
-## Phase 8 — Polish & Deployment
+## Phase 8 — Polish, Headless Simulation & Deployment
 
-**Goal:** Feature-complete, tested, deployable.
+**Goal:** Feature-complete, tested, deployable, with a robust headless simulation harness for game balance and AI verification.
 
 ### Tasks
 
@@ -554,6 +594,21 @@ Large saves (> 5 MB) overflow to **IndexedDB**.
 - [ ] Audio: normalise volume levels
 - [ ] Performance pass: profile tile rendering (target 60fps on a 21×21 view)
 - [ ] Mobile / touch support (optional — original was keyboard-only)
+
+### Headless Simulation & Advanced Testing Plan
+
+To ensure simulation fidelity and parity with the C# version without requiring a browser or DOM/Canvas context, Phase 8 includes a dedicated headless simulator and automated test harness:
+
+1. **Headless Simulator (`web/src/sim/HeadlessRunner.ts`)**:
+   - Runs game loops and AI ticks entirely in Node.js using a mock `IRogueUI` (`NullRogueUI`).
+   - Supports automated stress runs (e.g., simulating 1,000+ world turns across generated town maps).
+   - Metrics collection: actor survival rates, zombie infection spread, pathfinding efficiency, and combat balance.
+   - Useful for regression testing AI behavior changes and balance tweaks.
+
+2. **Expanded Testing Strategy (Vitest + Headless Integration)**:
+   - **AI Behaviour Tests**: Verify zombie pursuit, line-of-sight tracking, scent aggregation, and civilian self-preservation in isolated map scenarios.
+   - **Generator Integrity Tests**: Validate that town generators, building generators, and sewer networks consistently output fully reachable nav-graphs without deadlocks or out-of-bounds errors.
+   - **Save/Load Roundtrip Tests**: Serialize a complex running game state to JSON, deserialize it, and assert deep-equality across actors, items, maps, and world clocks.
 
 ---
 
@@ -669,4 +724,4 @@ No image conversion is needed — all sprites are already PNG.
 | 5 | AI + generators | `BaseAI`, all 11 AI controllers, all 4 generator files (5 814-line `BaseTownGenerator`) | ✅ Complete |
 | 6 | Audio | Sound effects and music | ✅ Complete |
 | 7 | Save / load | Persistent saves via localStorage / IndexedDB | ✅ Complete |
-| 8 | Polish | PWA, CI, performance, deployment | ⏳ Planned |
+| 8 | Polish | PWA, CI, headless simulator, test harness, deployment | ⏳ Planned |
