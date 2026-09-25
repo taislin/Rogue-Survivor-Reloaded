@@ -1,6 +1,6 @@
 # Rogue Survivor Reloaded — TypeScript / Browser Port: Full Implementation Plan
 
-> **Status:** Phase 1 & 2 complete. Phase 3 complete except `ui/OptionsScreen.ts`. Phase 5 in progress — `BaseAI` (184/184 methods) + all 11 AI controllers done; generators pending.  
+> **Status:** Phase 1 & 2 complete. Phase 3 complete except `ui/OptionsScreen.ts`. Phase 5 complete — `BaseAI` (184/184 methods), all 11 AI controllers, and all 4 generator files done (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator`, `StdTownGenerator`) with `npm run type-check` clean. Phase 6 & 7 complete.  
 > **Last updated:** 2026-09-25
 
 ---
@@ -105,7 +105,7 @@ server/
 |------|------|-------|-------|
 | `Engine/RogueGame.cs` | 955 KB | 4 | Split into sub-modules |
 | `Gameplay/AI/BaseAI.cs` | 245 KB | 5 | Split into focused AI behaviours |
-| `Gameplay/Generators/BaseTownGenerator.cs` | 243 KB | 5 | Port faithfully; heavy but no UI deps |
+| `Gameplay/Generators/BaseTownGenerator.cs` | 243 KB | 5 | ✅ Ported as one 5 814-line class (see Phase 5 note) |
 | `Engine/Rules.cs` | 147 KB | 3 | Pure logic, straightforward port |
 | `Gameplay/GameItems.cs` | 76 KB | 2 | Data definitions only |
 | `Gameplay/GameActors.cs` | 51 KB | 2 | Data definitions only |
@@ -440,29 +440,40 @@ These are the only symbols `BaseAI.ts` could not resolve; everything else type-c
 | `game.DoEmote` / `game.DoMakeAggression` / `game.DoSay` | Phase 4 — `RogueGame` |
 | `game.GameItems.MEDIKIT` / `game.GameItems.EMPTY_CAN` | Phase 4 — needs a `GameItems` singleton on the game object |
 | `isSoldier()` uses a `faction.id === FactionID.TheArmy` fallback | ✅ resolved — `SoldierAI.ts` now exists |
-| `Map.isOnMapBorder` / `trimToBounds` / `countAdjacentInMap` | inlined at the 3 call sites instead of added to `data/Map.ts` |
+| `Map.isOnMapBorder` / `trimToBounds` / `countAdjacentInMap` | ✅ `Map.isOnMapBorder` added to `data/Map.ts`; the others stay inlined at their call sites |
 | `Actor.isBoredOf` / `addBoringItem` / `getEquippedRangedWeapon` | ✅ added to `data/Actor.ts` |
 | `Actions.SayFlags`, `Actions.FireMode` | ✅ corrected to match `RogueGame.Sayflags` / `Data/Attack.cs` |
 
 ### Generator files
 
-| C# file | Size | TS output | Notes |
-|---------|------|-----------|-------|
-| `Gameplay/Generators/BaseMapGenerator.cs` | 43 KB | `gameplay/generators/BaseMapGenerator.ts` | |
-| `Gameplay/Generators/BaseTownGenerator.cs` | 243 KB | Split (see below) | |
-| `Gameplay/Generators/StdTownGenerator.cs` | 4 KB | `gameplay/generators/StdTownGenerator.ts` | |
+| C# file | Size | TS output | Notes | Status |
+|---------|------|-----------|-------|--------|
+| `Engine/MapGenerator.cs` | 507 lines | `engine/MapGenerator.ts` | Shared `TileFill` / `MapObjectPlace` / `ActorPlace` helpers | ✅ Done |
+| `Gameplay/Generators/BaseMapGenerator.cs` | 43 KB | `gameplay/generators/BaseMapGenerator.ts` | Dressing, skills, map objects, item factories | ✅ Done |
+| `Gameplay/Generators/BaseTownGenerator.cs` | 243 KB | `gameplay/generators/BaseTownGenerator.ts` (5 814 lines) | Single class — see note below | ✅ Done |
+| `Gameplay/Generators/StdTownGenerator.cs` | 4 KB | `gameplay/generators/StdTownGenerator.ts` | Surface/sewers population | ✅ Done |
 
-#### BaseTownGenerator decomposition (243 KB → split)
+#### BaseTownGenerator — as implemented
 
-| Sub-module | Contents |
-|------------|---------|
-| `gameplay/generators/TownLayout.ts` | District / road grid layout |
-| `gameplay/generators/BuildingGenerator.ts` | Individual building interiors |
-| `gameplay/generators/ShopGenerator.ts` | Shop layout variants |
-| `gameplay/generators/SubwayGenerator.ts` | Subway map |
-| `gameplay/generators/SewersGenerator.ts` | Sewers map |
-| `gameplay/generators/PopulationGenerator.ts` | Actor / item spawning |
-| `gameplay/generators/BaseTownGenerator.ts` | Orchestration only |
+The suggested decomposition into `TownLayout` / `BuildingGenerator` / `ShopGenerator` /
+`SubwayGenerator` / `SewersGenerator` / `PopulationGenerator` was **not** taken: the C#
+file is one class whose methods freely call each other across regions (buildings → rooms →
+items → actors → exits/zones) and share `m_DiceRoller` / `m_SurfaceBlocks` / `m_Params`
+state, so a split would need every helper promoted to public plumbing.
+
+It is instead ported as **one class**, exactly like `BaseAI.ts` (see the note above):
+`gameplay/generators/BaseTownGenerator.ts` (5 814 lines, all 88 C# methods + 5 small
+.NET-helper ports: `Rectangle.Intersect`/`IsEmpty`, `string.GetHashCode`, `Map.HasAnExitIn`).
+`StdTownGenerator` subclasses it (`generate`, `generateSewersMap`, `generateSubwayMap`).
+
+Built as 8 contiguous slices (`/tmp/opencode/parts/p0..p7*.ts`, transient) and spliced into
+one file; 2 independent audits compared the C# regions against the port and found only
+3 LOW findings (see commit message).
+
+**Known leftovers (same class as the BaseAI gaps):** unported `RogueGame` members are
+called as `this.m_Game.<PascalCase>` — `ApplyOnFire`, `SkillUpgrade`, `ZombifySkill`,
+`NextUndeadEvolution` — and the `RogueGame.NAME_*` / day constants are inlined in the
+generator file. They resolve when Phase 4 ports `RogueGame`.
 
 ---
 
@@ -645,7 +656,7 @@ No image conversion is needed — all sprites are already PNG.
 | 2 | Data layer | All game objects typed, `Map`/`Actor` working | ✅ Complete |
 | 3 | Engine core | Rules, LOS, Session, Scoring, GameOptions — all but the Options UI screen | 🔄 In Progress |
 | 4 | Game loop | **Playable game** (new game, move, attack, die) | ⏳ Planned |
-| 5 | AI + generators | `BaseAI` + all 11 AI controllers done; generators pending | 🔄 In Progress |
-| 6 | Audio | Sound effects and music | ⏳ Planned |
-| 7 | Save / load | Persistent saves via localStorage / IndexedDB | ⏳ Planned |
+| 5 | AI + generators | `BaseAI`, all 11 AI controllers, all 4 generator files (5 814-line `BaseTownGenerator`) | ✅ Complete |
+| 6 | Audio | Sound effects and music | ✅ Complete |
+| 7 | Save / load | Persistent saves via localStorage / IndexedDB | ✅ Complete |
 | 8 | Polish | PWA, CI, performance, deployment | ⏳ Planned |

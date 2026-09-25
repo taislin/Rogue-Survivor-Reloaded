@@ -61,6 +61,6 @@ public/assets/MapObjects/wooden_door_closed.png
 | 2 | ✅ Complete | Data layer (Map, Actor, Item, Tile, World) |
 | 3 | 🔄 In progress | Engine core — all but `ui/OptionsScreen.ts` |
 | 4 | ⬜ Pending | RogueGame core loop |
-| 5 | 🔄 In progress | AI controllers done; world generators pending |
-| 6 | ⬜ Pending | Audio (Web Audio API) |
-| 7 | ⬜ Pending | Save/load (IndexedDB) |
+| 5 | ✅ Complete | All 11 AI controllers + `BaseAI`; world generators (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator`, `StdTownGenerator`) |
+| 6 | ✅ Complete | Audio (Web Audio API) |
+| 7 | ✅ Complete | Save/load (IndexedDB fallback) |

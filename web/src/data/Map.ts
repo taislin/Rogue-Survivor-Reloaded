@@ -3,6 +3,7 @@ import { Rect } from "@engine/Rect";
 import { Direction } from "@engine/Direction";
 import { WorldTime } from "@engine/WorldTime";
 import { Tile } from "./Tile";
+import type { TileModel } from "./TileModel";
 import type { Zone } from "./Zone";
 import type { District } from "./District";
 import type { Actor } from "./Actor";
@@ -89,6 +90,11 @@ export class Map {
     return this.isInBounds(p.x, p.y);
   }
 
+  /** C# `Map.IsOnMapBorder(int, int)`. */
+  isOnMapBorder(x: number, y: number): boolean {
+    return x === 0 || x === this.width - 1 || y === 0 || y === this.height - 1;
+  }
+
   getTileAt(x: number, y: number): Tile | null {
     if (!this.isInBounds(x, y)) return null;
     return this.tilesGrid[x][y] ?? null;
@@ -98,6 +104,13 @@ export class Map {
     if (this.isInBounds(x, y)) {
       this.tilesGrid[x][y] = tile;
     }
+  }
+
+  /** C# `Map.SetTileModelAt(int, int, TileModel)`. */
+  setTileModelAt(x: number, y: number, model: TileModel): void {
+    if (!this.isInBounds(x, y)) throw new RangeError(`position out of map bounds (${x},${y})`);
+    if (!model) throw new Error('model');
+    this.tilesGrid[x][y].model = model;
   }
 
   // ── Exits ─────────────────────────────────────────────────────────────────
@@ -148,6 +161,18 @@ export class Map {
 
   getZonesAtPoint(pos: Point): Zone[] {
     return this.getZonesAt(pos.x, pos.y);
+  }
+
+  /** C# `Map.RemoveAllZonesAt(int, int)`. */
+  removeAllZonesAt(x: number, y: number): void {
+    const zones = this.getZonesAt(x, y);
+    for (const z of zones) this.removeZone(z);
+  }
+
+  /** C# `Map.RemoveZone(Zone)`. */
+  removeZone(zone: Zone): void {
+    const idx = this.zonesList.indexOf(zone);
+    if (idx !== -1) this.zonesList.splice(idx, 1);
   }
 
   isWalkable(x: number, y: number): boolean {
@@ -346,6 +371,17 @@ export class Map {
     if (inv && inv.isEmpty) {
       this.groundItemsMap.delete(k);
     }
+  }
+
+  /** C# `Map.RemoveItemAt(Item, Point)`. */
+  removeItemAt(it: Item, pos: Point): void {
+    if (!it) throw new Error('item');
+    if (!this.isInBoundsPoint(pos)) throw new RangeError('position out of map bounds');
+    const invThere = this.groundItemsMap.get(Map.key(pos.x, pos.y));
+    if (!invThere) throw new Error('no items at this position');
+    if (!invThere.contains(it)) throw new Error('item not at this position');
+    invThere.removeAllQuantity(it);
+    this.removeItemsAtIfEmpty(pos);
   }
 
   // ── Corpses ───────────────────────────────────────────────────────────────
