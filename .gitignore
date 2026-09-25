@@ -1,0 +1,43 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+artifacts/
+
+# Visual Studio / IDE state
+.vs/
+*.suo
+*.user
+*.rsuser
+*.userosscache
+*.sln.docstates
+.idea/
+.vscode/
+
+# Test results / NuGet packages
+[Tt]est[Rr]esults/
+*.trx
+packages/
+*.nupkg
+project.lock.json
+
+# Runtime-generated game data (saves, config, logs)
+Config/
+*.dat
+log.txt
+hiscores.txt
+
+# Bundled SFML debug build (only Release is referenced by the project)
+src/libs/sfml/Debug/
+*.pdb
+
+# OS / editor junk
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+._*
+*.tmp
+*.bak
+*.swp
+*~
