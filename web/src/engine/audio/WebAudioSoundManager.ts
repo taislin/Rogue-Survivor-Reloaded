@@ -1,5 +1,6 @@
 import { ISoundManager } from './ISoundManager';
 import { soundPath } from '@engine/AssetPaths';
+import { sfxGain } from '@gameplay/AudioLevels';
 
 export class WebAudioSoundManager implements ISoundManager {
   private ctx: AudioContext | null = null;
@@ -47,7 +48,11 @@ export class WebAudioSoundManager implements ISoundManager {
       const source = this.ctx.createBufferSource();
       source.buffer = buffer;
       const gainNode = this.ctx.createGain();
-      gainNode.gain.value = this.volume;
+      // Per-sound loudness correction (see gameplay/AudioLevels.ts) folded into
+      // the master volume, so effects are as audible as the music bed. The
+      // shipped sfx are peak-normalised, which matters most for "undead eat" —
+      // its peak is 0.39 against 1.0 for "nightmare".
+      gainNode.gain.value = this.volume * sfxGain(soundId);
       source.connect(gainNode);
       gainNode.connect(this.ctx.destination);
       source.start(0);
