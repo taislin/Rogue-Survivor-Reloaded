@@ -4338,135 +4338,435 @@ export class RogueGame {
 
   // C# HandleMouseLook — RogueGame.cs:6622
   HandleMouseLook(mousePos: Point): boolean {
-    void mousePos;
-    throw new Error("not yet ported: HandleMouseLook (RogueGame.cs:6622)");
+    const mouseMap = this.MouseToMap(mousePos);
+    if (!this.IsInViewRect(mouseMap))
+      return false;
+
+    if (!this.m_Session.currentMap!.isInBoundsPoint(mouseMap))
+      return true;
+
+    this.ClearOverlays();
+    if (this.IsVisibleToPlayer(this.m_Session.currentMap!, mouseMap)) {
+      const tileScreenPos = this.MapToScreen(mouseMap);
+      const description = this.DescribeStuffAt(this.m_Session.currentMap!, mouseMap);
+      if (description != null) {
+        const popupPos = new Point(tileScreenPos.x + TILE_SIZE, tileScreenPos.y);
+        this.AddOverlay(new OverlayPopup(description, Color.White, Color.White, this.POPUP_FILLCOLOR, popupPos));
+        if (s_Options.showTargets) {
+          const actorThere = this.m_Session.currentMap!.getActorAtPoint(mouseMap);
+          if (actorThere != null)
+            this.DrawActorRelations(actorThere);
+        }
+      }
+    }
+
+    return true;
   }
 
   // C# HandleMouseInventory — RogueGame.cs:6656
-  HandleMouseInventory(mousePos: Point, mouseButtons: MouseButton | null, hasDoneAction: boolean): { ok: boolean; hasDoneAction: boolean } {
-    void mousePos;
-    void mouseButtons;
-    void hasDoneAction;
-    throw new Error("not yet ported: HandleMouseInventory (RogueGame.cs:6656)");
+  HandleMouseInventory(mousePos: Point, mouseButtons: MouseButton | null, _hasDoneAction: boolean): { ok: boolean; hasDoneAction: boolean } {
+    const hit = this.MouseToInventoryItem(mousePos);
+    const inv = hit.inv;
+    if (inv == null) {
+      return { ok: false, hasDoneAction: false };
+    }
+
+    const isPlayerInventory = (inv === this.m_Player.inventory);
+    let hasDoneAction = false;
+    this.ClearOverlays();
+    const itemPos = hit.itemPos;
+    this.AddOverlay(new OverlayRect(Color.Cyan, new Rect(itemPos.x, itemPos.y, 32, 32)));
+    this.AddOverlay(new OverlayRect(Color.Cyan, new Rect(itemPos.x + 1, itemPos.y + 1, 30, 30)));
+    const it = hit.result;
+    if (it != null) {
+      const lines = this.DescribeItemLong(it, isPlayerInventory, hit.iSlot);
+      const longestLine = 1 + this.FindLongestLine(lines);
+      const ovX = itemPos.x - 7 * longestLine;
+      const ovY = itemPos.y + 32;
+
+      this.AddOverlay(new OverlayPopup(lines, Color.White, Color.White, this.POPUP_FILLCOLOR, new Point(ovX, ovY)));
+
+      if (mouseButtons != null) {
+        if (mouseButtons === MouseButton.Left)
+          hasDoneAction = this.OnLMBItem(inv, it);
+        else if (mouseButtons === MouseButton.Right)
+          hasDoneAction = this.OnRMBItem(inv, it);
+      }
+    }
+
+    return { ok: true, hasDoneAction };
   }
 
   // C# MouseToInventoryItem — RogueGame.cs:6698
-  MouseToInventoryItem(screen: Point, inv: Inventory, itemPos: Point, iSlot: number): { result: Item; inv: Inventory; itemPos: Point; iSlot: number } {
-    void screen;
-    void inv;
-    void itemPos;
-    void iSlot;
-    throw new Error("not yet ported: MouseToInventoryItem (RogueGame.cs:6698)");
+  MouseToInventoryItem(screen: Point): { result: Item | null; inv: Inventory | null; itemPos: Point; iSlot: number } {
+    let inv: Inventory | null = null;
+    let itemPos = Point.Zero;
+    let iSlot = -1;
+
+    if (this.m_Player == null)
+      return { result: null, inv, itemPos, iSlot };
+
+    const playerInv = this.m_Player.inventory!;
+    const playerSlot = this.MouseToInventorySlot(INVENTORYPANEL_X, INVENTORYPANEL_Y, screen.x, screen.y);
+    const playerItemIndex = playerSlot.x + playerSlot.y * INVENTORY_SLOTS_PER_LINE;
+    if (playerItemIndex >= 0 && playerItemIndex < playerInv.maxCapacity) {
+      inv = playerInv;
+      itemPos = this.InventorySlotToScreen(INVENTORYPANEL_X, INVENTORYPANEL_Y, playerSlot.x, playerSlot.y);
+      iSlot = playerItemIndex;
+      return { result: playerInv.getItem(playerItemIndex), inv, itemPos, iSlot };
+    }
+
+    const groundInv = this.m_Player.location.map?.getItemsAt(this.m_Player.location.position) ?? null;
+    const groundSlot = this.MouseToInventorySlot(INVENTORYPANEL_X, GROUNDINVENTORYPANEL_Y, screen.x, screen.y);
+    itemPos = this.InventorySlotToScreen(INVENTORYPANEL_X, GROUNDINVENTORYPANEL_Y, groundSlot.x, groundSlot.y);
+    if (groundInv == null)
+      return { result: null, inv, itemPos, iSlot };
+    const groundItemIndex = groundSlot.x + groundSlot.y * INVENTORY_SLOTS_PER_LINE;
+    if (groundItemIndex >= 0 && groundItemIndex < groundInv.maxCapacity) {
+      inv = groundInv;
+      iSlot = groundItemIndex;
+      return { result: groundInv.getItem(groundItemIndex), inv, itemPos, iSlot };
+    }
+
+    return { result: null, inv, itemPos, iSlot };
   }
 
   // C# OnLMBItem — RogueGame.cs:6734
   OnLMBItem(inv: Inventory, it: Item): boolean {
-    void inv;
-    void it;
-    throw new Error("not yet ported: OnLMBItem (RogueGame.cs:6734)");
+    if (inv === this.m_Player.inventory) {
+      if (it.isEquipped) {
+        const res = this.m_Rules.canActorUnequipItem(this.m_Player, it);
+        if (res.ok) {
+          this.DoUnequipItem(this.m_Player, it);
+          return false;
+        } else {
+          this.AddMessage(this.MakeErrorMessage(`Cannot unequip ${it.theName} : ${res.reason}.`));
+          return false;
+        }
+      } else if (it.model.isEquipable) {
+        const res = this.m_Rules.canActorEquipItem(this.m_Player, it);
+        if (res.ok) {
+          this.DoEquipItem(this.m_Player, it);
+          return false;
+        } else {
+          this.AddMessage(this.MakeErrorMessage(`Cannot equip ${it.theName} : ${res.reason}.`));
+          return false;
+        }
+      } else {
+        const res = this.m_Rules.canActorUseItem(this.m_Player, it);
+        if (res.ok) {
+          this.DoUseItem(this.m_Player, it);
+          return true;
+        } else {
+          this.AddMessage(this.MakeErrorMessage(`Cannot use ${it.theName} : ${res.reason}.`));
+        }
+      }
+    } else {
+      const res = this.m_Rules.canActorGetItem(this.m_Player, it);
+      if (res.ok) {
+        this.DoTakeItem(this.m_Player, this.m_Player.location.position, it);
+        return true;
+      } else {
+        this.AddMessage(this.MakeErrorMessage(`Cannot take ${it.theName} : ${res.reason}.`));
+        return false;
+      }
+    }
+
+    return false;
   }
 
   // C# OnRMBItem — RogueGame.cs:6801
   OnRMBItem(inv: Inventory, it: Item): boolean {
-    void inv;
-    void it;
-    throw new Error("not yet ported: OnRMBItem (RogueGame.cs:6801)");
+    if (inv === this.m_Player.inventory) {
+      const res = this.m_Rules.canActorDropItem(this.m_Player, it);
+      if (res.ok) {
+        this.DoDropItem(this.m_Player, it);
+        return true;
+      } else {
+        this.AddMessage(this.MakeErrorMessage(`Cannot drop ${it.theName} : ${res.reason}.`));
+        return false;
+      }
+    }
+
+    return false;
   }
 
   // C# HandleMouseOverCorpses — RogueGame.cs:6822
-  HandleMouseOverCorpses(mousePos: Point, mouseButtons: MouseButton | null, hasDoneAction: boolean): { ok: boolean; hasDoneAction: boolean } {
-    void mousePos;
-    void mouseButtons;
-    void hasDoneAction;
-    throw new Error("not yet ported: HandleMouseOverCorpses (RogueGame.cs:6822)");
+  HandleMouseOverCorpses(mousePos: Point, mouseButtons: MouseButton | null, _hasDoneAction: boolean): { ok: boolean; hasDoneAction: boolean } {
+    const hit = this.MouseToCorpse(mousePos);
+    const corpse = hit.result;
+    if (corpse == null) {
+      return { ok: false, hasDoneAction: false };
+    }
+
+    let hasDoneAction = false;
+    this.ClearOverlays();
+    const corpsePos = hit.corpsePos;
+    this.AddOverlay(new OverlayRect(Color.Cyan, new Rect(corpsePos.x, corpsePos.y, 32, 32)));
+    this.AddOverlay(new OverlayRect(Color.Cyan, new Rect(corpsePos.x + 1, corpsePos.y + 1, 30, 30)));
+    if (corpse != null) {
+      const lines = this.DescribeCorpseLong(corpse, true);
+      const longestLine = 1 + this.FindLongestLine(lines);
+      const ovX = corpsePos.x - 7 * longestLine;
+      const ovY = corpsePos.y + 32;
+
+      this.AddOverlay(new OverlayPopup(lines, Color.White, Color.White, this.POPUP_FILLCOLOR, new Point(ovX, ovY)));
+
+      if (mouseButtons != null) {
+        if (mouseButtons === MouseButton.Left)
+          hasDoneAction = this.OnLMBCorpse(corpse);
+        else if (mouseButtons === MouseButton.Right)
+          hasDoneAction = this.OnRMBCorpse(corpse);
+      }
+    }
+
+    return { ok: true, hasDoneAction };
   }
 
   // C# MouseToCorpse — RogueGame.cs:6861
-  MouseToCorpse(screen: Point, corpsePos: Point): { result: Corpse; corpsePos: Point } {
-    void screen;
-    void corpsePos;
-    throw new Error("not yet ported: MouseToCorpse (RogueGame.cs:6861)");
+  MouseToCorpse(screen: Point): { result: Corpse | null; corpsePos: Point } {
+    let corpsePos = Point.Zero;
+
+    if (this.m_Player == null)
+      return { result: null, corpsePos };
+
+    const corpsesList = this.m_Player.location.map?.getCorpsesAt(this.m_Player.location.position) ?? null;
+    if (corpsesList == null)
+      return { result: null, corpsePos };
+
+    const corpseSlot = this.MouseToInventorySlot(INVENTORYPANEL_X, CORPSESPANEL_Y, screen.x, screen.y);
+    corpsePos = this.InventorySlotToScreen(INVENTORYPANEL_X, CORPSESPANEL_Y, corpseSlot.x, corpseSlot.y);
+    const corpseIndex = corpseSlot.x + corpseSlot.y * INVENTORY_SLOTS_PER_LINE;
+    if (corpseIndex >= 0 && corpseIndex < corpsesList.length)
+      return { result: corpsesList[corpseIndex], corpsePos };
+
+    return { result: null, corpsePos };
   }
 
   // C# OnLMBCorpse — RogueGame.cs:6880
   OnLMBCorpse(c: Corpse): boolean {
-    void c;
-    throw new Error("not yet ported: OnLMBCorpse (RogueGame.cs:6880)");
+    if (c.isDragged) {
+      const res = this.m_Rules.canActorStopDragCorpse(this.m_Player, c);
+      if (res.ok) {
+        this.DoStopDragCorpse(this.m_Player, c);
+        return false;
+      } else {
+        this.AddMessage(this.MakeErrorMessage(`Cannot stop dragging ${c.deadGuy.name} corpse : ${res.reason}.`));
+        return false;
+      }
+    } else {
+      const res = this.m_Rules.canActorStartDragCorpse(this.m_Player, c);
+      if (res.ok) {
+        this.DoStartDragCorpse(this.m_Player, c);
+        return false;
+      } else {
+        this.AddMessage(this.MakeErrorMessage(`Cannot start dragging ${c.deadGuy.name} corpse : ${res.reason}.`));
+        return false;
+      }
+    }
   }
 
   // C# OnRMBCorpse — RogueGame.cs:6912
   OnRMBCorpse(c: Corpse): boolean {
-    void c;
-    throw new Error("not yet ported: OnRMBCorpse (RogueGame.cs:6912)");
+    if (this.m_Player.model.abilities.isUndead) {
+      const res = this.m_Rules.canActorEatCorpse(this.m_Player, c);
+      if (res.ok) {
+        this.DoEatCorpse(this.m_Player, c);
+        return true;
+      } else {
+        this.AddMessage(this.MakeErrorMessage(`Cannot eat ${c.deadGuy.name} corpse : ${res.reason}.`));
+        return false;
+      }
+    } else {
+      const res = this.m_Rules.canActorButcherCorpse(this.m_Player, c);
+      if (res.ok) {
+        this.DoButcherCorpse(this.m_Player, c);
+        return true;
+      } else {
+        this.AddMessage(this.MakeErrorMessage(`Cannot butcher ${c.deadGuy.name} corpse : ${res.reason}.`));
+        return false;
+      }
+    }
   }
 
   // C# HandlePlayerEatCorpse — RogueGame.cs:6943
   HandlePlayerEatCorpse(player: Actor, mousePos: Point): boolean {
-    void player;
-    void mousePos;
-    throw new Error("not yet ported: HandlePlayerEatCorpse (RogueGame.cs:6943)");
+    const hit = this.MouseToCorpse(mousePos);
+    const corpse = hit.result;
+    if (corpse == null)
+      return false;
+
+    const res = this.m_Rules.canActorEatCorpse(player, corpse);
+    if (!res.ok) {
+      this.AddMessage(this.MakeErrorMessage(`Cannot eat ${corpse.deadGuy.name} corpse : ${res.reason}.`));
+      return false;
+    }
+
+    this.DoEatCorpse(player, corpse);
+    return true;
   }
 
   // C# HandlePlayerReviveCorpse — RogueGame.cs:6964
   HandlePlayerReviveCorpse(player: Actor, mousePos: Point): boolean {
-    void player;
-    void mousePos;
-    throw new Error("not yet ported: HandlePlayerReviveCorpse (RogueGame.cs:6964)");
+    const hit = this.MouseToCorpse(mousePos);
+    const corpse = hit.result;
+    if (corpse == null)
+      return false;
+
+    const res = this.m_Rules.canActorReviveCorpse(player, corpse);
+    if (!res.ok) {
+      this.AddMessage(this.MakeErrorMessage(`Cannot revive ${corpse.deadGuy.name} : ${res.reason}.`));
+      return false;
+    }
+
+    this.DoReviveCorpse(player, corpse);
+    return true;
   }
 
   // C# DoStartDragCorpse — RogueGame.cs:6985
   DoStartDragCorpse(a: Actor, c: Corpse): void {
-    void a;
-    void c;
-    throw new Error("not yet ported: DoStartDragCorpse (RogueGame.cs:6985)");
+    c.draggedBy = a;
+    a.draggedCorpse = c;
+    if (this.IsVisibleToPlayer(a))
+      this.AddMessage(this.MakeMessage(a, `${this.Conjugate(a, this.VERB_START)} dragging ${c.deadGuy.name} corpse.`));
   }
 
   // C# DoStopDragCorpse — RogueGame.cs:6993
   DoStopDragCorpse(a: Actor, c: Corpse): void {
-    void a;
-    void c;
-    throw new Error("not yet ported: DoStopDragCorpse (RogueGame.cs:6993)");
+    c.draggedBy = null;
+    a.draggedCorpse = null;
+    if (this.IsVisibleToPlayer(a))
+      this.AddMessage(this.MakeMessage(a, `${this.Conjugate(a, this.VERB_STOP)} dragging ${c.deadGuy.name} corpse.`));
   }
 
   // C# DoStopDraggingCorpses — RogueGame.cs:7001
   DoStopDraggingCorpses(a: Actor): void {
-    void a;
-    throw new Error("not yet ported: DoStopDraggingCorpses (RogueGame.cs:7001)");
+    if (a.draggedCorpse != null) {
+      this.DoStopDragCorpse(a, a.draggedCorpse);
+    }
   }
 
   // C# DoButcherCorpse — RogueGame.cs:7009
   DoButcherCorpse(a: Actor, c: Corpse): void {
-    void a;
-    void c;
-    throw new Error("not yet ported: DoButcherCorpse (RogueGame.cs:7009)");
+    const isVisible = this.IsVisibleToPlayer(a);
+
+    this.SpendActorActionPoints(a, Rules.BASE_ACTION_COST);
+
+    this.SeeingCauseInsanity(a, a.location, Rules.SANITY_HIT_BUTCHERING_CORPSE, `${a.name} butchering ${c.deadGuy.name}`);
+
+    const dmg = this.m_Rules.actorDamageVsCorpses(a);
+
+    if (isVisible)
+      this.AddMessage(this.MakeMessage(a, `${this.Conjugate(a, this.VERB_BUTCHER)} ${c.deadGuy.name} corpse for ${dmg} damage.`));
+
+    this.InflictDamageToCorpse(c, dmg);
+
+    if (c.hitPoints <= 0) {
+      this.DestroyCorpse(c, a.location.map!);
+      if (isVisible)
+        this.AddMessage(new Message(`${c.deadGuy.name} corpse is no more.`, a.location.map!.localTime.turnCounter, Color.Purple));
+    }
   }
 
   // C# DoEatCorpse — RogueGame.cs:7036
   DoEatCorpse(a: Actor, c: Corpse): void {
-    void a;
-    void c;
-    throw new Error("not yet ported: DoEatCorpse (RogueGame.cs:7036)");
+    const isVisible = this.IsVisibleToPlayer(a);
+
+    this.SpendActorActionPoints(a, Rules.BASE_ACTION_COST);
+
+    const dmg = this.m_Rules.actorDamageVsCorpses(a);
+
+    if (isVisible) {
+      this.AddMessage(this.MakeMessage(a, `${this.Conjugate(a, this.VERB_FEAST_ON)} ${c.deadGuy.name} corpse.`));
+      this.m_MusicManager.stop();
+      this.m_MusicManager.play(GameSounds.UNDEAD_EAT);
+    }
+
+    this.InflictDamageToCorpse(c, dmg);
+
+    if (c.hitPoints <= 0) {
+      this.DestroyCorpse(c, a.location.map!);
+      if (isVisible)
+        this.AddMessage(new Message(`${c.deadGuy.name} corpse is no more.`, a.location.map!.localTime.turnCounter, Color.Purple));
+    }
+
+    if (a.model.abilities.isUndead) {
+      this.RegenActorHitPoints(a, this.m_Rules.actorBiteHpRegen(a, dmg));
+      a.foodPoints = Math.min(a.foodPoints + this.m_Rules.actorBiteNutritionValue(a, dmg), this.m_Rules.actorMaxRot(a));
+    } else {
+      a.foodPoints = Math.min(a.foodPoints + this.m_Rules.actorBiteNutritionValue(a, dmg), this.m_Rules.actorMaxFood(a));
+      this.InfectActor(a, this.m_Rules.corpseEeatingInfectionTransmission(c.deadGuy.infection));
+    }
+
+    this.SeeingCauseInsanity(
+      a,
+      a.location,
+      a.model.abilities.isUndead ? Rules.SANITY_HIT_UNDEAD_EATING_CORPSE : Rules.SANITY_HIT_LIVING_EATING_CORPSE,
+      `${a.name} eating ${c.deadGuy.name}`
+    );
   }
 
   // C# DoReviveCorpse — RogueGame.cs:7085
   DoReviveCorpse(actor: Actor, corpse: Corpse): void {
-    void actor;
-    void corpse;
-    throw new Error("not yet ported: DoReviveCorpse (RogueGame.cs:7085)");
+    const visible = this.IsVisibleToPlayer(actor);
+
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+    const map = actor.location.map!;
+    const revivePoints = map.filterAdjacentInMap(
+      actor.location.position,
+      (pt: Point) => {
+        if (map.getActorAtPoint(pt) != null) return false;
+        if (map.getMapObjectAt(pt.x, pt.y) != null) return false;
+        return true;
+      }
+    );
+
+    if (revivePoints == null || revivePoints.length === 0) {
+      if (visible)
+        this.AddMessage(this.MakeMessage(actor, `${this.Conjugate(actor, this.VERB_HAVE)} not enough room for reviving ${corpse.deadGuy.name}.`));
+      return;
+    }
+    const revivePt = revivePoints[this.m_Rules.roll(0, revivePoints.length)];
+
+    const medikit = actor.inventory!.getSmallestStackByModel(Models.items.get(ItemID.MEDICINE_MEDIKIT)!);
+    if (medikit != null) {
+      actor.inventory!.consume(medikit);
+    }
+
+    const chance = this.m_Rules.corpseReviveChance(actor, corpse);
+    if (this.m_Rules.rollChance(chance)) {
+      corpse.deadGuy.isDead = false;
+      corpse.deadGuy.hitPoints = this.m_Rules.corpseReviveHPs(actor, corpse);
+      corpse.deadGuy.doll.removeDecoration(GameImages.BLOODIED);
+      corpse.deadGuy.activity = Activity.IDLE;
+      corpse.deadGuy.targetActor = null;
+      map.removeCorpse(corpse);
+      map.placeActor(corpse.deadGuy, revivePt);
+
+      if (visible)
+        this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_REVIVE), corpse.deadGuy));
+
+      if (!this.m_Rules.areEnemies(actor, corpse.deadGuy))
+        this.DoSay(corpse.deadGuy, actor, "Thank you, you saved my life!", SayFlags.NONE);
+    } else {
+      if (visible)
+        this.AddMessage(this.MakeMessage(actor, `${this.Conjugate(actor, this.VERB_FAIL)} to revive`, corpse.deadGuy));
+    }
   }
 
   // C# InflictDamageToCorpse — RogueGame.cs:7141
   InflictDamageToCorpse(c: Corpse, dmg: number): void {
-    void c;
-    void dmg;
-    throw new Error("not yet ported: InflictDamageToCorpse (RogueGame.cs:7141)");
+    c.hitPoints -= dmg;
   }
 
   // C# DestroyCorpse — RogueGame.cs:7146
   DestroyCorpse(c: Corpse, m: Map): void {
-    void c;
-    void m;
-    throw new Error("not yet ported: DestroyCorpse (RogueGame.cs:7146)");
+    if (c.draggedBy != null) {
+      c.draggedBy.draggedCorpse = null;
+      c.draggedBy = null;
+    }
+    m.removeCorpse(c);
   }
 
   // C# DoPlayerItemSlot — RogueGame.cs:7157

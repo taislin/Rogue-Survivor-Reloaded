@@ -246,4 +246,20 @@ export class Inventory {
   forEach(action: (it: Item) => void): void {
     this.itemsList.forEach(action);
   }
+
+  getSmallestStackByModel(model: ItemModel, allowZeroQuantity = false): Item | null {
+    let smallest: Item | null = null;
+    let smallestQuantity = 0;
+    for (const it of this.itemsList) {
+      if (it.model === model) {
+        const q = it.quantity;
+        if (smallest === null || (q < smallestQuantity && (allowZeroQuantity || q > 0))) {
+          smallest = it;
+          smallestQuantity = q;
+        }
+      }
+    }
+    return smallest;
+  }
+
 }
