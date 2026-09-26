@@ -49,7 +49,8 @@ import { MapObject, MapObjectBreak, MapObjectFire } from "@data/MapObject";
 import { Board, DoorWindow, Fortification, PowerGenerator } from "@engine/mapobjects/MapObjects";
 import { Actor } from "@data/Actor";
 import { ActorModel } from "@data/ActorModel";
-import { ActorOrder } from "@data/ActorOrder";
+import { ActorDirective, ActorCourage } from "@data/ActorDirective";
+import { ActorTasks, ActorOrder } from "@data/ActorOrder";
 import { FireMode } from "@data/Attack";
 import { BlastAttack } from "@data/BlastAttack";
 import { ActorAction } from "@data/ActorAction";
@@ -3462,7 +3463,7 @@ export class RogueGame {
 
     // Check if long wait.
     if (this.m_IsPlayerLongWait) {
-      if (this.CheckPlayerWaitLong(player)) {
+      if (await this.CheckPlayerWaitLong(player)) {
         // continue waiting.
         this.DoWait(player);
         return;
@@ -6006,143 +6007,814 @@ export class RogueGame {
   }
 
   // C# HandlePlayerUseSpray — RogueGame.cs:9034
-  HandlePlayerUseSpray(player: Actor): boolean {
-    void player;
-    throw new Error("not yet ported: HandlePlayerUseSpray (RogueGame.cs:9034)");
+  async HandlePlayerUseSpray(player: Actor): Promise<boolean> {
+    const it = player.getEquippedItem(DollPart.LEFT_HAND);
+    if (it == null) {
+      this.AddMessage(this.MakeErrorMessage("No spray equipped."));
+      this.RedrawPlayScreen();
+      return false;
+    }
+
+    const sprayPaint = it instanceof ItemSprayPaint ? it as ItemSprayPaint : null;
+    if (sprayPaint != null)
+      return await this.HandlePlayerTag(player);
+
+    const sprayScent = it instanceof ItemSprayScent ? it as ItemSprayScent : null;
+    if (sprayScent != null) {
+      return await this.HandlePlayerSprayOdorSuppressor(player);
+    }
+
+    this.AddMessage(this.MakeErrorMessage("No spray equipped."));
+    this.RedrawPlayScreen();
+    return false;
   }
 
   // C# HandlePlayerTag — RogueGame.cs:9070
-  HandlePlayerTag(player: Actor): boolean {
-    void player;
-    throw new Error("not yet ported: HandlePlayerTag (RogueGame.cs:9070)");
+  async HandlePlayerTag(player: Actor): Promise<boolean> {
+    let loop = true;
+    let actionDone = false;
+
+    const sprayPaint = player.getEquippedItem(DollPart.LEFT_HAND) instanceof ItemSprayPaint ? player.getEquippedItem(DollPart.LEFT_HAND) as ItemSprayPaint : null;
+    if (sprayPaint == null) {
+      this.AddMessage(this.MakeErrorMessage("No spray paint equipped."));
+      this.RedrawPlayScreen();
+      return false;
+    }
+    if (sprayPaint.paintQuantity <= 0) {
+      this.AddMessage(this.MakeErrorMessage("No paint left."));
+      this.RedrawPlayScreen();
+      return false;
+    }
+
+    this.ClearOverlays();
+    this.AddOverlay(new OverlayPopup(this.TAG_MODE_TEXT, this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+    do {
+      this.RedrawPlayScreen();
+      const dir = await this.WaitDirectionOrCancel();
+
+      if (dir == null) {
+        loop = false;
+      } else if (dir !== Direction.NEUTRAL) {
+        const pos = player.location.position.add(new Point(dir.dx, dir.dy));
+        if (player.location.map!.isInBoundsPoint(pos)) {
+          const res = this.CanTag(player.location.map!, pos);
+          if (res.ok) {
+            this.DoTag(player, sprayPaint, pos);
+            loop = false;
+            actionDone = true;
+          } else {
+            this.AddMessage(this.MakeErrorMessage(`Can't tag there : ${res.reason}.`));
+            this.RedrawPlayScreen();
+          }
+        }
+      }
+    } while (loop);
+
+    this.ClearOverlays();
+    return actionDone;
   }
 
   // C# CanTag — RogueGame.cs:9142
-  CanTag(map: Map, pos: Point, reason: string): { ok: boolean; reason: string } {
-    void map;
-    void pos;
-    void reason;
-    throw new Error("not yet ported: CanTag (RogueGame.cs:9142)");
+  CanTag(map: Map, pos: Point): { ok: boolean; reason: string } {
+    if (!map.isInBoundsPoint(pos)) {
+      return { ok: false, reason: "out of map" };
+    }
+
+    const other = map.getActorAtPoint(pos);
+    if (other != null) {
+      return { ok: false, reason: "someone there" };
+    }
+
+    const mapObj = map.getMapObjectAt(pos.x, pos.y);
+    if (mapObj != null) {
+      return { ok: false, reason: "something there" };
+    }
+
+    return { ok: true, reason: "" };
   }
 
   // C# HandlePlayerSprayOdorSuppressor — RogueGame.cs:9179
-  HandlePlayerSprayOdorSuppressor(player: Actor): boolean {
-    void player;
-    throw new Error("not yet ported: HandlePlayerSprayOdorSuppressor (RogueGame.cs:9179)");
+  async HandlePlayerSprayOdorSuppressor(player: Actor): Promise<boolean> {
+    let loop = true;
+    let actionDone = false;
+
+    const spray = player.getEquippedItem(DollPart.LEFT_HAND) instanceof ItemSprayScent ? player.getEquippedItem(DollPart.LEFT_HAND) as ItemSprayScent : null;
+    if (spray == null) {
+      this.AddMessage(this.MakeErrorMessage("No spray equipped."));
+      this.RedrawPlayScreen();
+      return false;
+    }
+    if (spray.sprayQuantity <= 0) {
+      this.AddMessage(this.MakeErrorMessage("No spray left."));
+      this.RedrawPlayScreen();
+      return false;
+    }
+
+    this.ClearOverlays();
+    this.AddOverlay(new OverlayPopup(this.SPRAY_MODE_TEXT, this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+    do {
+      this.RedrawPlayScreen();
+      const dir = await this.WaitDirectionOrCancel();
+
+      if (dir == null) {
+        loop = false;
+      } else {
+        let sprayOn: Actor | null = null;
+
+        if (dir === Direction.NEUTRAL) {
+          sprayOn = player;
+        } else {
+          const pos = player.location.position.add(new Point(dir.dx, dir.dy));
+          if (player.location.map!.isInBoundsPoint(pos))
+            sprayOn = player.location.map!.getActorAtPoint(pos);
+        }
+
+        if (sprayOn == null) {
+          this.AddMessage(this.MakeErrorMessage("No one to spray on here."));
+          this.RedrawPlayScreen();
+        } else {
+          const res = this.m_Rules.canActorSprayOdorSuppressor(player, spray, sprayOn);
+          if (res.ok) {
+            this.DoSprayOdorSuppressor(player, spray, sprayOn);
+            loop = false;
+            actionDone = true;
+          } else {
+            this.AddMessage(this.MakeErrorMessage(`Can't spray here : ${res.reason}.`));
+            this.RedrawPlayScreen();
+          }
+        }
+      }
+    } while (loop);
+
+    this.ClearOverlays();
+    return actionDone;
   }
 
   // C# StartPlayerWaitLong — RogueGame.cs:9267
   StartPlayerWaitLong(player: Actor): void {
-    void player;
-    throw new Error("not yet ported: StartPlayerWaitLong (RogueGame.cs:9267)");
+    this.CheckAutoSaveTime();
+
+    this.m_IsPlayerLongWait = true;
+    this.m_IsPlayerLongWaitForcedStop = false;
+    this.m_PlayerLongWaitEnd = new WorldTime(this.m_Session.worldTime.turnCounter + WorldTime.TURNS_PER_HOUR);
+
+    this.AddMessage(this.MakeMessage(player, `${this.Conjugate(player, this.VERB_START)} waiting.`));
+    this.RedrawPlayScreen();
   }
 
   // C# CheckPlayerWaitLong — RogueGame.cs:9282
-  CheckPlayerWaitLong(player: Actor): boolean {
-    void player;
-    throw new Error("not yet ported: CheckPlayerWaitLong (RogueGame.cs:9282)");
-  }
+  async CheckPlayerWaitLong(player: Actor): Promise<boolean> {
+    if (this.m_IsPlayerLongWaitForcedStop)
+      return false;
 
+    if (this.m_Session.worldTime.turnCounter >= this.m_PlayerLongWaitEnd.turnCounter)
+      return false;
+
+    if (this.m_Rules.isActorHungry(player) || this.m_Rules.isActorStarving(player) || this.m_Rules.isActorSleepy(player) || this.m_Rules.isActorExhausted(player))
+      return false;
+
+    for (const p of this.m_PlayerFOV) {
+      const other = player.location.map!.getActorAtPoint(p);
+      if (other != null && this.m_Rules.areEnemies(player, other))
+        return false;
+    }
+
+    if (await this.TryPlayerInsanity())
+      return false;
+
+    return true;
+  }
   // C# HandlePlayerOrderMode — RogueGame.cs:9322
-  HandlePlayerOrderMode(player: Actor): boolean {
-    void player;
-    throw new Error("not yet ported: HandlePlayerOrderMode (RogueGame.cs:9322)");
+  async HandlePlayerOrderMode(player: Actor): Promise<boolean> {
+    if (player.countFollowers === 0) {
+      this.AddMessage(this.MakeErrorMessage("No followers to give orders to."));
+      return false;
+    }
+
+    const followers: Actor[] = [];
+    const fovs: Set<string>[] = [];
+    const hasLinkWith: boolean[] = [];
+    for (const fo of (player.followers ?? [])) {
+      followers.push(fo);
+      const foFov = LOS.computeFOVFor(this.m_Rules, fo, this.m_Session.worldTime, this.m_Session.world!.weather);
+      fovs.push(foFov);
+      const inView = foFov.has(player.location.position.toString()) && this.m_PlayerFOV.has(fo.location.position);
+      const linkedByPhone = this.AreLinkedByPhone(player, fo);
+      hasLinkWith.push(inView || linkedByPhone);
+    }
+
+    if (player.countFollowers === 1 && hasLinkWith[0]) {
+      const done = await await this.HandlePlayerOrderFollower(player, followers[0]);
+      this.ClearOverlays();
+      this.ClearMessages();
+      return done;
+    }
+
+    let loop = true;
+    let actionDone = false;
+    const maxFoOnPage = MAX_MESSAGES - 2;
+    let iFirstFollower = 0;
+    do {
+      this.ClearOverlays();
+      this.AddOverlay(new OverlayPopup(this.ORDER_MODE_TEXT, this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+      this.ClearMessages();
+      this.AddMessage(new Message("Choose a follower.", this.m_Session.worldTime.turnCounter, Color.Yellow));
+      let foShown: number;
+      for (foShown = 0; foShown < maxFoOnPage && (iFirstFollower + foShown < followers.length); foShown++) {
+        const iFo = foShown + iFirstFollower;
+        const f = followers[iFo];
+        const desc = this.DescribePlayerFollowerStatus(f);
+
+        if (hasLinkWith[iFo])
+          this.AddMessage(new Message(`${1 + foShown}. ${iFo + 1}/${followers.length} ${f.name} ... ${desc}.`, this.m_Session.worldTime.turnCounter, Color.LightGreen));
+        else
+          this.AddMessage(new Message(`${1 + foShown}. ${iFo + 1}/${followers.length} (${f.name}) ${desc}.`, this.m_Session.worldTime.turnCounter, Color.DarkGray));
+      }
+      if (foShown < followers.length) {
+        this.AddMessage(new Message("9. next", this.m_Session.worldTime.turnCounter, Color.LightGreen));
+      }
+      this.RedrawPlayScreen();
+
+      const key = await this.m_UI.UI_WaitKey();
+      const choice = this.KeyToChoiceNumber(key);
+
+      if (key.key === "Escape") {
+        loop = false;
+      } else if (choice === 9) {
+        iFirstFollower += maxFoOnPage;
+        if (iFirstFollower >= followers.length)
+          iFirstFollower = 0;
+      } else if (choice >= 1 && choice <= foShown) {
+        const f = iFirstFollower + choice - 1;
+        if (hasLinkWith[f]) {
+          const selectedFollower = followers[f];
+          if (await await this.HandlePlayerOrderFollower(player, selectedFollower)) {
+            loop = false;
+            actionDone = true;
+          }
+        }
+      }
+    } while (loop);
+
+    this.ClearOverlays();
+    this.ClearMessages();
+    return actionDone;
   }
 
   // C# HandlePlayerDirectiveFollower — RogueGame.cs:9437
-  HandlePlayerDirectiveFollower(player: Actor, follower: Actor): boolean {
-    void player;
-    void follower;
-    throw new Error("not yet ported: HandlePlayerDirectiveFollower (RogueGame.cs:9437)");
+  async HandlePlayerDirectiveFollower(_player: Actor, follower: Actor): Promise<boolean> {
+    let loop = true;
+    const actionDone = false;
+
+    do {
+      const directives = (follower.controller as AIController).directives;
+
+      this.ClearOverlays();
+      this.AddOverlay(new OverlayPopup(this.ORDER_MODE_TEXT, this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+      this.ClearMessages();
+      this.AddMessage(new Message(`${follower.name} directives...`, this.m_Session.worldTime.turnCounter, Color.Yellow));
+      this.AddMessage(new Message(`1. ${directives.canTakeItems ? "Take" : "Don't take"} items.`, this.m_Session.worldTime.turnCounter, Color.LightGreen));
+      this.AddMessage(new Message(`2. ${directives.canFireWeapons ? "Fire" : "Don't fire"} weapons.`, this.m_Session.worldTime.turnCounter, Color.LightGreen));
+      this.AddMessage(new Message(`3. ${directives.canThrowGrenades ? "Throw" : "Don't throw"} grenades.`, this.m_Session.worldTime.turnCounter, Color.LightGreen));
+      this.AddMessage(new Message(`4. ${directives.canSleep ? "Sleep" : "Don't sleep"}.`, this.m_Session.worldTime.turnCounter, Color.LightGreen));
+      this.AddMessage(new Message(`5. ${directives.canTrade ? "Trade" : "Don't trade"}.`, this.m_Session.worldTime.turnCounter, Color.LightGreen));
+      this.AddMessage(new Message(`6. ${ActorDirective.courageString(directives.courage)}.`, this.m_Session.worldTime.turnCounter, Color.LightGreen));
+      this.RedrawPlayScreen();
+
+      const key = await this.m_UI.UI_WaitKey();
+      const choice = this.KeyToChoiceNumber(key);
+
+      if (key.key === "Escape") {
+        loop = false;
+      } else if (choice >= 1 && choice <= 6) {
+        switch (choice) {
+          case 1: directives.canTakeItems = !directives.canTakeItems; break;
+          case 2: directives.canFireWeapons = !directives.canFireWeapons; break;
+          case 3: directives.canThrowGrenades = !directives.canThrowGrenades; break;
+          case 4: directives.canSleep = !directives.canSleep; break;
+          case 5: directives.canTrade = !directives.canTrade; break;
+          case 6:
+            switch (directives.courage) {
+              case ActorCourage.COWARD: directives.courage = ActorCourage.CAUTIOUS; break;
+              case ActorCourage.CAUTIOUS: directives.courage = ActorCourage.COURAGEOUS; break;
+              case ActorCourage.COURAGEOUS: directives.courage = ActorCourage.COWARD; break;
+            }
+            break;
+        }
+      }
+    } while (loop);
+
+    return actionDone;
   }
 
   // C# HandlePlayerOrderFollower — RogueGame.cs:9515
-  HandlePlayerOrderFollower(player: Actor, follower: Actor): boolean {
-    void player;
-    void follower;
-    throw new Error("not yet ported: HandlePlayerOrderFollower (RogueGame.cs:9515)");
+  async HandlePlayerOrderFollower(player: Actor, follower: Actor): Promise<boolean> {
+    if (!this.m_Rules.isActorTrustingLeader(follower)) {
+      if (this.IsVisibleToPlayer(follower))
+        this.DoSay(follower, player, "Sorry, I don't trust you enough yet.", SayFlags.IS_FREE_ACTION | SayFlags.IS_IMPORTANT);
+      else if (this.AreLinkedByPhone(follower, player)) {
+        this.ClearMessages();
+        this.AddMessage(this.MakeMessage(follower, "Sorry, I don't trust you enough yet."));
+        await this.AddMessagePressEnter();
+      }
+      return false;
+    }
+
+    const desc = this.DescribePlayerFollowerStatus(follower);
+    const followerFOV = LOS.computeFOVFor(this.m_Rules, follower, this.m_Session.worldTime, this.m_Session.world!.weather);
+
+    let loop = true;
+    let actionDone = false;
+    do {
+      const startStopFollow = (follower.controller as OrderableAI).dontFollowLeader ? "Start" : "Stop";
+      this.ClearOverlays();
+      this.AddOverlay(new OverlayPopup(this.ORDER_MODE_TEXT, this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+      this.ClearMessages();
+      this.AddMessage(new Message(`Order ${follower.name} to...`, this.m_Session.worldTime.turnCounter, Color.Yellow));
+      this.AddMessage(new Message(`0. Cancel current order ${desc}.`, this.m_Session.worldTime.turnCounter, Color.Green));
+      this.AddMessage(new Message("1. Set directives...", this.m_Session.worldTime.turnCounter, Color.Cyan));
+      this.AddMessage(new Message("2. Barricade (one)...    6. Drop all items.      A. Give me...", this.m_Session.worldTime.turnCounter, Color.LightGreen));
+      this.AddMessage(new Message("3. Barricade (max)...    7. Build small fort.    B. Sleep now.", this.m_Session.worldTime.turnCounter, Color.LightGreen));
+      this.AddMessage(new Message(`4. Guard...              8. Build large fort.    C. ${startStopFollow} following me.   `, this.m_Session.worldTime.turnCounter, Color.LightGreen));
+      this.AddMessage(new Message("5. Patrol...             9. Report events.       D. Where are you?", this.m_Session.worldTime.turnCounter, Color.LightGreen));
+      this.RedrawPlayScreen();
+
+      const key = await this.m_UI.UI_WaitKey();
+      const choice = this.KeyToChoiceNumber(key);
+
+      if (key.key === "Escape") {
+        loop = false;
+      } else if (choice >= 0 && choice <= 9) {
+        switch (choice) {
+          case 0:
+            this.DoCancelOrder(player, follower);
+            loop = false;
+            actionDone = true;
+            break;
+          case 1:
+            await this.HandlePlayerDirectiveFollower(player, follower);
+            break;
+          case 2:
+            if (await this.HandlePlayerOrderFollowerToBarricade(player, follower, followerFOV, false)) {
+              loop = false;
+              actionDone = true;
+            }
+            break;
+          case 3:
+            if (await this.HandlePlayerOrderFollowerToBarricade(player, follower, followerFOV, true)) {
+              loop = false;
+              actionDone = true;
+            }
+            break;
+          case 4:
+            if (await this.HandlePlayerOrderFollowerToGuard(player, follower, followerFOV)) {
+              loop = false;
+              actionDone = true;
+            }
+            break;
+          case 5:
+            if (await this.HandlePlayerOrderFollowerToPatrol(player, follower, followerFOV)) {
+              loop = false;
+              actionDone = true;
+            }
+            break;
+          case 6:
+            if (this.HandlePlayerOrderFollowerToDropAllItems(player, follower)) {
+              loop = false;
+              actionDone = true;
+            }
+            break;
+          case 7:
+            if (await this.HandlePlayerOrderFollowerToBuildFortification(player, follower, followerFOV, false)) {
+              loop = false;
+              actionDone = true;
+            }
+            break;
+          case 8:
+            if (await this.HandlePlayerOrderFollowerToBuildFortification(player, follower, followerFOV, true)) {
+              loop = false;
+              actionDone = true;
+            }
+            break;
+          case 9:
+            if (this.HandlePlayerOrderFollowerToReport(player, follower)) {
+              loop = false;
+              actionDone = true;
+            }
+            break;
+        }
+      } else {
+        switch (key.key) {
+          case "a":
+          case "A":
+            if (await this.HandlePlayerOrderFollowerToGiveItems(player, follower)) {
+              loop = false;
+              actionDone = true;
+            }
+            break;
+          case "b":
+          case "B":
+            if (this.HandlePlayerOrderFollowerToSleep(player, follower)) {
+              loop = false;
+              actionDone = true;
+            }
+            break;
+          case "c":
+          case "C":
+            if (this.HandlePlayerOrderFollowerToToggleFollow(player, follower)) {
+              loop = false;
+              actionDone = true;
+            }
+            break;
+          case "d":
+          case "D":
+            if (this.HandlePlayerOrderFollowerToReportPosition(player, follower)) {
+              loop = false;
+              actionDone = true;
+            }
+            break;
+        }
+      }
+    } while (loop);
+
+    return actionDone;
   }
 
   // C# HandlePlayerOrderFollowerToBuildFortification — RogueGame.cs:9704
-  HandlePlayerOrderFollowerToBuildFortification(player: Actor, follower: Actor, followerFOV: Set<Point>, isLarge: boolean): boolean {
-    void player;
-    void follower;
-    void followerFOV;
-    void isLarge;
-    throw new Error("not yet ported: HandlePlayerOrderFollowerToBuildFortification (RogueGame.cs:9704)");
+  async HandlePlayerOrderFollowerToBuildFortification(player: Actor, follower: Actor, followerFOV: Set<string>, isLarge: boolean): Promise<boolean> {
+    let loop = true;
+    let actionDone = false;
+    const map = player.location.map!;
+    let highlightedTile: Point | null = null;
+    let highlightColor = Color.White;
+
+    do {
+      this.ClearOverlays();
+      this.AddOverlay(new OverlayPopup(this.ORDER_MODE_TEXT, this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+      if (highlightedTile != null)
+        this.AddOverlay(new OverlayRect(highlightColor, new Rect(this.MapToScreen(highlightedTile.x, highlightedTile.y).x, this.MapToScreen(highlightedTile.x, highlightedTile.y).y, TILE_SIZE, TILE_SIZE)));
+      this.ClearMessages();
+      this.AddMessage(new Message(`Ordering ${follower.name} to build ${isLarge ? "large" : "small"} fortification...`, this.m_Session.worldTime.turnCounter, Color.Yellow));
+      this.AddMessage(new Message("<LMB> on a map object.", this.m_Session.worldTime.turnCounter, Color.LightGreen));
+      this.RedrawPlayScreen();
+
+      const ev = await this.WaitKeyOrMouse();
+      const key = ev.key;
+      const mousePos = ev.mousePos;
+      const mouseButtons = ev.mouseButtons;
+
+      if (key != null) {
+        if (key.key === "Escape")
+          loop = false;
+      } else {
+        const mapPos = this.MouseToMap(mousePos);
+        if (map.isInBoundsPoint(mapPos) && this.IsInViewRect(mapPos)) {
+          if (this.IsVisibleToPlayer(map, mapPos) && followerFOV.has(mapPos.toString())) {
+            const res = this.m_Rules.canActorBuildFortification(follower, mapPos, isLarge);
+            if (res.ok) {
+              highlightedTile = mapPos;
+              highlightColor = Color.LightGreen;
+              if (mouseButtons === MouseButton.Left) {
+                this.DoGiveOrderTo(player, follower, new ActorOrder(isLarge ? ActorTasks.BUILD_LARGE_FORTIFICATION : ActorTasks.BUILD_SMALL_FORTIFICATION, new Location(map, mapPos)));
+                loop = false;
+                actionDone = true;
+              }
+            } else {
+              highlightedTile = mapPos;
+              highlightColor = Color.Red;
+              if (mouseButtons === MouseButton.Left) {
+                this.AddMessage(this.MakeErrorMessage(`Can't build ${isLarge ? "large" : "small"} fortification : ${res.reason}.`));
+                await this.AddMessagePressEnter();
+              }
+            }
+          } else {
+            highlightedTile = mapPos;
+            highlightColor = Color.Red;
+          }
+        }
+      }
+    } while (loop);
+
+    return actionDone;
   }
 
   // C# HandlePlayerOrderFollowerToBarricade — RogueGame.cs:9795
-  HandlePlayerOrderFollowerToBarricade(player: Actor, follower: Actor, followerFOV: Set<Point>, toTheMax: boolean): boolean {
-    void player;
-    void follower;
-    void followerFOV;
-    void toTheMax;
-    throw new Error("not yet ported: HandlePlayerOrderFollowerToBarricade (RogueGame.cs:9795)");
+  async HandlePlayerOrderFollowerToBarricade(player: Actor, follower: Actor, followerFOV: Set<string>, toTheMax: boolean): Promise<boolean> {
+    let loop = true;
+    let actionDone = false;
+    const map = player.location.map!;
+    let highlightedTile: Point | null = null;
+    let highlightColor = Color.White;
+
+    do {
+      this.ClearOverlays();
+      this.AddOverlay(new OverlayPopup(this.ORDER_MODE_TEXT, this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+      if (highlightedTile != null)
+        this.AddOverlay(new OverlayRect(highlightColor, new Rect(this.MapToScreen(highlightedTile.x, highlightedTile.y).x, this.MapToScreen(highlightedTile.x, highlightedTile.y).y, TILE_SIZE, TILE_SIZE)));
+      this.ClearMessages();
+      this.AddMessage(new Message(`Ordering ${follower.name} to barricade...`, this.m_Session.worldTime.turnCounter, Color.Yellow));
+      this.AddMessage(new Message("<LMB> on a map object.", this.m_Session.worldTime.turnCounter, Color.LightGreen));
+      this.RedrawPlayScreen();
+
+      const ev = await this.WaitKeyOrMouse();
+      const key = ev.key;
+      const mousePos = ev.mousePos;
+      const mouseButtons = ev.mouseButtons;
+
+      if (key != null) {
+        if (key.key === "Escape")
+          loop = false;
+      } else {
+        const mapPos = this.MouseToMap(mousePos);
+        if (map.isInBoundsPoint(mapPos) && this.IsInViewRect(mapPos)) {
+          if (this.IsVisibleToPlayer(map, mapPos) && followerFOV.has(mapPos.toString())) {
+            const door = map.getMapObjectAt(mapPos.x, mapPos.y) instanceof DoorWindow ? map.getMapObjectAt(mapPos.x, mapPos.y) as DoorWindow : null;
+            if (door != null) {
+              const res = this.m_Rules.canActorBarricadeDoor(follower, door);
+              if (res.ok) {
+                highlightedTile = mapPos;
+                highlightColor = Color.LightGreen;
+                if (mouseButtons === MouseButton.Left) {
+                  this.DoGiveOrderTo(player, follower, new ActorOrder(toTheMax ? ActorTasks.BARRICADE_MAX : ActorTasks.BARRICADE_ONE, door.location));
+                  loop = false;
+                  actionDone = true;
+                }
+              } else {
+                highlightedTile = mapPos;
+                highlightColor = Color.Red;
+                if (mouseButtons === MouseButton.Left) {
+                  this.AddMessage(this.MakeErrorMessage(`Can't barricade ${door.theName} : ${res.reason}.`));
+                  await this.AddMessagePressEnter();
+                }
+              }
+            } else {
+              highlightedTile = mapPos;
+              highlightColor = Color.Red;
+            }
+          }
+        }
+      }
+    } while (loop);
+
+    return actionDone;
   }
 
   // C# HandlePlayerOrderFollowerToGuard — RogueGame.cs:9897
-  HandlePlayerOrderFollowerToGuard(player: Actor, follower: Actor, followerFOV: Set<Point>): boolean {
-    void player;
-    void follower;
-    void followerFOV;
-    throw new Error("not yet ported: HandlePlayerOrderFollowerToGuard (RogueGame.cs:9897)");
+  async HandlePlayerOrderFollowerToGuard(player: Actor, follower: Actor, followerFOV: Set<string>): Promise<boolean> {
+    let loop = true;
+    let actionDone = false;
+    const map = player.location.map!;
+    let highlightedTile: Point | null = null;
+    let highlightColor = Color.White;
+
+    do {
+      this.ClearOverlays();
+      this.AddOverlay(new OverlayPopup(this.ORDER_MODE_TEXT, this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+      if (highlightedTile != null)
+        this.AddOverlay(new OverlayRect(highlightColor, new Rect(this.MapToScreen(highlightedTile.x, highlightedTile.y).x, this.MapToScreen(highlightedTile.x, highlightedTile.y).y, TILE_SIZE, TILE_SIZE)));
+      this.ClearMessages();
+      this.AddMessage(new Message(`Ordering ${follower.name} to guard...`, this.m_Session.worldTime.turnCounter, Color.Yellow));
+      this.AddMessage(new Message("<LMB> on a map position.", this.m_Session.worldTime.turnCounter, Color.LightGreen));
+      this.RedrawPlayScreen();
+
+      const ev = await this.WaitKeyOrMouse();
+      const key = ev.key;
+      const mousePos = ev.mousePos;
+      const mouseButtons = ev.mouseButtons;
+
+      if (key != null) {
+        if (key.key === "Escape")
+          loop = false;
+      } else {
+        const mapPos = this.MouseToMap(mousePos);
+        if (map.isInBoundsPoint(mapPos) && this.IsInViewRect(mapPos)) {
+          if (this.IsVisibleToPlayer(map, mapPos) && followerFOV.has(mapPos.toString())) {
+            const res = this.m_Rules.isWalkableFor(follower, map, mapPos.x, mapPos.y);
+            if (mapPos.equals(follower.location.position) || res.ok) {
+              highlightedTile = mapPos;
+              highlightColor = Color.LightGreen;
+              if (mouseButtons === MouseButton.Left) {
+                this.DoGiveOrderTo(player, follower, new ActorOrder(ActorTasks.GUARD, new Location(map, mapPos)));
+                loop = false;
+                actionDone = true;
+              }
+            } else {
+              highlightedTile = mapPos;
+              highlightColor = Color.Red;
+              if (mouseButtons === MouseButton.Left) {
+                this.AddMessage(this.MakeErrorMessage(`Can't guard here : ${res.reason}`));
+                await this.AddMessagePressEnter();
+              }
+            }
+          } else {
+            highlightedTile = mapPos;
+            highlightColor = Color.Red;
+          }
+        }
+      }
+    } while (loop);
+
+    return actionDone;
   }
 
   // C# HandlePlayerOrderFollowerToPatrol — RogueGame.cs:9988
-  HandlePlayerOrderFollowerToPatrol(player: Actor, follower: Actor, followerFOV: Set<Point>): boolean {
-    void player;
-    void follower;
-    void followerFOV;
-    throw new Error("not yet ported: HandlePlayerOrderFollowerToPatrol (RogueGame.cs:9988)");
+  async HandlePlayerOrderFollowerToPatrol(player: Actor, follower: Actor, followerFOV: Set<string>): Promise<boolean> {
+    let loop = true;
+    let actionDone = false;
+    const map = player.location.map!;
+    let highlightedTile: Point | null = null;
+    let highlightColor = Color.White;
+
+    do {
+      this.ClearOverlays();
+      this.AddOverlay(new OverlayPopup(this.ORDER_MODE_TEXT, this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+      if (highlightedTile != null) {
+        this.AddOverlay(new OverlayRect(highlightColor, new Rect(this.MapToScreen(highlightedTile.x, highlightedTile.y).x, this.MapToScreen(highlightedTile.x, highlightedTile.y).y, TILE_SIZE, TILE_SIZE)));
+        const zonesHere = map.getZonesAt(highlightedTile.x, highlightedTile.y);
+        if (zonesHere != null && zonesHere.length > 0) {
+          const zonesNames: string[] = new Array(zonesHere.length + 1);
+          zonesNames[0] = "Zone(s) here :";
+          for (let i = 0; i < zonesHere.length; i++) {
+            zonesNames[i + 1] = `- ${zonesHere[i].name}`;
+          }
+          this.AddOverlay(new OverlayPopup(zonesNames, Color.White, Color.White, this.POPUP_FILLCOLOR, this.MapToScreen(highlightedTile.x + 1, highlightedTile.y + 1)));
+        }
+      }
+      this.ClearMessages();
+      this.AddMessage(new Message(`Ordering ${follower.name} to patrol...`, this.m_Session.worldTime.turnCounter, Color.Yellow));
+      this.AddMessage(new Message("<LMB> on a map position.", this.m_Session.worldTime.turnCounter, Color.LightGreen));
+      this.RedrawPlayScreen();
+
+      const ev = await this.WaitKeyOrMouse();
+      const key = ev.key;
+      const mousePos = ev.mousePos;
+      const mouseButtons = ev.mouseButtons;
+
+      if (key != null) {
+        if (key.key === "Escape")
+          loop = false;
+      } else {
+        const mapPos = this.MouseToMap(mousePos);
+        if (map.isInBoundsPoint(mapPos) && this.IsInViewRect(mapPos)) {
+          if (this.IsVisibleToPlayer(map, mapPos) && followerFOV.has(mapPos.toString())) {
+            let validPatrol = true;
+            let reason = "";
+
+            if (map.getZonesAt(mapPos.x, mapPos.y) == null) {
+              validPatrol = false;
+              reason = "no zone here";
+            } else {
+              const res = this.m_Rules.isWalkableFor(follower, map, mapPos.x, mapPos.y);
+              if (!(mapPos.equals(follower.location.position) || res.ok)) {
+                validPatrol = false;
+                reason = res.reason;
+              }
+            }
+
+            if (validPatrol) {
+              highlightedTile = mapPos;
+              highlightColor = Color.LightGreen;
+              if (mouseButtons === MouseButton.Left) {
+                this.DoGiveOrderTo(player, follower, new ActorOrder(ActorTasks.PATROL, new Location(map, mapPos)));
+                loop = false;
+                actionDone = true;
+              }
+            } else {
+              highlightedTile = mapPos;
+              highlightColor = Color.Red;
+              if (mouseButtons === MouseButton.Left) {
+                this.AddMessage(this.MakeErrorMessage(`Can't patrol here : ${reason}`));
+                await this.AddMessagePressEnter();
+              }
+            }
+          }
+        }
+      }
+    } while (loop);
+
+    return actionDone;
   }
 
   // C# HandlePlayerOrderFollowerToDropAllItems — RogueGame.cs:10103
   HandlePlayerOrderFollowerToDropAllItems(player: Actor, follower: Actor): boolean {
-    void player;
-    void follower;
-    throw new Error("not yet ported: HandlePlayerOrderFollowerToDropAllItems (RogueGame.cs:10103)");
+    if (follower.inventory!.isEmpty)
+      return false;
+
+    this.DoGiveOrderTo(player, follower, new ActorOrder(ActorTasks.DROP_ALL_ITEMS, follower.location));
+    this.DoSay(follower, player, "Well ok...", SayFlags.IS_FREE_ACTION);
+    this.ModifyActorTrustInLeader(follower, follower.inventory!.countItems * Rules.TRUST_GIVE_ITEM_ORDER_PENALTY, true);
+    return true;
   }
 
   // C# HandlePlayerOrderFollowerToReport — RogueGame.cs:10122
   HandlePlayerOrderFollowerToReport(player: Actor, follower: Actor): boolean {
-    void player;
-    void follower;
-    throw new Error("not yet ported: HandlePlayerOrderFollowerToReport (RogueGame.cs:10122)");
+    this.DoGiveOrderTo(player, follower, new ActorOrder(ActorTasks.REPORT_EVENTS, follower.location));
+    return true;
   }
 
   // C# HandlePlayerOrderFollowerToSleep — RogueGame.cs:10131
   HandlePlayerOrderFollowerToSleep(player: Actor, follower: Actor): boolean {
-    void player;
-    void follower;
-    throw new Error("not yet ported: HandlePlayerOrderFollowerToSleep (RogueGame.cs:10131)");
+    this.DoGiveOrderTo(player, follower, new ActorOrder(ActorTasks.SLEEP_NOW, follower.location));
+    return true;
   }
 
   // C# HandlePlayerOrderFollowerToToggleFollow — RogueGame.cs:10140
   HandlePlayerOrderFollowerToToggleFollow(player: Actor, follower: Actor): boolean {
-    void player;
-    void follower;
-    throw new Error("not yet ported: HandlePlayerOrderFollowerToToggleFollow (RogueGame.cs:10140)");
+    this.DoGiveOrderTo(player, follower, new ActorOrder(ActorTasks.FOLLOW_TOGGLE, follower.location));
+    return true;
   }
 
   // C# HandlePlayerOrderFollowerToReportPosition — RogueGame.cs:10149
   HandlePlayerOrderFollowerToReportPosition(player: Actor, follower: Actor): boolean {
-    void player;
-    void follower;
-    throw new Error("not yet ported: HandlePlayerOrderFollowerToReportPosition (RogueGame.cs:10149)");
+    this.DoGiveOrderTo(player, follower, new ActorOrder(ActorTasks.WHERE_ARE_YOU, follower.location));
+    return true;
   }
 
   // C# HandlePlayerOrderFollowerToGiveItems — RogueGame.cs:10158
-  HandlePlayerOrderFollowerToGiveItems(player: Actor, follower: Actor): boolean {
-    void player;
-    void follower;
-    throw new Error("not yet ported: HandlePlayerOrderFollowerToGiveItems (RogueGame.cs:10158)");
-  }
+  async HandlePlayerOrderFollowerToGiveItems(player: Actor, follower: Actor): Promise<boolean> {
+    if (follower.inventory == null || follower.inventory.isEmpty) {
+      this.ClearMessages();
+      this.AddMessage(this.MakeErrorMessage(`${follower.name} has no items to give.`));
+      await this.AddMessagePressEnter();
+      return false;
+    }
+    if (player.location.map !== follower.location.map || !this.m_Rules.isAdjacent(player.location.position, follower.location.position)) {
+      this.ClearMessages();
+      this.AddMessage(this.MakeErrorMessage(`${follower.name} is not next to you.`));
+      await this.AddMessagePressEnter();
+      return false;
+    }
 
+    let loop = true;
+    let actionDone = false;
+
+    let iFirstItem = 0;
+    const maxItOnPage = MAX_MESSAGES - 2;
+    const foInventory = follower.inventory;
+    do {
+      this.ClearOverlays();
+      this.AddOverlay(new OverlayPopup(this.ORDER_MODE_TEXT, this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+      this.ClearMessages();
+      this.AddMessage(new Message(`Ordering ${follower.name} to give...`, this.m_Session.worldTime.turnCounter, Color.Yellow));
+
+      let itShown: number;
+      for (itShown = 0; itShown < maxItOnPage && (iFirstItem + itShown < foInventory.countItems); itShown++) {
+        const iIt = iFirstItem + itShown;
+        this.AddMessage(new Message(`${1 + itShown}. ${iIt + 1}/${foInventory.countItems} ${this.DescribeItemShort(foInventory.getItem(iIt)!)}.`, this.m_Session.worldTime.turnCounter, Color.LightGreen));
+      }
+      if (itShown < foInventory.countItems) {
+        this.AddMessage(new Message("9. next", this.m_Session.worldTime.turnCounter, Color.LightGreen));
+      }
+      this.RedrawPlayScreen();
+
+      const key = await this.m_UI.UI_WaitKey();
+      const choice = this.KeyToChoiceNumber(key);
+
+      if (key.key === "Escape") {
+        loop = false;
+      } else if (choice === 9) {
+        iFirstItem += maxItOnPage;
+        if (iFirstItem >= foInventory.countItems)
+          iFirstItem = 0;
+      } else if (choice >= 1 && choice <= itShown) {
+        const i = iFirstItem + choice - 1;
+        const it = foInventory.getItem(i)!;
+
+        const res = this.m_Rules.canActorGiveItemTo(follower, player, it);
+        if (res.ok) {
+          this.DoGiveItemTo(follower, this.m_Player, it);
+          loop = false;
+          actionDone = true;
+        } else {
+          this.ClearMessages();
+          this.AddMessage(this.MakeErrorMessage(`${follower.name} cannot give ${this.DescribeItemShort(it)} : ${res.reason}.`));
+          await this.AddMessagePressEnter();
+        }
+      }
+    } while (loop);
+
+    return actionDone;
+  }
   // C# HandleAiActor — RogueGame.cs:10255
   HandleAiActor(aiActor: Actor): void {
-    void aiActor;
-    throw new Error("not yet ported: HandleAiActor (RogueGame.cs:10255)");
+    let desiredAction = aiActor.controller!.getAction(this);
+
+    if (this.m_Rules.isActorInsane(aiActor) && this.m_Rules.rollChance(Rules.SANITY_INSANE_ACTION_CHANCE)) {
+      const insaneAction = this.GenerateInsaneAction(aiActor);
+      if (insaneAction != null && insaneAction.isLegal())
+        desiredAction = insaneAction;
+    }
+
+    if (desiredAction != null) {
+      if (desiredAction.isLegal())
+        desiredAction.perform();
+      else {
+        this.SpendActorActionPoints(aiActor, Rules.BASE_ACTION_COST);
+        this.DoWait(aiActor);
+      }
+    } else {
+      throw new TypeError("AI returned null action.");
+    }
   }
 
   // C# HandleAdvisor — RogueGame.cs:10296
