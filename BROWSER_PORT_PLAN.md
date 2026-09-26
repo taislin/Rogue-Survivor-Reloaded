@@ -1,858 +1,198 @@
-# Rogue Survivor Reloaded — TypeScript / Browser Port: Full Implementation Plan
+# Rogue Survivor Reloaded — TypeScript / Browser Port
 
-> **Status:** Phase 1, 2 & 3 complete (Phase 3 includes `ui/OptionsScreen.ts`). Phase 5 complete — `BaseAI` (184/184 methods), all 11 AI controllers, and all 4 generator files done (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator`, `StdTownGenerator`). Phase 6 & 7 complete.  
-> **Phase 4 in progress:** `engine/RogueGame.ts` (18 109 lines) filled slice by slice. **9 of 10 slices done** — 1: char creation / credits / redefine keys; 2: `AdvancePlay`, `NextMapTurn`, actor regen/counts, scents; 3: events / invasions / refugees / raids / supplies; 4: FOV, `HandlePlayerActor`, all `HandlePlayerXXX` commands; 5: AI actor handling, advisor, describe-*; 7: player death, new day/night, skills, infection/zombification; 8: view rect, map/tile/actor/item drawing, minimap, coordinate conversion; 9: save/load, `GenerateWorld`, district maps, map switching; 10: sim thread, achievements, uniques, reincarnation, dev/cheats. `main.ts` wired to `RogueGame.Run()`. **Open: slice 6 only → 46 of 492 stubs remain** (action primitives `DoMoveActor` … `KillActor`). `npm run type-check` + `npm run build` clean. Assets shipped: 1 184 files (397 classic sprites + 2 variation sets, 24 tracks, 3 sfx); see Asset Pipeline.  
-> **Last updated:** 2026-09-26
+> **Status (2026-09-26):** Phases 1–7 ported and building. Phase 8 (polish / headless sim / CI) in progress.
+> **Read [Current State & Handover](#1-current-state--handover) first — it contains the bugs found and the exact next steps.**
+
+Porting a C# WinForms zombie-survival roguelike (195 files, ~2.5 MB, largest `RogueGame.cs` at 955 KB / 23 233 lines) to a browser-playable TypeScript version. `src/` is the original C# and is **never modified** — it is the reference for every port.
 
 ---
 
 ## Table of Contents
 
-1. [Project Overview](#1-project-overview)
-2. [Architecture](#2-architecture)
-3. [Source Inventory](#3-source-inventory)
-4. [Migration Strategy](#4-migration-strategy)
-5. [Phase 1 — Scaffold & Primitives](#phase-1--scaffold--primitives-complete)
-6. [Phase 2 — Data Layer](#phase-2--data-layer-complete)
-7. [Phase 3 — Engine Core (Rules & LOS)](#phase-3--engine-core)
-8. [Phase 4 — Game Loop (RogueGame)](#phase-4--game-loop-roguegame)
-9. [Phase 5 — World Generation & AI](#phase-5--world-generation--ai)
-10. [Phase 6 — Audio](#phase-6--audio)
-11. [Phase 7 — Save / Load](#phase-7--save--load)
-12. [Phase 8 — Polish & Deployment](#phase-8--polish--deployment)
-13. [Cross-Cutting Concerns](#cross-cutting-concerns)
-14. [Testing Strategy](#testing-strategy)
-15. [Asset Pipeline](#asset-pipeline)
+1. [Current State & Handover](#1-current-state--handover)
+2. [Quick Reference](#2-quick-reference)
+3. [Phase Status](#3-phase-status)
+4. [Phase 8 — Polish, Headless Simulation & Deployment](#4-phase-8--polish-headless-simulation--deployment)
+5. [Summary Timeline](#5-summary-timeline)
 
 ---
 
-## 1. Project Overview
+## 1. Current State & Handover
 
-**Rogue Survivor Reloaded** is a C# Windows Forms zombie-survival roguelike.
+### 1.1 The headline finding
 
-| Metric | Value |
-|--------|-------|
-| C# source files | 195 |
-| Total C# source size | ~2.5 MB |
-| Largest single file | `RogueGame.cs` — 955 KB / 23 233 lines |
-| 2nd largest | `BaseAI.cs` — 245 KB |
-| 3rd largest | `BaseTownGenerator.cs` — 243 KB |
-| Platform dependencies | WinForms, GDI+, DirectX, SFML audio, .NET binary serialization |
+**A clean `tsc` and a clean Vite build do not mean the port works.** Phase 4 was marked "complete" on the basis of zero remaining `not yet ported` stubs plus a green type-check. Neither test executes the game.
 
-The goal is to produce a **browser-playable TypeScript version** that is:
-- Functionally equivalent to the C# alpha 10.1 release
-- Served by an Express HTTP server (or any static host)
-- Smaller and cleaner than the original where the original is bloated
+The Phase 8 headless simulator was the first thing ever to actually *run* the ported engine. In its first hour it found **9 runtime bugs**, two of which made the game completely non-functional:
 
----
+| # | Bug | File | Impact |
+|---|-----|------|--------|
+| 1 | Tile grid allocated as a **sparse** `Array`; C# initialises every cell to `new Tile(TileModel.UNDEF)` | `data/Map.ts` | **Fatal.** `getTileAt` → null, `setTileModelAt` → crash. World generation could never complete. |
+| 2 | `new window.Map<>()` in six field initialisers | `data/Map.ts` | **Fatal in Node** (the browser case was fine). |
+| 3 | `filterActors` / `filterNonEnemies` used `a && …` as an "is an Actor" test, but a `MapObject` percept is truthy, so non-actors leaked through | `gameplay/ai/BaseAI.ts` | Every downstream `as Actor` cast dereferenced `undefined`. Reachable from `ZombieAI`, `CivilianAI`, melee/ranged attack. |
+| 4 | 6 call sites passed a `Location` where `isBumpableFor` / `isWalkableFor` expected `(map, x, y)` — signature drift from the `baseAI_part*` merge | `engine/actions/Actions.ts`, `gameplay/ai/BaseAI.ts` | Crash on first AI move attempt. |
+| 5 | `GameActors` never set `defaultControllerCtor`; C# passes `typeof(SkeletonAI)` etc. to every model | `gameplay/GameActors.ts`, `data/ActorModel.ts` | `BotTakeControl()` silently no-opped. The game's own bot mode was dead. |
+| 6 | 3 methods `throw` on a non-actor percept where C# yields `null` | `gameplay/ai/BaseAI.ts` | Crashed instead of returning "no action". Now returns `null` / skips. |
+| 7 | Unsafe `Percept` → `Actor` cast | `gameplay/ai/CivilianAI.ts` | `undefined.abilities`. Now an `instanceof` check. |
+| 8 | Bot's fixed 250 ms action delay was a hard-coded `await sleep()` | `engine/RogueGame.ts` | Made headless runs 250× slower. Now `botDelayMs`, set to 0 by the runner. |
+| 9 | No headless UI, so the engine could not be driven outside a browser | `ui/NullRogueUI.ts` *(new)* | Blocking. Now solved. |
 
-## 2. Architecture
+**Takeaway for the next agent: "0 stubs + green type-check" is not a definition of done for this project. The headless sim is.**
+
+### 1.2 Where the simulator stands
+
+The harness works and is doing its job. World generation completes in ~250 ms. It then runs real turns and crashes on further latent bugs — the long tail is not finished.
+
+Last two runs (note: **not reproducible**, see 1.4):
 
 ```
-Browser (HTML5 Canvas 2D)
-│
-├── main.ts                     Bootstrap / game entry point
-│
-├── engine/                     Pure game logic (no DOM)
-│   ├── IRogueUI.ts             Rendering + input contract (interface)
-│   ├── RogueGame.ts            Main game loop (23 KLOC → Phase 4)
-│   ├── Rules.ts                All game rules (Phase 3)
-│   ├── LOS.ts                  Line-of-sight / FOV (Phase 3)
-│   ├── Session.ts              Game session state (Phase 3)
-│   ├── Scoring.ts              High score logic (Phase 3)
-│   └── ...
-│
-├── data/                       Pure data models (no DOM, no UI)
-│   ├── Actor.ts
-│   ├── Map.ts
-│   ├── World.ts
-│   └── ...
-│
-├── gameplay/                   Definitions, generators, AI
-│   ├── GameImages.ts           Image ID constants
-│   ├── GameItems.ts            Item definitions
-│   ├── GameActors.ts           Actor definitions
-│   ├── ai/                     AI controllers
-│   └── generators/             World generation
-│
-└── ui/                         Browser rendering layer
-    ├── CanvasUI.ts             IRogueUI over HTML5 Canvas 2D
-    └── InputHandler.ts         Keyboard / mouse event queue
-
-server/
-└── index.ts                    Express HTTP server (production)
+turns played : 8      →  Cannot read properties of undefined (reading 'register')
+                         at Map.placeActor → DoSwitchPlace → ActionSwitchPlace.perform
+turns played : 1      →  Tile (39, 3) already has an actor
 ```
 
-### Key Architectural Differences from C#
+Both are genuine unported/misported behaviour, not harness bugs.
 
-| C# | TypeScript/Browser |
-|----|-------------------|
-| `Application.Run()` blocks on WinForms message pump | `async` game loop with `await UI_WaitKey()` |
-| Background thread posts to UI thread via `Invoke()` | Single JS thread; async/await replaces cross-thread calls |
-| `System.Drawing.Color/Point/Rectangle` | `Color`, `Point`, `Rect` classes in `engine/` |
-| `System.Random` | Mulberry32 PRNG (`DiceRoller.ts`) |
-| GDI+ / DirectX rendering | HTML5 Canvas 2D (`CanvasUI.ts`) |
-| `BinaryFormatter` save files | JSON saved to `localStorage` / IndexedDB |
-| SFML / DirectX audio | Web Audio API |
-| Windows file paths `"Tiles\\floor"` | URL paths `/assets/Tiles/floor.png` |
-
----
-
-## 3. Source Inventory
-
-### Biggest files (most work)
-
-| File | Size | Phase | Notes |
-|------|------|-------|-------|
-| `Engine/RogueGame.cs` | 955 KB | 4 | Split into sub-modules |
-| `Gameplay/AI/BaseAI.cs` | 245 KB | 5 | Split into focused AI behaviours |
-| `Gameplay/Generators/BaseTownGenerator.cs` | 243 KB | 5 | ✅ Ported as one 5 814-line class (see Phase 5 note) |
-| `Engine/Rules.cs` | 147 KB | 3 | Pure logic, straightforward port |
-| `Gameplay/GameItems.cs` | 76 KB | 2 | Data definitions only |
-| `Gameplay/GameActors.cs` | 51 KB | 2 | Data definitions only |
-| `Gameplay/GameImages.cs` | 47 KB | 2 | String constants — trivial |
-| `Gameplay/Generators/BaseMapGenerator.cs` | 43 KB | 5 | |
-| `Data/Map.cs` | 40 KB | 2 | Core data model |
-| `Gameplay/GameOptions.cs` | 39 KB | 3 | Settings, some UI interaction |
-| `Gameplay/AI/CivilianAI.cs` | 39 KB | 5 | |
-| `Data/Actor.cs` | 30 KB | 2 | Core data model |
-
-### Small files (easy wins)
-
-Most `Data/` files are under 5 KB and have zero platform dependencies —
-they port in minutes and form the stable foundation everything else builds on.
-
----
-
-## 4. Migration Strategy
-
-### Guiding principles
-
-1. **Bottom-up by dependency**: port data models before engine, engine before AI, AI before generators.
-2. **No platform leakage**: `engine/` and `data/` must never import from `ui/`. Only `main.ts` and `ui/` touch the DOM.
-3. **Async-first**: every function that blocks in C# (waiting for input, sleeping) becomes `async` in TypeScript.
-4. **Reduce where bloated**: `RogueGame.cs` is 955 KB because it mixes rendering, logic, and UI layout. Break it into focused modules during the port.
-5. **One phase at a time**: each phase produces a runnable build before the next starts.
-6. **Keep C# source intact**: `src/` is never touched. Diffs between the two versions serve as documentation.
-
-### Bloat reduction targets
-
-| C# file | Bloat reason | TypeScript approach |
-|---------|-------------|-------------------|
-| `RogueGame.cs` (955 KB) | Everything in one God class | Split into `GameLoop`, `GameRenderer`, `GameUI`, `GameEvents`, `GameActions` |
-| `BaseAI.cs` (245 KB) | One class for all AI types | One file per AI behaviour (`ZombieAI`, `CivilianAI`, etc.) with shared `BaseAI` |
-| `BaseTownGenerator.cs` (243 KB) | God generator | Split into `RoadGenerator`, `BuildingGenerator`, `ZoneGenerator` |
-| `GameItems.cs` (76 KB) | All item definitions inline | JSON data file + typed loader |
-| `GameActors.cs` (51 KB) | All actor definitions inline | JSON data file + typed loader |
-| `GameOptions.cs` (39 KB) | Mixed options + UI code | Separate `GameOptions` (data) from `OptionsScreen` (UI) |
-
----
-
-## Phase 1 — Scaffold & Primitives ✅ Complete
-
-**Output:** Working dev server + production HTTP server. Splash screen proves the full stack.
-
-### Files created
-
-```
-web/
-├── package.json                  npm project (Vite + TypeScript + Express)
-├── tsconfig.json                 Strict browser TS config
-├── vite.config.ts                Dev server :3000 + production build
-├── index.html                    1024×768 <canvas> + loading overlay
-├── .gitignore
-├── README.md
-├── public/assets/                (images go here — see Asset Pipeline)
-├── src/
-│   ├── main.ts                   Entry point + splash screen + self-tests
-│   ├── engine/
-│   │   ├── Color.ts              System.Drawing.Color equivalent
-│   │   ├── Point.ts              System.Drawing.Point equivalent
-│   │   ├── Rect.ts               System.Drawing.Rectangle equivalent
-│   │   ├── Direction.ts          Direction.cs port (8-compass)
-│   │   ├── DiceRoller.ts         DiceRoller.cs port (Mulberry32 PRNG)
-│   │   ├── WorldTime.ts          WorldTime.cs port (day/night clock)
-│   │   └── IRogueUI.ts           IRogueUI.cs port (Promise-based interface)
-│   └── ui/
-│       ├── CanvasUI.ts           Canvas 2D implementation of IRogueUI
-│       └── InputHandler.ts       Browser keyboard/mouse → game event queue
-└── server/
-    ├── index.ts                  Express production HTTP server (:8080)
-    └── tsconfig.json             Node.js TS config
-```
-
-### Verification
-
-```
-npm run type-check  → 0 errors
-npm run build       → 15.6 kB bundle (5.5 kB gzipped)
-```
-
----
-
-## Phase 2 — Data Layer ✅ Complete
-
-**Goal:** All pure data models ported. `data/` and `gameplay/GameImages.ts` fully typed.  
-**Platform deps:** None — these classes have zero WinForms/GDI/IO references.  
-**Estimated effort:** Medium (many small files, two large ones: `Map.cs` 40 KB, `Actor.cs` 30 KB).
-
-### Files to port
-
-#### `data/` — core models
-
-| C# file | TS output | Notes | Status |
-|---------|-----------|-------|--------|
-| `Skill.cs` | `data/Skill.ts` | Simple enum + record | ✅ Done |
-| `Abilities.cs` | `data/Abilities.ts` | Bitflag struct | ✅ Done |
-| `Verb.cs` | `data/Verb.ts` | Tiny | ✅ Done |
-| `Weather.cs` | `data/Weather.ts` | Enum | ✅ Done |
-| `Odor.cs` | `data/Odor.ts` | Enum | ✅ Done |
-| `Activity.cs` | `data/Activity.ts` | Enum | ✅ Done |
-| `TileModel.cs` | `data/TileModel.ts` | | ✅ Done |
-| `Tile.cs` | `data/Tile.ts` | | ✅ Done |
-| `ItemModel.cs` | `data/ItemModel.ts` | | ✅ Done |
-| `Item.cs` | `data/Item.ts` | | ✅ Done |
-| `ActorModel.cs` | `data/ActorModel.ts` | | ✅ Done |
-| `ActorSheet.cs` | `data/ActorSheet.ts` | | ✅ Done |
-| `Attack.cs` | `data/Attack.ts` | | ✅ Done |
-| `BlastAttack.cs` | `data/BlastAttack.ts` | | ✅ Done |
-| `Defence.cs` | `data/Defence.ts` | | ✅ Done |
-| `Doll.cs` | `data/Doll.ts` | Equipment slots | ✅ Done |
-| `Inventory.cs` | `data/Inventory.ts` | ~16 KB, slot logic | ✅ Done |
-| `Corpse.cs` | `data/Corpse.ts` | | ✅ Done |
-| `Message.cs` | `data/Message.ts` | | ✅ Done |
-| `Faction.cs` | `data/Faction.ts` | | ✅ Done |
-| `Zone.cs` | `data/Zone.ts` | | ✅ Done |
-| `Location.cs` | `data/Location.ts` | | ✅ Done |
-| `TimedTask.cs` | `data/TimedTask.ts` | | ✅ Done |
-| `MapObject.cs` | `data/MapObject.ts` | | ✅ Done |
-| `StateMapObject.cs` | `data/StateMapObject.ts` | | ✅ Done |
-| `Actor.cs` | `data/Actor.ts` | **30 KB** — biggest data class | ✅ Done |
-| `Map.cs` | `data/Map.ts` | **40 KB** — complex spatial index | ✅ Done |
-| `District.cs` | `data/District.ts` | | ✅ Done |
-| `World.cs` | `data/World.ts` | | ✅ Done |
-| `Models.cs` | `data/Models.ts` | Model DB registries | ✅ Done |
-| `ActorOrder.cs` | `data/ActorOrder.ts` | | ✅ Done |
-| `ActorDirective.cs` | `data/ActorDirective.ts` | | ✅ Done |
-
-#### `data/` — controllers
-
-| C# file | TS output | Notes | Status |
-|---------|-----------|-------|--------|
-| `ActorController.cs` | `data/ActorController.ts` | Abstract base | ✅ Done |
-| `AIController.cs` | `data/AIController.ts` | AI subclass | ✅ Done |
-| `PlayerController.cs` | `data/PlayerController.ts` | Player subclass | ✅ Done |
-
-#### `engine/Items/` — item type hierarchy
- 
-| C# file | TS output | Notes | Status |
-|---------|-----------|-------|--------|
-| `ItemWeapon.cs` / `ItemWeaponModel.cs` | `engine/items/ItemWeapon.ts` | | ✅ Done |
-| `ItemMeleeWeapon.cs` / `Model` | `engine/items/ItemMeleeWeapon.ts` | | ✅ Done |
-| `ItemRangedWeapon.cs` / `Model` | `engine/items/ItemRangedWeapon.ts` | | ✅ Done |
-| `ItemAmmo.cs` / `Model` | `engine/items/ItemAmmo.ts` | | ✅ Done |
-| `ItemFood.cs` / `Model` | `engine/items/ItemFood.ts` | | ✅ Done |
-| `ItemMedicine.cs` / `Model` | `engine/items/ItemMedicine.ts` | | ✅ Done |
-| `ItemBodyArmor.cs` / `Model` | `engine/items/ItemBodyArmor.ts` | | ✅ Done |
-| `ItemLight.cs` / `Model` | `engine/items/ItemLight.ts` | | ✅ Done |
-| `ItemExplosive.cs` / `Model` | `engine/items/ItemExplosive.ts` | | ✅ Done |
-| `ItemGrenade.cs` / `Model` | `engine/items/ItemGrenade.ts` | | ✅ Done |
-| `ItemGrenadePrimed.cs` / `Model` | `engine/items/ItemGrenadePrimed.ts` | | ✅ Done |
-| `ItemTrap.cs` / `Model` | `engine/items/ItemTrap.ts` | ~5 KB | ✅ Done |
-| `ItemTracker.cs` / `Model` | `engine/items/ItemTracker.ts` | | ✅ Done |
-| `ItemEntertainment.cs` / `Model` | `engine/items/ItemEntertainment.ts` | | ✅ Done |
-| `ItemBarricadeMaterial.cs` / `Model` | `engine/items/ItemBarricadeMaterial.ts` | | ✅ Done |
-| `ItemSprayPaint.cs` / `Model` | `engine/items/ItemSprayPaint.ts` | | ✅ Done |
-| `ItemSprayScent.cs` / `Model` | `engine/items/ItemSprayScent.ts` | | ✅ Done |
- 
-#### `engine/MapObjects/`
- 
-| C# file | TS output | Status |
-|---------|-----------|--------|
-| `Door.cs` | `engine/mapobjects/MapObjects.ts` | ✅ Done |
-| `Fortification.cs` | `engine/mapobjects/MapObjects.ts` | ✅ Done |
-| `PowerGenerator.cs` | `engine/mapobjects/MapObjects.ts` | ✅ Done |
-| `Board.cs` | `engine/mapobjects/MapObjects.ts` | ✅ Done |
- 
-#### `gameplay/` — definition tables
- 
-| C# file | TS output | Simplification | Status |
-|---------|-----------|----------------|--------|
-| `GameImages.cs` | `gameplay/GameImages.ts` | String constants only — direct port | ✅ Done |
-| `GameTiles.cs` | `gameplay/GameTiles.ts` | | ✅ Done |
-| `GameSounds.cs` | `gameplay/GameSounds.ts` | | ✅ Done |
-| `GameMusics.cs` | `gameplay/GameMusics.ts` | | ✅ Done |
-| `Skills.cs` | `gameplay/Skills.ts` | | ✅ Done |
-| `ZoneAttributes.cs` | `gameplay/ZoneAttributes.ts` | Tiny | ✅ Done |
-| `GameFactions.cs` | `gameplay/GameFactions.ts` | | ✅ Done |
-| `GameGangs.cs` | `gameplay/GameGangs.ts` | | ✅ Done |
-| `GameTips.cs` | `gameplay/ZoneAttributes.ts` | Combined tips | ✅ Done |
-| `GameActors.cs` | `gameplay/GameActors.ts` + `gameplay/data/actors.json` | **50 KB → move definitions to JSON** | ✅ Done |
-| `GameItems.cs` | `gameplay/GameItems.ts` + `gameplay/data/items.json` | **76 KB → move definitions to JSON** | ✅ Done |
-
-> **Bloat reduction:** `GameItems.cs` (76 KB) and `GameActors.cs` (51 KB) contain thousands of lines of repetitive inline object construction. These will be moved to typed JSON files, reducing the TS files to typed loaders of ~100 lines each.
-
-### Verification
-
-```
-npm run type-check  → 0 errors
-All data models instantiable in unit tests
-Map.getActorAt / getExitAt / etc. return correct types
-```
-
----
-
-## Phase 3 — Engine Core
-
-**Goal:** `Rules`, `LOS`, `Session`, `Scoring`, `MessageManager`, `HiScoreTable`, `GameOptions`, `GameHints` ported.  
-**Platform deps:** `Session.cs` uses .NET XML serialization → replace with JSON. `GameOptions.cs` uses WinForms for some UI → split into data and UI parts.
-
-### Files to port
-
-| C# file | Size | TS output | Notes | Status |
-|---------|------|-----------|-------|--------|
-| `Engine/Rules.cs` | 147 KB | `engine/Rules.ts` | Pure logic, no deps — direct port | ✅ Done |
-| `Engine/LOS.cs` | 14 KB | `engine/LOS.ts` | Bresenham line-trace, FOV — direct port | ✅ Done |
-| `Engine/Session.cs` | 25 KB | `engine/Session.ts` | Drop XML serialization; use localStorage JSON (world graph deferred to Phase 4) | ✅ Done |
-| `Engine/Scoring.cs` | 24 KB | `engine/Scoring.ts` | `Achievement`, `DifficultySide`, `Scoring` | ✅ Done |
-| `Engine/HiScoreTable.cs` | 6 KB | `engine/HiScoreTable.ts` | Persist to localStorage JSON | ✅ Done |
-| `Engine/MessageManager.cs` | 3 KB | `engine/MessageManager.ts` | | ✅ Done |
-| `Engine/PlayerCommand.cs` | 1 KB | `engine/PlayerCommand.ts` | Enum | ✅ Done |
-| `Engine/InputTranslator.cs` | 3 KB | `engine/Keybindings.ts` (`InputTranslator`) | Map browser keys → PlayerCommand; merged into Keybindings.ts | ✅ Done |
-| `Engine/Keybindings.cs` | 8 KB | `engine/Keybindings.ts` | Persist to localStorage | ✅ Done |
-| `Engine/GameHints.cs` | 3 KB | `engine/GameHints.ts` | | ✅ Done |
-| `Engine/GameOptions.cs` | 39 KB | `engine/GameOptions.ts` (data) + `ui/OptionsScreen.ts` (UI) | Data + UI done. The C# project has no `OptionsScreen.cs`: the screen is `RogueGame.HandleOptions(bool)` (RogueGame.cs ≈2294), so that method was ported as `ui/OptionsScreen.ts` | ✅ Done |
-| `Engine/AI/MemorizedSensor.cs` | 3 KB | `engine/ai/Sensors.ts` | Combined into Sensors.ts | ✅ Done |
-| `Engine/AI/Percept.cs` | 1 KB | `engine/ai/Sensors.ts` | Combined into Sensors.ts | ✅ Done |
-| `Engine/AI/Sensor.cs` | 0.3 KB | `engine/ai/Sensors.ts` | Abstract base | ✅ Done |
-| `Engine/Actions/*.cs` | ~35 KB total | `engine/actions/Actions.ts` | 38 action classes | ✅ Done |
-| `Engine/Tasks/TaskRemoveDecoration.cs` | 0.6 KB | `engine/tasks/TaskRemoveDecoration.ts` | | ✅ Done |
-| `Engine/TextFile.cs` | 3 KB | `engine/TextFile.ts` | `fetch()` instead of `File.OpenText` | ✅ Done |
-| `Engine/CSVParser.cs` | 6 KB | `web/scripts/convert-csv.js` | Converted to JSON build pipeline | ✅ Done |
-
-### Key design change: `Rules.cs`
-
-The C# `Rules` class is 4 440 lines but is **pure calculation logic** — no UI, no IO. It ports almost line-for-line into TypeScript. The main change is replacing `System.Drawing.Point` with our `Point` class and `System.Drawing.Color` with our `Color` class throughout.
-
-TypeScript porting conventions (established while porting `Rules.cs`):
-
-- C# `out string reason` overloads collapse into a single TS method returning `RuleResult { ok, reason }`; helpers `OK` (frozen) and `fail(reason)` are exported from `Rules.ts`.
-- `IsBumpableFor` returns `BumpResult { action, reason }` with `NO_ACTION` / `noAction(reason)` helpers.
-- `out`-returning results become `MoveLocationResult { ok, location }` and `DirectionResult { ok, direction }`.
-- Because `game` is typed `any` in this layer, call sites must add `.ok` when testing a `RuleResult` as a boolean — TS will not catch mistakes there.
-
-### Key design change: `InputTranslator.cs`
-
-C# maps `System.Windows.Forms.Keys` enum values. In TypeScript we map browser `KeyboardEvent.key` strings to `PlayerCommand` enum values, using the same logical mapping.
-
----
-
-## Phase 4 — Game Loop (RogueGame)
-
-**Goal:** `RogueGame.cs` (955 KB, 23 233 lines) ported and running. The game is playable.  
-**This is the largest single task in the whole project.**
-
-### As implemented: one `engine/RogueGame.ts` class
-
-The original decomposition table below was written before looking at how the
-regions actually call each other. During porting (same argument that applied to
-`BaseTownGenerator` and `BaseAI`), `RogueGame` is ported as a **single class**
-in `web/src/engine/RogueGame.ts`, assembled from contiguous C# line-range slices:
-
-* every `DoXXX` action, every `HandlePlayerXXX` command and every `Draw*` method
-  reads/writes the same private fields (`m_Player`, `m_Session`, `m_Overlays`,
-  `m_ViewRect`, …) — a split would make most of that state public and thread a
-  `game` reference through ~500 call sites;
-* player input → actions → rendering form a cycle (`DoTrade` waits for keys,
-  `DoMeleeAttack` redraws), which would mean circular module imports.
-
-**Tooling** (all gitignored, in `web/.porting/`): `roguegame-methods.txt` lists
-all 516 top-level members with C# line numbers; `gen_stubs.py` turns the C# source into
-`rg_consts.txt` / `rg_fields.txt` / `rg_stubs.txt` (signature-accurate TS stubs with
-`out`-param returns, overload merges and the `game.doXxx()` aliases); `assemble_roguegame.py`
-combines them with the hand-ported overlay types, constructor and getters into
-`src/engine/RogueGame.ts`. Re-run both after regenerating, then `npm run type-check`.
-
-| # | C# lines | Contents | Status |
-|---|----------|----------|--------|
-| scaffold | 1–1414 | Constants, fields, properties, init, messaging, `Run`/`GameLoop`, main menu | ✅ Ported (stubs for input/drawing helpers it calls) |
-| 1 | 1415–2876 | Character creation, `StartNewGame`, credits, options, redefine keys | ✅ Ported |
-| 2 | 2877–4154 | `AdvancePlay`, `NextMapTurn`, actor regen/counts, scents | ✅ Ported |
-| 3 | 4156–5366 | Events (invasions, refugees, raids, drops) + spawning | ✅ Ported |
-| 4 | 5367–10255 | FOV, `HandlePlayerActor` and all `HandlePlayerXXX` commands | ✅ Ported |
-| 5 | 10256–12658 | AI actor handling, advisor, input helpers, describe-* | ✅ Ported |
-| 6 | 12660–16790 | Action primitives `DoMoveActor` … `KillActor`, blood/corpses | ✅ Ported |
-| 7 | 16791–17986 | Player death, new day/night, skills, infection/zombification | ✅ Ported |
-| 8 | 17987–19723 | View, drawing, overlays, coordinates, visibility helpers | ✅ Ported |
-| 9 | 19724–21381 | Save/load, paths, `GenerateWorld`, district maps, map switching | ✅ Ported |
-| 10 | 21382–23233 | Sim thread, achievements, special events, reincarnation, dev/data | ✅ Ported |
-
-**0 stubs left — Phase 4 is complete.** Every `RogueGame.cs` method (23 233
-lines, all 11 slices) is now ported to `web/src/engine/RogueGame.ts`.
-`npm run type-check` and `npm run build` are both clean.
-
-Slice 6 was the last one, done in dependency order rather than file order:
-
-1. **6h damage/death** (8) — `InflictDamage`, `KillActor`, `Disarm`,
-   `CheckUndeadEvolution`, `NextUndeadEvolution`, `SplatterBlood`,
-   `UndeadRemains`, `DropCorpse`
-2. **`OnLoudNoise`** (1) — high fan-in
-3. **6a movement** (7), **6b aggression** (7), **6c combat** (12),
-   **6d social** (6), **6e items** (21), **6f world objects** (7),
-   **6g push/pull/sleep/orders** (12)
-
-Slice 6 notes:
-
-* Almost every action primitive became `async`, because C# blocks on
-  `AnimDelay` / `AddMessagePressEnter` / `UI_WaitKey` inside them. That
-  propagated outward through slices 4, 6 and 10 — all call sites and the
-  `game.doXxx()` camelCase aliases were audited and `await`ed. Three
-  deliberate exceptions, each documented in-line with the reason:
-  `GenerateInsaneAction` and `DoReviveCorpse` both call `DoSay` in a
-  configuration that never reaches its press-ENTER branch (that needs
-  `IS_IMPORTANT` on a player target), and `SpawnActorOnMapBorder` fires
-  `OnActorEnterTile` without awaiting it — it is sync with 11 call sites
-  across the event code, and a trap under a freshly spawned actor at the map
-  border is a rare edge case.
-* Added to support the port: `Actor.removeAllAgressorSelfDefenceRelations`,
-  `Map.trimToBounds`, `Map.setAllAsUnvisited`, `Map.findFirstInMap`,
-  `Map.hasZonePartiallyNamedAt`, `Inventory.getSmallestStackByType`,
-  `ItemBodyArmorModel.toDefence`, `ItemSprayPaintModel.tagImageId`
-  (wired to `GameImages.DECO_PLAYER_TAG1..4`), `Color.Crimson`.
-
-Slice 8 notes:
-
-* The C# overload pairs (`DrawMapObject` ×2, `DrawActorDecoration` ×2,
-  `MapToScreen`/`ScreenToMap`/`MouseToMap` ×2) become TS overload *signatures*;
-  the generated stubs had merged them into single union-typed methods.
-* `Point` is immutable in the port, so `DrawMap`/`DrawMiniMap` allocate a `Point`
-  per tile instead of mutating one scratch point as the C# does.
-* `MovingWaterImage` compares `model.id` to `TileID.FLOOR_SEWER_WATER`:
-  `GameTiles.setModel()` stamps the `TileID` onto every model, so this is
-  equivalent to the C# `model == m_GameTiles.FLOOR_SEWER_WATER` instance compare.
-* `Color` gained the 5 .NET named colours the status bars need
-  (`Chocolate`, `Beige`, `DarkOrange`, `OrangeRed`, `HotPink`).
-* The `#if DEBUG` blocks (dev stats overlay, `DrawTileDev`) are ported guarded by
-  the same option flags rather than dropped.
-
-Slice 9 notes:
-
-* `Directory`/`File`/`Path`/`Environment.GetFolderPath` have no browser
-  equivalent: the `GetUser*Path` helpers return browser-relative keys
-  (`""`, `Docs/`, `Graveyard/`, `Config/`, `Screenshots/`) and
-  `CreateDirectory`/`CheckDirectory`/`CheckCopyOfManual` degrade to no-ops /
-  log lines. The manual ships as a static asset instead of being copied.
-* `DoSaveGame`/`LoadGame` go through `Session.save()` (localStorage JSON) and
-  mirror the same JSON into the IndexedDB slot via `GameSaveManager`, so the
-  main menu's `hasSave(0)` sees it. C#'s named multi-file saves and
-  version/format rejection are not reproduced; a corrupt slot makes `JSON.parse`
-  throw.
-* `BeforePlayerEnterDistrict` became `async` because it awaits `SimulateDistrict`
-  — the catch-up loop would spin forever otherwise (its single caller now awaits).
-* `Parameters` struct copy → `new TownParameters()` + save/restore of
-  `m_TownGenerator.params` (`DEFAULT_PARAMS` is shared and must not be mutated).
-
-Slice 10 notes:
-
-* `StartSimThread`/`SimThreadProc` are no-ops, matching the existing
-  `StopSimThread` no-op: C#'s dedicated sim thread is gone, and the
-  neighbouring-district catch-up already runs inline from
-  `advancePlayDistrict()` when the player sleeps.
-* `MusicPriority` does not exist (`IMusicManager` has no priorities), so the
-  `PRIORITY_EVENT`/`PRIORITY_BGM` arguments are dropped throughout and
-  `PlayLooping` maps to `play()` (the WebAudio backend always loops).
-  `IMusicManager.Music` was also missing, so `getCurrentMusicId()` was added to
-  `IMusicManager`/`WebAudioMusicManager`/`NullMusicManager` — `UpdateBgMusic` and
-  the Jason Myers sighting both need to know the current track.
-* Slice 10 calls several slice 6/8 methods that are still stubs
-  (`MapToScreen`, `RedrawPlayScreen`, `InflictDamage`, `KillActor`,
-  `PrepareActorForPlayerControl`, `DoMakeAggression`). Core game-logic calls are
-  left direct; the cosmetic drawing calls are `try`/`catch` guarded, following
-  `DoTriggerTrap`.
-* `async` propagation: `SimulateDistrict`, `SimulateNearbyDistricts`,
-  `ShowSpecialDialogue`, `CheckSpecialPlayerEventsAfterAction`,
-  `HandleReincarnation`, `AskForReincarnation`, `OnMapPowerGeneratorSwitch`,
-  `CheckForGateClosingCrush`, `DoCloseSubwayGates`, `DoClosePoliceJailCells`,
-  `DoHospitalPowerOff` and `DoTurnAllGeneratorsOn` became `async` because C#
-  blocks there on `AnimDelay`/`AddMessagePressEnter`/`UI_WaitKey`.
-* Three `Map` helpers slice 10 needs were missing and were added to
-  `web/src/data/Map.ts`: `setAllAsUnvisited`, `findFirstInMap`,
-  `hasZonePartiallyNamedAt`.
-
-The module table below is therefore **deferred to a post-Phase-4 refactor**
-(Phase 8) — it stays as the target shape once the game runs and the real
-cross-method dependencies are known.
-
-### Decomposition plan
-
-`RogueGame.cs` is a God class. During porting, split it into focused modules:
-
-| New TS module | C# region(s) it covers | Approx lines |
-|---------------|------------------------|--------------|
-| `engine/GameLoop.ts` | Main game loop, turn scheduling, events | ~1 000 |
-| `engine/GameRenderer.ts` | All `Draw*` methods (rendering the world, UI panels, messages) | ~3 500 |
-| `engine/GameActions.ts` | Player + AI action execution (`DoMeleeAttack`, `DoMoveActor`, etc.) | ~6 000 |
-| `engine/GameEvents.ts` | Spawning, death, infection, raids, refugees, NatGuard | ~3 000 |
-| `engine/GameUI.ts` | All modal screens (main menu, inventory screen, skill screen, etc.) | ~4 000 |
-| `engine/GameSave.ts` | Save / load (replaces .NET serialization) | ~500 |
-| `engine/GameCheats.ts` | Cheat / debug commands | ~500 |
-| `engine/GameScript.ts` | Scripted story events (uniques, CHAR HQ, etc.) | ~2 000 |
-
-### Async game loop model
-
-```typescript
-// Replaces the C# blocking while loop on a background thread
-async function gameLoop(ui: IRogueUI): Promise<void> {
-  while (!session.isOver) {
-    const actor = scheduler.nextActor();
-    if (actor.isPlayer) {
-      const key = await ui.UI_WaitKey();   // yields to browser
-      handlePlayerInput(key, actor);
-    } else {
-      await aiTakeTurn(actor);
-      await ui.UI_Wait(0);                 // yield every AI turn to avoid blocking
-    }
-    advanceTurn();
-  }
-}
-```
-
-### Verification
-
-- New game starts, map generates, player can move with arrow keys
-- At least one full day cycle runs without crash
-- Zombie spawning and combat work
-
-### Leftovers earlier phases parked for Phase 4
-
-| Item | Where it stands today |
-|------|-----------------------|
-| `main.ts` | ✅ Wired to the real game: `new RogueGame(ui, new WebAudioMusicManager()).Run()`. Loading screens, main menu, character creation and rebind/hi-score/credits screens run in the browser; a `not yet ported:` throw is drawn on the canvas instead of dying in the console. |
-| `OPTIONS_MODE` command | C# `case PlayerCommand.OPTIONS_MODE: HandleOptions(true); ApplyOptions(true);` (RogueGame.cs ≈5645). `RogueGame.HandleOptions()` owns the screen now; wiring the ingame command comes with slices 4–5 (`HandlePlayerXXX`). |
-| `ApplyOptions` side update | C# re-derives `Scoring.Side` from the player (`m_Player.Model.Abilities.IsUndead`); `OptionsScreen.applyOptions()` refreshes the rating only, until a player exists. |
-| `HandleRedefineKeys` | ✅ Ported (Phase 4 slice 1) — 51-entry rebind menu, `Keybindings.checkForConflict()`, C# `Set()` key stealing. |
-| Music manager wiring | ✅ `main.ts` passes `WebAudioMusicManager` into the `RogueGame` constructor (defaults to `NullMusicManager` in tests/Node). |
-
----
-
-## Phase 5 — World Generation & AI
-
-**Goal:** All AI controllers and world generators ported.
-
-### AI files
-
-| C# file | Size | TS output | Notes | Status |
-|---------|------|-----------|-------|--------|
-| `Gameplay/AI/BaseAI.cs` | 245 KB | `gameplay/ai/BaseAI.ts` | Core AI behavior framework & algorithms | ✅ Done |
-| `Gameplay/AI/ZombieAI.cs` | 11 KB | `gameplay/ai/ZombieAI.ts` | Complete zombie AI (scents, corpse-eating, chasing) | ✅ Done |
-| `Gameplay/AI/SkeletonAI.cs` | 2 KB | `gameplay/ai/SkeletonAI.ts` | Skeleton AI (chasing, idle, wander) | ✅ Done |
-| `Gameplay/AI/CivilianAI.cs` | 39 KB | `gameplay/ai/CivilianAI.ts` | | ✅ Done |
-| `Gameplay/AI/OrderableAI.cs` | 20 KB | `gameplay/ai/OrderableAI.ts` | | ✅ Done |
-| `Gameplay/AI/GangAI.cs` | 20 KB | `gameplay/ai/GangAI.ts` | | ✅ Done |
-| `Gameplay/AI/SoldierAI.cs` | 14 KB | `gameplay/ai/SoldierAI.ts` | | ✅ Done |
-| `Gameplay/AI/CHARGuardAI.cs` | 10 KB | `gameplay/ai/CHARGuardAI.ts` | | ✅ Done |
-| `Gameplay/AI/InsaneHumanAI.cs` | 9 KB | `gameplay/ai/InsaneHumanAI.ts` | | ✅ Done |
-| `Gameplay/AI/FeralDogAI.cs` | 7 KB | `gameplay/ai/FeralDogAI.ts` | | ✅ Done |
-| `Gameplay/AI/RatAI.cs` | 6 KB | `gameplay/ai/RatAI.ts` | | ✅ Done |
-| `Gameplay/AI/SewersThingAI.cs` | 5 KB | `gameplay/ai/SewersThingAI.ts` | | ✅ Done |
-| `Gameplay/AI/LOSSensor.cs` | 2 KB | `gameplay/ai/GameplaySensors.ts` | Combined into GameplaySensors.ts | ✅ Done |
-| `Gameplay/AI/SmellSensor.cs` | 2 KB | `gameplay/ai/GameplaySensors.ts` | Combined into GameplaySensors.ts | ✅ Done |
-| `Gameplay/AI/ExplorationData.cs` | 5 KB | `gameplay/ai/ExplorationData.ts` | Visited location/zone tracking | ✅ Done |
-| `Gameplay/AI/Sensors/LOSSensor.cs` | 4 KB | `gameplay/ai/GameplaySensors.ts` | Combined into GameplaySensors.ts | ✅ Done |
-| `Gameplay/AI/Sensors/SmellSensor.cs` | 4 KB | `gameplay/ai/GameplaySensors.ts` | Combined into GameplaySensors.ts | ✅ Done |
-| `Gameplay/AI/Tools/RouteFinder.cs` | 11 KB | `gameplay/ai/RouteFinder.ts` | A* reachability checker | ✅ Done |
-
-#### BaseAI decomposition
-
-**As implemented:** `BaseAI.cs` (6 422 lines / 245 KB) is ported as a **single**
-`gameplay/ai/BaseAI.ts` (4 402 lines, all 184 methods), rather than being split into
-`behaviours/` files. The subclass split (`ZombieAI`, `CivilianAI`, …) already gives the
-useful separation; a further split would only add cross-file plumbing for the many
-`protected` members and the `m_Taboo*` / `m_RouteFinder` state they share.
-
-The port was produced in 13 contiguous slices (`web/.porting/baseAI_part*.ts`, gitignored)
-and spliced in by `web/.porting/merge.ps1`, which also de-duplicates the imports.
-
-#### Known gaps left by the BaseAI port
-
-These are the only symbols `BaseAI.ts` could not resolve; everything else type-checks.
-
-| Gap | Owner |
-|-----|-------|
-| `game.DoEmote` / `game.DoMakeAggression` / `game.DoSay` | Phase 4 — `RogueGame` |
-| `game.GameItems.MEDIKIT` / `game.GameItems.EMPTY_CAN` | Phase 4 — needs a `GameItems` singleton on the game object |
-| `isSoldier()` uses a `faction.id === FactionID.TheArmy` fallback | ✅ resolved — `SoldierAI.ts` now exists |
-| `Map.isOnMapBorder` / `trimToBounds` / `countAdjacentInMap` | ✅ `Map.isOnMapBorder` added to `data/Map.ts`; the others stay inlined at their call sites |
-| `Actor.isBoredOf` / `addBoringItem` / `getEquippedRangedWeapon` | ✅ added to `data/Actor.ts` |
-| `Actions.SayFlags`, `Actions.FireMode` | ✅ corrected to match `RogueGame.Sayflags` / `Data/Attack.cs` |
-
-### Generator files
-
-| C# file | Size | TS output | Notes | Status |
-|---------|------|-----------|-------|--------|
-| `Engine/MapGenerator.cs` | 507 lines | `engine/MapGenerator.ts` | Shared `TileFill` / `MapObjectPlace` / `ActorPlace` helpers | ✅ Done |
-| `Gameplay/Generators/BaseMapGenerator.cs` | 43 KB | `gameplay/generators/BaseMapGenerator.ts` | Dressing, skills, map objects, item factories | ✅ Done |
-| `Gameplay/Generators/BaseTownGenerator.cs` | 243 KB | `gameplay/generators/BaseTownGenerator.ts` (5 814 lines) | Single class — see note below | ✅ Done |
-| `Gameplay/Generators/StdTownGenerator.cs` | 4 KB | `gameplay/generators/StdTownGenerator.ts` | Surface/sewers population | ✅ Done |
-
-#### BaseTownGenerator — as implemented
-
-The suggested decomposition into `TownLayout` / `BuildingGenerator` / `ShopGenerator` /
-`SubwayGenerator` / `SewersGenerator` / `PopulationGenerator` was **not** taken: the C#
-file is one class whose methods freely call each other across regions (buildings → rooms →
-items → actors → exits/zones) and share `m_DiceRoller` / `m_SurfaceBlocks` / `m_Params`
-state, so a split would need every helper promoted to public plumbing.
-
-It is instead ported as **one class**, exactly like `BaseAI.ts` (see the note above):
-`gameplay/generators/BaseTownGenerator.ts` (5 814 lines, all 88 C# methods + 5 small
-.NET-helper ports: `Rectangle.Intersect`/`IsEmpty`, `string.GetHashCode`, `Map.HasAnExitIn`).
-`StdTownGenerator` subclasses it (`generate`, `generateSewersMap`, `generateSubwayMap`).
-
-Built as 8 contiguous slices (`/tmp/opencode/parts/p0..p7*.ts`, transient) and spliced into
-one file; 2 independent audits compared the C# regions against the port and found only
-3 LOW findings (see commit message).
-
-**Known leftovers (same class as the BaseAI gaps):** unported `RogueGame` members are
-called as `this.m_Game.<PascalCase>` — `ApplyOnFire`, `SkillUpgrade`, `ZombifySkill`,
-`NextUndeadEvolution` — and the `RogueGame.NAME_*` / day constants are inlined in the
-generator file. They resolve when Phase 4 ports `RogueGame`.
-
----
-
-## Phase 6 — Audio
-
-**Goal:** Replace DirectX / SFML audio with the Web Audio API.
-
-### Files to replace
-
-| C# file | Replacement |
-|---------|-------------|
-| `Engine/IMusicManager.cs` | `engine/audio/IMusicManager.ts` (interface) |
-| `Engine/ISoundManager.cs` | `engine/audio/ISoundManager.ts` (interface) |
-| `Engine/NullSoundManager.cs` | `engine/audio/NullSoundManager.ts` (no-op, default) |
-| `Engine/MDXSoundManager.cs` | ❌ Drop (DirectX — browser has no equivalent) |
-| `Engine/SFMLSoundManager.cs` | ❌ Drop (SFML native — browser has no equivalent) |
-| *(new)* | `engine/audio/WebAudioSoundManager.ts` (Web Audio API) |
-| *(new)* | `engine/audio/WebAudioMusicManager.ts` (streaming MP3/OGG) |
-
-### Audio asset format
-
-Sound effects → `.ogg` (compressed, widely supported)  
-Music → `.ogg` / `.mp3` (streaming via `<audio>` element)
-
-Both formats are committed under `web/public/assets/` (24 tracks, 3 sfx) and the
-runtime always resolves `.ogg` through `AssetPaths.musicPath()` /
-`AssetPaths.soundPath()`, falling back to the id when no `*_FILE` mapping exists.
-`mp3` is kept in-tree as a source/streaming fallback.
-
----
-
-## Phase 7 — Save / Load
-
-**Goal:** Replace .NET `BinaryFormatter` / XML serialization with browser-native persistence.
-
-### C# serialization used
-
-| C# class | C# mechanism | Browser replacement |
-|----------|-------------|-------------------|
-| `Session` | `BinaryFormatter` | `JSON.stringify` + `localStorage` / IndexedDB |
-| `GameOptions` | Custom text file | `localStorage` (JSON) |
-| `Keybindings` | Custom text file | `localStorage` (JSON) |
-| `HiScoreTable` | Custom text file | `localStorage` (JSON) |
-
-### Save format
-
-```typescript
-interface SaveFile {
-  version: string;         // "alpha10.1-ts-port"
-  timestamp: number;
-  session: SerializedSession;
-  options: GameOptions;
-}
-```
-
-Saved to `localStorage["rogueSurvivor_save_0"]` through `["_save_9"]` (10 slots, matching the C# slots).
-
-Large saves (> 5 MB) overflow to **IndexedDB**.
-
----
-
-## Phase 8 — Polish, Headless Simulation & Deployment
-
-**Goal:** Feature-complete, tested, deployable, with a robust headless simulation harness for game balance and AI verification.
-
-### Tasks
-
-- [ ] Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`)
-- [ ] PWA manifest + service worker (offline play)
-- [ ] Docker image for self-hosted server
-- [ ] GitHub Actions CI: `npm run type-check` + `npm run build` on every push
-- [ ] Extract + optimise all sprite PNGs from C# embedded resources
-- [ ] Audio: normalise volume levels
-- [ ] Performance pass: profile tile rendering (target 60fps on a 21×21 view)
-- [ ] Mobile / touch support (optional — original was keyboard-only)
-
-### Headless Simulation & Advanced Testing Plan
-
-To ensure simulation fidelity and parity with the C# version without requiring a browser or DOM/Canvas context, Phase 8 includes a dedicated headless simulator and automated test harness:
-
-1. **Headless Simulator (`web/src/sim/HeadlessRunner.ts`)**:
-   - Runs game loops and AI ticks entirely in Node.js using a mock `IRogueUI` (`NullRogueUI`).
-   - Supports automated stress runs (e.g., simulating 1,000+ world turns across generated town maps).
-   - Metrics collection: actor survival rates, zombie infection spread, pathfinding efficiency, and combat balance.
-   - Useful for regression testing AI behavior changes and balance tweaks.
-
-2. **Expanded Testing Strategy (Vitest + Headless Integration)**:
-   - **AI Behaviour Tests**: Verify zombie pursuit, line-of-sight tracking, scent aggregation, and civilian self-preservation in isolated map scenarios.
-   - **Generator Integrity Tests**: Validate that town generators, building generators, and sewer networks consistently output fully reachable nav-graphs without deadlocks or out-of-bounds errors.
-   - **Save/Load Roundtrip Tests**: Serialize a complex running game state to JSON, deserialize it, and assert deep-equality across actors, items, maps, and world clocks.
-
----
-
-## Cross-Cutting Concerns
-
-### No `System.Drawing` in engine
-
-All `System.Drawing.Point`, `Rectangle`, and `Color` usages are replaced by our own classes in `engine/`. This is applied uniformly across every phase.
-
-### Namespace mapping
-
-| C# namespace | TS directory |
-|-------------|-------------|
-| `djack.RogueSurvivor.Data` | `data/` |
-| `djack.RogueSurvivor.Engine` | `engine/` |
-| `djack.RogueSurvivor.Engine.Actions` | `engine/actions/` |
-| `djack.RogueSurvivor.Engine.Items` | `engine/items/` |
-| `djack.RogueSurvivor.Engine.MapObjects` | `engine/mapobjects/` |
-| `djack.RogueSurvivor.Engine.Tasks` | `engine/tasks/` |
-| `djack.RogueSurvivor.Engine.AI` | `engine/ai/` |
-| `djack.RogueSurvivor.Gameplay` | `gameplay/` |
-| `djack.RogueSurvivor.Gameplay.AI` | `gameplay/ai/` |
-| `djack.RogueSurvivor.Gameplay.Generators` | `gameplay/generators/` |
-| `djack.RogueSurvivor.UI` | `ui/` |
-
-### String formatting
-
-C# `string.Format("{0} hits {1} for {2} damage", a, b, n)` → TS template literals `` `${a} hits ${b} for ${n} damage` ``.
-
-### C# `enum` flags
-
-C# `[Flags] enum` → TypeScript `const enum` + bitwise ops. E.g.:
-
-```typescript
-export const enum ActorFlags {
-  None       = 0,
-  IsUnique   = 1 << 0,
-  IsProperName = 1 << 1,
-  IsDead     = 1 << 3,
-  IsRunning  = 1 << 4,
-  IsSleeping = 1 << 5,
-}
-```
-
-### C# `[Serializable]` attribute
-
-Ignored. Instead, every class that needs persistence gets a `serialize(): SomeDTO` and static `deserialize(dto: SomeDTO): SomeClass` method pair.
-
-### C# operator overloading
-
-C# has `public static Point operator +(Point lhs, Direction rhs)`. TypeScript has no operator overloading — replaced with named methods: `direction.applyTo(point)`.
-
----
-
-## Testing Strategy
-
-### Phase 1–3: Unit tests (Vitest)
+### 1.3 How to run it
 
 ```bash
-npm run test          # Vitest unit tests
-npm run test:watch    # Watch mode
+cd web
+npm install
+npm run type-check
+npm run build
+npm run sim                              # default 3x3 world, 200 turns
+npm run sim -- --size 1 --turns 30       # fast smoke run
+npm run sim -- --size 1 --turns 30 --trace   # per-actor + bot decisions
 ```
 
-Target coverage:
-- `DiceRoller` — distribution, seeding, reproducibility
-- `WorldTime` — all 24 hours, strike of midnight/midday
-- `Direction` — all 8 directions, opposite, left, right
-- `LOS` — line tracing, FOV correctness vs known maps
-- `Rules` — combat formulas, movement checks
+Other flags: `--undead <n>`, `--bot <true|false>`, `--verbose`.
 
-### Phase 4+: Integration / smoke tests
+### 1.4 Known issue: runs are not reproducible
 
-- New game generates without crash
-- 100 AI turns run without exception
-- Save → reload → state unchanged
-- All menu screens navigate without error
+`Session` seeds from `Date.now()` (`engine/Session.ts:219`), so every run explores a different world and fails in a different place. **This is the first thing to fix** — without a seed flag, each bug is found by luck and cannot be regression-tested. Add `HeadlessRunner.run({ seed })` overriding `session.seed` (a `Session.seed` field already exists and is used by save/load).
+
+### 1.5 Next steps, in priority order
+
+1. **Add a `--seed` flag** to the sim (1.4). Without it, nothing below is verifiable.
+2. **Keep running the sim to failure and fix what it finds.** Loop: `npm run sim -- --size 1 --turns 30` → fix → repeat. Work down from the smallest world / fewest turns. Current known failures are `DoSwitchPlace` → `Map.placeActor` and a tile-collision assert in `placeActor`.
+3. **Widen the run** once 1×1 is clean: `--size 3 --turns 200`, then the default. Watch for hangs, not just crashes — a turn that never returns is usually a blocking `UI_Wait*`.
+4. **Add the test suite** (Phase 8 task 5, entirely unstarted — no Vitest, no coverage, no CI yet). See §4.
+5. **Audit the remaining AI files for bug 3.** The `filterActors` fix was central, but any other `percepted as Actor` cast followed by a dereference is still suspect. Grep for the pattern.
+6. Then work down the Phase 8 task list in §4.
+
+### 1.6 Git state
+
+- `master`, tracking `origin/master`.
+- Phase 4 completion committed as `0bc8e7f`; the Phase 4 async audit (18 detached calls awaited, stale notes fixed) as `389a845`.
+- The headless harness + the 9 fixes above were committed together as the Phase 8 simulator commit.
 
 ---
 
-## Asset Pipeline
+## 2. Quick Reference
 
-Game sprites are embedded as `.png` files in the C# `.csproj`. They have been
-extracted and committed under `web/public/assets/`, which Vite serves at
-`/assets/` (`publicDir: "public"`):
+### Layout
 
 ```
-web/public/assets/
-├── images/
-│   ├── classic/                     397 sprites — the default set
-│   ├── deonapocalypse_v9_r1/        390 sprites — variation
-│   └── genesis_classic_1.4/         339 sprites — variation
-├── music/                           24 tracks (mp3 + ogg)
-└── sfx/                             3 sounds (mp3 + ogg)
+web/src/
+├── engine/       pure game logic (no DOM) — RogueGame.ts, Rules.ts, LOS.ts, Session.ts, Scoring.ts
+├── data/         pure data models — Actor.ts, Map.ts, World.ts, ActorModel.ts
+├── gameplay/     definitions, generators, ai/ — GameActors.ts, GameItems.ts, generators/
+├── ui/           browser layer — CanvasUI.ts, InputHandler.ts, OptionsScreen.ts, NullRogueUI.ts
+├── sim/          HeadlessRunner.ts (Node harness)
+└── main.ts       bootstrap
+web/sim/cli.ts    CLI entry point for the headless sim
+server/index.ts   Express production server
 ```
 
-Sprites are grouped per **sprite set** because the original ships three art
-directions; `classic` is the default and holds all 395 ids referenced by
-`GameImages`, so it gives 100% coverage. `AssetPaths.setImageSet()` switches
-between the three without touching a call site.
+**Path aliases** (`web/tsconfig.json`): `@engine/*`, `@ui/*`, `@data/*`, `@gameplay/*`.
 
-`engine/AssetPaths.ts` is the single place that builds an asset URL:
+### Porting rules
 
-```typescript
-imagePath("Activities/chasing") // /assets/images/classic/Activities/chasing.png
-musicPath("army")              // /assets/music/RS - Army.ogg
-soundPath("undead rise")       // /assets/sfx/sfx - undead rise.ogg
-```
+Full detail in `web/.porting/CONVENTIONS.md`. The ones that matter:
 
-`CanvasUI`, `WebAudioMusicManager` and `WebAudioSoundManager` all go through it —
-no call site concatenates `/assets/` by hand.
+1. **Never modify `src/`** (the C#). It is the reference.
+2. **No platform leakage** — `engine/` and `data/` must not import from `ui/`. Only `main.ts` and `ui/` touch the DOM.
+3. **Async-first** — anything that blocks in C# (waiting for input, `Thread.Sleep`) becomes `async` + `await`.
+4. **C# → TS mapping:** `System.Drawing.*` → `engine/Color|Point|Rect`; `System.Random` → `DiceRoller` (Mulberry32); `Application.Run()` → async loop with `await UI_WaitKey()`; `BinaryFormatter` → JSON in `localStorage`; SFML/DirectX audio → Web Audio API; `Thread` + `Invoke()` → single-threaded async.
+5. **`enum` flags stay numeric.** C# `[Flags]` enums must keep their integer values — the TS uses bitwise `|`, `&`, `~` directly and `Rules.canActorFireAt` relies on it. Reordering an enum silently breaks every bitmask test.
+6. `enum` members with colliding names across namespaces (e.g. `Rules.Goal`, `Session.Goal`) are one flat `const enum` in the port.
 
-### Path mapping example
+### Build / verify
 
-| C# constant | C# value | Browser URL |
-|------------|---------|-------------|
-| `TILE_FLOOR_ASPHALT` | `"Tiles\\floor_asphalt"` | `/assets/images/classic/Tiles/floor_asphalt.png` |
-| `OBJ_WOODEN_DOOR_CLOSED` | `"MapObjects\\wooden_door_closed"` | `/assets/images/classic/MapObjects/wooden_door_closed.png` |
-| `ICON_BLAST` | `"Icons\\blast"` | `/assets/images/classic/Icons/blast.png` |
-
-Image ids keep the C# form (no extension, backslashes normalised to forward
-slashes at path-build time):
-
-```typescript
-const src = imagePath(imageId); // adds /assets/images/<set>/ prefix and .png
-```
-
-Audio ids are **logical names, not file names**, so they cannot be derived — the
-C# solves this with a `*_FILE` companion constant per id (`GameMusics.cs`).
-Those are ported verbatim into `gameplay/GameSounds.ts` and exposed as the
-`MUSIC_FILES` / `SOUND_FILES` maps, because the web managers resolve the file at
-play time instead of pre-loading it. The names do not follow a rule:
-`char underground facility` → `RS - CUF`, `interlude` → `RS - Interlude - Loop`,
-`heythere` → `RS - Hey There`, `playerdeath` → `RS - Post mortem`.
-
-No image conversion is needed — all sprites are already PNG.
+| Command | Purpose |
+|---|---|
+| `npm run type-check` | `tsc --noEmit` — necessary, **not sufficient** |
+| `npm run build` | Vite production build |
+| `npm run sim` | Headless engine run — the real test |
 
 ---
 
-## Summary Timeline
+## 3. Phase Status
 
-| Phase | Scope | Key output | Status |
-|-------|-------|-----------|--------|
-| 1 | Scaffold + primitives | Dev server, `CanvasUI`, type-safe foundation | ✅ Complete |
-| 2 | Data layer | All game objects typed, `Map`/`Actor` working | ✅ Complete |
-| 3 | Engine core | Rules, LOS, Session, Scoring, GameOptions + `ui/OptionsScreen.ts` (from `RogueGame.HandleOptions`) | ✅ Complete |
-| 4 | Game loop | **Playable game** (new game, move, attack, die) — `RogueGame.ts` 9/10 slices done, 46 of 492 stubs open (slice 6, the action primitives) | 🔄 In Progress |
-| 5 | AI + generators | `BaseAI`, all 11 AI controllers, all 4 generator files (5 814-line `BaseTownGenerator`) | ✅ Complete |
-| 6 | Audio | Sound effects and music | ✅ Complete |
-| 7 | Save / load | Persistent saves via localStorage / IndexedDB | ✅ Complete |
-| 8 | Polish | PWA, CI, headless simulator, test harness, deployment | ⏳ Planned |
+Phases 1–7 are ported and building. Historical per-slice detail has been removed; consult git history if needed.
+
+| Phase | Output | Status |
+|---|---|---|
+| 1 — Scaffold & primitives | Vite + Express, `IRogueUI`, `CanvasUI`, `InputHandler`, `Point`/`Rect`/`Color`, `DiceRoller` | Done |
+| 2 — Data layer | `Actor`, `Map`, `World`, `ActorModel`, `GameItems`, `GameActors`, `GameImages` | Done |
+| 3 — Engine core | `Rules`, `LOS`, `Session`, `Scoring`, `GameOptions`, `ui/OptionsScreen.ts` | Done |
+| 4 — Game loop | `RogueGame.ts` (~18 KLOC) all 10 slices | Ported, **0 stubs — but see §1.1: not behaviourally verified** |
+| 5 — World gen & AI | `BaseAI` (184/184), all 11 AI controllers, 4 generator files (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator` 5 814 lines, `StdTownGenerator`) | Done |
+| 6 — Audio | Web Audio SFX + music | Done |
+| 7 — Save / load | localStorage / IndexedDB, `Session` serialisation | Done |
+| 8 — Polish, sim, CI | Headless harness built; rest not started | **In progress** |
+
+Assets: 1 184 files shipped (397 classic sprites + 2 variation sets, 24 music tracks, 3 SFX), extracted from the C# embedded resources.
+
+---
+
+## 4. Phase 8 — Polish, Headless Simulation & Deployment
+
+**Goal:** feature-complete, tested, deployable, with a headless harness for balance and AI verification.
+
+### 4.1 Task list
+
+| # | Task | Status |
+|---|------|--------|
+| 1 | Headless simulator (`NullRogueUI` + `HeadlessRunner` + CLI) | **Built; surfacing bugs. Not yet running clean.** |
+| 2 | Deterministic `--seed` for reproducible runs | **Not started** — blocks verification (§1.4) |
+| 3 | Drive the sim to a clean full-length run and fix what it finds | **Not started** |
+| 4 | Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`) | Not started |
+| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds, CI running type-check + coverage + build + a short sim | **Not started** |
+| 6 | GitHub Actions CI | Not started (bundled with 5) |
+| 7 | PWA manifest + service worker (offline play) | Not started |
+| 8 | Docker image for the self-hosted server | Not started |
+| 9 | Extract + optimise all sprite PNGs from C# embedded resources | Partly done (1 184 files extracted); optimisation pending |
+| 10 | Audio: normalise volume levels | Not started |
+| 11 | Performance pass: profile tile rendering (target 60 fps on a 21×21 view) | Not started |
+| 12 | Mobile / touch support (optional — original was keyboard-only) | Not started |
+
+### 4.2 Headless harness design (for whoever extends it)
+
+- **`ui/NullRogueUI.ts`** — implements `IRogueUI` with no DOM. Drawing is a no-op; `UI_Wait` returns immediately. It **synthesises input** (`Enter` / `Escape` / `n` / `y`, exposed from both `UI_WaitKey` and `UI_PeekKey`) so blocking waiters — `WaitEnter`, `WaitYesOrNo`, `WaitKeyOrMouse` — cannot deadlock. This is what lets the game run with no human present; do not remove it.
+- **`sim/HeadlessRunner.ts`** — boots the real `RogueGame`, loads data, `StartNewGame`, optionally `BotTakeControl`, then loops `AdvancePlay`. Collects metrics: turns played, final turn/day, player alive + HP, actors alive (undead/living), corpses, kills, score, duration, error.
+- **`RogueGame.botDelayMs`** — the bot's action delay, defaulting to the original `BOT_DELAY`. The runner sets it to 0; without this a 1-turn run costs 250 ms × every AI actor.
+- **`RogueGame.debugTrace`** — opt-in (`null` by default) per-actor/bot decision logging, enabled by `--trace`. Guarded by optional chaining so it costs nothing when off.
+
+### 4.3 Test strategy (not yet implemented)
+
+1. **Headless integration tests** — boot a small world, play N turns, assert no crash, actor counts stay consistent, the world clock advances, and the player is never soft-locked. Cheapest high-value tests; build these first.
+2. **AI behaviour tests** — zombie pursuit, line-of-sight tracking, scent aggregation, civilian self-preservation, in isolated map scenarios.
+3. **Generator integrity tests** — town/building/sewer generators must produce fully reachable nav-graphs with no deadlocks or out-of-bounds writes.
+4. **Save/load roundtrip** — serialise a complex running game to JSON, deserialise, assert deep equality across actors, items, maps, world clocks.
+5. **Coverage** — `@vitest/coverage-v8`, thresholds set from a measured baseline (do not pick aspirational numbers on day one; the port is not at full coverage and a failing threshold will just be disabled again).
+
+---
+
+## 5. Summary Timeline
+
+| Phase | Scope | Status |
+|---|---|---|
+| 1 | Scaffold + primitives | Done |
+| 2 | Data layer | Done |
+| 3 | Engine core | Done |
+| 4 | Game loop | Ported, 0 stubs — **behaviour unverified, see §1.1** |
+| 5 | World generation + AI | Done |
+| 6 | Audio | Done |
+| 7 | Save / load | Done |
+| 8 | Headless sim, tests, CI, deployment | In progress — harness built, long-tail bug hunt next |

@@ -198,8 +198,11 @@ export abstract class BaseAI extends AIController {
     if (!percepts || percepts.length === 0) return null;
     const list: Percept[] = [];
     for (const p of percepts) {
-      const other = p.percepted as Actor;
-      if (other && other !== this.controlledActor && !game.rules.areEnemies(this.controlledActor, other)) {
+      // See filterActors: percepted is a union, so instanceof is the only
+      // reliable actor test.
+      if (!(p.percepted instanceof ActorClass)) continue;
+      const other = p.percepted;
+      if (other !== this.controlledActor && !game.rules.areEnemies(this.controlledActor, other)) {
         list.push(p);
       }
     }
@@ -251,8 +254,11 @@ export abstract class BaseAI extends AIController {
   protected filterActors(_game: Game, percepts: Percept[] | null, predicateFn: (a: Actor) => boolean): Percept[] | null {
     if (!percepts || percepts.length === 0) return null;
     const list = percepts.filter(p => {
-      const a = p.percepted as Actor;
-      return a && predicateFn(a);
+      // Must be a real Actor: `percepted` is a union, and a truthiness check
+      // lets MapObjects/Corpses/Items through, which then blow up in every
+      // caller that (correctly, per C#) assumes an Actor.
+      if (!(p.percepted instanceof ActorClass)) return false;
+      return predicateFn(p.percepted);
     });
     return list.length > 0 ? list : null;
   }
@@ -357,7 +363,7 @@ export abstract class BaseAI extends AIController {
       dir => {
         const next = this.controlledActor.location.addDirection(dir);
         if (goodWanderLocFn && !goodWanderLocFn(next)) return false;
-        const bumpAction = game.rules.isBumpableFor(this.controlledActor, game, next);
+        const bumpAction = game.rules.isBumpableFor(this.controlledActor, game, next.map!, next.position.x, next.position.y);
         return this.isValidWanderAction(game, bumpAction.action);
       },
       dir => {
@@ -376,7 +382,7 @@ export abstract class BaseAI extends AIController {
 
         const mobj = next.map?.getMapObjectAtPoint(next.position);
         if (mobj) {
-          const bumpObjAction = game.rules.isBumpableFor(this.controlledActor, game, next).action;
+          const bumpObjAction = game.rules.isBumpableFor(this.controlledActor, game, next.map!, next.position.x, next.position.y).action;
           if (bumpObjAction instanceof ActionBashDoor) score += BREAKING_BARRICADES;
           else if (bumpObjAction instanceof ActionBreak) score += BREAKING_OBJ;
         }
@@ -414,7 +420,7 @@ export abstract class BaseAI extends AIController {
       Direction.COMPASS,
       dir => {
         const next = this.controlledActor.location.addDirection(dir);
-        const bumpAction = game.rules.isBumpableFor(this.controlledActor, game, next).action;
+        const bumpAction = game.rules.isBumpableFor(this.controlledActor, game, next.map!, next.position.x, next.position.y).action;
         if (!bumpAction) {
           if (this.controlledActor.model.abilities.isUndead && game.rules.hasActorPushAbility(this.controlledActor)) {
             const obj = this.controlledActor.location.map?.getMapObjectAtPoint(next.position);
@@ -604,7 +610,7 @@ export abstract class BaseAI extends AIController {
       dir => {
         const next = this.controlledActor.location.addDirection(dir);
         if (exploration.hasExploredLocation(next)) return false;
-        const bumpAction = game.rules.isBumpableFor(this.controlledActor, game, next).action;
+        const bumpAction = game.rules.isBumpableFor(this.controlledActor, game, next.map!, next.position.x, next.position.y).action;
         if (bumpAction instanceof ActionBreak || bumpAction instanceof ActionBashDoor) return false;
         return this.isValidMoveTowardGoalAction(bumpAction);
       },
@@ -786,7 +792,7 @@ export abstract class BaseAI extends AIController {
       Direction.COMPASS,
       dir => {
         const next = this.controlledActor.location.addDirection(dir);
-        const bumpAction = game.rules.isBumpableFor(this.controlledActor, game, next).action;
+        const bumpAction = game.rules.isBumpableFor(this.controlledActor, game, next.map!, next.position.x, next.position.y).action;
         return this.isValidFleeingAction(bumpAction);
       },
       dir => {
@@ -812,10 +818,10 @@ export abstract class BaseAI extends AIController {
   }
   // ---- Melee attack ----
   protected behaviorMeleeAttack(game: Game, target: Percept): ActorAction | null {
-    const targetActor = target.percepted as Actor | null;
-    if (!targetActor) {
-      throw new Error('percepted is not an actor');
-    }
+    // C# does `Target.Percepted as Actor`; a non-actor percept means there is
+    // no one to hit, which is "no action", not a crash.
+    if (!(target.percepted instanceof ActorClass)) return null;
+    const targetActor = target.percepted;
     if (!game.rules.canActorMeleeAttack(this.controlledActor, targetActor).ok) {
       return null;
     }
@@ -823,10 +829,9 @@ export abstract class BaseAI extends AIController {
   }
   // ---- Ranged attack ----
   protected behaviorRangedAttack(game: Game, target: Percept): ActorAction | null {
-    const targetActor = target.percepted as Actor | null;
-    if (!targetActor) {
-      throw new Error('percepted is not an actor');
-    }
+    // See behaviorMeleeAttack: a non-actor percept means no target.
+    if (!(target.percepted instanceof ActorClass)) return null;
+    const targetActor = target.percepted;
     if (!game.rules.canActorFireAt(this.controlledActor, targetActor).ok) {
       return null;
     }
@@ -2288,8 +2293,8 @@ export abstract class BaseAI extends AIController {
     if (leader && leader.isSleeping) return new ActionShout(this.controlledActor, game);
     // Shout if we have a friend sleeping.
     for (const p of friends) {
+      if (!(p.percepted instanceof ActorClass)) continue;
       const other = p.percepted;
-      if (!(other instanceof ActorClass)) throw new Error('percept not an actor');
       if (other === this.controlledActor) continue;
       if (!other.isSleeping) continue;
       if (game.rules.areEnemies(this.controlledActor, other)) continue;

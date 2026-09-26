@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "serve": "node dist-server/server/index.js",
     "build:server": "tsc -p server/tsconfig.json",
-    "build:all": "npm run build && npm run build:server"
+    "build:all": "npm run build && npm run build:server",
+    "sim": "esbuild sim/cli.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --outfile=node_modules/.cache/sim.mjs --log-level=warning && node node_modules/.cache/sim.mjs"
   },
   "dependencies": {
     "express": "^4.18.2"

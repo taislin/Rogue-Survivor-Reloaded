@@ -3,7 +3,7 @@ import { Rect } from "@engine/Rect";
 import { Direction } from "@engine/Direction";
 import { WorldTime } from "@engine/WorldTime";
 import { Tile } from "./Tile";
-import type { TileModel } from "./TileModel";
+import { TileModel } from "./TileModel";
 import type { Zone } from "./Zone";
 import type { District } from "./District";
 import type { Actor } from "./Actor";
@@ -48,20 +48,20 @@ export class Map {
   readonly rect: Rect;
 
   private readonly tilesGrid: Tile[][];
-  private readonly exitsMap = new window.Map<string, Exit>();
+  private readonly exitsMap = new globalThis.Map<string, Exit>();
   private readonly zonesList: Zone[] = [];
   private readonly actorsList: Actor[] = [];
   private readonly mapObjectsList: MapObject[] = [];
-  private readonly groundItemsMap = new window.Map<string, Inventory>();
+  private readonly groundItemsMap = new globalThis.Map<string, Inventory>();
   private readonly corpsesList: Corpse[] = [];
   private readonly scentsList: OdorScent[] = [];
   private readonly timersList: TimedTask[] = [];
 
   // Spatial lookups
-  private readonly actorsByPos = new window.Map<string, Actor>();
-  private readonly mapObjectsByPos = new window.Map<string, MapObject>();
-  private readonly corpsesByPos = new window.Map<string, Corpse[]>();
-  private readonly scentsByPos = new window.Map<string, OdorScent[]>();
+  private readonly actorsByPos = new globalThis.Map<string, Actor>();
+  private readonly mapObjectsByPos = new globalThis.Map<string, MapObject>();
+  private readonly corpsesByPos = new globalThis.Map<string, Corpse[]>();
+  private readonly scentsByPos = new globalThis.Map<string, OdorScent[]>();
   private m_checkNextActorIndex = 0;
 
   constructor(seed: number, name: string, width: number, height: number) {
@@ -72,9 +72,16 @@ export class Map {
     this.rect = new Rect(0, 0, width, height);
     this.localTime = new WorldTime(0);
 
+    // C# `Map` ctor: `m_Tiles[x, y] = new Tile(TileModel.UNDEF)` for every cell.
+    // Pre-filling matters — `GetTileAt`/`SetTileModelAt` dereference the tile
+    // directly, so a sparse grid would leave the whole map unusable.
     this.tilesGrid = [];
     for (let x = 0; x < width; x++) {
-      this.tilesGrid.push(new Array(height));
+      const column: Tile[] = [];
+      for (let y = 0; y < height; y++) {
+        column.push(new Tile(TileModel.UNDEF));
+      }
+      this.tilesGrid.push(column);
     }
   }
 

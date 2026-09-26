@@ -85,7 +85,12 @@ export class ActionMoveStep extends ActorAction {
   }
 
   isLegal(): boolean {
-    const result = this.game.rules.isWalkableFor(this.actor, this.newLocation);
+    const result = this.game.rules.isWalkableFor(
+      this.actor,
+      this.newLocation.map!,
+      this.newLocation.position.x,
+      this.newLocation.position.y
+    );
     if (!result.ok) this.failReason = result.reason;
     return result.ok;
   }
@@ -108,7 +113,7 @@ export class ActionBump extends ActorAction {
     super(actor, game);
     this.direction = direction;
     const newLoc = actor.location.addDirection(direction);
-    const result = game.rules.isBumpableFor(actor, game, newLoc);
+    const result = game.rules.isBumpableFor(actor, game, newLoc.map!, newLoc.position.x, newLoc.position.y);
     this.concreteAction = result.action ?? null;
     if (!result.action) this.failReason = result.reason;
   }

@@ -3,6 +3,17 @@ import { ActorModelDB, Models } from "@data/Models";
 import { DollBody } from "@data/Doll";
 import { Abilities } from "@data/Abilities";
 import { ActorSheet } from "@data/ActorSheet";
+import type { ActorController } from "@data/ActorController";
+import { SkeletonAI } from "@gameplay/ai/SkeletonAI";
+import { ZombieAI } from "@gameplay/ai/ZombieAI";
+import { RatAI } from "@gameplay/ai/RatAI";
+import { SewersThingAI } from "@gameplay/ai/SewersThingAI";
+import { CivilianAI } from "@gameplay/ai/CivilianAI";
+import { CHARGuardAI } from "@gameplay/ai/CHARGuardAI";
+import { SoldierAI } from "@gameplay/ai/SoldierAI";
+import { GangAI } from "@gameplay/ai/GangAI";
+import { FeralDogAI } from "@gameplay/ai/FeralDogAI";
+import { InsaneHumanAI } from "@gameplay/ai/InsaneHumanAI";
 import { Attack } from "@data/Attack";
 import { Defence } from "@data/Defence";
 import { Verb } from "@data/Verb";
@@ -148,7 +159,65 @@ export class GameActors implements ActorModelDB {
 
   private setModel(id: ActorID, model: ActorModel): void {
     model.id = id;
+    model.defaultControllerCtor = GameActors.defaultControllerFor(id);
     this.models[id] = model;
+  }
+
+  /**
+   * C# passes `typeof(SkeletonAI)` / `typeof(ZombieAI)` / … as every
+   * `ActorModel`'s `DefaultController`. The port built its models from CSV in
+   * one loop, so the mapping lives here instead of in ~27 constructor calls.
+   *
+   * It matters beyond `Actor.create()`: `RogueGame.BotTakeControl()` reads
+   * `defaultControllerCtor` off the player's model, so with this missing the
+   * game's own bot mode silently failed to start.
+   */
+  private static defaultControllerFor(id: ActorID): (new () => ActorController) | null {
+    switch (id) {
+      case ActorID.UNDEAD_SKELETON:
+      case ActorID.UNDEAD_RED_EYED_SKELETON:
+      case ActorID.UNDEAD_RED_SKELETON:
+        return SkeletonAI;
+
+      case ActorID.UNDEAD_ZOMBIE:
+      case ActorID.UNDEAD_DARK_EYED_ZOMBIE:
+      case ActorID.UNDEAD_DARK_ZOMBIE:
+      case ActorID.UNDEAD_MALE_ZOMBIFIED:
+      case ActorID.UNDEAD_FEMALE_ZOMBIFIED:
+      case ActorID.UNDEAD_MALE_NEOPHYTE:
+      case ActorID.UNDEAD_FEMALE_NEOPHYTE:
+      case ActorID.UNDEAD_MALE_DISCIPLE:
+      case ActorID.UNDEAD_FEMALE_DISCIPLE:
+      case ActorID.UNDEAD_ZOMBIE_MASTER:
+      case ActorID.UNDEAD_ZOMBIE_LORD:
+      case ActorID.UNDEAD_ZOMBIE_PRINCE:
+        return ZombieAI;
+
+      case ActorID.UNDEAD_RAT_ZOMBIE:
+        return RatAI;
+      case ActorID.SEWERS_THING:
+        return SewersThingAI;
+
+      case ActorID.MALE_CIVILIAN:
+      case ActorID.FEMALE_CIVILIAN:
+      case ActorID.POLICEMAN:
+        return CivilianAI;
+      case ActorID.CHAR_GUARD:
+        return CHARGuardAI;
+      case ActorID.ARMY_NATIONAL_GUARD:
+      case ActorID.BLACKOPS_MAN:
+        return SoldierAI;
+      case ActorID.BIKER_MAN:
+      case ActorID.GANGSTA_MAN:
+        return GangAI;
+      case ActorID.FERAL_DOG:
+        return FeralDogAI;
+      case ActorID.JASON_MYERS:
+        return InsaneHumanAI;
+
+      default:
+        return null;
+    }
   }
 
   get(id: number): ActorModel {

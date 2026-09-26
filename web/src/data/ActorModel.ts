@@ -13,7 +13,7 @@ export class ActorModel {
   readonly pluralName: string;
   readonly abilities: Abilities;
   readonly startingSheet: ActorSheet;
-  readonly defaultControllerCtor: (new () => ActorController) | null;
+  defaultControllerCtor: (new () => ActorController) | null;
   readonly scoreValue: number;
   flavorDescription: string = "";
   createdCount: number = 0;

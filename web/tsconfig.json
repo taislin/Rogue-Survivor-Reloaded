@@ -22,6 +22,6 @@
       "@gameplay/*": ["src/gameplay/*"]
     }
   },
-  "include": ["src"],
+  "include": ["src", "sim"],
   "exclude": ["server", "node_modules", "dist"]
 }

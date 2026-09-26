@@ -549,6 +549,18 @@ export class RogueGame {
   m_DEBUG_prevAiActor: Actor | null = null;
   m_DEBUG_sameAiActorCount: number = 0;
   m_isBotMode: boolean = false;
+  /**
+   * C# hard-codes `Thread.Sleep(BOT_DELAY)` per bot action. Kept as a field so
+   * the Phase 8 headless simulator can set it to 0 — otherwise a 1 000-turn
+   * balance run spends hours in `sleep` instead of simulating.
+   */
+  botDelayMs: number = BOT_DELAY;
+  /**
+   * Optional progress hook, used by the Phase 8 headless simulator to see
+   * which actor the turn loop is on. Null in normal play, so the guarded
+   * calls in the turn loop cost nothing.
+   */
+  debugTrace: ((message: string) => void) | null = null;
   m_botControl: BaseAI | null = null;
   readonly m_botLock: object = {};
 
@@ -2336,9 +2348,14 @@ export class RogueGame {
 
     // 2. If none move to next turn and return.
     if (actor === null) {
+      this.debugTrace?.(`  no actor left -> NextMapTurn (turn ${map.localTime.turnCounter})`);
       await this.NextMapTurn(map, sim);
       return;
     }
+
+    this.debugTrace?.(
+      `  act: ${actor.isPlayer ? "PLAYER" : actor.theName} (ap ${actor.actionPoints}/${Rules.BASE_ACTION_COST}, turn ${map.localTime.turnCounter})`
+    );
 
     // 3. Ask actor to act. Handle player and AI differently.
     actor.previousStaminaPoints = actor.staminaPoints;
@@ -3938,9 +3955,12 @@ export class RogueGame {
   // the browser can deliver input (WaitKeyOrMouse yields), no cursor API.
   async HandlePlayerActor(player: Actor): Promise<void> {
     // Upkeep.
+    this.debugTrace?.("    HandlePlayerActor: UpdatePlayerFOV");
     this.UpdatePlayerFOV(player); // make sure LOS is up to date.
     this.m_Player = player;       // remember player.
+    this.debugTrace?.("    HandlePlayerActor: ComputeViewRect");
     this.ComputeViewRect(player.location.position);
+    this.debugTrace?.("    HandlePlayerActor: preamble done");
 
     // Update survival scoring.
     this.m_Session.scoring.turnsSurvived = this.m_Session.worldTime.turnCounter;
@@ -3978,15 +3998,19 @@ export class RogueGame {
       // 1. Redraw
       // alpha10.1 bot mode?
       if (this.m_isBotMode) {
-        await new Promise<void>((r) => setTimeout(r, BOT_DELAY));
+        await new Promise<void>((r) => setTimeout(r, this.botDelayMs));
         this.RedrawPlayScreen();
         if (this.m_botControl != null) { // can become null even under C#'s lock.
+          this.debugTrace?.("    bot: getAction...");
           let botAction: ActorAction | null = this.m_botControl.getAction(this);
+          this.debugTrace?.(`    bot: got ${botAction === null ? "null" : botAction.constructor.name}`);
           if (botAction == null || !botAction.isLegal()) {
             this.AddMessage(this.MakeErrorMessage(`Bot issued ${botAction == null ? "NULL" : `illegal ${botAction.toString()}`} action`));
             botAction = new ActionWait(player, this);
           }
+          this.debugTrace?.("    bot: perform...");
           botAction.perform();
+          this.debugTrace?.("    bot: performed");
           // copy-paste is bad
           this.UpdatePlayerFOV(player);
           this.ComputeViewRect(player.location.position);
@@ -4023,12 +4047,15 @@ export class RogueGame {
           this.RemoveOverlay(this.m_HintAvailableOverlay);
         }
       }
+      this.debugTrace?.("    loop: RedrawPlayScreen...");
       this.RedrawPlayScreen();
+      this.debugTrace?.("    loop: RedrawPlayScreen done (bot=" + this.m_isBotMode + ", ctrl=" + (this.m_botControl !== null) + ")");
 
       // 2. Get input.
       // Peek keyboard & mouse until we got an event. (C# busy-loops here;
       // WaitKeyOrMouse is the async equivalent.)
       const ev = await this.WaitKeyOrMouse();
+      this.debugTrace?.("    loop: WaitKeyOrMouse done");
       const inKey = ev.key;
       const mousePos = ev.mousePos;
       const mouseButtons = ev.mouseButtons;

@@ -6,7 +6,7 @@
  */
 
 import { Activity } from '@data/Activity';
-import type { Actor } from '@data/Actor';
+import { Actor } from '@data/Actor';
 import type { ActorAction } from '@data/ActorAction';
 import { Percept } from '@engine/ai/Sensors';
 import { ActionSleep, ActionTrade, ActionUnequipItem, ActionWait, SayFlags } from '@engine/actions/Actions';
@@ -423,7 +423,12 @@ export class CivilianAI extends OrderableAI {
           this.filterNonEnemies(game, mapPercepts),
           (p: Percept) => {
             if (p.turn !== turn) return true;
-            const other = p.percepted as Actor;
+            // C# writes `p.Percepted as Actor` and dereferences it directly,
+            // relying on FilterNonEnemies yielding only actor percepts. The TS
+            // Percept is a union, so skip anything that is not an Actor
+            // rather than blowing up on `undefined.model`.
+            if (!(p.percepted instanceof Actor)) return true;
+            const other = p.percepted;
             // dont bother player or someone we can't trade with or already did trade.
             if (other.isPlayer) return true;
             if (!game.rules.canActorInitiateTradeWith(actor, other).ok) return true;
