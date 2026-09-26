@@ -1,7 +1,7 @@
 # Rogue Survivor Reloaded — TypeScript / Browser Port: Full Implementation Plan
 
 > **Status:** Phase 1, 2 & 3 complete (Phase 3 includes `ui/OptionsScreen.ts`). Phase 5 complete — `BaseAI` (184/184 methods), all 11 AI controllers, and all 4 generator files done (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator`, `StdTownGenerator`). Phase 6 & 7 complete.  
-> **Phase 4 in progress:** `engine/RogueGame.ts` scaffold generated (4 044 lines: constants, fields, properties, constructor, 492 method stubs, 38 camelCase call-site aliases); slices 1–10 still to fill. `npm run type-check` + `npm run build` clean.  
+> **Phase 4 in progress:** `engine/RogueGame.ts` scaffold generated (constants, fields, properties, constructor, 492 method stubs, 38 camelCase call-site aliases) and filled slice by slice. **Slice 1 done** (character creation, `StartNewGame`, credits, redefine keys), **slices 4, 5 and 7 in progress** (one agent each), `main.ts` wired to `RogueGame.Run()`. Open slices: 2, 3, 6, 8, 9, 10. `npm run type-check` + `npm run build` clean; 75/75 smoke checks pass.  
 > **Last updated:** 2026-09-26
 
 ---
@@ -376,11 +376,11 @@ combines them with the hand-ported overlay types, constructor and getters into
 | # | C# lines | Contents | Status |
 |---|----------|----------|--------|
 | scaffold | 1–1414 | Constants, fields, properties, init, messaging, `Run`/`GameLoop`, main menu | ✅ Ported (stubs for input/drawing helpers it calls) |
-| 1 | 1415–2876 | Character creation, `StartNewGame`, credits, options, redefine keys | ⬜ |
+| 1 | 1415–2876 | Character creation, `StartNewGame`, credits, options, redefine keys | ✅ Ported |
 | 2 | 2877–4154 | `AdvancePlay`, `NextMapTurn`, actor regen/counts, scents | ⬜ |
 | 3 | 4156–5366 | Events (invasions, refugees, raids, drops) + spawning | ⬜ |
-| 4 | 5367–10255 | FOV, `HandlePlayerActor` and all `HandlePlayerXXX` commands | ⬜ |
-| 5 | 10256–12658 | AI actor handling, advisor, input helpers, describe-* | ⬜ |
+| 4 | 5367–10255 | FOV, `HandlePlayerActor` and all `HandlePlayerXXX` commands | 🔄 In progress |
+| 5 | 10256–12658 | AI actor handling, advisor, input helpers, describe-* | 🔄 In progress |
 | 6 | 12660–16790 | Action primitives `DoMoveActor` … `KillActor`, blood/corpses | ⬜ |
 | 7 | 16791–17986 | Player death, new day/night, skills, infection/zombification | ⬜ |
 | 8 | 17987–19723 | View, drawing, overlays, coordinates, visibility helpers | ⬜ |
@@ -435,11 +435,11 @@ async function gameLoop(ui: IRogueUI): Promise<void> {
 
 | Item | Where it stands today |
 |------|-----------------------|
-| `main.ts` | Still the Phase 1 splash screen (temporary key loop: **O** opens the options screen). `RogueGame.Run()` now loads options/keys/hints/hiscores/manual and reaches a drawable `HandleMainMenu` (drawing helpers ported) — wiring is held back until slice 1 ports `HandleNewCharacter`, otherwise **New Game** throws from the menu. |
-| `OPTIONS_MODE` command | C# `case PlayerCommand.OPTIONS_MODE: HandleOptions(true); ApplyOptions(true);` (RogueGame.cs ≈5645). Ported screen is called manually from `main.ts` instead. |
+| `main.ts` | ✅ Wired to the real game: `new RogueGame(ui, new WebAudioMusicManager()).Run()`. Loading screens, main menu, character creation and rebind/hi-score/credits screens run in the browser; a `not yet ported:` throw is drawn on the canvas instead of dying in the console. |
+| `OPTIONS_MODE` command | C# `case PlayerCommand.OPTIONS_MODE: HandleOptions(true); ApplyOptions(true);` (RogueGame.cs ≈5645). `RogueGame.HandleOptions()` owns the screen now; wiring the ingame command comes with slices 4–5 (`HandlePlayerXXX`). |
 | `ApplyOptions` side update | C# re-derives `Scoring.Side` from the player (`m_Player.Model.Abilities.IsUndead`); `OptionsScreen.applyOptions()` refreshes the rating only, until a player exists. |
-| `HandleRedefineKeys` | Still in `RogueGame.cs` (`KEYBINDING_MODE`) → goes to the Phase 4 `GameUI` module. |
-| Music manager wiring | `OptionsScreen` takes an optional `IMusicManager`; pass `WebAudioMusicManager` when Phase 4 owns the audio lifecycle. |
+| `HandleRedefineKeys` | ✅ Ported (Phase 4 slice 1) — 51-entry rebind menu, `Keybindings.checkForConflict()`, C# `Set()` key stealing. |
+| Music manager wiring | ✅ `main.ts` passes `WebAudioMusicManager` into the `RogueGame` constructor (defaults to `NullMusicManager` in tests/Node). |
 
 ---
 

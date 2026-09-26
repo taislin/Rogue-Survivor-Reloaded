@@ -59,8 +59,8 @@ public/assets/MapObjects/wooden_door_closed.png
 |-------|--------|-------|
 | 1 | ✅ Complete | Scaffold, primitives, Canvas UI, HTTP server |
 | 2 | ✅ Complete | Data layer (Map, Actor, Item, Tile, World) |
-| 3 | ✅ Complete | Engine core + `ui/OptionsScreen.ts` (press **O** on the splash screen) |
-| 4 | 🔄 In progress | RogueGame core loop — scaffold landed (`engine/RogueGame.ts`, 4 044 lines: constants, fields, constructor, 516 stubs); slices 1–10 pending |
+| 3 | ✅ Complete | Engine core + `ui/OptionsScreen.ts` (reachable from the in-game menu) |
+| 4 | 🔄 In progress | RogueGame core loop (`engine/RogueGame.ts`) — slice 1 (character creation, `StartNewGame`, credits, redefine keys) done and `main.ts` wired to `RogueGame.Run()`; slices 4, 5, 7 in progress, slices 2, 3, 6, 8, 9, 10 open |
 | 5 | ✅ Complete | All 11 AI controllers + `BaseAI`; world generators (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator`, `StdTownGenerator`) |
 | 6 | ✅ Complete | Audio (Web Audio API) |
 | 7 | ✅ Complete | Save/load (`GameSaveManager`, 10 localStorage slots) |

@@ -609,13 +609,14 @@ export class RogueGame {
 
   // ── C# `#region Init` (RogueGame.cs:781) ──────────────────────────────────
 
-  constructor(UI: IRogueUI) {
+  constructor(UI: IRogueUI, music: IMusicManager = new NullMusicManager()) {
     logInit("RogueGame()");
 
     this.m_UI = UI;
     logInit("creating MusicManager");
     // C# picks MDX/SFML/NullSoundManager (the C# Null implements both sound+music).
-    this.m_MusicManager = new NullMusicManager();
+    // The browser passes `WebAudioMusicManager` from main.ts.
+    this.m_MusicManager = music;
 
     logInit("creating MessageManager");
     this.m_MessageManager = new MessageManager(MESSAGES_SPACING, MESSAGES_FADEOUT, MESSAGES_HISTORY);
