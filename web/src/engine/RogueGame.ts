@@ -27,7 +27,7 @@ import { GameImages } from "@gameplay/GameImages";
 import { GameMusics, GameSounds } from "@gameplay/GameSounds";
 import { OptionsScreen } from "@ui/OptionsScreen";
 import { HiScore, HiScoreTable } from "@engine/HiScoreTable";
-import { Keybindings } from "@engine/Keybindings";
+import { Keybindings, InputTranslator } from "@engine/Keybindings";
 import { GameHintsStatus, AdvisorHint } from "@engine/GameHints";
 import { GameOptions, OptionIDs, Options, ReincMode, ZupDays } from "@engine/GameOptions";
 import { PlayerCommand } from "@engine/PlayerCommand";
@@ -37,16 +37,16 @@ import { TextFile } from "@engine/TextFile";
 import { SayFlags } from "@engine/actions/Actions";
 import { Item } from "@data/Item";
 import { ItemBodyArmor } from "@engine/items/ItemBodyArmor";
-import { ItemExplosive, ItemExplosiveModel, ItemPrimedExplosive } from "@engine/items/ItemExplosive";
+import { ItemExplosive, ItemExplosiveModel, ItemGrenade, ItemGrenadeModel, ItemPrimedExplosive } from "@engine/items/ItemExplosive";
 import { ItemFood } from "@engine/items/ItemFood";
 import { ItemLight } from "@engine/items/ItemLight";
 import { ItemMedicine } from "@engine/items/ItemMedicine";
 import { ItemTrap } from "@engine/items/ItemTrap";
-import { AmmoType, ItemAmmo, ItemRangedWeapon, ItemRangedWeaponModel, ItemWeapon } from "@engine/items/ItemWeapon";
+import { AmmoType, ItemAmmo, ItemMeleeWeapon, ItemRangedWeapon, ItemRangedWeaponModel, ItemWeapon, ItemWeaponModel } from "@engine/items/ItemWeapon";
 import { ItemBarricadeMaterial, ItemEntertainment, ItemSprayPaint, ItemSprayScent } from "@engine/items/ItemMisc";
 import { ItemTracker } from "@engine/items/ItemTracker";
-import { MapObject, MapObjectFire } from "@data/MapObject";
-import { DoorWindow, Fortification, PowerGenerator } from "@engine/mapobjects/MapObjects";
+import { MapObject, MapObjectBreak, MapObjectFire } from "@data/MapObject";
+import { Board, DoorWindow, Fortification, PowerGenerator } from "@engine/mapobjects/MapObjects";
 import { Actor } from "@data/Actor";
 import { ActorModel } from "@data/ActorModel";
 import { ActorOrder } from "@data/ActorOrder";
@@ -59,9 +59,11 @@ import { Activity } from "@data/Activity";
 import type { TimedTask } from "@data/TimedTask";
 import { District, DistrictKind } from "@data/District";
 import { DollPart } from "@data/Doll";
+import { AIController } from "@data/AIController";
 import { Faction } from "@data/Faction";
 import { Inventory } from "@data/Inventory";
 import { Location } from "@data/Location";
+import { Models } from "@data/Models";
 import { Message } from "@data/Message";
 import { Map } from "@data/Map";
 import { Skill } from "@data/Skill";
@@ -72,8 +74,8 @@ import { Weather } from "@data/Weather";
 import { World } from "@data/World";
 import { GameActors, ActorID } from "@gameplay/GameActors";
 import { GameFactions } from "@gameplay/GameFactions";
-import { GangID } from "@gameplay/GameGangs";
-import { GameItems } from "@gameplay/GameItems";
+import { GameGangs, GangID } from "@gameplay/GameGangs";
+import { GameItems, ItemID } from "@gameplay/GameItems";
 import { GameTiles } from "@gameplay/GameTiles";
 import { GameTips } from "@gameplay/ZoneAttributes";
 import { SkillID, Skills } from "@gameplay/Skills";
@@ -3254,12 +3256,17 @@ export class RogueGame {
     throw new Error("not yet ported: DistanceToPlayer (RogueGame.cs:4951)");
   }
 
-  // C# IsAdjacentToEnemy — RogueGame.cs:4963
+  // C# IsAdjacentToEnemy — RogueGame.cs:4963 (slice 3 borrow: advisor hints need it)
   IsAdjacentToEnemy(map: Map, pos: Point, actor: Actor): boolean {
-    void map;
-    void pos;
-    void actor;
-    throw new Error("not yet ported: IsAdjacentToEnemy (RogueGame.cs:4963)");
+    for (let x = pos.x - 1; x <= pos.x + 1; x++)
+      for (let y = pos.y - 1; y <= pos.y + 1; y++) {
+        if (x === pos.x && y === pos.y) continue;
+        if (!map.isInBounds(x, y)) continue;
+        const other = map.getActorAt(x, y);
+        if (other == null) continue;
+        if (this.m_Rules.areEnemies(actor, other)) return true;
+      }
+    return false;
   }
 
   // C# SpawnActorOnMapBorder — RogueGame.cs:4987
@@ -3889,60 +3896,891 @@ export class RogueGame {
   }
 
   // C# HandleAdvisor — RogueGame.cs:10296
-  HandleAdvisor(player: Actor): void {
-    void player;
-    throw new Error("not yet ported: HandleAdvisor (RogueGame.cs:10296)");
+  // C# ShowAdvisorMessage blocks on AddMessagePressEnter; async here.
+  async HandleAdvisor(player: Actor): Promise<void> {
+    void player; // C# takes the player but reads m_Player
+
+    ///////////////////////////////
+    // If all hints given, say so.
+    ///////////////////////////////
+    if (s_Hints.hasAdvisorGivenAllHints()) {
+      await this.ShowAdvisorMessage("YOU KNOW THE BASICS!", [
+        "The Advisor has given you all the hints.",
+        "You can disable the advisor in the options.",
+        "Read the manual or discover the rest of the game by yourself.",
+        "Good luck and have fun!",
+        `To REDEFINE THE KEYS : <${s_KeyBindings.get(PlayerCommand.KEYBINDING_MODE) ?? ""}>.`,
+        `To CHANGE OPTIONS    : <${s_KeyBindings.get(PlayerCommand.OPTIONS_MODE) ?? ""}>.`,
+        `To READ THE MANUAL   : <${s_KeyBindings.get(PlayerCommand.HELP_MODE) ?? ""}>.`
+      ]);
+      return;
+    }
+
+    /////////////////////////////////
+    // Show the first appliable hint.
+    /////////////////////////////////
+    for (let i = AdvisorHint._FIRST; i < AdvisorHint._COUNT; i++) {
+      if (s_Hints.isAdvisorHintGiven(i)) continue;
+      if (this.IsAdvisorHintAppliable(i)) {
+        await this.AdvisorGiveHint(i);
+        return;
+      }
+    }
+
+    // no hint.
+    await this.ShowAdvisorMessage("No hint available.", [
+      "The Advisor has now new hint for you in this situation.",
+      "You will see a popup when he has something to say.",
+      `To REDEFINE THE KEYS : <${s_KeyBindings.get(PlayerCommand.KEYBINDING_MODE) ?? ""}>.`,
+      `To CHANGE OPTIONS    : <${s_KeyBindings.get(PlayerCommand.OPTIONS_MODE) ?? ""}>.`,
+      `To READ THE MANUAL   : <${s_KeyBindings.get(PlayerCommand.HELP_MODE) ?? ""}>.`
+    ]);
   }
 
-  // C# GetAdvisorFirstAvailableHint — RogueGame.cs:10362
+  // C# GetAdvisorFirstAvailableHint — RogueGame.cs:10362 (-1 if none)
   GetAdvisorFirstAvailableHint(): number {
-    throw new Error("not yet ported: GetAdvisorFirstAvailableHint (RogueGame.cs:10362)");
+    for (let i = AdvisorHint._FIRST; i < AdvisorHint._COUNT; i++) {
+      if (s_Hints.isAdvisorHintGiven(i)) continue;
+      if (this.IsAdvisorHintAppliable(i)) return i;
+    }
+    return -1;
   }
 
   // C# AdvisorGiveHint — RogueGame.cs:10375
-  AdvisorGiveHint(hint: AdvisorHint): void {
-    void hint;
-    throw new Error("not yet ported: AdvisorGiveHint (RogueGame.cs:10375)");
+  async AdvisorGiveHint(hint: AdvisorHint): Promise<void> {
+    // Mark as given
+    s_Hints.setAdvisorHintAsGiven(hint);
+    // Save status.
+    this.SaveHints();
+    // Show
+    await this.ShowAdvisorHint(hint);
   }
 
   // C# IsAdvisorHintAppliable — RogueGame.cs:10393
   IsAdvisorHintAppliable(hint: AdvisorHint): boolean {
-    void hint;
-    throw new Error("not yet ported: IsAdvisorHintAppliable (RogueGame.cs:10393)");
+    const map = this.m_Player.location.map!;
+    const pos = this.m_Player.location.position;
+    const p = this.m_Player;
+
+    switch (hint) {
+      case AdvisorHint.ACTOR_MELEE:   // adjacent to an enemy.
+        return this.IsAdjacentToEnemy(map, pos, p);
+
+      case AdvisorHint.BARRICADE:  // barricading.
+        return map.hasAnyAdjacentInMap(pos, (pt) => {
+          const door = map.getMapObjectAt(pt.x, pt.y);
+          if (!(door instanceof DoorWindow)) return false;
+          return this.m_Rules.canActorBarricadeDoor(p, door).ok;
+        });
+
+      case AdvisorHint.BUILD_FORTIFICATION: // building fortifications.
+        return map.hasAnyAdjacentInMap(pos, (pt) => this.m_Rules.canActorBuildFortification(p, pt, false).ok);
+
+      case AdvisorHint.CELLPHONES:
+        return p.inventory != null &&
+          p.inventory.getFirstByModel(Models.items.get(ItemID.TRACKER_CELL_PHONE)) != null;
+
+      case AdvisorHint.CITY_INFORMATION:  // city information, wait a bit...
+        return map.localTime.hour >= 12;
+
+      case AdvisorHint.CORPSE:
+        return !p.model.abilities.isUndead && map.getCorpsesAt(pos) != null;
+
+      case AdvisorHint.CORPSE_EAT:
+        return p.model.abilities.isUndead && map.getCorpsesAt(pos) != null;
+
+      case AdvisorHint.DOORWINDOW_OPEN:   // can open an adj door/window.
+        return map.hasAnyAdjacentInMap(pos, (pt) => {
+          const door = map.getMapObjectAt(pt.x, pt.y);
+          if (!(door instanceof DoorWindow)) return false;
+          return this.m_Rules.isOpenableFor(p, door).ok;
+        });
+
+      case AdvisorHint.DOORWINDOW_CLOSE:   // can close an open door/window.
+        return map.hasAnyAdjacentInMap(pos, (pt) => {
+          const door = map.getMapObjectAt(pt.x, pt.y);
+          if (!(door instanceof DoorWindow)) return false;
+          return this.m_Rules.isClosableFor(p, door).ok;
+        });
+
+      case AdvisorHint.EXIT_STAIRS_LADDERS:  // using stairs, ladders.
+        return map.getExitAt(pos) != null;
+
+      case AdvisorHint.EXIT_LEAVING_DISTRICT: { // leaving the district.
+        for (const d of Direction.COMPASS) {
+          const pt = d.applyTo(pos);
+          if (map.isInBoundsPoint(pt)) continue;
+          if (map.getExitAt(pt) != null) return true;
+        }
+        return false;
+      }
+
+      case AdvisorHint.FLASHLIGHT:
+        return p.inventory != null && p.inventory.hasItemOfType(ItemLight);
+
+      case AdvisorHint.GAME_SAVE_LOAD:    // saving/loading. wait a bit...
+        return map.localTime.hour >= 7;
+
+      case AdvisorHint.GRENADE: {
+        const inv = p.inventory;
+        if (inv == null || inv.isEmpty) return false;
+        return inv.hasItemOfType(ItemGrenade);
+      }
+
+      case AdvisorHint.ITEM_GRAB_CONTAINER: // can take an item from an adjacent container.
+        return map.hasAnyAdjacentInMap(pos, (pt) => this.m_Rules.canActorGetItemFromContainer(p, pt).ok);
+
+      case AdvisorHint.ITEM_GRAB_FLOOR: {   // can take an item from the floor.
+        const invThere = map.getItemsAt(pos);
+        if (invThere == null) return false;
+        for (const it of invThere.items)
+          if (this.m_Rules.canActorGetItem(p, it).ok) return true;
+        return false;
+      }
+
+      case AdvisorHint.ITEM_EQUIP: {  // equip an item.
+        const inv = p.inventory;
+        if (inv == null || inv.isEmpty) return false;
+        for (const it of inv.items)
+          if (!it.isEquipped && this.m_Rules.canActorEquipItem(p, it).ok) return true;
+        return false;
+      }
+
+      case AdvisorHint.ITEM_UNEQUIP: {  // unequip an item.
+        const inv = p.inventory;
+        if (inv == null || inv.isEmpty) return false;
+        for (const it of inv.items)
+          if (this.m_Rules.canActorUnequipItem(p, it).ok) return true;
+        return false;
+      }
+
+      case AdvisorHint.ITEM_DROP: { // dropping an item.
+        const inv = p.inventory;
+        if (inv == null || inv.isEmpty) return false;
+        for (const it of inv.items)
+          if (this.m_Rules.canActorDropItem(p, it).ok) return true;
+        return false;
+      }
+
+      case AdvisorHint.ITEM_TYPE_BARRICADING: { // barricading material.
+        const inv = p.inventory;
+        if (inv == null || inv.isEmpty) return false;
+        return inv.hasItemOfType(ItemBarricadeMaterial);
+      }
+
+      case AdvisorHint.ITEM_USE: { // using an item.
+        const inv = p.inventory;
+        if (inv == null || inv.isEmpty) return false;
+        for (const it of inv.items)
+          if (this.m_Rules.canActorUseItem(p, it).ok) return true;
+        return false;
+      }
+
+      case AdvisorHint.KEYS_OPTIONS:  // redefining keys & options.
+        return true;
+
+      case AdvisorHint.LEADING_CAN_RECRUIT:   // can recruit follower.
+        return map.hasAnyAdjacentInMap(pos, (pt) => {
+          const other = map.getActorAt(pt.x, pt.y);
+          if (other == null) return false;
+          return this.m_Rules.canActorTakeLead(p, other).ok;
+        });
+
+      case AdvisorHint.LEADING_GIVE_ORDERS:   // give orders to followers.
+        return p.countFollowers > 0;
+
+      case AdvisorHint.LEADING_NEED_SKILL:    // could recruit...
+        return map.hasAnyAdjacentInMap(pos, (pt) => {
+          const other = map.getActorAt(pt.x, pt.y);
+          if (other == null) return false;
+          return !this.m_Rules.areEnemies(p, other);
+        });
+
+      case AdvisorHint.LEADING_SWITCH_PLACE:  // switch place.
+        return map.hasAnyAdjacentInMap(pos, (pt) => {
+          const other = map.getActorAt(pt.x, pt.y);
+          if (other == null) return false;
+          return this.m_Rules.canActorSwitchPlaceWith(p, other).ok;
+        });
+
+      case AdvisorHint.MOUSE_LOOK:    // always!
+        return map.localTime.turnCounter >= 2;  // don't spam at turn 0.
+
+      case AdvisorHint.MOVE_BASIC:    // always!
+        return true;
+
+      case AdvisorHint.MOVE_JUMP:  // can jump.
+        return !this.m_Rules.isActorTired(p) &&
+          map.hasAnyAdjacentInMap(pos, (pt) => {
+            const obj = map.getMapObjectAt(pt.x, pt.y);
+            if (obj == null) return false;
+            return obj.isJumpable;
+          });
+
+      case AdvisorHint.MOVE_RUN:   // running.
+        return map.localTime.turnCounter >= 5 && this.m_Rules.canActorRun(p).ok;  // don't spam at turn 0.
+
+      case AdvisorHint.MOVE_RESTING: // resting.
+        return this.m_Rules.isActorTired(p);
+
+      case AdvisorHint.NIGHT: // night effects, wait a bit.
+        return map.localTime.turnCounter >= 1 * WorldTime.TURNS_PER_HOUR;
+
+      case AdvisorHint.NPC_TRADE: { // trading.
+        return map.hasAnyAdjacentInMap(pos, (pt) => {
+          const other = map.getActorAt(pt.x, pt.y);
+          if (other == null) return false;
+          return this.m_Rules.canActorInitiateTradeWith(p, other).ok;
+        });
+      }
+
+      case AdvisorHint.NPC_GIVING_ITEM: { // giving items.
+        const inv = p.inventory;
+        if (inv == null || inv.isEmpty) return false;
+        return map.hasAnyAdjacentInMap(pos, (pt) => {
+          const other = map.getActorAt(pt.x, pt.y);
+          if (other == null) return false;
+          return !this.m_Rules.areEnemies(p, other);
+        });
+      }
+
+      case AdvisorHint.NPC_SHOUTING:  // shouting.
+        return map.hasAnyAdjacentInMap(pos, (pt) => {
+          const other = map.getActorAt(pt.x, pt.y);
+          if (other == null) return false;
+          return other.isSleeping && !this.m_Rules.areEnemies(p, other);
+        });
+
+      case AdvisorHint.OBJECT_BREAK: // breaking around.
+        return map.hasAnyAdjacentInMap(pos, (pt) => {
+          const obj = map.getMapObjectAt(pt.x, pt.y);
+          if (obj == null) return false;
+          return this.m_Rules.isBreakableFor(p, obj).ok;
+        });
+
+      case AdvisorHint.OBJECT_PUSH:   // pushable around.
+        return map.hasAnyAdjacentInMap(pos, (pt) => {
+          const obj = map.getMapObjectAt(pt.x, pt.y);
+          if (obj == null) return false;
+          return this.m_Rules.canActorPush(p, obj).ok;
+        });
+
+      case AdvisorHint.RAIN:  // rainy weather, wait a bit.
+        return this.m_Rules.isWeatherRain(this.m_Session.weather) &&
+          map.localTime.turnCounter >= 2 * WorldTime.TURNS_PER_HOUR;
+
+      case AdvisorHint.SPRAYS_PAINT:    // using spraypaint.
+        return p.inventory != null && p.inventory.hasItemOfType(ItemSprayPaint);
+
+      case AdvisorHint.SPRAYS_SCENT:    // using scent sprays.
+        return p.inventory != null && p.inventory.hasItemOfType(ItemSprayScent);
+
+      case AdvisorHint.STATE_HUNGRY:
+        return this.m_Rules.isActorHungry(p);
+
+      case AdvisorHint.STATE_SLEEPY:
+        return this.m_Rules.isActorSleepy(p);
+
+      case AdvisorHint.WEAPON_FIRE: { // can fire a weapon.
+        const rw = p.getEquippedWeapon();
+        if (!(rw instanceof ItemRangedWeapon)) return false;
+        return rw.ammo >= 0;
+      }
+
+      case AdvisorHint.WEAPON_RELOAD: { // reloading a weapon.
+        const rw = p.getEquippedWeapon();
+        if (!(rw instanceof ItemRangedWeapon)) return false;
+        const inv = p.inventory;
+        if (inv == null || inv.isEmpty) return false;
+        for (const it of inv.items)
+          if (it instanceof ItemAmmo && this.m_Rules.canActorUseItem(p, it).ok) return true;
+        return false;
+      }
+
+      // alpha10 new hints
+
+      case AdvisorHint.SANITY:  // sanity
+        return p.sanity < 0.80 * this.m_Rules.actorMaxSanity(p);
+
+      case AdvisorHint.INFECTION:
+        return p.infection > 0;
+
+      case AdvisorHint.TRAPS:
+        return p.inventory != null && p.inventory.hasItemOfType(ItemTrap);
+
+      default:
+        throw new RangeError("unhandled hint " + hint);
+    }
   }
 
-  // C# GetAdvisorHintText — RogueGame.cs:10705
-  GetAdvisorHintText(hint: AdvisorHint, title: string, body: string[]): { title: string; body: string[] } {
-    void hint;
-    void title;
-    void body;
-    throw new Error("not yet ported: GetAdvisorHintText (RogueGame.cs:10705)");
+  // C# GetAdvisorHintText — RogueGame.cs:10705 (C# out-params become the return object)
+  GetAdvisorHintText(hint: AdvisorHint): { title: string; body: string[] } {
+    let title: string;
+    let body: string[];
+    const key = (cmd: PlayerCommand) => `<${s_KeyBindings.get(cmd) ?? ""}>`;
+    switch (hint) {
+      case AdvisorHint.ACTOR_MELEE:
+        title = "ATTACK AN ENEMY IN MELEE";
+        body = [
+          "You are next to an enemy.",
+          "To ATTACK him, try to MOVE on him."];
+        break;
+
+      case AdvisorHint.BARRICADE:
+        title = "BARRICADING A DOOR/WINDOW";
+        body = [
+          "You can barricade an adjacent door or window.",
+          "Barricading uses material such as planks.",
+          `To BARRICADE : ${key(PlayerCommand.BARRICADE_MODE)}.`
+        ];
+        break;
+
+      case AdvisorHint.BUILD_FORTIFICATION:
+        title = "BUILDING FORTIFICATIONS";
+        body = [
+          "You can now build fortifications thanks to the carpentry skill.",
+          "You need enough barricading materials.",
+          `To BUILD SMALL FORTIFICATIONS : ${key(PlayerCommand.BUILD_SMALL_FORTIFICATION)}.`,
+          `To BUILD LARGE FORTIFICATIONS : ${key(PlayerCommand.BUILD_LARGE_FORTIFICATION)}.`
+        ];
+        break;
+
+      case AdvisorHint.CELLPHONES:
+        title = "CELLPHONES";
+        body = [
+          "You have found a cellphone.",
+          "Cellphones are useful to keep contact with your follower(s).",
+          "You and your follower(s) must have a cellphone equipped.",
+          "You can recharge cellphones at power generators."
+        ];
+        break;
+
+      case AdvisorHint.CITY_INFORMATION:
+        title = "CITY INFORMATION";
+        body = [
+          "You know the layout of your town.",
+          "You aso know the most notable locations.",
+          `To VIEW THE CITY INFORMATION : ${key(PlayerCommand.CITY_INFO)}.`
+        ];
+        break;
+
+      // alpha10 merged corpses hints
+      case AdvisorHint.CORPSE:
+        title = "CORPSES";
+        body = [
+          "You are standing on a CORPSE.",
+          "Corpses will slowly rot away but may resurrect as zombies.",
+          "You can BUTCHER a corpse as a way to prevent that.",
+          "You can also DRAG corpses to move them.",
+          "You can try to REVIVE corpses if you have the medic skill and a medikit.",
+          "If you are desperate and starving you can resort to cannibalism by EATING corpses.",
+          "To act, hover the mouse on it in the corpse list and...",
+          "TO BUTCHER the CORPSE : <RMB>",
+          "TO DRAG the CORPSE : <LMB>",
+          `TO REVIVE the CORPSE : ${key(PlayerCommand.REVIVE_CORPSE)}`,
+          `TO EAT the CORPSE : ${key(PlayerCommand.EAT_CORPSE)}`
+        ];
+        break;
+
+      case AdvisorHint.CORPSE_EAT:
+        title = "EATING CORPSES";
+        body = [
+          "You can eat a corpse to regain health.",
+          "TO EAT A CORPSE : <RMB> on it in the corpse list."
+        ];
+        break;
+
+      case AdvisorHint.DOORWINDOW_OPEN:
+        title = "OPENING A DOOR/WINDOW";
+        body = [
+          "You are next to a closed door or window.",
+          "To OPEN it, try to MOVE on it."
+        ];
+        break;
+
+      case AdvisorHint.DOORWINDOW_CLOSE:
+        title = "CLOSING A DOOR/WINDOW";
+        body = [
+          "You are next to an open door or window.",
+          `To CLOSE : ${key(PlayerCommand.CLOSE_DOOR)}.`
+        ];
+        break;
+
+      case AdvisorHint.EXIT_STAIRS_LADDERS:
+        title = "USING STAIRS & LADDERS";
+        body = [
+          "You are standing on stairs or a ladder.",
+          "You can use this exit to go on another map.",
+          `To USE THE EXIT : ${key(PlayerCommand.USE_EXIT)}.`
+        ];
+        break;
+
+      case AdvisorHint.FLASHLIGHT:
+        title = "LIGHTING";
+        body = [
+          "You have found a lighting item, such as a flashlight.",
+          "Equip the item to increase your view distance (FoV).",
+          "Standing next to someone with a light on has the same effect.",
+          "You can recharge flashlights at power generators."
+        ];
+        break;
+
+      case AdvisorHint.GAME_SAVE_LOAD:
+        title = "SAVING AND LOADING GAME";
+        body = [
+          "Now could be a good time to save your game.",
+          "You can have only one save game active.",
+          `To SAVE THE GAME : ${key(PlayerCommand.SAVE_GAME)}.`,
+          `To LOAD THE GAME : ${key(PlayerCommand.LOAD_GAME)}.`,
+          "You can also load the game from the main menu.",
+          "Saving or loading can take a bit of time, please be patient.",
+          "Or consider turning some game options to lower settings."
+        ];
+        break;
+
+      case AdvisorHint.EXIT_LEAVING_DISTRICT:
+        title = "LEAVING THE DISTRICT";
+        body = [
+          "You are next to a district EXIT.",
+          "You can leave this district by MOVING into the exit."
+        ];
+        break;
+
+      case AdvisorHint.GRENADE:
+        title = "GRENADES";
+        body = [
+          "You have found a grenade.",
+          "To THROW a GRENADE, EQUIP it and FIRE it.",
+          `To FIRE : ${key(PlayerCommand.FIRE_MODE)}.`
+        ];
+        break;
+
+      case AdvisorHint.ITEM_GRAB_CONTAINER:
+        title = "TAKING AN ITEM FROM A CONTAINER";
+        body = [
+          "You are next to a container, such as a wardrobe or a shelf.",
+          "You can TAKE the item there by MOVING into the object."
+        ];
+        break;
+
+      case AdvisorHint.ITEM_GRAB_FLOOR:
+        title = "TAKING AN ITEM FROM THE FLOOR";
+        body = [
+          "You are standing on a stack of items.",
+          "The items are listed on the right panel in the ground inventory.",
+          "To TAKE an item, move your mouse on the item on the ground inventory and <LMB>.",
+          "Shortcut : <Ctrl-item slot number>."
+        ];
+        break;
+
+      case AdvisorHint.ITEM_DROP:
+        title = "DROPPING AN ITEM";
+        body = [
+          "You can drop items from your inventory.",
+          "To DROP an item, <RMB> on it.",
+          "The item must be unequiped first."
+        ];
+        break;
+
+      case AdvisorHint.ITEM_EQUIP:
+        title = "EQUIPING AN ITEM";
+        body = [
+          "You have an equipable item in your inventory.",
+          "Typical equipable items are weapons, lights and phones.",
+          "To EQUIP the item, <LMB> on it in your inventory.",
+          "Shortcut : <Ctrl-item slot number>"
+        ];
+        break;
+
+      case AdvisorHint.ITEM_TYPE_BARRICADING:
+        title = "ITEM - BARRICADING MATERIAL";
+        body = [
+          "You have some barricading materials, such as planks.",
+          "Barricading material is used when you barricade doors/windows or build fortifications.",
+          "To build fortifications you need the CARPENTRY skill."
+        ];
+        break;
+
+      case AdvisorHint.ITEM_UNEQUIP:
+        title = "UNEQUIPING AN ITEM";
+        body = [
+          "You have equiped an item.",
+          "The item is displayed with a green background.",
+          "To UNEQUIP the item, <LMB> on it in your inventory.",
+          "Shortcut: <Ctrl-item slot number>"
+        ];
+        break;
+
+      case AdvisorHint.ITEM_USE:
+        title = "USING AN ITEM";
+        body = [
+          "You can use one of your item.",
+          "Typical usable items are food, medecine and ammunition.",
+          "To USE the item, <LMB> on it in your inventory.",
+          "Shortcut: <Ctrl-item slot number>"
+        ];
+        break;
+
+      case AdvisorHint.KEYS_OPTIONS:
+        title = "KEYS & OPTIONS";
+        body = [
+          `You can view and redefine the KEYS by pressing ${key(PlayerCommand.KEYBINDING_MODE)}.`,
+          `You can change OPTIONS by pressing ${key(PlayerCommand.OPTIONS_MODE)}.`,
+          "Some option changes will only take effect when starting a new game.",
+          "Keys and Options are saved."
+        ];
+        break;
+
+      case AdvisorHint.LEADING_CAN_RECRUIT:
+        title = "LEADING - RECRUITING";
+        body = [
+          "You can recruit a follower next to you!",
+          `To RECRUIT : ${key(PlayerCommand.LEAD_MODE)}.`
+        ];
+        break;
+
+      case AdvisorHint.LEADING_GIVE_ORDERS:
+        title = "LEADING - GIVING ORDERS";
+        body = [
+          "You can give orders and directives to your follower.",
+          "You can also fire your followers.",
+          `To GIVE ORDERS : ${key(PlayerCommand.ORDER_MODE)}.`,
+          `To FIRE YOUR FOLLOWER : ${key(PlayerCommand.LEAD_MODE)}.`
+        ];
+        break;
+
+      case AdvisorHint.LEADING_NEED_SKILL:
+        title = "LEADING - LEADERSHIP SKILL";
+        body = [
+          "You can try to recruit a follower if you have the LEADERSHIP skill.",
+          "The higher the skill, the more followers you can recruit."
+        ];
+        break;
+
+      case AdvisorHint.LEADING_SWITCH_PLACE:
+        title = "LEADING - SWITCHING PLACE";
+        body = [
+          "You can switch place with followers next to you.",
+          `To SWITCH PLACE : ${key(PlayerCommand.SWITCH_PLACE)}.`
+        ];
+        break;
+
+      case AdvisorHint.MOUSE_LOOK:
+        title = "LOOKING WITH THE MOUSE";
+        body = [
+          "You can LOOK at actors and objects on the map.",
+          "Move the MOUSE over something interesting.",
+          "You will get a detailed description of the actor or object.",
+          "This is useful to learn the game or assessing the tactical situation."
+        ];
+        break;
+
+      case AdvisorHint.MOVE_BASIC:
+        title = "MOVEMENT - DIRECTIONS";
+        body = [
+          "MOVE your character around with the movements keys.",
+          "The default keys are your NUMPAD numbers.",
+          "",
+          "7 8 9",
+          "4 - 6",
+          "1 2 3",
+          "",
+          "5 makes you WAIT one turn.",
+          "The move keys are the most important ones.",
+          "When asked for a DIRECTION, press a MOVE key.",
+          "Be sure to remember that!",
+          "...and remember to keep NumLock on!"
+        ];
+        break;
+
+      case AdvisorHint.MOVE_JUMP:
+        title = "MOVEMENT - JUMPING";
+        body = [
+          "You can JUMP on or over an obstacle next to you.",
+          "Typical jumpable objects are cars, fences and furniture.",
+          "The object is described with 'Can be jumped on'.",
+          "Some enemies can't jump and won't be able to follow you.",
+          "Jumping is tiring and spends stamina.",
+          "To jump, just MOVE on the obstacle."
+        ];
+        break;
+
+      case AdvisorHint.MOVE_RUN:
+        title = "MOVEMENT - RUNNING";
+        body = [
+          "You can RUN to move faster.",
+          "Running is tiring and spend stamina.",
+          `To TOGGLE RUNNING : ${key(PlayerCommand.RUN_TOGGLE)}.`
+        ];
+        break;
+
+      case AdvisorHint.MOVE_RESTING:
+        title = "MOVEMENT - RESTING";
+        body = [
+          "You are TIRED because you lost too much STAMINA.",
+          "Being tired is bad for you!",
+          "You move slowly.",
+          "You can't do tiring activities such as running, fighting and jumping.",
+          "You always recover a bit of stamina each turn.",
+          "But you can REST to recover stamina faster.",
+          `To REST/WAIT : ${key(PlayerCommand.WAIT_OR_SELF)}.`
+        ];
+        break;
+
+      case AdvisorHint.NIGHT:
+        title = "NIGHT TIME";
+        body = [
+          "It is night. Night time is penalizing for livings.",
+          "They tire faster (stamina and sleep) and don't see very far.",
+          "Undeads are not penalized by night at all."
+        ];
+        break;
+
+      case AdvisorHint.NPC_GIVING_ITEM:
+        title = "GIVING ITEMS";
+        body = [
+          "You can GIVE ITEMS to other actors.",
+          `To GIVE AN ITEM : move the mouse over your item and press ${key(PlayerCommand.GIVE_ITEM)}.`
+        ];
+        break;
+
+      case AdvisorHint.NPC_SHOUTING:
+        title = "SHOUTING";
+        body = [
+          "Someone is sleeping near you.",
+          "You can SHOUT to try to wake him or her up.",
+          "Other actors can also shout to wake their friends up when they see danger.",
+          `To SHOUT : ${key(PlayerCommand.SHOUT)}.`
+        ];
+        break;
+
+      case AdvisorHint.NPC_TRADE:
+        title = "TRADING";
+        body = [
+          "You can TRADE with an actor next to you.",
+          "Actor that can trade with you have a $ icon on the map.",
+          "Trading means exhanging items.",
+          "To ask for a TRADE offer, just try to MOVE into the actor and accept or refuse the offer.",
+          "You can also initiate a more detailled trade negociation.",
+          `To NEGOCIATE A TRADE : press ${key(PlayerCommand.NEGOCIATE_TRADE)} and select an npc with the directions.`
+        ];
+        break;
+
+      case AdvisorHint.OBJECT_BREAK:
+        title = "BREAKING OBJECTS";
+        body = [
+          "You can try to BREAK an object around you.",
+          "Typical breakable objects are furnitures, doors and windows.",
+          `To BREAK : ${key(PlayerCommand.BREAK_MODE)}.`
+        ];
+        break;
+
+      // alpha10 also pulling and mention shoving actors
+      case AdvisorHint.OBJECT_PUSH:
+        title = "PUSHING/PULLING OBJECTS";
+        body = [
+          "You can PUSH/PULL an OBJECT around you.",
+          "Only MOVABLE objects can be pushed/pulled.",
+          "Movable objects will be described as 'Can be moved'",
+          "You can also PUSH/PULL ACTORS around you.",
+          `To PUSH : ${key(PlayerCommand.PUSH_MODE)}.`,
+          `To PULL : ${key(PlayerCommand.PULL_MODE)}.`
+        ];
+        break;
+
+      case AdvisorHint.RAIN:
+        title = "RAIN";
+        body = [
+          "It is raining. Rain has various effects.",
+          "Livings vision is reduced.",
+          "Firearms have more chance to jam.",
+          "Scents evaporate faster."
+        ];
+        break;
+
+      case AdvisorHint.SPRAYS_PAINT:
+        title = "SPRAYS - SPRAYPAINT";
+        body = [
+          "You have found a can of spraypaint.",
+          "You can tag a symbol on walls and floors.",
+          "This is useful to mark some places and locations.",
+          `To SPRAY : equip the spray and press ${key(PlayerCommand.USE_SPRAY)}.`
+        ];
+        break;
+
+      case AdvisorHint.SPRAYS_SCENT:
+        title = "SPRAYS - SCENT SPRAY";
+        body = [
+          "You have found a scent spray.",
+          "You can spray some perfurme on yourself or another adjacent actor.",
+          "This is useful to confuse the undeads because they hunt using their smell.",
+          `To SPRAY : equip the spray and press ${key(PlayerCommand.USE_SPRAY)}.`
+        ];
+        break;
+
+      case AdvisorHint.STATE_HUNGRY:
+        title = "STATE - HUNGRY";
+        body = [
+          "You are HUNGRY.",
+          "If you become starved you can die!",
+          "You should EAT soon.",
+          "To eat, just USE a food item, such as groceries.",
+          "Read the manual for more explanations on hunger."
+        ];
+        break;
+
+      case AdvisorHint.STATE_SLEEPY:
+        title = "STATE - SLEEPY";
+        body = [
+          "You are SLEEPY.",
+          "This is bad for you!",
+          "You have a number of penalties.",
+          "You should find a place to SLEEP.",
+          "Couches are good places to sleep.",
+          `To SLEEP : ${key(PlayerCommand.SLEEP)}.`,
+          "Read the manual for more explanations on sleep."
+        ];
+        break;
+
+      case AdvisorHint.WEAPON_FIRE:
+        title = "FIRING A WEAPON";
+        body = [
+          "You can fire your equiped ranged weapon.",
+          "You need to have valid targets.",
+          "To fire on a target you need ammunitions and a clear line of fine.",
+          "The target must be within the weapon range.",
+          "The closer the target is, the easier it is to hit and it does slightly more damage.",
+          `To FIRE : ${key(PlayerCommand.FIRE_MODE)}.`,
+          "When firing you can switch to rapid fire mode : you will shoot twice but at reduced accuracy.",
+          "Remember you need to have visible enemies to fire at.",
+          "Read the manual for more explanation about firing and ranged weapons."
+        ];
+        break;
+
+      case AdvisorHint.WEAPON_RELOAD:
+        title = "RELOADING A WEAPON";
+        body = [
+          "You can reload your equiped ranged weapon.",
+          "To RELOAD, just USE a compatible ammo item."
+        ];
+        break;
+
+      // alpha10 new hints
+
+      case AdvisorHint.SANITY:  // sanity
+        title = "SANITY";
+        body = [
+          "You should care about your SANITY.",
+          "If it gets too low, you can go insane.",
+          "Living in this horrible world and seing horrible things will lower your sanity.",
+          "You can recover sanity by :",
+          "- Talking to people.",
+          "- Having followers you trust.",
+          "- Killing undeads.",
+          "- Using entertainment items.",
+          "- Taking pills."
+        ];
+        break;
+
+      case AdvisorHint.INFECTION:
+        title = "INFECTION";
+        body = [
+          "You are INFECTED!",
+          "Most undeads bites are infectious.",
+          "A low infection value will make you sick.",
+          "A full infection value is death.",
+          "Infection only worsen when you are biten.",
+          "Cure the infection with appropriate meds."
+        ];
+        break;
+
+      case AdvisorHint.TRAPS:
+        title = "TRAPS";
+        body = [
+          "You are carrying TRAPS.",
+          "Traps are a good way to protect places.",
+          "Drop activated traps on tiles.",
+          "Some traps are activated by dropping them.",
+          "Other traps need to be activated before being dropped.",
+          "You are always safe from your own traps.",
+          "Traps layed by your followers are also safe."
+        ];
+        break;
+
+      default:
+        throw new RangeError("unhandled hint " + hint);
+    }
+    return { title, body };
   }
 
   // C# ShowAdvisorHint — RogueGame.cs:11201
-  ShowAdvisorHint(hint: AdvisorHint): void {
-    void hint;
-    throw new Error("not yet ported: ShowAdvisorHint (RogueGame.cs:11201)");
+  async ShowAdvisorHint(hint: AdvisorHint): Promise<void> {
+    const { title, body } = this.GetAdvisorHintText(hint);
+    await this.ShowAdvisorMessage(title, body);
   }
 
   // C# ShowAdvisorMessage — RogueGame.cs:11210
-  ShowAdvisorMessage(title: string, lines: string[]): void {
-    void title;
-    void lines;
-    throw new Error("not yet ported: ShowAdvisorMessage (RogueGame.cs:11210)");
+  // C# blocks on AddMessagePressEnter; async here. The trailing RedrawPlayScreen
+  // is a slice-8 stub (throws) — overlays are stored, drawing comes later.
+  async ShowAdvisorMessage(title: string, lines: string[]): Promise<void> {
+    // clear.
+    this.ClearMessages();
+    this.ClearOverlays();
+
+    // tell.
+    const text: string[] = new Array(lines.length + 2);
+    text[0] = "HINT : " + title;
+    for (let i = 0; i < lines.length; i++) text[i + 1] = lines[i];
+    text[lines.length + 1] = `(hint ${s_Hints.countAdvisorHintsGiven()}/${AdvisorHint._COUNT})`;
+    this.AddOverlay(new OverlayPopup(text, Color.White, Color.White, Color.Black, new Point(0, 0)));
+
+    // wait.
+    this.ClearMessages();
+    this.AddMessage(new Message("You can disable the advisor in the options screen.", this.m_Session.worldTime.turnCounter, Color.White));
+    this.AddMessage(new Message(`To show the options screen : <${s_KeyBindings.get(PlayerCommand.OPTIONS_MODE) ?? ""}>.`, this.m_Session.worldTime.turnCounter, Color.White));
+    await this.AddMessagePressEnter();
+
+    // clear.
+    this.ClearMessages();
+    this.ClearOverlays();
+    this.RedrawPlayScreen();
   }
 
   // C# WaitKeyOrMouse — RogueGame.cs:11237
-  WaitKeyOrMouse(key: GameKeyEvent, mousePos: Point, mouseButtons: MouseButton | null): { key: GameKeyEvent; mousePos: Point; mouseButtons: MouseButton | null } {
-    void key;
-    void mousePos;
-    void mouseButtons;
-    throw new Error("not yet ported: WaitKeyOrMouse (RogueGame.cs:11237)");
+  // C# busy-loops on sync peeks; the browser must yield to the event loop so
+  // DOM input can arrive, so this is async here. C# out-params become the
+  // returned object (key is null when the mouse moved/changed buttons).
+  async WaitKeyOrMouse(): Promise<{ key: GameKeyEvent | null; mousePos: Point; mouseButtons: MouseButton | null }> {
+    this.m_UI.UI_PeekKey(); // consume keys to avoid repeats
+    const prevMousePos = this.m_UI.UI_GetMousePosition();
+    let mousePos = new Point(-1, -1);
+    let mouseButtons: MouseButton | null = null;
+    for (;;) {
+      const inKey = this.m_UI.UI_PeekKey();
+      if (inKey != null) return { key: inKey, mousePos, mouseButtons };
+      mousePos = this.m_UI.UI_GetMousePosition();
+      mouseButtons = this.m_UI.UI_PeekMouseButtons();
+      if (!mousePos.equals(prevMousePos) || mouseButtons != null) return { key: null, mousePos, mouseButtons };
+      await new Promise<void>((r) => setTimeout(r, 0));
+    }
   }
 
   // C# WaitDirectionOrCancel — RogueGame.cs:11270
-  WaitDirectionOrCancel(): Direction {
-    throw new Error("not yet ported: WaitDirectionOrCancel (RogueGame.cs:11270)");
+  // C# blocks on UI_WaitKey; async here (see WaitEnter). Returns null on Exit/Cancel.
+  async WaitDirectionOrCancel(): Promise<Direction | null> {
+    for (;;) {
+      const inKey = await this.m_UI.UI_WaitKey();
+      if (inKey.key === "Escape") return null;
+      const command = InputTranslator.keyToCommand(
+        RogueGame.KeyBindings(),
+        inKey.key,
+        inKey.ctrl,
+        inKey.alt,
+        inKey.shift
+      );
+      const dir = this.CommandToDirection(command);
+      if (dir != null) return dir;
+    }
   }
 
   // C# WaitEnter — RogueGame.cs:11284
@@ -3979,161 +4817,951 @@ export class RogueGame {
     }
   }
 
-  // C# DescribeStuffAt — RogueGame.cs:11372
-  DescribeStuffAt(map: Map, mapPos: Point): string[] {
-    void map;
-    void mapPos;
-    throw new Error("not yet ported: DescribeStuffAt (RogueGame.cs:11372)");
+  // C# DescribeStuffAt — RogueGame.cs:11372 (null when nothing to describe)
+  DescribeStuffAt(map: Map, mapPos: Point): string[] | null {
+    // Actor?
+    const actor = map.getActorAtPoint(mapPos);
+    if (actor != null) return this.DescribeActor(actor);
+
+    // Object/Items?
+    const obj = map.getMapObjectAtPoint(mapPos);
+    if (obj != null) return this.DescribeMapObject(obj, map, mapPos);
+
+    // Items?
+    const inv = map.getItemsAt(mapPos);
+    if (inv != null && !inv.isEmpty) return this.DescribeInventory(inv);
+
+    // Corpses?
+    const corpses = map.getCorpsesAt(mapPos);
+    if (corpses != null) return this.DescribeCorpses(corpses);
+
+    // Nothing to describe!
+    return null;
   }
 
   // C# DescribeActor — RogueGame.cs:11406
   DescribeActor(actor: Actor): string[] {
-    void actor;
-    throw new Error("not yet ported: DescribeActor (RogueGame.cs:11406)");
+    const lines: string[] = [];
+    const rules = this.m_Rules;
+    const p = this.m_Player;
+
+    // 1. Name-Faction(Gang), Model, SpawnTime, Order & Leader(trust if player), (Murder counter if player law enforcer);
+    //    Enemy & Self-Defence.
+    if (actor.faction != null) {
+      if (actor.isInAGang)
+        lines.push(`${this.Capitalize(actor.name)}, ${actor.faction.memberName}-${GameGangs.NAMES[actor.gangId]}.`);
+      else
+        lines.push(`${this.Capitalize(actor.name)}, ${actor.faction.memberName}.`);
+    } else
+      lines.push(`${this.Capitalize(actor.name)}.`);
+    lines.push(`${this.Capitalize(actor.model.name)}.`);
+
+    lines.push(`${actor.model.abilities.isUndead ? "Undead" : "Staying alive"} since ${new WorldTime(actor.spawnTime).toString()}.`);
+    const ai = actor.controller instanceof AIController ? actor.controller : null;
+    if (ai != null && ai.order != null) {
+      lines.push(`Order : ${ai.order.toString()}.`);
+    }
+    if (actor.hasLeader) {
+      if (actor.leader!.isPlayer) {
+        if (actor.trustInLeader >= Rules.TRUST_BOND_THRESHOLD)
+          lines.push("Trust : BOND.");
+        else if (actor.trustInLeader >= Rules.TRUST_MAX)
+          lines.push("Trust : MAX.");
+        else
+          lines.push(`Trust : ${actor.trustInLeader}/T:${Rules.TRUST_TRUSTING_THRESHOLD}-B:${Rules.TRUST_BOND_THRESHOLD}.`);
+        if (ai instanceof OrderableAI) {
+          if (ai.dontFollowLeader) lines.push("Ordered to not follow you.");
+        }
+        // gauges.
+        lines.push(`Foo : ${actor.foodPoints} ${this.FoodToHoursUntilHungry(actor.foodPoints)}h`);
+        lines.push(`Slp : ${actor.sleepPoints} ${rules.sleepToHoursUntilSleepy(actor.sleepPoints, actor.location.map!.localTime.isNight)}h`);
+        lines.push(`San : ${actor.sanity} ${rules.sanityToHoursUntilUnstable(actor)}h`);
+        lines.push(`Inf : ${actor.infection} ${rules.actorInfectionPercent(actor)}%`);
+      } else
+        lines.push(`Leader : ${this.Capitalize(actor.leader!.name)}.`);
+    }
+
+    // show murder counter if trusting follower or player is a law enforcer.
+    if (actor.murdersCounter > 0 && p.model.abilities.isLawEnforcer) {
+      lines.push("WANTED FOR MURDER!");
+      lines.push(`${actor.murdersCounter} murder${actor.murdersCounter > 1 ? "s" : ""}!`);
+    } else if (actor.hasLeader && actor.leader!.isPlayer && rules.isActorTrustingLeader(actor)) {
+      if (actor.murdersCounter > 0)
+        lines.push(`* Confess ${actor.murdersCounter} murder${actor.murdersCounter > 1 ? "s" : ""}! *`);
+      else
+        lines.push("Has committed no murders.");
+    }
+    if (actor.isAggressorOf(p)) lines.push("Aggressed you.");
+    if (p.isSelfDefenceFrom(actor)) lines.push(`You can kill ${this.HimOrHer(actor)} in self-defence.`);
+    if (p.isAggressorOf(actor)) lines.push(`You aggressed ${this.HimOrHer(actor)}.`);
+    if (actor.isSelfDefenceFrom(p)) lines.push("Killing you would be self-defence.");
+    if (!p.faction.isEnemyOf(actor.faction) && rules.areGroupEnemies(p, actor)) // alpha10
+      lines.push("You are enemies through groups.");
+
+    lines.push("");
+
+    // 2. Activity & Hunger/Sleep/Sanity
+    const activityLine = this.DescribeActorActivity(actor);
+    if (activityLine != null) lines.push(activityLine);
+    else lines.push(" ");  // blank activity line
+    if (actor.model.abilities.hasToSleep) {
+      if (rules.isActorExhausted(actor)) lines.push("Exhausted!");
+      else if (rules.isActorSleepy(actor)) lines.push("Sleepy.");
+    }
+    if (actor.model.abilities.hasToEat) {
+      if (rules.isActorStarving(actor)) lines.push("Starving!");
+      else if (rules.isActorHungry(actor)) lines.push("Hungry.");
+    } else if (actor.model.abilities.isRotting) {
+      if (rules.isRottingActorStarving(actor)) lines.push("Starving!");
+      else if (rules.isRottingActorHungry(actor)) lines.push("Hungry.");
+    }
+    if (actor.model.abilities.hasSanity) {
+      if (rules.isActorInsane(actor)) lines.push("Insane!");
+      else if (rules.isActorDisturbed(actor)) lines.push("Disturbed.");
+    }
+
+    // 3. Speed
+    lines.push((rules.actorSpeed(actor) / Rules.BASE_SPEED).toFixed(2));
+
+    // 4. HP & STA.
+    let hpLine: string;
+    const maxHP = rules.actorMaxHPs(actor);
+    if (actor.hitPoints !== maxHP)
+      hpLine = `HP  : ${String(actor.hitPoints).padStart(2, "0")}/${String(maxHP).padStart(2, "0")}`;
+    else
+      hpLine = `HP  : ${String(actor.hitPoints).padStart(2, "0")} MAX`;
+    if (actor.model.abilities.canTire) {
+      const maxSTA = rules.actorMaxSTA(actor);
+      if (actor.staminaPoints !== maxSTA)
+        hpLine += `   STA : ${actor.staminaPoints}/${maxSTA}`;
+      else
+        hpLine += `   STA : ${actor.staminaPoints} MAX`;
+    }
+    lines.push(hpLine);
+
+    // 5. Attack, Dmg, Defence.
+    const attack = rules.actorMeleeAttack(actor, actor.currentMeleeAttack, null);
+    lines.push(`Atk : ${String(attack.hitValue).padStart(2, "0")} Dmg : ${String(attack.damageValue).padStart(2, "0")}`);
+    const defence = rules.actorDefence(actor, actor.currentDefence);
+    lines.push(`Def : ${String(defence.value).padStart(2, "0")}`);
+    lines.push(`Arm : ${defence.protectionHit}/${defence.protectionShot}`);
+    lines.push(" ");
+
+    // 6. Flavor
+    lines.push(actor.model.flavorDescription);
+    lines.push(" ");
+
+    // 7. Skills
+    const st = actor.sheet.skillTable;
+    if (st != null && st.countSkills > 0) {
+      for (const sk of st.skills!)
+        lines.push(`${sk.level}-${Skills.name(sk.id)}`);
+      lines.push(" ");
+    }
+
+    // alpha10
+    // 8. Unusual abilities
+    // unusual abilities for undeads
+    if (actor.model.abilities.isUndead) {
+      // fov
+      lines.push(`- FOV : ${actor.model.startingSheet.baseViewRange}.`);
+
+      // smell rating
+      const smell = Math.floor(100 * rules.actorSmell(actor));  // applies z-tracker skill
+      lines.push(
+        smell === 0 ? "- Has no sense of smell." :
+        smell < 50 ? "- Has poor sense of smell." :
+        smell < 100 ? "- Has good sense of smell." :
+        "- Has excellent sense of smell.");
+
+      // grab?
+      if (st != null && st.getSkillLevel(SkillID.Z_GRAB) > 0)
+        lines.push("- Z-Grab : this undead can grab its victims.");
+
+      if (actor.model.abilities.isUndeadMaster) lines.push("- Other undeads follow this undead tracks.");
+      else if (smell > 0) lines.push("- This undead will follow zombie masters tracks.");
+      if (actor.model.abilities.isIntelligent) lines.push("- This undead is intelligent.");
+      if (actor.model.abilities.canDisarm) lines.push("- This undead can disarm.");
+      if (actor.model.abilities.canJump) {
+        if (actor.model.abilities.canJumpStumble) lines.push("- This undead can jump but may stumble.");
+        else lines.push("- This undead can jump.");
+      }
+      if (rules.hasActorPushAbility(actor)) lines.push("- This undead can push.");
+      if (actor.model.abilities.zombieAIExplore) lines.push("- This undead will explore.");
+
+      // things some of them cannot do
+      if (!actor.model.abilities.isRotting) lines.push("- This undead will not rot.");
+      if (!actor.model.abilities.canBashDoors) lines.push("- This undead cannot bash doors.");
+      if (!actor.model.abilities.canBreakObjects) lines.push("- This undead cannot break objects.");
+      if (!actor.model.abilities.canZombifyKilled) lines.push("- This undead cannot infect livings.");
+      if (!actor.model.abilities.aiCanUseAIExits) lines.push("- This undead live in this map.");
+    }
+    // misc unusual abilities
+    if (actor.model.abilities.isLawEnforcer) lines.push("- Is a law enforcer.");
+    if (actor.model.abilities.isSmall) lines.push("- Is small and can sneak through things.");
+
+    // 9. Inventory.
+    if (actor.inventory != null && !actor.inventory.isEmpty) {
+      lines.push(`Items ${actor.inventory.countItems}/${rules.actorMaxInv(actor)} : `);
+      lines.push(...this.DescribeInventory(actor.inventory));
+    }
+
+    // done.
+    return lines;
   }
 
-  // C# DescribeActorActivity — RogueGame.cs:11610
-  DescribeActorActivity(actor: Actor): string {
-    void actor;
-    throw new Error("not yet ported: DescribeActorActivity (RogueGame.cs:11610)");
+  // C# DescribeActorActivity — RogueGame.cs:11610 (null for player/idle)
+  DescribeActorActivity(actor: Actor): string | null {
+    if (actor.isPlayer) return null;
+
+    switch (actor.activity) {
+      case Activity.IDLE:
+        return null;
+
+      case Activity.CHASING:
+        if (actor.targetActor == null) return "Chasing!";
+        return `Chasing ${actor.targetActor.name}!`;
+
+      case Activity.FIGHTING:
+        if (actor.targetActor == null) return "Fighting!";
+        return `Fighting ${actor.targetActor.name}!`;
+
+      case Activity.TRACKING:
+        return "Tracking!";
+
+      case Activity.FLEEING:
+        return "Fleeing!";
+
+      case Activity.FLEEING_FROM_EXPLOSIVE:
+        return "Fleeing from explosives!";
+
+      case Activity.FOLLOWING:
+        if (actor.targetActor == null) return "Following.";
+        // alpha10
+        if (actor.leader === actor.targetActor) return `Following ${this.HisOrHer(actor)} leader.`;
+        return `Following ${actor.targetActor.name}.`;
+
+      case Activity.FOLLOWING_ORDER:
+        return "Following orders.";
+
+      case Activity.SLEEPING:
+        return "Sleeping.";
+
+      default:
+        throw new TypeError("unhandled activity " + actor.activity);
+    }
   }
 
   // C# DescribePlayerFollowerStatus — RogueGame.cs:11663
   DescribePlayerFollowerStatus(follower: Actor): string {
-    void follower;
-    throw new Error("not yet ported: DescribePlayerFollowerStatus (RogueGame.cs:11663)");
+    const foAI = follower.controller;
+    if (!(foAI instanceof BaseAI)) throw new TypeError("DescribePlayerFollowerStatus: controller is not BaseAI");
+    let desc: string;
+    if (foAI.order == null) desc = "(no orders)";
+    else desc = foAI.order.toString();
+    desc += `(trust:${follower.trustInLeader})`;
+    return desc;
   }
 
   // C# DescribeMapObject — RogueGame.cs:11677
   DescribeMapObject(obj: MapObject, map: Map, mapPos: Point): string[] {
-    void obj;
-    void map;
-    void mapPos;
-    throw new Error("not yet ported: DescribeMapObject (RogueGame.cs:11677)");
+    const lines: string[] = [];
+
+    // 1. Name
+    lines.push(`${obj.aName}.`);
+
+    // 2. Special flags.
+    if (obj.isJumpable) lines.push("Can be jumped on.");
+    if (obj.isCouch) lines.push("Is a couch.");
+    if (obj.givesWood) lines.push("Can be dismantled for wood.");
+    if (obj.isMovable) lines.push("Can be moved.");
+    if (obj.standOnFovBonus) lines.push("Increases view range.");
+
+    // 3. Common Status: Break, Fire.
+    //    Concrete MapObjects status.
+    let status = "";
+    if (obj.breakState === MapObjectBreak.BROKEN) status += "Broken! ";
+    if (obj.fireState === MapObjectFire.ONFIRE) status += "On fire! ";
+    else if (obj.fireState === MapObjectFire.ASHES) status += "Burnt to ashes! ";
+    lines.push(status);
+    if (obj instanceof PowerGenerator) {
+      if (obj.isOn) lines.push("Currently ON.");
+      else lines.push("Currently OFF.");
+      const powerRatio = this.m_Rules.computeMapPowerRatio(obj.location.map!);
+      lines.push(`The power gauge reads ${Math.floor(100 * powerRatio)}%.`);
+    } else if (obj instanceof Board) {
+      lines.push("The text reads : ");
+      lines.push(...obj.text);
+    }
+
+    // 4. HitPoints & Barricade
+    if (obj.maxHitPoints > 0) {
+      if (obj.hitPoints < obj.maxHitPoints)
+        lines.push(`HP        : ${obj.hitPoints}/${obj.maxHitPoints}`);
+      else
+        lines.push(`HP        : ${obj.hitPoints} MAX`);
+
+      if (obj instanceof DoorWindow) {
+        if (obj.barricadePoints < Rules.BARRICADING_MAX)
+          lines.push(`Barricades: ${obj.barricadePoints}/${Rules.BARRICADING_MAX}`);
+        else
+          lines.push(`Barricades: ${obj.barricadePoints} MAX`);
+      }
+    }
+
+    // 5. Weight?
+    if (obj.weight > 0) {
+      lines.push(`Weight    : ${obj.weight}`);
+    }
+
+    // 6. Items there
+    const inv = map.getItemsAt(mapPos);
+    if (inv != null && !inv.isEmpty) {
+      lines.push(...this.DescribeInventory(inv));
+    }
+
+    return lines;
   }
 
   // C# DescribeInventory — RogueGame.cs:11756
   DescribeInventory(inv: Inventory): string[] {
-    void inv;
-    throw new Error("not yet ported: DescribeInventory (RogueGame.cs:11756)");
+    const lines: string[] = [];
+
+    for (const it of inv.items) {
+      if (it.isEquipped)
+        lines.push(`- ${this.DescribeItemShort(it)} (equipped)`);
+      else
+        lines.push(`- ${this.DescribeItemShort(it)}`);
+    }
+
+    return lines;
   }
 
   // C# DescribeCorpses — RogueGame.cs:11771
-  DescribeCorpses(corpses: Corpse[]): string[] {
-    void corpses;
-    throw new Error("not yet ported: DescribeCorpses (RogueGame.cs:11771)");
+  DescribeCorpses(corpses: readonly Corpse[]): string[] {
+    const lines: string[] = [];
+
+    if (corpses.length > 1)
+      lines.push("There are corpses there...");
+    else
+      lines.push("There is a corpse here.");
+    lines.push(" ");
+
+    for (const c of corpses) {
+      lines.push(`- Corpse of ${c.deadGuy.name}.`);
+    }
+    return lines;
   }
 
   // C# DescribeCorpseLong — RogueGame.cs:11788
   DescribeCorpseLong(c: Corpse, isInPlayerTile: boolean): string[] {
-    void c;
-    void isInPlayerTile;
-    throw new Error("not yet ported: DescribeCorpseLong (RogueGame.cs:11788)");
+    const lines: string[] = [];
+
+    // 1. Corpse of XXX
+    lines.push(`Corpse of ${c.deadGuy.name}.`);
+    lines.push(" ");
+
+    // 2. Necrology infos.
+    const necrology = this.m_Player.sheet.skillTable.getSkillLevel(SkillID.NECROLOGY);
+
+    let deadSince = "???";
+    if (necrology > 0)
+      deadSince = WorldTime.makeTimeDurationMessage(this.m_Session.worldTime.turnCounter - c.turn);
+    lines.push(`Death     : ${deadSince}.`);
+
+    let infectionEst = "???";
+    if (necrology >= Rules.SKILL_NECROLOGY_LEVEL_FOR_INFECTION) {
+      const infectionP = this.m_Rules.actorInfectionPercent(c.deadGuy);
+      if (infectionP === 0) infectionEst = "0/7 - none";
+      else if (infectionP < 5) infectionEst = "1/7 - traces";
+      else if (infectionP < 15) infectionEst = "2/7 - minor";
+      else if (infectionP < 30) infectionEst = "3/7 - low";
+      else if (infectionP < 55) infectionEst = "4/7 - average";
+      else if (infectionP < 70) infectionEst = "5/7 - important";
+      else if (infectionP < 99) infectionEst = "6/7 - great";
+      else infectionEst = "7/7 - total";
+    }
+    lines.push(`Infection : ${infectionEst}.`);
+
+    let riseEst = "???";
+    if (necrology >= Rules.SKILL_NECROLOGY_LEVEL_FOR_RISE) {
+      const riseP = 2 * this.m_Rules.corpseZombifyChance(c, c.deadGuy.location.map!.localTime, false);
+      if (riseP < 5) riseEst = "0/6 - extremely unlikely";
+      else if (riseP < 20) riseEst = "1/6 - unlikely";
+      else if (riseP < 40) riseEst = "2/6 - possible";
+      else if (riseP < 60) riseEst = "3/6 - likely";
+      else if (riseP < 80) riseEst = "4/6 - very likely";
+      else if (riseP < 99) riseEst = "5/6 - most likely";
+      else riseEst = "6/6 - certain";
+    }
+    lines.push(`Rise      : ${riseEst}.`);
+    lines.push(" ");
+
+    // 3. Decay
+    const rotLevel = this.m_Rules.corpseRotLevel(c);
+    switch (rotLevel) {
+      case 5: lines.push("The corpse is about to crumble to dust."); break;
+      case 4: lines.push("The corpse is almost entirely rotten."); break;
+      case 3: lines.push("The corpse is badly damaged."); break;
+      case 2: lines.push("The corpse is damaged."); break;
+      case 1: lines.push("The corpse is bruised and smells."); break;
+      case 0: lines.push("The corpse looks fresh."); break;
+      default: throw new RangeError("unhandled rot level");
+    }
+
+    // 4. Medic info.
+    let reviveEst = "???";
+    const medic = this.m_Player.sheet.skillTable.getSkillLevel(SkillID.MEDIC);
+    if (medic >= Rules.SKILL_MEDIC_LEVEL_FOR_REVIVE_EST) {
+      const reviveP = this.m_Rules.corpseReviveChance(this.m_Player, c);
+      if (reviveP === 0) reviveEst = "impossible";
+      else if (reviveP < 5) reviveEst = "0/6 - extremely unlikely";
+      else if (reviveP < 20) reviveEst = "1/6 - unlikely";
+      else if (reviveP < 40) reviveEst = "2/6 - possible";
+      else if (reviveP < 60) reviveEst = "3/6 - likely";
+      else if (reviveP < 80) reviveEst = "4/6 - very likely";
+      else if (reviveP < 99) reviveEst = "5/6 - most likely";
+      else reviveEst = "6/6 - certain";
+    }
+    lines.push(`Revive    : ${reviveEst}.`);
+
+    // 5. Special keys.
+    if (isInPlayerTile) {
+      lines.push(" ");
+      lines.push("----");
+      lines.push("LBM to start/stop dragging.");
+      lines.push(`RBM to ${this.m_Player.model.abilities.isUndead ? "eat" : "butcher"}.`);
+      if (!this.m_Player.model.abilities.isUndead) {
+        lines.push(`to eat: <${s_KeyBindings.get(PlayerCommand.EAT_CORPSE) ?? ""}>`);
+        lines.push(`to revive : <${s_KeyBindings.get(PlayerCommand.REVIVE_CORPSE) ?? ""}>`);
+      }
+    }
+
+    return lines;
   }
 
   // C# DescribeItemShort — RogueGame.cs:11881
   DescribeItemShort(it: Item): string {
-    void it;
-    throw new Error("not yet ported: DescribeItemShort (RogueGame.cs:11881)");
+    let name = it.quantity > 1 ? it.model.pluralName : it.aName;
+
+    if (it instanceof ItemFood) {
+      if (this.m_Rules.isFoodSpoiled(it, this.m_Session.worldTime.turnCounter))
+        name += " (spoiled)";
+      else if (this.m_Rules.isFoodExpired(it, this.m_Session.worldTime.turnCounter))
+        name += " (expired)";
+    } else if (it instanceof ItemRangedWeapon) {
+      name += ` (${it.ammo}/${(it.model as ItemRangedWeaponModel).maxAmmo})`;
+    } else if (it instanceof ItemTrap) {
+      if (it.isActivated) name += "(activated)";
+      if (it.isTriggered) name += "(triggered)";
+      if (it.owner === this.m_Player) name += "(yours)";  // alpha10
+    }
+
+    if (it.quantity > 1) return `${it.quantity} ${name}`;
+    else return name;
   }
 
   // C# DescribeItemLong — RogueGame.cs:11912
   DescribeItemLong(it: Item, isPlayerInventory: boolean, iSlot: number): string[] {
-    void it;
-    void isPlayerInventory;
-    void iSlot;
-    throw new Error("not yet ported: DescribeItemLong (RogueGame.cs:11912)");
+    const lines: string[] = [];
+    let isDefaultUse = true; // alpha10
+    const key = (cmd: PlayerCommand) => s_KeyBindings.get(cmd) ?? "";
+
+    // 1. Name & stacking.
+    if (it.model.isStackable) {
+      lines.push(`${this.DescribeItemShort(it)} ${it.quantity}/${it.model.stackingLimit}`);
+    } else
+      lines.push(this.DescribeItemShort(it));
+
+    // 2. Special flags.
+    // unbreakable?
+    if (it.model.isUnbreakable) {
+      lines.push("Unbreakable.");
+    }
+
+    // 3. Item specific stuff...
+    let inInvAdditionalDesc: string | null = null;
+    if (it instanceof ItemWeapon) {
+      lines.push(...this.DescribeItemWeapon(it));
+      if (it instanceof ItemRangedWeapon) {
+        isDefaultUse = false;
+        inInvAdditionalDesc = `to fire : <${key(PlayerCommand.FIRE_MODE)}>`;
+      }
+    } else if (it instanceof ItemFood) {
+      lines.push(...this.DescribeItemFood(it));
+    } else if (it instanceof ItemMedicine) {
+      lines.push(...this.DescribeItemMedicine(it));
+    } else if (it instanceof ItemBarricadeMaterial) {
+      lines.push(...this.DescribeItemBarricadeMaterial(it));
+      isDefaultUse = false;
+      inInvAdditionalDesc = `to build : <${key(PlayerCommand.BARRICADE_MODE)}>/<${key(PlayerCommand.BUILD_SMALL_FORTIFICATION)}>/<${key(PlayerCommand.BUILD_LARGE_FORTIFICATION)}>`;
+    } else if (it instanceof ItemBodyArmor) {
+      lines.push(...this.DescribeItemBodyArmor(it));
+    } else if (it instanceof ItemSprayPaint) {
+      lines.push(...this.DescribeItemSprayPaint(it));
+      isDefaultUse = false;
+      inInvAdditionalDesc = `to spray : <${key(PlayerCommand.USE_SPRAY)}>`;
+    } else if (it instanceof ItemSprayScent) {
+      lines.push(...this.DescribeItemSprayScent(it));
+      isDefaultUse = false;
+      inInvAdditionalDesc = `to spray : <${key(PlayerCommand.USE_SPRAY)}>`;
+    } else if (it instanceof ItemLight) {
+      lines.push(...this.DescribeItemLight(it));
+    } else if (it instanceof ItemTracker) {
+      lines.push(...this.DescribeItemTracker(it));
+    } else if (it instanceof ItemAmmo) {
+      lines.push(...this.DescribeItemAmmo(it));
+      isDefaultUse = false;
+      inInvAdditionalDesc = `to reload : <LMB> or <Ctrl-${iSlot + 1}>`;
+    } else if (it instanceof ItemExplosive) {
+      lines.push(...this.DescribeItemExplosive(it));
+      inInvAdditionalDesc = `to throw : <${key(PlayerCommand.FIRE_MODE)}>`;
+    } else if (it instanceof ItemTrap) {
+      lines.push(...this.DescribeItemTrap(it));
+      // alpha10
+      if (it.trapModel.useToActivate)
+        inInvAdditionalDesc = "to activate trap : use it";
+      else
+        inInvAdditionalDesc = "to activate trap : drop it";
+    } else if (it instanceof ItemEntertainment) {
+      lines.push(...this.DescribeItemEntertainment(it));
+    }
+
+    // 3. Flavor description
+    lines.push(" ");
+    lines.push(it.model.flavorDescription);
+
+    // 4. Special keys.
+    // alpha10 added more special keys very few players know about!
+    if (isPlayerInventory) {
+      lines.push(" ");
+      lines.push("----");
+      if (it.model.isEquipable)
+        lines.push(`to ${it.isEquipped ? "unequip" : "equip"} : <LMB> or <Ctrl-${iSlot + 1}>`);
+      else if (isDefaultUse)
+        lines.push(`to use : <LMB> or <Ctrl-${iSlot + 1}>`);
+      if (!it.isEquipped)
+        lines.push("to drop : <RMB>");
+      lines.push(`to give : <${key(PlayerCommand.GIVE_ITEM)}>`);
+      if (inInvAdditionalDesc != null)
+        lines.push(inInvAdditionalDesc);
+    } else {
+      lines.push(" ");
+      lines.push("----");
+      lines.push(`to take : <LMB> or <Shift-${iSlot + 1}>`);
+    }
+
+    // done.
+    return lines;
   }
 
   // C# DescribeItemExplosive — RogueGame.cs:12039
   DescribeItemExplosive(ex: ItemExplosive): string[] {
-    void ex;
-    throw new Error("not yet ported: DescribeItemExplosive (RogueGame.cs:12039)");
+    const lines: string[] = [];
+
+    const m = ex.model as ItemExplosiveModel;
+    const primed = ex instanceof ItemPrimedExplosive ? ex : null;
+
+    lines.push("> explosive");
+
+    // 1. Explosive attack.
+    if (m.blastAttack.canDamageObjects) lines.push("Can damage objects.");
+    if (m.blastAttack.canDestroyWalls) lines.push("Can destroy walls.");
+
+    if (primed != null) lines.push(`Fuse          : ${primed.fuseTimeLeft} turn(s) left!`);
+    else lines.push(`Fuse          : ${m.fuseDelay} turn(s)`);
+    lines.push(`Blast radius  : ${m.blastAttack.radius}`);
+
+    // 2. Damage for each distance.
+    let damages = "";
+    for (let blastRadius = 0; blastRadius <= m.blastAttack.radius; blastRadius++) {
+      damages += `${this.m_Rules.blastDamage(blastRadius, m.blastAttack)};`;
+    }
+    lines.push(`Blast damages : ${damages}`);
+
+    // 3. Specialized explosives.
+    // grenade?
+    if (ex instanceof ItemGrenade) {
+      lines.push("> grenade");
+
+      const greModel = ex.model as ItemGrenadeModel;
+      const rng = this.m_Rules.actorMaxThrowRange(this.m_Player, greModel.maxThrowDistance);
+      if (rng !== greModel.maxThrowDistance)
+        lines.push(`Throwing rng  : ${rng} (${greModel.maxThrowDistance})`);
+      else
+        lines.push(`Throwing rng  : ${rng}`);
+    }
+
+    // 4. Primed?
+    if (primed != null) {
+      lines.push("PRIMED AND READY TO EXPLODE!");
+    }
+
+    return lines;
   }
 
   // C# DescribeItemWeapon — RogueGame.cs:12092
   DescribeItemWeapon(w: ItemWeapon): string[] {
-    void w;
-    throw new Error("not yet ported: DescribeItemWeapon (RogueGame.cs:12092)");
+    const lines: string[] = [];
+
+    lines.push("> weapon");
+
+    // 1. Attack
+    const m = w.model as ItemWeaponModel;
+    lines.push(`Atk : +${m.attack.hitValue}`);
+    lines.push(`Dmg : +${m.attack.damageValue}`);
+    // alpha10
+    if (m.attack.staminaPenalty !== 0) lines.push(`Sta : -${m.attack.staminaPenalty}`);
+    if (m.attack.disarmChance !== 0) lines.push(`Disarm : +${m.attack.disarmChance}%`);
+
+    // 2. Melee vs Ranged items
+    if (w instanceof ItemMeleeWeapon) {
+      if (w.isFragile) lines.push("Breaks easily.");
+      // alpha10 tool
+      if (w.isTool) {
+        lines.push("Is a tool.");
+        const toolBashDmg = w.toolBashDamageBonus;
+        if (toolBashDmg !== 0)
+          lines.push(`Tool Dmg   : +${toolBashDmg} = +${toolBashDmg + m.attack.damageValue}`);
+        const toolBuild = w.toolBuildBonus;
+        if (toolBuild !== 0)
+          lines.push(`Tool Build : +${Math.floor(100 * toolBuild)}%`);
+      }
+    } else if (w instanceof ItemRangedWeapon) {
+      const rm = w.model as ItemRangedWeaponModel;
+      if (rm.isFireArm) lines.push("> firearm");
+      else if (rm.isBow) lines.push("> bow");
+      else lines.push("> ranged weapon");
+
+      // alpha10 (C# RapidFireHit1/2Value = Attack.Hit2/Hit3Value)
+      lines.push(`Rapid Fire Atk: ${rm.attack.hit2Value} ${rm.attack.hit3Value}`);
+
+      lines.push(`Rng  : ${rm.attack.range}-${rm.attack.efficientRange}`);
+      if (w.ammo < rm.maxAmmo) lines.push(`Amo  : ${w.ammo}/${rm.maxAmmo}`);
+      else lines.push(`Amo  : ${w.ammo} MAX`);
+      lines.push(`Type : ${this.DescribeAmmoType(rm.ammoType)}`);
+    }
+
+    // done.
+    return lines;
   }
 
   // C# DescribeAmmoType — RogueGame.cs:12156
   DescribeAmmoType(at: AmmoType): string {
-    void at;
-    throw new Error("not yet ported: DescribeAmmoType (RogueGame.cs:12156)");
+    switch (at) {
+      case AmmoType.BOLT: return "bolts";
+      case AmmoType.HEAVY_PISTOL: return "heavy pistol bullets";
+      case AmmoType.HEAVY_RIFLE: return "heavy rifle bullets";
+      case AmmoType.LIGHT_PISTOL: return "light pistol bullets";
+      case AmmoType.LIGHT_RIFLE: return "light rifle bullets";
+      case AmmoType.SHOTGUN: return "shotgun cartridge";
+      default:
+        throw new RangeError("unhandled ammo type");
+    }
   }
 
   // C# DescribeItemAmmo — RogueGame.cs:12171
   DescribeItemAmmo(am: ItemAmmo): string[] {
-    void am;
-    throw new Error("not yet ported: DescribeItemAmmo (RogueGame.cs:12171)");
+    const lines: string[] = [];
+
+    lines.push("> ammo");
+
+    // 1. Ammo type
+    lines.push(`Type : ${this.DescribeAmmoType(am.ammoType)}`);
+
+    return lines;
   }
 
   // C# DescribeItemFood — RogueGame.cs:12183
   DescribeItemFood(f: ItemFood): string[] {
-    void f;
-    throw new Error("not yet ported: DescribeItemFood (RogueGame.cs:12183)");
+    const lines: string[] = [];
+
+    lines.push("> food");
+
+    // 1. Fresh/Expired, Best-Before
+    if (f.isPerishable) {
+      if (this.m_Rules.isFoodStillFresh(f, this.m_Session.worldTime.turnCounter))
+        lines.push("Fresh.");
+      else if (this.m_Rules.isFoodExpired(f, this.m_Session.worldTime.turnCounter))
+        lines.push("*Expired*");
+      else if (this.m_Rules.isFoodSpoiled(f, this.m_Session.worldTime.turnCounter))
+        lines.push("**SPOILED**");
+      lines.push(`Best-Before : ${f.bestBefore?.toString() ?? "???"}`);
+    } else
+      lines.push("Always fresh.");
+
+    // 2. Nutrition
+    const nutrition = this.m_Rules.foodItemNutrition(f, this.m_Session.worldTime.turnCounter);
+    const nutritionForPlayer = this.m_Player == null ? nutrition : this.m_Rules.actorItemNutritionValue(this.m_Player, nutrition);
+    if (nutritionForPlayer === f.nutrition)
+      lines.push(`Nutrition   : +${nutrition}`);
+    else
+      lines.push(`Nutrition   : +${nutritionForPlayer} (+${nutrition})`);
+
+    return lines;
   }
 
   // C# DescribeItemMedicine — RogueGame.cs:12217
   DescribeItemMedicine(med: ItemMedicine): string[] {
-    void med;
-    throw new Error("not yet ported: DescribeItemMedicine (RogueGame.cs:12217)");
+    const lines: string[] = [];
+
+    lines.push("> medicine");
+
+    // alpha10 dont add lines for zero values
+
+    const healingForPlayer = this.m_Player == null ? med.healing : this.m_Rules.actorMedicineEffect(this.m_Player, med.healing);
+    if (med.healing !== 0) {
+      if (healingForPlayer === med.healing)
+        lines.push(`Healing : +${med.healing}`);
+      else
+        lines.push(`Healing : +${healingForPlayer} (+${med.healing})`);
+    }
+
+    const staminaForPlayer = this.m_Player == null ? med.staminaBoost : this.m_Rules.actorMedicineEffect(this.m_Player, med.staminaBoost);
+    if (med.staminaBoost !== 0) {
+      if (staminaForPlayer === med.staminaBoost)
+        lines.push(`Stamina : +${med.staminaBoost}`);
+      else
+        lines.push(`Stamina : +${staminaForPlayer} (+${med.staminaBoost})`);
+    }
+
+    const sleepForPlayer = this.m_Player == null ? med.sleepBoost : this.m_Rules.actorMedicineEffect(this.m_Player, med.sleepBoost);
+    if (med.sleepBoost !== 0) {
+      if (sleepForPlayer === med.sleepBoost)
+        lines.push(`Sleep   : +${med.sleepBoost}`);
+      else
+        lines.push(`Sleep   : +${sleepForPlayer} (+${med.sleepBoost})`);
+    }
+
+    const sanForPlayer = this.m_Player == null ? med.sanityCure : this.m_Rules.actorMedicineEffect(this.m_Player, med.sanityCure);
+    if (med.sanityCure !== 0) {
+      if (sanForPlayer === med.sanityCure)
+        lines.push(`Sanity  : +${med.sanityCure}`);
+      else
+        lines.push(`Sanity  : +${sanForPlayer} (+${med.sanityCure})`);
+    }
+
+    if (Rules.hasInfection(this.m_Session.gameMode)) {
+      const cureForPlayer = this.m_Player == null ? med.infectionCure : this.m_Rules.actorMedicineEffect(this.m_Player, med.infectionCure);
+      if (med.infectionCure !== 0) {
+        if (cureForPlayer === med.infectionCure)
+          lines.push(`Cure    : +${med.infectionCure}`);
+        else
+          lines.push(`Cure    : +${cureForPlayer} (+${med.infectionCure})`);
+      }
+    }
+
+    return lines;
   }
 
   // C# DescribeItemBarricadeMaterial — RogueGame.cs:12278
   DescribeItemBarricadeMaterial(bm: ItemBarricadeMaterial): string[] {
-    void bm;
-    throw new Error("not yet ported: DescribeItemBarricadeMaterial (RogueGame.cs:12278)");
+    const lines: string[] = [];
+
+    const m = bm.barricadeModel;
+
+    lines.push("> barricade material");
+
+    // 1. Barricading value.
+    const barForPlayer = this.m_Player == null ? m.barricadingValue : this.m_Rules.actorBarricadingPoints(this.m_Player, m.barricadingValue);
+    if (barForPlayer === m.barricadingValue)
+      lines.push(`Barricading : +${m.barricadingValue}`);
+    else
+      lines.push(`Barricading : +${barForPlayer} (+${m.barricadingValue})`);
+
+    return lines;
   }
 
   // C# DescribeItemBodyArmor — RogueGame.cs:12296
   DescribeItemBodyArmor(b: ItemBodyArmor): string[] {
-    void b;
-    throw new Error("not yet ported: DescribeItemBodyArmor (RogueGame.cs:12296)");
+    const lines: string[] = [];
+
+    lines.push("> body armor");
+
+    // 1. Protection value.
+    lines.push(`Protection vs Hits  : +${b.protectionHit}`);
+    lines.push(`Protection vs Shots : +${b.protectionShot}`);
+    lines.push(`Encumbrance         : -${b.encumbrance} DEF`);
+    lines.push(`Weight              : -${(0.01 * b.weight).toFixed(2)} SPD`);
+
+    // 2. Unsuspicious effects.
+    const unsuspicious: string[] = [];
+    const suspicious: string[] = [];
+    if (b.isFriendlyForCops()) unsuspicious.push("Cops");
+    if (b.isHostileForCops()) suspicious.push("Cops");
+    for (const gang of GameGangs.BIKERS) {
+      if (b.isHostileForBiker(gang)) suspicious.push(GameGangs.NAMES[gang]);
+      if (b.isFriendlyForBiker(gang)) unsuspicious.push(GameGangs.NAMES[gang]);
+    }
+    // alpha10 fixed rule & desc mismatch (C# has the gangsta loop commented out)
+    if (unsuspicious.length > 0) {
+      lines.push("Unsuspicious to:");
+      for (const s of unsuspicious) lines.push("- " + s);
+    }
+    if (suspicious.length > 0) {
+      lines.push("Suspicious to:");
+      for (const s of suspicious) lines.push("- " + s);
+    }
+
+    return lines;
   }
 
   // C# DescribeItemSprayPaint — RogueGame.cs:12340
   DescribeItemSprayPaint(sp: ItemSprayPaint): string[] {
-    void sp;
-    throw new Error("not yet ported: DescribeItemSprayPaint (RogueGame.cs:12340)");
+    const lines: string[] = [];
+
+    const m = sp.sprayPaintModel;
+
+    lines.push("> spray paint");
+
+    // 1. Paint
+    if (sp.paintQuantity < m.maxPaintQuantity)
+      lines.push(`Paint : ${sp.paintQuantity}/${m.maxPaintQuantity}`);
+    else
+      lines.push(`Paint : ${sp.paintQuantity} MAX`);
+
+    return lines;
   }
 
   // C# DescribeItemSprayScent — RogueGame.cs:12357
   DescribeItemSprayScent(sp: ItemSprayScent): string[] {
-    void sp;
-    throw new Error("not yet ported: DescribeItemSprayScent (RogueGame.cs:12357)");
+    const lines: string[] = [];
+
+    const m = sp.sprayScentModel;
+
+    lines.push("> spray scent");
+
+    // 1. Spray.
+    if (sp.sprayQuantity < m.maxSprayQuantity)
+      lines.push(`Spray    : ${sp.sprayQuantity}/${m.maxSprayQuantity}`);
+    else
+      lines.push(`Spray    : ${sp.sprayQuantity} MAX`);
+
+    // alpha10
+    // 2. Odor & Strength
+    lines.push(`Odor     : ${this.Capitalize(Odor[sp.odor].toLowerCase())}`);
+    lines.push(`Strength : ${Math.floor(sp.strength / WorldTime.TURNS_PER_HOUR)}h`);
+
+    return lines;
   }
 
   // C# DescribeItemLight — RogueGame.cs:12380
   DescribeItemLight(lt: ItemLight): string[] {
-    void lt;
-    throw new Error("not yet ported: DescribeItemLight (RogueGame.cs:12380)");
+    const lines: string[] = [];
+
+    lines.push("> light");
+
+    // 1. Batteries
+    lines.push(this.DescribeBatteries(lt.batteries, lt.lightModel.maxBatteries));
+
+    // 2. FoV
+    lines.push(`FOV       : +${lt.fovBonus}`);
+
+    return lines;
   }
 
   // C# DescribeItemTracker — RogueGame.cs:12397
   DescribeItemTracker(tr: ItemTracker): string[] {
-    void tr;
-    throw new Error("not yet ported: DescribeItemTracker (RogueGame.cs:12397)");
+    const lines: string[] = [];
+
+    const m = tr.trackerModel;
+
+    lines.push("> tracker");
+
+    // 1. Batteries
+    lines.push(this.DescribeBatteries(tr.batteries, m.maxBatteries));
+    // alpha10 range if applicable
+    // TODO -- should be an tracker item property, hardcoding is baaaad -_-
+    if (tr.canTrackUndeads)
+      lines.push(`Range: ${Rules.ZTRACKINGRADIUS}`);
+    else
+      lines.push("Range: whole map");
+
+    // alpha10
+    // 2. Clock
+    if (tr.hasClock) {
+      lines.push(" ");
+      if (tr.batteries === 0)
+        lines.push("Out of batteries, can't give the time.");
+      else if (!tr.isEquipped)
+        lines.push("Equip the item to read the time.");
+      else
+        lines.push(`The clock reads: ${this.m_Session.worldTime.hour}h, ${this.DescribeDayPhase(this.m_Session.worldTime.phase)}`);
+    }
+
+    return lines;
   }
 
   // C# DescribeItemTrap — RogueGame.cs:12430
   DescribeItemTrap(tr: ItemTrap): string[] {
-    void tr;
-    throw new Error("not yet ported: DescribeItemTrap (RogueGame.cs:12430)");
+    const lines: string[] = [];
+
+    const m = tr.trapModel;
+
+    lines.push("> trap");
+
+    // 1. Status
+    if (tr.isActivated) {
+      lines.push("** Activated! **");
+      // alpha10
+      if (this.m_Rules.isSafeFromTrap(tr, this.m_Player)) {
+        lines.push("You will safely avoid this trap.");
+        const owner = tr.owner;
+        if (owner != null) lines.push(`Trap setup by ${owner.name}.`);
+      }
+    } else if (tr.isTriggered) {
+      // alpha10
+      lines.push("** Triggered! **");
+      if (this.m_Rules.isSafeFromTrap(tr, this.m_Player)) {
+        lines.push("You will safely avoid this trap.");
+        const owner = tr.owner;
+        if (owner != null) lines.push(`Trap setup by ${owner.name}.`);
+      }
+    }
+    // alpha10
+    lines.push(`Trigger chance for you : ${this.m_Rules.getTrapTriggerChance(tr, this.m_Player)}%.`);
+
+    // 2. Flags
+    if (m.isOneTimeUse) lines.push("Desactives when triggered.");
+    if (m.isNoisy) lines.push(`Makes ${m.noiseName} noise.`);
+    if (m.useToActivate) lines.push("Use to activate.");
+
+    // 3. Stats
+    lines.push(`Damage  : ${m.damage} x${tr.quantity} = ${tr.quantity * m.damage}`);  // alpha10
+    lines.push(`Trigger : ${m.triggerChance}% x${tr.quantity} = ${tr.quantity * m.triggerChance}%`);  // alpha10
+    lines.push(`Break   : ${m.breakChance}%`);
+    if (m.blockChance > 0) lines.push(`Block   : ${m.blockChance}%`);
+    if (m.breakChanceWhenEscape > 0) lines.push(`${m.breakChanceWhenEscape}% to break on escape`);
+
+    return lines;
   }
 
   // C# DescribeItemEntertainment — RogueGame.cs:12480
   DescribeItemEntertainment(ent: ItemEntertainment): string[] {
-    void ent;
-    throw new Error("not yet ported: DescribeItemEntertainment (RogueGame.cs:12480)");
+    const lines: string[] = [];
+
+    const m = ent.entertainmentModel;
+
+    lines.push("> entertainment");
+
+    // player bored?
+    if (this.m_Player != null && ent.isBoringFor(this.m_Player)) // alpha10 boring items item centric
+      lines.push("* BORED OF IT! *");
+
+    // San & Bore chance.
+    lines.push(`Sanity : +${m.value}`);
+    lines.push(`Boring : ${m.boreChance}%`);
+
+    return lines;
   }
 
   // C# DescribeBatteries — RogueGame.cs:12499
   DescribeBatteries(batteries: number, maxBatteries: number): string {
-    void batteries;
-    void maxBatteries;
-    throw new Error("not yet ported: DescribeBatteries (RogueGame.cs:12499)");
+    const hours = this.BatteriesToHours(batteries);
+    if (batteries < maxBatteries)
+      return `Batteries : ${batteries}/${maxBatteries} (${hours}h)`;
+    else
+      return `Batteries : ${batteries} MAX (${hours}h)`;
   }
 
   // C# DescribeSkillShort — RogueGame.cs:12509
@@ -4234,11 +5862,11 @@ export class RogueGame {
   // C# WeatherColor — RogueGame.cs:12609
   WeatherColor(weather: Weather): Color {
     switch (weather) {
-      case Weather.CLEAR: return Color.Yellow;
       case Weather.CLOUDY: return Color.Gray;
-      case Weather.RAIN: return Color.Cyan;
       case Weather.HEAVY_RAIN: return Color.Blue;
-      default: return Color.White;
+      case Weather.RAIN: return Color.LightBlue;
+      case Weather.CLEAR: return Color.Yellow;
+      default: throw new RangeError("unhandled weather");
     }
   }
 
@@ -4249,28 +5877,44 @@ export class RogueGame {
 
   // C# FoodToHoursUntilHungry — RogueGame.cs:12628
   FoodToHoursUntilHungry(food: number): number {
-    return Math.floor(food / (Rules.FOOD_BASE_POINTS / 24));
+    const left = food - Rules.FOOD_HUNGRY_LEVEL;
+    if (left <= 0) return 0;
+    return Math.floor(left / WorldTime.TURNS_PER_HOUR);
   }
 
   // C# FoodToHoursUntilRotHungry — RogueGame.cs:12636
   FoodToHoursUntilRotHungry(food: number): number {
-    return Math.floor(food / (Rules.FOOD_BASE_POINTS / 24));
+    const left = food - Rules.ROT_HUNGRY_LEVEL;
+    if (left <= 0) return 0;
+    return Math.floor(left / WorldTime.TURNS_PER_HOUR);
   }
 
   // C# IsAlmostHungry — RogueGame.cs:12644
   IsAlmostHungry(actor: Actor): boolean {
-    return actor.foodPoints < Rules.FOOD_HUNGRY_LEVEL;
+    if (!actor.model.abilities.hasToEat) return false;
+    return this.FoodToHoursUntilHungry(actor.foodPoints) <= 3;
   }
 
   // C# IsAlmostRotHungry — RogueGame.cs:12651
   IsAlmostRotHungry(actor: Actor): boolean {
-    return actor.foodPoints < Rules.ROT_HUNGRY_LEVEL;
+    if (!actor.model.abilities.isRotting) return false;
+    return this.FoodToHoursUntilRotHungry(actor.foodPoints) <= 3;
   }
 
-  // C# CommandToDirection — RogueGame.cs:12660
-  CommandToDirection(cmd: PlayerCommand): Direction {
-    void cmd;
-    throw new Error("not yet ported: CommandToDirection (RogueGame.cs:12660)");
+  // C# CommandToDirection — RogueGame.cs:12660 (slice 6 borrow: WaitDirectionOrCancel needs it)
+  CommandToDirection(cmd: PlayerCommand): Direction | null {
+    switch (cmd) {
+      case PlayerCommand.MOVE_N: return Direction.N;
+      case PlayerCommand.MOVE_NE: return Direction.NE;
+      case PlayerCommand.MOVE_E: return Direction.E;
+      case PlayerCommand.MOVE_SE: return Direction.SE;
+      case PlayerCommand.MOVE_S: return Direction.S;
+      case PlayerCommand.MOVE_SW: return Direction.SW;
+      case PlayerCommand.MOVE_W: return Direction.W;
+      case PlayerCommand.MOVE_NW: return Direction.NW;
+      case PlayerCommand.WAIT_OR_SELF: return Direction.NEUTRAL;
+      default: return null;
+    }
   }
 
   // C# DoMoveActor — RogueGame.cs:12692 (+1 overloads)
