@@ -387,16 +387,16 @@ export class GameItems implements ItemModelDB {
     }
 
     // Spray Paints
-    const paintMap: Record<string, { id: ItemID; img: string }> = {
-      SPRAY_PAINT1: { id: ItemID.SPRAY_PAINT1, img: GameImages.ITEM_SPRAYPAINT },
-      SPRAY_PAINT2: { id: ItemID.SPRAY_PAINT2, img: GameImages.ITEM_SPRAYPAINT2 },
-      SPRAY_PAINT3: { id: ItemID.SPRAY_PAINT3, img: GameImages.ITEM_SPRAYPAINT3 },
-      SPRAY_PAINT4: { id: ItemID.SPRAY_PAINT4, img: GameImages.ITEM_SPRAYPAINT4 },
+    const paintMap: Record<string, { id: ItemID; img: string; tagImg: string }> = {
+      SPRAY_PAINT1: { id: ItemID.SPRAY_PAINT1, img: GameImages.ITEM_SPRAYPAINT, tagImg: GameImages.DECO_PLAYER_TAG1 },
+      SPRAY_PAINT2: { id: ItemID.SPRAY_PAINT2, img: GameImages.ITEM_SPRAYPAINT2, tagImg: GameImages.DECO_PLAYER_TAG2 },
+      SPRAY_PAINT3: { id: ItemID.SPRAY_PAINT3, img: GameImages.ITEM_SPRAYPAINT3, tagImg: GameImages.DECO_PLAYER_TAG3 },
+      SPRAY_PAINT4: { id: ItemID.SPRAY_PAINT4, img: GameImages.ITEM_SPRAYPAINT4, tagImg: GameImages.DECO_PLAYER_TAG4 },
     };
     for (const d of spraypaintsData as any[]) {
       const meta = paintMap[d.ID];
       if (!meta) continue;
-      const model = new ItemSprayPaintModel(d.NAME, d.PLURAL, meta.img, d.QUANTITY);
+      const model = new ItemSprayPaintModel(d.NAME, d.PLURAL, meta.img, d.QUANTITY, meta.tagImg);
       model.flavorDescription = d.FLAVOR ?? "";
       this.setModel(meta.id, model);
     }

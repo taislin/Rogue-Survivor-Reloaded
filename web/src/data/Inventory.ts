@@ -201,6 +201,27 @@ export class Inventory {
     return null;
   }
 
+  /**
+   * C# `GetSmallestStackByType` - the stack of exactly this type with the fewest
+   * items, so consuming it leaves the larger stacks alone. Only the exact class
+   * matches, like C#'s `it.GetType() == tt`.
+   */
+  getSmallestStackByType<T extends Item>(typeCtor: new (...args: any[]) => T, allowZeroQuantity = false): T | null {
+    let smallest: T | null = null;
+    let smallestQuantity = 0;
+
+    for (const it of this.itemsList) {
+      // C# compares GetType(), so subclasses do not match.
+      if (it.constructor !== typeCtor) continue;
+      const q = it.quantity;
+      if (smallest === null || (q < smallestQuantity && (allowZeroQuantity || q > 0))) {
+        smallest = it as T;
+        smallestQuantity = q;
+      }
+    }
+    return smallest;
+  }
+
   getFirstByType<T extends Item>(typeCtor: new (...args: any[]) => T): T | null {
     for (const it of this.itemsList) {
       if (it instanceof typeCtor) return it;

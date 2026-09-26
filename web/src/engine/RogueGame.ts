@@ -36,15 +36,16 @@ import { LOS } from "@engine/LOS";
 import { TextFile } from "@engine/TextFile";
 import { SayFlags } from "@engine/actions/Actions";
 import { Item } from "@data/Item";
-import { ItemBodyArmor } from "@engine/items/ItemBodyArmor";
-import { ItemExplosive, ItemExplosiveModel, ItemGrenade, ItemGrenadeModel, ItemGrenadePrimed, ItemGrenadePrimedModel } from "@engine/items/ItemExplosive";
+import { ItemBodyArmor, ItemBodyArmorModel } from "@engine/items/ItemBodyArmor";
+import { ItemExplosive, ItemExplosiveModel, ItemGrenade, ItemGrenadeModel, ItemGrenadePrimed, ItemGrenadePrimedModel, ItemPrimedExplosive } from "@engine/items/ItemExplosive";
 import { ItemFood } from "@engine/items/ItemFood";
 import { ItemLight, ItemLightModel } from "@engine/items/ItemLight";
 import { ItemMedicine } from "@engine/items/ItemMedicine";
 import { ItemTrap } from "@engine/items/ItemTrap";
-import { AmmoType, ItemAmmo, ItemMeleeWeapon, ItemRangedWeapon, ItemRangedWeaponModel, ItemWeapon, ItemWeaponModel } from "@engine/items/ItemWeapon";
+import { AmmoType, ItemAmmo, ItemMeleeWeapon, ItemMeleeWeaponModel, ItemRangedWeapon, ItemRangedWeaponModel, ItemWeapon, ItemWeaponModel } from "@engine/items/ItemWeapon";
 import {
   ItemBarricadeMaterial,
+  ItemBarricadeMaterialModel,
   ItemEntertainment,
   ItemSprayPaint,
   ItemSprayPaintModel,
@@ -58,7 +59,7 @@ import { Actor } from "@data/Actor";
 import { ActorModel } from "@data/ActorModel";
 import { ActorDirective, ActorCourage } from "@data/ActorDirective";
 import { ActorTasks, ActorOrder } from "@data/ActorOrder";
-import { FireMode } from "@data/Attack";
+import { Attack, AttackKind, FireMode } from "@data/Attack";
 import { BlastAttack } from "@data/BlastAttack";
 import { ActorAction } from "@data/ActorAction";
 import { Corpse } from "@data/Corpse";
@@ -93,7 +94,7 @@ import { GameTips, ZoneAttributes } from "@gameplay/ZoneAttributes";
 import { SkillID, Skills } from "@gameplay/Skills";
 import { BaseTownGenerator, Parameters as TownParameters } from "@gameplay/generators/BaseTownGenerator";
 import { StdTownGenerator } from "@gameplay/generators/StdTownGenerator";
-import { BaseAI, TradeRating } from "@gameplay/ai/BaseAI";
+import { BaseAI, TradeRating, ItemRating, ItemSource } from "@gameplay/ai/BaseAI";
 import { ActionWait } from "@engine/actions/Actions";
 import {
   ActionBashDoor,
@@ -3678,7 +3679,10 @@ export class RogueGame {
         continue;
 
       map.placeActor(actorToSpawn, pos);
-      this.OnActorEnterTile(actorToSpawn);
+      // OnActorEnterTile is async (it rolls traps), but this spawner is sync and has
+      // 11 call sites across the event code; a trap under a freshly spawned actor at
+      // the map border is a rare enough edge case to fire-and-forget.
+      void this.OnActorEnterTile(actorToSpawn);
       return true;
     } while (i <= maxTries);
 
@@ -4246,7 +4250,7 @@ export class RogueGame {
 
             case PlayerCommand.SHOUT:
               if (await this.TryPlayerInsanity()) { loop = false; break; }
-              loop = !this.HandlePlayerShout(player, null);
+              loop = !(await this.HandlePlayerShout(player, null));
               break;
 
             case PlayerCommand.SLEEP:
@@ -5229,7 +5233,10 @@ export class RogueGame {
         this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_REVIVE), corpse.deadGuy));
 
       if (!this.m_Rules.areEnemies(actor, corpse.deadGuy))
-        this.DoSay(corpse.deadGuy, actor, "Thank you, you saved my life!", SayFlags.NONE);
+        // SayFlags.NONE never hits DoSay's press-ENTER path (that needs IS_IMPORTANT
+        // on a player target), and DoReviveCorpse is reached from the synchronous
+        // ActorAction.perform(), so this is intentionally not awaited.
+        void this.DoSay(corpse.deadGuy, actor, "Thank you, you saved my life!", SayFlags.NONE);
     } else {
       if (visible)
         this.AddMessage(this.MakeMessage(actor, `${this.Conjugate(actor, this.VERB_FAIL)} to revive`, corpse.deadGuy));
@@ -5349,14 +5356,15 @@ export class RogueGame {
   }
 
   // C# HandlePlayerShout — RogueGame.cs:7295
-  HandlePlayerShout(player: Actor, text: string | null): boolean {
+  // async: C# blocks on DoShout's AddMessagePressEnter.
+  async HandlePlayerShout(player: Actor, text: string | null): Promise<boolean> {
     const res = this.m_Rules.canActorShout(player);
     if (!res.ok) {
       this.AddMessage(this.MakeErrorMessage(`Can't shout : ${res.reason}.`));
       return false;
     }
 
-    this.DoShout(player, text);
+    await this.DoShout(player, text);
     return true;
   }
 
@@ -5389,7 +5397,7 @@ export class RogueGame {
             if (res.ok) {
               actionDone = true;
               loop = false;
-              this.DoGiveItemTo(player, other, gift);
+              await this.DoGiveItemTo(player, other, gift);
             } else {
               this.AddMessage(this.MakeErrorMessage(`Can't give ${gift.theName} to ${other.name} : ${res.reason}.`));
             }
@@ -5777,7 +5785,7 @@ export class RogueGame {
               if (this.m_Rules.areEnemies(player, actorTo)) {
                 const res = this.m_Rules.canActorMeleeAttack(player, actorTo);
                 if (res.ok) {
-                  this.DoMeleeAttack(player, actorTo);
+                  await this.DoMeleeAttack(player, actorTo);
                   loop = false;
                   actionDone = true;
                 } else {
@@ -5791,7 +5799,7 @@ export class RogueGame {
               if (objTo != null) {
                 const res = this.m_Rules.isBreakableFor(player, objTo);
                 if (res.ok) {
-                  this.DoBreak(player, objTo);
+                  await this.DoBreak(player, objTo);
                   loop = false;
                   actionDone = true;
                 } else {
@@ -5809,7 +5817,7 @@ export class RogueGame {
             if (mapObj != null) {
               const res = this.m_Rules.isBreakableFor(player, mapObj);
               if (res.ok) {
-                this.DoBreak(player, mapObj);
+                await this.DoBreak(player, mapObj);
                 this.RedrawPlayScreen();
                 loop = false;
                 actionDone = true;
@@ -5857,7 +5865,7 @@ export class RogueGame {
         if (player.location.map!.isInBoundsPoint(pos)) {
           const res = this.m_Rules.canActorBuildFortification(player, pos, isLarge);
           if (res.ok) {
-            this.DoBuildFortification(player, pos, isLarge);
+            await this.DoBuildFortification(player, pos, isLarge);
             this.RedrawPlayScreen();
             loop = false;
             actionDone = true;
@@ -5943,7 +5951,7 @@ export class RogueGame {
         this.m_Session.player_CurrentFireMode = mode;
       } else if (key.key === "f" || key.key === "F") {
         if (res.ok) {
-          this.DoRangedAttack(player, currentTarget, lof, mode);
+          await this.DoRangedAttack(player, currentTarget, lof, mode);
           this.RedrawPlayScreen();
           loop = false;
           actionDone = true;
@@ -6074,9 +6082,9 @@ export class RogueGame {
 
           if (doIt) {
             if (unprimedGrenade != null)
-              this.DoThrowGrenadeUnprimed(player, targetThrow);
+              await this.DoThrowGrenadeUnprimed(player, targetThrow);
             else
-              this.DoThrowGrenadePrimed(player, targetThrow);
+              await this.DoThrowGrenadePrimed(player, targetThrow);
             this.RedrawPlayScreen();
             loop = false;
             actionDone = true;
@@ -6187,9 +6195,9 @@ export class RogueGame {
               loop = false;
 
               if (other.hasLeader)
-                this.DoStealLead(player, other);
+                await this.DoStealLead(player, other);
               else
-                this.DoTakeLead(player, other);
+                await this.DoTakeLead(player, other);
 
               this.m_Session.scoring.addEvent(this.m_Session.worldTime.turnCounter, `Recruited ${other.name}.`);
 
@@ -6306,7 +6314,7 @@ export class RogueGame {
         if (player.location.map!.isInBoundsPoint(movePos)) {
           const res = this.m_Rules.canPushObjectTo(mapObj, movePos);
           if (res.ok) {
-            this.DoPush(player, mapObj, movePos);
+            await this.DoPush(player, mapObj, movePos);
             loop = false;
             actionDone = true;
           } else {
@@ -6340,7 +6348,7 @@ export class RogueGame {
         if (player.location.map!.isInBoundsPoint(movePos)) {
           const res = this.m_Rules.canShoveActorTo(other, movePos);
           if (res.ok) {
-            this.DoShove(player, other, movePos);
+            await this.DoShove(player, other, movePos);
             loop = false;
             actionDone = true;
           } else {
@@ -6438,7 +6446,7 @@ export class RogueGame {
         if (player.location.map!.isInBoundsPoint(moveToPos)) {
           const res = this.m_Rules.canPullObject(player, mapObj, moveToPos);
           if (res.ok) {
-            this.DoPull(player, mapObj, moveToPos);
+            await this.DoPull(player, mapObj, moveToPos);
             loop = false;
             actionDone = true;
           } else {
@@ -6472,7 +6480,7 @@ export class RogueGame {
         if (player.location.map!.isInBoundsPoint(moveToPos)) {
           const res = this.m_Rules.canPullActor(player, other, moveToPos);
           if (res.ok) {
-            this.DoPullActor(player, other, moveToPos);
+            await this.DoPullActor(player, other, moveToPos);
             loop = false;
             actionDone = true;
           } else {
@@ -6791,7 +6799,7 @@ export class RogueGame {
   async HandlePlayerOrderFollower(player: Actor, follower: Actor): Promise<boolean> {
     if (!this.m_Rules.isActorTrustingLeader(follower)) {
       if (this.IsVisibleToPlayer(follower))
-        this.DoSay(follower, player, "Sorry, I don't trust you enough yet.", SayFlags.IS_FREE_ACTION | SayFlags.IS_IMPORTANT);
+        await this.DoSay(follower, player, "Sorry, I don't trust you enough yet.", SayFlags.IS_FREE_ACTION | SayFlags.IS_IMPORTANT);
       else if (this.AreLinkedByPhone(follower, player)) {
         this.ClearMessages();
         this.AddMessage(this.MakeMessage(follower, "Sorry, I don't trust you enough yet."));
@@ -6859,7 +6867,7 @@ export class RogueGame {
             }
             break;
           case 6:
-            if (this.HandlePlayerOrderFollowerToDropAllItems(player, follower)) {
+            if (await this.HandlePlayerOrderFollowerToDropAllItems(player, follower)) {
               loop = false;
               actionDone = true;
             }
@@ -6877,7 +6885,7 @@ export class RogueGame {
             }
             break;
           case 9:
-            if (this.HandlePlayerOrderFollowerToReport(player, follower)) {
+            if (await this.HandlePlayerOrderFollowerToReport(player, follower)) {
               loop = false;
               actionDone = true;
             }
@@ -6894,21 +6902,21 @@ export class RogueGame {
             break;
           case "b":
           case "B":
-            if (this.HandlePlayerOrderFollowerToSleep(player, follower)) {
+            if (await this.HandlePlayerOrderFollowerToSleep(player, follower)) {
               loop = false;
               actionDone = true;
             }
             break;
           case "c":
           case "C":
-            if (this.HandlePlayerOrderFollowerToToggleFollow(player, follower)) {
+            if (await this.HandlePlayerOrderFollowerToToggleFollow(player, follower)) {
               loop = false;
               actionDone = true;
             }
             break;
           case "d":
           case "D":
-            if (this.HandlePlayerOrderFollowerToReportPosition(player, follower)) {
+            if (await this.HandlePlayerOrderFollowerToReportPosition(player, follower)) {
               loop = false;
               actionDone = true;
             }
@@ -6955,7 +6963,7 @@ export class RogueGame {
               highlightedTile = mapPos;
               highlightColor = Color.LightGreen;
               if (mouseButtons === MouseButton.Left) {
-                this.DoGiveOrderTo(player, follower, new ActorOrder(isLarge ? ActorTasks.BUILD_LARGE_FORTIFICATION : ActorTasks.BUILD_SMALL_FORTIFICATION, new Location(map, mapPos)));
+                await this.DoGiveOrderTo(player, follower, new ActorOrder(isLarge ? ActorTasks.BUILD_LARGE_FORTIFICATION : ActorTasks.BUILD_SMALL_FORTIFICATION, new Location(map, mapPos)));
                 loop = false;
                 actionDone = true;
               }
@@ -7015,7 +7023,7 @@ export class RogueGame {
                 highlightedTile = mapPos;
                 highlightColor = Color.LightGreen;
                 if (mouseButtons === MouseButton.Left) {
-                  this.DoGiveOrderTo(player, follower, new ActorOrder(toTheMax ? ActorTasks.BARRICADE_MAX : ActorTasks.BARRICADE_ONE, door.location));
+                  await this.DoGiveOrderTo(player, follower, new ActorOrder(toTheMax ? ActorTasks.BARRICADE_MAX : ActorTasks.BARRICADE_ONE, door.location));
                   loop = false;
                   actionDone = true;
                 }
@@ -7074,7 +7082,7 @@ export class RogueGame {
               highlightedTile = mapPos;
               highlightColor = Color.LightGreen;
               if (mouseButtons === MouseButton.Left) {
-                this.DoGiveOrderTo(player, follower, new ActorOrder(ActorTasks.GUARD, new Location(map, mapPos)));
+                await this.DoGiveOrderTo(player, follower, new ActorOrder(ActorTasks.GUARD, new Location(map, mapPos)));
                 loop = false;
                 actionDone = true;
               }
@@ -7155,7 +7163,7 @@ export class RogueGame {
               highlightedTile = mapPos;
               highlightColor = Color.LightGreen;
               if (mouseButtons === MouseButton.Left) {
-                this.DoGiveOrderTo(player, follower, new ActorOrder(ActorTasks.PATROL, new Location(map, mapPos)));
+                await this.DoGiveOrderTo(player, follower, new ActorOrder(ActorTasks.PATROL, new Location(map, mapPos)));
                 loop = false;
                 actionDone = true;
               }
@@ -7176,37 +7184,42 @@ export class RogueGame {
   }
 
   // C# HandlePlayerOrderFollowerToDropAllItems — RogueGame.cs:10103
-  HandlePlayerOrderFollowerToDropAllItems(player: Actor, follower: Actor): boolean {
+  // async: C# blocks on DoSay's AddMessagePressEnter.
+  async HandlePlayerOrderFollowerToDropAllItems(player: Actor, follower: Actor): Promise<boolean> {
     if (follower.inventory!.isEmpty)
       return false;
 
-    this.DoGiveOrderTo(player, follower, new ActorOrder(ActorTasks.DROP_ALL_ITEMS, follower.location));
-    this.DoSay(follower, player, "Well ok...", SayFlags.IS_FREE_ACTION);
+    await this.DoGiveOrderTo(player, follower, new ActorOrder(ActorTasks.DROP_ALL_ITEMS, follower.location));
+    await this.DoSay(follower, player, "Well ok...", SayFlags.IS_FREE_ACTION);
     this.ModifyActorTrustInLeader(follower, follower.inventory!.countItems * Rules.TRUST_GIVE_ITEM_ORDER_PENALTY, true);
     return true;
   }
 
   // C# HandlePlayerOrderFollowerToReport — RogueGame.cs:10122
-  HandlePlayerOrderFollowerToReport(player: Actor, follower: Actor): boolean {
-    this.DoGiveOrderTo(player, follower, new ActorOrder(ActorTasks.REPORT_EVENTS, follower.location));
+  // async: C# blocks on DoSay.
+  async HandlePlayerOrderFollowerToReport(player: Actor, follower: Actor): Promise<boolean> {
+    await this.DoGiveOrderTo(player, follower, new ActorOrder(ActorTasks.REPORT_EVENTS, follower.location));
     return true;
   }
 
   // C# HandlePlayerOrderFollowerToSleep — RogueGame.cs:10131
-  HandlePlayerOrderFollowerToSleep(player: Actor, follower: Actor): boolean {
-    this.DoGiveOrderTo(player, follower, new ActorOrder(ActorTasks.SLEEP_NOW, follower.location));
+  // async: C# blocks on DoSay.
+  async HandlePlayerOrderFollowerToSleep(player: Actor, follower: Actor): Promise<boolean> {
+    await this.DoGiveOrderTo(player, follower, new ActorOrder(ActorTasks.SLEEP_NOW, follower.location));
     return true;
   }
 
   // C# HandlePlayerOrderFollowerToToggleFollow — RogueGame.cs:10140
-  HandlePlayerOrderFollowerToToggleFollow(player: Actor, follower: Actor): boolean {
-    this.DoGiveOrderTo(player, follower, new ActorOrder(ActorTasks.FOLLOW_TOGGLE, follower.location));
+  // async: C# blocks on DoSay.
+  async HandlePlayerOrderFollowerToToggleFollow(player: Actor, follower: Actor): Promise<boolean> {
+    await this.DoGiveOrderTo(player, follower, new ActorOrder(ActorTasks.FOLLOW_TOGGLE, follower.location));
     return true;
   }
 
   // C# HandlePlayerOrderFollowerToReportPosition — RogueGame.cs:10149
-  HandlePlayerOrderFollowerToReportPosition(player: Actor, follower: Actor): boolean {
-    this.DoGiveOrderTo(player, follower, new ActorOrder(ActorTasks.WHERE_ARE_YOU, follower.location));
+  // async: C# blocks on DoSay.
+  async HandlePlayerOrderFollowerToReportPosition(player: Actor, follower: Actor): Promise<boolean> {
+    await this.DoGiveOrderTo(player, follower, new ActorOrder(ActorTasks.WHERE_ARE_YOU, follower.location));
     return true;
   }
 
@@ -7262,7 +7275,7 @@ export class RogueGame {
 
         const res = this.m_Rules.canActorGiveItemTo(follower, player, it);
         if (res.ok) {
-          this.DoGiveItemTo(follower, this.m_Player, it);
+          await this.DoGiveItemTo(follower, this.m_Player, it);
           loop = false;
           actionDone = true;
         } else {
@@ -9862,7 +9875,8 @@ export class RogueGame {
   }
 
   // C# DoTakeLead — RogueGame.cs:13345
-  DoTakeLead(actor: Actor, other: Actor): void {
+  // async: C# blocks on DoSay's AddMessagePressEnter.
+  async DoTakeLead(actor: Actor, other: Actor): Promise<void> {
     // spend AP.
     this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
 
@@ -9877,13 +9891,14 @@ export class RogueGame {
     if (this.IsVisibleToPlayer(actor) || this.IsVisibleToPlayer(other)) {
       if (actor === this.m_Player) this.ClearMessages();
       this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_PERSUADE), other, " to join."));
-      if (prevTrust !== 0) this.DoSay(other, actor, "Ah yes I remember you.", SayFlags.IS_FREE_ACTION);
+      if (prevTrust !== 0) await this.DoSay(other, actor, "Ah yes I remember you.", SayFlags.IS_FREE_ACTION);
     }
   }
 
   // C# DoStealLead — RogueGame.cs:13369
   // alpha10.1
-  DoStealLead(actor: Actor, other: Actor): void {
+  // async: C# blocks on DoSay's AddMessagePressEnter.
+  async DoStealLead(actor: Actor, other: Actor): Promise<void> {
     const prevLeader = other.leader!;
 
     // spend AP.
@@ -9910,7 +9925,7 @@ export class RogueGame {
           ` to leave ${prevLeader.name} and join.`
         )
       );
-      if (prevTrust !== 0) this.DoSay(other, actor, "Ah yes I remember you.", SayFlags.IS_FREE_ACTION);
+      if (prevTrust !== 0) await this.DoSay(other, actor, "Ah yes I remember you.", SayFlags.IS_FREE_ACTION);
     }
   }
 
@@ -10011,7 +10026,7 @@ export class RogueGame {
 
     // if target is AI and has not aggressor as enemy, emote.
     if (!target.isPlayer && !target.isSleeping && !aggressor.isAggressorOf(target) && !target.isAggressorOf(aggressor))
-      this.DoSay(target, aggressor, "BASTARD! TRAITOR!", SayFlags.IS_FREE_ACTION | SayFlags.IS_DANGER);
+      await this.DoSay(target, aggressor, "BASTARD! TRAITOR!", SayFlags.IS_FREE_ACTION | SayFlags.IS_DANGER);
 
     // aggressor and selfdefence
     aggressor.addAggressorOf(target);
@@ -10041,7 +10056,7 @@ export class RogueGame {
   async OnMakeEnemyOfCop(aggressor: Actor, cop: Actor, wasAlreadyEnemy: boolean): Promise<void> {
     // say.
     if (!wasAlreadyEnemy)
-      this.DoSay(
+      await this.DoSay(
         cop,
         aggressor,
         `TO DISTRICT PATROLS : ${aggressor.theName} MUST DIE!`,
@@ -10074,7 +10089,7 @@ export class RogueGame {
   async OnMakeEnemyOfSoldier(aggressor: Actor, soldier: Actor, wasAlreadyEnemy: boolean): Promise<void> {
     // say.
     if (!wasAlreadyEnemy)
-      this.DoSay(
+      await this.DoSay(
         soldier,
         aggressor,
         `TO DISTRICT SQUADS : ${aggressor.theName} MUST DIE!`,
@@ -10750,386 +10765,1849 @@ export class RogueGame {
 
   // C# ShowBlastImage — RogueGame.cs:14190
   ShowBlastImage(screenPos: Point, attack: BlastAttack, damage: number): void {
-    void screenPos;
-    void attack;
-    void damage;
-    throw new Error("not yet ported: ShowBlastImage (RogueGame.cs:14190)");
+    let alpha = 0.1 + damage / attack.damage[0];
+    if (alpha > 1) alpha = 1;
+    this.AddOverlay(new OverlayTransparentImage(alpha, screenPos, GameImages.ICON_BLAST));
+    this.AddOverlay(new OverlayText(screenPos, Color.Red, damage.toString(), Color.Black));
   }
 
   // C# DoBlast — RogueGame.cs:14198
-  DoBlast(location: Location, blastAttack: BlastAttack): void {
-    void location;
-    void blastAttack;
-    throw new Error("not yet ported: DoBlast (RogueGame.cs:14198)");
+  // async: C# blocks on AnimDelay/ApplyExplosionWave.
+  async DoBlast(location: Location, blastAttack: BlastAttack): Promise<void> {
+    // noise.
+    this.OnLoudNoise(location.map!, location.position, "A loud EXPLOSION");
+
+    // blast icon vs audio.
+    let isVisible = this.IsVisibleToPlayer(location);
+    if (isVisible) {
+      // FIXME: MapToScreen is a slice 8 method; best effort until then.
+      try {
+        this.ShowBlastImage(this.MapToScreen(location.position), blastAttack, blastAttack.damage[0]);
+      } catch (e) {}
+      this.RedrawPlayScreen();
+      await this.AnimDelay(DELAY_LONG);
+      this.RedrawPlayScreen();
+    } else if (this.m_Rules.rollChance(PLAYER_HEAR_EXPLOSION_CHANCE)) {
+      this.AddMessageIfAudibleForPlayer(
+        location,
+        this.MakePlayerCentricMessage("You hear an explosion", location.position)
+      );
+    }
+
+    // ground zero explosion.
+    await this.ApplyExplosionDamage(location, 0, blastAttack);
+
+    // explosion wave.
+    for (let waveDistance = 1; waveDistance <= blastAttack.radius; waveDistance++) {
+      // do it.
+      const anyVisible = await this.ApplyExplosionWave(location, waveDistance, blastAttack);
+
+      // show.
+      if (anyVisible) {
+        isVisible = true; // alpha10
+        this.RedrawPlayScreen();
+        await this.AnimDelay(DELAY_NORMAL);
+      }
+    }
+
+    // alpha10 bug fix; clear overlays only if action is visible
+    if (isVisible) this.ClearOverlays();
   }
 
   // C# ApplyExplosionWave — RogueGame.cs:14240
-  ApplyExplosionWave(center: Location, waveDistance: number, blast: BlastAttack): boolean {
-    void center;
-    void waveDistance;
-    void blast;
-    throw new Error("not yet ported: ApplyExplosionWave (RogueGame.cs:14240)");
+  // async: C# blocks on ApplyExplosionWaveSub.
+  async ApplyExplosionWave(center: Location, waveDistance: number, blast: BlastAttack): Promise<boolean> {
+    let anyVisible = false;
+    const map = center.map!;
+
+    const xmin = center.position.x - waveDistance;
+    const xmax = center.position.x + waveDistance;
+    const ymin = center.position.y - waveDistance;
+    const ymax = center.position.y + waveDistance;
+
+    // north.
+    if (ymin >= 0) {
+      for (let x = xmin; x <= xmax; x++) {
+        anyVisible = (await this.ApplyExplosionWaveSub(center, new Point(x, ymin), waveDistance, blast)) || anyVisible;
+      }
+    }
+
+    // south.
+    if (ymax < map.height) {
+      for (let x = xmin; x <= xmax; x++) {
+        anyVisible = (await this.ApplyExplosionWaveSub(center, new Point(x, ymax), waveDistance, blast)) || anyVisible;
+      }
+    }
+
+    // west.
+    // do dont west corners twice!
+    // hence the ymin + 1 and < ymax checks.
+    if (xmin >= 0) {
+      for (let y = ymin + 1; y < ymax; y++) {
+        anyVisible = (await this.ApplyExplosionWaveSub(center, new Point(xmin, y), waveDistance, blast)) || anyVisible;
+      }
+    }
+
+    // east.
+    // don't do east corners twice!
+    // hence the ymin + 1 and < ymax checks.
+    if (xmax < map.width) {
+      for (let y = ymin + 1; y < ymax; y++) {
+        anyVisible = (await this.ApplyExplosionWaveSub(center, new Point(xmax, y), waveDistance, blast)) || anyVisible;
+      }
+    }
+
+    // return if any explosion was visible.
+    return anyVisible;
   }
 
   // C# ApplyExplosionWaveSub — RogueGame.cs:14303
-  ApplyExplosionWaveSub(blastCenter: Location, pt: Point, waveDistance: number, blast: BlastAttack): boolean {
-    void blastCenter;
-    void pt;
-    void waveDistance;
-    void blast;
-    throw new Error("not yet ported: ApplyExplosionWaveSub (RogueGame.cs:14303)");
+  // async: C# blocks on ApplyExplosionDamage.
+  async ApplyExplosionWaveSub(
+    blastCenter: Location,
+    pt: Point,
+    waveDistance: number,
+    blast: BlastAttack
+  ): Promise<boolean> {
+    if (
+      blastCenter.map!.isInBoundsPoint(pt) &&
+      LOS.canTraceFireLine(blastCenter.map!, blastCenter.position, pt, waveDistance, null)
+    ) {
+      // do damage.
+      const damage = await this.ApplyExplosionDamage(new Location(blastCenter.map, pt), waveDistance, blast);
+
+      // show if visible.
+      if (this.IsVisibleToPlayer(blastCenter.map!, pt)) {
+        // FIXME: MapToScreen is a slice 8 method; best effort until then.
+        try {
+          this.ShowBlastImage(this.MapToScreen(pt), blast, damage);
+        } catch (e) {}
+        return true;
+      } else return false;
+    }
+
+    return false;
   }
 
   // C# ApplyExplosionDamage — RogueGame.cs:14324
-  ApplyExplosionDamage(location: Location, distanceFromBlast: number, blast: BlastAttack): number {
-    void location;
-    void distanceFromBlast;
-    void blast;
-    throw new Error("not yet ported: ApplyExplosionDamage (RogueGame.cs:14324)");
+  // async: C# blocks on InflictDamage/KillActor/DoDestroyObject.
+  async ApplyExplosionDamage(location: Location, distanceFromBlast: number, blast: BlastAttack): Promise<number> {
+    const map = location.map!;
+
+    const modifiedDamage = this.m_Rules.blastDamage(distanceFromBlast, blast);
+
+    // if no damage, don't bother.
+    if (modifiedDamage <= 0) return 0;
+
+    // damage actor / carried explosives chain reaction.
+    {
+      const victim = map.getActorAtPoint(location.position);
+      if (victim !== null) {
+        // carried explosives chain reaction.
+        this.ExplosionChainReaction(victim.inventory, location);
+
+        // damage.
+        const dmgToVictim =
+          modifiedDamage - (victim.currentDefence.protectionHit + victim.currentDefence.protectionShot) / 2;
+        if (dmgToVictim > 0) {
+          // inflict.
+          await this.InflictDamage(victim, dmgToVictim);
+
+          // message.
+          if (this.IsVisibleToPlayer(victim)) {
+            this.AddMessage(
+              new Message(
+                `${victim.name} is hit for ${dmgToVictim} damage!`,
+                map.localTime.turnCounter,
+                Color.Crimson
+              )
+            );
+          }
+
+          // die? do not kill someone who is already dead, this could happen because of
+          // multiple explosions in a single turn.
+          if (victim.hitPoints <= 0 && !victim.isDead) {
+            // kill him.
+            await this.KillActor(null, victim, `explosion ${dmgToVictim} damage`);
+
+            // message?
+            if (this.IsVisibleToPlayer(victim)) {
+              this.AddMessage(
+                new Message(`${victim.name} dies in the explosion!`, map.localTime.turnCounter, Color.Crimson)
+              );
+            }
+          }
+        } else
+          this.AddMessage(
+            new Message(`${victim.name} is hit for no damage.`, map.localTime.turnCounter, Color.White)
+          );
+      }
+    }
+
+    // destroy items / ground explosives chain reaction.
+    {
+      const groundInv = map.getItemsAt(location.position);
+      if (groundInv !== null) {
+        // ground explosives chain reaction.
+        this.ExplosionChainReaction(groundInv, location);
+
+        // pick items to destroy - don't destroy explosives ready to go, we need them
+        // for the chain reaction.
+        // the more damage, the more chance.
+        // never destroy uniques or unbreakables.
+        const destroyChance = modifiedDamage;
+        const destroyItems: Item[] = [];
+        for (const it of groundInv.items) {
+          if (it.isUnique || it.model.isUnbreakable) continue;
+          if (it instanceof ItemPrimedExplosive) {
+            if (it.fuseTimeLeft <= 0) continue;
+          }
+          if (!this.m_Rules.rollChance(destroyChance)) continue;
+          destroyItems.push(it);
+        }
+
+        // do it.
+        for (const it of destroyItems) map.removeItemAt(it, location.position);
+      }
+    }
+
+    // damage objects?
+    if (blast.canDamageObjects) {
+      const obj = map.getMapObjectAtPoint(location.position);
+      if (obj !== null) {
+        const door = obj instanceof DoorWindow ? obj : null;
+        // damage only breakables or barricaded door/windows.
+        if (obj.isBreakable || (door !== null && door.isBarricaded)) {
+          let damageToObject = modifiedDamage;
+
+          // barricaded doors absorb part of the damage.
+          if (door !== null && door.isBarricaded) {
+            const barricadeDamage = Math.min(door.barricadePoints, damageToObject);
+            door.barricadePoints -= barricadeDamage;
+            damageToObject -= barricadeDamage;
+          }
+
+          // then directly damage the object.
+          if (damageToObject >= 0) {
+            obj.hitPoints -= damageToObject;
+            if (obj.hitPoints <= 0) this.DoDestroyObject(obj);
+          }
+        }
+      }
+    }
+
+    // damage corpses?
+    {
+      const corpses = map.getCorpsesAt(location.position);
+      if (corpses !== null) {
+        for (const c of corpses) this.InflictDamageToCorpse(c, modifiedDamage);
+      }
+    }
+
+    // destroy walls?
+    if (blast.canDestroyWalls) {
+      throw new Error("blast.destroyWalls");
+    }
+
+    // return damage done.
+    return modifiedDamage;
   }
 
   // C# ExplosionChainReaction — RogueGame.cs:14469
-  ExplosionChainReaction(inv: Inventory, location: Location): void {
-    void inv;
-    void location;
-    throw new Error("not yet ported: ExplosionChainReaction (RogueGame.cs:14469)");
+  ExplosionChainReaction(inv: Inventory | null, location: Location): void {
+    if (inv === null || inv.isEmpty) return;
+
+    // set each explosive item ready to explode.
+    const removedExplosives: ItemExplosive[] = [];
+    const addedExplosives: ItemPrimedExplosive[] = [];
+    for (const it of inv.items) {
+      // explosive?
+      if (!(it instanceof ItemExplosive)) continue;
+      const explosive = it;
+
+      // if a primed explosive, just force fuse to zero.
+      if (explosive instanceof ItemPrimedExplosive) {
+        explosive.fuseTimeLeft = 0;
+        continue;
+      }
+
+      // unprimed explosive, prime it, force fuse to zero and drop it at location.
+      removedExplosives.push(explosive);
+      // add as many primed explosives at explosive quantity (stackables explosives).
+      for (let nbPrimedToDrop = 0; nbPrimedToDrop < it.quantity; nbPrimedToDrop++) {
+        const primedExplosive = new ItemPrimedExplosive(this.m_GameItems.get(explosive.primedModelId));
+        primedExplosive.fuseTimeLeft = 0;
+        addedExplosives.push(primedExplosive);
+      }
+    }
+
+    // remove explosives from inventory.
+    for (const removeIt of removedExplosives) inv.removeAllQuantity(removeIt);
+
+    // drop primed explosives.
+    for (const addIt of addedExplosives) location.map!.dropItemAt(addIt, location.position);
   }
 
   // C# DoChat — RogueGame.cs:14525
-  DoChat(speaker: Actor, target: Actor): void {
-    void speaker;
-    void target;
-    throw new Error("not yet ported: DoChat (RogueGame.cs:14525)");
+  // async: C# blocks on DoTrade.
+  async DoChat(speaker: Actor, target: Actor): Promise<void> {
+    // spend APs.
+    this.SpendActorActionPoints(speaker, Rules.BASE_ACTION_COST);
+
+    // message
+    const isSpeakerVisible = this.IsVisibleToPlayer(speaker);
+    const isTargetVisible = this.IsVisibleToPlayer(target);
+    if (isSpeakerVisible || isTargetVisible)
+      this.AddMessage(this.MakeMessage(speaker, this.Conjugate(speaker, this.VERB_CHAT_WITH), target));
+
+    // trade?
+    if (this.m_Rules.canActorInitiateTradeWith(speaker, target).ok) {
+      await this.DoTrade(speaker, target);
+    }
+
+    // alpha10 recover san after "normal" chat or fast trade
+    if (speaker.model.abilities.hasSanity) {
+      this.RegenActorSanity(speaker, Rules.SANITY_RECOVER_CHAT_OR_TRADE);
+      if (this.IsVisibleToPlayer(speaker))
+        this.AddMessage(
+          this.MakeMessage(speaker, `${this.Conjugate(speaker, this.VERB_FEEL)} better after chatting with`, target)
+        );
+    }
+
+    if (target.model.abilities.hasSanity) {
+      this.RegenActorSanity(target, Rules.SANITY_RECOVER_CHAT_OR_TRADE);
+      if (this.IsVisibleToPlayer(target))
+        this.AddMessage(
+          this.MakeMessage(target, `${this.Conjugate(speaker, this.VERB_FEEL)} better after chatting with`, speaker)
+        );
+    }
   }
 
   // C# DoTrade — RogueGame.cs:14562
-  DoTrade(speaker: Actor, target: Actor): void {
-    void speaker;
-    void target;
-    throw new Error("not yet ported: DoTrade (RogueGame.cs:14562)");
+  // alpha10 "fast" trade uses the new trade mechanic of rating items and trades.
+  // npcs will mostly only make mutually beneficial deals.
+  // speaker and target are also somehow reversed from how they were in rs9(!?)
+  // for the player this tries to mimick most trade results obtained by the player
+  // negociating a trade, but it is not mandatory.
+  // async: C# blocks on WaitYesOrNo.
+  async DoTrade(origSpeaker: Actor, origTarget: Actor): Promise<void> {
+    // clean up activities
+    let speaker = origSpeaker;
+    let target = origTarget;
+    speaker.activity = Activity.IDLE;
+    target.activity = Activity.IDLE;
+
+    const isVisible = this.IsVisibleToPlayer(speaker) || this.IsVisibleToPlayer(target);
+    if (isVisible) this.AddMessage(this.MakeMessage(speaker, `wants to make a quick trade with ${target.name}.`));
+
+    // the basic idea is to pick an item the speaker wants from target,
+    // and offer an item the speaker is willing to get rid of.
+    let speakerAI = speaker.controller as BaseAI | null;
+    let targetAI = target.controller as BaseAI | null;
+
+    // target not willing to trade if is ordered not to
+    if (targetAI !== null && !targetAI.directives.canTrade && speaker !== target.leader) {
+      if (isVisible) this.AddMessage(this.MakeMessage(target, "is not willing to trade."));
+      return;
+    }
+
+    // if speaker is the player, make the npc the speaker so the npc is the one
+    // offering an item.
+    // alpha10.1 but not for bot
+    if (speaker.isPlayer) {
+      // swap speaker and target so npc is always speaker in fast trade
+      const swap = target;
+      target = speaker;
+      speaker = swap;
+      targetAI = null; // now player
+      speakerAI = speaker.controller as BaseAI | null;
+    }
+
+    // get an item the speaker would like from target inventory.
+    const pickAskedItem = (): { item: Item | null; rating: ItemRating } => {
+      // pick an item in target inventory the speaker wants, or any item if target
+      // has only junk.
+      const wants = target.inventory!.filter((it) => {
+        const r = speakerAI!.rateItem(this, it, false);
+        // wants anything but junk.
+        // don't limit to things speaker needs because the target ai is more likely to
+        // value the same item as being needed for himself! also makes for more varied deals.
+        return r !== ItemRating.JUNK;
+      });
+      if (wants.length === 0) {
+        // no non-junk items, extend to all items...
+        wants.push(...target.inventory!.items);
+      }
+
+      // pick one from the wanted list.
+      const wantIt = wants[this.m_Rules.roll(0, wants.length)];
+      return { item: wantIt, rating: speakerAI!.rateItem(this, wantIt, false) };
+    };
+
+    // can return null
+    // get an item the speaker is willing to exchange for the target item it wants.
+    const pickOfferedItem = (askedItem: Item, askedItemRating: ItemRating): Item | null => {
+      let offerables: Item[];
+
+      // if target is npc:
+      //   - offer any item that could pass a trade deal with this npc (read their ai mind)
+      // if target is player:
+      //   - cannot use rate trade offer on the npc itself...
+      //   - so offer only items we rate less than the one we want (player should negociate
+      //     deal instead)
+      //   - accepting equal item ratings lead to bad deals for the npc, offering a need for
+      //     a need (eg: a rifle for bullets!)
+      // in all offers, never offer the same item model as the one asked eg: a pistol for a pistol!
+      if (target.isPlayer) {
+        offerables = speaker.inventory!.filter(
+          (it) => it.model !== askedItem.model && speakerAI!.rateItem(this, it, true) < askedItemRating
+        );
+      } else {
+        offerables = speaker.inventory!.filter((it) => {
+          if (it.model === askedItem.model) return false;
+          // read target ai mind...
+          const tr = targetAI!.rateTradeOffer(this, speaker, it, askedItem);
+          // accept "Maybe" items to be a bit more realistic in not always making perfect deals
+          // ("hey! the ai always accept ai trades! they are cheating!")
+          // and let charisma influence the final result.
+          return tr !== TradeRating.REFUSE;
+        });
+      }
+
+      if (offerables.length === 0) {
+        // all our items are more valuable than the one we want or only silly deals. no deal.
+        return null;
+      }
+
+      return offerables[this.m_Rules.roll(0, offerables.length)];
+    };
+
+    const askedPick = pickAskedItem();
+    const asked = askedPick.item;
+    const offered = asked !== null ? pickOfferedItem(asked, askedPick.rating) : null;
+
+    // if no item pairs found, failed trade.
+    // either the target has no interesting items for speaker,
+    // or the speaker has items too valuable for a trade.
+    if (asked === null || offered === null) {
+      if (asked === null) {
+        // speaker finds nothing interesting in target inventory
+        if (isVisible) this.AddMessage(this.MakeMessage(speaker, "is not interested in any item of your items."));
+      } else {
+        // speaker has no item to give away (should not happen if target is player)
+        if (isVisible)
+          this.AddMessage(this.MakeMessage(speaker, `would prefer to keep ${this.HisOrHer(speaker)} items.`));
+      }
+      if (target.isPlayer)
+        // help confused players...
+        this.AddMessage(
+          new Message("(maybe try negociating a deal instead)", this.m_Session.worldTime.turnCounter, Color.Yellow)
+        );
+      return;
+    }
+
+    // propose.
+    // if player, ask.
+    // if target is ai, check for it.
+    // alpha10.1 handle bot player
+    let acceptTrade: boolean;
+    if (isVisible)
+      this.AddMessage(
+        this.MakeMessage(speaker, `${this.Conjugate(speaker, this.VERB_OFFER)} ${offered.aName} for ${asked.aName}.`)
+      );
+    if (target.isPlayer && !target.isBotPlayer) {
+      // speaker is always ai unless bot
+      // ask player.
+      this.AddOverlay(
+        new OverlayPopup(
+          this.TRADE_MODE_TEXT,
+          this.MODE_TEXTCOLOR,
+          this.MODE_BORDERCOLOR,
+          this.MODE_FILLCOLOR,
+          new Point(0, 0)
+        )
+      );
+      this.RedrawPlayScreen();
+      acceptTrade = await this.WaitYesOrNo();
+      this.ClearOverlays();
+      this.RedrawPlayScreen();
+    } else {
+      // ask target ai/bot
+      const ai: BaseAI | null =
+        target.isPlayer && target.isBotPlayer ? this.m_botControl : targetAI;
+
+      const r = ai!.rateTradeOffer(this, speaker, offered, asked);
+      if (r === TradeRating.ACCEPT) acceptTrade = true;
+      else if (r === TradeRating.REFUSE) acceptTrade = false;
+      else {
+        // use charisma on "maybe" trades, similar to what we do for the player in the
+        // negociating command we the ai won't exploit the game by asking several times
+        // so its ok not to store the charisma roll -_-
+        // note that a duo of charismatic npcs could in theory trade back and forth ha!
+        if (this.m_Rules.rollChance(this.m_Rules.actorCharismaticTradeChance(speaker))) {
+          if (isVisible) this.DoEmote(target, "Okay you convinced me.");
+          acceptTrade = true;
+        } else acceptTrade = false;
+      }
+    }
+
+    // so, deal or not?
+    if (acceptTrade) {
+      if (isVisible)
+        this.AddMessage(this.MakeMessage(target, `${this.Conjugate(target, this.VERB_ACCEPT_THE_DEAL)}.`));
+      if (target.isPlayer || speaker.isPlayer) this.RedrawPlayScreen();
+
+      // do it
+      this.SwapActorItems(speaker, offered, target, asked);
+    } else {
+      if (isVisible)
+        this.AddMessage(this.MakeMessage(target, `${this.Conjugate(target, this.VERB_REFUSE_THE_DEAL)}.`));
+      if (target.isPlayer || speaker.isPlayer) this.RedrawPlayScreen();
+    }
   }
 
   // C# SwapActorItems — RogueGame.cs:14766
+  /** Swap items after a successful trade. Used in "fast" trades and player negociating trade. */
   SwapActorItems(a: Actor, itA: Item, b: Actor, itB: Item): void {
-    void a;
-    void itA;
-    void b;
-    void itB;
-    throw new Error("not yet ported: SwapActorItems (RogueGame.cs:14766)");
+    if (itA.isEquipped) this.DoUnequipItem(a, itA);
+    if (itB.isEquipped) this.DoUnequipItem(b, itB);
+
+    a.inventory!.removeAllQuantity(itA);
+    b.inventory!.removeAllQuantity(itB);
+
+    a.inventory!.addAll(itB);
+    b.inventory!.addAll(itA);
   }
 
   // C# DoSay — RogueGame.cs:14801
-  DoSay(speaker: Actor, target: Actor, text: string, flags: SayFlags): void {
-    void speaker;
-    void target;
-    void text;
-    void flags;
-    throw new Error("not yet ported: DoSay (RogueGame.cs:14801)");
+  // async: C# blocks on AddMessagePressEnter.
+  async DoSay(speaker: Actor, target: Actor, text: string, flags: SayFlags): Promise<void> {
+    const sayColor = (flags & SayFlags.IS_DANGER) !== 0 ? this.SAYOREMOTE_DANGER_COLOR : this.SAYOREMOTE_NORMAL_COLOR;
+
+    // spend APS?
+    if ((flags & SayFlags.IS_FREE_ACTION) === 0) this.SpendActorActionPoints(speaker, Rules.BASE_ACTION_COST);
+
+    // message.
+    if (
+      this.IsVisibleToPlayer(speaker) ||
+      (this.IsVisibleToPlayer(target) && !(this.m_Player.isSleeping && target === this.m_Player))
+    ) {
+      const isPlayer = target.isPlayer;
+      const isBot = target.isBotPlayer; // alpha10.1 handle bot
+      const isImportant = (flags & SayFlags.IS_IMPORTANT) !== 0;
+      if (isPlayer && isImportant) this.ClearMessages();
+      this.AddMessage(this.MakeMessage(speaker, `to ${target.theName} : `, sayColor));
+      this.AddMessage(this.MakeMessage(speaker, `"${text}"`, sayColor));
+      if (isPlayer && isImportant && !isBot) {
+        // FIXME: MapToScreen is a slice 8 method; best effort until then.
+        try {
+          const sp = this.MapToScreen(speaker.location.position);
+          this.AddOverlay(new OverlayRect(Color.Yellow, new Rect(sp.x, sp.y, TILE_SIZE, TILE_SIZE)));
+        } catch (e) {}
+        await this.AddMessagePressEnter();
+        this.ClearOverlays();
+        this.RemoveLastMessage();
+        this.RedrawPlayScreen();
+      }
+    }
   }
 
   // C# DoShout — RogueGame.cs:14835
-  DoShout(speaker: Actor, text: string | null): void {
-    void speaker;
-    void text;
-    throw new Error("not yet ported: DoShout (RogueGame.cs:14835)");
+  // async: C# blocks on AddMessagePressEnter.
+  async DoShout(speaker: Actor, text: string | null): Promise<void> {
+    // spend APs.
+    this.SpendActorActionPoints(speaker, Rules.BASE_ACTION_COST);
+
+    // loud noise.
+    this.OnLoudNoise(speaker.location.map!, speaker.location.position, "A SHOUT");
+
+    // message.
+    if (this.IsVisibleToPlayer(speaker) || this.AreLinkedByPhone(speaker, this.m_Player)) {
+      // if player follower, alert!
+      if (speaker.leader === this.m_Player && !this.m_Player.isBotPlayer) {
+        // alpha10.1 handle bot
+        this.ClearMessages();
+        // FIXME: MapToScreen is a slice 8 method; best effort until then.
+        try {
+          const sp = this.MapToScreen(speaker.location.position);
+          this.AddOverlay(new OverlayRect(Color.Yellow, new Rect(sp.x, sp.y, TILE_SIZE, TILE_SIZE)));
+        } catch (e) {}
+        this.AddMessage(this.MakeMessage(speaker, `${this.Conjugate(speaker, this.VERB_RAISE_ALARM)}!!`));
+        if (text !== null) this.DoEmote(speaker, text, true);
+        await this.AddMessagePressEnter();
+        this.ClearOverlays();
+        this.RemoveLastMessage();
+      } else {
+        if (text === null) this.AddMessage(this.MakeMessage(speaker, `${this.Conjugate(speaker, this.VERB_SHOUT)}!`));
+        else this.DoEmote(speaker, `${this.Conjugate(speaker, this.VERB_SHOUT)} "${text}"`, true);
+      }
+    }
   }
 
   // C# DoEmote — RogueGame.cs:14868
-  DoEmote(actor: Actor, text: string, isDanger?: boolean): void {
-    void actor;
-    void text;
-    void isDanger;
-    throw new Error("not yet ported: DoEmote (RogueGame.cs:14868)");
+  DoEmote(actor: Actor, text: string, isDanger = false): void {
+    if (this.IsVisibleToPlayer(actor))
+      this.AddMessage(
+        new Message(
+          `${actor.name} : ${text}`,
+          actor.location.map!.localTime.turnCounter,
+          isDanger ? this.SAYOREMOTE_DANGER_COLOR : this.SAYOREMOTE_NORMAL_COLOR
+        )
+      );
   }
 
   // C# DoTakeFromContainer — RogueGame.cs:14876
   DoTakeFromContainer(actor: Actor, position: Point): void {
-    void actor;
-    void position;
-    throw new Error("not yet ported: DoTakeFromContainer (RogueGame.cs:14876)");
+    const map = actor.location.map!;
+
+    // get topmost item.
+    const it = map.getItemsAt(position)!.topItem!;
+
+    // take it.
+    this.DoTakeItem(actor, position, it);
   }
 
   // C# DoTakeItem — RogueGame.cs:14887
   DoTakeItem(actor: Actor, position: Point, it: Item): void {
-    void actor;
-    void position;
-    void it;
-    throw new Error("not yet ported: DoTakeItem (RogueGame.cs:14887)");
+    const map = actor.location.map!;
+
+    // spend APs.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+    // special case for traps
+    if (it instanceof ItemTrap) {
+      const trap = it;
+      // taking a trap desactivates it.
+      trap.deactivate(); // alpha10 // trap.isActivated = false;
+    }
+
+    // add to inventory.
+    const quantityBefore = it.quantity;
+    const quantityAdded = actor.inventory!.addAsMuchAsPossible(it).quantityAdded;
+    // if added all, remove from map.
+    if (quantityAdded === quantityBefore) {
+      const itemsThere = map.getItemsAt(position);
+      if (itemsThere !== null && itemsThere.contains(it)) map.removeItemAt(it, position);
+    }
+
+    // message
+    if (this.IsVisibleToPlayer(actor) || this.IsVisibleToPlayer(new Location(map, position))) {
+      this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_TAKE), it));
+    }
+
+    // automatically equip item if flags set & possible, and not already equipped something.
+    if (
+      !it.model.dontAutoEquip &&
+      this.m_Rules.canActorEquipItem(actor, it).ok &&
+      actor.getEquippedItem(it.model.equipmentPart) === null
+    )
+      this.DoEquipItem(actor, it);
   }
 
   // C# DoGiveItemTo — RogueGame.cs:14925
-  DoGiveItemTo(actor: Actor, target: Actor, gift: Item): void {
-    void actor;
-    void target;
-    void gift;
-    throw new Error("not yet ported: DoGiveItemTo (RogueGame.cs:14925)");
+  // async: C# blocks on DoSay.
+  async DoGiveItemTo(actor: Actor, target: Actor, gift: Item): Promise<void> {
+    // spend APs.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+    // if leader give to follower, improve trust.
+    if (target.leader === actor) {
+      // interesting item?
+      const ai = target.controller as BaseAI | null;
+      const isInterestingItem =
+        ai !== null && ai.isInterestingItemToOwn(this, gift, ItemSource.ANOTHER_ACTOR);
+
+      // emote.
+      if (isInterestingItem) await this.DoSay(target, actor, "Thank you, I really needed that!", SayFlags.IS_FREE_ACTION);
+      else await this.DoSay(target, actor, "Thanks I guess...", SayFlags.IS_FREE_ACTION);
+
+      // update trust.
+      this.ModifyActorTrustInLeader(
+        target,
+        isInterestingItem ? Rules.TRUST_GOOD_GIFT_INCREASE : Rules.TRUST_MISC_GIFT_INCREASE,
+        true
+      );
+    }
+    // if follower give to leader, decrease trust.
+    else if (actor.leader === target) {
+      // emote.
+      await this.DoSay(target, actor, "Well, here it is...", SayFlags.IS_FREE_ACTION);
+
+      // update trust.
+      this.ModifyActorTrustInLeader(actor, Rules.TRUST_GIVE_ITEM_ORDER_PENALTY, true);
+    }
+
+    // transfer item : drop then take (solves problem of partial quantities transfer).
+    this.DropItem(actor, gift);
+    this.DoTakeItem(target, actor.location.position, gift);
+
+    // message.
+    if (this.IsVisibleToPlayer(actor) || this.IsVisibleToPlayer(target)) {
+      this.AddMessage(
+        this.MakeMessage(actor, `${this.Conjugate(actor, this.VERB_GIVE)} ${gift.theName} to`, target)
+      );
+    }
   }
 
   // C# DoEquipItem — RogueGame.cs:14973
+  /** AP free */
   DoEquipItem(actor: Actor, it: Item): void {
-    void actor;
-    void it;
-    throw new Error("not yet ported: DoEquipItem (RogueGame.cs:14973)");
+    // unequip previous item first.
+    const previousItem = actor.getEquippedItem(it.model.equipmentPart);
+    if (previousItem !== null) {
+      this.DoUnequipItem(actor, previousItem);
+    }
+
+    // equip part.
+    it.equippedPart = it.model.equipmentPart;
+
+    // update revelant datas.
+    this.OnEquipItem(actor, it);
+
+    // message
+    if (this.IsVisibleToPlayer(actor)) this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_EQUIP), it));
   }
 
   // C# DoUnequipItem — RogueGame.cs:14998
-  DoUnequipItem(actor: Actor, it: Item, canMessage?: boolean): void {
-    void actor;
-    void it;
-    void canMessage;
-    throw new Error("not yet ported: DoUnequipItem (RogueGame.cs:14998)");
+  /** AP free */
+  DoUnequipItem(actor: Actor, it: Item, canMessage = true): void {
+    // unequip part.
+    it.equippedPart = DollPart.NONE;
+
+    // update revelant datas.
+    this.OnUnequipItem(actor, it);
+
+    // message.
+    if (canMessage && this.IsVisibleToPlayer(actor))
+      this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_UNEQUIP), it));
   }
 
   // C# OnEquipItem — RogueGame.cs:15011
   OnEquipItem(actor: Actor, it: Item): void {
-    void actor;
-    void it;
-    throw new Error("not yet ported: OnEquipItem (RogueGame.cs:15011)");
+    // Weapons
+    if (it.model instanceof ItemWeaponModel) {
+      if (it.model instanceof ItemMeleeWeaponModel) {
+        const meleeModel = it.model;
+        const unarmed = actor.sheet.unarmedAttack;
+        actor.currentMeleeAttack = Attack.meleeAttack(
+          meleeModel.attack.verb,
+          meleeModel.attack.hitValue + unarmed.hitValue,
+          meleeModel.attack.damageValue + unarmed.damageValue,
+          meleeModel.attack.staminaPenalty,
+          meleeModel.attack.disarmChance
+        );
+      } else if (it.model instanceof ItemRangedWeaponModel) {
+        const rangedModel = it.model;
+        actor.currentRangedAttack = Attack.rangedAttack(
+          rangedModel.attack.kind,
+          rangedModel.attack.verb,
+          rangedModel.attack.hitValue,
+          rangedModel.attack.hit2Value,
+          rangedModel.attack.hit3Value,
+          rangedModel.attack.damageValue,
+          rangedModel.attack.range
+        );
+      }
+    }
+    // Armors
+    else if (it.model instanceof ItemBodyArmorModel) {
+      actor.currentDefence = actor.currentDefence.add(it.model.toDefence());
+    }
+    // Batteries
+    else if (it.model instanceof ItemTrackerModel) {
+      const trIt = it as ItemTracker;
+      --trIt.batteries;
+    } else if (it.model instanceof ItemLightModel) {
+      const ltIt = it as ItemLight;
+      --ltIt.batteries;
+    }
   }
 
   // C# OnUnequipItem — RogueGame.cs:15058
   OnUnequipItem(actor: Actor, it: Item): void {
-    void actor;
-    void it;
-    throw new Error("not yet ported: OnUnequipItem (RogueGame.cs:15058)");
+    if (it.model instanceof ItemWeaponModel) {
+      if (it.model instanceof ItemMeleeWeaponModel) {
+        actor.currentMeleeAttack = actor.sheet.unarmedAttack;
+      } else if (it.model instanceof ItemRangedWeaponModel) {
+        actor.currentRangedAttack = Attack.BLANK;
+      }
+    } else if (it.model instanceof ItemBodyArmorModel) {
+      actor.currentDefence = actor.currentDefence.subtract(it.model.toDefence());
+    }
   }
 
   // C# DoDropItem — RogueGame.cs:15078
   DoDropItem(actor: Actor, it: Item): void {
-    void actor;
-    void it;
-    throw new Error("not yet ported: DoDropItem (RogueGame.cs:15078)");
+    // spend APs.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+    // which item to drop (original or a clone)
+    let dropIt: Item = it;
+    // discard?
+    let discardMe = false;
+
+    // special case for traps and discared items.
+    if (it instanceof ItemTrap) {
+      const trap = it;
+
+      // drop one at a time.
+      const clone = trap.clone();
+      //alpha10 clone.isActivated = trap.isActivated;
+      if (trap.isActivated) clone.activate(actor); // alpha10
+      dropIt = clone;
+
+      // trap activates when dropped?
+      if (clone.trapModel.activatesWhenDropped) clone.activate(actor); // alpha10 //clone.isActivated = true;
+
+      // make sure source stack is desactivated (activate only activate the stack top item).
+      trap.deactivate(); // alpha10  //trap.isActivated = false;
+    } else {
+      // drop or discard.
+      if (it instanceof ItemTracker) {
+        discardMe = it.batteries <= 0;
+      } else if (it instanceof ItemLight) {
+        discardMe = it.batteries <= 0;
+      } else if (it instanceof ItemSprayPaint) {
+        discardMe = it.paintQuantity <= 0;
+      } else if (it instanceof ItemSprayScent) {
+        discardMe = it.sprayQuantity <= 0;
+      }
+    }
+
+    if (discardMe) {
+      this.DiscardItem(actor, it);
+      // message
+      if (this.IsVisibleToPlayer(actor))
+        this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_DISCARD), it));
+    } else {
+      if (dropIt === it) this.DropItem(actor, it);
+      else this.DropCloneItem(actor, it, dropIt);
+      // message
+      if (this.IsVisibleToPlayer(actor))
+        this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_DROP), dropIt));
+    }
   }
 
   // C# DiscardItem — RogueGame.cs:15147
   DiscardItem(actor: Actor, it: Item): void {
-    void actor;
-    void it;
-    throw new Error("not yet ported: DiscardItem (RogueGame.cs:15147)");
+    // remove from inventory.
+    actor.inventory!.removeAllQuantity(it);
+
+    // make sure it is unequipped.
+    it.equippedPart = DollPart.NONE;
   }
 
   // C# DropItem — RogueGame.cs:15156
   DropItem(actor: Actor, it: Item): void {
-    void actor;
-    void it;
-    throw new Error("not yet ported: DropItem (RogueGame.cs:15156)");
+    // remove from inventory.
+    actor.inventory!.removeAllQuantity(it);
+
+    // add to ground.
+    actor.location.map!.dropItemAt(it, actor.location.position);
+
+    // make sure it is unequipped.
+    it.equippedPart = DollPart.NONE;
   }
 
   // C# DropCloneItem — RogueGame.cs:15168
   DropCloneItem(actor: Actor, it: Item, clone: Item): void {
-    void actor;
-    void it;
-    void clone;
-    throw new Error("not yet ported: DropCloneItem (RogueGame.cs:15168)");
+    // remove one quantity from inventory.
+    it.quantity -= 1;
+    if (it.quantity <= 0) actor.inventory!.removeAllQuantity(it);
+
+    // add to ground.
+    actor.location.map!.dropItemAt(clone, actor.location.position);
+
+    // make sure it is unequipped.
+    clone.equippedPart = DollPart.NONE;
   }
 
   // C# DoUseItem — RogueGame.cs:15181
   DoUseItem(actor: Actor, it: Item): void {
-    void actor;
-    void it;
-    throw new Error("not yet ported: DoUseItem (RogueGame.cs:15181)");
+    // alpha10 defrag ai inventories
+    const defragInventory = !actor.isPlayer && it.model.isStackable;
+
+    // concrete use.
+    if (it instanceof ItemFood) this.DoUseFoodItem(actor, it);
+    else if (it instanceof ItemMedicine) this.DoUseMedicineItem(actor, it);
+    else if (it instanceof ItemAmmo) this.DoUseAmmoItem(actor, it);
+    //else if (it instanceof ItemSprayScent)  // alpha10 new way to use spray scent
+    //    this.DoUseSprayScentItem(actor, it);
+    else if (it instanceof ItemTrap) this.DoUseTrapItem(actor, it);
+    else if (it instanceof ItemEntertainment) this.DoUseEntertainmentItem(actor, it);
+
+    // alpha10 defrag ai inventories
+    if (defragInventory) actor.inventory!.defrag();
   }
 
   // C# DoEatFoodFromGround — RogueGame.cs:15205
   DoEatFoodFromGround(actor: Actor, it: Item): void {
-    void actor;
-    void it;
-    throw new Error("not yet ported: DoEatFoodFromGround (RogueGame.cs:15205)");
+    const food = it as ItemFood;
+
+    // spend APs.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+    // recover food points.
+    const baseNutrition = this.m_Rules.foodItemNutrition(food, actor.location.map!.localTime.turnCounter);
+    actor.foodPoints = Math.min(
+      actor.foodPoints + this.m_Rules.actorItemNutritionValue(actor, baseNutrition),
+      this.m_Rules.actorMaxFood(actor)
+    );
+
+    // consume it.
+    const inv = actor.location.map!.getItemsAt(actor.location.position);
+    inv!.consume(food);
+
+    // message.
+    const isVisible = this.IsVisibleToPlayer(actor);
+    if (isVisible) this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_EAT), food));
+
+    // vomit?
+    if (this.m_Rules.isFoodSpoiled(food, actor.location.map!.localTime.turnCounter)) {
+      if (this.m_Rules.rollChance(Rules.FOOD_EXPIRED_VOMIT_CHANCE)) {
+        this.DoVomit(actor);
+
+        // message.
+        if (isVisible) {
+          this.AddMessage(
+            this.MakeMessage(actor, `${this.Conjugate(actor, this.VERB_VOMIT)} from eating spoiled food!`)
+          );
+        }
+      }
+    }
   }
 
   // C# DoUseFoodItem — RogueGame.cs:15241
   DoUseFoodItem(actor: Actor, food: ItemFood): void {
-    void actor;
-    void food;
-    throw new Error("not yet ported: DoUseFoodItem (RogueGame.cs:15241)");
+    // If player, prevent wasteful usage.
+    if (actor === this.m_Player && actor.foodPoints >= this.m_Rules.actorMaxFood(actor) - 1) {
+      this.AddMessage(this.MakeErrorMessage("Don't waste food!"));
+      return;
+    }
+
+    // spend APs.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+    // recover food points.
+    const baseNutrition = this.m_Rules.foodItemNutrition(food, actor.location.map!.localTime.turnCounter);
+    actor.foodPoints = Math.min(
+      actor.foodPoints + this.m_Rules.actorItemNutritionValue(actor, baseNutrition),
+      this.m_Rules.actorMaxFood(actor)
+    );
+
+    // consume it.
+    actor.inventory!.consume(food);
+
+    // canned food drops empty cans.
+    if (food.model === this.m_GameItems.get(ItemID.FOOD_CANNED_FOOD)) {
+      const emptyCan = new ItemTrap(this.m_GameItems.get(ItemID.TRAP_EMPTY_CAN)); // alpha10 { isActivated = true };
+      emptyCan.activate(actor); // alpha10
+      actor.location.map!.dropItemAt(emptyCan, actor.location.position);
+    }
+
+    // message.
+    const isVisible = this.IsVisibleToPlayer(actor);
+    if (isVisible) this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_EAT), food));
+
+    // vomit?
+    if (this.m_Rules.isFoodSpoiled(food, actor.location.map!.localTime.turnCounter)) {
+      if (this.m_Rules.rollChance(Rules.FOOD_EXPIRED_VOMIT_CHANCE)) {
+        this.DoVomit(actor);
+
+        // message.
+        if (isVisible) {
+          this.AddMessage(
+            this.MakeMessage(actor, `${this.Conjugate(actor, this.VERB_VOMIT)} from eating spoiled food!`)
+          );
+        }
+      }
+    }
   }
 
   // C# DoVomit — RogueGame.cs:15291
   DoVomit(actor: Actor): void {
-    void actor;
-    throw new Error("not yet ported: DoVomit (RogueGame.cs:15291)");
+    // beuargh.
+    actor.staminaPoints -= Rules.FOOD_VOMIT_STA_COST;
+    actor.sleepPoints = Math.max(0, actor.sleepPoints - WorldTime.TURNS_PER_HOUR);
+    actor.foodPoints = Math.max(0, actor.foodPoints - WorldTime.TURNS_PER_HOUR);
+
+    // drop vomit ^^.
+    const loc = actor.location;
+    const map = loc.map!;
+    map.getTileAt(loc.position.x, loc.position.y)?.addDecoration(GameImages.DECO_VOMIT);
   }
 
   // C# DoUseMedicineItem — RogueGame.cs:15304
   DoUseMedicineItem(actor: Actor, med: ItemMedicine): void {
-    void actor;
-    void med;
-    throw new Error("not yet ported: DoUseMedicineItem (RogueGame.cs:15304)");
+    // If player, prevent wasteful usage.
+    if (actor === this.m_Player) {
+      const HPneed = this.m_Rules.actorMaxHPs(actor) - actor.hitPoints;
+      const STAneed = this.m_Rules.actorMaxSTA(actor) - actor.staminaPoints;
+      const SLPneed = this.m_Rules.actorMaxSleep(actor) - 2 - actor.sleepPoints;
+      const CureNeed = actor.infection;
+      const SanNeed = this.m_Rules.actorMaxSanity(actor) - actor.sanity;
+
+      const HPwaste = HPneed <= 0 || med.healing <= 0;
+      const STAwaste = STAneed <= 0 || med.staminaBoost <= 0;
+      const SLPwaste = SLPneed <= 0 || med.sleepBoost <= 0;
+      const CureWaste = CureNeed <= 0 || med.infectionCure <= 0;
+      const SanWaste = SanNeed <= 0 || med.sanityCure <= 0;
+
+      if (HPwaste && STAwaste && SLPwaste && CureWaste && SanWaste) {
+        this.AddMessage(this.MakeErrorMessage("Don't waste medicine!"));
+        return;
+      }
+    }
+
+    // spend APs.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+    // recover HPs, STA, SLP, INF, SAN.
+    actor.hitPoints = Math.min(
+      actor.hitPoints + this.m_Rules.actorMedicineEffect(actor, med.healing),
+      this.m_Rules.actorMaxHPs(actor)
+    );
+    actor.staminaPoints = Math.min(
+      actor.staminaPoints + this.m_Rules.actorMedicineEffect(actor, med.staminaBoost),
+      this.m_Rules.actorMaxSTA(actor)
+    );
+    actor.sleepPoints = Math.min(
+      actor.sleepPoints + this.m_Rules.actorMedicineEffect(actor, med.sleepBoost),
+      this.m_Rules.actorMaxSleep(actor)
+    );
+    actor.infection = Math.max(0, actor.infection - this.m_Rules.actorMedicineEffect(actor, med.infectionCure));
+    actor.sanity = Math.min(
+      actor.sanity + this.m_Rules.actorMedicineEffect(actor, med.sanityCure),
+      this.m_Rules.actorMaxSanity(actor)
+    );
+
+    // consume it.
+    actor.inventory!.consume(med);
+
+    // message.
+    if (this.IsVisibleToPlayer(actor))
+      this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_HEAL_WITH), med));
   }
 
   // C# DoUseAmmoItem — RogueGame.cs:15348
   DoUseAmmoItem(actor: Actor, ammoItem: ItemAmmo): void {
-    void actor;
-    void ammoItem;
-    throw new Error("not yet ported: DoUseAmmoItem (RogueGame.cs:15348)");
+    // spend APs.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+    // get weapon.
+    const ranged = actor.getEquippedWeapon() as ItemRangedWeapon;
+    const model = ranged.model as ItemRangedWeaponModel;
+
+    // compute ammo spent.
+    const ammoSpent = Math.min(model.maxAmmo - ranged.ammo, ammoItem.quantity);
+
+    // reload.
+    ranged.ammo += ammoSpent;
+
+    // spend ammo clip.
+    ammoItem.quantity -= ammoSpent;
+
+    // if no ammo left, remove item.
+    if (ammoItem.quantity <= 0) actor.inventory!.removeAllQuantity(ammoItem);
+
+    // message.
+    if (this.IsVisibleToPlayer(actor)) {
+      this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_RELOAD), ranged));
+    }
   }
 
   // C# DoUseSprayScentItem — RogueGame.cs:15379
+  // alpha10 obsolete
   DoUseSprayScentItem(actor: Actor, spray: ItemSprayScent): void {
+    // C# has this whole method under `#if false`; the new way to use a spray scent
+    // is DoSprayOdorSuppressor. Ported as empty.
     void actor;
     void spray;
-    throw new Error("not yet ported: DoUseSprayScentItem (RogueGame.cs:15379)");
   }
 
   // C# DoUseTrapItem — RogueGame.cs:15400
   DoUseTrapItem(actor: Actor, trap: ItemTrap): void {
-    void actor;
-    void trap;
-    throw new Error("not yet ported: DoUseTrapItem (RogueGame.cs:15400)");
+    // spend APs.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+    // toggle activation.
+    // alpha10 //trap.isActivated = !trap.isActivated;
+    if (trap.isActivated) trap.deactivate();
+    else trap.activate(actor);
+
+    // message.
+    if (this.IsVisibleToPlayer(actor))
+      this.AddMessage(
+        this.MakeMessage(
+          actor,
+          this.Conjugate(actor, trap.isActivated ? this.VERB_ACTIVATE : this.VERB_DESACTIVATE),
+          trap
+        )
+      );
   }
 
   // C# DoUseEntertainmentItem — RogueGame.cs:15417
   DoUseEntertainmentItem(actor: Actor, ent: ItemEntertainment): void {
-    void actor;
-    void ent;
-    throw new Error("not yet ported: DoUseEntertainmentItem (RogueGame.cs:15417)");
+    const visible = this.IsVisibleToPlayer(actor);
+
+    // spend APs.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+    // recover san.
+    this.RegenActorSanity(actor, ent.entertainmentModel.value);
+
+    // message.
+    if (visible) this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_ENJOY), ent));
+
+    // check boring chance.
+    // 100% means discard it.
+    const boreChance = ent.entertainmentModel.boreChance;
+    let bored = false;
+    let discarded = false;
+    if (boreChance === 100) {
+      actor.inventory!.consume(ent);
+      discarded = true;
+    } else if (boreChance > 0) {
+      if (this.m_Rules.rollChance(boreChance)) bored = true;
+    }
+    if (bored) ent.addBoringFor(actor); // alpha10 boring items item centric
+
+    // message.
+    if (visible) {
+      if (bored)
+        this.AddMessage(
+          this.MakeMessage(actor, `${this.Conjugate(actor, this.VERB_BE)} now bored of ${ent.theName}.`)
+        );
+      if (discarded) this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_DISCARD), ent));
+    }
   }
 
   // C# DoRechargeItemBattery — RogueGame.cs:15459
   DoRechargeItemBattery(actor: Actor, it: Item): void {
-    void actor;
-    void it;
-    throw new Error("not yet ported: DoRechargeItemBattery (RogueGame.cs:15459)");
+    // spend APs.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+    // recharge.
+    if (it instanceof ItemLight) {
+      const light = it;
+      light.batteries += WorldTime.TURNS_PER_HOUR;
+    } else if (it instanceof ItemTracker) {
+      const track = it;
+      track.batteries += WorldTime.TURNS_PER_HOUR;
+    }
+
+    // message.
+    if (this.IsVisibleToPlayer(actor)) {
+      this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_RECHARGE), it, " batteries."));
+    }
   }
 
   // C# DoOpenDoor — RogueGame.cs:15486
   DoOpenDoor(actor: Actor, door: DoorWindow): void {
-    void actor;
-    void door;
-    throw new Error("not yet ported: DoOpenDoor (RogueGame.cs:15486)");
+    // Do it.
+    door.setState(DoorWindow.STATE_OPEN);
+
+    // Message.
+    if (this.IsVisibleToPlayer(actor) || this.IsVisibleToPlayer(door)) {
+      this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_OPEN), door));
+      this.RedrawPlayScreen();
+    }
+
+    // Spend APs.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
   }
 
   // C# DoCloseDoor — RogueGame.cs:15503
   DoCloseDoor(actor: Actor, door: DoorWindow): void {
-    void actor;
-    void door;
-    throw new Error("not yet ported: DoCloseDoor (RogueGame.cs:15503)");
+    // Do it.
+    door.setState(DoorWindow.STATE_CLOSED);
+
+    // Message.
+    if (this.IsVisibleToPlayer(actor) || this.IsVisibleToPlayer(door)) {
+      this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_CLOSE), door));
+      this.RedrawPlayScreen();
+    }
+
+    // Spend APs.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
   }
 
   // C# DoBarricadeDoor — RogueGame.cs:15520
   DoBarricadeDoor(actor: Actor, door: DoorWindow): void {
-    void actor;
-    void door;
-    throw new Error("not yet ported: DoBarricadeDoor (RogueGame.cs:15520)");
+    // get barricading item.
+    const it = actor.inventory!.getSmallestStackByType(ItemBarricadeMaterial);
+    if (it === null) throw new Error("no barricading material");
+    const m = it.model as ItemBarricadeMaterialModel;
+
+    // do it.
+    actor.inventory!.consume(it);
+    door.barricadePoints = Math.min(
+      door.barricadePoints + this.m_Rules.actorBarricadingPoints(actor, m.barricadingValue),
+      Rules.BARRICADING_MAX
+    );
+
+    // message.
+    const isVisible = this.IsVisibleToPlayer(actor) || this.IsVisibleToPlayer(door);
+    if (isVisible) {
+      this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_BARRICADE), door));
+    }
+
+    // spend AP.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
   }
 
   // C# DoBuildFortification — RogueGame.cs:15544
-  DoBuildFortification(actor: Actor, buildPos: Point, isLarge: boolean): void {
-    void actor;
-    void buildPos;
-    void isLarge;
-    throw new Error("not yet ported: DoBuildFortification (RogueGame.cs:15544)");
+  // async: C# blocks on CheckMapObjectTriggersTraps.
+  async DoBuildFortification(actor: Actor, buildPos: Point, isLarge: boolean): Promise<void> {
+    // spend AP.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+    // consume material.
+    const need = this.m_Rules.actorBarricadingMaterialNeedForFortification(actor, isLarge);
+    for (let i = 0; i < need; i++) {
+      const it = actor.inventory!.getSmallestStackByType(ItemBarricadeMaterial);
+      if (it === null) throw new Error("no barricading material");
+      actor.inventory!.consume(it);
+    }
+
+    // add object.
+    const fortObj = isLarge
+      ? this.m_TownGenerator.makeObjLargeFortification(GameImages.OBJ_LARGE_WOODEN_FORTIFICATION)
+      : this.m_TownGenerator.makeObjSmallFortification(GameImages.OBJ_SMALL_WOODEN_FORTIFICATION);
+    actor.location.map!.placeMapObject(fortObj, buildPos);
+
+    // message.
+    if (
+      this.IsVisibleToPlayer(actor) ||
+      this.IsVisibleToPlayer(new Location(actor.location.map, buildPos))
+    ) {
+      this.AddMessage(
+        this.MakeMessage(
+          actor,
+          `${this.Conjugate(actor, this.VERB_BUILD)} a ${isLarge ? "large" : "small"} fortification.`
+        )
+      );
+    }
+
+    // check traps.
+    await this.CheckMapObjectTriggersTraps(actor.location.map!, buildPos);
   }
 
   // C# DoRepairFortification — RogueGame.cs:15572
   DoRepairFortification(actor: Actor, fort: Fortification): void {
-    void actor;
-    void fort;
-    throw new Error("not yet ported: DoRepairFortification (RogueGame.cs:15572)");
+    // spend AP.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+    // spend material.
+    const material = actor.inventory!.getSmallestStackByType(ItemBarricadeMaterial);
+    if (material === null) throw new Error("no material");
+    actor.inventory!.consume(material);
+
+    // repair HP.
+    fort.hitPoints = Math.min(
+      fort.maxHitPoints,
+      fort.hitPoints +
+        this.m_Rules.actorBarricadingPoints(actor, (material.model as ItemBarricadeMaterialModel).barricadingValue)
+    );
+
+    // message.
+    if (this.IsVisibleToPlayer(actor) || this.IsVisibleToPlayer(fort)) {
+      this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_REPAIR), fort));
+    }
   }
 
   // C# DoSwitchPowerGenerator — RogueGame.cs:15597
-  DoSwitchPowerGenerator(actor: Actor, powGen: PowerGenerator): void {
-    void actor;
-    void powGen;
-    throw new Error("not yet ported: DoSwitchPowerGenerator (RogueGame.cs:15597)");
+  // async: C# blocks on OnMapPowerGeneratorSwitch.
+  async DoSwitchPowerGenerator(actor: Actor, powGen: PowerGenerator): Promise<void> {
+    // spend AP.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+    // switch it.
+    powGen.togglePower();
+
+    // message.
+    if (this.IsVisibleToPlayer(actor) || this.IsVisibleToPlayer(powGen)) {
+      this.AddMessage(
+        this.MakeMessage(actor, this.Conjugate(actor, this.VERB_SWITCH), powGen, powGen.isOn ? " on." : " off.")
+      );
+    }
+
+    // check for special effects.
+    await this.OnMapPowerGeneratorSwitch(actor.location, powGen);
+
+    // done.
   }
 
   // C# DoDestroyObject — RogueGame.cs:15619
   DoDestroyObject(mapObj: MapObject): void {
-    void mapObj;
-    throw new Error("not yet ported: DoDestroyObject (RogueGame.cs:15619)");
+    const door = mapObj instanceof DoorWindow ? mapObj : null;
+    const isWindow = door !== null && door.isWindow;
+
+    // force HP to zero.
+    mapObj.hitPoints = 0;
+
+    // drop plank and improvised weapons?
+    if (mapObj.givesWood) {
+      // drop planks.
+      let nbPlanks = 1 + Math.floor(mapObj.maxHitPoints / DoorWindow.BASE_HITPOINTS);
+      while (nbPlanks > 0) {
+        const planks = new ItemBarricadeMaterial(this.m_GameItems.get(ItemID.BAR_WOODEN_PLANK));
+        planks.quantity = Math.min(planks.model.stackingLimit, nbPlanks);
+        if (planks.quantity < 1) planks.quantity = 1;
+        mapObj.location.map!.dropItemAt(planks, mapObj.location.position);
+        nbPlanks -= planks.quantity;
+      }
+
+      // drop improvised weapons?
+      if (this.m_Rules.rollChance(Rules.IMPROVED_WEAPONS_FROM_BROKEN_WOOD_CHANCE)) {
+        // improvised club, improvised spear.
+        const impWpn = this.m_Rules.rollChance(50)
+          ? new ItemMeleeWeapon(this.m_GameItems.get(ItemID.MELEE_IMPROVISED_CLUB))
+          : new ItemMeleeWeapon(this.m_GameItems.get(ItemID.MELEE_IMPROVISED_SPEAR));
+
+        // drop it.
+        mapObj.location.map!.dropItemAt(impWpn, mapObj.location.position);
+      }
+    }
+
+    // remove object - but not windows.
+    if (isWindow) {
+      door!.setState(DoorWindow.STATE_BROKEN);
+    } else mapObj.location.map!.removeMapObject(mapObj);
+
+    // loud noise.
+    this.OnLoudNoise(mapObj.location.map!, mapObj.location.position, "A loud *CRASH*");
   }
 
   // C# DoBreak — RogueGame.cs:15670
-  DoBreak(actor: Actor, mapObj: MapObject): void {
-    void actor;
-    void mapObj;
-    throw new Error("not yet ported: DoBreak (RogueGame.cs:15670)");
+  // async: C# blocks on AnimDelay.
+  async DoBreak(actor: Actor, mapObj: MapObject): Promise<void> {
+    const bashAttack = this.m_Rules.actorMeleeAttack(actor, actor.currentMeleeAttack, null, mapObj);
+
+    // Attacking a barricaded door.
+    const door = mapObj instanceof DoorWindow ? mapObj : null;
+    if (door !== null && door.isBarricaded) {
+      // Spend APs & STA.
+      this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+      this.SpendActorStaminaPoints(actor, Rules.STAMINA_COST_MELEE_ATTACK);
+
+      // Bash.
+      door.barricadePoints -= bashAttack.damageValue;
+
+      // loud noise.
+      this.OnLoudNoise(door.location.map!, door.location.position, "A loud *BASH*");
+
+      // message.
+      if (this.IsVisibleToPlayer(actor) || this.IsVisibleToPlayer(door)) {
+        if (this.IsVisibleToPlayer(door)) {
+          // alpha10 tell & show damage
+          // FIXME: MapToScreen/RedrawPlayScreen are slice 8 methods; best effort.
+          try {
+            const screenPos = this.MapToScreen(mapObj.location.position);
+            this.AddOverlay(new OverlayImage(screenPos, GameImages.ICON_MELEE_DAMAGE));
+            this.AddOverlay(
+              new OverlayText(
+                screenPos.add(new Point(DAMAGE_DX, DAMAGE_DY)),
+                Color.White,
+                bashAttack.damageValue.toString(),
+                Color.Black
+              )
+            ); // alpha10
+          } catch (e) {}
+          this.AddMessage(
+            this.MakeMessage(
+              actor,
+              `${this.Conjugate(actor, this.VERB_BASH)} the barricade for ${bashAttack.damageValue} damage.`
+            )
+          ); // alpha10
+          this.RedrawPlayScreen();
+          await this.AnimDelay(actor.isPlayer ? DELAY_NORMAL : DELAY_SHORT);
+          this.ClearOverlays();
+        } else {
+          this.AddMessage(
+            this.MakeMessage(actor, `${this.Conjugate(actor, this.VERB_BASH)} the barricade.`)
+          ); // alpha10
+        }
+      } else {
+        if (this.m_Rules.rollChance(PLAYER_HEAR_BASH_CHANCE))
+          this.AddMessageIfAudibleForPlayer(
+            door.location,
+            this.MakePlayerCentricMessage("You hear someone bashing barricades", door.location.position)
+          );
+      }
+
+      // done.
+      return;
+    }
+    // Attacking a un-barricaded door or a normal object
+    else {
+      // Always hit.
+      mapObj.hitPoints -= bashAttack.damageValue;
+
+      // Spend APs & STA.
+      this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+      this.SpendActorStaminaPoints(actor, Rules.STAMINA_COST_MELEE_ATTACK);
+
+      // Broken?
+      let isBroken = false;
+      if (mapObj.hitPoints <= 0) {
+        // breaks.
+        this.DoDestroyObject(mapObj);
+        isBroken = true;
+      }
+
+      // loud noise.
+      this.OnLoudNoise(mapObj.location.map!, mapObj.location.position, "A loud *CRASH*");
+
+      // Message.
+      const isActorVisible = this.IsVisibleToPlayer(actor);
+      const isDoorVisible = this.IsVisibleToPlayer(mapObj);
+      const isPlayer = actor.isPlayer;
+
+      if (isActorVisible || isDoorVisible) {
+        // FIXME: MapToScreen is a slice 8 method; best effort.
+        try {
+          if (isActorVisible) {
+            const ap = this.MapToScreen(actor.location.position);
+            this.AddOverlay(new OverlayRect(Color.Yellow, new Rect(ap.x, ap.y, TILE_SIZE, TILE_SIZE)));
+          }
+          if (isDoorVisible) {
+            const dp = this.MapToScreen(mapObj.location.position);
+            this.AddOverlay(new OverlayRect(Color.Red, new Rect(dp.x, dp.y, TILE_SIZE, TILE_SIZE)));
+          }
+        } catch (e) {}
+
+        if (isBroken) {
+          this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_BREAK), mapObj));
+          try {
+            if (isActorVisible)
+              this.AddOverlay(new OverlayImage(this.MapToScreen(actor.location.position), GameImages.ICON_MELEE_ATTACK));
+            if (isDoorVisible)
+              this.AddOverlay(new OverlayImage(this.MapToScreen(mapObj.location.position), GameImages.ICON_KILLED));
+          } catch (e2) {}
+          this.RedrawPlayScreen();
+          await this.AnimDelay(DELAY_LONG);
+        } else {
+          if (isDoorVisible) {
+            this.AddMessage(
+              this.MakeMessage(
+                actor,
+                `${this.Conjugate(actor, this.VERB_BASH)} ${mapObj.theName} for ${bashAttack.damageValue} damage.`
+              )
+            ); // alpha10
+            try {
+              const dp = this.MapToScreen(mapObj.location.position);
+              this.AddOverlay(new OverlayImage(dp, GameImages.ICON_MELEE_DAMAGE));
+              this.AddOverlay(
+                new OverlayText(
+                  dp.add(new Point(DAMAGE_DX, DAMAGE_DY)),
+                  Color.White,
+                  bashAttack.damageValue.toString(),
+                  Color.Black
+                )
+              ); // alpha10
+            } catch (e2) {}
+          } else if (isActorVisible) {
+            this.AddMessage(
+              this.MakeMessage(actor, `${this.Conjugate(actor, this.VERB_BASH)} ${mapObj.theName}.`)
+            ); // alpha10
+          }
+
+          if (isActorVisible) {
+            try {
+              this.AddOverlay(
+                new OverlayImage(this.MapToScreen(actor.location.position), GameImages.ICON_MELEE_ATTACK)
+              );
+            } catch (e2) {}
+          }
+
+          this.RedrawPlayScreen();
+          await this.AnimDelay(isPlayer ? DELAY_NORMAL : DELAY_SHORT);
+        }
+
+        // alpha10 bug fix; clear overlays only if action is visible
+        this.ClearOverlays(); // was in the wrong place!
+      } else {
+        if (isBroken) {
+          if (this.m_Rules.rollChance(PLAYER_HEAR_BREAK_CHANCE))
+            this.AddMessageIfAudibleForPlayer(
+              mapObj.location,
+              this.MakePlayerCentricMessage("You hear someone breaking furniture", mapObj.location.position)
+            );
+        } else {
+          if (this.m_Rules.rollChance(PLAYER_HEAR_BASH_CHANCE))
+            this.AddMessageIfAudibleForPlayer(
+              mapObj.location,
+              this.MakePlayerCentricMessage("You hear someone bashing furniture", mapObj.location.position)
+            );
+        }
+      }
+    }
   }
 
   // C# DoPushPullFollowersHelp — RogueGame.cs:15810
+  // alpha10
+  /** @param staCost C# `ref int staCost` - the shared cost, divided among the helpers. */
   DoPushPullFollowersHelp(actor: Actor, mapObj: MapObject, isPulling: boolean, staCost: { value: number }): void {
-    void actor;
-    void mapObj;
-    void isPulling;
-    void staCost;
-    throw new Error("not yet ported: DoPushPullFollowersHelp (RogueGame.cs:15810)");
+    const isVisibleMobj = this.IsVisibleToPlayer(mapObj);
+
+    const helpers: Actor[] = [];
+    for (const fo of actor.followers!) {
+      // follower can help if: not sleeping, idle and adj to map object.
+      if (
+        !fo.isSleeping &&
+        (fo.activity === Activity.IDLE || fo.activity === Activity.FOLLOWING) &&
+        this.m_Rules.isAdjacent(fo.location, mapObj.location)
+      ) {
+        helpers.push(fo);
+      }
+    }
+    if (helpers.length > 0) {
+      // share the sta cost.
+      staCost.value = Math.floor(mapObj.weight / (1 + helpers.length));
+      for (const h of helpers) {
+        // spend fo AP & STA.
+        this.SpendActorActionPoints(h, Rules.BASE_ACTION_COST);
+        this.SpendActorStaminaPoints(h, staCost.value);
+        // message.
+        if (isVisibleMobj || this.IsVisibleToPlayer(h))
+          this.AddMessage(
+            this.MakeMessage(
+              h,
+              `${this.Conjugate(h, this.VERB_HELP)} ${actor.name} ${isPulling ? "pulling" : "pushing"} ${mapObj.theName}.`
+            )
+          );
+      }
+    }
   }
 
   // C# DoPush — RogueGame.cs:15841
-  DoPush(actor: Actor, mapObj: MapObject, toPos: Point): void {
-    void actor;
-    void mapObj;
-    void toPos;
-    throw new Error("not yet ported: DoPush (RogueGame.cs:15841)");
+  // async: C# blocks on OnActorEnterTile/CheckMapObjectTriggersTraps.
+  async DoPush(actor: Actor, mapObj: MapObject, toPos: Point): Promise<void> {
+    const isVisible = this.IsVisibleToPlayer(actor) || this.IsVisibleToPlayer(mapObj);
+    const staCost = { value: mapObj.weight };
+
+    // followers help?
+    if (actor.countFollowers > 0) this.DoPushPullFollowersHelp(actor, mapObj, false, staCost); // alpha10
+
+    // spend AP & STA.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+    this.SpendActorStaminaPoints(actor, staCost.value);
+
+    // do it : move object, then move actor if he is pushing it away and can enter the tile.
+    const map = mapObj.location.map!;
+    const prevObjPos = mapObj.location.position;
+    map.removeMapObject(mapObj);
+    map.placeMapObject(mapObj, toPos);
+    if (
+      !this.m_Rules.isAdjacent(toPos, actor.location.position) &&
+      this.m_Rules.isWalkableFor(actor, map, prevObjPos.x, prevObjPos.y).ok
+    ) {
+      // pushing away, need to follow.
+      if (this.TryActorLeaveTile(actor)) {
+        // alpha10
+        map.removeActor(actor);
+        map.placeActor(actor, prevObjPos);
+        await this.OnActorEnterTile(actor); // alpha10
+      }
+    }
+
+    // noise/message.
+    if (isVisible) {
+      this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_PUSH), mapObj));
+      this.RedrawPlayScreen();
+    } else {
+      // loud noise.
+      this.OnLoudNoise(map, toPos, "Something being pushed");
+
+      // player hears?
+      if (this.m_Rules.rollChance(PLAYER_HEAR_PUSHPULL_CHANCE)) {
+        this.AddMessageIfAudibleForPlayer(
+          mapObj.location,
+          this.MakePlayerCentricMessage("You hear something being pushed", toPos)
+        );
+      }
+    }
+
+    // check traps.
+    await this.CheckMapObjectTriggersTraps(map, toPos);
   }
 
   // C# DoShove — RogueGame.cs:15892
-  DoShove(actor: Actor, target: Actor, toPos: Point): void {
-    void actor;
-    void target;
-    void toPos;
-    throw new Error("not yet ported: DoShove (RogueGame.cs:15892)");
+  // async: C# blocks on OnActorEnterTile.
+  async DoShove(actor: Actor, target: Actor, toPos: Point): Promise<void> {
+    // Target try to leave tile.
+    if (!this.TryActorLeaveTile(target)) {
+      // waste ap.
+      this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+      return;
+    }
+
+    // spend AP & STA.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+    this.SpendActorStaminaPoints(actor, Rules.DEFAULT_ACTOR_WEIGHT);
+
+    // force target to stop dragging corpses.
+    this.DoStopDraggingCorpses(target);
+
+    // do it : move target, then move actor if he is pushing it away and can enter the tile.
+    const map = target.location.map!;
+    const prevTargetPos = target.location.position;
+    map.placeActor(target, toPos);
+    if (
+      !this.m_Rules.isAdjacent(toPos, actor.location.position) &&
+      this.m_Rules.isWalkableFor(actor, map, prevTargetPos.x, prevTargetPos.y).ok
+    ) {
+      // shoving away, need to follow.
+      // Try to leave tile.
+      if (this.TryActorLeaveTile(actor)) {
+        // alpha10
+        map.removeActor(actor);
+        map.placeActor(actor, prevTargetPos);
+        // Trigger stuff.
+        await this.OnActorEnterTile(actor);
+      }
+    }
+
+    // message.
+    const isVisible = this.IsVisibleToPlayer(actor) || this.IsVisibleToPlayer(target) || this.IsVisibleToPlayer(map, toPos);
+    if (isVisible) {
+      this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_SHOVE), target));
+      this.RedrawPlayScreen();
+    }
+
+    // if target is sleeping, wakes him up!
+    if (target.isSleeping) this.DoWakeUp(target);
+
+    // Trigger stuff.
+    await this.OnActorEnterTile(target);
   }
 
   // C# DoPull — RogueGame.cs:15943
-  DoPull(actor: Actor, mapObj: MapObject, moveActorToPos: Point): void {
-    void actor;
-    void mapObj;
-    void moveActorToPos;
-    throw new Error("not yet ported: DoPull (RogueGame.cs:15943)");
+  // alpha10
+  // async: C# blocks on OnActorEnterTile/CheckMapObjectTriggersTraps.
+  async DoPull(actor: Actor, mapObj: MapObject, moveActorToPos: Point): Promise<void> {
+    const isVisible = this.IsVisibleToPlayer(actor) || this.IsVisibleToPlayer(mapObj);
+    const staCost = { value: mapObj.weight };
+
+    // try leaving tile
+    if (!this.TryActorLeaveTile(actor)) {
+      // waste ap.
+      this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+      return;
+    }
+
+    // followers help?
+    if (actor.countFollowers > 0) this.DoPushPullFollowersHelp(actor, mapObj, true, staCost);
+
+    // spend AP & STA.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+    this.SpendActorStaminaPoints(actor, staCost.value);
+
+    // do it : move actor then move object
+    const map = mapObj.location.map!;
+    // actor...
+    const pullObjectTo = actor.location.position;
+    map.removeActor(actor);
+    map.placeActor(actor, moveActorToPos); // assumed to be walkable, checked by rules
+    // ...object
+    map.removeMapObject(mapObj);
+    map.placeMapObject(mapObj, pullObjectTo);
+
+    // noise/message.
+    if (isVisible) {
+      this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_PULL), mapObj));
+      this.RedrawPlayScreen();
+    } else {
+      // loud noise.
+      this.OnLoudNoise(map, mapObj.location.position, "Something being pushed");
+
+      // player hears?
+      if (this.m_Rules.rollChance(PLAYER_HEAR_PUSHPULL_CHANCE)) {
+        this.AddMessageIfAudibleForPlayer(
+          mapObj.location,
+          this.MakePlayerCentricMessage("You hear something being pushed", mapObj.location.position)
+        );
+      }
+    }
+
+    // check triggers
+    await this.OnActorEnterTile(actor);
+    await this.CheckMapObjectTriggersTraps(map, mapObj.location.position);
   }
 
   // C# DoPullActor — RogueGame.cs:15998
-  DoPullActor(actor: Actor, target: Actor, moveActorToPos: Point): void {
-    void actor;
-    void target;
-    void moveActorToPos;
-    throw new Error("not yet ported: DoPullActor (RogueGame.cs:15998)");
+  // alpha10
+  // async: C# blocks on OnActorEnterTile.
+  async DoPullActor(actor: Actor, target: Actor, moveActorToPos: Point): Promise<void> {
+    const isVisible = this.IsVisibleToPlayer(actor) || this.IsVisibleToPlayer(target);
+
+    // try leaving tile, both actors and target
+    if (!this.TryActorLeaveTile(actor)) {
+      // waste ap.
+      this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+      return;
+    }
+    if (!this.TryActorLeaveTile(target)) {
+      // waste ap.
+      this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+      return;
+    }
+
+    // spend AP & STA.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+    this.SpendActorStaminaPoints(actor, Rules.DEFAULT_ACTOR_WEIGHT);
+
+    // force target to stop dragging corpses.
+    this.DoStopDraggingCorpses(target);
+
+    // do it : move actor then move target
+    const map = target.location.map!;
+    // move actor...
+    const pullTargetTo = actor.location.position;
+    map.removeActor(actor);
+    map.placeActor(actor, moveActorToPos);
+    // ...move target
+    map.removeActor(target);
+    map.placeActor(target, pullTargetTo);
+
+    // if target is sleeping, wakes him up!
+    if (target.isSleeping) this.DoWakeUp(target);
+
+    // message
+    if (isVisible) {
+      this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_PULL), target));
+      this.RedrawPlayScreen();
+    }
+
+    // Trigger stuff.
+    await this.OnActorEnterTile(actor);
+    await this.OnActorEnterTile(target);
   }
 
   // C# DoStartSleeping — RogueGame.cs:16051
   DoStartSleeping(actor: Actor): void {
-    void actor;
-    throw new Error("not yet ported: DoStartSleeping (RogueGame.cs:16051)");
+    // spend AP.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+    // force actor to stop dragging corpses.
+    this.DoStopDraggingCorpses(actor);
+
+    // set activity & state.
+    actor.activity = Activity.SLEEPING;
+    actor.isSleeping = true;
   }
 
   // C# DoWakeUp — RogueGame.cs:16064
   DoWakeUp(actor: Actor): void {
-    void actor;
-    throw new Error("not yet ported: DoWakeUp (RogueGame.cs:16064)");
+    // set activity & state.
+    actor.activity = Activity.IDLE;
+    actor.isSleeping = false;
+
+    // message.
+    if (this.IsVisibleToPlayer(actor)) {
+      this.AddMessage(this.MakeMessage(actor, `${this.Conjugate(actor, this.VERB_WAKE_UP)}.`));
+    }
+
+    // stop sleep music if player.
+    if (actor.isPlayer && this.m_MusicManager.getCurrentMusicId() === GameMusics.SLEEP) this.m_MusicManager.stop();
   }
 
   // C# DoTag — RogueGame.cs:16083
   DoTag(actor: Actor, spray: ItemSprayPaint, pos: Point): void {
-    void actor;
-    void spray;
-    void pos;
-    throw new Error("not yet ported: DoTag (RogueGame.cs:16083)");
+    // spend AP.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+    // spend paint.
+    spray.paintQuantity -= 1;
+
+    // add tag decoration.
+    const map = actor.location.map!;
+    map.getTileAt(pos.x, pos.y)?.addDecoration((spray.model as ItemSprayPaintModel).tagImageId);
+
+    // message.
+    if (this.IsVisibleToPlayer(actor)) {
+      this.AddMessage(this.MakeMessage(actor, `${this.Conjugate(actor, this.VERB_SPRAY)} a tag.`));
+    }
   }
 
   // C# DoSprayOdorSuppressor — RogueGame.cs:16105
+  // alpha10 new way to use spray scent
   DoSprayOdorSuppressor(actor: Actor, suppressor: ItemSprayScent, sprayOn: Actor): void {
-    void actor;
-    void suppressor;
-    void sprayOn;
-    throw new Error("not yet ported: DoSprayOdorSuppressor (RogueGame.cs:16105)");
+    // spend AP.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+    // spend spray.
+    suppressor.sprayQuantity -= 1;
+
+    // add odor suppressor on spray target
+    sprayOn.odorSuppressorCounter += suppressor.strength;
+
+    // message.
+    if (this.IsVisibleToPlayer(actor)) {
+      this.AddMessage(
+        this.MakeMessage(
+          actor,
+          `${this.Conjugate(actor, this.VERB_SPRAY)} ${sprayOn === actor ? this.HimselfOrHerself(actor) : sprayOn.name}.`
+        )
+      );
+    }
   }
 
   // C# DoGiveOrderTo — RogueGame.cs:16126
-  DoGiveOrderTo(master: Actor, slave: Actor, order: ActorOrder): void {
-    void master;
-    void slave;
-    void order;
-    throw new Error("not yet ported: DoGiveOrderTo (RogueGame.cs:16126)");
+  // async: C# blocks on DoSay.
+  async DoGiveOrderTo(master: Actor, slave: Actor, order: ActorOrder): Promise<void> {
+    // master spend AP.
+    this.SpendActorActionPoints(master, Rules.BASE_ACTION_COST);
+
+    // refuse if :
+    // - master is not slave leader.
+    // - slave is not trusting leader.
+    if (master !== slave.leader) {
+      await this.DoSay(slave, master, "Who are you to give me orders?", SayFlags.IS_FREE_ACTION);
+      return;
+    }
+    if (!this.m_Rules.isActorTrustingLeader(slave)) {
+      await this.DoSay(
+        slave,
+        master,
+        "Sorry, I don't trust you enough yet.",
+        SayFlags.IS_FREE_ACTION | SayFlags.IS_IMPORTANT
+      );
+      return;
+    }
+
+    // get AI.
+    const ai = slave.controller as AIController | null;
+    if (ai === null) return;
+
+    // give order.
+    ai.setOrder(order);
+
+    // message.
+    if (this.IsVisibleToPlayer(master) || this.IsVisibleToPlayer(slave)) {
+      this.AddMessage(
+        this.MakeMessage(master, this.Conjugate(master, this.VERB_ORDER), slave, ` to ${order.toString()}.`)
+      );
+    }
   }
 
   // C# DoCancelOrder — RogueGame.cs:16160
   DoCancelOrder(master: Actor, slave: Actor): void {
-    void master;
-    void slave;
-    throw new Error("not yet ported: DoCancelOrder (RogueGame.cs:16160)");
+    // master spend AP.
+    this.SpendActorActionPoints(master, Rules.BASE_ACTION_COST);
+
+    // get AI.
+    const ai = slave.controller as AIController | null;
+    if (ai === null) return;
+
+    // cancel order.
+    ai.setOrder(null);
+
+    // message.
+    if (this.IsVisibleToPlayer(master) || this.IsVisibleToPlayer(slave)) {
+      this.AddMessage(this.MakeMessage(master, this.Conjugate(master, this.VERB_ORDER), slave, " to forget its orders."));
+    }
   }
 
   // C# OnLoudNoise — RogueGame.cs:16184
@@ -11409,7 +12887,7 @@ export class RogueGame {
           gainTrust = true;
 
         if (gainTrust) {
-          this.DoSay(fo, killer, "That was close! Thanks for the help!!", SayFlags.IS_FREE_ACTION);
+          await this.DoSay(fo, killer, "That was close! Thanks for the help!!", SayFlags.IS_FREE_ACTION);
           this.ModifyActorTrustInLeader(fo, Rules.TRUST_LEADER_KILL_ENEMY, true);
         }
       }
@@ -11461,7 +12939,7 @@ export class RogueGame {
 
         // we see the murderer!
         // make enemy and emote.
-        this.DoSay(
+        await this.DoSay(
           a,
           killer!,
           `MURDER! ${killer!.theName} HAS KILLED ${deadGuy.theName}!`,
@@ -11486,7 +12964,7 @@ export class RogueGame {
             Color.White
           )
         );
-      else this.DoSay(killer, deadGuy, "Good riddance, murderer!", SayFlags.IS_FREE_ACTION | SayFlags.IS_DANGER);
+      else await this.DoSay(killer, deadGuy, "Good riddance, murderer!", SayFlags.IS_FREE_ACTION | SayFlags.IS_DANGER);
     }
 
     //////////////////////////////////////////////
@@ -17654,18 +19132,18 @@ export class RogueGame {
   }
 
   /** camelCase alias for `game.doBreak()` — C# `DoBreak`. */
-  doBreak(actor: Actor, mapObj: MapObject): void {
-    this.DoBreak(actor, mapObj);
+  doBreak(actor: Actor, mapObj: MapObject): Promise<void> {
+    return this.DoBreak(actor, mapObj);
   }
 
   /** camelCase alias for `game.doBuildFortification()` — C# `DoBuildFortification`. */
-  doBuildFortification(actor: Actor, buildPos: Point, isLarge: boolean): void {
-    this.DoBuildFortification(actor, buildPos, isLarge);
+  doBuildFortification(actor: Actor, buildPos: Point, isLarge: boolean): Promise<void> {
+    return this.DoBuildFortification(actor, buildPos, isLarge);
   }
 
   /** camelCase alias for `game.doChat()` — C# `DoChat`. */
-  doChat(speaker: Actor, target: Actor): void {
-    this.DoChat(speaker, target);
+  doChat(speaker: Actor, target: Actor): Promise<void> {
+    return this.DoChat(speaker, target);
   }
 
   /** camelCase alias for `game.doCloseDoor()` — C# `DoCloseDoor`. */
@@ -17699,8 +19177,8 @@ export class RogueGame {
   }
 
   /** camelCase alias for `game.doMeleeAttack()` — C# `DoMeleeAttack`. */
-  doMeleeAttack(attacker: Actor, defender: Actor): void {
-    this.DoMeleeAttack(attacker, defender);
+  doMeleeAttack(attacker: Actor, defender: Actor): Promise<void> {
+    return this.DoMeleeAttack(attacker, defender);
   }
 
   /** camelCase alias for `game.doMoveActor()` — C# `DoMoveActor`. */
@@ -17714,18 +19192,18 @@ export class RogueGame {
   }
 
   /** camelCase alias for `game.doPull()` — C# `DoPull`. */
-  doPull(actor: Actor, mapObj: MapObject, moveActorToPos: Point): void {
-    this.DoPull(actor, mapObj, moveActorToPos);
+  doPull(actor: Actor, mapObj: MapObject, moveActorToPos: Point): Promise<void> {
+    return this.DoPull(actor, mapObj, moveActorToPos);
   }
 
   /** camelCase alias for `game.doPush()` — C# `DoPush`. */
-  doPush(actor: Actor, mapObj: MapObject, toPos: Point): void {
-    this.DoPush(actor, mapObj, toPos);
+  doPush(actor: Actor, mapObj: MapObject, toPos: Point): Promise<void> {
+    return this.DoPush(actor, mapObj, toPos);
   }
 
   /** camelCase alias for `game.doRangedAttack()` — C# `DoRangedAttack`. */
-  doRangedAttack(attacker: Actor, defender: Actor, LoF: Point[], mode: FireMode): void {
-    this.DoRangedAttack(attacker, defender, LoF, mode);
+  doRangedAttack(attacker: Actor, defender: Actor, LoF: Point[], mode: FireMode): Promise<void> {
+    return this.DoRangedAttack(attacker, defender, LoF, mode);
   }
 
   /** camelCase alias for `game.doRechargeItemBattery()` — C# `DoRechargeItemBattery`. */
@@ -17744,13 +19222,13 @@ export class RogueGame {
   }
 
   /** camelCase alias for `game.doSay()` — C# `DoSay`. */
-  doSay(speaker: Actor, target: Actor, text: string, flags: SayFlags): void {
-    this.DoSay(speaker, target, text, flags);
+  doSay(speaker: Actor, target: Actor, text: string, flags: SayFlags): Promise<void> {
+    return this.DoSay(speaker, target, text, flags);
   }
 
   /** camelCase alias for `game.doShout()` — C# `DoShout`. */
-  doShout(speaker: Actor, text: string): void {
-    this.DoShout(speaker, text);
+  doShout(speaker: Actor, text: string | null): Promise<void> {
+    return this.DoShout(speaker, text);
   }
 
   /** camelCase alias for `game.doSprayOdorSuppressor()` — C# `DoSprayOdorSuppressor`. */
@@ -17769,8 +19247,8 @@ export class RogueGame {
   }
 
   /** camelCase alias for `game.doStealLead()` — C# `DoStealLead`. */
-  doStealLead(actor: Actor, other: Actor): void {
-    this.DoStealLead(actor, other);
+  doStealLead(actor: Actor, other: Actor): Promise<void> {
+    return this.DoStealLead(actor, other);
   }
 
   /** camelCase alias for `game.doStopDragCorpse()` — C# `DoStopDragCorpse`. */
@@ -17784,8 +19262,8 @@ export class RogueGame {
   }
 
   /** camelCase alias for `game.doSwitchPowerGenerator()` — C# `DoSwitchPowerGenerator`. */
-  doSwitchPowerGenerator(actor: Actor, powGen: PowerGenerator): void {
-    this.DoSwitchPowerGenerator(actor, powGen);
+  doSwitchPowerGenerator(actor: Actor, powGen: PowerGenerator): Promise<void> {
+    return this.DoSwitchPowerGenerator(actor, powGen);
   }
 
   /** camelCase alias for `game.doTakeFromContainer()` — C# `DoTakeFromContainer`. */
@@ -17799,23 +19277,23 @@ export class RogueGame {
   }
 
   /** camelCase alias for `game.doTakeLead()` — C# `DoTakeLead`. */
-  doTakeLead(actor: Actor, other: Actor): void {
-    this.DoTakeLead(actor, other);
+  doTakeLead(actor: Actor, other: Actor): Promise<void> {
+    return this.DoTakeLead(actor, other);
   }
 
   /** camelCase alias for `game.doThrowGrenadePrimed()` — C# `DoThrowGrenadePrimed`. */
-  doThrowGrenadePrimed(actor: Actor, targetPos: Point): void {
-    this.DoThrowGrenadePrimed(actor, targetPos);
+  doThrowGrenadePrimed(actor: Actor, targetPos: Point): Promise<void> {
+    return this.DoThrowGrenadePrimed(actor, targetPos);
   }
 
   /** camelCase alias for `game.doThrowGrenadeUnprimed()` — C# `DoThrowGrenadeUnprimed`. */
-  doThrowGrenadeUnprimed(actor: Actor, targetPos: Point): void {
-    this.DoThrowGrenadeUnprimed(actor, targetPos);
+  doThrowGrenadeUnprimed(actor: Actor, targetPos: Point): Promise<void> {
+    return this.DoThrowGrenadeUnprimed(actor, targetPos);
   }
 
   /** camelCase alias for `game.doTrade()` — C# `DoTrade`. */
-  doTrade(speaker: Actor, target: Actor): void {
-    this.DoTrade(speaker, target);
+  doTrade(speaker: Actor, target: Actor): Promise<void> {
+    return this.DoTrade(speaker, target);
   }
 
   /** camelCase alias for `game.doUnequipItem()` — C# `DoUnequipItem`. */

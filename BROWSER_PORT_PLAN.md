@@ -381,13 +381,44 @@ combines them with the hand-ported overlay types, constructor and getters into
 | 3 | 4156–5366 | Events (invasions, refugees, raids, drops) + spawning | ✅ Ported |
 | 4 | 5367–10255 | FOV, `HandlePlayerActor` and all `HandlePlayerXXX` commands | ✅ Ported |
 | 5 | 10256–12658 | AI actor handling, advisor, input helpers, describe-* | ✅ Ported |
-| 6 | 12660–16790 | Action primitives `DoMoveActor` … `KillActor`, blood/corpses | ⬜ 46 stubs |
+| 6 | 12660–16790 | Action primitives `DoMoveActor` … `KillActor`, blood/corpses | ✅ Ported |
 | 7 | 16791–17986 | Player death, new day/night, skills, infection/zombification | ✅ Ported |
 | 8 | 17987–19723 | View, drawing, overlays, coordinates, visibility helpers | ✅ Ported |
 | 9 | 19724–21381 | Save/load, paths, `GenerateWorld`, district maps, map switching | ✅ Ported |
 | 10 | 21382–23233 | Sim thread, achievements, special events, reincarnation, dev/data | ✅ Ported |
 
-**46 stubs left** (slice 6 only — the last blocker before the game is playable).
+**0 stubs left — Phase 4 is complete.** Every `RogueGame.cs` method (23 233
+lines, all 11 slices) is now ported to `web/src/engine/RogueGame.ts`.
+`npm run type-check` and `npm run build` are both clean.
+
+Slice 6 was the last one, done in dependency order rather than file order:
+
+1. **6h damage/death** (8) — `InflictDamage`, `KillActor`, `Disarm`,
+   `CheckUndeadEvolution`, `NextUndeadEvolution`, `SplatterBlood`,
+   `UndeadRemains`, `DropCorpse`
+2. **`OnLoudNoise`** (1) — high fan-in
+3. **6a movement** (7), **6b aggression** (7), **6c combat** (12),
+   **6d social** (6), **6e items** (21), **6f world objects** (7),
+   **6g push/pull/sleep/orders** (12)
+
+Slice 6 notes:
+
+* Almost every action primitive became `async`, because C# blocks on
+  `AnimDelay` / `AddMessagePressEnter` / `UI_WaitKey` inside them. That
+  propagated outward through slices 4, 6 and 10 — all call sites and the
+  `game.doXxx()` camelCase aliases were audited and `await`ed. Three
+  deliberate exceptions, each documented in-line with the reason:
+  `GenerateInsaneAction` and `DoReviveCorpse` both call `DoSay` in a
+  configuration that never reaches its press-ENTER branch (that needs
+  `IS_IMPORTANT` on a player target), and `SpawnActorOnMapBorder` fires
+  `OnActorEnterTile` without awaiting it — it is sync with 11 call sites
+  across the event code, and a trap under a freshly spawned actor at the map
+  border is a rare edge case.
+* Added to support the port: `Actor.removeAllAgressorSelfDefenceRelations`,
+  `Map.trimToBounds`, `Map.setAllAsUnvisited`, `Map.findFirstInMap`,
+  `Map.hasZonePartiallyNamedAt`, `Inventory.getSmallestStackByType`,
+  `ItemBodyArmorModel.toDefence`, `ItemSprayPaintModel.tagImageId`
+  (wired to `GameImages.DECO_PLAYER_TAG1..4`), `Color.Crimson`.
 
 Slice 8 notes:
 

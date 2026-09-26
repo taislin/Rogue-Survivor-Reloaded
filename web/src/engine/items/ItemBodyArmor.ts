@@ -1,5 +1,6 @@
 import { Item } from "@data/Item";
 import { ItemModel } from "@data/ItemModel";
+import { Defence } from "@data/Defence";
 import { GameFactions } from "@gameplay/GameFactions";
 import { GameGangs, GangID } from "@gameplay/GameGangs";
 
@@ -23,6 +24,11 @@ export class ItemBodyArmorModel extends ItemModel {
     this.protectionShot = protectionShot;
     this.encumbrance = encumbrance;
     this.weight = weight;
+  }
+
+  /** C# `ItemBodyArmorModel.ToDefence` - note the negated encumbrance. */
+  toDefence(): Defence {
+    return new Defence(-this.encumbrance, this.protectionHit, this.protectionShot);
   }
 }
 

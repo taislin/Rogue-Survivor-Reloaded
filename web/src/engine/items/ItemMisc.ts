@@ -71,10 +71,14 @@ export class ItemBarricadeMaterial extends Item {
 
 export class ItemSprayPaintModel extends ItemModel {
   readonly maxPaintQuantity: number;
+  /** C# `TagImageID` - the floor decoration this spray leaves when tagging. */
+  readonly tagImageId: string;
 
-  constructor(aName: string, theNames: string, imageId: string, maxPaintQuantity: number) {
+  constructor(aName: string, theNames: string, imageId: string, maxPaintQuantity: number, tagImageId: string) {
     super(aName, theNames, imageId);
     this.maxPaintQuantity = maxPaintQuantity;
+    if (tagImageId == null) throw new Error("tagImageId");
+    this.tagImageId = tagImageId;
   }
 }
 
