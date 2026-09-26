@@ -3233,21 +3233,21 @@ export class RogueGame {
       );
       if (mayArrive.length > 0) {
         const iArrive = this.m_Rules.roll(0, mayArrive.length);
-        this.FireEvent_UniqueActorArrive(district.entryMap!, mayArrive[iArrive]);
+        await this.FireEvent_UniqueActorArrive(district.entryMap!, mayArrive[iArrive]);
       }
     }
   }
 
   // C# FireEvent_UniqueActorArrive — RogueGame.cs:4344
-  FireEvent_UniqueActorArrive(map: Map, unique: UniqueActor): void {
+  // async: C# blocks on PlayUniqueActorMusicAndMessage's press-ENTER.
+  async FireEvent_UniqueActorArrive(map: Map, unique: UniqueActor): Promise<void> {
     const spawned = this.SpawnActorOnMapBorder(map, unique.theActor!, SPAWN_DISTANCE_TO_PLAYER, true);
-    if (!spawned)
-      return;
+    if (!spawned) return;
 
     unique.isSpawned = true;
 
     if (map === this.m_Player.location.map && !this.m_Player.isSleeping && !this.m_Player.model.abilities.isUndead) {
-      this.PlayUniqueActorMusicAndMessage(unique, true);
+      await this.PlayUniqueActorMusicAndMessage(unique, true);
       this.m_Session.scoring.addEvent(this.m_Session.worldTime.turnCounter, `${unique.theActor!.name} arrived.`);
     }
   }
@@ -4162,7 +4162,7 @@ export class RogueGame {
               break;
             case PlayerCommand.USE_EXIT:
               if (await this.TryPlayerInsanity()) { loop = false; break; }
-              loop = !this.DoUseExit(player, player.location.position);
+              loop = !(await this.DoUseExit(player, player.location.position));
               break;
 
             case PlayerCommand.ITEM_SLOT_0:
@@ -4213,39 +4213,39 @@ export class RogueGame {
 
             case PlayerCommand.CLOSE_DOOR:
               if (await this.TryPlayerInsanity()) { loop = false; break; }
-              loop = !this.HandlePlayerCloseDoor(player);
+              loop = !(await this.HandlePlayerCloseDoor(player));
               break;
             case PlayerCommand.BARRICADE_MODE:
               if (await this.TryPlayerInsanity()) { loop = false; break; }
-              loop = !this.HandlePlayerBarricade(player);
+              loop = !(await this.HandlePlayerBarricade(player));
               break;
             case PlayerCommand.BREAK_MODE:
               if (await this.TryPlayerInsanity()) { loop = false; break; }
-              loop = !this.HandlePlayerBreak(player);
+              loop = !(await this.HandlePlayerBreak(player));
               break;
             case PlayerCommand.BUILD_LARGE_FORTIFICATION:
               if (await this.TryPlayerInsanity()) { loop = false; break; }
-              loop = !this.HandlePlayerBuildFortification(player, true);
+              loop = !(await this.HandlePlayerBuildFortification(player, true));
               break;
             case PlayerCommand.BUILD_SMALL_FORTIFICATION:
               if (await this.TryPlayerInsanity()) { loop = false; break; }
-              loop = !this.HandlePlayerBuildFortification(player, false);
+              loop = !(await this.HandlePlayerBuildFortification(player, false));
               break;
             case PlayerCommand.ORDER_MODE:
               if (await this.TryPlayerInsanity()) { loop = false; break; }
-              loop = !this.HandlePlayerOrderMode(player);
+              loop = !(await this.HandlePlayerOrderMode(player));
               break;
             case PlayerCommand.PULL_MODE: // alpha10
               if (await this.TryPlayerInsanity()) { loop = false; break; }
-              loop = !this.HandlePlayerPull(player);
+              loop = !(await this.HandlePlayerPull(player));
               break;
             case PlayerCommand.PUSH_MODE:
               if (await this.TryPlayerInsanity()) { loop = false; break; }
-              loop = !this.HandlePlayerPush(player);
+              loop = !(await this.HandlePlayerPush(player));
               break;
             case PlayerCommand.FIRE_MODE:
               if (await this.TryPlayerInsanity()) { loop = false; break; }
-              loop = !this.HandlePlayerFireMode(player);
+              loop = !(await this.HandlePlayerFireMode(player));
               break;
 
             case PlayerCommand.SHOUT:
@@ -4255,37 +4255,37 @@ export class RogueGame {
 
             case PlayerCommand.SLEEP:
               if (await this.TryPlayerInsanity()) { loop = false; break; }
-              loop = !this.HandlePlayerSleep(player);
+              loop = !(await this.HandlePlayerSleep(player));
               break;
 
             case PlayerCommand.SWITCH_PLACE:
               if (await this.TryPlayerInsanity()) { loop = false; break; }
-              loop = !this.HandlePlayerSwitchPlace(player);
+              loop = !(await this.HandlePlayerSwitchPlace(player));
               break;
 
             case PlayerCommand.USE_SPRAY:
               if (await this.TryPlayerInsanity()) { loop = false; break; }
-              loop = !this.HandlePlayerUseSpray(player);
+              loop = !(await this.HandlePlayerUseSpray(player));
               break;
 
             case PlayerCommand.LEAD_MODE:
               if (await this.TryPlayerInsanity()) { loop = false; break; }
-              loop = !this.HandlePlayerTakeLead(player);
+              loop = !(await this.HandlePlayerTakeLead(player));
               break;
 
             case PlayerCommand.GIVE_ITEM:
               if (await this.TryPlayerInsanity()) { loop = false; break; }
-              loop = !this.HandlePlayerGiveItem(player, mousePos);
+              loop = !(await this.HandlePlayerGiveItem(player, mousePos));
               break;
 
             case PlayerCommand.NEGOCIATE_TRADE: // alpha10
               if (await this.TryPlayerInsanity()) { loop = false; break; }
-              loop = !this.HandlePlayerNegociateTrade(player); // alpha10
+              loop = !(await this.HandlePlayerNegociateTrade(player)); // alpha10
               break;
 
             case PlayerCommand.MARK_ENEMIES_MODE:
               if (await this.TryPlayerInsanity()) { loop = false; break; }
-              this.HandlePlayerMarkEnemies(player);
+              await this.HandlePlayerMarkEnemies(player);
               break;
 
             case PlayerCommand.EAT_CORPSE:
@@ -10204,7 +10204,8 @@ export class RogueGame {
     }
 
     if (isAttVisible) {
-      // FIXME: MapToScreen is a slice 8 method; best effort until then.
+      // Slice 8 is ported, so MapToScreen no longer throws; the try/catch is
+      // now redundant (kept for Phase 8 cleanup).
       try {
         const attPos = this.MapToScreen(attacker.location.position);
         const defPos = this.MapToScreen(defender.location.position);
@@ -10541,7 +10542,8 @@ export class RogueGame {
     }
 
     if (isAttVisible) {
-      // FIXME: MapToScreen is a slice 8 method; best effort until then.
+      // Slice 8 is ported, so MapToScreen no longer throws; the try/catch is
+      // now redundant (kept for Phase 8 cleanup).
       try {
         const attPos = this.MapToScreen(attacker.location.position);
         const defPos = this.MapToScreen(defender.location.position);
@@ -10663,7 +10665,8 @@ export class RogueGame {
         const isAttVisible = this.IsVisibleToPlayer(attacker);
         const isObjVisible = this.IsVisibleToPlayer(mapObj);
         if (isAttVisible || isObjVisible) {
-          // FIXME: MapToScreen is a slice 8 method; best effort until then.
+          // Slice 8 is ported, so MapToScreen no longer throws; the try/catch is
+        // now redundant (kept for Phase 8 cleanup).
           try {
             const attPos = this.MapToScreen(attacker.location.position);
             this.AddOverlay(new OverlayRect(Color.Yellow, new Rect(attPos.x, attPos.y, TILE_SIZE, TILE_SIZE)));
@@ -10709,7 +10712,8 @@ export class RogueGame {
     // message about throwing.
     const isVisible = this.IsVisibleToPlayer(actor) || this.IsVisibleToPlayer(map, targetPos);
     if (isVisible) {
-      // FIXME: MapToScreen is a slice 8 method; best effort until then.
+      // Slice 8 is ported, so MapToScreen no longer throws; the try/catch is
+      // now redundant (kept for Phase 8 cleanup).
       try {
         const actPos = this.MapToScreen(actor.location.position);
         const tgtPos = this.MapToScreen(targetPos);
@@ -10746,7 +10750,8 @@ export class RogueGame {
     // message about throwing.
     const isVisible = this.IsVisibleToPlayer(actor) || this.IsVisibleToPlayer(actor.location.map!, targetPos);
     if (isVisible) {
-      // FIXME: MapToScreen is a slice 8 method; best effort until then.
+      // Slice 8 is ported, so MapToScreen no longer throws; the try/catch is
+      // now redundant (kept for Phase 8 cleanup).
       try {
         const actPos = this.MapToScreen(actor.location.position);
         const tgtPos = this.MapToScreen(targetPos);
@@ -10780,7 +10785,8 @@ export class RogueGame {
     // blast icon vs audio.
     let isVisible = this.IsVisibleToPlayer(location);
     if (isVisible) {
-      // FIXME: MapToScreen is a slice 8 method; best effort until then.
+      // Slice 8 is ported, so MapToScreen no longer throws; the try/catch is
+      // now redundant (kept for Phase 8 cleanup).
       try {
         this.ShowBlastImage(this.MapToScreen(location.position), blastAttack, blastAttack.damage[0]);
       } catch (e) {}
@@ -10878,7 +10884,8 @@ export class RogueGame {
 
       // show if visible.
       if (this.IsVisibleToPlayer(blastCenter.map!, pt)) {
-        // FIXME: MapToScreen is a slice 8 method; best effort until then.
+        // Slice 8 is ported, so MapToScreen no longer throws; the try/catch is
+        // now redundant (kept for Phase 8 cleanup).
         try {
           this.ShowBlastImage(this.MapToScreen(pt), blast, damage);
         } catch (e) {}
@@ -11299,7 +11306,8 @@ export class RogueGame {
       this.AddMessage(this.MakeMessage(speaker, `to ${target.theName} : `, sayColor));
       this.AddMessage(this.MakeMessage(speaker, `"${text}"`, sayColor));
       if (isPlayer && isImportant && !isBot) {
-        // FIXME: MapToScreen is a slice 8 method; best effort until then.
+        // Slice 8 is ported, so MapToScreen no longer throws; the try/catch is
+        // now redundant (kept for Phase 8 cleanup).
         try {
           const sp = this.MapToScreen(speaker.location.position);
           this.AddOverlay(new OverlayRect(Color.Yellow, new Rect(sp.x, sp.y, TILE_SIZE, TILE_SIZE)));
@@ -11327,7 +11335,8 @@ export class RogueGame {
       if (speaker.leader === this.m_Player && !this.m_Player.isBotPlayer) {
         // alpha10.1 handle bot
         this.ClearMessages();
-        // FIXME: MapToScreen is a slice 8 method; best effort until then.
+        // Slice 8 is ported, so MapToScreen no longer throws; the try/catch is
+        // now redundant (kept for Phase 8 cleanup).
         try {
           const sp = this.MapToScreen(speaker.location.position);
           this.AddOverlay(new OverlayRect(Color.Yellow, new Rect(sp.x, sp.y, TILE_SIZE, TILE_SIZE)));
@@ -12101,7 +12110,7 @@ export class RogueGame {
       if (this.IsVisibleToPlayer(actor) || this.IsVisibleToPlayer(door)) {
         if (this.IsVisibleToPlayer(door)) {
           // alpha10 tell & show damage
-          // FIXME: MapToScreen/RedrawPlayScreen are slice 8 methods; best effort.
+          // MapToScreen/RedrawPlayScreen are ported (slice 8); try/catch is redundant.
           try {
             const screenPos = this.MapToScreen(mapObj.location.position);
             this.AddOverlay(new OverlayImage(screenPos, GameImages.ICON_MELEE_DAMAGE));
@@ -12165,7 +12174,7 @@ export class RogueGame {
       const isPlayer = actor.isPlayer;
 
       if (isActorVisible || isDoorVisible) {
-        // FIXME: MapToScreen is a slice 8 method; best effort.
+        // MapToScreen is ported (slice 8); the try/catch is now redundant.
         try {
           if (isActorVisible) {
             const ap = this.MapToScreen(actor.location.position);
@@ -12858,7 +12867,7 @@ export class RogueGame {
 
           // Message.
           if (this.IsVisibleToPlayer(killer)) {
-            // FIXME: MapToScreen/RedrawPlayScreen are still slice 8 stubs.
+            // MapToScreen/RedrawPlayScreen are ported (slice 8); try/catch is redundant.
             try {
               const sp = this.MapToScreen(killer.location.position);
               this.AddOverlay(new OverlayRect(Color.Yellow, new Rect(sp.x, sp.y, TILE_SIZE, TILE_SIZE)));
@@ -17776,7 +17785,7 @@ export class RogueGame {
 
     // overlays.
     this.AddOverlay(new OverlayPopup(text, Color.Gold, Color.Gold, Color.DimGray, new Point(0, 0)));
-    // FIXME: MapToScreen is still a slice 8 stub.
+    // MapToScreen is ported (slice 8); the try/catch is now redundant.
     try {
       const screenPos = this.MapToScreen(speaker.location.position);
       this.AddOverlay(new OverlayRect(Color.Yellow, new Rect(screenPos.x, screenPos.y, TILE_SIZE, TILE_SIZE)));
@@ -18744,7 +18753,7 @@ export class RogueGame {
     await this.InflictDamage(crushedActor, crushingDamage);
     if (this.IsVisibleToPlayer(crushedActor)) {
       this.AddMessage(this.MakeMessage(crushedActor, `is crushed for ${crushingDamage} damage!`));
-      // FIXME: MapToScreen/RedrawPlayScreen are still slice 8 stubs, so the damage
+      // MapToScreen/RedrawPlayScreen are ported (slice 8), so the damage
       // popup is best effort until slice 8 lands.
       let screenPos: Point | null = null;
       try {
