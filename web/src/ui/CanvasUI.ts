@@ -1,4 +1,5 @@
 import { IRogueUI, GameKeyEvent, MouseButton } from "@engine/IRogueUI";
+import { imagePath } from "@engine/AssetPaths";
 import { Color } from "@engine/Color";
 import { Point } from "@engine/Point";
 import { Rect }  from "@engine/Rect";
@@ -16,8 +17,11 @@ const FONT_BOLD   = 'bold 8.25pt "Lucida Console", "Courier New", monospace';
  * Canvas 2D implementation of IRogueUI.
  *
  * Replaces the C# GDIGameCanvas / DXGameCanvas hierarchy.
- * Images are loaded from /assets/<imageId>.png (forward-slash paths, no extension
- * in the ID — same convention as the C# image IDs but with OS-appropriate slashes).
+ * Images are loaded through `AssetPaths.imagePath()`, i.e.
+ * /assets/images/<imageSet>/<imageId>.png (forward-slash paths, no extension in the
+ * ID — same convention as the C# image IDs but with OS-appropriate slashes).
+ * The sprite set defaults to "classic"; the other folders under assets/images/ are
+ * variations of it.
  */
 export class CanvasUI implements IRogueUI {
   private readonly ctx:    CanvasRenderingContext2D;
@@ -312,7 +316,7 @@ export class CanvasUI implements IRogueUI {
   private loadImage(imageId: string): Promise<HTMLImageElement | null> {
     if (this.imageLoading.has(imageId)) return this.imageLoading.get(imageId)!;
 
-    const src = `/assets/${imageId.replace(/\\/g, "/")}.png`;
+    const src = imagePath(imageId);
     const promise = new Promise<HTMLImageElement | null>((resolve) => {
       const img  = new Image();
       img.onload  = () => { this.imageCache.set(imageId, img); resolve(img); };

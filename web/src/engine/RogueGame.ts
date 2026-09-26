@@ -10141,49 +10141,611 @@ export class RogueGame {
   }
 
   // C# DoMeleeAttack — RogueGame.cs:13669
-  DoMeleeAttack(attacker: Actor, defender: Actor): void {
-    void attacker;
-    void defender;
-    throw new Error("not yet ported: DoMeleeAttack (RogueGame.cs:13669)");
+  // async: C# blocks on AddMessagePressEnter/AnimDelay/KillActor/DoMakeAggression.
+  async DoMeleeAttack(attacker: Actor, defender: Actor): Promise<void> {
+    // set activiy & target.
+    attacker.activity = Activity.FIGHTING;
+    attacker.targetActor = defender;
+
+    // if not already enemies, attacker is aggressor.
+    if (!this.m_Rules.areEnemies(attacker, defender)) await this.DoMakeAggression(attacker, defender);
+
+    // get attack & defence.
+    const attack = this.m_Rules.actorMeleeAttack(attacker, attacker.currentMeleeAttack, defender);
+    const defence = this.m_Rules.actorDefence(defender, defender.currentDefence);
+
+    // spend APs & STA.
+    this.SpendActorActionPoints(attacker, Rules.BASE_ACTION_COST);
+    this.SpendActorStaminaPoints(attacker, Rules.STAMINA_COST_MELEE_ATTACK + attack.staminaPenalty);
+
+    // resolve attack.
+    const hitRoll = this.m_Rules.rollSkill(attack.hitValue);
+    const defRoll = this.m_Rules.rollSkill(defence.value);
+
+    // loud noise.
+    this.OnLoudNoise(attacker.location.map!, attacker.location.position, "Nearby fighting");
+
+    // if defender is long waiting player, force stop.
+    if (this.m_IsPlayerLongWait && defender.isPlayer) {
+      this.m_IsPlayerLongWaitForcedStop = true;
+    }
+
+    // show/hear.
+    const isDefVisible = this.IsVisibleToPlayer(defender);
+    const isAttVisible = this.IsVisibleToPlayer(attacker);
+    const isPlayer = attacker.isPlayer || defender.isPlayer;
+    const isBot = attacker.isBotPlayer || defender.isBotPlayer; // alpha10.1 handle bot
+
+    if (
+      !isDefVisible &&
+      !isAttVisible &&
+      !isPlayer &&
+      this.m_Rules.rollChance(PLAYER_HEAR_FIGHT_CHANCE)
+    ) {
+      this.AddMessageIfAudibleForPlayer(
+        attacker.location,
+        this.MakePlayerCentricMessage("You hear fighting", attacker.location.position)
+      );
+    }
+
+    if (isAttVisible) {
+      // FIXME: MapToScreen is a slice 8 method; best effort until then.
+      try {
+        const attPos = this.MapToScreen(attacker.location.position);
+        const defPos = this.MapToScreen(defender.location.position);
+        this.AddOverlay(new OverlayRect(Color.Yellow, new Rect(attPos.x, attPos.y, TILE_SIZE, TILE_SIZE)));
+        this.AddOverlay(new OverlayRect(Color.Red, new Rect(defPos.x, defPos.y, TILE_SIZE, TILE_SIZE)));
+        this.AddOverlay(new OverlayImage(attPos, GameImages.ICON_MELEE_ATTACK));
+      } catch (e) {}
+    }
+
+    // Hit vs Missed
+    if (hitRoll > defRoll) {
+      // alpha10
+      // roll for attacker disarming defender
+      if (attacker.model.abilities.canDisarm && this.m_Rules.rollChance(attack.disarmChance)) {
+        const disarmIt = this.Disarm(defender);
+        if (disarmIt !== null) {
+          // show
+          if (isDefVisible) {
+            if (isPlayer) this.ClearMessages();
+            this.AddMessage(this.MakeMessage(attacker, this.Conjugate(attacker, this.VERB_DISARM), defender));
+            this.AddMessage(
+              new Message(
+                `${disarmIt.theName} is sent flying!`,
+                attacker.location.map!.localTime.turnCounter
+              )
+            );
+            if (isPlayer && !isBot) {
+              await this.AddMessagePressEnter();
+            } else {
+              this.RedrawPlayScreen();
+              await this.AnimDelay(DELAY_SHORT);
+            }
+          }
+        }
+      }
+
+      // roll damage - double potential if def is sleeping.
+      const dmgRoll =
+        this.m_Rules.rollDamage(defender.isSleeping ? attack.damageValue * 2 : attack.damageValue) -
+        defence.protectionHit;
+      // damage?
+      if (dmgRoll > 0) {
+        // inflict dmg.
+        await this.InflictDamage(defender, dmgRoll);
+
+        // regen HP/Rot and infection?
+        if (attacker.model.abilities.canZombifyKilled && !defender.model.abilities.isUndead) {
+          this.RegenActorHitPoints(attacker, this.m_Rules.actorBiteHpRegen(attacker, dmgRoll));
+          attacker.foodPoints = Math.min(
+            attacker.foodPoints + this.m_Rules.actorBiteNutritionValue(attacker, dmgRoll),
+            this.m_Rules.actorMaxRot(attacker)
+          );
+          if (isAttVisible) {
+            this.AddMessage(this.MakeMessage(attacker, this.Conjugate(attacker, this.VERB_FEAST_ON), defender, " flesh !"));
+          }
+          this.InfectActor(defender, Rules.infectionForDamage(attacker, dmgRoll));
+        }
+
+        // Killed?
+        if (defender.hitPoints <= 0) {
+          // def killed!
+          // show.
+          if (isAttVisible || isDefVisible) {
+            this.AddMessage(
+              this.MakeMessage(
+                attacker,
+                this.Conjugate(
+                  attacker,
+                  defender.model.abilities.isUndead
+                    ? this.VERB_DESTROY
+                    : this.m_Rules.isMurder(attacker, defender)
+                      ? this.VERB_MURDER
+                      : this.VERB_KILL
+                ),
+                defender,
+                " !"
+              )
+            );
+            try {
+              this.AddOverlay(
+                new OverlayImage(this.MapToScreen(defender.location.position), GameImages.ICON_KILLED)
+              );
+            } catch (e) {}
+            this.RedrawPlayScreen();
+            await this.AnimDelay(DELAY_LONG);
+          }
+
+          // kill.
+          await this.KillActor(attacker, defender, "hit");
+
+          // cause insanity?
+          if (attacker.model.abilities.isUndead && !defender.model.abilities.isUndead)
+            this.SeeingCauseInsanity(
+              attacker,
+              attacker.location,
+              Rules.SANITY_HIT_EATEN_ALIVE,
+              `${defender.name} eaten alive`
+            );
+
+          // turn victim into zombie; always turn player into zombie NOW if killed by
+          // zombifier or if was infected.
+          if (Rules.hasImmediateZombification(this.m_Session.gameMode) || defender === this.m_Player) {
+            if (
+              attacker.model.abilities.canZombifyKilled &&
+              !defender.model.abilities.isUndead &&
+              this.m_Rules.rollChance(s_Options.zombificationChance)
+            ) {
+              if (defender.isPlayer) {
+                // remove player corpse.
+                defender.location.map!.tryRemoveCorpseOf(defender);
+              }
+              // add new zombie.
+              this.Zombify(attacker, defender, false);
+
+              // show
+              if (isDefVisible) {
+                this.AddMessage(
+                  this.MakeMessage(attacker, `${this.Conjugate(attacker, "turn")}`, defender, " into a Zombie!")
+                );
+                this.RedrawPlayScreen();
+                await this.AnimDelay(DELAY_LONG);
+              }
+            } else if (defender === this.m_Player && !defender.model.abilities.isUndead && defender.infection > 0) {
+              // remove player corpse.
+              defender.location.map!.tryRemoveCorpseOf(defender);
+              // zombify player!
+              this.Zombify(null, defender, false);
+
+              // show
+              this.AddMessage(this.MakeMessage(defender, `${this.Conjugate(defender, "turn")} into a Zombie!`));
+              this.RedrawPlayScreen();
+              await this.AnimDelay(DELAY_LONG);
+            }
+          }
+        } else {
+          // show
+          if (isAttVisible || isDefVisible) {
+            this.AddMessage(
+              this.MakeMessage(attacker, this.Conjugate(attacker, attack.verb), defender, ` for ${dmgRoll} damage.`)
+            );
+            try {
+              const sp = this.MapToScreen(defender.location.position);
+              this.AddOverlay(new OverlayImage(sp, GameImages.ICON_MELEE_DAMAGE));
+              this.AddOverlay(
+                new OverlayText(
+                  sp.add(new Point(DAMAGE_DX, DAMAGE_DY)),
+                  Color.White,
+                  dmgRoll.toString(),
+                  Color.Black
+                )
+              );
+            } catch (e) {}
+            this.RedrawPlayScreen();
+            await this.AnimDelay(isPlayer ? DELAY_NORMAL : DELAY_SHORT);
+          }
+        }
+      } else {
+        if (isAttVisible || isDefVisible) {
+          this.AddMessage(
+            this.MakeMessage(attacker, this.Conjugate(attacker, attack.verb), defender, " for no effect.")
+          );
+          try {
+            this.AddOverlay(
+              new OverlayImage(this.MapToScreen(defender.location.position), GameImages.ICON_MELEE_MISS)
+            );
+          } catch (e) {}
+          this.RedrawPlayScreen();
+          await this.AnimDelay(isPlayer ? DELAY_NORMAL : DELAY_SHORT);
+        }
+      }
+    } else {
+      // miss
+      // show
+      if (isAttVisible || isDefVisible) {
+        this.AddMessage(this.MakeMessage(attacker, this.Conjugate(attacker, this.VERB_MISS), defender));
+        try {
+          this.AddOverlay(new OverlayImage(this.MapToScreen(defender.location.position), GameImages.ICON_MELEE_MISS));
+        } catch (e) {}
+        this.RedrawPlayScreen();
+        await this.AnimDelay(isPlayer ? DELAY_NORMAL : DELAY_SHORT);
+      }
+    }
+
+    // weapon break?
+    const meleeWeapon = attacker.getEquippedWeapon();
+    if (meleeWeapon instanceof ItemMeleeWeapon && !meleeWeapon.model.isUnbreakable) {
+      if (
+        this.m_Rules.rollChance(
+          meleeWeapon.isFragile ? Rules.MELEE_WEAPON_FRAGILE_BREAK_CHANCE : Rules.MELEE_WEAPON_BREAK_CHANCE
+        )
+      ) {
+        // do it.
+        // stackable weapons : only break ONE.
+        this.OnUnequipItem(attacker, meleeWeapon);
+        if (meleeWeapon.quantity > 1) --meleeWeapon.quantity;
+        else attacker.inventory!.removeAllQuantity(meleeWeapon);
+
+        // message.
+        if (isAttVisible) {
+          this.AddMessage(
+            this.MakeMessage(attacker, `: ${meleeWeapon.theName} breaks and is now useless!`)
+          );
+          this.RedrawPlayScreen();
+          await this.AnimDelay(isPlayer ? DELAY_NORMAL : DELAY_SHORT);
+        }
+      }
+    }
+
+    // alpha10 bug fix; clear overlays only if action is visible
+    if (isAttVisible || isDefVisible) this.ClearOverlays();
   }
 
   // C# DoRangedAttack — RogueGame.cs:13889
-  DoRangedAttack(attacker: Actor, defender: Actor, LoF: Point[], mode: FireMode): void {
-    void attacker;
-    void defender;
-    void LoF;
-    void mode;
-    throw new Error("not yet ported: DoRangedAttack (RogueGame.cs:13889)");
+  // async: C# blocks on DoSingleRangedAttack/DoMakeAggression.
+  async DoRangedAttack(attacker: Actor, defender: Actor, LoF: Point[], mode: FireMode): Promise<void> {
+    // if not enemies, aggression.
+    if (!this.m_Rules.areEnemies(attacker, defender)) await this.DoMakeAggression(attacker, defender);
+
+    // resolve, depending on mode.
+    switch (mode) {
+      case FireMode.DEFAULT: {
+        // spend AP.
+        this.SpendActorActionPoints(attacker, Rules.BASE_ACTION_COST);
+
+        // do attack.
+        await this.DoSingleRangedAttack(attacker, defender, LoF, 0);
+        break;
+      }
+
+      case FireMode.RAPID: {
+        // spend AP.
+        this.SpendActorActionPoints(attacker, Rules.BASE_ACTION_COST);
+
+        // 1st attack
+        await this.DoSingleRangedAttack(attacker, defender, LoF, 1);
+
+        // 2nd attack.
+        // special cases:
+        // - target was killed by 1st attack.
+        // - no more ammo.
+        const w = attacker.getEquippedWeapon();
+        if (!(w instanceof ItemRangedWeapon)) throw new Error("rapid fire but no equipped ranged weapon");
+        if (defender.isDead) {
+          // spend 2nd shot ammo.
+          --w.ammo;
+
+          // shoot at nothing.
+          const attack = attacker.currentRangedAttack;
+          this.AddMessage(this.MakeMessage(attacker, `${this.Conjugate(attacker, attack.verb)} at nothing.`));
+        } else if (w.ammo <= 0) {
+          // fail silently.
+          return;
+        } else {
+          // perform attack normally.
+          await this.DoSingleRangedAttack(attacker, defender, LoF, 2);
+        }
+        break;
+      }
+      default:
+        throw new Error("unhandled mode");
+    }
   }
 
   // C# DoSingleRangedAttack — RogueGame.cs:13950
-  DoSingleRangedAttack(attacker: Actor, defender: Actor, LoF: Point[], shotCounter: number): void {
-    void attacker;
-    void defender;
-    void LoF;
-    void shotCounter;
-    throw new Error("not yet ported: DoSingleRangedAttack (RogueGame.cs:13950)");
+  // @param shotCounter 0 for normal shot, 1 for 1st rapid fire shot, 2 for 2nd rapid fire shot
+  // async: C# blocks on InflictDamage/KillActor/DoCheckFireThrough/AnimDelay.
+  async DoSingleRangedAttack(
+    attacker: Actor,
+    defender: Actor,
+    LoF: Point[],
+    shotCounter: number
+  ): Promise<void> {
+    // set activiy & target.
+    attacker.activity = Activity.FIGHTING;
+    attacker.targetActor = defender;
+
+    // get attack & defence.
+    const targetDistance = this.m_Rules.gridDistance(attacker.location.position, defender.location.position);
+    const attack = this.m_Rules.actorRangedAttack(attacker, attacker.currentRangedAttack, targetDistance, defender);
+    const defence = this.m_Rules.actorDefence(defender, defender.currentDefence);
+
+    // spend STA.
+    this.SpendActorStaminaPoints(attacker, attack.staminaPenalty);
+
+    // Firearms weapon jam?
+    if (attack.kind === AttackKind.FIREARM) {
+      const jamChances = this.m_Rules.isWeatherRain(this.m_Session.world!.weather)
+        ? Rules.FIREARM_JAM_CHANCE_RAIN
+        : Rules.FIREARM_JAM_CHANCE_NO_RAIN;
+      if (this.m_Rules.rollChance(jamChances)) {
+        if (this.IsVisibleToPlayer(attacker)) {
+          this.AddMessage(this.MakeMessage(attacker, " : weapon jam!"));
+          return;
+        }
+      }
+    }
+
+    // spend ammo.
+    const weapon = attacker.getEquippedWeapon();
+    if (!(weapon instanceof ItemRangedWeapon))
+      throw new Error("DoSingleRangedAttack but no equipped ranged weapon");
+    --weapon.ammo;
+
+    // check we are firing through something and it intercepts the attack.
+    if (await this.DoCheckFireThrough(attacker, LoF)) {
+      return;
+    }
+
+    // if defender is long waiting player, force stop.
+    if (this.m_IsPlayerLongWait && defender.isPlayer) {
+      this.m_IsPlayerLongWaitForcedStop = true;
+    }
+
+    // resolve attack.
+    const hitValue = shotCounter === 0 ? attack.hitValue : shotCounter === 1 ? attack.hit2Value : attack.hit3Value;
+    const hitRoll = this.m_Rules.rollSkill(hitValue);
+    const defRoll = this.m_Rules.rollSkill(defence.value);
+
+    // show/hear.
+    const isDefVisible = this.IsVisibleToPlayer(defender.location);
+    const isAttVisible = this.IsVisibleToPlayer(attacker.location);
+    const isPlayer = attacker.isPlayer || defender.isPlayer;
+
+    if (
+      !isDefVisible &&
+      !isAttVisible &&
+      !isPlayer &&
+      this.m_Rules.rollChance(PLAYER_HEAR_FIGHT_CHANCE)
+    ) {
+      this.AddMessageIfAudibleForPlayer(
+        attacker.location,
+        this.MakePlayerCentricMessage("You hear firing", attacker.location.position)
+      );
+    }
+
+    if (isAttVisible) {
+      // FIXME: MapToScreen is a slice 8 method; best effort until then.
+      try {
+        const attPos = this.MapToScreen(attacker.location.position);
+        const defPos = this.MapToScreen(defender.location.position);
+        this.AddOverlay(new OverlayRect(Color.Yellow, new Rect(attPos.x, attPos.y, TILE_SIZE, TILE_SIZE)));
+        this.AddOverlay(new OverlayRect(Color.Red, new Rect(defPos.x, defPos.y, TILE_SIZE, TILE_SIZE)));
+        this.AddOverlay(new OverlayImage(attPos, GameImages.ICON_RANGED_ATTACK));
+      } catch (e) {}
+    }
+
+    // Hit vs Missed
+    if (hitRoll > defRoll) {
+      // roll damage - double potential if def is sleeping.
+      const dmgRoll =
+        this.m_Rules.rollDamage(defender.isSleeping ? attack.damageValue * 2 : attack.damageValue) -
+        defence.protectionShot;
+      if (dmgRoll > 0) {
+        // inflict dmg.
+        await this.InflictDamage(defender, dmgRoll);
+
+        // Killed?
+        if (defender.hitPoints <= 0) {
+          // def killed!
+          // show.
+          if (isDefVisible) {
+            this.AddMessage(
+              this.MakeMessage(
+                attacker,
+                this.Conjugate(
+                  attacker,
+                  defender.model.abilities.isUndead
+                    ? this.VERB_DESTROY
+                    : this.m_Rules.isMurder(attacker, defender)
+                      ? this.VERB_MURDER
+                      : this.VERB_KILL
+                ),
+                defender,
+                " !"
+              )
+            );
+            try {
+              this.AddOverlay(
+                new OverlayImage(this.MapToScreen(defender.location.position), GameImages.ICON_KILLED)
+              );
+            } catch (e) {}
+            this.RedrawPlayScreen();
+            await this.AnimDelay(DELAY_LONG);
+          }
+
+          // kill.
+          await this.KillActor(attacker, defender, "shot");
+        } else {
+          // show
+          if (isDefVisible) {
+            this.AddMessage(
+              this.MakeMessage(attacker, this.Conjugate(attacker, attack.verb), defender, ` for ${dmgRoll} damage.`)
+            );
+            try {
+              const sp = this.MapToScreen(defender.location.position);
+              this.AddOverlay(new OverlayImage(sp, GameImages.ICON_RANGED_DAMAGE));
+              this.AddOverlay(
+                new OverlayText(
+                  sp.add(new Point(DAMAGE_DX, DAMAGE_DY)),
+                  Color.White,
+                  dmgRoll.toString(),
+                  Color.Black
+                )
+              );
+            } catch (e) {}
+            this.RedrawPlayScreen();
+            await this.AnimDelay(isPlayer ? DELAY_NORMAL : DELAY_SHORT);
+          }
+        }
+      } else {
+        if (isDefVisible) {
+          this.AddMessage(
+            this.MakeMessage(attacker, this.Conjugate(attacker, attack.verb), defender, " for no effect.")
+          );
+          try {
+            this.AddOverlay(
+              new OverlayImage(this.MapToScreen(defender.location.position), GameImages.ICON_RANGED_MISS)
+            );
+          } catch (e) {}
+          this.RedrawPlayScreen();
+          await this.AnimDelay(isPlayer ? DELAY_NORMAL : DELAY_SHORT);
+        }
+      }
+    } else {
+      // miss
+      // show
+      if (isDefVisible) {
+        this.AddMessage(this.MakeMessage(attacker, this.Conjugate(attacker, this.VERB_MISS), defender));
+        try {
+          this.AddOverlay(
+            new OverlayImage(this.MapToScreen(defender.location.position), GameImages.ICON_RANGED_MISS)
+          );
+        } catch (e) {}
+        this.RedrawPlayScreen();
+        await this.AnimDelay(isPlayer ? DELAY_NORMAL : DELAY_SHORT);
+      }
+    }
+
+    // alpha10 bug fix; clear overlays only if action is visible
+    if (isAttVisible || isDefVisible) this.ClearOverlays();
   }
 
   // C# DoCheckFireThrough — RogueGame.cs:14088
-  DoCheckFireThrough(attacker: Actor, LoF: Point[]): boolean {
-    void attacker;
-    void LoF;
-    throw new Error("not yet ported: DoCheckFireThrough (RogueGame.cs:14088)");
+  // async: C# blocks on AnimDelay/DoDestroyObject.
+  async DoCheckFireThrough(attacker: Actor, LoF: Point[]): Promise<boolean> {
+    // check if we are firing through an object that blocks the LoF and breaks.
+    for (const pt of LoF) {
+      const mapObj = attacker.location.map!.getMapObjectAtPoint(pt);
+      if (mapObj === null) continue;
+      if (
+        mapObj.breaksWhenFiredThrough &&
+        mapObj.breakState !== MapObjectBreak.BROKEN && // not if already broken.
+        !mapObj.isWalkable // not if not blocking.
+      ) {
+        // message.
+        const isAttVisible = this.IsVisibleToPlayer(attacker);
+        const isObjVisible = this.IsVisibleToPlayer(mapObj);
+        if (isAttVisible || isObjVisible) {
+          // FIXME: MapToScreen is a slice 8 method; best effort until then.
+          try {
+            const attPos = this.MapToScreen(attacker.location.position);
+            this.AddOverlay(new OverlayRect(Color.Yellow, new Rect(attPos.x, attPos.y, TILE_SIZE, TILE_SIZE)));
+            this.AddOverlay(new OverlayImage(attPos, GameImages.ICON_RANGED_ATTACK));
+            if (isObjVisible) {
+              const objPos = this.MapToScreen(pt);
+              this.AddOverlay(new OverlayRect(Color.Red, new Rect(objPos.x, objPos.y, TILE_SIZE, TILE_SIZE)));
+            }
+          } catch (e) {}
+          await this.AnimDelay(attacker.isPlayer ? DELAY_NORMAL : DELAY_SHORT);
+        }
+
+        // destroy that object.
+        this.DoDestroyObject(mapObj);
+
+        // fire intercepted.
+        return true;
+      }
+    }
+
+    // Line Of Fire completly clear, process normally.
+    return false;
   }
 
   // C# DoThrowGrenadeUnprimed — RogueGame.cs:14128
-  DoThrowGrenadeUnprimed(actor: Actor, targetPos: Point): void {
-    void actor;
-    void targetPos;
-    throw new Error("not yet ported: DoThrowGrenadeUnprimed (RogueGame.cs:14128)");
+  // async: C# blocks on AnimDelay.
+  async DoThrowGrenadeUnprimed(actor: Actor, targetPos: Point): Promise<void> {
+    // get grenade.
+    const grenade = actor.getEquippedWeapon();
+    if (!(grenade instanceof ItemGrenade)) throw new Error("throwing grenade but no grenade equiped ");
+
+    // spend AP.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+    // consume grenade.
+    actor.inventory!.consume(grenade);
+
+    // drop primed grenade at target position.
+    const map = actor.location.map!;
+    const primedGrenade = new ItemGrenadePrimed(this.m_GameItems.get(grenade.primedModelId));
+    map.dropItemAt(primedGrenade, targetPos);
+
+    // message about throwing.
+    const isVisible = this.IsVisibleToPlayer(actor) || this.IsVisibleToPlayer(map, targetPos);
+    if (isVisible) {
+      // FIXME: MapToScreen is a slice 8 method; best effort until then.
+      try {
+        const actPos = this.MapToScreen(actor.location.position);
+        const tgtPos = this.MapToScreen(targetPos);
+        this.AddOverlay(new OverlayRect(Color.Yellow, new Rect(actPos.x, actPos.y, TILE_SIZE, TILE_SIZE)));
+        this.AddOverlay(new OverlayRect(Color.Red, new Rect(tgtPos.x, tgtPos.y, TILE_SIZE, TILE_SIZE)));
+      } catch (e) {}
+      this.AddMessage(
+        this.MakeMessage(actor, `${this.Conjugate(actor, this.VERB_THROW)} a ${grenade.model.singleName}!`)
+      );
+      this.RedrawPlayScreen();
+      await this.AnimDelay(DELAY_LONG);
+      this.ClearOverlays();
+      this.RedrawPlayScreen();
+    }
   }
 
   // C# DoThrowGrenadePrimed — RogueGame.cs:14160
-  DoThrowGrenadePrimed(actor: Actor, targetPos: Point): void {
-    void actor;
-    void targetPos;
-    throw new Error("not yet ported: DoThrowGrenadePrimed (RogueGame.cs:14160)");
+  // async: C# blocks on AnimDelay.
+  async DoThrowGrenadePrimed(actor: Actor, targetPos: Point): Promise<void> {
+    // get grenade.
+    const primedGrenade = actor.getEquippedWeapon();
+    if (!(primedGrenade instanceof ItemGrenadePrimed))
+      throw new Error("throwing primed grenade but no primed grenade equiped ");
+
+    // spend AP.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+    // remove grenade from inventory.
+    actor.inventory!.removeAllQuantity(primedGrenade);
+
+    // drop primed grenade at target position.
+    actor.location.map!.dropItemAt(primedGrenade, targetPos);
+
+    // message about throwing.
+    const isVisible = this.IsVisibleToPlayer(actor) || this.IsVisibleToPlayer(actor.location.map!, targetPos);
+    if (isVisible) {
+      // FIXME: MapToScreen is a slice 8 method; best effort until then.
+      try {
+        const actPos = this.MapToScreen(actor.location.position);
+        const tgtPos = this.MapToScreen(targetPos);
+        this.AddOverlay(new OverlayRect(Color.Yellow, new Rect(actPos.x, actPos.y, TILE_SIZE, TILE_SIZE)));
+        this.AddOverlay(new OverlayRect(Color.Red, new Rect(tgtPos.x, tgtPos.y, TILE_SIZE, TILE_SIZE)));
+      } catch (e) {}
+      this.AddMessage(
+        this.MakeMessage(actor, `${this.Conjugate(actor, this.VERB_THROW)} back a ${primedGrenade.model.singleName}!`)
+      );
+      this.RedrawPlayScreen();
+      await this.AnimDelay(DELAY_LONG);
+      this.ClearOverlays();
+      this.RedrawPlayScreen();
+    }
   }
 
   // C# ShowBlastImage — RogueGame.cs:14190

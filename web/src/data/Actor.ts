@@ -361,6 +361,22 @@ export class Actor {
     }
   }
 
+  /** C# `RemoveAllAgressorSelfDefenceRelations` - break every aggressor/self-defence link. */
+  removeAllAgressorSelfDefenceRelations(): void {
+    // removeAggressorOf/removeSelfDefenceFrom null the list once it empties, so
+    // both loops terminate.
+    while (this.aggressorOfList !== null) {
+      const other = this.aggressorOfList[0];
+      this.removeAggressorOf(other);
+      other.removeSelfDefenceFrom(this);
+    }
+    while (this.selfDefenceFromList !== null) {
+      const other = this.selfDefenceFromList[0];
+      this.removeSelfDefenceFrom(other);
+      other.removeAggressorOf(this);
+    }
+  }
+
   // ── Boring items ─────────────────────────────────────────────────────────
   // alpha10 moved this out of Actor into ItemEntertainment; C# keeps the block
   // under #if false. Ported for fidelity (BaseAI.isJunkItem still calls it).

@@ -149,6 +149,14 @@ export class Map {
     return null;
   }
 
+  /** C# `Map.HasZonePartiallyNamedAt` – true if any zone *at that tile* matches. */
+  hasZonePartiallyNamedAt(pos: Point, partOfName: string): boolean {
+    for (const z of this.getZonesAt(pos.x, pos.y)) {
+      if (z.name.includes(partOfName)) return true;
+    }
+    return false;
+  }
+
   getZoneAt(pos: Point): Zone | null {
     for (const z of this.zonesList) {
       if (z.bounds.contains(pos)) return z;
@@ -181,6 +189,13 @@ export class Map {
   removeZone(zone: Zone): void {
     const idx = this.zonesList.indexOf(zone);
     if (idx !== -1) this.zonesList.splice(idx, 1);
+  }
+
+  /** C# `Map.TrimToBounds(ref int x, ref int y)` - clamp a tile coord into the map. */
+  trimToBounds(x: number, y: number): Point {
+    const cx = x < 0 ? 0 : x > this.width - 1 ? this.width - 1 : x;
+    const cy = y < 0 ? 0 : y > this.height - 1 ? this.height - 1 : y;
+    return new Point(cx, cy);
   }
 
   isWalkable(x: number, y: number): boolean {
@@ -258,6 +273,27 @@ export class Map {
       if (this.isInBoundsPoint(next) && predicateFn(next)) return true;
     }
     return false;
+  }
+
+  /** C# `Map.FindFirstInMap` – first tile in row-major order matching the predicate. */
+  findFirstInMap(predicateFn: (pt: Point) => boolean): Point | null {
+    for (let x = 0; x < this.width; x++) {
+      for (let y = 0; y < this.height; y++) {
+        const p = new Point(x, y);
+        if (predicateFn(p)) return p;
+      }
+    }
+    return null;
+  }
+
+  /** C# `Map.SetAllAsUnvisited` – forget the whole map (used on reincarnation). */
+  setAllAsUnvisited(): void {
+    for (let x = 0; x < this.width; x++) {
+      for (let y = 0; y < this.height; y++) {
+        const tile = this.getTileAt(x, y);
+        if (tile) tile.isVisited = false;
+      }
+    }
   }
 
   // ── Actors ────────────────────────────────────────────────────────────────

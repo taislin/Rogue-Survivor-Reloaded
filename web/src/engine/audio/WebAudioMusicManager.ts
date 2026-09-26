@@ -1,4 +1,5 @@
 import { IMusicManager } from './IMusicManager';
+import { musicPath } from '@engine/AssetPaths';
 
 export class WebAudioMusicManager implements IMusicManager {
   private audioElement: HTMLAudioElement | null = null;
@@ -16,8 +17,7 @@ export class WebAudioMusicManager implements IMusicManager {
     if (!this.audioElement) return;
     if (this.currentMusicId === musicId && this.isPlayingState) return;
 
-    const normalized = musicId.replace(/\\/g, '/');
-    const url = `/assets/${normalized}.ogg`;
+    const url = musicPath(musicId);
     
     this.audioElement.src = url;
     this.audioElement.volume = this.volume;
@@ -56,6 +56,11 @@ export class WebAudioMusicManager implements IMusicManager {
 
   public isPlaying(): boolean {
     return this.isPlayingState;
+  }
+
+  /** C# `IMusicManager.Music`. */
+  public getCurrentMusicId(): string | null {
+    return this.currentMusicId;
   }
 
   public setVolume(vol: number): void {

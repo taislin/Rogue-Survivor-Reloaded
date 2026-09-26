@@ -381,11 +381,40 @@ combines them with the hand-ported overlay types, constructor and getters into
 | 3 | 4156–5366 | Events (invasions, refugees, raids, drops) + spawning | ✅ Ported |
 | 4 | 5367–10255 | FOV, `HandlePlayerActor` and all `HandlePlayerXXX` commands | ✅ Ported |
 | 5 | 10256–12658 | AI actor handling, advisor, input helpers, describe-* | ✅ Ported |
-| 6 | 12660–16790 | Action primitives `DoMoveActor` … `KillActor`, blood/corpses | ⬜ 90 stubs |
+| 6 | 12660–16790 | Action primitives `DoMoveActor` … `KillActor`, blood/corpses | ⬜ 81 stubs |
 | 7 | 16791–17986 | Player death, new day/night, skills, infection/zombification | ✅ Ported |
 | 8 | 17987–19723 | View, drawing, overlays, coordinates, visibility helpers | ⬜ 37 stubs |
-| 9 | 19724–21381 | Save/load, paths, `GenerateWorld`, district maps, map switching | ⬜ 42 stubs |
-| 10 | 21382–23233 | Sim thread, achievements, special events, reincarnation, dev/data | ⬜ 37 stubs |
+| 9 | 19724–21381 | Save/load, paths, `GenerateWorld`, district maps, map switching | ⬜ 21 stubs |
+| 10 | 21382–23233 | Sim thread, achievements, special events, reincarnation, dev/data | ✅ Ported |
+
+**139 stubs left** (slices 6, 8 and 9).
+
+Slice 10 notes:
+
+* `StartSimThread`/`SimThreadProc` are no-ops, matching the existing
+  `StopSimThread` no-op: C#'s dedicated sim thread is gone, and the
+  neighbouring-district catch-up already runs inline from
+  `advancePlayDistrict()` when the player sleeps.
+* `MusicPriority` does not exist (`IMusicManager` has no priorities), so the
+  `PRIORITY_EVENT`/`PRIORITY_BGM` arguments are dropped throughout and
+  `PlayLooping` maps to `play()` (the WebAudio backend always loops).
+  `IMusicManager.Music` was also missing, so `getCurrentMusicId()` was added to
+  `IMusicManager`/`WebAudioMusicManager`/`NullMusicManager` — `UpdateBgMusic` and
+  the Jason Myers sighting both need to know the current track.
+* Slice 10 calls several slice 6/8 methods that are still stubs
+  (`MapToScreen`, `RedrawPlayScreen`, `InflictDamage`, `KillActor`,
+  `PrepareActorForPlayerControl`, `DoMakeAggression`). Core game-logic calls are
+  left direct; the cosmetic drawing calls are `try`/`catch` guarded, following
+  `DoTriggerTrap`.
+* `async` propagation: `SimulateDistrict`, `SimulateNearbyDistricts`,
+  `ShowSpecialDialogue`, `CheckSpecialPlayerEventsAfterAction`,
+  `HandleReincarnation`, `AskForReincarnation`, `OnMapPowerGeneratorSwitch`,
+  `CheckForGateClosingCrush`, `DoCloseSubwayGates`, `DoClosePoliceJailCells`,
+  `DoHospitalPowerOff` and `DoTurnAllGeneratorsOn` became `async` because C#
+  blocks there on `AnimDelay`/`AddMessagePressEnter`/`UI_WaitKey`.
+* Three `Map` helpers slice 10 needs were missing and were added to
+  `web/src/data/Map.ts`: `setAllAsUnvisited`, `findFirstInMap`,
+  `hasZonePartiallyNamedAt`.
 
 The module table below is therefore **deferred to a post-Phase-4 refactor**
 (Phase 8) — it stays as the target shape once the game runs and the real

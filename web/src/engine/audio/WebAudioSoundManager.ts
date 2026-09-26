@@ -1,4 +1,5 @@
 import { ISoundManager } from './ISoundManager';
+import { soundPath } from '@engine/AssetPaths';
 
 export class WebAudioSoundManager implements ISoundManager {
   private ctx: AudioContext | null = null;
@@ -30,8 +31,7 @@ export class WebAudioSoundManager implements ISoundManager {
     let buffer = this.buffers.get(soundId);
     if (!buffer) {
       try {
-        const normalized = soundId.replace(/\\/g, '/');
-        const url = `/assets/${normalized}.ogg`;
+        const url = soundPath(soundId);
         const response = await fetch(url);
         if (!response.ok) return;
         const arrayBuffer = await response.arrayBuffer();
@@ -73,8 +73,7 @@ export class WebAudioSoundManager implements ISoundManager {
     for (const id of soundIds) {
       if (this.buffers.has(id)) continue;
       try {
-        const normalized = id.replace(/\\/g, '/');
-        const url = `/assets/${normalized}.ogg`;
+        const url = soundPath(id);
         const response = await fetch(url);
         if (response.ok) {
           const arrayBuffer = await response.arrayBuffer();

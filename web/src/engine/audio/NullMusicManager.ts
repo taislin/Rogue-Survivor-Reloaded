@@ -6,6 +6,7 @@ export class NullMusicManager implements IMusicManager {
   pause(): void {}
   resume(): void {}
   isPlaying(): boolean { return false; }
+  getCurrentMusicId(): string | null { return null; }
   setVolume(_vol: number): void {}
   getVolume(): number { return 0; }
 }
