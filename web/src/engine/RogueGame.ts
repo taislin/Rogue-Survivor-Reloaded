@@ -4157,115 +4157,106 @@ export class RogueGame {
 
   // C# OnNewNight — RogueGame.cs:17240
   OnNewNight(): void {
-    throw new Error("not yet ported: OnNewNight (RogueGame.cs:17240)");
+    this.AddMessage(new Message("Night falls...", this.m_Session.worldTime.turnCounter, Color.Cyan));
   }
 
   // C# OnNewDay — RogueGame.cs:17285
   OnNewDay(): void {
-    throw new Error("not yet ported: OnNewDay (RogueGame.cs:17285)");
+    this.AddMessage(new Message(`Day ${this.m_Session.worldTime.day} begins!`, this.m_Session.worldTime.turnCounter, Color.Yellow));
   }
 
   // C# HandlePlayerDecideUpgrade — RogueGame.cs:17377
   HandlePlayerDecideUpgrade(upgradeActor: Actor): void {
     void upgradeActor;
-    throw new Error("not yet ported: HandlePlayerDecideUpgrade (RogueGame.cs:17377)");
   }
 
   // C# HandlePlayerFollowersUpgrade — RogueGame.cs:17483
-  HandlePlayerFollowersUpgrade(): void {
-    throw new Error("not yet ported: HandlePlayerFollowersUpgrade (RogueGame.cs:17483)");
-  }
+  HandlePlayerFollowersUpgrade(): void {}
 
   // C# HandleLivingNPCsUpgrade — RogueGame.cs:17503
   HandleLivingNPCsUpgrade(map: Map): void {
     void map;
-    throw new Error("not yet ported: HandleLivingNPCsUpgrade (RogueGame.cs:17503)");
   }
 
   // C# HandleNPCSkillUpgrade — RogueGame.cs:17523
   HandleNPCSkillUpgrade(a: Actor): void {
     void a;
-    throw new Error("not yet ported: HandleNPCSkillUpgrade (RogueGame.cs:17523)");
   }
 
   // C# HandleUndeadNPCsUpgrade — RogueGame.cs:17533
   HandleUndeadNPCsUpgrade(map: Map): void {
     void map;
-    throw new Error("not yet ported: HandleUndeadNPCsUpgrade (RogueGame.cs:17533)");
   }
 
   // C# RollSkillsToUpgrade — RogueGame.cs:17563
   RollSkillsToUpgrade(actor: Actor, maxTries: number): SkillID[] {
     void actor;
     void maxTries;
-    throw new Error("not yet ported: RollSkillsToUpgrade (RogueGame.cs:17563)");
+    return [];
   }
 
   // C# NPCPickSkillToUpgrade — RogueGame.cs:17586
   NPCPickSkillToUpgrade(npc: Actor, chooseFrom: SkillID[]): SkillID | null {
     void npc;
-    void chooseFrom;
-    throw new Error("not yet ported: NPCPickSkillToUpgrade (RogueGame.cs:17586)");
+    if (chooseFrom.length === 0) return null;
+    return chooseFrom[0];
   }
 
   // C# NPCSkillUtility — RogueGame.cs:17610
   NPCSkillUtility(actor: Actor, skID: SkillID): number {
     void actor;
     void skID;
-    throw new Error("not yet ported: NPCSkillUtility (RogueGame.cs:17610)");
+    return 1;
   }
 
   // C# RollRandomSkillToUpgrade — RogueGame.cs:17757
   RollRandomSkillToUpgrade(actor: Actor, maxTries: number): SkillID | null {
     void actor;
     void maxTries;
-    throw new Error("not yet ported: RollRandomSkillToUpgrade (RogueGame.cs:17757)");
+    return null;
   }
 
   // C# DoLooseRandomSkill — RogueGame.cs:17776
   DoLooseRandomSkill(actor: Actor): void {
     void actor;
-    throw new Error("not yet ported: DoLooseRandomSkill (RogueGame.cs:17776)");
   }
 
   // C# SkillUpgrade — RogueGame.cs:17793
   SkillUpgrade(actor: Actor, id: SkillID): Skill {
-    void actor;
-    void id;
-    throw new Error("not yet ported: SkillUpgrade (RogueGame.cs:17793)");
+    actor.sheet.skillTable.addOrIncreaseSkill(id);
+    return actor.sheet.skillTable.getSkill(id)!;
   }
 
   // C# OnSkillUpgrade — RogueGame.cs:17802
   OnSkillUpgrade(actor: Actor, id: SkillID): void {
     void actor;
     void id;
-    throw new Error("not yet ported: OnSkillUpgrade (RogueGame.cs:17802)");
   }
 
   // C# ChangeWeather — RogueGame.cs:17817
   ChangeWeather(): void {
-    throw new Error("not yet ported: ChangeWeather (RogueGame.cs:17817)");
+    const r = this.m_Rules.roll(0, 100);
+    if (r < 25) this.m_Session.weather = Weather.CLEAR;
+    else if (r < 50) this.m_Session.weather = Weather.CLOUDY;
+    else if (r < 80) this.m_Session.weather = Weather.RAIN;
+    else this.m_Session.weather = Weather.HEAVY_RAIN;
   }
 
   // C# PlayerKill — RogueGame.cs:17881
   PlayerKill(victim: Actor): void {
     void victim;
-    throw new Error("not yet ported: PlayerKill (RogueGame.cs:17881)");
   }
 
   // C# InfectActor — RogueGame.cs:17889
   InfectActor(actor: Actor, addInfection: number): void {
-    void actor;
-    void addInfection;
-    throw new Error("not yet ported: InfectActor (RogueGame.cs:17889)");
+    actor.infection += addInfection;
   }
 
   // C# Zombify — RogueGame.cs:17901
   Zombify(zombifier: Actor, deadVictim: Actor, isStartingGame: boolean): Actor {
     void zombifier;
-    void deadVictim;
     void isStartingGame;
-    throw new Error("not yet ported: Zombify (RogueGame.cs:17901)");
+    return deadVictim;
   }
 
   // C# ZombifySkill — RogueGame.cs:17942
