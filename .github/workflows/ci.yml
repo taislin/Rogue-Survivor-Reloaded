@@ -1,0 +1,103 @@
+# Phase 8 CI for the browser port.
+#
+# The point of this workflow is the lesson from §1.1 of BROWSER_PORT_PLAN.md:
+# for four phases "0 stubs + green tsc + green build" was treated as done, and
+# the first actual execution of the engine then found nine runtime bugs, two of
+# them fatal. So this runs the engine, not just the compiler:
+#
+#   1. type-check   - includes tests/ (they are in tsconfig.json's include list)
+#   2. coverage     - 76 tests incl. a real headless playthrough, thresholds enforced
+#   3. build        - the real Vite production build
+#   4. sim          - a short seeded headless run, as an independent smoke check
+#
+# Step 4 is deliberately redundant with the integration test. It exercises the
+# shipped `npm run sim` path (esbuild bundle + node), which the in-process test
+# does not, and a seeded run is reproducible so a failure here is a real signal
+# rather than flaky.
+
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref; a new push makes the old one moot.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: web
+
+jobs:
+  verify:
+    name: type-check, test, build, sim
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run type-check
+
+      - name: Test with coverage
+        run: npm run test:coverage
+
+      - name: Build
+        run: npm run build
+
+      - name: Headless simulation smoke run
+        # Fixed seed so this is deterministic: the same world every time, and a
+        # failure here is reproducible locally with the identical command.
+        run: npm run sim -- --size 1 --turns 30 --seed 12345 --undead
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: web/coverage/lcov.info
+          if-no-files-found: ignore
+
+  docker:
+    name: docker image builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t rogue-survivor-web:ci .
+
+      - name: Smoke-test the container
+        run: |
+          docker run -d --name rs-test -p 8080:8080 rogue-survivor-web:ci
+          # Poll rather than sleep-and-hope: the server may take a moment, and
+          # CI runners vary.
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/ > /dev/null; then
+              echo "server responded after ${i}s"
+              curl -fsS http://localhost:8080/ | head -c 200
+              echo
+              docker rm -f rs-test
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "server did not respond within 30s"
+          docker logs rs-test
+          docker rm -f rs-test
+          exit 1

@@ -6,6 +6,8 @@ import { WebAudioMusicManager } from "@engine/audio/WebAudioMusicManager";
 
 async function main(): Promise<void> {
   // ── Bootstrap ──────────────────────────────────────────────────────────────
+  registerServiceWorker();
+
   const canvas = document.getElementById("gameCanvas") as HTMLCanvasElement;
   if (!canvas) throw new Error("No #gameCanvas element found");
 
@@ -27,6 +29,28 @@ async function main(): Promise<void> {
     // of dying silently in the console.
     drawError(ui, e as Error);
   }
+}
+
+/**
+ * Enables offline play (Phase 8 task 7).
+ *
+ * Registered before the game boots but deliberately not awaited: the first
+ * visit should start rendering immediately rather than wait on the SW, and a
+ * failed registration must never stop the game from running. `sw.js` sits in
+ * `public/` so Vite serves it from the origin root, which is required for it
+ * to control the whole scope.
+ */
+function registerServiceWorker(): void {
+  if (!("serviceWorker" in navigator)) return;
+  // file:// has no service worker support and throws rather than no-op'ing.
+  if (location.protocol === "file:") return;
+
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js").catch((e: unknown) => {
+      // Offline play is a bonus, not a requirement: log and carry on.
+      console.warn("[RogueSurvivor] service worker registration failed:", e);
+    });
+  });
 }
 
 /** Explains an unported slice-4 method (or any boot error) on the canvas. */

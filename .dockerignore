@@ -1,0 +1,29 @@
+# Keep the build context small. The C# original in src/ is the port's reference
+# and is never compiled, copied, or modified -- excluding it here is what stops
+# the Docker build from uploading ~58 MB it will never use.
+src/
+
+# Not needed to build the image: git metadata, editor state, CI config.
+# Markdown is excluded purely to keep the context small.
+.git/
+.gitignore
+.github/
+.vscode/
+.idea/
+*.md
+
+# web/ build outputs and dependencies. Rebuilt inside the image; copying a
+# host-built node_modules or dist in would be both wrong (wrong platform) and
+# a cache-busting nightmare.
+web/node_modules/
+web/dist/
+web/dist-server/
+web/coverage/
+web/.porting/
+web/*.tsbuildinfo
+
+# Local logs and editor droppings.
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
