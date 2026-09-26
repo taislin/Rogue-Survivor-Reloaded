@@ -85,12 +85,27 @@ export class Keybindings {
   }
 
   set(cmd: PlayerCommand, keyDesc: string): void {
+    // remove previous bind (C#: `Keybindings.Set` — a key can only belong to one command).
+    const prevCommand = this.getCommand(keyDesc);
+    if (prevCommand !== PlayerCommand.NONE) {
+      this.commandToKey.delete(prevCommand);
+    }
     const prevKey = this.commandToKey.get(cmd);
     if (prevKey) {
       this.keyToCommand.delete(prevKey);
     }
     this.commandToKey.set(cmd, keyDesc);
     this.keyToCommand.set(keyDesc, cmd);
+  }
+
+  /** C#: `Keybindings.CheckForConflict` — true when 2 commands share the same key. */
+  checkForConflict(): boolean {
+    const seen = new Set<string>();
+    for (const key of this.commandToKey.values()) {
+      if (seen.has(key)) return true;
+      seen.add(key);
+    }
+    return false;
   }
 
   get(cmd: PlayerCommand): string | undefined {

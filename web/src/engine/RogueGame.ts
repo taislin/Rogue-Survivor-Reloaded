@@ -91,14 +91,17 @@ function shadowColorOf(c: Color): Color {
 
 /** C# numeric/string format alignment: `{0,3}`, `{0,6}` (right aligned). */
 export function padLeft(s: string | number, width: number): string {
-  void width;
-  return String(s);
+  return String(s).padStart(width, " ");
 }
 
 /** C# numeric/string format alignment: `{0,-25}` (left aligned). */
 export function padRight(s: string | number, width: number): string {
-  void width;
-  return String(s);
+  return String(s).padEnd(width, " ");
+}
+
+/** C# numeric format: `{0:D2}` / `{0:D3}` (zero padded integer). */
+export function padZero(s: string | number, width: number): string {
+  return String(s).padStart(width, "0");
 }
 
 // ── C# Constants (module level so initializers and static methods can see them)
@@ -1343,8 +1346,8 @@ export class RogueGame {
     const menuEntries: string[] = ["*Random*", "Male", "Female"];
     const descs: string[] = [
       "(picks a gender at random for you)",
-      `HP:${padLeft(maleModel.startingSheet.baseHitPoints, 2)}  Def:${padLeft(maleModel.startingSheet.baseDefence.value, 2)}  Dmg:${padLeft(maleModel.startingSheet.unarmedAttack.damageValue, 1)}`,
-      `HP:${padLeft(femaleModel.startingSheet.baseHitPoints, 2)}  Def:${padLeft(femaleModel.startingSheet.baseDefence.value, 2)}  Dmg:${padLeft(femaleModel.startingSheet.unarmedAttack.damageValue, 1)}`,
+      `HP:${padZero(maleModel.startingSheet.baseHitPoints, 2)}  Def:${padZero(maleModel.startingSheet.baseDefence.value, 2)}  Dmg:${maleModel.startingSheet.unarmedAttack.damageValue}`,
+      `HP:${padZero(femaleModel.startingSheet.baseHitPoints, 2)}  Def:${padZero(femaleModel.startingSheet.baseDefence.value, 2)}  Dmg:${femaleModel.startingSheet.unarmedAttack.damageValue}`,
     ];
 
     // C# `out bool isMale` — seeded with the caller's value (C# assigns `true` first).
@@ -1427,9 +1430,9 @@ export class RogueGame {
   DescribeUndeadModelStatLine(m: ActorModel): string {
     const sheet = m.startingSheet;
     return (
-      `HP:${padLeft(sheet.baseHitPoints, 3)}  Spd:${(m.dollBody.speed / 100).toFixed(2)}` +
-      `  Atk:${padLeft(sheet.unarmedAttack.hitValue, 2)}  Def:${padLeft(sheet.baseDefence.value, 2)}` +
-      `  Dmg:${padLeft(sheet.unarmedAttack.damageValue, 2)}  FoV:${sheet.baseViewRange.toFixed(1)}` +
+      `HP:${padZero(sheet.baseHitPoints, 3)}  Spd:${(m.dollBody.speed / 100).toFixed(2)}` +
+      `  Atk:${padZero(sheet.unarmedAttack.hitValue, 2)}  Def:${padZero(sheet.baseDefence.value, 2)}` +
+      `  Dmg:${padZero(sheet.unarmedAttack.damageValue, 2)}  FoV:${sheet.baseViewRange}` +
       `  Sml:${sheet.baseSmellRating.toFixed(2)}`
     );
   }

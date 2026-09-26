@@ -50,6 +50,9 @@ export class Color {
   static readonly Gray           = new Color(128, 128, 128);
   static readonly DarkGray       = new Color(64, 64, 64);
   static readonly LightGray      = new Color(211, 211, 211);
+  static readonly DimGray        = new Color(105, 105, 105);
+  static readonly LightCyan      = new Color(224, 255, 255);
+  static readonly LightYellow    = new Color(255, 255, 224);
   static readonly Red            = new Color(255, 0, 0);
   static readonly DarkRed        = new Color(139, 0, 0);
   static readonly Green          = new Color(0, 128, 0);
