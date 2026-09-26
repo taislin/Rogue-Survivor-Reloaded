@@ -1,7 +1,7 @@
 # Rogue Survivor Reloaded — TypeScript / Browser Port: Full Implementation Plan
 
 > **Status:** Phase 1, 2 & 3 complete (Phase 3 includes `ui/OptionsScreen.ts`). Phase 5 complete — `BaseAI` (184/184 methods), all 11 AI controllers, and all 4 generator files done (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator`, `StdTownGenerator`). Phase 6 & 7 complete.  
-> **Phase 4 in progress:** `engine/RogueGame.ts` scaffold generated (constants, fields, properties, constructor, 492 method stubs, 38 camelCase call-site aliases) and filled slice by slice. **Slices 1, 2, 3, 4, 5 and 7 done** (char creation / credits / redefine keys; `AdvancePlay`, `NextMapTurn`, actor regen/counts, scents; advisor hints, describe-*, item/UI helpers, input waits; player death, new day/night, skills, infection/zombification), **slice 4 in progress**, `main.ts` wired to `RogueGame.Run()`. Open slices: 3, 6, 8, 9, 10. 206 of 492 stubs remain. `npm run type-check` + `npm run build` clean; 206/206 smoke checks pass.  
+> **Phase 4 in progress:** `engine/RogueGame.ts` (12 380 lines) filled slice by slice. **Slices 1, 2, 3, 4, 5 and 7 done** — char creation / credits / redefine keys; `AdvancePlay`, `NextMapTurn`, actor regen/counts, scents; events / invasions / refugees / raids / supplies; FOV, `HandlePlayerActor`, all `HandlePlayerXXX` commands; AI actor handling, advisor, describe-*; player death, new day/night, skills, infection/zombification. `main.ts` wired to `RogueGame.Run()`. **Open: slices 6, 8, 9, 10 → 206 of 492 stubs remain** (6: 90, 8: 37, 9: 42, 10: 37). `npm run type-check` + `npm run build` clean.  
 > **Last updated:** 2026-09-26
 
 ---
@@ -378,14 +378,14 @@ combines them with the hand-ported overlay types, constructor and getters into
 | scaffold | 1–1414 | Constants, fields, properties, init, messaging, `Run`/`GameLoop`, main menu | ✅ Ported (stubs for input/drawing helpers it calls) |
 | 1 | 1415–2876 | Character creation, `StartNewGame`, credits, options, redefine keys | ✅ Ported |
 | 2 | 2877–4154 | `AdvancePlay`, `NextMapTurn`, actor regen/counts, scents | ✅ Ported |
-| 3 | 4156–5366 | Events (invasions, refugees, raids, drops) + spawning | ⬜ |
-| 4 | 5367–10255 | FOV, `HandlePlayerActor` and all `HandlePlayerXXX` commands | 🔄 In progress (77 stubs) |
+| 3 | 4156–5366 | Events (invasions, refugees, raids, drops) + spawning | ✅ Ported |
+| 4 | 5367–10255 | FOV, `HandlePlayerActor` and all `HandlePlayerXXX` commands | ✅ Ported |
 | 5 | 10256–12658 | AI actor handling, advisor, input helpers, describe-* | ✅ Ported |
-| 6 | 12660–16790 | Action primitives `DoMoveActor` … `KillActor`, blood/corpses | ⬜ |
+| 6 | 12660–16790 | Action primitives `DoMoveActor` … `KillActor`, blood/corpses | ⬜ 90 stubs |
 | 7 | 16791–17986 | Player death, new day/night, skills, infection/zombification | ✅ Ported |
-| 8 | 17987–19723 | View, drawing, overlays, coordinates, visibility helpers | ⬜ |
-| 9 | 19724–21381 | Save/load, paths, `GenerateWorld`, district maps, map switching | ⬜ |
-| 10 | 21382–23233 | Sim thread, achievements, special events, reincarnation, dev/data | ⬜ |
+| 8 | 17987–19723 | View, drawing, overlays, coordinates, visibility helpers | ⬜ 37 stubs |
+| 9 | 19724–21381 | Save/load, paths, `GenerateWorld`, district maps, map switching | ⬜ 42 stubs |
+| 10 | 21382–23233 | Sim thread, achievements, special events, reincarnation, dev/data | ⬜ 37 stubs |
 
 The module table below is therefore **deferred to a post-Phase-4 refactor**
 (Phase 8) — it stays as the target shape once the game runs and the real
@@ -720,7 +720,7 @@ No image conversion is needed — all sprites are already PNG.
 | 1 | Scaffold + primitives | Dev server, `CanvasUI`, type-safe foundation | ✅ Complete |
 | 2 | Data layer | All game objects typed, `Map`/`Actor` working | ✅ Complete |
 | 3 | Engine core | Rules, LOS, Session, Scoring, GameOptions + `ui/OptionsScreen.ts` (from `RogueGame.HandleOptions`) | ✅ Complete |
-| 4 | Game loop | **Playable game** (new game, move, attack, die) | ⏳ Planned |
+| 4 | Game loop | **Playable game** (new game, move, attack, die) — `RogueGame.ts` 6/10 slices done, 206 of 492 stubs open (slices 6, 8, 9, 10) | 🔄 In Progress |
 | 5 | AI + generators | `BaseAI`, all 11 AI controllers, all 4 generator files (5 814-line `BaseTownGenerator`) | ✅ Complete |
 | 6 | Audio | Sound effects and music | ✅ Complete |
 | 7 | Save / load | Persistent saves via localStorage / IndexedDB | ✅ Complete |
