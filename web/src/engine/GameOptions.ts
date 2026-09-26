@@ -145,6 +145,12 @@ export class GameOptions {
   private m_CanReincarnateToSewers = false;
   private m_IsLivingReincRestricted = false;
   private m_Permadeath = false;
+  /**
+   * C# defaults this to true (a silent file write). The browser has no silent
+   * files: saving means a download prompt, so an automatic download on every
+   * death is hostile. Default off here; the option screen still offers it, and
+   * turning it on is an explicit choice to get that download.
+   */
   private m_DeathScreenshot = false;
   private m_AggressiveHungryCivilians = false;
   private m_NatGuardFactor = 0;
@@ -530,7 +536,7 @@ export class GameOptions {
     this.m_CanReincarnateToSewers = false;
     this.m_IsLivingReincRestricted = false;
     this.m_Permadeath = false;
-    this.m_DeathScreenshot = true;
+    this.m_DeathScreenshot = false; // browser default off; C# default is true.
     this.m_AggressiveHungryCivilians = true;
     this.m_NatGuardFactor = GameOptions.DEFAULT_NATGUARD_FACTOR;
     this.m_SuppliesDropFactor = GameOptions.DEFAULT_SUPPLIESDROP_FACTOR;
@@ -901,7 +907,7 @@ export class GameOptions {
           3
         )})`;
       case OptionIDs.GAME_DEATH_SCREENSHOT:
-        return this.isDeathScreenshotOn ? "YES   (default YES)" : "NO    (default YES)";
+        return this.isDeathScreenshotOn ? "YES   (default NO)" : "NO    (default NO)";
       case OptionIDs.GAME_DISTRICT_SIZE:
         return `${pad(this.districtSize, 2)}*   (default ${pad(GameOptions.DEFAULT_DISTRICT_SIZE, 2)})`;
       case OptionIDs.GAME_MAX_CIVILIANS:

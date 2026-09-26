@@ -7,7 +7,15 @@ import { Actor } from "./Actor";
 
 export class ActorModel {
   id: number = 0;
-  readonly imageId: string;
+  /**
+   * Whole-body sprite, or null when the actor is drawn only from its doll.
+   *
+   * Null is the normal case for every living actor: C# passes `null` here for
+   * civilians, dogs, the gangs and the zombified pair, because the generator
+   * skins and dresses them instead (see `BaseMapGenerator.dressCivilian`).
+   * `RogueGame.DrawActorSprite` null-checks before drawing, as C# does.
+   */
+  readonly imageId: string | null;
   readonly dollBody: DollBody;
   readonly name: string;
   readonly pluralName: string;
@@ -19,7 +27,7 @@ export class ActorModel {
   createdCount: number = 0;
 
   constructor(
-    imageId: string,
+    imageId: string | null,
     name: string,
     pluralName: string,
     scoreValue: number,

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { existsSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { imagePath, IMAGE_EXTENSION, IMAGE_SETS, DEFAULT_IMAGE_SET, getImageSet, setImageSet } from "@engine/AssetPaths";
-import { GameImages } from "@gameplay/GameImages";
+import { GameImages, allImageIds } from "@gameplay/GameImages";
 
 /**
  * Every sprite id the game can ask for resolves to a file that exists.
@@ -75,6 +75,53 @@ describe("sprite assets on disk", () => {
     expect(p).not.toContain("\\");
     expect(p).toBe(`/assets/images/classic/Tiles/floor_asphalt.webp`);
     expect(existsSync(resolve(webRoot, "public", p.replace(/^\//, "")))).toBe(true);
+  });
+});
+
+/**
+ * `allImageIds()` is the preload manifest `RogueGame.Run` fetches before the
+ * first frame. If it silently returned an empty or short list, the preload
+ * would appear to succeed while leaving the map to fill in lazily — which is
+ * precisely the bug it exists to prevent, and it would look like a performance
+ * quirk rather than a bug.
+ */
+describe("preload manifest", () => {
+  it("enumerates every declared id", () => {
+    const all = allImageIds();
+    expect(all.length).toBe(imageIds().length);
+    expect(all.length).toBeGreaterThan(200);
+  });
+
+  it("contains no duplicates", () => {
+    const all = allImageIds();
+    expect(new Set(all).size).toBe(all.length);
+  });
+
+  it("contains only non-empty strings", () => {
+    // A stray `undefined` would become the literal path "undefined.webp" and
+    // 404 once per frame, forever.
+    for (const id of allImageIds()) {
+      expect(typeof id).toBe("string");
+      expect(id.length).toBeGreaterThan(0);
+      expect(id).not.toContain("undefined");
+    }
+  });
+
+  it("resolves every manifest entry to a file on disk", () => {
+    // The manifest is only useful if it is complete; a gap here is a sprite that
+    // will be missing from the screen.
+    const missing = allImageIds().filter((id) => {
+      const rel = imagePath(id).replace(/^\//, "");
+      return !existsSync(resolve(webRoot, "public", rel));
+    });
+    expect(missing, `${missing.length} manifest id(s) have no file on disk`).toEqual([]);
+  });
+
+  it("covers the tile sprites the map is drawn from", () => {
+    // The map is ~578 tile draws a frame; if Tiles/ were absent from the
+    // manifest the whole map would render blank.
+    const tiles = allImageIds().filter((id) => id.startsWith("Tiles/"));
+    expect(tiles.length).toBeGreaterThan(20);
   });
 });
 

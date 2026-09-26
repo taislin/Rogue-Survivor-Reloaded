@@ -58,6 +58,23 @@ export interface IRogueUI {
 
   // ── Canvas painting ───────────────────────────────────────────────────────
 
+  /**
+   * Fetch sprites ahead of the first frame, reporting progress.
+   *
+   * C# loaded every image up front, so a draw was always just a blit. A browser
+   * cannot do that lazily: `UI_DrawImage` and friends silently skip a sprite
+   * that is not in cache yet, so without a preload the map paints itself in
+   * over as the network delivers files — in draw order, which is left-to-right
+   * then top-to-bottom — leaving whatever had not arrived simply missing.
+   *
+   * Implementations resolve once every id has settled; a failure is reported
+   * through `onProgress` but must not reject, since one missing sprite should
+   * not stop the game from starting.
+   *
+   * @param onProgress Called with (loaded, total) as the batch advances.
+   */
+  UI_PreloadImages(ids: string[], onProgress?: (loaded: number, total: number) => void): Promise<void>;
+
   /** Flush the current frame to the display. */
   UI_Repaint(): void;
 
@@ -76,6 +93,18 @@ export interface IRogueUI {
 
   UI_DrawString(color: Color, text: string, gx: number, gy: number, shadowColor?: Color): void;
   UI_DrawStringBold(color: Color, text: string, gx: number, gy: number, shadowColor?: Color): void;
+
+  /**
+   * Large text for full-screen menus and reading screens (help, manual,
+   * hiscores, message log, character creation, death screens).
+   *
+   * The base `UI_DrawString` pair stays at C#'s 8.25pt because the in-game HUD
+   * (side panel, message area) is densely packed for it. Menus have room, so
+   * they get 12pt via these methods instead. Splitting by method rather than
+   * by size parameter keeps every existing call site untouched.
+   */
+  UI_DrawStringLarge(color: Color, text: string, gx: number, gy: number, shadowColor?: Color): void;
+  UI_DrawStringBoldLarge(color: Color, text: string, gx: number, gy: number, shadowColor?: Color): void;
 
   UI_DrawPopup(lines: string[], textColor: Color, borderColor: Color, fillColor: Color, gx: number, gy: number): void;
   UI_DrawPopupTitle(

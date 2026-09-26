@@ -8,6 +8,17 @@ async function main(): Promise<void> {
   // ── Bootstrap ──────────────────────────────────────────────────────────────
   registerServiceWorker();
 
+  // `?debug=1` enables per-action `[render]` console logging (see
+  // RogueGame.logRenderState) for diagnosing drawing reports.
+  try {
+    const debug = new URLSearchParams(location.search).get("debug") === "1";
+    RogueGame.debugRender = debug;
+    CanvasUI.debugDraw = debug;
+  } catch {
+    RogueGame.debugRender = false;
+    CanvasUI.debugDraw = false;
+  }
+
   const canvas = document.getElementById("gameCanvas") as HTMLCanvasElement;
   if (!canvas) throw new Error("No #gameCanvas element found");
 

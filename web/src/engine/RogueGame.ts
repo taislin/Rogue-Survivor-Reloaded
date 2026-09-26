@@ -24,7 +24,7 @@ import { storage } from "@engine/storage";
 import { AchievementIDs, Scoring, DifficultySide } from "@engine/Scoring";
 import { MessageManager } from "@engine/MessageManager";
 import { GameSaveManager } from "@engine/GameSave";
-import { GameImages } from "@gameplay/GameImages";
+import { GameImages, allImageIds } from "@gameplay/GameImages";
 import { GameMusics, GameSounds } from "@gameplay/GameSounds";
 import { OptionsScreen } from "@ui/OptionsScreen";
 import { HiScore, HiScoreTable } from "@engine/HiScoreTable";
@@ -143,11 +143,20 @@ export const MAP_MAX_WIDTH: number = 100;
 export const TILE_SIZE: number = 32;
 export const ACTOR_SIZE: number = 32;
 export const ACTOR_OFFSET: number = (TILE_SIZE - ACTOR_SIZE) / 2;
-export const TILE_VIEW_WIDTH: number = 21;
+/**
+ * 16:9 widescreen canvas (1366x768, the common HD panel size) instead of C#'s
+ * 4:3 1024x768. Only the width changed, so the entire right-panel stack,
+ * message area and minimap-Y are untouched; the extra 342 px go to the map.
+ *
+ * TILE_VIEW_WIDTH 21 -> 31 and HALF_VIEW_WIDTH 10 -> 15 keep the camera
+ * relationship (width = 2*half+1). This is display only: FOV, sensors and AI
+ * use rules.actorFOV, never the view rect, so nothing gameplay-related moves.
+ */
+export const TILE_VIEW_WIDTH: number = 31;
 export const TILE_VIEW_HEIGHT: number = 21;
-export const HALF_VIEW_WIDTH: number = 10;
+export const HALF_VIEW_WIDTH: number = 15;
 export const HALF_VIEW_HEIGHT: number = 10;
-export const CANVAS_WIDTH: number = 1024;
+export const CANVAS_WIDTH: number = 1366;
 export const CANVAS_HEIGHT: number = 768;
 export const DAMAGE_DX: number = 10;
 export const DAMAGE_DY: number = 10;
@@ -179,6 +188,13 @@ export const DELAY_NORMAL: number = 500;
 export const DELAY_LONG: number = 1000;
 export const LINE_SPACING: number = 12;
 export const BOLD_LINE_SPACING: number = 14;
+/**
+ * Line steps for full-screen menus and reading screens, paired with the 12pt
+ * menu font (`UI_DrawStringLarge`). The HUD keeps 12/14; menus have room, so
+ * they get airier leading to match the larger glyphs.
+ */
+export const MENU_LINE_SPACING: number = 16;
+export const MENU_BOLD_LINE_SPACING: number = 18;
 export const CREDIT_CHAR_SPACING: number = 8;
 export const CREDIT_LINE_SPACING: number = LINE_SPACING;
 export const TEXTFILE_CHARS_PER_LINE: number = 120;
@@ -397,6 +413,16 @@ function logInit(text: string): void {
 export class RogueGame {
   /** Browser save slot used by the C# "current save file" (`GetUserSave`). */
   static readonly CURRENT_SAVE_SLOT = 0;
+
+  /**
+   * Render-state console logging, enabled with `?debug=1` in the page URL.
+   *
+   * Read once at boot in `main.ts`. Off by default; when on, every player
+   * action logs one `[render]` line (see `logRenderState`). There is no C#
+   * equivalent — it exists because "my sprite doesn't draw" is otherwise
+   * untriageable without a debugger attached to the player's browser.
+   */
+  static debugRender = false;
 
 
   readonly POPUP_FILLCOLOR: Color = Color.withAlpha(192, Color.CornflowerBlue);
@@ -941,21 +967,47 @@ export class RogueGame {
 
     // load music & sfxs.
     this.m_UI.UI_Clear(Color.Black);
-    this.m_UI.UI_DrawStringBold(Color.White, "Loading music...", 0, 0);
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Loading music...", 0, 0);
     this.m_UI.UI_Repaint();
     // C# preloaded every GameMusics/GameSounds file here; the Web Audio
     // manager fetches tracks by id on demand (see WebAudioMusicManager).
 
     this.m_UI.UI_Clear(Color.Black);
-    this.m_UI.UI_DrawStringBold(Color.White, "Loading music... done!", 0, 0);
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Loading music... done!", 0, 0);
     this.m_UI.UI_Repaint();
 
     this.m_UI.UI_Clear(Color.Black);
-    this.m_UI.UI_DrawStringBold(Color.White, "Loading sfxs...", 0, 0);
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Loading sfxs...", 0, 0);
     this.m_UI.UI_Repaint();
 
     this.m_UI.UI_Clear(Color.Black);
-    this.m_UI.UI_DrawStringBold(Color.White, "Loading sfxs... done!", 0, 0);
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Loading sfxs... done!", 0, 0);
+    this.m_UI.UI_Repaint();
+
+    // Load sprites.
+    //
+    // C# loaded every image before the first frame, so a draw was always just a
+    // blit. The browser cannot: UI_DrawImage silently skips a sprite that is not
+    // cached yet, which made the map paint itself in over as the network
+    // delivered files — in draw order, left-to-right then top-to-bottom — so
+    // whatever had not arrived was simply missing. Preloading removes the
+    // dependency on timing entirely.
+    const spriteIds = allImageIds();
+    this.m_UI.UI_Clear(Color.Black);
+    this.m_UI.UI_Repaint();
+    await this.m_UI.UI_PreloadImages(spriteIds, (loaded, total) => {
+      this.m_UI.UI_Clear(Color.Black);
+      this.m_UI.UI_DrawStringBoldLarge(Color.White, "Loading sprites...", 0, 0);
+      this.m_UI.UI_DrawStringLarge(
+        Color.LightGray,
+        `${Math.floor((100 * loaded) / Math.max(1, total))}%  (${loaded}/${total})`,
+        0,
+        20
+      );
+      this.m_UI.UI_Repaint();
+    });
+    this.m_UI.UI_Clear(Color.Black);
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Loading sprites... done!", 0, 0);
     this.m_UI.UI_Repaint();
 
     // load and parse manual.
@@ -1046,9 +1098,9 @@ export class RogueGame {
       let gy = 0;
       this.m_UI.UI_Clear(Color.Black);
       this.DrawHeader();
-      gy += BOLD_LINE_SPACING;
-      this.m_UI.UI_DrawStringBold(Color.Yellow, "Main Menu", 0, gy);
-      gy += 2 * BOLD_LINE_SPACING;
+      gy += MENU_BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Main Menu", 0, gy);
+      gy += 2 * MENU_BOLD_LINE_SPACING;
       const gyRef = { value: gy };
       this.DrawMenuOrOptions(selected, Color.White, menuEntries, Color.White, null, gx, gyRef);
       gy = gyRef.value;
@@ -1091,8 +1143,8 @@ export class RogueGame {
 
             case 1:
               if (!isLoadEnabled) break;
-              gy += 2 * BOLD_LINE_SPACING;
-              this.m_UI.UI_DrawStringBold(Color.Yellow, "Loading game, please wait...", gx, gy);
+              gy += 2 * MENU_BOLD_LINE_SPACING;
+              this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Loading game, please wait...", gx, gy);
               this.m_UI.UI_Repaint();
               await this.LoadGame(this.GetUserSave());
               loop = false;
@@ -1204,8 +1256,8 @@ export class RogueGame {
       this.m_UI.UI_Clear(Color.Black);
       const gx = 0;
       let gy = 0;
-      this.m_UI.UI_DrawStringBold(Color.Yellow, "New Game - Choose Game Mode", gx, gy);
-      gy += 2 * BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "New Game - Choose Game Mode", gx, gy);
+      gy += 2 * MENU_BOLD_LINE_SPACING;
       const gyRef = { value: gy };
       this.DrawMenuOrOptions(selected, Color.White, menuEntries, Color.LightGray, descs, gx, gyRef);
       gy = gyRef.value;
@@ -1264,8 +1316,8 @@ export class RogueGame {
           break;
       }
       for (const str of descMode) {
-        this.m_UI.UI_DrawStringBold(Color.Gray, str, gx, gy);
-        gy += BOLD_LINE_SPACING;
+        this.m_UI.UI_DrawStringBoldLarge(Color.Gray, str, gx, gy);
+        gy += MENU_BOLD_LINE_SPACING;
       }
 
       this.DrawFootnote(Color.White, "cursor to move, ENTER to select, ESC to cancel");
@@ -1343,13 +1395,13 @@ export class RogueGame {
       this.m_UI.UI_Clear(Color.Black);
       const gx = 0;
       let gy = 0;
-      this.m_UI.UI_DrawStringBold(
+      this.m_UI.UI_DrawStringBoldLarge(
         Color.Yellow,
         `[${Session.descGameMode(this.m_Session.gameMode)}] New Character - Choose Race`,
         gx,
         gy
       );
-      gy += 2 * BOLD_LINE_SPACING;
+      gy += 2 * MENU_BOLD_LINE_SPACING;
       const gyRef = { value: gy };
       this.DrawMenuOrOptions(selected, Color.White, menuEntries, Color.LightGray, descs, gx, gyRef);
       gy = gyRef.value;
@@ -1380,10 +1432,10 @@ export class RogueGame {
             case 0: // random
               undead = roller.rollChance(50);
 
-              gy += BOLD_LINE_SPACING;
-              this.m_UI.UI_DrawStringBold(Color.White, `Race : ${undead ? "Undead" : "Living"}.`, gx, gy);
-              gy += BOLD_LINE_SPACING;
-              this.m_UI.UI_DrawStringBold(Color.Yellow, "Is that OK? Y to confirm, N to cancel.", gx, gy);
+              gy += MENU_BOLD_LINE_SPACING;
+              this.m_UI.UI_DrawStringBoldLarge(Color.White, `Race : ${undead ? "Undead" : "Living"}.`, gx, gy);
+              gy += MENU_BOLD_LINE_SPACING;
+              this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Is that OK? Y to confirm, N to cancel.", gx, gy);
               this.m_UI.UI_Repaint();
               if (await this.WaitYesOrNo()) {
                 choiceDone = true;
@@ -1433,13 +1485,13 @@ export class RogueGame {
       this.m_UI.UI_Clear(Color.Black);
       const gx = 0;
       let gy = 0;
-      this.m_UI.UI_DrawStringBold(
+      this.m_UI.UI_DrawStringBoldLarge(
         Color.Yellow,
         `[${Session.descGameMode(this.m_Session.gameMode)}] New Living - Choose Gender`,
         gx,
         gy
       );
-      gy += 2 * BOLD_LINE_SPACING;
+      gy += 2 * MENU_BOLD_LINE_SPACING;
       const gyRef = { value: gy };
       this.DrawMenuOrOptions(selected, Color.White, menuEntries, Color.LightGray, descs, gx, gyRef);
       gy = gyRef.value;
@@ -1468,10 +1520,10 @@ export class RogueGame {
             case 0: // random
               male = roller.rollChance(50);
 
-              gy += BOLD_LINE_SPACING;
-              this.m_UI.UI_DrawStringBold(Color.White, `Gender : ${male ? "Male" : "Female"}.`, gx, gy);
-              gy += BOLD_LINE_SPACING;
-              this.m_UI.UI_DrawStringBold(Color.Yellow, "Is that OK? Y to confirm, N to cancel.", gx, gy);
+              gy += MENU_BOLD_LINE_SPACING;
+              this.m_UI.UI_DrawStringBoldLarge(Color.White, `Gender : ${male ? "Male" : "Female"}.`, gx, gy);
+              gy += MENU_BOLD_LINE_SPACING;
+              this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Is that OK? Y to confirm, N to cancel.", gx, gy);
               this.m_UI.UI_Repaint();
               if (await this.WaitYesOrNo()) {
                 choiceDone = true;
@@ -1548,13 +1600,13 @@ export class RogueGame {
       this.m_UI.UI_Clear(Color.Black);
       const gx = 0;
       let gy = 0;
-      this.m_UI.UI_DrawStringBold(
+      this.m_UI.UI_DrawStringBoldLarge(
         Color.Yellow,
         `[${Session.descGameMode(this.m_Session.gameMode)}] New Undead - Choose Type`,
         gx,
         gy
       );
-      gy += 2 * BOLD_LINE_SPACING;
+      gy += 2 * MENU_BOLD_LINE_SPACING;
       const gyRef = { value: gy };
       this.DrawMenuOrOptions(selected, Color.White, menuEntries, Color.LightGray, descs, gx, gyRef);
       gy = gyRef.value;
@@ -1602,10 +1654,10 @@ export class RogueGame {
                   throw new RangeError("unhandled select " + selected);
               }
 
-              gy += BOLD_LINE_SPACING;
-              this.m_UI.UI_DrawStringBold(Color.White, `Type : ${this.gameActors.get(model).name}.`, gx, gy);
-              gy += BOLD_LINE_SPACING;
-              this.m_UI.UI_DrawStringBold(Color.Yellow, "Is that OK? Y to confirm, N to cancel.", gx, gy);
+              gy += MENU_BOLD_LINE_SPACING;
+              this.m_UI.UI_DrawStringBoldLarge(Color.White, `Type : ${this.gameActors.get(model).name}.`, gx, gy);
+              gy += MENU_BOLD_LINE_SPACING;
+              this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Is that OK? Y to confirm, N to cancel.", gx, gy);
               this.m_UI.UI_Repaint();
               if (await this.WaitYesOrNo()) {
                 choiceDone = true;
@@ -1678,13 +1730,13 @@ export class RogueGame {
       this.m_UI.UI_Clear(Color.Black);
       const gx = 0;
       let gy = 0;
-      this.m_UI.UI_DrawStringBold(
+      this.m_UI.UI_DrawStringBoldLarge(
         Color.Yellow,
         `[${Session.descGameMode(this.m_Session.gameMode)}] New ${this.m_CharGen.isMale ? "Male" : "Female"} Character - Choose Starting Skill`,
         gx,
         gy
       );
-      gy += 2 * BOLD_LINE_SPACING;
+      gy += 2 * MENU_BOLD_LINE_SPACING;
       const gyRef = { value: gy };
       this.DrawMenuOrOptions(selected, Color.White, menuEntries, Color.LightGray, skillDesc, gx, gyRef);
       gy = gyRef.value;
@@ -1714,10 +1766,10 @@ export class RogueGame {
             skill = Skills.rollLiving(roller);
           else skill = (selected - 1 + Skills.FIRST_LIVING) as SkillID;
 
-          gy += BOLD_LINE_SPACING;
-          this.m_UI.UI_DrawStringBold(Color.White, `Skill : ${Skills.name(skill)}.`, gx, gy);
-          gy += BOLD_LINE_SPACING;
-          this.m_UI.UI_DrawStringBold(Color.Yellow, "Is that OK? Y to confirm, N to cancel.", gx, gy);
+          gy += MENU_BOLD_LINE_SPACING;
+          this.m_UI.UI_DrawStringBoldLarge(Color.White, `Skill : ${Skills.name(skill)}.`, gx, gy);
+          gy += MENU_BOLD_LINE_SPACING;
+          this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Is that OK? Y to confirm, N to cancel.", gx, gy);
           this.m_UI.UI_Repaint();
           if (await this.WaitYesOrNo()) {
             choiceDone = true;
@@ -1735,18 +1787,18 @@ export class RogueGame {
   async LoadManual(): Promise<void> {
     this.m_UI.UI_Clear(Color.Black);
     let gy = 0;
-    this.m_UI.UI_DrawStringBold(Color.White, "Loading game manual...", 0, 0);
-    gy += BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Loading game manual...", 0, 0);
+    gy += MENU_BOLD_LINE_SPACING;
     this.m_UI.UI_Repaint();
 
     this.m_Manual = new TextFile();
     this.m_ManualLine = 0;
     if (!(await this.m_Manual.load(this.GetUserManualFilePath()))) {
       // error.
-      this.m_UI.UI_DrawStringBold(Color.Red, "Error while loading the manual.", 0, gy);
-      gy += BOLD_LINE_SPACING;
-      this.m_UI.UI_DrawStringBold(Color.Red, "The manual won't be available ingame.", 0, gy);
-      gy += BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(Color.Red, "Error while loading the manual.", 0, gy);
+      gy += MENU_BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(Color.Red, "The manual won't be available ingame.", 0, gy);
+      gy += MENU_BOLD_LINE_SPACING;
       this.m_UI.UI_Repaint();
       this.DrawFootnote(Color.White, "press ENTER");
       await this.WaitEnter();
@@ -1756,13 +1808,13 @@ export class RogueGame {
       return;
     }
 
-    this.m_UI.UI_DrawStringBold(Color.White, "Parsing game manual...", 0, gy);
-    gy += BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Parsing game manual...", 0, gy);
+    gy += MENU_BOLD_LINE_SPACING;
     this.m_UI.UI_Repaint();
     this.m_Manual.formatLines(TEXTFILE_CHARS_PER_LINE);
 
     this.m_UI.UI_Clear(Color.Black);
-    this.m_UI.UI_DrawStringBold(Color.White, "Game manual... done!", 0, gy);
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Game manual... done!", 0, gy);
     this.m_UI.UI_Repaint();
   }
 
@@ -1773,9 +1825,9 @@ export class RogueGame {
     this.m_UI.UI_Clear(Color.Black);
     let gy = 0;
     this.DrawHeader();
-    gy += BOLD_LINE_SPACING;
-    this.m_UI.UI_DrawStringBold(Color.Yellow, "Hi Scores", 0, gy);
-    gy += BOLD_LINE_SPACING;
+    gy += MENU_BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Hi Scores", 0, gy);
+    gy += MENU_BOLD_LINE_SPACING;
     this.m_UI.UI_DrawStringBold(
       Color.White,
       "---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+",
@@ -1785,6 +1837,8 @@ export class RogueGame {
     gy += BOLD_LINE_SPACING;
 
     // display.
+    // Table body stays at the standard size: 12 entries x 4 lines only fit at
+    // 14px leading. Title and header above carry the larger size.
     this.m_UI.UI_DrawStringBold(
       Color.White,
       "Rank | Name, Skills, Death       |  Score |Difficulty|Survival|  Kills |Achievm.|      Game Time | Playing time",
@@ -1800,33 +1854,15 @@ export class RogueGame {
       file.append("Rank | Name, Skills, Death       |  Score |Difficulty|Survival|  Kills |Achievm.|      Game Time | Playing time");
     }
 
-    // individual entries.
-    for (let i = 0; i < this.m_HiScoreTable.count; i++) {
-      // display.
-      const rankColor =
-        i === 0 ? Color.LightYellow : i === 1 ? Color.LightCyan : i === 2 ? Color.LightGreen : Color.DimGray;
-      this.m_UI.UI_DrawStringBold(
-        rankColor,
-        "------------------------------------------------------------------------------------------------------------------------",
-        0,
-        gy
-      );
-      gy += BOLD_LINE_SPACING;
-      const hi = this.m_HiScoreTable.get(i);
-      const line =
-        `${padLeft(i + 1, 3)}. | ${padRight(this.TruncateString(hi.name, 25), 25)} | ${padLeft(hi.totalPoints, 6)}` +
-        ` |     ${padLeft(hi.difficultyPercent, 3)}% | ${padLeft(hi.survivalPoints, 6)} | ${padLeft(hi.killPoints, 6)}` +
-        ` | ${padLeft(hi.achievementPoints, 6)} | ${padLeft(new WorldTime(hi.turnSurvived).toString(), 14)}` +
-        ` | ${this.TimeSpanToString(hi.playingTimeSeconds)}`;
-      this.m_UI.UI_DrawStringBold(rankColor, line, 0, gy);
-      gy += BOLD_LINE_SPACING;
-      this.m_UI.UI_DrawStringBold(rankColor, `     | ${hi.skillsDescription}.`, 0, gy);
-      gy += BOLD_LINE_SPACING;
-      this.m_UI.UI_DrawStringBold(rankColor, `     | ${hi.death}.`, 0, gy);
-      gy += BOLD_LINE_SPACING;
-
-      // text.
-      if (file) {
+    // text export (unaffected by display scrolling).
+    if (file) {
+      for (let i = 0; i < this.m_HiScoreTable.count; i++) {
+        const hi = this.m_HiScoreTable.get(i);
+        const line =
+          `${padLeft(i + 1, 3)}. | ${padRight(this.TruncateString(hi.name, 25), 25)} | ${padLeft(hi.totalPoints, 6)}` +
+          ` |     ${padLeft(hi.difficultyPercent, 3)}% | ${padLeft(hi.survivalPoints, 6)} | ${padLeft(hi.killPoints, 6)}` +
+          ` | ${padLeft(hi.achievementPoints, 6)} | ${padLeft(new WorldTime(hi.turnSurvived).toString(), 14)}` +
+          ` | ${this.TimeSpanToString(hi.playingTimeSeconds)}`;
         file.append("------------------------------------------------------------------------------------------------------------------------");
         file.append(line);
         file.append(`     | ${hi.skillsDescription}`);
@@ -1838,47 +1874,133 @@ export class RogueGame {
     const textfilePath = this.GetUserHiScoreTextFilePath();
     if (file) file.save(textfilePath);
 
-    // display.
-    this.m_UI.UI_DrawStringBold(
-      Color.White,
-      "---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+",
-      0,
-      gy
+    // individual entries, in a scrolling window: 12 entries x 4 lines do not
+    // fit at menu leading, so cursor/PgUp/PgDn move through them.
+    const ENTRY_LINES = 4;
+    const pageEntries = Math.max(
+      1,
+      Math.floor(
+        (CANVAS_HEIGHT - MENU_BOLD_LINE_SPACING - gy - 2 * MENU_BOLD_LINE_SPACING) /
+          (ENTRY_LINES * MENU_BOLD_LINE_SPACING)
+      )
     );
-    gy += BOLD_LINE_SPACING;
-    if (file) {
-      this.m_UI.UI_DrawStringBold(Color.White, textfilePath, 0, gy);
-      gy += BOLD_LINE_SPACING;
+    let firstEntry = 0;
+    let loopScores = true;
+    while (loopScores) {
+      let gyRows = gy;
+      const lastEntry = Math.min(this.m_HiScoreTable.count, firstEntry + pageEntries);
+      for (let i = firstEntry; i < lastEntry; i++) {
+        // display.
+        const rankColor =
+          i === 0 ? Color.LightYellow : i === 1 ? Color.LightCyan : i === 2 ? Color.LightGreen : Color.DimGray;
+        this.m_UI.UI_DrawStringBoldLarge(
+          rankColor,
+          "------------------------------------------------------------------------------------------------------------------------",
+          0,
+          gyRows
+        );
+        gyRows += MENU_BOLD_LINE_SPACING;
+        const hi = this.m_HiScoreTable.get(i);
+        const line =
+          `${padLeft(i + 1, 3)}. | ${padRight(this.TruncateString(hi.name, 25), 25)} | ${padLeft(hi.totalPoints, 6)}` +
+          ` |     ${padLeft(hi.difficultyPercent, 3)}% | ${padLeft(hi.survivalPoints, 6)} | ${padLeft(hi.killPoints, 6)}` +
+          ` | ${padLeft(hi.achievementPoints, 6)} | ${padLeft(new WorldTime(hi.turnSurvived).toString(), 14)}` +
+          ` | ${this.TimeSpanToString(hi.playingTimeSeconds)}`;
+        this.m_UI.UI_DrawStringBoldLarge(rankColor, line, 0, gyRows);
+        gyRows += MENU_BOLD_LINE_SPACING;
+        this.m_UI.UI_DrawStringBoldLarge(rankColor, `     | ${hi.skillsDescription}.`, 0, gyRows);
+        gyRows += MENU_BOLD_LINE_SPACING;
+        this.m_UI.UI_DrawStringBoldLarge(rankColor, `     | ${hi.death}.`, 0, gyRows);
+        gyRows += MENU_BOLD_LINE_SPACING;
+      }
+
+      // display.
+      this.m_UI.UI_DrawStringBoldLarge(
+        Color.White,
+        "---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+",
+        0,
+        gyRows
+      );
+      gyRows += MENU_BOLD_LINE_SPACING;
+      if (file) {
+        this.m_UI.UI_DrawStringBoldLarge(Color.White, textfilePath, 0, gyRows);
+        gyRows += MENU_BOLD_LINE_SPACING;
+      }
+      if (this.m_HiScoreTable.count > pageEntries) {
+        this.m_UI.UI_DrawStringLarge(
+          Color.Gray,
+          `(${firstEntry + 1}-${lastEntry}/${this.m_HiScoreTable.count} - cursor/PgUp/PgDn to scroll)`,
+          0,
+          gyRows
+        );
+        gyRows += MENU_LINE_SPACING;
+      }
+      this.DrawFootnote(Color.White, "press ESC to leave");
+      this.m_UI.UI_Repaint();
+
+      const skey = await this.m_UI.UI_WaitKey();
+      switch (skey.key) {
+        case "Escape":
+          loopScores = false;
+          break;
+        case "ArrowUp":
+          firstEntry = Math.max(0, firstEntry - 1);
+          break;
+        case "ArrowDown":
+          firstEntry = Math.min(Math.max(0, this.m_HiScoreTable.count - pageEntries), firstEntry + 1);
+          break;
+        case "PageUp":
+          firstEntry = Math.max(0, firstEntry - pageEntries);
+          break;
+        case "PageDown":
+          firstEntry = Math.min(Math.max(0, this.m_HiScoreTable.count - pageEntries), firstEntry + pageEntries);
+          break;
+        default:
+          break;
+      }
+      // Redraw the rows area on scroll.
+      if (loopScores) {
+        this.m_UI.UI_Clear(Color.Black);
+        let gyHead = 0;
+        this.DrawHeader();
+        gyHead += MENU_BOLD_LINE_SPACING;
+        this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Hi Scores", 0, gyHead);
+        gyHead += MENU_BOLD_LINE_SPACING;
+        this.m_UI.UI_DrawStringBoldLarge(
+          Color.White,
+          "Rank | Name, Skills, Death       |  Score |Difficulty|Survival|  Kills |Achievm.|      Game Time | Playing time",
+          0,
+          gyHead
+        );
+        gy = gyHead + MENU_BOLD_LINE_SPACING;
+      }
     }
-    this.DrawFootnote(Color.White, "press ESC to leave");
-    this.m_UI.UI_Repaint();
-    await this.WaitEscape();
   }
 
   // C# LoadHiScoreTable — RogueGame.cs:2146
   async LoadHiScoreTable(): Promise<void> {
     this.m_UI.UI_Clear(Color.Black);
-    this.m_UI.UI_DrawStringBold(Color.White, "Loading hiscores table...", 0, 0);
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Loading hiscores table...", 0, 0);
     this.m_UI.UI_Repaint();
 
     this.m_HiScoreTable =
       HiScoreTable.load() ?? new HiScoreTable(HiScoreTable.DEFAULT_MAX_ENTRIES);
 
     this.m_UI.UI_Clear(Color.Black);
-    this.m_UI.UI_DrawStringBold(Color.White, "Loading hiscores table... done!", 0, 0);
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Loading hiscores table... done!", 0, 0);
     this.m_UI.UI_Repaint();
   }
 
   // C# SaveHiScoreTable — RogueGame.cs:2164
   SaveHiScoreTable(): void {
     this.m_UI.UI_Clear(Color.Black);
-    this.m_UI.UI_DrawStringBold(Color.White, "Saving hiscores table...", 0, 0);
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Saving hiscores table...", 0, 0);
     this.m_UI.UI_Repaint();
 
     HiScoreTable.save(this.m_HiScoreTable);
 
     this.m_UI.UI_Clear(Color.Black);
-    this.m_UI.UI_DrawStringBold(Color.White, "Saving hiscores table... done!", 0, 0);
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Saving hiscores table... done!", 0, 0);
     this.m_UI.UI_Repaint();
   }
 
@@ -1982,35 +2104,35 @@ export class RogueGame {
     // draw.
     this.m_UI.UI_Clear(Color.Black);
     this.DrawHeader();
-    gy += BOLD_LINE_SPACING;
-    this.m_UI.UI_DrawStringBold(Color.Yellow, "Credits", 0, gy);
-    gy += 2 * BOLD_LINE_SPACING;
-    this.m_UI.UI_DrawStringBold(Color.White, "Programming, Graphics & Music by Jacques Ruiz (roguedjack) 2018", 0, gy);
-    gy += 2 * BOLD_LINE_SPACING;
+    gy += MENU_BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Credits", 0, gy);
+    gy += 2 * MENU_BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Programming, Graphics & Music by Jacques Ruiz (roguedjack) 2018", 0, gy);
+    gy += 2 * MENU_BOLD_LINE_SPACING;
 
-    this.m_UI.UI_DrawStringBold(Color.White, "Programming", left, gy);
-    this.m_UI.UI_DrawString(Color.White, "- C# NET 3.5, Microsoft Visual Studio Community 2017", right, gy);
-    gy += BOLD_LINE_SPACING;
-    this.m_UI.UI_DrawStringBold(Color.White, "Graphic softwares", left, gy);
-    this.m_UI.UI_DrawString(Color.White, "- Inkscape, Paint.NET", right, gy);
-    gy += BOLD_LINE_SPACING;
-    this.m_UI.UI_DrawStringBold(Color.White, "Sound & Music softwares", left, gy);
-    this.m_UI.UI_DrawString(Color.White, "- GuitarPro 7, Audacity", right, gy);
-    gy += BOLD_LINE_SPACING;
-    this.m_UI.UI_DrawStringBold(Color.White, "Sound samples", left, gy);
-    this.m_UI.UI_DrawString(Color.White, "- http://www.sound-fishing.net  http://www.soundsnap.com/", right, gy);
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Programming", left, gy);
+    this.m_UI.UI_DrawStringLarge(Color.White, "- C# NET 3.5, Microsoft Visual Studio Community 2017", right, gy);
+    gy += MENU_BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Graphic softwares", left, gy);
+    this.m_UI.UI_DrawStringLarge(Color.White, "- Inkscape, Paint.NET", right, gy);
+    gy += MENU_BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Sound & Music softwares", left, gy);
+    this.m_UI.UI_DrawStringLarge(Color.White, "- GuitarPro 7, Audacity", right, gy);
+    gy += MENU_BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Sound samples", left, gy);
+    this.m_UI.UI_DrawStringLarge(Color.White, "- http://www.sound-fishing.net  http://www.soundsnap.com/", right, gy);
 
-    gy += 2 * BOLD_LINE_SPACING;
-    this.m_UI.UI_DrawStringBold(Color.White, "Contact", 0, gy);
-    gy += BOLD_LINE_SPACING;
-    this.m_UI.UI_DrawString(Color.White, "Email      : roguedjack@yahoo.fr", 0, gy);
-    gy += BOLD_LINE_SPACING;
-    this.m_UI.UI_DrawString(Color.White, "Blog       : http://roguesurvivor.blogspot.com/", 0, gy);
-    gy += BOLD_LINE_SPACING;
-    this.m_UI.UI_DrawString(Color.White, "Fans Forum : http://roguesurvivor.proboards.com/", 0, gy);
-    gy += BOLD_LINE_SPACING;
-    this.m_UI.UI_DrawStringBold(Color.White, "Thanks to the players for their feedback and eagerness to die!", 0, gy);
-    gy += BOLD_LINE_SPACING;
+    gy += 2 * MENU_BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Contact", 0, gy);
+    gy += MENU_BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringLarge(Color.White, "Email      : roguedjack@yahoo.fr", 0, gy);
+    gy += MENU_LINE_SPACING;
+    this.m_UI.UI_DrawStringLarge(Color.White, "Blog       : http://roguesurvivor.blogspot.com/", 0, gy);
+    gy += MENU_LINE_SPACING;
+    this.m_UI.UI_DrawStringLarge(Color.White, "Fans Forum : http://roguesurvivor.proboards.com/", 0, gy);
+    gy += MENU_LINE_SPACING;
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Thanks to the players for their feedback and eagerness to die!", 0, gy);
+    gy += MENU_BOLD_LINE_SPACING;
 
     this.DrawFootnote(Color.White, "ESC to leave");
     this.m_UI.UI_Repaint();
@@ -2148,11 +2270,16 @@ export class RogueGame {
       let gy = 0;
       this.m_UI.UI_Clear(Color.Black);
       this.DrawHeader();
-      gy += BOLD_LINE_SPACING;
-      this.m_UI.UI_DrawStringBold(Color.Yellow, "Redefine keys", 0, gy);
-      gy += BOLD_LINE_SPACING;
+      gy += MENU_BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Redefine keys", 0, gy);
+      gy += MENU_BOLD_LINE_SPACING;
       const gyRef = { value: gy };
-      this.DrawMenuOrOptions(selected, Color.White, menuEntries, Color.LightGreen, values, gx, gyRef);
+      // 51 entries: scroll a window that fits above the footnote.
+      const keysRows = Math.max(
+        5,
+        Math.floor((CANVAS_HEIGHT - MENU_BOLD_LINE_SPACING - gyRef.value) / MENU_BOLD_LINE_SPACING)
+      );
+      this.DrawMenuOrOptions(selected, Color.White, menuEntries, Color.LightGreen, values, gx, gyRef, false, 256, keysRows);
       gy = gyRef.value;
       if (conflict) {
         this.m_UI.UI_DrawStringBold(
@@ -2187,7 +2314,7 @@ export class RogueGame {
         case "Enter": {
           // rebind
           // say.
-          this.m_UI.UI_DrawStringBold(
+          this.m_UI.UI_DrawStringBoldLarge(
             Color.Yellow,
             `rebinding ${menuEntries[selected]}, press the new key.`,
             gx,
@@ -4396,6 +4523,48 @@ export class RogueGame {
     this.UpdatePlayerFOV(player); // make sure LOS is up to date.
     this.ComputeViewRect(player.location.position);
     this.m_Session.lastTurnPlayerActed = this.m_Session.worldTime.turnCounter;
+    this.logRenderState(player);
+  }
+
+  /**
+   * One-line render-state report for diagnosing "the map / my sprite doesn't
+   * draw" reports. Enabled with `?debug=1` in the page URL; off by default so
+   * normal play never pays for it or spams the console.
+   *
+   * It answers the four questions that decide every such report: where the
+   * player is, how big the FOV set is versus its range, whether the player's
+   * own tile is flagged in-view (the gate for drawing the sprite), whether the
+   * view rect is centred on the player, and whether the drawn map is the
+   * player's map. If those all agree and the sprite still does not show, the
+   * fault is in the canvas layer, not the engine.
+   */
+  private logRenderState(player: Actor): void {
+    if (!RogueGame.debugRender) return;
+    const pos = player.location.position;
+    const map = player.location.map!;
+    const own = map.getTileAt(pos.x, pos.y);
+    const dollCounts: Record<string, number> = {};
+    for (const part of [
+      DollPart.SKIN,
+      DollPart.EYES,
+      DollPart.HEAD,
+      DollPart.TORSO,
+      DollPart.LEGS,
+      DollPart.FEET,
+    ]) {
+      dollCounts[DollPart[part]] = player.doll.countDecorations(part);
+    }
+    // console.log, not console.debug: Chrome hides debug-level messages unless
+    // the console's Verbose filter is on, which makes them invisible exactly
+    // when someone is trying to report them.
+    // eslint-disable-next-line no-console
+    console.log(
+      `[render] pos=${pos.x},${pos.y} fovRange=${this.m_Rules.actorFOV(player)} ` +
+        `fovSet=${this.m_PlayerFOV.size} ownInView=${own?.isInView ?? "no-tile"} ` +
+        `ownVisited=${own?.isVisited ?? "no-tile"} ` +
+        `view=${this.m_MapViewRect.toString()} sameMap=${this.m_Session.currentMap === map} ` +
+        `img=${player.model.imageId ?? "null"} doll=${JSON.stringify(dollCounts)}`
+    );
   }
 
   // C# TryPlayerInsanity — RogueGame.cs:6090
@@ -4488,8 +4657,8 @@ export class RogueGame {
     if (this.m_Manual == null) {
       this.m_UI.UI_Clear(Color.Black);
       let gy = 0;
-      this.m_UI.UI_DrawStringBold(Color.Red, "Game manual not available ingame.", 0, gy);
-      gy += BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(Color.Red, "Game manual not available ingame.", 0, gy);
+      gy += MENU_BOLD_LINE_SPACING;
       this.DrawFootnote(Color.White, "press ENTER");
       this.m_UI.UI_Repaint();
       await this.WaitEnter();
@@ -4503,11 +4672,11 @@ export class RogueGame {
       this.m_UI.UI_Clear(Color.Black);
       let gy = 0;
       this.DrawHeader();
-      gy += BOLD_LINE_SPACING;
-      this.m_UI.UI_DrawStringBold(Color.Yellow, "Game Manual", 0, gy);
-      gy += BOLD_LINE_SPACING;
-      this.m_UI.UI_DrawStringBold(Color.White, "---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+", 0, gy);
-      gy += BOLD_LINE_SPACING;
+      gy += MENU_BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Game Manual", 0, gy);
+      gy += MENU_BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(Color.White, "---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+", 0, gy);
+      gy += MENU_BOLD_LINE_SPACING;
 
       // draw manual.
       let iLine = this.m_ManualLine;
@@ -4516,15 +4685,15 @@ export class RogueGame {
         const ignore = (lines[iLine] === "<SECTION>");
 
         if (!ignore) {
-          this.m_UI.UI_DrawStringBold(Color.LightGray, lines[iLine], 0, gy);
-          gy += BOLD_LINE_SPACING;
+          this.m_UI.UI_DrawStringBoldLarge(Color.LightGray, lines[iLine], 0, gy);
+          gy += MENU_BOLD_LINE_SPACING;
         }
         ++iLine;
-      } while (iLine < lines.length && gy < CANVAS_HEIGHT - 2 * BOLD_LINE_SPACING);
+      } while (iLine < lines.length && gy < CANVAS_HEIGHT - 2 * MENU_BOLD_LINE_SPACING);
 
       // draw foot.
-      this.m_UI.UI_DrawStringBold(Color.White, "---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+", 0, gy);
-      gy += BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(Color.White, "---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+", 0, gy);
+      gy += MENU_BOLD_LINE_SPACING;
       this.DrawFootnote(Color.White, "cursor and PgUp/PgDn to move, numbers to jump to section, ESC to leave");
 
       this.m_UI.UI_Repaint();
@@ -4586,13 +4755,13 @@ export class RogueGame {
     this.m_UI.UI_Clear(Color.Black);
     let gy = 0;
     this.DrawHeader();
-    gy += BOLD_LINE_SPACING;
-    this.m_UI.UI_DrawStringBold(Color.Yellow, "Advisor Hints", 0, gy);
-    gy += BOLD_LINE_SPACING;
+    gy += MENU_BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Advisor Hints", 0, gy);
+    gy += MENU_BOLD_LINE_SPACING;
 
     // prepare : get all the hints text into one huuuuuge list of line :D
-    this.m_UI.UI_DrawStringBold(Color.White, "preparing...", 0, gy);
-    gy += BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "preparing...", 0, gy);
+    gy += MENU_BOLD_LINE_SPACING;
     this.m_UI.UI_Repaint();
     const lines: string[] = [];
     for (let i: number = AdvisorHint._FIRST; i < AdvisorHint._COUNT; i++) {
@@ -4615,23 +4784,23 @@ export class RogueGame {
       this.m_UI.UI_Clear(Color.Black);
       gy = 0;
       this.DrawHeader();
-      gy += BOLD_LINE_SPACING;
-      this.m_UI.UI_DrawStringBold(Color.Yellow, "Advisor Hints", 0, gy);
-      gy += BOLD_LINE_SPACING;
+      gy += MENU_BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Advisor Hints", 0, gy);
+      gy += MENU_BOLD_LINE_SPACING;
 
       // display currently viewed lines.
-      this.m_UI.UI_DrawStringBold(Color.White, "---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+", 0, gy);
-      gy += BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(Color.White, "---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+", 0, gy);
+      gy += MENU_BOLD_LINE_SPACING;
       let iLine = currentLine;
       do {
-        this.m_UI.UI_DrawStringBold(Color.LightGray, lines[iLine], 0, gy);
-        gy += BOLD_LINE_SPACING;
+        this.m_UI.UI_DrawStringBoldLarge(Color.LightGray, lines[iLine], 0, gy);
+        gy += MENU_BOLD_LINE_SPACING;
         ++iLine;
-      } while (iLine < lines.length && gy < CANVAS_HEIGHT - 2 * BOLD_LINE_SPACING);
+      } while (iLine < lines.length && gy < CANVAS_HEIGHT - 2 * MENU_BOLD_LINE_SPACING);
 
       // draw foot.
-      this.m_UI.UI_DrawStringBold(Color.White, "---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+", 0, gy);
-      gy += BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(Color.White, "---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+", 0, gy);
+      gy += MENU_BOLD_LINE_SPACING;
       this.DrawFootnote(Color.White, "cursor and PgUp/PgDn to move, R to reset hints, ESC to leave");
 
       this.m_UI.UI_Repaint();
@@ -4665,10 +4834,10 @@ export class RogueGame {
           this.m_UI.UI_Clear(Color.Black);
           gy = 0;
           this.DrawHeader();
-          gy += BOLD_LINE_SPACING;
-          this.m_UI.UI_DrawStringBold(Color.Yellow, "Advisor Hints", 0, gy);
-          gy += BOLD_LINE_SPACING;
-          this.m_UI.UI_DrawStringBold(Color.White, "Hints reset done.", 0, gy);
+          gy += MENU_BOLD_LINE_SPACING;
+          this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Advisor Hints", 0, gy);
+          gy += MENU_BOLD_LINE_SPACING;
+          this.m_UI.UI_DrawStringBoldLarge(Color.White, "Hints reset done.", 0, gy);
           this.m_UI.UI_Repaint();
           await this.m_UI.UI_Wait(DELAY_LONG);
           break;
@@ -4683,28 +4852,74 @@ export class RogueGame {
   // C# HandleMessageLog — RogueGame.cs:6392
   // C# blocks on WaitEscape; async here.
   async HandleMessageLog(): Promise<void> {
-    // draw header.
-    this.m_UI.UI_Clear(Color.Black);
-    let gy = 0;
-    this.DrawHeader();
-    gy += BOLD_LINE_SPACING;
-    this.m_UI.UI_DrawStringBold(Color.Yellow, "Message Log", 0, gy);
-    gy += BOLD_LINE_SPACING;
-    this.m_UI.UI_DrawStringBold(Color.White, "---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+", 0, gy);
-    gy += BOLD_LINE_SPACING;
-
-    // log.
-    for (const msg of this.m_MessageManager.history) {
-      this.m_UI.UI_DrawString(msg.color, msg.text, 0, gy);
-      gy += LINE_SPACING;
+    const history = this.m_MessageManager.history;
+    // Rows that fit below the header; scroll through the rest.
+    const pageRows = (gyTop: number): number =>
+      Math.max(1, Math.floor((CANVAS_HEIGHT - MENU_BOLD_LINE_SPACING - gyTop) / MENU_LINE_SPACING));
+    // Start at the tail (most recent), like C#'s full dump reads oldest-first
+    // but the interesting end is the latest.
+    let firstLine = 0;
+    {
+      const probeGy = 3 * MENU_BOLD_LINE_SPACING;
+      firstLine = Math.max(0, history.length - pageRows(probeGy));
     }
 
-    // foot.
-    this.DrawFootnote(Color.White, "press ESC to leave");
+    let loopLog = true;
+    while (loopLog) {
+      // draw header.
+      this.m_UI.UI_Clear(Color.Black);
+      let gy = 0;
+      this.DrawHeader();
+      gy += MENU_BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Message Log", 0, gy);
+      gy += MENU_BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(Color.White, "---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+", 0, gy);
+      gy += MENU_BOLD_LINE_SPACING;
 
-    // wait.
-    this.m_UI.UI_Repaint();
-    await this.WaitEscape();
+      // log window.
+      const rows = pageRows(gy);
+      const lastLine = Math.min(history.length, firstLine + rows);
+      for (let i = firstLine; i < lastLine; i++) {
+        const msg = history[i];
+        this.m_UI.UI_DrawStringLarge(msg.color, msg.text, 0, gy);
+        gy += MENU_LINE_SPACING;
+      }
+      if (history.length > rows) {
+        this.m_UI.UI_DrawStringLarge(
+          Color.Gray,
+          `(${firstLine + 1}-${lastLine}/${history.length} - cursor/PgUp/PgDn to scroll)`,
+          0,
+          gy
+        );
+        gy += MENU_LINE_SPACING;
+      }
+
+      // foot.
+      this.DrawFootnote(Color.White, "press ESC to leave");
+
+      // wait.
+      this.m_UI.UI_Repaint();
+      const lkey = await this.m_UI.UI_WaitKey();
+      switch (lkey.key) {
+        case "Escape":
+          loopLog = false;
+          break;
+        case "ArrowUp":
+          firstLine = Math.max(0, firstLine - 1);
+          break;
+        case "ArrowDown":
+          firstLine = Math.min(Math.max(0, history.length - rows), firstLine + 1);
+          break;
+        case "PageUp":
+          firstLine = Math.max(0, firstLine - rows);
+          break;
+        case "PageDown":
+          firstLine = Math.min(Math.max(0, history.length - rows), firstLine + rows);
+          break;
+        default:
+          break;
+      }
+    }
   }
 
   // C# HandleCityInfo — RogueGame.cs:6419
@@ -4714,8 +4929,8 @@ export class RogueGame {
     let gy = 0;
 
     this.m_UI.UI_Clear(Color.Black);
-    this.m_UI.UI_DrawStringBold(Color.White, "CITY INFORMATION", gy, gy);
-    gy += 2 * BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "CITY INFORMATION", gy, gy);
+    gy += 2 * MENU_BOLD_LINE_SPACING;
 
     /////////////////////
     // Undead : no info!
@@ -4723,10 +4938,10 @@ export class RogueGame {
     /////////////////////
     if (this.m_Player.model.abilities.isUndead) {
       // Undead : no info
-      this.m_UI.UI_DrawStringBold(Color.Red, "You can't remember where you are...", gx, gy);
-      gy += BOLD_LINE_SPACING;
-      this.m_UI.UI_DrawStringBold(Color.Red, "Must be that rotting brain of yours...", gx, gy);
-      gy += 2 * BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(Color.Red, "You can't remember where you are...", gx, gy);
+      gy += MENU_BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(Color.Red, "Must be that rotting brain of yours...", gx, gy);
+      gy += 2 * MENU_BOLD_LINE_SPACING;
     } else {
       const world = this.m_Session.world!;
       const curMap = this.m_Session.currentMap!;
@@ -4734,24 +4949,24 @@ export class RogueGame {
 
       // Living : show info
       // City map
-      this.m_UI.UI_DrawStringBold(Color.White, "> DISTRICTS LAYOUT", gx, gy);
-      gy += BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(Color.White, "> DISTRICTS LAYOUT", gx, gy);
+      gy += MENU_BOLD_LINE_SPACING;
 
       // coordinates.
-      gy += BOLD_LINE_SPACING;
+      gy += MENU_BOLD_LINE_SPACING;
       for (let y = 0; y < world.size; y++) {
         const color = (y === playerDistrict.worldPosition.y ? Color.LightGreen : Color.White);
-        this.m_UI.UI_DrawStringBold(color, String(y), 20, gy + y * 3 * BOLD_LINE_SPACING + BOLD_LINE_SPACING);
-        this.m_UI.UI_DrawStringBold(color, ".", 20, gy + y * 3 * BOLD_LINE_SPACING);
-        this.m_UI.UI_DrawStringBold(color, ".", 20, gy + y * 3 * BOLD_LINE_SPACING + 2 * BOLD_LINE_SPACING);
+        this.m_UI.UI_DrawStringBoldLarge(color, String(y), 20, gy + y * 3 * MENU_BOLD_LINE_SPACING + MENU_BOLD_LINE_SPACING);
+        this.m_UI.UI_DrawStringBoldLarge(color, ".", 20, gy + y * 3 * MENU_BOLD_LINE_SPACING);
+        this.m_UI.UI_DrawStringBoldLarge(color, ".", 20, gy + y * 3 * MENU_BOLD_LINE_SPACING + 2 * MENU_BOLD_LINE_SPACING);
       }
-      gy -= BOLD_LINE_SPACING;
+      gy -= MENU_BOLD_LINE_SPACING;
       for (let x = 0; x < world.size; x++) {
         const color = (x === playerDistrict.worldPosition.x ? Color.LightGreen : Color.White);
-        this.m_UI.UI_DrawStringBold(color, `..${String.fromCharCode(65 + x)}..`, 32 + x * 48, gy);
+        this.m_UI.UI_DrawStringBoldLarge(color, `..${String.fromCharCode(65 + x)}..`, 32 + x * 48, gy);
       }
       // districts.
-      gy += BOLD_LINE_SPACING;
+      gy += MENU_BOLD_LINE_SPACING;
       const mx = 32;
       const my = gy;
       for (let y = 0; y < world.size; y++)
@@ -4776,35 +4991,35 @@ export class RogueGame {
             lchar += dStatus;
           const lColor = (d === playerDistrict ? Color.LightGreen : dColor);
 
-          this.m_UI.UI_DrawStringBold(lColor, lchar, mx + x * 48, my + (y * 3) * BOLD_LINE_SPACING);
-          this.m_UI.UI_DrawStringBold(lColor, dStatus, mx + x * 48, my + (y * 3 + 1) * BOLD_LINE_SPACING);
-          this.m_UI.UI_DrawStringBold(dColor, dChar, mx + x * 48 + 8, my + (y * 3 + 1) * BOLD_LINE_SPACING);
-          this.m_UI.UI_DrawStringBold(lColor, dStatus, mx + x * 48 + 4 * 8, my + (y * 3 + 1) * BOLD_LINE_SPACING);
-          this.m_UI.UI_DrawStringBold(lColor, lchar, mx + x * 48, my + (y * 3 + 2) * BOLD_LINE_SPACING);
+          this.m_UI.UI_DrawStringBoldLarge(lColor, lchar, mx + x * 48, my + (y * 3) * MENU_BOLD_LINE_SPACING);
+          this.m_UI.UI_DrawStringBoldLarge(lColor, dStatus, mx + x * 48, my + (y * 3 + 1) * MENU_BOLD_LINE_SPACING);
+          this.m_UI.UI_DrawStringBoldLarge(dColor, dChar, mx + x * 48 + 8, my + (y * 3 + 1) * MENU_BOLD_LINE_SPACING);
+          this.m_UI.UI_DrawStringBoldLarge(lColor, dStatus, mx + x * 48 + 4 * 8, my + (y * 3 + 1) * MENU_BOLD_LINE_SPACING);
+          this.m_UI.UI_DrawStringBoldLarge(lColor, lchar, mx + x * 48, my + (y * 3 + 2) * MENU_BOLD_LINE_SPACING);
         }
       // subway line.
       const subwayChar = "=";
       const subwayY = Math.floor(world.size / 2);
       for (let x = 1; x < world.size; x++) {
-        this.m_UI.UI_DrawStringBold(Color.White, subwayChar, mx + x * 48 - 8, my + (subwayY * 3) * BOLD_LINE_SPACING + BOLD_LINE_SPACING);
+        this.m_UI.UI_DrawStringBoldLarge(Color.White, subwayChar, mx + x * 48 - 8, my + (subwayY * 3) * MENU_BOLD_LINE_SPACING + MENU_BOLD_LINE_SPACING);
       }
 
-      gy += (world.size * 3 + 1) * BOLD_LINE_SPACING;
-      this.m_UI.UI_DrawStringBold(Color.White, "Legend", gx, gy);
-      gy += BOLD_LINE_SPACING;
-      this.m_UI.UI_DrawString(Color.White, "  *   - current     ?   - unvisited", gx, gy);
-      gy += LINE_SPACING;
-      this.m_UI.UI_DrawString(Color.White, "  Bus - Business    Gen - General    Gre - Green", gx, gy);
-      gy += LINE_SPACING;
-      this.m_UI.UI_DrawString(Color.White, "  Res - Residential Sho - Shopping", gx, gy);
-      gy += LINE_SPACING;
-      this.m_UI.UI_DrawString(Color.White, "  =   - Subway Line", gx, gy);
-      gy += LINE_SPACING;
+      gy += (world.size * 3 + 1) * MENU_BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(Color.White, "Legend", gx, gy);
+      gy += MENU_BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringLarge(Color.White, "  *   - current     ?   - unvisited", gx, gy);
+      gy += MENU_LINE_SPACING;
+      this.m_UI.UI_DrawStringLarge(Color.White, "  Bus - Business    Gen - General    Gre - Green", gx, gy);
+      gy += MENU_LINE_SPACING;
+      this.m_UI.UI_DrawStringLarge(Color.White, "  Res - Residential Sho - Shopping", gx, gy);
+      gy += MENU_LINE_SPACING;
+      this.m_UI.UI_DrawStringLarge(Color.White, "  =   - Subway Line", gx, gy);
+      gy += MENU_LINE_SPACING;
 
       // Notable locations
-      gy += BOLD_LINE_SPACING;
-      this.m_UI.UI_DrawStringBold(Color.White, "> NOTABLE LOCATIONS", gx, gy);
-      gy += BOLD_LINE_SPACING;
+      gy += MENU_BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(Color.White, "> NOTABLE LOCATIONS", gx, gy);
+      gy += MENU_BOLD_LINE_SPACING;
       const buildingsY = gy;
       for (let y = 0; y < world.size; y++)
         for (let x = 0; x < world.size; x++) {
@@ -4816,31 +5031,31 @@ export class RogueGame {
           // Subway station?
           const subwayZone = districtMap.getZoneByPartialName(NAME_SUBWAY_STATION);
           if (subwayZone != null) {
-            this.m_UI.UI_DrawStringBold(Color.Blue, `at ${World.CoordToString(x, y)} : ${subwayZone.name}.`, gx, gy);
-            gy += BOLD_LINE_SPACING;
-            if (gy >= CANVAS_HEIGHT - 2 * BOLD_LINE_SPACING) {
+            this.m_UI.UI_DrawStringBoldLarge(Color.Blue, `at ${World.CoordToString(x, y)} : ${subwayZone.name}.`, gx, gy);
+            gy += MENU_BOLD_LINE_SPACING;
+            if (gy >= CANVAS_HEIGHT - 2 * MENU_BOLD_LINE_SPACING) {
               gy = buildingsY;
-              gx += 25 * BOLD_LINE_SPACING;
+              gx += 25 * MENU_BOLD_LINE_SPACING;
             }
           }
 
           // Police station?
           if (districtMap === this.m_Session.uniqueMaps.policeStation_OfficesLevel.theMap?.district?.entryMap) {
-            this.m_UI.UI_DrawStringBold(Color.CadetBlue, `at ${World.CoordToString(x, y)} : Police Station.`, gx, gy);
-            gy += BOLD_LINE_SPACING;
-            if (gy >= CANVAS_HEIGHT - 2 * BOLD_LINE_SPACING) {
+            this.m_UI.UI_DrawStringBoldLarge(Color.CadetBlue, `at ${World.CoordToString(x, y)} : Police Station.`, gx, gy);
+            gy += MENU_BOLD_LINE_SPACING;
+            if (gy >= CANVAS_HEIGHT - 2 * MENU_BOLD_LINE_SPACING) {
               gy = buildingsY;
-              gx += 25 * BOLD_LINE_SPACING;
+              gx += 25 * MENU_BOLD_LINE_SPACING;
             }
           }
 
           // Hospital?
           if (districtMap === this.m_Session.uniqueMaps.hospital_Admissions.theMap?.district?.entryMap) {
-            this.m_UI.UI_DrawStringBold(Color.White, `at ${World.CoordToString(x, y)} : Hospital.`, gx, gy);
-            gy += BOLD_LINE_SPACING;
-            if (gy >= CANVAS_HEIGHT - 2 * BOLD_LINE_SPACING) {
+            this.m_UI.UI_DrawStringBoldLarge(Color.White, `at ${World.CoordToString(x, y)} : Hospital.`, gx, gy);
+            gy += MENU_BOLD_LINE_SPACING;
+            if (gy >= CANVAS_HEIGHT - 2 * MENU_BOLD_LINE_SPACING) {
               gy = buildingsY;
-              gx += 25 * BOLD_LINE_SPACING;
+              gx += 25 * MENU_BOLD_LINE_SPACING;
             }
           }
 
@@ -4848,11 +5063,11 @@ export class RogueGame {
           // - CHAR Underground Facility?
           if (this.m_Session.playerKnows_CHARUndergroundFacilityLocation &&
               districtMap === this.m_Session.uniqueMaps.charUndergroundFacility.theMap?.district?.entryMap) {
-            this.m_UI.UI_DrawStringBold(Color.Red, `at ${World.CoordToString(x, y)} : ${this.m_Session.uniqueMaps.charUndergroundFacility.theMap?.name}.`, gx, gy);
-            gy += BOLD_LINE_SPACING;
-            if (gy >= CANVAS_HEIGHT - 2 * BOLD_LINE_SPACING) {
+            this.m_UI.UI_DrawStringBoldLarge(Color.Red, `at ${World.CoordToString(x, y)} : ${this.m_Session.uniqueMaps.charUndergroundFacility.theMap?.name}.`, gx, gy);
+            gy += MENU_BOLD_LINE_SPACING;
+            if (gy >= CANVAS_HEIGHT - 2 * MENU_BOLD_LINE_SPACING) {
               gy = buildingsY;
-              gx += 25 * BOLD_LINE_SPACING;
+              gx += 25 * MENU_BOLD_LINE_SPACING;
             }
           }
           // - The Sewers Thing?
@@ -4861,11 +5076,11 @@ export class RogueGame {
               sewersThing != null &&
               districtMap === sewersThing.location.map?.district?.entryMap &&
               !sewersThing.isDead) {
-            this.m_UI.UI_DrawStringBold(Color.Red, `at ${World.CoordToString(x, y)} : The Sewers Thing lives down there.`, gx, gy);
-            gy += BOLD_LINE_SPACING;
-            if (gy >= CANVAS_HEIGHT - 2 * BOLD_LINE_SPACING) {
+            this.m_UI.UI_DrawStringBoldLarge(Color.Red, `at ${World.CoordToString(x, y)} : The Sewers Thing lives down there.`, gx, gy);
+            gy += MENU_BOLD_LINE_SPACING;
+            if (gy >= CANVAS_HEIGHT - 2 * MENU_BOLD_LINE_SPACING) {
               gy = buildingsY;
-              gx += 25 * BOLD_LINE_SPACING;
+              gx += 25 * MENU_BOLD_LINE_SPACING;
             }
           }
         }
@@ -13574,19 +13789,19 @@ export class RogueGame {
     let gx = 0;
     let gy = 0;
     this.m_UI.UI_Clear(Color.Black);
-    this.m_UI.UI_DrawStringBold(Color.Yellow, "Saving post mortem to graveyard...", 0, 0);
-    gy += BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Saving post mortem to graveyard...", 0, 0);
+    gy += MENU_BOLD_LINE_SPACING;
     this.m_UI.UI_Repaint();
     const graveName = this.GetUserNewGraveyardName();
     const graveFile = this.GraveFilePath(graveName);
     if (!graveyard.save(graveFile)) {
-      this.m_UI.UI_DrawStringBold(Color.Red, "Could not save to graveyard.", 0, gy);
-      gy += BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(Color.Red, "Could not save to graveyard.", 0, gy);
+      gy += MENU_BOLD_LINE_SPACING;
     } else {
-      this.m_UI.UI_DrawStringBold(Color.Yellow, "Grave saved to :", 0, gy);
-      gy += BOLD_LINE_SPACING;
-      this.m_UI.UI_DrawString(Color.White, graveFile, 0, gy);
-      gy += BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Grave saved to :", 0, gy);
+      gy += MENU_BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringLarge(Color.White, graveFile, 0, gy);
+      gy += MENU_LINE_SPACING;
     }
     this.DrawFootnote(Color.White, "press ENTER");
     this.m_UI.UI_Repaint();
@@ -13604,31 +13819,35 @@ export class RogueGame {
       gx = 0;
       gy = 0;
       this.DrawHeader();
-      gy += BOLD_LINE_SPACING;
+      gy += MENU_BOLD_LINE_SPACING;
 
       // text.
       let linesThisPage = 0;
-      this.m_UI.UI_DrawStringBold(
+      this.m_UI.UI_DrawStringBoldLarge(
         Color.White,
         "---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+",
         0,
         gy
       );
-      gy += BOLD_LINE_SPACING;
-      while (linesThisPage < TEXTFILE_LINES_PER_PAGE && iLine < graveyard.formatedLines.length) {
+      gy += MENU_BOLD_LINE_SPACING;
+      while (
+        linesThisPage < TEXTFILE_LINES_PER_PAGE &&
+        iLine < graveyard.formatedLines.length &&
+        gy < CANVAS_HEIGHT - 2 * MENU_BOLD_LINE_SPACING
+      ) {
         const line = graveyard.formatedLines[iLine];
-        this.m_UI.UI_DrawStringBold(Color.White, line, gx, gy);
-        gy += BOLD_LINE_SPACING;
+        this.m_UI.UI_DrawStringBoldLarge(Color.White, line, gx, gy);
+        gy += MENU_BOLD_LINE_SPACING;
         ++iLine;
         ++linesThisPage;
       }
 
       // foot.
-      this.m_UI.UI_DrawStringBold(
+      this.m_UI.UI_DrawStringBoldLarge(
         Color.White,
         "---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+",
         0,
-        CANVAS_HEIGHT - 2 * BOLD_LINE_SPACING
+        CANVAS_HEIGHT - 2 * MENU_BOLD_LINE_SPACING
       );
       if (iLine < graveyard.formatedLines.length) this.DrawFootnote(Color.White, "press ENTER for more");
       else this.DrawFootnote(Color.White, "press ENTER to leave");
@@ -16321,39 +16540,39 @@ export class RogueGame {
   // C# LoadKeybindings — RogueGame.cs:19873
   async LoadKeybindings(): Promise<void> {
     this.m_UI.UI_Clear(Color.Black);
-    this.m_UI.UI_DrawStringBold(Color.White, "Loading keybindings...", 0, 0);
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Loading keybindings...", 0, 0);
     this.m_UI.UI_Repaint();
 
     s_KeyBindings.loadFromStorage();
 
     this.m_UI.UI_Clear(Color.Black);
-    this.m_UI.UI_DrawStringBold(Color.White, "Loading keybindings... done!", 0, 0);
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Loading keybindings... done!", 0, 0);
     this.m_UI.UI_Repaint();
   }
 
   // C# SaveKeybindings — RogueGame.cs:19887
   SaveKeybindings(): void {
     this.m_UI.UI_Clear(Color.Black);
-    this.m_UI.UI_DrawStringBold(Color.White, "Saving keybindings...", 0, 0);
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Saving keybindings...", 0, 0);
     this.m_UI.UI_Repaint();
 
     s_KeyBindings.saveToStorage();
 
     this.m_UI.UI_Clear(Color.Black);
-    this.m_UI.UI_DrawStringBold(Color.White, "Saving keybindings... done!", 0, 0);
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Saving keybindings... done!", 0, 0);
     this.m_UI.UI_Repaint();
   }
 
   // C# LoadHints — RogueGame.cs:19902
   async LoadHints(): Promise<void> {
     this.m_UI.UI_Clear(Color.Black);
-    this.m_UI.UI_DrawStringBold(Color.White, "Loading hints...", 0, 0);
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Loading hints...", 0, 0);
     this.m_UI.UI_Repaint();
 
     s_Hints = GameHintsStatus.loadFromStorage();
 
     this.m_UI.UI_Clear(Color.Black);
-    this.m_UI.UI_DrawStringBold(Color.White, "Loading hints... done!", 0, 0);
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Loading hints... done!", 0, 0);
     this.m_UI.UI_Repaint();
   }
 
@@ -16372,46 +16591,77 @@ export class RogueGame {
     gx: number,
     gy: { value: number },
     valuesOnNewLine = false,
-    rightPadding = 256
+    rightPadding = 256,
+    /**
+     * Maximum rows to draw. When the list is longer, a window around the
+     * selection is shown and follows it as it moves (arrow keys wrap, so every
+     * entry stays reachable). Lets long lists — 51 keybindings, 30 skills —
+     * use the large menu size instead of shrinking to fit.
+     *
+     * Omit for short lists, which draw whole as before.
+     */
+    maxRows?: number
   ): void {
     const right = gx + rightPadding;
 
     if (values != null && entries.length !== values.length)
       throw new RangeError("values length!= choices length");
 
+    // Scroll window: keep the selection visible, clamped to the list.
+    let first = 0;
+    let count = entries.length;
+    if (maxRows !== undefined && maxRows < count) {
+      const half = Math.floor(maxRows / 2);
+      first = Math.min(Math.max(0, currentChoice - half), count - maxRows);
+      count = maxRows;
+    }
+
     // display.
     const entriesShadowColor = shadowColorOf(entriesColor);
-    for (let i = 0; i < entries.length; i++) {
+    for (let r = 0; r < count; r++) {
+      const i = first + r;
       const choiceStr = i === currentChoice ? `---> ${entries[i]}` : `     ${entries[i]}`;
-      this.m_UI.UI_DrawStringBold(entriesColor, choiceStr, gx, gy.value, entriesShadowColor);
+      this.m_UI.UI_DrawStringBoldLarge(entriesColor, choiceStr, gx, gy.value, entriesShadowColor);
 
       if (values != null) {
         const valueStr = i === currentChoice && !valuesOnNewLine ? `${values[i]} <---` : values[i];
 
         if (valuesOnNewLine) {
-          gy.value += BOLD_LINE_SPACING;
-          this.m_UI.UI_DrawStringBold(valuesColor, valueStr, gx + right, gy.value);
+          gy.value += MENU_BOLD_LINE_SPACING;
+          this.m_UI.UI_DrawStringBoldLarge(valuesColor, valueStr, gx + right, gy.value);
         } else {
-          this.m_UI.UI_DrawStringBold(valuesColor, valueStr, right, gy.value);
+          this.m_UI.UI_DrawStringBoldLarge(valuesColor, valueStr, right, gy.value);
         }
       }
 
-      gy.value += BOLD_LINE_SPACING;
+      gy.value += MENU_BOLD_LINE_SPACING;
+    }
+
+    // Scroll position hint when windowed.
+    if (count < entries.length) {
+      this.m_UI.UI_DrawStringLarge(
+        Color.Gray,
+        `(${currentChoice + 1}/${entries.length} - list scrolls)`,
+        gx,
+        gy.value,
+        shadowColorOf(Color.Gray)
+      );
+      gy.value += MENU_LINE_SPACING;
     }
   }
 
   // C# DrawHeader — RogueGame.cs:19975
   DrawHeader(): void {
-    this.m_UI.UI_DrawStringBold(Color.Red, `ROGUE SURVIVOR - ${GAME_VERSION}`, 0, 0, Color.DarkRed);
+    this.m_UI.UI_DrawStringBoldLarge(Color.Red, `ROGUE SURVIVOR - ${GAME_VERSION}`, 0, 0, Color.DarkRed);
   }
 
   // C# DrawFootnote — RogueGame.cs:19980
   DrawFootnote(color: Color, text: string): void {
-    this.m_UI.UI_DrawStringBold(
+    this.m_UI.UI_DrawStringBoldLarge(
       color,
       `<${text}>`,
       0,
-      CANVAS_HEIGHT - BOLD_LINE_SPACING,
+      CANVAS_HEIGHT - MENU_BOLD_LINE_SPACING,
       shadowColorOf(color)
     );
   }
@@ -16558,7 +16808,7 @@ export class RogueGame {
     // say so.
     if (isVerbose) {
       this.m_UI.UI_Clear(Color.Black);
-      this.m_UI.UI_DrawStringBold(Color.White, "Generating game world...", 0, 0);
+      this.m_UI.UI_DrawStringBoldLarge(Color.White, "Generating game world...", 0, 0);
       this.m_UI.UI_Repaint();
     }
 
@@ -16567,7 +16817,7 @@ export class RogueGame {
     //////////////////////
     if (isVerbose) {
       this.m_UI.UI_Clear(Color.Black);
-      this.m_UI.UI_DrawStringBold(Color.White, "Creating empty world...", 0, 0);
+      this.m_UI.UI_DrawStringBoldLarge(Color.White, "Creating empty world...", 0, 0);
       this.m_UI.UI_Repaint();
     }
     this.m_Session.world = new World(size);
@@ -16603,7 +16853,7 @@ export class RogueGame {
       for (let y = 0; y < world.size; y++) {
         if (isVerbose) {
           this.m_UI.UI_Clear(Color.Black);
-          this.m_UI.UI_DrawStringBold(Color.White, `Creating District@${World.CoordToString(x, y)}...`, 0, 0);
+          this.m_UI.UI_DrawStringBoldLarge(Color.White, `Creating District@${World.CoordToString(x, y)}...`, 0, 0);
           this.m_UI.UI_Repaint();
         }
 
@@ -16629,7 +16879,7 @@ export class RogueGame {
     ///////////////
     if (isVerbose) {
       this.m_UI.UI_Clear(Color.Black);
-      this.m_UI.UI_DrawStringBold(Color.White, "Generating unique maps...", 0, 0);
+      this.m_UI.UI_DrawStringBoldLarge(Color.White, "Generating unique maps...", 0, 0);
       this.m_UI.UI_Repaint();
     }
     this.m_Session.uniqueMaps.charUndergroundFacility = this.CreateUniqueMap_CHARUndegroundFacility(world);
@@ -16639,7 +16889,7 @@ export class RogueGame {
     /////////////////
     if (isVerbose) {
       this.m_UI.UI_Clear(Color.Black);
-      this.m_UI.UI_DrawStringBold(Color.White, "Generating unique actors...", 0, 0);
+      this.m_UI.UI_DrawStringBoldLarge(Color.White, "Generating unique actors...", 0, 0);
       this.m_UI.UI_Repaint();
     }
     // "Sewers Thing" - in one of the sewers
@@ -16670,7 +16920,7 @@ export class RogueGame {
       for (let y = 0; y < world.size; y++) {
         if (isVerbose) {
           this.m_UI.UI_Clear(Color.Black);
-          this.m_UI.UI_DrawStringBold(Color.White, `Linking District@${World.CoordToString(x, y)}...`, 0, 0);
+          this.m_UI.UI_DrawStringBoldLarge(Color.White, `Linking District@${World.CoordToString(x, y)}...`, 0, 0);
           this.m_UI.UI_Repaint();
         }
 
@@ -16798,7 +17048,7 @@ export class RogueGame {
     //////////////////////////////
     if (isVerbose) {
       this.m_UI.UI_Clear(Color.Black);
-      this.m_UI.UI_DrawStringBold(Color.White, "Spawning player...", 0, 0);
+      this.m_UI.UI_DrawStringBoldLarge(Color.White, "Spawning player...", 0, 0);
       this.m_UI.UI_Repaint();
     }
     const gridCenter = Math.floor(world.size / 2);
@@ -16844,7 +17094,7 @@ export class RogueGame {
     /////////
     if (isVerbose) {
       this.m_UI.UI_Clear(Color.Black);
-      this.m_UI.UI_DrawStringBold(Color.White, "Generating game world... done!", 0, 0);
+      this.m_UI.UI_DrawStringBoldLarge(Color.White, "Generating game world... done!", 0, 0);
       this.m_UI.UI_Repaint();
     }
   }
@@ -17597,13 +17847,9 @@ export class RogueGame {
         this.m_MusicManager.play(GameMusics.INTERLUDE);
 
         // force player view to darkness (so he gets no messages).
-        // C# `Map.ClearView()` — no TS equivalent, inline the tile loop.
         if (this.m_Player != null) {
-          const playerMap = this.m_Player.location.map!;
-          for (let x = 0; x < playerMap.width; x++)
-            for (let y = 0; y < playerMap.height; y++) playerMap.getTileAt(x, y)!.isInView = false;
-          for (let x = 0; x < entryMap.width; x++)
-            for (let y = 0; y < entryMap.height; y++) entryMap.getTileAt(x, y)!.isInView = false;
+          this.m_Player.location.map!.clearView();
+          entryMap.clearView();
         }
 
         // simulate loop.
@@ -18179,12 +18425,12 @@ export class RogueGame {
 
     // Waiting screen...
     this.m_UI.UI_Clear(Color.Black);
-    this.m_UI.UI_DrawStringBold(Color.Yellow, "Reincarnation - Purgatory", 0, 0);
-    this.m_UI.UI_DrawStringBold(
+    this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Reincarnation - Purgatory", 0, 0);
+    this.m_UI.UI_DrawStringBoldLarge(
       Color.White,
       "(preparing reincarnations, please wait...)",
       0,
-      2 * BOLD_LINE_SPACING
+      2 * MENU_BOLD_LINE_SPACING
     );
     this.m_UI.UI_Repaint();
 
@@ -18229,26 +18475,26 @@ export class RogueGame {
       const gx = 0;
       let gy = 0;
       this.m_UI.UI_Clear(Color.Black);
-      this.m_UI.UI_DrawStringBold(Color.Yellow, "Reincarnation - Choose Avatar", gx, gy);
-      gy += 2 * BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Reincarnation - Choose Avatar", gx, gy);
+      gy += 2 * MENU_BOLD_LINE_SPACING;
 
       const gyRef = { value: gy };
       this.DrawMenuOrOptions(selected, Color.White, entries, Color.LightGreen, values, gx, gyRef);
       gy = gyRef.value;
       gy += 2 * BOLD_LINE_SPACING;
 
-      this.m_UI.UI_DrawStringBold(Color.Pink, ".-* District Fun Facts! *-.", gx, gy);
-      gy += BOLD_LINE_SPACING;
-      this.m_UI.UI_DrawStringBold(
+      this.m_UI.UI_DrawStringBoldLarge(Color.Pink, ".-* District Fun Facts! *-.", gx, gy);
+      gy += MENU_BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(
         Color.Pink,
         `at current date : ${new WorldTime(this.m_Session.worldTime.turnCounter).toString()}.`,
         gx,
         gy
       );
-      gy += 2 * BOLD_LINE_SPACING;
+      gy += 2 * MENU_BOLD_LINE_SPACING;
       for (const fact of funFacts) {
-        this.m_UI.UI_DrawStringBold(Color.Pink, fact, gx, gy);
-        gy += BOLD_LINE_SPACING;
+        this.m_UI.UI_DrawStringBoldLarge(Color.Pink, fact, gx, gy);
+        gy += MENU_BOLD_LINE_SPACING;
       }
 
       this.DrawFootnote(Color.White, "cursor to move, ENTER to select, ESC to cancel and end game");
@@ -18379,43 +18625,43 @@ export class RogueGame {
     const gx = 0;
     let gy = 0;
     this.m_UI.UI_Clear(Color.Black);
-    this.m_UI.UI_DrawStringBold(Color.Yellow, "Limbo", gx, gy);
-    gy += 2 * BOLD_LINE_SPACING;
-    this.m_UI.UI_DrawStringBold(
+    this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Limbo", gx, gy);
+    gy += 2 * MENU_BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBoldLarge(
       Color.White,
       `Leave body ${1 + this.m_Session.scoring.reincarnationNumber}/${1 + s_Options.maxReincarnations}.`,
       gx,
       gy
     );
-    gy += BOLD_LINE_SPACING;
-    this.m_UI.UI_DrawStringBold(Color.White, "Remember lives.", gx, gy);
-    gy += BOLD_LINE_SPACING;
-    this.m_UI.UI_DrawStringBold(Color.White, "Remember purpose.", gx, gy);
-    gy += BOLD_LINE_SPACING;
-    this.m_UI.UI_DrawStringBold(Color.White, "Clear again.", gx, gy);
-    gy += BOLD_LINE_SPACING;
+    gy += MENU_BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Remember lives.", gx, gy);
+    gy += MENU_BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Remember purpose.", gx, gy);
+    gy += MENU_BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBoldLarge(Color.White, "Clear again.", gx, gy);
+    gy += MENU_BOLD_LINE_SPACING;
 
     // ask question or no more lives left.
     if (this.m_Session.scoring.reincarnationNumber >= s_Options.maxReincarnations) {
       // no more lives left.
-      this.m_UI.UI_DrawStringBold(Color.LightGreen, "Humans interesting.", gx, gy);
-      gy += BOLD_LINE_SPACING;
-      this.m_UI.UI_DrawStringBold(Color.LightGreen, "Time to leave.", gx, gy);
-      gy += BOLD_LINE_SPACING;
-      gy += 2 * BOLD_LINE_SPACING;
-      this.m_UI.UI_DrawStringBold(Color.Yellow, "No more reincarnations left.", gx, gy);
+      this.m_UI.UI_DrawStringBoldLarge(Color.LightGreen, "Humans interesting.", gx, gy);
+      gy += MENU_BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(Color.LightGreen, "Time to leave.", gx, gy);
+      gy += MENU_BOLD_LINE_SPACING;
+      gy += 2 * MENU_BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "No more reincarnations left.", gx, gy);
       this.DrawFootnote(Color.White, "press ENTER");
       this.m_UI.UI_Repaint();
       await this.WaitEnter();
       return false;
     } else {
       // one more life available.
-      this.m_UI.UI_DrawStringBold(Color.White, "Leave?", gx, gy);
-      gy += BOLD_LINE_SPACING;
-      this.m_UI.UI_DrawStringBold(Color.White, "Live?", gx, gy);
+      this.m_UI.UI_DrawStringBoldLarge(Color.White, "Leave?", gx, gy);
+      gy += MENU_BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(Color.White, "Live?", gx, gy);
 
-      gy += 2 * BOLD_LINE_SPACING;
-      this.m_UI.UI_DrawStringBold(Color.Yellow, "Reincarnate? Y to confirm, N to cancel.", gx, gy);
+      gy += 2 * MENU_BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Reincarnate? Y to confirm, N to cancel.", gx, gy);
       this.m_UI.UI_Repaint();
 
       // ask question.
@@ -19398,6 +19644,7 @@ export class RogueGame {
   }
 
   UpdatePlayerFOV(player: Actor): void {
+    if (player == null) return;
     const rawFov = LOS.computeFOVFor(this.m_Rules, player, this.m_Session.worldTime, this.m_Session.world!.weather);
     this.m_PlayerFOV = new Set<Point>();
     for (const key of rawFov) {
@@ -19407,6 +19654,10 @@ export class RogueGame {
         this.m_PlayerFOV.add(new Point(parseInt(parts[0], 10), parseInt(parts[1], 10)));
       }
     }
+    // Push the FOV onto the map's tiles. Without this nothing is ever marked
+    // in-view, so IsVisibleToPlayer is false everywhere and no actor, item or
+    // corpse is ever drawn — including the player.
+    player.location.map!.setViewAndMarkVisited(this.m_PlayerFOV);
   }
 
   IsAdjacentToEnemy(map: Map, pos: Point, actor: Actor): boolean {

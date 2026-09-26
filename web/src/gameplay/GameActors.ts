@@ -58,7 +58,17 @@ export class GameActors implements ActorModelDB {
   constructor() {
     Models.actors = this;
 
-    const actorImageMap: Record<number, string> = {
+    // Per-model sprite, or null when the actor is drawn entirely from its doll
+    // decorations instead. This mirrors the C# `GameActors` constructor
+    // argument-by-argument: every living actor (and the zombified pair) is
+    // passed `null` there, because they are skinned and dressed at spawn time
+    // by the generator. Undead and uniques carry a whole-body sprite.
+    //
+    // Getting this wrong is invisible until you look for it: a living actor
+    // given a sprite draws that sprite *under* its doll layers, so the doll
+    // still looks right, but a null-sprite actor given the wrong sprite shows
+    // the wrong body entirely.
+    const actorImageMap: Record<number, string | null> = {
       [ActorID.UNDEAD_SKELETON]: GameImages.ACTOR_SKELETON,
       [ActorID.UNDEAD_RED_EYED_SKELETON]: GameImages.ACTOR_RED_EYED_SKELETON,
       [ActorID.UNDEAD_RED_SKELETON]: GameImages.ACTOR_RED_SKELETON,
@@ -68,24 +78,25 @@ export class GameActors implements ActorModelDB {
       [ActorID.UNDEAD_ZOMBIE_MASTER]: GameImages.ACTOR_ZOMBIE_MASTER,
       [ActorID.UNDEAD_ZOMBIE_LORD]: GameImages.ACTOR_ZOMBIE_LORD,
       [ActorID.UNDEAD_ZOMBIE_PRINCE]: GameImages.ACTOR_ZOMBIE_PRINCE,
-      [ActorID.UNDEAD_MALE_ZOMBIFIED]: GameImages.ACTOR_ZOMBIE,
-      [ActorID.UNDEAD_FEMALE_ZOMBIFIED]: GameImages.ACTOR_ZOMBIE,
+      [ActorID.UNDEAD_MALE_ZOMBIFIED]: null, // dressed as a civilian, then zombified
+      [ActorID.UNDEAD_FEMALE_ZOMBIFIED]: null,
       [ActorID.UNDEAD_MALE_NEOPHYTE]: GameImages.ACTOR_MALE_NEOPHYTE,
       [ActorID.UNDEAD_FEMALE_NEOPHYTE]: GameImages.ACTOR_FEMALE_NEOPHYTE,
       [ActorID.UNDEAD_MALE_DISCIPLE]: GameImages.ACTOR_MALE_DISCIPLE,
       [ActorID.UNDEAD_FEMALE_DISCIPLE]: GameImages.ACTOR_FEMALE_DISCIPLE,
       [ActorID.UNDEAD_RAT_ZOMBIE]: GameImages.ACTOR_RAT_ZOMBIE,
-      [ActorID.MALE_CIVILIAN]: GameImages.ACTOR_ZOMBIE,
-      [ActorID.FEMALE_CIVILIAN]: GameImages.ACTOR_ZOMBIE,
-      [ActorID.FERAL_DOG]: GameImages.ACTOR_ZOMBIE,
-      [ActorID.CHAR_GUARD]: GameImages.ACTOR_ZOMBIE,
-      [ActorID.ARMY_NATIONAL_GUARD]: GameImages.ACTOR_ZOMBIE,
-      [ActorID.BIKER_MAN]: GameImages.ACTOR_ZOMBIE,
-      [ActorID.POLICEMAN]: GameImages.ACTOR_ZOMBIE,
-      [ActorID.GANGSTA_MAN]: GameImages.ACTOR_ZOMBIE,
-      [ActorID.BLACKOPS_MAN]: GameImages.ACTOR_ZOMBIE,
       [ActorID.SEWERS_THING]: GameImages.ACTOR_SEWERS_THING,
-      [ActorID.JASON_MYERS]: GameImages.ACTOR_JASON_MYERS,
+      // Livings: no sprite, drawn from the doll.
+      [ActorID.MALE_CIVILIAN]: null,
+      [ActorID.FEMALE_CIVILIAN]: null,
+      [ActorID.FERAL_DOG]: null,
+      [ActorID.CHAR_GUARD]: null, // skinned & dressed
+      [ActorID.ARMY_NATIONAL_GUARD]: null,
+      [ActorID.BIKER_MAN]: null,
+      [ActorID.GANGSTA_MAN]: null,
+      [ActorID.POLICEMAN]: null,
+      [ActorID.BLACKOPS_MAN]: null,
+      [ActorID.JASON_MYERS]: null, // skinned
     };
 
     const dataArr = actorsData as any[];
@@ -141,7 +152,12 @@ export class GameActors implements ActorModelDB {
       const isMale = i !== ActorID.FEMALE_CIVILIAN && i !== ActorID.UNDEAD_FEMALE_ZOMBIFIED && i !== ActorID.UNDEAD_FEMALE_NEOPHYTE && i !== ActorID.UNDEAD_FEMALE_DISCIPLE;
       const body = new DollBody(isMale, d.SPD);
 
-      const img = actorImageMap[i] ?? GameImages.ACTOR_ZOMBIE;
+      // Null is meaningful and must survive: it means "no whole-body sprite,
+      // draw this actor from its doll decorations". Coalescing it away here
+      // (as `?? GameImages.ACTOR_ZOMBIE` did) gave every living actor a zombie
+      // body, and since the sprite is drawn *under* the doll the result was a
+      // civilian with a zombie's torso showing through.
+      const img = Object.prototype.hasOwnProperty.call(actorImageMap, i) ? actorImageMap[i] : null;
       const model = new ActorModel(
         img,
         d.NAME,

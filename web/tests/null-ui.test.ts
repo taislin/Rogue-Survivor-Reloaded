@@ -79,6 +79,8 @@ describe("NullRogueUI", () => {
       ui.UI_FillRect(Color.White, new Rect(0, 0, 10, 10));
       ui.UI_DrawString(Color.White, "hello", 1, 1);
       ui.UI_DrawStringBold(Color.White, "hello", 1, 1);
+      ui.UI_DrawStringLarge(Color.White, "hello", 1, 1);
+      ui.UI_DrawStringBoldLarge(Color.White, "hello", 1, 1);
       ui.UI_ClearMinimap(Color.Black);
       ui.UI_SetMinimapColor(1, 1, Color.White);
       ui.UI_DrawMinimap(0, 0);

@@ -321,6 +321,42 @@ export class Map {
     this.bumpMinimapRevision();
   }
 
+  /**
+   * C# `Map.ClearView` – drop the current view, keeping the visited set.
+   *
+   * The view is what the player can see *right now*; the visited set is what
+   * they have ever seen. Only the former is cleared, so previously-memorised
+   * tiles stay drawn in their desaturated form.
+   */
+  clearView(): void {
+    for (let x = 0; x < this.width; x++) {
+      for (let y = 0; y < this.height; y++) {
+        const tile = this.getTileAt(x, y);
+        if (tile) tile.isInView = false;
+      }
+    }
+  }
+
+  /**
+   * C# `Map.SetViewAndMarkVisited` – replace the view, and remember it.
+   *
+   * Called once per FOV recomputation. This is what makes actors, items and
+   * corpses drawable at all: `RogueGame.IsVisibleToPlayer` reads
+   * `tile.isInView`, and `DrawTile` picks its lit or memorised sprite from the
+   * same two flags. Without it the whole map stays unvisited and empty.
+   */
+  setViewAndMarkVisited(visiblePositions: Iterable<Point>): void {
+    this.clearView();
+    for (const pt of visiblePositions) {
+      const tile = this.getTileAt(pt.x, pt.y);
+      if (tile === null) continue;
+      tile.isInView = true;
+      // Through markVisited, so the minimap revision tracks the visited set —
+      // DrawMiniMap caches on it and would otherwise go stale.
+      this.markVisited(pt.x, pt.y);
+    }
+  }
+
   // ── Minimap-relevant revision ─────────────────────────────────────────────
 
   /**

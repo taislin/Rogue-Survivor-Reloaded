@@ -132,6 +132,11 @@ export class NullRogueUI implements IRogueUI {
     return n;
   }
 
+  /** No sprites to fetch: painting here is a counter, not a blit. */
+  async UI_PreloadImages(_ids: string[], onProgress?: (loaded: number, total: number) => void): Promise<void> {
+    onProgress?.(0, 0);
+  }
+
   UI_Repaint(): void { this.count("UI_Repaint"); }
   UI_Clear(_color: Color): void { this.count("UI_Clear"); }
   UI_DrawImage(_imageId: string, _gx: number, _gy: number): void { this.count("UI_DrawImage"); }
@@ -147,6 +152,8 @@ export class NullRogueUI implements IRogueUI {
 
   UI_DrawString(_color: Color, _text: string, _gx: number, _gy: number, _shadowColor?: Color): void { this.count("UI_DrawString"); }
   UI_DrawStringBold(_color: Color, _text: string, _gx: number, _gy: number, _shadowColor?: Color): void { this.count("UI_DrawStringBold"); }
+  UI_DrawStringLarge(_color: Color, _text: string, _gx: number, _gy: number, _shadowColor?: Color): void { this.count("UI_DrawStringLarge"); }
+  UI_DrawStringBoldLarge(_color: Color, _text: string, _gx: number, _gy: number, _shadowColor?: Color): void { this.count("UI_DrawStringBoldLarge"); }
 
   UI_DrawPopup(
     _lines: string[], _textColor: Color, _borderColor: Color, _fillColor: Color, _gx: number, _gy: number

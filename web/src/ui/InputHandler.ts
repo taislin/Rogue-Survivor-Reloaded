@@ -44,8 +44,16 @@ export class InputHandler {
     });
   }
 
+  /**
+   * The next queued key, removing it.
+   *
+   * Despite the name, this is the C# `UI_PeekKey` contract: `RogueForm.UI_PeekKey`
+   * sets `m_HasKey = false` before returning, so it *consumes* the key it hands
+   * back. `RogueGame.WaitKeyOrMouse` and the sim's abort check both rely on that —
+   * they poll in a loop and would otherwise be handed the same key forever.
+   */
   peekKey(): GameKeyEvent | null {
-    return this.keyQueue[0] ?? null;
+    return this.keyQueue.shift() ?? null;
   }
 
   postKey(e: GameKeyEvent): void {

@@ -1,66 +1,47 @@
 # Rogue Survivor Reloaded — Web Port
 
-Browser-based TypeScript port of the original C# Windows Forms game.
+TypeScript port of the original C# Windows Forms game, playable in a browser.
+
+**See the [root README](../README.md) for setup, architecture, and project
+overview.** This file only covers what is specific to running the port.
 
 ## Quick start
 
 ```bash
-cd web
 npm install
-npm run dev     # Opens http://localhost:3000 with hot reload
+npm run dev     # http://localhost:3000, hot reload
 ```
 
-## Production build + serve
+## Production
 
 ```bash
-npm run build:all   # Compile browser bundle + Express server
+npm run build:all   # browser bundle -> dist/, Express server -> dist-server/
 npm run serve       # http://localhost:8080
 ```
 
-## Environment
-
-| Variable | Default | Description |
-|----------|---------|-------------|
+| Variable | Default | Description            |
+|----------|---------|------------------------|
 | `PORT`   | `8080`  | Production server port |
 
-## Project structure
+## Verification
 
-```
-web/
-├── index.html          Entry HTML (1024×768 canvas)
-├── vite.config.ts      Vite bundler config (dev server :3000)
-├── tsconfig.json       Browser TypeScript config
-├── src/
-│   ├── main.ts         Entry point + splash screen
-│   ├── engine/         Core primitives (Color, Point, Rect, Direction, …)
-│   └── ui/             Browser rendering (CanvasUI, InputHandler)
-├── server/
-│   ├── index.ts        Express production HTTP server
-│   └── tsconfig.json   Server TypeScript config
-└── public/
-    └── assets/         Game images (to be extracted from C# resources)
+```bash
+npm run verify   # type-check + 146 tests + build
+npm run sim      # headless simulation: plays a full game in Node
 ```
 
-## Asset extraction
+Run the sim after any engine change — a green type-check does not mean the game
+works. See the "Testing and the headless simulator" section of the root README.
 
-Game sprites in the C# project are embedded as `.png` resources accessed by IDs
-such as `"Tiles\\floor_asphalt"`.  Place them under `public/assets/` with
-forward-slash paths and the `.png` extension:
+## Notes specific to this directory
 
-```
-public/assets/Tiles/floor_asphalt.png
-public/assets/MapObjects/wooden_door_closed.png
-…
-```
-
-## Migration phases
-
-| Phase | Status | Scope |
-|-------|--------|-------|
-| 1 | ✅ Complete | Scaffold, primitives, Canvas UI, HTTP server |
-| 2 | ✅ Complete | Data layer (Map, Actor, Item, Tile, World) |
-| 3 | ✅ Complete | Engine core + `ui/OptionsScreen.ts` (reachable from the in-game menu) |
-| 4 | 🔄 In progress | RogueGame core loop (`engine/RogueGame.ts`) — slice 1 (character creation, `StartNewGame`, credits, redefine keys) done and `main.ts` wired to `RogueGame.Run()`; slices 4, 5, 7 in progress, slices 2, 3, 6, 8, 9, 10 open |
-| 5 | ✅ Complete | All 11 AI controllers + `BaseAI`; world generators (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator`, `StdTownGenerator`) |
-| 6 | ✅ Complete | Audio (Web Audio API) |
-| 7 | ✅ Complete | Save/load (`GameSaveManager`, 10 localStorage slots) |
+- `index.html` owns a **1366×768** canvas (the C# original was 1024×768), upscaled
+  to fit the viewport. Layout constants live at the top of
+  `src/engine/RogueGame.ts`.
+- Path aliases `@engine`, `@ui`, `@data`, `@gameplay` are configured in
+  `vite.config.ts`; `tsconfig.json` mirrors them for the type-checker.
+- Append `?debug=1` to the URL for `[render]` / `[draw]` console logging.
+- Sprites are lossless WebP under `public/assets/images/<set>/`, audio is `.ogg`
+  under `public/assets/{music,sfx}/`.
+- `public/sw.js` is a service worker for offline play; bump its `CACHE_VERSION`
+  when releasing.

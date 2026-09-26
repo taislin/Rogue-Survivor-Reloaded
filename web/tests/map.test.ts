@@ -193,3 +193,70 @@ describe("Map.assertActorIntegrity", () => {
     expect(() => map.assertActorIntegrity()).toThrow(/indexed by position/);
   });
 });
+
+/**
+ * Regression tests for the view/visited flags.
+ *
+ * `RogueGame.UpdatePlayerFOV` computed the FOV set but never pushed it onto the
+ * map, because the C# line it mirrors — `Map.SetViewAndMarkVisited(m_PlayerFOV)`
+ * — had no counterpart in the port. Every tile therefore stayed out of view, and
+ * since `IsVisibleToPlayer` and `DrawTile` both read those flags, the game drew
+ * an empty map: no tiles, no items, and no actors at all, the player included.
+ */
+describe("Map view/visited flags", () => {
+  it("marks the given positions in view and visited", () => {
+    const map = newMap();
+    map.setViewAndMarkVisited([new Point(1, 1), new Point(2, 2)]);
+
+    expect(map.getTileAt(1, 1)!.isInView).toBe(true);
+    expect(map.getTileAt(1, 1)!.isVisited).toBe(true);
+    expect(map.getTileAt(2, 2)!.isInView).toBe(true);
+  });
+
+  it("replaces the previous view rather than accumulating it", () => {
+    // A stale in-view flag is what makes a tile render lit from across the map,
+    // so the clear-then-set ordering is the behaviour under test.
+    const map = newMap();
+    map.setViewAndMarkVisited([new Point(1, 1)]);
+    map.setViewAndMarkVisited([new Point(5, 5)]);
+
+    expect(map.getTileAt(1, 1)!.isInView).toBe(false);
+    expect(map.getTileAt(5, 5)!.isInView).toBe(true);
+  });
+
+  it("keeps previously visited tiles visited when the view moves on", () => {
+    // Visited is the permanent memory; only the view is per-frame. Losing this
+    // distinction is what makes explored map areas go black again.
+    const map = newMap();
+    map.setViewAndMarkVisited([new Point(1, 1)]);
+    map.setViewAndMarkVisited([new Point(5, 5)]);
+
+    expect(map.getTileAt(1, 1)!.isVisited).toBe(true);
+    expect(map.getTileAt(1, 1)!.isInView).toBe(false);
+  });
+
+  it("bumps the minimap revision when a tile becomes newly visited", () => {
+    // DrawMiniMap caches its raster against this revision; marking visited
+    // without bumping it is how the minimap silently goes stale.
+    const map = newMap();
+    const before = map.minimapRevision;
+    map.setViewAndMarkVisited([new Point(3, 3)]);
+    expect(map.minimapRevision).toBeGreaterThan(before);
+  });
+
+  it("ignores out-of-bounds positions instead of throwing", () => {
+    // C# throws here, but the FOV set is produced by a raycast already clamped
+    // to the map, so a stray point must not be able to kill a frame.
+    const map = newMap();
+    expect(() => map.setViewAndMarkVisited([new Point(-1, 0), new Point(0, 999)])).not.toThrow();
+  });
+
+  it("clearView drops the view but keeps the visited set", () => {
+    const map = newMap();
+    map.setViewAndMarkVisited([new Point(4, 4)]);
+    map.clearView();
+
+    expect(map.getTileAt(4, 4)!.isInView).toBe(false);
+    expect(map.getTileAt(4, 4)!.isVisited).toBe(true);
+  });
+});

@@ -7,7 +7,8 @@ import { IMusicManager }    from "@engine/audio/IMusicManager";
 
 // RogueGame.cs layout constants
 const CANVAS_HEIGHT     = 768;
-const BOLD_LINE_SPACING = 14;
+const MENU_BOLD_LINE_SPACING = 18;
+const MENU_LINE_SPACING = 16;
 const RIGHT_PADDING     = 400;
 
 // SetupConfig.GAME_VERSION
@@ -153,7 +154,7 @@ export class OptionsScreen {
 
   /** `RogueGame.DrawHeader()` — RogueGame.cs ≈ line 19975. */
   private drawHeader(): void {
-    this.ui.UI_DrawStringBold(
+    this.ui.UI_DrawStringBoldLarge(
       Color.Red,
       `ROGUE SURVIVOR - ${GAME_VERSION}`,
       0,
@@ -164,11 +165,11 @@ export class OptionsScreen {
 
   /** `RogueGame.DrawFootnote(color, text)` — RogueGame.cs ≈ line 19980. */
   private drawFootnote(color: Color, text: string): void {
-    this.ui.UI_DrawStringBold(
+    this.ui.UI_DrawStringBoldLarge(
       color,
       `<${text}>`,
       0,
-      CANVAS_HEIGHT - BOLD_LINE_SPACING,
+      CANVAS_HEIGHT - MENU_BOLD_LINE_SPACING,
       shadowOf(color)
     );
   }
@@ -176,6 +177,9 @@ export class OptionsScreen {
   /**
    * `RogueGame.DrawMenuOrOptions(...)` — RogueGame.cs ≈ line 19932.
    * The C# `ref int gy` parameter becomes the returned value.
+   *
+   * Shows a scrolling window when the 36 options exceed the space above the
+   * description block, mirroring the main helper's windowing.
    */
   private drawMenuOrOptions(
     currentChoice: number,
@@ -186,26 +190,46 @@ export class OptionsScreen {
     gx: number,
     gy: number,
     valuesOnNewLine = false,
-    rightPadding = 256
+    rightPadding = 256,
+    maxRows?: number
   ): number {
     const right = gx + rightPadding;
 
     if (entries.length !== values.length) throw new Error("values length!= choices length");
 
+    let first = 0;
+    let count = entries.length;
+    if (maxRows !== undefined && maxRows < count) {
+      const half = Math.floor(maxRows / 2);
+      first = Math.min(Math.max(0, currentChoice - half), count - maxRows);
+      count = maxRows;
+    }
+
     const entriesShadowColor = shadowOf(entriesColor);
-    for (let i = 0; i < entries.length; i++) {
+    for (let r = 0; r < count; r++) {
+      const i = first + r;
       const choiceStr = i === currentChoice ? `---> ${entries[i]}` : `     ${entries[i]}`;
-      this.ui.UI_DrawStringBold(entriesColor, choiceStr, gx, gy, entriesShadowColor);
+      this.ui.UI_DrawStringBoldLarge(entriesColor, choiceStr, gx, gy, entriesShadowColor);
 
       const valueStr = i === currentChoice && !valuesOnNewLine ? `${values[i]} <---` : values[i];
       if (valuesOnNewLine) {
-        gy += BOLD_LINE_SPACING;
-        this.ui.UI_DrawStringBold(valuesColor, valueStr, gx + right, gy);
+        gy += MENU_BOLD_LINE_SPACING;
+        this.ui.UI_DrawStringBoldLarge(valuesColor, valueStr, gx + right, gy);
       } else {
-        this.ui.UI_DrawStringBold(valuesColor, valueStr, right, gy);
+        this.ui.UI_DrawStringBoldLarge(valuesColor, valueStr, right, gy);
       }
 
-      gy += BOLD_LINE_SPACING;
+      gy += MENU_BOLD_LINE_SPACING;
+    }
+    if (count < entries.length) {
+      this.ui.UI_DrawStringLarge(
+        Color.Gray,
+        `(${currentChoice + 1}/${entries.length} - list scrolls)`,
+        gx,
+        gy,
+        shadowOf(Color.Gray)
+      );
+      gy += MENU_LINE_SPACING;
     }
     return gy;
   }
@@ -217,9 +241,17 @@ export class OptionsScreen {
     let gy = 0;
     this.ui.UI_Clear(Color.Black);
     this.drawHeader();
-    gy += BOLD_LINE_SPACING;
-    this.ui.UI_DrawStringBold(Color.Yellow, "Options", 0, gy); // alpha10 dont mention current mode
-    gy += 2 * BOLD_LINE_SPACING;
+    gy += MENU_BOLD_LINE_SPACING;
+    this.ui.UI_DrawStringBoldLarge(Color.Yellow, "Options", 0, gy); // alpha10 dont mention current mode
+    gy += 2 * MENU_BOLD_LINE_SPACING;
+    // Window the 36 options above the description block; the footnote sits at
+    // the canvas bottom, so reserve description + legend + rating + footnote
+    // plus the scroll-hint line the windowed list appends.
+    const reserveLines = 1 + 4 + 3 + 2 + 1 + 1;
+    const listRows = Math.max(
+      5,
+      Math.floor((CANVAS_HEIGHT - MENU_BOLD_LINE_SPACING - gy) / MENU_BOLD_LINE_SPACING) - reserveLines
+    );
     gy = this.drawMenuOrOptions(
       selected,
       Color.White,
@@ -229,60 +261,61 @@ export class OptionsScreen {
       0,
       gy,
       false,
-      RIGHT_PADDING
+      RIGHT_PADDING,
+      listRows
     );
 
     // alpha10 — describe current option.
-    gy += BOLD_LINE_SPACING;
-    this.ui.UI_DrawStringBold(
+    gy += MENU_BOLD_LINE_SPACING;
+    this.ui.UI_DrawStringBoldLarge(
       Color.White,
       this.menuEntries[selected].replace(/^\s+/, ""),
       0,
       gy
     );
-    gy += BOLD_LINE_SPACING;
+    gy += MENU_BOLD_LINE_SPACING;
     const desc = GameOptions.describe(this.list[selected]);
     for (const line of desc.split("\n")) {
-      this.ui.UI_DrawString(Color.White, `  ${line}`, 0, gy);
-      gy += BOLD_LINE_SPACING;
+      this.ui.UI_DrawStringLarge(Color.White, `  ${line}`, 0, gy);
+      gy += MENU_LINE_SPACING;
     }
 
     // legend.
-    gy += BOLD_LINE_SPACING;
-    this.ui.UI_DrawStringBold(
+    gy += MENU_BOLD_LINE_SPACING;
+    this.ui.UI_DrawStringBoldLarge(
       Color.Red,
       "* Caution : increasing these values makes the game runs slower and saving/loading longer.",
       0,
       gy
     );
-    gy += BOLD_LINE_SPACING;
-    this.ui.UI_DrawStringBold(Color.White, "-V : option always OFF when playing VTG-Vintage", 0, gy);
-    gy += BOLD_LINE_SPACING;
-    this.ui.UI_DrawStringBold(Color.White, "=S : option used only when playing STD-Standard", 0, gy);
-    gy += BOLD_LINE_SPACING;
+    gy += MENU_BOLD_LINE_SPACING;
+    this.ui.UI_DrawStringBoldLarge(Color.White, "-V : option always OFF when playing VTG-Vintage", 0, gy);
+    gy += MENU_BOLD_LINE_SPACING;
+    this.ui.UI_DrawStringBoldLarge(Color.White, "=S : option used only when playing STD-Standard", 0, gy);
+    gy += MENU_BOLD_LINE_SPACING;
 
     // difficulty rating.
-    gy += BOLD_LINE_SPACING;
+    gy += MENU_BOLD_LINE_SPACING;
     const diffForSurvivor = Math.floor(
       100 * Scoring.computeDifficultyRating(Options, DifficultySide.FOR_SURVIVOR, 0)
     );
     const diffForUndead = Math.floor(
       100 * Scoring.computeDifficultyRating(Options, DifficultySide.FOR_UNDEAD, 0)
     );
-    this.ui.UI_DrawStringBold(
+    this.ui.UI_DrawStringBoldLarge(
       Color.Yellow,
       `Difficulty Rating : ${diffForSurvivor}% as survivor / ${diffForUndead}% as undead.`,
       0,
       gy
     );
-    gy += BOLD_LINE_SPACING;
-    this.ui.UI_DrawStringBold(
+    gy += MENU_BOLD_LINE_SPACING;
+    this.ui.UI_DrawStringBoldLarge(
       Color.White,
       "Difficulty used for scoring automatically decrease with each reincarnation.",
       0,
       gy
     );
-    gy += 2 * BOLD_LINE_SPACING;
+    gy += 2 * MENU_BOLD_LINE_SPACING;
 
     // footnote.
     this.drawFootnote(

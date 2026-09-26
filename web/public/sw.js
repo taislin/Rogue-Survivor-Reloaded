@@ -19,12 +19,36 @@
  * instead. That avoids needing a build plugin to inject a precache manifest.
  */
 
-const CACHE_VERSION = "rsr-v1";
+/**
+ * Bump this on every release that changes cached content (the JS bundle, `sw.js`
+ * itself, or anything under /assets/). The version namespaces every cache, so a
+ * bump is what evicts the previous build: without it, the stale-while-revalidate
+ * runtime handler keeps serving the old bundle first and the update only lands
+ * on the *next* load — which reads exactly like "the fix didn't work".
+ */
+const CACHE_VERSION = "rsr-v2";
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
 const SHELL_URLS = ["/", "/index.html", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
+
+/**
+ * Whether a response may be written to the Cache API.
+ *
+ * `response.ok` is true for any 2xx, but `cache.put` rejects anything that is
+ * not a complete 200: a 206 Partial Content — what the browser asks for when it
+ * seeks within a media file, which the .ogg tracks encourage — throws
+ * "Partial response (status code 206) is unsupported". That rejection escaped
+ * as an unhandled promise rejection and aborted the rest of the handler.
+ *
+ * A 206 is a range of a larger file, not a storable representation of the URL,
+ * so the right response is to pass it through uncached and let the network
+ * answer range requests directly.
+ */
+function isCacheable(response) {
+  return response.status === 200 && response.type === "basic";
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -76,7 +100,7 @@ self.addEventListener("fetch", (event) => {
       caches.match(request).then((cached) => {
         if (cached) return cached;
         return fetch(request).then((response) => {
-          if (response.ok && response.type === "basic") {
+          if (isCacheable(response)) {
             const copy = response.clone();
             caches.open(ASSET_CACHE).then((cache) => cache.put(request, copy));
           }
@@ -92,7 +116,7 @@ self.addEventListener("fetch", (event) => {
     caches.match(request).then((cached) => {
       const network = fetch(request)
         .then((response) => {
-          if (response.ok && response.type === "basic") {
+          if (isCacheable(response)) {
             const copy = response.clone();
             caches.open(RUNTIME_CACHE).then((cache) => cache.put(request, copy));
           }

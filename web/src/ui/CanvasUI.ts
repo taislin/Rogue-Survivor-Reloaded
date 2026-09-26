@@ -14,6 +14,14 @@ const FONT_NORMAL = '8.25pt "Lucida Console", "Courier New", monospace';
 const FONT_BOLD   = 'bold 8.25pt "Lucida Console", "Courier New", monospace';
 
 /**
+ * Menu/reading font. Same family as the HUD font for visual continuity, at
+ * 12pt for legibility on upscaled displays. Used by popups and every
+ * full-screen menu through `UI_DrawStringLarge` / `UI_DrawPopup*`.
+ */
+const FONT_MENU        = '12pt "Lucida Console", "Courier New", monospace';
+const FONT_MENU_BOLD   = 'bold 12pt "Lucida Console", "Courier New", monospace';
+
+/**
  * Canvas 2D implementation of IRogueUI.
  *
  * Replaces the C# GDIGameCanvas / DXGameCanvas hierarchy.
@@ -89,6 +97,42 @@ export class CanvasUI implements IRogueUI {
   UI_PeekMouseButtons(): MouseButton | null { return this.input.peekMouseButtons(); }
   UI_PostMouseButtons(b: MouseButton): void { this.input.postMouseButtons(b); }
 
+  // ── Preloading ────────────────────────────────────────────────────────────
+
+  /**
+   * How many sprites to fetch at once.
+   *
+   * The browser allows only ~6 connections per host, so a larger number buys
+   * nothing; it just queues inside the browser instead. 16 keeps the pipe full
+   * across connections without letting the first batch monopolise the tab.
+   */
+  private static readonly PRELOAD_CONCURRENCY = 16;
+
+  async UI_PreloadImages(ids: string[], onProgress?: (loaded: number, total: number) => void): Promise<void> {
+    const pending = ids.filter((id) => this.imageLoading.has(id) === false && this.imageCache.has(id) === false);
+    const total = ids.length;
+    let loaded = total - pending.length;
+    onProgress?.(loaded, total);
+
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      for (;;) {
+        const i = next++;
+        if (i >= pending.length) return;
+        // loadImage resolves rather than rejects on error, so one bad sprite
+        // cannot abort the batch.
+        await this.loadImage(pending[i]);
+        onProgress?.(++loaded, total);
+      }
+    };
+
+    const workers: Promise<void>[] = [];
+    for (let i = 0; i < Math.min(CanvasUI.PRELOAD_CONCURRENCY, pending.length); i++) {
+      workers.push(worker());
+    }
+    await Promise.all(workers);
+  }
+
   // ── Delay ─────────────────────────────────────────────────────────────────
 
   UI_Wait(msecs: number): Promise<void> {
@@ -100,11 +144,47 @@ export class CanvasUI implements IRogueUI {
   UI_Repaint(): void {
     // In the browser model, drawing is immediate; this is a no-op kept for API parity.
     // Callers who batch-draw and then repaint will still work correctly.
+    if (CanvasUI.debugDraw && (this.frameDraws > 0 || this.frameSkips > 0)) {
+      // eslint-disable-next-line no-console
+      console.log(
+        `[draw] draws=${this.frameDraws} skips=${this.frameSkips}` +
+          (this.frameSkips > 0 ? ` missing=[${[...this.frameSkippedIds].slice(0, 8).join(", ")}]` : "")
+      );
+      this.frameSkippedIds.clear();
+    }
   }
 
   UI_Clear(color: Color): void {
     this.ctx.fillStyle = color.toCssRgba();
     this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    // A new frame starts on clear; the repaint that ends it reports the tally.
+    this.frameDraws = 0;
+    this.frameSkips = 0;
+  }
+
+  // ── Frame draw tally (debug) ──────────────────────────────────────────────
+
+  /**
+   * Draw calls vs. skipped-for-missing-image calls since the last `UI_Clear`.
+   *
+   * Reported once per frame when `debugDraw` is on (see `?debug=1`). A healthy
+   * frame after preloading has skips of zero; any skip names a sprite the
+   * preload manifest missed, which renders as a hole exactly where that sprite
+   * would have drawn. Logged from `UI_Repaint`, which ends the frame.
+   */
+  static debugDraw = false;
+  private frameDraws = 0;
+  private frameSkips = 0;
+  private readonly frameSkippedIds = new Set<string>();
+
+  private tallyDraw(imageId: string | null, drew: boolean): void {
+    if (!CanvasUI.debugDraw) return;
+    if (drew) {
+      this.frameDraws++;
+    } else {
+      this.frameSkips++;
+      if (imageId !== null) this.frameSkippedIds.add(imageId);
+    }
   }
 
   // ── Image drawing ─────────────────────────────────────────────────────────
@@ -113,29 +193,43 @@ export class CanvasUI implements IRogueUI {
     const img = this.imageCache.get(imageId);
     if (img) {
       this.ctx.drawImage(img, gx, gy);
+      this.tallyDraw(imageId, true);
     } else {
+      this.tallyDraw(imageId, false);
       void this.loadImage(imageId); // kick off load; will appear next repaint
     }
   }
 
   UI_DrawImageTinted(imageId: string, gx: number, gy: number, tint: Color): void {
     const img = this.imageCache.get(imageId);
-    if (!img) { void this.loadImage(imageId); return; }
+    if (!img) { this.tallyDraw(imageId, false); void this.loadImage(imageId); return; }
+    this.tallyDraw(imageId, true);
 
-    // Apply tint via globalCompositeOperation trick
+    // Fast path: an opaque-white tint is the identity, so this is a plain blit
+    // — exactly what C# does, with no composite state to get wrong. The game
+    // currently passes White for every map/actor draw (day-phase tinting is
+    // disabled in RedrawPlayScreen), so this covers all of them and is also
+    // cheaper: no save/restore and no pipeline-breaking composite changes.
+    if (tint.r === 255 && tint.g === 255 && tint.b === 255 && tint.a === 255) {
+      this.ctx.drawImage(img, gx, gy);
+      return;
+    }
+
+    // Real tint: draw the sprite, then fill over it with source-atop so only
+    // the sprite's own pixels are tinted. One composite op instead of three,
+    // and nothing depends on what was on the canvas before.
     this.ctx.save();
     this.ctx.drawImage(img, gx, gy);
-    this.ctx.globalCompositeOperation = "multiply";
+    this.ctx.globalCompositeOperation = "source-atop";
     this.ctx.fillStyle = tint.toCssRgba();
     this.ctx.fillRect(gx, gy, img.width, img.height);
-    this.ctx.globalCompositeOperation = "destination-in";
-    this.ctx.drawImage(img, gx, gy);
     this.ctx.restore();
   }
 
   UI_DrawImageTransform(imageId: string, gx: number, gy: number, rotation: number, scale: number): void {
     const img = this.imageCache.get(imageId);
-    if (!img) { void this.loadImage(imageId); return; }
+    if (!img) { this.tallyDraw(imageId, false); void this.loadImage(imageId); return; }
+    this.tallyDraw(imageId, true);
 
     const cx = gx + img.width  / 2;
     const cy = gy + img.height / 2;
@@ -149,7 +243,8 @@ export class CanvasUI implements IRogueUI {
 
   UI_DrawGrayLevelImage(imageId: string, gx: number, gy: number): void {
     const img = this.imageCache.get(imageId);
-    if (!img) { void this.loadImage(imageId); return; }
+    if (!img) { this.tallyDraw(imageId, false); void this.loadImage(imageId); return; }
+    this.tallyDraw(imageId, true);
 
     const gray = this.grayVariant(imageId, img);
     if (gray === null) { void this.loadImage(imageId); return; }
@@ -181,7 +276,8 @@ export class CanvasUI implements IRogueUI {
 
   UI_DrawTransparentImage(alpha: number, imageId: string, gx: number, gy: number): void {
     const img = this.imageCache.get(imageId);
-    if (!img) { void this.loadImage(imageId); return; }
+    if (!img) { this.tallyDraw(imageId, false); void this.loadImage(imageId); return; }
+    this.tallyDraw(imageId, true);
 
     this.ctx.save();
     this.ctx.globalAlpha = alpha;
@@ -226,6 +322,14 @@ export class CanvasUI implements IRogueUI {
     this.drawText(FONT_BOLD, color, text, gx, gy, shadowColor);
   }
 
+  UI_DrawStringLarge(color: Color, text: string, gx: number, gy: number, shadowColor?: Color): void {
+    this.drawText(FONT_MENU, color, text, gx, gy, shadowColor);
+  }
+
+  UI_DrawStringBoldLarge(color: Color, text: string, gx: number, gy: number, shadowColor?: Color): void {
+    this.drawText(FONT_MENU_BOLD, color, text, gx, gy, shadowColor);
+  }
+
   private drawText(font: string, color: Color, text: string, gx: number, gy: number, shadowColor?: Color): void {
     this.ctx.font         = font;
     this.ctx.textBaseline = "top";
@@ -239,7 +343,8 @@ export class CanvasUI implements IRogueUI {
 
   // ── Popups ────────────────────────────────────────────────────────────────
 
-  private readonly LINE_H = 12; // matches C# LINE_SPACING constant
+  /** Line height for popups and menus, matching the 12pt menu font. */
+  private readonly MENU_LINE_H = 18;
 
   UI_DrawPopup(
     lines: string[], textColor: Color, borderColor: Color, fillColor: Color,
@@ -272,16 +377,18 @@ export class CanvasUI implements IRogueUI {
     borderColor: Color, fillColor: Color,
     gx: number, gy: number,
   ): void {
-    this.ctx.font         = FONT_NORMAL;
+    // Popups use the large menu font; the box is measured in that font so it
+    // always fits its text.
+    this.ctx.font         = FONT_MENU;
     this.ctx.textBaseline = "top";
 
     // Measure widest string
     const allText  = title ? [title, ...lines] : lines;
     const maxWidth = allText.reduce((w, l) => Math.max(w, this.ctx.measureText(l).width), 0);
     const totalLines = lines.length + (title ? 1 : 0);
-    const padX = 4, padY = 4;
+    const padX = 6, padY = 6;
     const boxW = maxWidth + padX * 2;
-    const boxH = totalLines * this.LINE_H + padY * 2;
+    const boxH = totalLines * this.MENU_LINE_H + padY * 2;
 
     // Background
     this.ctx.fillStyle = fillColor.toCssRgba();
@@ -295,12 +402,12 @@ export class CanvasUI implements IRogueUI {
     if (title && titleColor) {
       this.ctx.fillStyle = titleColor.toCssRgba();
       this.ctx.fillText(title, gx + padX, ty);
-      ty += this.LINE_H;
+      ty += this.MENU_LINE_H;
     }
     for (let i = 0; i < lines.length; i++) {
       this.ctx.fillStyle = (colors[i] ?? colors[colors.length - 1]).toCssRgba();
       this.ctx.fillText(lines[i], gx + padX, ty);
-      ty += this.LINE_H;
+      ty += this.MENU_LINE_H;
     }
   }
 
@@ -374,7 +481,14 @@ export class CanvasUI implements IRogueUI {
     const promise = new Promise<HTMLImageElement | null>((resolve) => {
       const img  = new Image();
       img.onload  = () => { this.imageCache.set(imageId, img); resolve(img); };
-      img.onerror = () => { this.imageCache.set(imageId, null); resolve(null); };
+      img.onerror = () => {
+        // Cache the failure, or every frame would retry it forever. Report it
+        // once: a silent skip is what made this class of bug hard to see.
+        this.imageCache.set(imageId, null);
+        this.failedImages.add(imageId);
+        console.warn(`[RogueSurvivor] sprite failed to load: ${src}`);
+        resolve(null);
+      };
       img.src     = src;
     });
 
@@ -382,8 +496,6 @@ export class CanvasUI implements IRogueUI {
     return promise;
   }
 
-  /** Pre-warm the image cache for a list of IDs. */
-  async preloadImages(ids: string[]): Promise<void> {
-    await Promise.all(ids.map((id) => this.loadImage(id)));
-  }
+  /** Sprite ids that failed to load, for diagnostics. */
+  readonly failedImages = new Set<string>();
 }

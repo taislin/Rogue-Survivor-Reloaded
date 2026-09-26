@@ -414,3 +414,26 @@ export class GameImages {
   static readonly ROT5_1 = "rot5_1";
   static readonly ROT5_2 = "rot5_2";
 }
+
+/**
+ * Every sprite id this class declares, de-duplicated.
+ *
+ * The set of ids is the preload manifest: `RogueGame.Run` fetches these before
+ * the first frame so that no draw call has to wait on the network. The ids are
+ * `static readonly` class fields, so they live on the constructor and have to be
+ * read reflectively — there is no way to enumerate them at the type level.
+ */
+export function allImageIds(): string[] {
+  const own = Object.getOwnPropertyNames(GameImages);
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  for (const name of own) {
+    if (name === "length" || name === "name" || name === "prototype") continue;
+    const value = (GameImages as unknown as Record<string, unknown>)[name];
+    if (typeof value !== "string" || value.length === 0) continue;
+    if (seen.has(value)) continue;
+    seen.add(value);
+    ids.push(value);
+  }
+  return ids;
+}
