@@ -1,7 +1,7 @@
 # Rogue Survivor Reloaded — TypeScript / Browser Port: Full Implementation Plan
 
 > **Status:** Phase 1, 2 & 3 complete (Phase 3 includes `ui/OptionsScreen.ts`). Phase 5 complete — `BaseAI` (184/184 methods), all 11 AI controllers, and all 4 generator files done (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator`, `StdTownGenerator`). Phase 6 & 7 complete.  
-> **Phase 4 in progress:** `engine/RogueGame.ts` scaffold generated (constants, fields, properties, constructor, 492 method stubs, 38 camelCase call-site aliases) and filled slice by slice. **Slices 1, 2, 4, 5 and 7 done** (char creation / credits / redefine keys; `AdvancePlay`, `NextMapTurn`, actor regen/counts, scents; advisor hints, describe-*, item/UI helpers, input waits; player death, new day/night, skills, infection/zombification), **slice 4 in progress**, `main.ts` wired to `RogueGame.Run()`. Open slices: 3, 6, 8, 9, 10. 248 of 492 stubs remain. `npm run type-check` + `npm run build` clean; 206/206 smoke checks pass.  
+> **Phase 4 in progress:** `engine/RogueGame.ts` scaffold generated (constants, fields, properties, constructor, 492 method stubs, 38 camelCase call-site aliases) and filled slice by slice. **Slices 1, 2, 3, 4, 5 and 7 done** (char creation / credits / redefine keys; `AdvancePlay`, `NextMapTurn`, actor regen/counts, scents; advisor hints, describe-*, item/UI helpers, input waits; player death, new day/night, skills, infection/zombification), **slice 4 in progress**, `main.ts` wired to `RogueGame.Run()`. Open slices: 3, 6, 8, 9, 10. 206 of 492 stubs remain. `npm run type-check` + `npm run build` clean; 206/206 smoke checks pass.  
 > **Last updated:** 2026-09-26
 
 ---
