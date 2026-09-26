@@ -1,7 +1,7 @@
 # Rogue Survivor Reloaded — TypeScript / Browser Port: Full Implementation Plan
 
 > **Status:** Phase 1, 2 & 3 complete (Phase 3 includes `ui/OptionsScreen.ts`). Phase 5 complete — `BaseAI` (184/184 methods), all 11 AI controllers, and all 4 generator files done (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator`, `StdTownGenerator`). Phase 6 & 7 complete.  
-> **Phase 4 in progress:** `engine/RogueGame.ts` (12 380 lines) filled slice by slice. **Slices 1, 2, 3, 4, 5 and 7 done** — char creation / credits / redefine keys; `AdvancePlay`, `NextMapTurn`, actor regen/counts, scents; events / invasions / refugees / raids / supplies; FOV, `HandlePlayerActor`, all `HandlePlayerXXX` commands; AI actor handling, advisor, describe-*; player death, new day/night, skills, infection/zombification. `main.ts` wired to `RogueGame.Run()`. **Open: slices 6, 8, 9, 10 → 206 of 492 stubs remain** (6: 90, 8: 37, 9: 42, 10: 37). `npm run type-check` + `npm run build` clean.  
+> **Phase 4 in progress:** `engine/RogueGame.ts` (18 109 lines) filled slice by slice. **9 of 10 slices done** — 1: char creation / credits / redefine keys; 2: `AdvancePlay`, `NextMapTurn`, actor regen/counts, scents; 3: events / invasions / refugees / raids / supplies; 4: FOV, `HandlePlayerActor`, all `HandlePlayerXXX` commands; 5: AI actor handling, advisor, describe-*; 7: player death, new day/night, skills, infection/zombification; 8: view rect, map/tile/actor/item drawing, minimap, coordinate conversion; 9: save/load, `GenerateWorld`, district maps, map switching; 10: sim thread, achievements, uniques, reincarnation, dev/cheats. `main.ts` wired to `RogueGame.Run()`. **Open: slice 6 only → 46 of 492 stubs remain** (action primitives `DoMoveActor` … `KillActor`). `npm run type-check` + `npm run build` clean. Assets shipped: 1 184 files (397 classic sprites + 2 variation sets, 24 tracks, 3 sfx); see Asset Pipeline.  
 > **Last updated:** 2026-09-26
 
 ---
@@ -381,13 +381,45 @@ combines them with the hand-ported overlay types, constructor and getters into
 | 3 | 4156–5366 | Events (invasions, refugees, raids, drops) + spawning | ✅ Ported |
 | 4 | 5367–10255 | FOV, `HandlePlayerActor` and all `HandlePlayerXXX` commands | ✅ Ported |
 | 5 | 10256–12658 | AI actor handling, advisor, input helpers, describe-* | ✅ Ported |
-| 6 | 12660–16790 | Action primitives `DoMoveActor` … `KillActor`, blood/corpses | ⬜ 81 stubs |
+| 6 | 12660–16790 | Action primitives `DoMoveActor` … `KillActor`, blood/corpses | ⬜ 46 stubs |
 | 7 | 16791–17986 | Player death, new day/night, skills, infection/zombification | ✅ Ported |
-| 8 | 17987–19723 | View, drawing, overlays, coordinates, visibility helpers | ⬜ 37 stubs |
-| 9 | 19724–21381 | Save/load, paths, `GenerateWorld`, district maps, map switching | ⬜ 21 stubs |
+| 8 | 17987–19723 | View, drawing, overlays, coordinates, visibility helpers | ✅ Ported |
+| 9 | 19724–21381 | Save/load, paths, `GenerateWorld`, district maps, map switching | ✅ Ported |
 | 10 | 21382–23233 | Sim thread, achievements, special events, reincarnation, dev/data | ✅ Ported |
 
-**139 stubs left** (slices 6, 8 and 9).
+**46 stubs left** (slice 6 only — the last blocker before the game is playable).
+
+Slice 8 notes:
+
+* The C# overload pairs (`DrawMapObject` ×2, `DrawActorDecoration` ×2,
+  `MapToScreen`/`ScreenToMap`/`MouseToMap` ×2) become TS overload *signatures*;
+  the generated stubs had merged them into single union-typed methods.
+* `Point` is immutable in the port, so `DrawMap`/`DrawMiniMap` allocate a `Point`
+  per tile instead of mutating one scratch point as the C# does.
+* `MovingWaterImage` compares `model.id` to `TileID.FLOOR_SEWER_WATER`:
+  `GameTiles.setModel()` stamps the `TileID` onto every model, so this is
+  equivalent to the C# `model == m_GameTiles.FLOOR_SEWER_WATER` instance compare.
+* `Color` gained the 5 .NET named colours the status bars need
+  (`Chocolate`, `Beige`, `DarkOrange`, `OrangeRed`, `HotPink`).
+* The `#if DEBUG` blocks (dev stats overlay, `DrawTileDev`) are ported guarded by
+  the same option flags rather than dropped.
+
+Slice 9 notes:
+
+* `Directory`/`File`/`Path`/`Environment.GetFolderPath` have no browser
+  equivalent: the `GetUser*Path` helpers return browser-relative keys
+  (`""`, `Docs/`, `Graveyard/`, `Config/`, `Screenshots/`) and
+  `CreateDirectory`/`CheckDirectory`/`CheckCopyOfManual` degrade to no-ops /
+  log lines. The manual ships as a static asset instead of being copied.
+* `DoSaveGame`/`LoadGame` go through `Session.save()` (localStorage JSON) and
+  mirror the same JSON into the IndexedDB slot via `GameSaveManager`, so the
+  main menu's `hasSave(0)` sees it. C#'s named multi-file saves and
+  version/format rejection are not reproduced; a corrupt slot makes `JSON.parse`
+  throw.
+* `BeforePlayerEnterDistrict` became `async` because it awaits `SimulateDistrict`
+  — the catch-up loop would spin forever otherwise (its single caller now awaits).
+* `Parameters` struct copy → `new TownParameters()` + save/restore of
+  `m_TownGenerator.params` (`DEFAULT_PARAMS` is shared and must not be mutated).
 
 Slice 10 notes:
 
@@ -577,6 +609,11 @@ generator file. They resolve when Phase 4 ports `RogueGame`.
 Sound effects → `.ogg` (compressed, widely supported)  
 Music → `.ogg` / `.mp3` (streaming via `<audio>` element)
 
+Both formats are committed under `web/public/assets/` (24 tracks, 3 sfx) and the
+runtime always resolves `.ogg` through `AssetPaths.musicPath()` /
+`AssetPaths.soundPath()`, falling back to the id when no `*_FILE` mapping exists.
+`mp3` is kept in-tree as a source/streaming fallback.
+
 ---
 
 ## Phase 7 — Save / Load
@@ -719,24 +756,58 @@ Target coverage:
 
 ## Asset Pipeline
 
-Game sprites are embedded as `.png` files in the C# `.csproj`. They need to be:
+Game sprites are embedded as `.png` files in the C# `.csproj`. They have been
+extracted and committed under `web/public/assets/`, which Vite serves at
+`/assets/` (`publicDir: "public"`):
 
-1. **Extracted** from the project resources
-2. **Placed** under `web/public/assets/` with forward-slash paths
-3. **Referenced** by the same ID strings as `GameImages.cs` constants
+```
+web/public/assets/
+├── images/
+│   ├── classic/                     397 sprites — the default set
+│   ├── deonapocalypse_v9_r1/        390 sprites — variation
+│   └── genesis_classic_1.4/         339 sprites — variation
+├── music/                           24 tracks (mp3 + ogg)
+└── sfx/                             3 sounds (mp3 + ogg)
+```
+
+Sprites are grouped per **sprite set** because the original ships three art
+directions; `classic` is the default and holds all 395 ids referenced by
+`GameImages`, so it gives 100% coverage. `AssetPaths.setImageSet()` switches
+between the three without touching a call site.
+
+`engine/AssetPaths.ts` is the single place that builds an asset URL:
+
+```typescript
+imagePath("Activities/chasing") // /assets/images/classic/Activities/chasing.png
+musicPath("army")              // /assets/music/RS - Army.ogg
+soundPath("undead rise")       // /assets/sfx/sfx - undead rise.ogg
+```
+
+`CanvasUI`, `WebAudioMusicManager` and `WebAudioSoundManager` all go through it —
+no call site concatenates `/assets/` by hand.
 
 ### Path mapping example
 
 | C# constant | C# value | Browser URL |
 |------------|---------|-------------|
-| `TILE_FLOOR_ASPHALT` | `"Tiles\\floor_asphalt"` | `/assets/Tiles/floor_asphalt.png` |
-| `OBJ_WOODEN_DOOR_CLOSED` | `"MapObjects\\wooden_door_closed"` | `/assets/MapObjects/wooden_door_closed.png` |
-| `ICON_BLAST` | `"Icons\\blast"` | `/assets/Icons/blast.png` |
+| `TILE_FLOOR_ASPHALT` | `"Tiles\\floor_asphalt"` | `/assets/images/classic/Tiles/floor_asphalt.png` |
+| `OBJ_WOODEN_DOOR_CLOSED` | `"MapObjects\\wooden_door_closed"` | `/assets/images/classic/MapObjects/wooden_door_closed.png` |
+| `ICON_BLAST` | `"Icons\\blast"` | `/assets/images/classic/Icons/blast.png` |
 
-`CanvasUI.ts` normalises backslashes to forward-slashes automatically:
+Image ids keep the C# form (no extension, backslashes normalised to forward
+slashes at path-build time):
+
 ```typescript
-const src = `/assets/${imageId.replace(/\\/g, "/")}.png`;
+const src = imagePath(imageId); // adds /assets/images/<set>/ prefix and .png
 ```
+
+Audio ids are **logical names, not file names**, so they cannot be derived — the
+C# solves this with a `*_FILE` companion constant per id (`GameMusics.cs`).
+Those are ported verbatim into `gameplay/GameSounds.ts` and exposed as the
+`MUSIC_FILES` / `SOUND_FILES` maps, because the web managers resolve the file at
+play time instead of pre-loading it. The names do not follow a rule:
+`char underground facility` → `RS - CUF`, `interlude` → `RS - Interlude - Loop`,
+`heythere` → `RS - Hey There`, `playerdeath` → `RS - Post mortem`.
 
 No image conversion is needed — all sprites are already PNG.
 
@@ -749,7 +820,7 @@ No image conversion is needed — all sprites are already PNG.
 | 1 | Scaffold + primitives | Dev server, `CanvasUI`, type-safe foundation | ✅ Complete |
 | 2 | Data layer | All game objects typed, `Map`/`Actor` working | ✅ Complete |
 | 3 | Engine core | Rules, LOS, Session, Scoring, GameOptions + `ui/OptionsScreen.ts` (from `RogueGame.HandleOptions`) | ✅ Complete |
-| 4 | Game loop | **Playable game** (new game, move, attack, die) — `RogueGame.ts` 6/10 slices done, 206 of 492 stubs open (slices 6, 8, 9, 10) | 🔄 In Progress |
+| 4 | Game loop | **Playable game** (new game, move, attack, die) — `RogueGame.ts` 9/10 slices done, 46 of 492 stubs open (slice 6, the action primitives) | 🔄 In Progress |
 | 5 | AI + generators | `BaseAI`, all 11 AI controllers, all 4 generator files (5 814-line `BaseTownGenerator`) | ✅ Complete |
 | 6 | Audio | Sound effects and music | ✅ Complete |
 | 7 | Save / load | Persistent saves via localStorage / IndexedDB | ✅ Complete |
