@@ -141,6 +141,14 @@ export class Map {
     this.zonesList.push(zone);
   }
 
+  /** C# GetZoneByPartialName – first zone whose name contains `partOfName`. */
+  getZoneByPartialName(partOfName: string): Zone | null {
+    for (const zone of this.zonesList) {
+      if (zone.name.includes(partOfName)) return zone;
+    }
+    return null;
+  }
+
   getZoneAt(pos: Point): Zone | null {
     for (const z of this.zonesList) {
       if (z.bounds.contains(pos)) return z;

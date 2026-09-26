@@ -82,6 +82,7 @@ import { SkillID, Skills } from "@gameplay/Skills";
 import { BaseTownGenerator, Parameters as TownParameters } from "@gameplay/generators/BaseTownGenerator";
 import { StdTownGenerator } from "@gameplay/generators/StdTownGenerator";
 import { BaseAI } from "@gameplay/ai/BaseAI";
+import { ActionWait } from "@engine/actions/Actions";
 import { OrderableAI } from "@gameplay/ai/OrderableAI";
 import { IMusicManager } from "@engine/audio/IMusicManager";
 import { NullMusicManager } from "@engine/audio/NullMusicManager";
@@ -3393,70 +3394,946 @@ export class RogueGame {
   }
 
   // C# BotToggleControl — RogueGame.cs:5385
+  // C# locks m_botLock (dev keys may fire from other threads); the browser is
+  // single threaded here so no lock is needed.
   BotToggleControl(): void {
-    throw new Error("not yet ported: BotToggleControl (RogueGame.cs:5385)");
+    if (this.m_isBotMode)
+      this.BotReleaseControl();
+    else
+      this.BotTakeControl();
   }
 
   // C# BotTakeControl — RogueGame.cs:5396
   BotTakeControl(): void {
-    throw new Error("not yet ported: BotTakeControl (RogueGame.cs:5396)");
+    // bot restrictions check
+    if (this.m_Player == null || this.m_Player.isDead) {
+      this.AddMessage(this.MakeErrorMessage("Bot cannot take control of null/dead player"));
+      return;
+    }
+
+    if (this.m_botControl != null)
+      this.m_botControl.leaveControl();
+
+    try {
+      const aiClass = this.m_Player.model.defaultControllerCtor;
+      if (aiClass == null)
+        throw new TypeError("actor model has null defaultcontroller");
+      const aiController = new aiClass();
+      if (!(aiController instanceof BaseAI))
+        throw new TypeError("actor model defaultcontroller is not BaseAI");
+
+      this.m_botControl = aiController;
+      this.m_botControl.takeControl(this.m_Player);
+      this.m_Player.isBotPlayer = true;
+      this.m_isBotMode = true;
+      this.AddMessage(this.MakeMessage(this.m_Player, `is now bot controlled by ${this.m_botControl.constructor.name}.`, Color.LightGreen));
+    } catch (e) {
+      this.ClearMessages();
+      this.AddMessage(this.MakeErrorMessage("error while creating bot ai:"));
+      this.AddMessage(this.MakeErrorMessage((e as Error).message));
+      void this.AddMessagePressEnter();
+    }
   }
 
   // C# BotReleaseControl — RogueGame.cs:5432
   BotReleaseControl(): void {
-    throw new Error("not yet ported: BotReleaseControl (RogueGame.cs:5432)");
+    if (this.m_botControl == null)
+      return;
+    if (this.m_Player != null)
+      this.m_Player.isBotPlayer = false;
+    this.m_botControl.leaveControl();
+    this.m_botControl = null;
+    this.m_isBotMode = false;
+    if (this.m_Player != null)
+      this.AddMessage(this.MakeMessage(this.m_Player, "is now human controlled.", Color.LightGreen));
   }
 
   // C# HandlePlayerActor — RogueGame.cs:5449
-  HandlePlayerActor(player: Actor): void {
-    void player;
-    throw new Error("not yet ported: HandlePlayerActor (RogueGame.cs:5449)");
+  // C# busy-loops on input peeks and calls UI_SetCursor(null); async here so
+  // the browser can deliver input (WaitKeyOrMouse yields), no cursor API.
+  async HandlePlayerActor(player: Actor): Promise<void> {
+    // Upkeep.
+    this.UpdatePlayerFOV(player); // make sure LOS is up to date.
+    this.m_Player = player;       // remember player.
+    this.ComputeViewRect(player.location.position);
+
+    // Update survival scoring.
+    this.m_Session.scoring.turnsSurvived = this.m_Session.worldTime.turnCounter;
+
+    // Check if long wait.
+    if (this.m_IsPlayerLongWait) {
+      if (this.CheckPlayerWaitLong(player)) {
+        // continue waiting.
+        this.DoWait(player);
+        return;
+      } else {
+        // stop long wait.
+        this.m_IsPlayerLongWait = false;
+        this.m_IsPlayerLongWaitForcedStop = false;
+
+        // wait ended or interrupted.
+        if (this.m_Session.worldTime.turnCounter >= this.m_PlayerLongWaitEnd.turnCounter)
+          this.AddMessage(new Message("Wait ended.", this.m_Session.worldTime.turnCounter, Color.Yellow));
+        else
+          this.AddMessage(new Message("Wait interrupted!", this.m_Session.worldTime.turnCounter, Color.Red));
+      }
+    }
+
+    /////////////////////////////////////////////////
+    // Loop until the player has made a valid choice
+    /////////////////////////////////////////////////
+    let loop = true;
+    do {
+      ///////////////////
+      // 1. Redraw
+      // 2. Get input.
+      // 3. Handle input
+      ///////////////////
+
+      // 1. Redraw
+      // alpha10.1 bot mode?
+      if (this.m_isBotMode) {
+        await new Promise<void>((r) => setTimeout(r, BOT_DELAY));
+        this.RedrawPlayScreen();
+        if (this.m_botControl != null) { // can become null even under C#'s lock.
+          let botAction: ActorAction | null = this.m_botControl.getAction(this);
+          if (botAction == null || !botAction.isLegal()) {
+            this.AddMessage(this.MakeErrorMessage(`Bot issued ${botAction == null ? "NULL" : `illegal ${botAction.toString()}`} action`));
+            botAction = new ActionWait(player, this);
+          }
+          botAction.perform();
+          // copy-paste is bad
+          this.UpdatePlayerFOV(player);
+          this.ComputeViewRect(player.location.position);
+          this.m_Session.lastTurnPlayerActed = this.m_Session.worldTime.turnCounter;
+          this.RedrawPlayScreen();
+        }
+        return;
+      }
+
+      // hint available?
+      // alpha10 no hint if undead
+      if (this.m_Player != null && !this.m_Player.isDead && !this.m_Player.model.abilities.isUndead) {
+        // alpha10 fix properly handle hint overlay
+        let availableHint = -1;
+        if (s_Options.isAdvisorEnabled && (availableHint = this.GetAdvisorFirstAvailableHint()) !== -1) {
+          const overlayPos = this.MapToScreen(this.m_Player.location.position.x - 3, this.m_Player.location.position.y - 1);
+          if (this.m_HintAvailableOverlay == null) {
+            this.m_HintAvailableOverlay = new OverlayPopup(
+              null,
+              Color.White, Color.White, Color.Black,
+              overlayPos);
+            this.AddOverlay(this.m_HintAvailableOverlay);
+          } else {
+            this.m_HintAvailableOverlay.screenPosition = overlayPos;
+            if (!this.HasOverlay(this.m_HintAvailableOverlay))
+              this.AddOverlay(this.m_HintAvailableOverlay);
+          }
+
+          const { title: hintTitle } = this.GetAdvisorHintText(availableHint as AdvisorHint);
+          this.m_HintAvailableOverlay.lines = [
+            `HINT AVAILABLE PRESS <${s_KeyBindings.get(PlayerCommand.ADVISOR) ?? ""}>`,
+            hintTitle];
+        } else if (this.m_HintAvailableOverlay != null && this.HasOverlay(this.m_HintAvailableOverlay)) {
+          this.RemoveOverlay(this.m_HintAvailableOverlay);
+        }
+      }
+      this.RedrawPlayScreen();
+
+      // 2. Get input.
+      // Peek keyboard & mouse until we got an event. (C# busy-loops here;
+      // WaitKeyOrMouse is the async equivalent.)
+      const ev = await this.WaitKeyOrMouse();
+      const inKey = ev.key;
+      const mousePos = ev.mousePos;
+      const mouseButtons = ev.mouseButtons;
+
+      // 3. Handle input
+      if (inKey != null) {
+        //////////////
+        // Handle key
+        //////////////
+        const command = InputTranslator.keyToCommand(
+          RogueGame.KeyBindings(), inKey.key, inKey.ctrl, inKey.alt, inKey.shift);
+        if (command === PlayerCommand.QUIT_GAME) { // quit game.
+          if (await this.HandleQuitGame()) {
+            // stop sim thread.
+            this.StopSimThread(true); // alpha10 abort allowed when quitting
+            // quit asap.
+            this.RedrawPlayScreen();
+            this.m_IsGameRunning = false;
+            return;
+          }
+        } else {
+          switch (command) {
+            // options, menu etc...
+            case PlayerCommand.ABANDON_GAME:
+              if (await this.HandleAbandonGame()) {
+                this.StopSimThread(true); // alpha10 abort allowed when quitting
+                loop = false;
+                this.KillActor(null, this.m_Player, "suicide");
+              }
+              break;
+
+            case PlayerCommand.HELP_MODE:
+              await this.HandleHelpMode();
+              break;
+
+            case PlayerCommand.HINTS_SCREEN_MODE:
+              await this.HandleHintsScreen();
+              break;
+
+            case PlayerCommand.ADVISOR:
+              await this.HandleAdvisor(player);
+              break;
+
+            case PlayerCommand.OPTIONS_MODE:
+              await this.HandleOptions(true);
+              this.ApplyOptions(true);
+              break;
+
+            case PlayerCommand.KEYBINDING_MODE:
+              await this.HandleRedefineKeys();
+              break;
+
+            case PlayerCommand.MESSAGE_LOG:
+              await this.HandleMessageLog();
+              break;
+
+            // alpha10.1 moved sim thread responsability out to DoLoadGame
+            case PlayerCommand.LOAD_GAME:
+              // load.
+              this.HandleLoadGame();
+              // refresh player local variable!!
+              player = this.m_Player;
+              // stop looping.
+              loop = false;
+              // stop the update loop!
+              this.m_HasLoadedGame = true;
+              break;
+            // alpha10.1 moved sim thread responsability out to DoSaveGame
+            case PlayerCommand.SAVE_GAME:
+              this.HandleSaveGame();
+              break;
+
+            case PlayerCommand.SCREENSHOT:
+              this.HandleScreenshot();
+              break;
+
+            case PlayerCommand.CITY_INFO:
+              await this.HandleCityInfo();
+              break;
+
+            // actual game actions.
+            case PlayerCommand.WAIT_OR_SELF:
+              if (await this.TryPlayerInsanity()) {
+                loop = false;
+                break;
+              }
+              loop = false;
+              this.DoWait(player);
+              break;
+
+            case PlayerCommand.WAIT_LONG:
+              if (await this.TryPlayerInsanity()) {
+                loop = false;
+                break;
+              }
+              loop = false;
+              this.StartPlayerWaitLong(player);
+              break;
+
+            case PlayerCommand.MOVE_N:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.DoPlayerBump(player, Direction.N);
+              break;
+            case PlayerCommand.MOVE_NE:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.DoPlayerBump(player, Direction.NE);
+              break;
+            case PlayerCommand.MOVE_E:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.DoPlayerBump(player, Direction.E);
+              break;
+            case PlayerCommand.MOVE_SE:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.DoPlayerBump(player, Direction.SE);
+              break;
+            case PlayerCommand.MOVE_S:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.DoPlayerBump(player, Direction.S);
+              break;
+            case PlayerCommand.MOVE_SW:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.DoPlayerBump(player, Direction.SW);
+              break;
+            case PlayerCommand.MOVE_W:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.DoPlayerBump(player, Direction.W);
+              break;
+            case PlayerCommand.MOVE_NW:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.DoPlayerBump(player, Direction.NW);
+              break;
+            case PlayerCommand.USE_EXIT:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.DoUseExit(player, player.location.position);
+              break;
+
+            case PlayerCommand.ITEM_SLOT_0:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.DoPlayerItemSlot(player, 0, inKey);
+              break;
+            case PlayerCommand.ITEM_SLOT_1:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.DoPlayerItemSlot(player, 1, inKey);
+              break;
+            case PlayerCommand.ITEM_SLOT_2:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.DoPlayerItemSlot(player, 2, inKey);
+              break;
+            case PlayerCommand.ITEM_SLOT_3:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.DoPlayerItemSlot(player, 3, inKey);
+              break;
+            case PlayerCommand.ITEM_SLOT_4:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.DoPlayerItemSlot(player, 4, inKey);
+              break;
+            case PlayerCommand.ITEM_SLOT_5:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.DoPlayerItemSlot(player, 5, inKey);
+              break;
+            case PlayerCommand.ITEM_SLOT_6:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.DoPlayerItemSlot(player, 6, inKey);
+              break;
+            case PlayerCommand.ITEM_SLOT_7:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.DoPlayerItemSlot(player, 7, inKey);
+              break;
+            case PlayerCommand.ITEM_SLOT_8:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.DoPlayerItemSlot(player, 8, inKey);
+              break;
+            case PlayerCommand.ITEM_SLOT_9:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.DoPlayerItemSlot(player, 9, inKey);
+              break;
+
+            case PlayerCommand.RUN_TOGGLE:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              this.HandlePlayerRunToggle(player);
+              break;
+
+            case PlayerCommand.CLOSE_DOOR:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.HandlePlayerCloseDoor(player);
+              break;
+            case PlayerCommand.BARRICADE_MODE:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.HandlePlayerBarricade(player);
+              break;
+            case PlayerCommand.BREAK_MODE:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.HandlePlayerBreak(player);
+              break;
+            case PlayerCommand.BUILD_LARGE_FORTIFICATION:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.HandlePlayerBuildFortification(player, true);
+              break;
+            case PlayerCommand.BUILD_SMALL_FORTIFICATION:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.HandlePlayerBuildFortification(player, false);
+              break;
+            case PlayerCommand.ORDER_MODE:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.HandlePlayerOrderMode(player);
+              break;
+            case PlayerCommand.PULL_MODE: // alpha10
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.HandlePlayerPull(player);
+              break;
+            case PlayerCommand.PUSH_MODE:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.HandlePlayerPush(player);
+              break;
+            case PlayerCommand.FIRE_MODE:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.HandlePlayerFireMode(player);
+              break;
+
+            case PlayerCommand.SHOUT:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.HandlePlayerShout(player, null);
+              break;
+
+            case PlayerCommand.SLEEP:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.HandlePlayerSleep(player);
+              break;
+
+            case PlayerCommand.SWITCH_PLACE:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.HandlePlayerSwitchPlace(player);
+              break;
+
+            case PlayerCommand.USE_SPRAY:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.HandlePlayerUseSpray(player);
+              break;
+
+            case PlayerCommand.LEAD_MODE:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.HandlePlayerTakeLead(player);
+              break;
+
+            case PlayerCommand.GIVE_ITEM:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.HandlePlayerGiveItem(player, mousePos);
+              break;
+
+            case PlayerCommand.NEGOCIATE_TRADE: // alpha10
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.HandlePlayerNegociateTrade(player); // alpha10
+              break;
+
+            case PlayerCommand.MARK_ENEMIES_MODE:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              this.HandlePlayerMarkEnemies(player);
+              break;
+
+            case PlayerCommand.EAT_CORPSE:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.HandlePlayerEatCorpse(player, mousePos);
+              break;
+
+            case PlayerCommand.REVIVE_CORPSE:
+              if (await this.TryPlayerInsanity()) { loop = false; break; }
+              loop = !this.HandlePlayerReviveCorpse(player, mousePos);
+              break;
+
+            case PlayerCommand.NONE:
+              break;
+
+            default:
+              throw new TypeError("command unhandled");
+          }
+        }
+      } else {
+        ////////////////
+        // Handle mouse
+        ////////////////
+        // Look?
+        const isLooking = this.HandleMouseLook(mousePos);
+        if (isLooking)
+          continue;
+
+        // Inventory?
+        const invRes = this.HandleMouseInventory(mousePos, mouseButtons, false);
+        if (invRes.ok) {
+          if (invRes.hasDoneAction) {
+            loop = false;
+          } else
+            continue;
+        }
+
+        // Corpses?
+        const corRes = this.HandleMouseOverCorpses(mousePos, mouseButtons, false);
+        if (corRes.ok) {
+          if (corRes.hasDoneAction) {
+            loop = false;
+          } else
+            continue;
+        }
+
+        // Neither look nor inventory nor corpses, cleanup.
+        this.ClearOverlays();
+      }
+    } while (loop);
+
+    // Upkeep.
+    this.UpdatePlayerFOV(player); // make sure LOS is up to date.
+    this.ComputeViewRect(player.location.position);
+    this.m_Session.lastTurnPlayerActed = this.m_Session.worldTime.turnCounter;
   }
 
   // C# TryPlayerInsanity — RogueGame.cs:6090
-  TryPlayerInsanity(): boolean {
-    throw new Error("not yet ported: TryPlayerInsanity (RogueGame.cs:6090)");
+  // C# blocks on AddMessagePressEnter; async here.
+  async TryPlayerInsanity(): Promise<boolean> {
+    if (!this.m_Rules.isActorInsane(this.m_Player))
+      return false;
+    if (!this.m_Rules.rollChance(Rules.SANITY_INSANE_ACTION_CHANCE))
+      return false;
+
+    const insaneAction = this.GenerateInsaneAction(this.m_Player);
+    if (insaneAction == null)
+      return false;
+    if (!insaneAction.isLegal())
+      return false;
+
+    this.ClearMessages();
+    this.AddMessage(new Message("(your insanity takes over)", this.m_Player.location.map!.localTime.turnCounter, Color.Orange));
+    if (!this.m_Player.isBotPlayer)
+      await this.AddMessagePressEnter();
+
+    insaneAction.perform();
+
+    return true;
   }
 
   // C# HandleQuitGame — RogueGame.cs:6113
-  HandleQuitGame(): boolean {
-    throw new Error("not yet ported: HandleQuitGame (RogueGame.cs:6113)");
+  // C# blocks on WaitYesOrNo; async here.
+  async HandleQuitGame(): Promise<boolean> {
+    this.AddMessage(this.MakeYesNoMessage("REALLY QUIT GAME"));
+    this.RedrawPlayScreen();
+
+    const answer = await this.WaitYesOrNo();
+
+    if (!answer)
+      this.AddMessage(new Message("Good. Keep roguing!", this.m_Session.worldTime.turnCounter, Color.Yellow));
+    else
+      this.AddMessage(new Message("Bye!", this.m_Session.worldTime.turnCounter, Color.Yellow));
+
+    return answer;
   }
 
   // C# HandleAbandonGame — RogueGame.cs:6128
-  HandleAbandonGame(): boolean {
-    throw new Error("not yet ported: HandleAbandonGame (RogueGame.cs:6128)");
+  // C# blocks on WaitYesOrNo; async here.
+  async HandleAbandonGame(): Promise<boolean> {
+    this.AddMessage(this.MakeYesNoMessage("REALLY KILL YOURSELF"));
+    this.RedrawPlayScreen();
+
+    const answer = await this.WaitYesOrNo();
+
+    if (!answer)
+      this.AddMessage(new Message("Good. No reason to make the undeads life easier by removing yours!", this.m_Session.worldTime.turnCounter, Color.Yellow));
+    else
+      this.AddMessage(new Message("You can't bear the horror anymore...", this.m_Session.worldTime.turnCounter, Color.Yellow));
+
+    return answer;
   }
 
   // C# HandleScreenshot — RogueGame.cs:6143
   HandleScreenshot(): void {
-    throw new Error("not yet ported: HandleScreenshot (RogueGame.cs:6143)");
+    // prepare.
+    this.AddMessage(new Message("Taking screenshot...", this.m_Session.worldTime.turnCounter, Color.Yellow));
+    this.RedrawPlayScreen();
+
+    // shot it!
+    const shotname = this.DoTakeScreenshot();
+    if (shotname === null) {
+      this.AddMessage(new Message("Could not save screenshot.", this.m_Session.worldTime.turnCounter, Color.Red));
+    } else {
+      this.AddMessage(new Message(`screenshot ${shotname} saved.`, this.m_Session.worldTime.turnCounter, Color.Yellow));
+    }
+
+    // refresh.
+    this.RedrawPlayScreen();
   }
 
   // C# DoTakeScreenshot — RogueGame.cs:6164
   // C# returns `null` when the file cannot be written.
   DoTakeScreenshot(): string | null {
-    throw new Error("not yet ported: DoTakeScreenshot (RogueGame.cs:6164)");
+    const shotname = this.GetUserNewScreenshotName();
+    if (this.m_UI.UI_SaveScreenshot(this.ScreenshotFilePath(shotname)) != null)
+      return shotname;
+    else
+      return null;
   }
 
   // C# HandleHelpMode — RogueGame.cs:6173
+  // C# blocks on WaitEnter/UI_WaitKey; async here.
   async HandleHelpMode(): Promise<void> {
-    throw new Error("not yet ported: HandleHelpMode (RogueGame.cs:6173)");
+    if (this.m_Manual == null) {
+      this.m_UI.UI_Clear(Color.Black);
+      let gy = 0;
+      this.m_UI.UI_DrawStringBold(Color.Red, "Game manual not available ingame.", 0, gy);
+      gy += BOLD_LINE_SPACING;
+      this.DrawFootnote(Color.White, "press ENTER");
+      this.m_UI.UI_Repaint();
+      await this.WaitEnter();
+      return;
+    }
+
+    let loop = true;
+    const lines = this.m_Manual.formatedLines;
+    do {
+      // draw header.
+      this.m_UI.UI_Clear(Color.Black);
+      let gy = 0;
+      this.DrawHeader();
+      gy += BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBold(Color.Yellow, "Game Manual", 0, gy);
+      gy += BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBold(Color.White, "---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+", 0, gy);
+      gy += BOLD_LINE_SPACING;
+
+      // draw manual.
+      let iLine = this.m_ManualLine;
+      do {
+        // ignore commands
+        const ignore = (lines[iLine] === "<SECTION>");
+
+        if (!ignore) {
+          this.m_UI.UI_DrawStringBold(Color.LightGray, lines[iLine], 0, gy);
+          gy += BOLD_LINE_SPACING;
+        }
+        ++iLine;
+      } while (iLine < lines.length && gy < CANVAS_HEIGHT - 2 * BOLD_LINE_SPACING);
+
+      // draw foot.
+      this.m_UI.UI_DrawStringBold(Color.White, "---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+", 0, gy);
+      gy += BOLD_LINE_SPACING;
+      this.DrawFootnote(Color.White, "cursor and PgUp/PgDn to move, numbers to jump to section, ESC to leave");
+
+      this.m_UI.UI_Repaint();
+
+      // get command.
+      const key = await this.m_UI.UI_WaitKey();
+      const choice = this.KeyToChoiceNumber(key);
+
+      if (choice >= 0) {
+        if (choice === 0) {
+          this.m_ManualLine = 0;
+        } else {
+          // jump to Nth section.
+          const prevLine = this.m_ManualLine;
+          let sectionCount = 0;
+          this.m_ManualLine = 0;
+          while (sectionCount < choice && this.m_ManualLine < lines.length) {
+            if (lines[this.m_ManualLine] === "<SECTION>") {
+              ++sectionCount;
+            }
+            ++this.m_ManualLine;
+          }
+
+          // if section not found, don't move.
+          if (this.m_ManualLine >= lines.length) {
+            this.m_ManualLine = prevLine;
+          }
+        }
+      } else {
+        switch (key.key) {
+          case "Escape":
+            loop = false;
+            break;
+
+          case "ArrowUp":
+            --this.m_ManualLine;
+            break;
+          case "ArrowDown":
+            ++this.m_ManualLine;
+            break;
+          case "PageUp":
+            this.m_ManualLine -= TEXTFILE_LINES_PER_PAGE;
+            break;
+          case "PageDown":
+            this.m_ManualLine += TEXTFILE_LINES_PER_PAGE;
+            break;
+        }
+      }
+
+      if (this.m_ManualLine < 0) this.m_ManualLine = 0;
+      if (this.m_ManualLine + TEXTFILE_LINES_PER_PAGE >= lines.length) this.m_ManualLine = Math.max(0, lines.length - TEXTFILE_LINES_PER_PAGE);
+    } while (loop);
   }
 
   // C# HandleHintsScreen — RogueGame.cs:6286
+  // C# blocks on UI_WaitKey/UI_Wait; async here.
   async HandleHintsScreen(): Promise<void> {
-    throw new Error("not yet ported: HandleHintsScreen (RogueGame.cs:6286)");
+    // draw header.
+    this.m_UI.UI_Clear(Color.Black);
+    let gy = 0;
+    this.DrawHeader();
+    gy += BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBold(Color.Yellow, "Advisor Hints", 0, gy);
+    gy += BOLD_LINE_SPACING;
+
+    // prepare : get all the hints text into one huuuuuge list of line :D
+    this.m_UI.UI_DrawStringBold(Color.White, "preparing...", 0, gy);
+    gy += BOLD_LINE_SPACING;
+    this.m_UI.UI_Repaint();
+    const lines: string[] = [];
+    for (let i: number = AdvisorHint._FIRST; i < AdvisorHint._COUNT; i++) {
+      const hint = i as AdvisorHint;
+      const hintText = this.GetAdvisorHintText(hint);
+      let title = hintText.title;
+      if (s_Hints.isAdvisorHintGiven(hint)) title += " (hint already given)"; // alpha10
+
+      lines.push(`HINT ${i} : ${title}`);
+      lines.push(...hintText.body);
+      lines.push("~~~~");
+      lines.push("");
+    }
+
+    // display & handle loop.
+    let currentLine = 0;
+    let loop = true;
+    do {
+      // header.
+      this.m_UI.UI_Clear(Color.Black);
+      gy = 0;
+      this.DrawHeader();
+      gy += BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBold(Color.Yellow, "Advisor Hints", 0, gy);
+      gy += BOLD_LINE_SPACING;
+
+      // display currently viewed lines.
+      this.m_UI.UI_DrawStringBold(Color.White, "---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+", 0, gy);
+      gy += BOLD_LINE_SPACING;
+      let iLine = currentLine;
+      do {
+        this.m_UI.UI_DrawStringBold(Color.LightGray, lines[iLine], 0, gy);
+        gy += BOLD_LINE_SPACING;
+        ++iLine;
+      } while (iLine < lines.length && gy < CANVAS_HEIGHT - 2 * BOLD_LINE_SPACING);
+
+      // draw foot.
+      this.m_UI.UI_DrawStringBold(Color.White, "---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+", 0, gy);
+      gy += BOLD_LINE_SPACING;
+      this.DrawFootnote(Color.White, "cursor and PgUp/PgDn to move, R to reset hints, ESC to leave");
+
+      this.m_UI.UI_Repaint();
+
+      // get command.
+      const key = await this.m_UI.UI_WaitKey();
+      switch (key.key) {
+        case "Escape":
+          loop = false;
+          break;
+
+        case "ArrowUp":
+          --currentLine;
+          break;
+        case "ArrowDown":
+          ++currentLine;
+          break;
+        case "PageUp":
+          currentLine -= TEXTFILE_LINES_PER_PAGE;
+          break;
+        case "PageDown":
+          currentLine += TEXTFILE_LINES_PER_PAGE;
+          break;
+
+        case "r":
+        case "R":
+          // do it.
+          s_Hints.resetAllHints();
+
+          // notify.
+          this.m_UI.UI_Clear(Color.Black);
+          gy = 0;
+          this.DrawHeader();
+          gy += BOLD_LINE_SPACING;
+          this.m_UI.UI_DrawStringBold(Color.Yellow, "Advisor Hints", 0, gy);
+          gy += BOLD_LINE_SPACING;
+          this.m_UI.UI_DrawStringBold(Color.White, "Hints reset done.", 0, gy);
+          this.m_UI.UI_Repaint();
+          await this.m_UI.UI_Wait(DELAY_LONG);
+          break;
+      }
+
+      if (currentLine < 0) currentLine = 0;
+      if (currentLine + TEXTFILE_LINES_PER_PAGE >= lines.length) currentLine = Math.max(0, lines.length - TEXTFILE_LINES_PER_PAGE);
+    } while (loop);
+
   }
 
   // C# HandleMessageLog — RogueGame.cs:6392
-  HandleMessageLog(): void {
-    throw new Error("not yet ported: HandleMessageLog (RogueGame.cs:6392)");
+  // C# blocks on WaitEscape; async here.
+  async HandleMessageLog(): Promise<void> {
+    // draw header.
+    this.m_UI.UI_Clear(Color.Black);
+    let gy = 0;
+    this.DrawHeader();
+    gy += BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBold(Color.Yellow, "Message Log", 0, gy);
+    gy += BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBold(Color.White, "---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+", 0, gy);
+    gy += BOLD_LINE_SPACING;
+
+    // log.
+    for (const msg of this.m_MessageManager.history) {
+      this.m_UI.UI_DrawString(msg.color, msg.text, 0, gy);
+      gy += LINE_SPACING;
+    }
+
+    // foot.
+    this.DrawFootnote(Color.White, "press ESC to leave");
+
+    // wait.
+    this.m_UI.UI_Repaint();
+    await this.WaitEscape();
   }
 
   // C# HandleCityInfo — RogueGame.cs:6419
-  HandleCityInfo(): void {
-    throw new Error("not yet ported: HandleCityInfo (RogueGame.cs:6419)");
+  // C# blocks on WaitEscape; async here.
+  async HandleCityInfo(): Promise<void> {
+    let gx = 0;
+    let gy = 0;
+
+    this.m_UI.UI_Clear(Color.Black);
+    this.m_UI.UI_DrawStringBold(Color.White, "CITY INFORMATION", gy, gy);
+    gy += 2 * BOLD_LINE_SPACING;
+
+    /////////////////////
+    // Undead : no info!
+    // Living : normal.
+    /////////////////////
+    if (this.m_Player.model.abilities.isUndead) {
+      // Undead : no info
+      this.m_UI.UI_DrawStringBold(Color.Red, "You can't remember where you are...", gx, gy);
+      gy += BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBold(Color.Red, "Must be that rotting brain of yours...", gx, gy);
+      gy += 2 * BOLD_LINE_SPACING;
+    } else {
+      const world = this.m_Session.world!;
+      const curMap = this.m_Session.currentMap!;
+      const playerDistrict = curMap.district!;
+
+      // Living : show info
+      // City map
+      this.m_UI.UI_DrawStringBold(Color.White, "> DISTRICTS LAYOUT", gx, gy);
+      gy += BOLD_LINE_SPACING;
+
+      // coordinates.
+      gy += BOLD_LINE_SPACING;
+      for (let y = 0; y < world.size; y++) {
+        const color = (y === playerDistrict.worldPosition.y ? Color.LightGreen : Color.White);
+        this.m_UI.UI_DrawStringBold(color, String(y), 20, gy + y * 3 * BOLD_LINE_SPACING + BOLD_LINE_SPACING);
+        this.m_UI.UI_DrawStringBold(color, ".", 20, gy + y * 3 * BOLD_LINE_SPACING);
+        this.m_UI.UI_DrawStringBold(color, ".", 20, gy + y * 3 * BOLD_LINE_SPACING + 2 * BOLD_LINE_SPACING);
+      }
+      gy -= BOLD_LINE_SPACING;
+      for (let x = 0; x < world.size; x++) {
+        const color = (x === playerDistrict.worldPosition.x ? Color.LightGreen : Color.White);
+        this.m_UI.UI_DrawStringBold(color, `..${String.fromCharCode(65 + x)}..`, 32 + x * 48, gy);
+      }
+      // districts.
+      gy += BOLD_LINE_SPACING;
+      const mx = 32;
+      const my = gy;
+      for (let y = 0; y < world.size; y++)
+        for (let x = 0; x < world.size; x++) {
+          const d = world.getDistrict(x, y);
+          if (d == null) continue; // TS: grid starts null-filled; C# assumes populated
+          const dStatus = d === playerDistrict ? "*" : this.m_Session.scoring.hasVisited(d.entryMap!) ? "-" : "?";
+          let dColor: Color;
+          let dChar: string;
+          switch (d.kind) {
+            case DistrictKind.BUSINESS: dColor = Color.Red; dChar = "Bus"; break;
+            case DistrictKind.GENERAL: dColor = Color.Gray; dChar = "Gen"; break;
+            case DistrictKind.GREEN: dColor = Color.Green; dChar = "Gre"; break;
+            case DistrictKind.RESIDENTIAL: dColor = Color.Orange; dChar = "Res"; break;
+            case DistrictKind.SHOPPING: dColor = Color.White; dChar = "Sho"; break;
+            default:
+              throw new RangeError("unhandled district kind");
+          }
+
+          let lchar = "";
+          for (let i = 0; i < 5; i++)
+            lchar += dStatus;
+          const lColor = (d === playerDistrict ? Color.LightGreen : dColor);
+
+          this.m_UI.UI_DrawStringBold(lColor, lchar, mx + x * 48, my + (y * 3) * BOLD_LINE_SPACING);
+          this.m_UI.UI_DrawStringBold(lColor, dStatus, mx + x * 48, my + (y * 3 + 1) * BOLD_LINE_SPACING);
+          this.m_UI.UI_DrawStringBold(dColor, dChar, mx + x * 48 + 8, my + (y * 3 + 1) * BOLD_LINE_SPACING);
+          this.m_UI.UI_DrawStringBold(lColor, dStatus, mx + x * 48 + 4 * 8, my + (y * 3 + 1) * BOLD_LINE_SPACING);
+          this.m_UI.UI_DrawStringBold(lColor, lchar, mx + x * 48, my + (y * 3 + 2) * BOLD_LINE_SPACING);
+        }
+      // subway line.
+      const subwayChar = "=";
+      const subwayY = Math.floor(world.size / 2);
+      for (let x = 1; x < world.size; x++) {
+        this.m_UI.UI_DrawStringBold(Color.White, subwayChar, mx + x * 48 - 8, my + (subwayY * 3) * BOLD_LINE_SPACING + BOLD_LINE_SPACING);
+      }
+
+      gy += (world.size * 3 + 1) * BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBold(Color.White, "Legend", gx, gy);
+      gy += BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawString(Color.White, "  *   - current     ?   - unvisited", gx, gy);
+      gy += LINE_SPACING;
+      this.m_UI.UI_DrawString(Color.White, "  Bus - Business    Gen - General    Gre - Green", gx, gy);
+      gy += LINE_SPACING;
+      this.m_UI.UI_DrawString(Color.White, "  Res - Residential Sho - Shopping", gx, gy);
+      gy += LINE_SPACING;
+      this.m_UI.UI_DrawString(Color.White, "  =   - Subway Line", gx, gy);
+      gy += LINE_SPACING;
+
+      // Notable locations
+      gy += BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBold(Color.White, "> NOTABLE LOCATIONS", gx, gy);
+      gy += BOLD_LINE_SPACING;
+      const buildingsY = gy;
+      for (let y = 0; y < world.size; y++)
+        for (let x = 0; x < world.size; x++) {
+          const d = world.getDistrict(x, y);
+          if (d == null) continue; // TS: grid starts null-filled; C# assumes populated
+          const districtMap = d.entryMap;
+          if (districtMap == null) continue; // TS: C# assumed non-null
+
+          // Subway station?
+          const subwayZone = districtMap.getZoneByPartialName(NAME_SUBWAY_STATION);
+          if (subwayZone != null) {
+            this.m_UI.UI_DrawStringBold(Color.Blue, `at ${World.CoordToString(x, y)} : ${subwayZone.name}.`, gx, gy);
+            gy += BOLD_LINE_SPACING;
+            if (gy >= CANVAS_HEIGHT - 2 * BOLD_LINE_SPACING) {
+              gy = buildingsY;
+              gx += 25 * BOLD_LINE_SPACING;
+            }
+          }
+
+          // Police station?
+          if (districtMap === this.m_Session.uniqueMaps.policeStation_OfficesLevel.theMap?.district?.entryMap) {
+            this.m_UI.UI_DrawStringBold(Color.CadetBlue, `at ${World.CoordToString(x, y)} : Police Station.`, gx, gy);
+            gy += BOLD_LINE_SPACING;
+            if (gy >= CANVAS_HEIGHT - 2 * BOLD_LINE_SPACING) {
+              gy = buildingsY;
+              gx += 25 * BOLD_LINE_SPACING;
+            }
+          }
+
+          // Hospital?
+          if (districtMap === this.m_Session.uniqueMaps.hospital_Admissions.theMap?.district?.entryMap) {
+            this.m_UI.UI_DrawStringBold(Color.White, `at ${World.CoordToString(x, y)} : Hospital.`, gx, gy);
+            gy += BOLD_LINE_SPACING;
+            if (gy >= CANVAS_HEIGHT - 2 * BOLD_LINE_SPACING) {
+              gy = buildingsY;
+              gx += 25 * BOLD_LINE_SPACING;
+            }
+          }
+
+          // Secrets
+          // - CHAR Underground Facility?
+          if (this.m_Session.playerKnows_CHARUndergroundFacilityLocation &&
+              districtMap === this.m_Session.uniqueMaps.charUndergroundFacility.theMap?.district?.entryMap) {
+            this.m_UI.UI_DrawStringBold(Color.Red, `at ${World.CoordToString(x, y)} : ${this.m_Session.uniqueMaps.charUndergroundFacility.theMap?.name}.`, gx, gy);
+            gy += BOLD_LINE_SPACING;
+            if (gy >= CANVAS_HEIGHT - 2 * BOLD_LINE_SPACING) {
+              gy = buildingsY;
+              gx += 25 * BOLD_LINE_SPACING;
+            }
+          }
+          // - The Sewers Thing?
+          const sewersThing = this.m_Session.uniqueActors.theSewersThing.theActor;
+          if (this.m_Session.playerKnows_TheSewersThingLocation &&
+              sewersThing != null &&
+              districtMap === sewersThing.location.map?.district?.entryMap &&
+              !sewersThing.isDead) {
+            this.m_UI.UI_DrawStringBold(Color.Red, `at ${World.CoordToString(x, y)} : The Sewers Thing lives down there.`, gx, gy);
+            gy += BOLD_LINE_SPACING;
+            if (gy >= CANVAS_HEIGHT - 2 * BOLD_LINE_SPACING) {
+              gy = buildingsY;
+              gx += 25 * BOLD_LINE_SPACING;
+            }
+          }
+        }
+    }
+
+    this.DrawFootnote(Color.White, "press ESC to leave");
+    this.m_UI.UI_Repaint();
+    await this.WaitEscape();
   }
 
   // C# HandleMouseLook — RogueGame.cs:6622
@@ -3622,7 +4499,7 @@ export class RogueGame {
   }
 
   // C# HandlePlayerShout — RogueGame.cs:7295
-  HandlePlayerShout(player: Actor, text: string): boolean {
+  HandlePlayerShout(player: Actor, text: string | null): boolean {
     void player;
     void text;
     throw new Error("not yet ported: HandlePlayerShout (RogueGame.cs:7295)");

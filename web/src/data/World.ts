@@ -22,6 +22,11 @@ export class World {
     }
   }
 
+  /** C# World.CoordToString – district coordinates to string [A-Z][0-9]. */
+  static CoordToString(x: number, y: number): string {
+    return `${String.fromCharCode(65 + x)}${y}`;
+  }
+
   getDistrict(x: number, y: number): District | null {
     if (x < 0 || x >= this.size || y < 0 || y >= this.size) {
       throw new RangeError(`Coordinates out of bounds (${x}, ${y})`);
