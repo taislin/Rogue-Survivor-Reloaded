@@ -31,7 +31,17 @@ const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
-const SHELL_URLS = ["/", "/index.html", "/manifest.webmanifest", "/icon-192.png", "/icon-512.png"];
+// The favicon is precached alongside the shell: it is what a browser shows
+// when the game is launched from the home screen with no connection, and a
+// missing one falls back to a default page icon.
+const SHELL_URLS = [
+  "/",
+  "/index.html",
+  "/manifest.webmanifest",
+  "/icon-reloaded.png",
+  "/icon-192.png",
+  "/icon-512.png",
+];
 
 /**
  * Whether a response may be written to the Cache API.

@@ -6,7 +6,14 @@
     <meta name="description" content="A zombie-survival roguelike. Explore, scavenge, and try to outlive the night." />
     <meta name="theme-color" content="#000000" />
     <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <!--
+      Favicon is icon-reloaded.png, the game's own art. Declared without a
+      `sizes` hint so the browser picks it at any tab size (a 256x256 image
+      scaled down), and `type` is omitted so it also works if the file is ever
+      swapped for a non-PNG. The /icon-192.png links below are kept for
+      apple-touch-icon, which wants a large opaque square.
+    -->
+    <link rel="icon" href="/icon-reloaded.png" />
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <title>Rogue Survivor Reloaded</title>
     <style>

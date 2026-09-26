@@ -41,3 +41,13 @@ Desktop.ini
 *.bak
 *.swp
 *~
+
+# Scratch icon copies in the repo root.
+#
+# The icons that actually ship live in web/public/ and are tracked there:
+# web/public/icon-reloaded.png is the favicon, web/public/icon-{192,512,
+# maskable-512}.png back the manifest and apple-touch-icon. These root copies
+# are scratch working files, and committing them would create a second,
+# silently-stale source of truth for the same artwork.
+/icon.png
+/icon_reloaded.png

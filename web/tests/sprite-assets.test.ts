@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { imagePath, IMAGE_EXTENSION, IMAGE_SETS, DEFAULT_IMAGE_SET, getImageSet, setImageSet } from "@engine/AssetPaths";
 import { GameImages, allImageIds } from "@gameplay/GameImages";
@@ -149,5 +149,47 @@ describe("image set switching", () => {
     } finally {
       setImageSet(DEFAULT_IMAGE_SET);
     }
+  });
+});
+
+/**
+ * The favicon and PWA icons are referenced from `index.html` and
+ * `manifest.webmanifest` as plain URL strings, so nothing in the type system
+ * connects them to a file on disk. A rename 404s them silently: the build
+ * passes, the tests pass, and the browser quietly shows a default globe or a
+ * broken install prompt. This is the same failure shape as the sprite-id
+ * problem above, in the one place where the ids are not centralised.
+ */
+describe("favicon and manifest icons", () => {
+  const publicDir = resolve(webRoot, "public");
+  const html = readFileSync(resolve(webRoot, "index.html"), "utf8");
+  const manifest = JSON.parse(readFileSync(resolve(publicDir, "manifest.webmanifest"), "utf8")) as {
+    icons: Array<{ src: string; sizes: string; purpose: string }>;
+  };
+
+  it("points the favicon at icon-reloaded.png, and that file exists", () => {
+    expect(html).toMatch(/<link rel="icon"[^>]*href="\/icon-reloaded\.png"/);
+    expect(existsSync(resolve(publicDir, "icon-reloaded.png"))).toBe(true);
+  });
+
+  it("resolves every icon the manifest declares", () => {
+    expect(manifest.icons.length).toBeGreaterThan(0);
+    const missing = manifest.icons
+      .map((i) => i.src.replace(/^\//, ""))
+      .filter((rel) => !existsSync(resolve(publicDir, rel)));
+    expect(missing, `manifest icon(s) with no file: ${missing.join(", ")}`).toEqual([]);
+  });
+
+  it("includes the reloaded icon in the manifest, so the installed app matches the tab", () => {
+    expect(manifest.icons.some((i) => i.src === "/icon-reloaded.png")).toBe(true);
+  });
+
+  it("keeps a maskable icon, which Android needs for a non-cropped install", () => {
+    expect(manifest.icons.some((i) => i.purpose === "maskable")).toBe(true);
+  });
+
+  it("has no duplicate icon entries", () => {
+    const keys = manifest.icons.map((i) => `${i.src} ${i.sizes} ${i.purpose}`);
+    expect(new Set(keys).size).toBe(keys.length);
   });
 });
