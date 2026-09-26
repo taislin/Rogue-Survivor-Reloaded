@@ -1,6 +1,6 @@
 # Rogue Survivor Reloaded — TypeScript / Browser Port
 
-> **Status (2026-09-26):** Phases 1–7 ported and building. Phase 8 in progress — tasks 1–10 done; only 11 (perf pass) and 12 (optional touch) remain.
+> **Status (2026-09-26):** Phases 1–7 ported and building. Phase 8 tasks 1–11 done; only 12 (optional touch support) remains.
 > **Read [Current State & Handover](#1-current-state--handover) first — it contains the bugs found and the exact next steps.**
 
 Porting a C# WinForms zombie-survival roguelike (195 files, ~2.5 MB, largest `RogueGame.cs` at 955 KB / 23 233 lines) to a browser-playable TypeScript version. `src/` is the original C# and is **never modified** — it is the reference for every port.
@@ -102,8 +102,47 @@ constructor builds `Rules` from `Session.get().seed`, so a seed applied later
 would reseed world generation while leaving the rules roller on the old value —
 half a deterministic run, which is worse than none.
 
+### 1.4a Open bug: the minimap never reveals explored ground
+
+Found while profiling the frame cost (task 11), and **not fixed** — it is a
+gameplay change, not a performance one, so it is reported rather than bundled
+in.
+
+`RogueGame.UpdatePlayerFOV` (web/src/engine/RogueGame.ts:19400) only computes
+`m_PlayerFOV`. It never pushes that set into the map. C# does, one line later
+than the equivalent:
+
+```csharp
+// src/Engine/RogueGame.cs:5373, inside UpdatePlayerFOV
+player.Location.Map.SetViewAndMarkVisited(m_PlayerFOV);
+```
+
+`Map.SetViewAndMarkVisited` (src/Data/Map.cs:953) sets `IsInView` **and**
+`IsVisited` for every visible tile. The TS port has no equivalent — the only
+two places that touch `isVisited` are the starting-zone reveal in
+`RogueGame.cs:16837` and `Map.setAllAsUnvisited`.
+
+Consequence: the visited set never grows after the initial reveal, so the
+minimap shows only the starting area for the entire game. `isInView` is also
+never set, though nothing appears to read it — `DrawMap` uses `m_PlayerFOV`
+directly, which is why the game still *looks* right.
+
+Evidence: a 40-turn headless run ends with 1 822 explored tiles and
+`ClearMinimap` called exactly once — the raster is built during world
+generation and never rebuilt, because nothing marks anything visited.
+
+The fix is to port `setViewAndMarkVisited` (and `markAsVisited` /
+`setAllAsVisited`, which `RogueForm.cs:180` uses for a debug cheat) and call it
+from `UpdatePlayerFOV`. Note this will make the minimap rebuild far more often
+than it does today — once per FOV change rather than never — which is what the
+`minimapRevision` cache in §4.1d exists to make cheap. The two changes belong
+together.
+
 ### 1.5 Next steps, in priority order
 
+0. **Fix the minimap reveal bug above (1.4a).** Small, self-contained, and the
+   profile harness can verify it: `ClearMinimap` should go from 1 to roughly
+   "number of FOV changes", and explored tiles should keep growing.
 1. **Keep running the sim to failure and fix what it finds.** Now that the map
    stops corrupting itself, 1 000-turn runs are reachable. Loop over seeds:
    `for s in 1 2 3 4 5; do npm run sim -- --size 3 --turns 1000 --seed $s --undead; done`
@@ -172,10 +211,11 @@ Full detail in `web/.porting/CONVENTIONS.md`. The ones that matter:
 |---|---|
 | `npm run verify` | type-check + coverage + build — what CI runs, in one command |
 | `npm run type-check` | `tsc --noEmit`; covers `src/`, `sim/` and `tests/` — necessary, **not sufficient** |
-| `npm run test` | Vitest, 94 tests |
+| `npm run test` | Vitest, 104 tests |
 | `npm run test:coverage` | Vitest with coverage thresholds enforced |
 | `npm run build` | Vite production build |
 | `npm run sim` | Headless engine run — the real test |
+| `npm run profile` | Draw calls per frame + engine ms/frame — the perf harness |
 | `npm run serve` | Express production server (needs `build:all` first) |
 
 ---
@@ -211,13 +251,13 @@ Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks,
 | 2 | Deterministic `--seed` for reproducible runs | **Done** (`Session.useSeed`, `--seed`) |
 | 3 | Drive the sim to a clean full-length run and fix what it finds | **In progress** — 1 000-turn runs clean on 4/5 seeds; keep sweeping |
 | 4 | Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`) | **Already present** in `index.html` (the task list was stale) — but never verified in a real browser |
-| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 94 tests, 8 files, thresholds enforced (50/75/57/50) |
+| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 104 tests, 9 files, thresholds enforced (50/75/57/50) |
 | 6 | GitHub Actions CI | **Done** — `.github/workflows/ci.yml`, type-check + coverage + build + seeded sim, plus a docker smoke job |
 | 7 | PWA manifest + service worker (offline play) | **Done** — manifest, drawn icons, runtime-caching `sw.js` |
 | 8 | Docker image for the self-hosted server | **Done but unverified** — docker is not installed locally, so the image has never been built; CI will exercise it first |
 | 9 | Extract + optimise all sprite PNGs from C# embedded resources | **Done** — 1 124 sprites converted to lossless WebP, 2.41 MB → 0.32 MB, every file pixel-verified |
 | 10 | Audio: normalise volume levels | **Done** — plus 25.7 MB of unreferenced MP3s deleted. Music RMS spread 4.88× → 1.71× |
-| 11 | Performance pass: profile tile rendering (target 60 fps on a 21×21 view) | Not started |
+| 11 | Performance pass: profile tile rendering (target 60 fps on a 21×21 view) | **Done for draw calls** — `npm run profile`; 3 058 → 658 calls/frame, engine 1.86 → 1.11 ms/frame. See §4.1d. Frame *rate* still unverified (needs a browser) |
 | 12 | Mobile / touch support (optional — original was keyboard-only) | Not started |
 
 ### 4.1a Test suite layout
@@ -306,6 +346,53 @@ attenuation would have forced every track down to the quietest one's level,
 making the soundtrack ~2.4× quieter. Falls back to plain element volume where
 Web Audio is unavailable.
 
+### 4.1d Frame cost (task 11)
+
+`npm run profile` measures what a frame costs without a browser: it counts
+painting calls per method through `IRogueUI` (proxy for the browser's
+rasterisation) and times `RedrawPlayScreen` (the engine-side loops,
+allocations and lookups). Run it before optimising anything here — the
+expensive frame work was not where it looked.
+
+The 60 fps target itself is still **unverified**, because frame rate needs a
+real browser. What is verified is the work per frame.
+
+3×3 world, 60 turns, seed 12345:
+
+| | before | after | |
+|---|---|---|---|
+| `UI_SetMinimapColor` | 2 429/frame | 30.4/frame | −98.7% |
+| `UI_ClearMinimap` | 1.3/frame | 0 | — |
+| **total calls/frame** | **3 058** | **658** | −78.5% |
+| engine ms/frame | 1.86 | 1.11 | −40% |
+
+The "before" is measured by forcing the cache to always rebuild in the same
+build, so the comparison isolates the change rather than confounding it with
+other edits.
+
+The dominant cost was `DrawMiniMap`, which rebuilt the whole raster every
+frame — all 10 000 tiles of a 100×100 map, one `UI_SetMinimapColor` per
+visited tile, plus a `new Point` allocation per tile inside the loop. At 60 fps
+that is ~148 000 calls per second redrawing an image that had not changed. The
+raster is now cached against `Map.minimapRevision`, which is bumped by
+`markVisited`, `setAllAsUnvisited` and `setTileModelAt`.
+
+Two things to preserve:
+
+- **Tiles must be marked visited through `Map.markVisited`**, never by
+  assigning `tile.isVisited` directly, or the revision drifts and the cached
+  raster goes stale. A stale minimap fails silently — it just stops updating.
+- **`setTileModelAt` bumps the revision on purpose.** Every caller today is
+  world generation, so it is not needed yet, but a tile model carries its
+  minimap colour and a future runtime tile change would otherwise be invisible.
+
+Also worth knowing when touching the renderer: `UI_DrawGrayLevelImage` is
+called ~578 times a frame (it is how unexplored tiles are drawn) and setting
+`ctx.filter` per call is a pipeline barrier in browsers, so the desaturated
+variant is pre-rendered once per image and blitted. The profiler's *call count*
+for that call does not drop — the cost per call does, which is the limit of
+what a call-counting harness can show.
+
 ### 4.2 Headless harness design (for whoever extends it)
 
 - **`ui/NullRogueUI.ts`** — implements `IRogueUI` with no DOM. Drawing is a no-op; `UI_Wait` returns immediately. It **synthesises input** (`Enter` / `Escape` / `n` / `y`, exposed from both `UI_WaitKey` and `UI_PeekKey`) so blocking waiters — `WaitEnter`, `WaitYesOrNo`, `WaitKeyOrMouse` — cannot deadlock. This is what lets the game run with no human present; do not remove it.
@@ -340,4 +427,4 @@ Items 1, 4 and 5 are implemented (see §4.1a). Items 2 and 3 are not.
 | 5 | World generation + AI | Done |
 | 6 | Audio | Done |
 | 7 | Save / load | Done |
-| 8 | Headless sim, tests, CI, deployment | In progress — sim plays 1 000 turns; 94 tests, CI, PWA, Docker in; **tasks 9–12 all done except 11 (perf) and 12 (touch)** |
+| 8 | Headless sim, tests, CI, deployment | In progress — sim plays 1 000 turns; 104 tests, CI, PWA, Docker, asset pass and frame-cost pass all in. Only 12 (optional touch) remains |
