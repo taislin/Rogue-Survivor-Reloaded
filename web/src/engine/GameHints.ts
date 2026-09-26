@@ -3,6 +3,8 @@
  * Ported from src/Engine/GameHints.cs and AdvisorHint enum in Session.cs
  */
 
+import { storage } from "@engine/storage";
+
 export enum AdvisorHint {
   _FIRST = 0,
   MOVE_BASIC = 0,
@@ -83,14 +85,12 @@ export class GameHintsStatus {
   }
 
   saveToStorage(): void {
-    if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(GameHintsStatus.STORAGE_KEY, JSON.stringify(this.hints));
+    storage.setItem(GameHintsStatus.STORAGE_KEY, JSON.stringify(this.hints));
   }
 
   static loadFromStorage(): GameHintsStatus {
     const status = new GameHintsStatus();
-    if (typeof localStorage === 'undefined') return status;
-    const json = localStorage.getItem(GameHintsStatus.STORAGE_KEY);
+    const json = storage.getItem(GameHintsStatus.STORAGE_KEY);
     if (!json) return status;
     try {
       const arr = JSON.parse(json);

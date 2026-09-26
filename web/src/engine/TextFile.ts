@@ -5,6 +5,8 @@
  * `localStorage` since the browser has no filesystem.
  */
 
+import { storage } from "@engine/storage";
+
 export class TextFile {
   private m_RawLines: string[] = [];
   private m_FormatedLines: string[] | null = null;
@@ -38,7 +40,7 @@ export class TextFile {
   /** Browser equivalent of `File.WriteAllLines`: stores into localStorage. */
   save(fileName: string): boolean {
     try {
-      localStorage.setItem(`textfile:${fileName}`, this.m_RawLines.join("\n"));
+      storage.setItem(`textfile:${fileName}`, this.m_RawLines.join("\n"));
       return true;
     } catch {
       return false;

@@ -20,6 +20,7 @@ import { DiceRoller } from "@engine/DiceRoller";
 import { WorldTime, DayPhase } from "@engine/WorldTime";
 import { Rules } from "@engine/Rules";
 import { Session, GameMode, RaidType, ScriptStage, UniqueActor, UniqueMap, UniqueItem } from "@engine/Session";
+import { storage } from "@engine/storage";
 import { AchievementIDs, Scoring, DifficultySide } from "@engine/Scoring";
 import { MessageManager } from "@engine/MessageManager";
 import { GameSaveManager } from "@engine/GameSave";
@@ -1116,10 +1117,14 @@ export class RogueGame {
 
   // C# HandleNewCharacter — RogueGame.cs:1415
   async HandleNewCharacter(): Promise<boolean> {
-    const roller = new DiceRoller();
-
     // Reset session
     this.m_Session.reset();
+
+    // C# allocates an unseeded `new DiceRoller()` here (RogueGame.cs:1417),
+    // which rolls off the clock. We seed it from the session instead so a run
+    // is reproducible; the session reset above has to come first for that seed
+    // to be the one the roller uses.
+    const roller = new DiceRoller(this.m_Session.seed);
 
     // Game Mode
     if (!(await this.HandleNewGameMode())) return false;
@@ -16165,7 +16170,7 @@ export class RogueGame {
     // the browser port has one localStorage session; the same JSON is also
     // mirrored into the IndexedDB slot the main menu checks (see GetUserSave).)
     Session.save(this.m_Session);
-    void GameSaveManager.saveGame(Number(saveName), JSON.parse(localStorage.getItem(Session.STORAGE_KEY) ?? "{}"));
+    void GameSaveManager.saveGame(Number(saveName), JSON.parse(storage.getItem(Session.STORAGE_KEY) ?? "{}"));
 
     this.AddMessage(
       new Message(`${savingOrAutosaving} DONE.`, this.m_Session.worldTime.turnCounter, Color.Yellow)
@@ -16216,7 +16221,7 @@ export class RogueGame {
     // JSON in localStorage (session) and in one IndexedDB slot (see DoSaveGame).
     const saveFile = await GameSaveManager.loadGame(Number(saveName));
     if (saveFile != null && saveFile.sessionData != null)
-      localStorage.setItem(Session.STORAGE_KEY, JSON.stringify(saveFile.sessionData));
+      storage.setItem(Session.STORAGE_KEY, JSON.stringify(saveFile.sessionData));
 
     // load session object.
     const loaded = Session.load();
@@ -16412,7 +16417,7 @@ export class RogueGame {
     let isFreeID = false;
     do {
       name = `grave_${String(i).padStart(3, "0")}`;
-      isFreeID = typeof localStorage === "undefined" || localStorage.getItem(`textfile:${this.GraveFilePath(name)}`) === null;
+      isFreeID = storage.getItem(`textfile:${this.GraveFilePath(name)}`) === null;
       ++i;
     } while (!isFreeID);
 

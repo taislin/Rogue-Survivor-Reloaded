@@ -1,13 +1,21 @@
 import { RogueGame, SimFlags } from "@engine/RogueGame";
 import { NullRogueUI } from "@ui/NullRogueUI";
 import { NullMusicManager } from "@engine/audio/NullMusicManager";
-import { GameMode } from "@engine/Session";
+import { GameMode, Session } from "@engine/Session";
 import { SimRatio } from "@engine/GameOptions";
 import { ActorID } from "@gameplay/GameActors";
 import { SkillID } from "@gameplay/Skills";
 
 /** Options for one headless run. */
 export interface HeadlessOptions {
+  /**
+   * RNG seed. Same seed ⇒ same world, same turns, same crash.
+   *
+   * Must be applied *before* the `RogueGame` is constructed (the constructor
+   * builds `Rules` from the session seed), which is why it lives on the
+   * constructor rather than here.
+   */
+  seed?: number;
   /** World size in districts (C# `s_Options.citySize`). */
   worldSize?: number;
   /** Stop after this many world turns. */
@@ -66,8 +74,16 @@ export interface HeadlessMetrics {
 export class HeadlessRunner {
   private readonly ui = new NullRogueUI();
   private readonly game: RogueGame;
+  /** The seed this run was pinned to, or 0 for clock-derived. */
+  readonly seed: number;
 
-  constructor() {
+  /**
+   * @param seed Pin the RNG seed for a reproducible run (0 = random).
+   *   Applied before the game exists — see `HeadlessOptions.seed`.
+   */
+  constructor(seed = 0) {
+    this.seed = seed;
+    Session.useSeed(seed);
     this.game = new RogueGame(this.ui, new NullMusicManager());
   }
 
@@ -85,13 +101,21 @@ export class HeadlessRunner {
     };
 
     // ── Boot ────────────────────────────────────────────────────────────────
-    // LoadData builds the model tables the generator needs. We deliberately
-    // skip Run()'s storage/UI preamble (options, keybindings, hi scores,
-    // manual) — all of that touches localStorage or the DOM and none of it
-    // affects the simulation.
+    // LoadData builds the model tables the generator needs.
     step("LoadData...");
     await game.LoadData();
     step("LoadData done");
+
+    // Run() (RogueGame.ts:942) loads the hi score table, and the runner
+    // deliberately bypasses Run() — which is how the first sim crash happened:
+    // HandlePostMortem() dereferences m_HiScoreTable.register() on player death,
+    // and nothing had ever constructed the table. The other Run() preamble steps
+    // (options, hints, keybindings, manual) are skipped on purpose: they are UI
+    // or player-preference state, the sim overrides the options it cares about
+    // below, and loading stored options would make runs depend on leftovers.
+    step("LoadHiScoreTable...");
+    await game.LoadHiScoreTable();
+    step("LoadHiScoreTable done");
 
     const s_Options = RogueGame.options;
     s_Options.citySize = worldSize;

@@ -5,6 +5,7 @@
  */
 
 import { GameMode } from "@engine/Session";
+import { storage } from "@engine/storage";
 
 export enum OptionIDs {
   UI_MUSIC,
@@ -989,20 +990,19 @@ export class GameOptions {
   static readonly STORAGE_KEY = "rogue-survivor-options";
 
   static save(options: GameOptions): void {
-    if (typeof localStorage === "undefined") return;
     const data: Record<string, unknown> = {
       DEV_ShowActorsStats: options.DEV_ShowActorsStats,
     };
     for (const key of Object.keys(options)) {
       if (key.startsWith("m_")) data[key] = (options as unknown as Record<string, unknown>)[key];
     }
-    localStorage.setItem(GameOptions.STORAGE_KEY, JSON.stringify(data));
+    storage.setItem(GameOptions.STORAGE_KEY, JSON.stringify(data));
   }
 
   static load(): GameOptions {
     const options = new GameOptions();
     try {
-      const raw = localStorage.getItem(GameOptions.STORAGE_KEY);
+      const raw = storage.getItem(GameOptions.STORAGE_KEY);
       if (raw === null) return options;
       const data = JSON.parse(raw) as Record<string, unknown>;
       for (const key of Object.keys(data)) {

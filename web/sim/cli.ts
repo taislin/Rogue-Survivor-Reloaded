@@ -2,6 +2,7 @@
  * CLI entry point for the headless simulator.
  *
  *   npm run sim                    # 3x3 world, 200 turns
+ *   npm run sim -- --seed 12345    # reproducible run
  *   npm run sim -- --turns 1000    # longer stress run
  *   npm run sim -- --size 5 --undead --verbose
  *   npm run sim -- --bot=false     # drive the player with no AI (Escape-only)
@@ -12,6 +13,7 @@ import { HeadlessRunner, formatMetrics, HeadlessMetrics } from "../src/sim/Headl
 import { ActorID } from "../src/gameplay/GameActors";
 
 interface Args {
+  seed: number;
   size: number;
   turns: number;
   undead: boolean;
@@ -21,10 +23,13 @@ interface Args {
 }
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { size: 3, turns: 200, undead: false, bot: true, verbose: false, trace: false };
+  const args: Args = { seed: 0, size: 3, turns: 200, undead: false, bot: true, verbose: false, trace: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     switch (a) {
+      case "--seed":
+        args.seed = Number(argv[++i]);
+        break;
       case "--size":
         args.size = Number(argv[++i]);
         break;
@@ -46,7 +51,11 @@ function parseArgs(argv: string[]): Args {
       case "--help":
       case "-h":
         process.stdout.write(
-          "usage: npm run sim -- [--size N] [--turns N] [--undead] [--bot=false] [--verbose]\n"
+          "usage: npm run sim -- [--seed N] [--size N] [--turns N] [--undead] [--bot=false] [--verbose] [--trace]\n" +
+            "\n" +
+            "  --seed N   Pin the RNG seed: the same seed replays the same run\n" +
+            "             exactly, so a crash can be reproduced and regression-tested.\n" +
+            "             Omit it (or pass 0) for a fresh random world each time.\n"
         );
         process.exit(0);
         break;
@@ -65,10 +74,11 @@ async function main(): Promise<void> {
 
   process.stdout.write(
     `headless sim: ${args.size}x${args.size} world, ${args.turns} turns, ` +
-      `${args.undead ? "undead" : "survivor"} player, bot=${args.bot}\n\n`
+      `${args.undead ? "undead" : "survivor"} player, bot=${args.bot}, ` +
+      `seed=${args.seed !== 0 ? args.seed : "random"}\n\n`
   );
 
-  const runner = new HeadlessRunner();
+  const runner = new HeadlessRunner(args.seed);
   const metrics: HeadlessMetrics = await runner.run({
     worldSize: args.size,
     maxTurns: args.turns,

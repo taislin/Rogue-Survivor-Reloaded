@@ -5,6 +5,7 @@
  */
 
 import { Scoring } from "@engine/Scoring";
+import { storage } from "@engine/storage";
 
 export class HiScore {
   name = "";
@@ -95,7 +96,7 @@ export class HiScoreTable {
 
   // ── Saving & Loading ────────────────────────────────────────────────────
   static save(table: HiScoreTable): void {
-    localStorage.setItem(
+    storage.setItem(
       HiScoreTable.STORAGE_KEY,
       JSON.stringify({ maxEntries: table.m_MaxEntries, entries: table.m_Table })
     );
@@ -104,7 +105,7 @@ export class HiScoreTable {
   /** Try to load, null if failed. */
   static load(): HiScoreTable | null {
     try {
-      const raw = localStorage.getItem(HiScoreTable.STORAGE_KEY);
+      const raw = storage.getItem(HiScoreTable.STORAGE_KEY);
       if (raw === null) return null;
 
       const data = JSON.parse(raw) as { maxEntries: number; entries: HiScore[] };
@@ -119,7 +120,7 @@ export class HiScoreTable {
 
   static delete(): boolean {
     try {
-      localStorage.removeItem(HiScoreTable.STORAGE_KEY);
+      storage.removeItem(HiScoreTable.STORAGE_KEY);
       return true;
     } catch {
       return false;

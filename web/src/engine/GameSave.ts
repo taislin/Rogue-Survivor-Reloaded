@@ -1,3 +1,5 @@
+import { storage } from "@engine/storage";
+
 export interface SaveFile {
   version: string;
   timestamp: number;
@@ -27,7 +29,7 @@ export class GameSaveManager {
 
     try {
       // Try localStorage first
-      localStorage.setItem(key, json);
+      storage.setItem(key, json);
       return true;
     } catch (e) {
       // If localStorage is full (> 5MB or quota exceeded), fall back to IndexedDB
@@ -46,7 +48,7 @@ export class GameSaveManager {
     const key = `${this.SLOT_PREFIX}${slot}`;
 
     try {
-      const json = localStorage.getItem(key);
+      const json = storage.getItem(key);
       if (json) {
         return JSON.parse(json) as SaveFile;
       }
@@ -65,7 +67,7 @@ export class GameSaveManager {
   public static async hasSave(slot: number): Promise<boolean> {
     if (slot < 0 || slot >= this.MAX_SLOTS) return false;
     const key = `${this.SLOT_PREFIX}${slot}`;
-    if (localStorage.getItem(key) !== null) return true;
+    if (storage.getItem(key) !== null) return true;
 
     try {
       const idbJson = await this.loadFromIndexedDB(key);
@@ -78,7 +80,7 @@ export class GameSaveManager {
   public static async deleteSave(slot: number): Promise<void> {
     if (slot < 0 || slot >= this.MAX_SLOTS) return;
     const key = `${this.SLOT_PREFIX}${slot}`;
-    localStorage.removeItem(key);
+    storage.removeItem(key);
     try {
       await this.deleteFromIndexedDB(key);
     } catch (e) {}

@@ -4,6 +4,7 @@
  */
 
 import { PlayerCommand } from './PlayerCommand';
+import { storage } from "@engine/storage";
 
 export class Keybindings {
   private static readonly STORAGE_KEY = 'rogue_survivor_keybindings';
@@ -117,17 +118,15 @@ export class Keybindings {
   }
 
   saveToStorage(): void {
-    if (typeof localStorage === 'undefined') return;
     const entries: [number, string][] = [];
     for (const [cmd, key] of this.commandToKey) {
       entries.push([cmd, key]);
     }
-    localStorage.setItem(Keybindings.STORAGE_KEY, JSON.stringify(entries));
+    storage.setItem(Keybindings.STORAGE_KEY, JSON.stringify(entries));
   }
 
   loadFromStorage(): boolean {
-    if (typeof localStorage === 'undefined') return false;
-    const json = localStorage.getItem(Keybindings.STORAGE_KEY);
+    const json = storage.getItem(Keybindings.STORAGE_KEY);
     if (!json) return false;
     try {
       const entries = JSON.parse(json) as [number, string][];

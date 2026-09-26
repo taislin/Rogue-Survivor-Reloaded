@@ -15,6 +15,7 @@ import { WorldTime } from "@engine/WorldTime";
 import { Weather } from "@data/Weather";
 import { GameOptions, Options } from "@engine/GameOptions";
 import { Scoring } from "@engine/Scoring";
+import { storage } from "@engine/storage";
 
 export enum GameMode {
   GM_STANDARD,
@@ -144,6 +145,15 @@ export class Session {
   seed = 0;
   lastTurnPlayerActed = 0;
 
+  /**
+   * An explicitly requested RNG seed, or 0 for "derive from the clock".
+   *
+   * `reset()` honours this, so a forced seed survives the resets that
+   * `HandleNewCharacter` and `Session.load()` perform. It is deliberately *not*
+   * serialized: it is a property of one process, not of a saved game.
+   */
+  private m_ForcedSeed = 0;
+
   // ── Uniques ─────────────────────────────────────────────────────────────
   uniqueActors = new UniqueActors();
   uniqueItems = new UniqueItems();
@@ -162,6 +172,26 @@ export class Session {
   static get(): Session {
     if (Session.s_TheSession === null) Session.s_TheSession = new Session();
     return Session.s_TheSession;
+  }
+
+  /**
+   * Pin the RNG seed so a run is reproducible, then reset.
+   *
+   * This exists because `reset()` otherwise seeds from `Date.now()`, which made
+   * every headless run explore a different world and fail in a different place
+   * — so bugs could be found but never regression-tested. Pass 0 to go back to
+   * the clock-derived default.
+   *
+   * **Call this before constructing `RogueGame`.** The game constructor builds
+   * `Rules` from `Session.get().seed`, so a seed applied afterwards would
+   * reseed world generation while leaving the rules roller on the old value —
+   * only half the run would be deterministic, which is worse than none.
+   */
+  static useSeed(seed: number): Session {
+    const session = Session.get();
+    session.m_ForcedSeed = seed > 0 ? seed >>> 0 : 0;
+    session.reset();
+    return session;
   }
 
   get gameMode(): GameMode {
@@ -216,7 +246,8 @@ export class Session {
   }
 
   reset(): void {
-    this.seed = Math.floor(Date.now() % 0x7fffffff);
+    this.seed =
+      this.m_ForcedSeed !== 0 ? this.m_ForcedSeed : Math.floor(Date.now() % 0x7fffffff);
     this.m_CurrentMap = null;
     this.m_Scoring = new Scoring();
     this.m_World = null;
@@ -293,13 +324,13 @@ export class Session {
       // TODO(phase 4): serialize m_World / m_CurrentMap once the data layer
       // implements toJSON().
     };
-    localStorage.setItem(Session.STORAGE_KEY, JSON.stringify(data));
+    storage.setItem(Session.STORAGE_KEY, JSON.stringify(data));
   }
 
   /** Try to load, false if failed. */
   static load(_format: SaveFormat = SaveFormat.FORMAT_JSON): boolean {
     try {
-      const raw = localStorage.getItem(Session.STORAGE_KEY);
+      const raw = storage.getItem(Session.STORAGE_KEY);
       if (raw === null) return false;
 
       const data = JSON.parse(raw) as Record<string, unknown>;
@@ -330,7 +361,7 @@ export class Session {
 
   static delete(_filepath: string | null = null): boolean {
     try {
-      localStorage.removeItem(Session.STORAGE_KEY);
+      storage.removeItem(Session.STORAGE_KEY);
       return true;
     } catch {
       // failing silently.
