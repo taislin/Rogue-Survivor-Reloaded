@@ -18,7 +18,7 @@ const FONT_BOLD   = 'bold 8.25pt "Lucida Console", "Courier New", monospace';
  *
  * Replaces the C# GDIGameCanvas / DXGameCanvas hierarchy.
  * Images are loaded through `AssetPaths.imagePath()`, i.e.
- * /assets/images/<imageSet>/<imageId>.png (forward-slash paths, no extension in the
+ * /assets/images/<imageSet>/<imageId>.webp (forward-slash paths, no extension in the
  * ID — same convention as the C# image IDs but with OS-appropriate slashes).
  * The sprite set defaults to "classic"; the other folders under assets/images/ are
  * variations of it.
