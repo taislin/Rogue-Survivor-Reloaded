@@ -9,6 +9,10 @@ The game is a turn-based, real-time survival roguelike: you play a survivor
 (or an undead) in a procedurally generated city, scavenging while the district
 behind you floods with the dead. Survive the nights.
 
+**Website** — the manual, controls and project notes live in
+[`docs/`](docs/), published with GitHub Pages. See [`docs/README.md`](docs/README.md)
+for how to enable it.
+
 ```bash
 cd web
 npm install
@@ -28,6 +32,7 @@ npm run dev          # http://localhost:3000
 - [Testing and the headless simulator](#testing-and-the-headless-simulator)
 - [Known issues](#known-issues)
 - [Porting notes](#porting-notes)
+- [Website](#website)
 - [License](#license)
 
 ---
@@ -96,6 +101,7 @@ All run from `web/`.
 .
 ├── src/                  Original C# source (reference only — never modified)
 ├── BROWSER_PORT_PLAN.md  Porting plan, phase status, and the bug log
+├── docs/                 Static website (GitHub Pages source)
 ├── Dockerfile
 ├── LICENSE.txt           GPLv3 (inherited from the original)
 └── web/                  The port
@@ -228,6 +234,25 @@ type-checker is structurally unable to catch.
 
 The C# in `src/` is treated as read-only reference. If behaviour is wrong,
 compare against it before "fixing" the port.
+
+---
+
+## Website
+
+[`docs/`](docs/) is a static site — landing page, the complete game manual, the
+control reference, and notes on how the port works. It is the GitHub Pages
+source, using the plain "deploy from a branch" setup: set **Pages → Source →
+Deploy from a branch**, branch `master`, folder `/docs`. No workflow and no
+build step are involved.
+
+```bash
+node docs/tools/check-site.mjs      # validate links, assets, tags, CSS coverage
+node docs/tools/build-manual.mjs    # regenerate manual.html from the source text
+```
+
+`docs/manual.html` is generated from `src/Resources/Manual/RS Manual.txt` — the
+original manual by the game's author, reformatted and not rewritten. See
+[`docs/README.md`](docs/README.md) for the conventions.
 
 ---
 

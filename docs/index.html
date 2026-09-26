@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rogue Survivor Reloaded &mdash; a browser port of a brutal zombie survival roguelike</title>
+<meta name="description" content="Rogue Survivor Reloaded is a browser-playable TypeScript port of Rogue Survivor by Jacques Ruiz (roguedjack). A turn-based, real-time survival roguelike: scavenge, build a shelter, survive the nights.">
+<link rel="icon" href="assets/img/icon-192.png">
+<link rel="stylesheet" href="assets/css/site.css">
+<meta property="og:title" content="Rogue Survivor Reloaded">
+<meta property="og:description" content="A browser port of Rogue Survivor: a turn-based, real-time survival roguelike set in a city that floods with the dead.">
+<meta property="og:type" content="website">
+<meta property="og:image" content="assets/img/icon-512.png">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap site-header__inner">
+    <a class="brand" href="index.html">
+      <img src="assets/img/icon-192.png" alt="" width="28" height="28">
+      <span>Rogue Survivor <em>Reloaded</em></span>
+    </a>
+    <nav class="site-nav" aria-label="Main">
+      <a href="index.html" aria-current="page">Home</a>
+      <a href="manual.html">Manual</a>
+      <a href="controls.html">Controls</a>
+      <a href="info.html">About</a>
+      <a href="https://github.com/taislin/Rogue-Survivor-Reloaded">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ================= Hero ================= -->
+  <section class="hero">
+    <div class="wrap hero__grid">
+      <div>
+        <span class="hero__title-accent">Rogue Survivor Reloaded</span>
+        <h1>It is midnight. Something in your bedroom wants your brain.</h1>
+        <p class="lede">You kicked and punched until it stopped moving. Then another
+        came through the window. And another through the door. <em>Rogue Survivor</em>
+        is a turn-based, real-time survival roguelike set in a city that keeps
+        flooding with the dead &mdash; and it is now a static web build you can
+        play in a browser.</p>
+
+        <div class="btn-row" style="margin-top:1.5rem">
+          <a class="btn btn--primary" href="https://github.com/taislin/Rogue-Survivor-Reloaded#readme">Play / build it</a>
+          <a class="btn" href="manual.html">Read the manual</a>
+          <a class="btn" href="controls.html">Controls</a>
+        </div>
+
+        <ul class="hero__meta">
+          <li>Browser &middot; Canvas 2D</li>
+          <li>TypeScript</li>
+          <li>Alpha 10.1</li>
+          <li>GPLv3</li>
+        </ul>
+      </div>
+
+      <div>
+        <div class="mosaic" aria-hidden="true">
+          <img src="assets/img/scenery/sewers_building.webp" alt="">
+          <img src="assets/img/actors/zombie.webp" class="is-actor" alt="">
+          <img src="assets/img/scenery/shop_gunshop.webp" alt="">
+          <img src="assets/img/actors/skeleton.webp" class="is-actor" alt="">
+          <img src="assets/img/scenery/hospital.webp" alt="">
+          <img src="assets/img/scenery/police_station.webp" alt="">
+
+          <img src="assets/img/scenery/shop_grocery.webp" alt="">
+          <img src="assets/img/actors/player_follower.webp" class="is-actor" alt="">
+          <img src="assets/img/scenery/bloodied_floor.webp" alt="">
+          <img src="assets/img/actors/dark_zombie.webp" class="is-actor" alt="">
+          <img src="assets/img/scenery/sewer_ladder.webp" alt="">
+          <img src="assets/img/scenery/char_office.webp" alt="">
+
+          <img src="assets/img/scenery/shop_pharmacy.webp" alt="">
+          <img src="assets/img/actors/sewers_thing.webp" class="is-actor" alt="">
+          <img src="assets/img/scenery/zombie_remains.webp" alt="">
+          <img src="assets/img/actors/zombie_master.webp" class="is-actor" alt="">
+          <img src="assets/img/scenery/subway_building.webp" alt="">
+          <img src="assets/img/scenery/vomit.webp" alt="">
+
+          <img src="assets/img/scenery/char_poster1.webp" alt="">
+          <img src="assets/img/actors/rat_zombie.webp" class="is-actor" alt="">
+          <img src="assets/img/scenery/stairs_down.webp" alt="">
+          <img src="assets/img/actors/zombie_prince.webp" class="is-actor" alt="">
+          <img src="assets/img/scenery/power_sign_big.webp" alt="">
+          <img src="assets/img/scenery/tags3.webp" alt="">
+
+          <img src="assets/img/scenery/shop_general_store.webp" alt="">
+          <img src="assets/img/actors/big_bear.webp" class="is-actor" alt="">
+          <img src="assets/img/scenery/bloodied_wall.webp" alt="">
+          <img src="assets/img/actors/jason_myers.webp" class="is-actor" alt="">
+          <img src="assets/img/scenery/posters1.webp" alt="">
+          <img src="assets/img/scenery/sewer_hole.webp" alt="">
+        </div>
+        <p class="mosaic__caption">Every sprite on this site is the game's own art</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= What it is ================= -->
+  <section class="section">
+    <div class="wrap">
+      <p class="eyebrow">The pitch</p>
+      <h2>The game is about surviving, not killing</h2>
+      <p class="lede">Rogue Survivor handles combat and progression differently from most
+      roguelikes. You are just an average human, and you have to be cautious. There is no
+      difficulty ramp tied to your level, and no amount of skill turns you into a
+      superhuman. If a place or a foe is too hard, leave. Run.</p>
+
+      <div class="grid grid--2" style="margin-top:1.75rem">
+        <div class="card card--feature">
+          <img class="card__icon" src="assets/img/actors/zombie.webp" alt="">
+          <h3>Time moves whether you act or not</h3>
+          <p>One turn is two in-game minutes. Every action costs action points and
+          stamina, and stamina only comes back as fast as your speed allows. Standing
+          still is a real tactic &mdash; and so is running away.</p>
+        </div>
+        <div class="card card--feature">
+          <img class="card__icon" src="assets/img/scenery/sewer_ladder.webp" alt="">
+          <h3>A city, not a corridor</h3>
+          <p>The map is an N&times;N grid of districts &mdash; residential, business,
+          shopping, green &mdash; linked by streets, plus a sewer network under each one
+          and a subway line across the middle. Leave a district and the game keeps
+          simulating it without you.</p>
+        </div>
+        <div class="card card--feature">
+          <img class="card__icon" src="assets/img/actors/player_follower.webp" alt="">
+          <h3>You are not alone</h3>
+          <p>Survivors panic, trade, murder each other for food, and can be talked into
+          following you. Trust builds slowly, orders can send them into rooms they
+          should not enter, and cops have a licence to kill murderers.</p>
+        </div>
+        <div class="card card--feature">
+          <img class="card__icon" src="assets/img/scenery/char_office.webp" alt="">
+          <h3>Something else is going on</h3>
+          <p>Your home town is the headquarters of the C.H.A.R. Corporation, and there
+          are persistent rumours about them. There is also a persistent urban legend
+          about something large living in the sewers.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= How to survive ================= -->
+  <section class="section section--tight">
+    <div class="wrap">
+      <p class="eyebrow">Getting through the first night</p>
+      <h2>How to play</h2>
+      <div class="grid grid--2">
+        <div>
+          <ol class="steps">
+            <li><strong>Do not fight what you cannot kill.</strong> Slower enemies can be
+            avoided; hit-and-run beats a straight fight at almost any level.</li>
+            <li><strong>Eat, early and often.</strong> Food drains every turn. Hungry
+            means you cannot sleep, and starved means a chance of dying each turn.</li>
+            <li><strong>Find a shop and make it a base.</strong> Groceries, pharmacies and
+            gunshops are the early game. Push shelves across the entrance.</li>
+            <li><strong>Get a ranged weapon.</strong> A rifle or pistol solves a lot of
+            early problems. Accuracy is drawn as a line: red, no shot; yellow, beyond
+            efficient range; green, good.</li>
+            <li><strong>Barricade, trap and cover your tracks.</strong> Wooden planks,
+            bear traps, and a stench killer spray to erase the scent trail the dead
+            follow.</li>
+            <li><strong>Sleep somewhere defended.</strong> On a couch, behind
+            barricades. Sleeping is the only real way to heal &mdash; and you are
+            blind and defenceless while you do it.</li>
+          </ol>
+        </div>
+        <div>
+          <div class="callout callout--tip">
+            <span class="callout__label">The one rule</span>
+            <p>Fear for your life and use the <strong>Run</strong> action constantly.
+            The game can be harsh on you. That is part of the fun.</p>
+          </div>
+
+          <div class="callout callout--note">
+            <span class="callout__label">Heads up</span>
+            <p>Night halves your field of view and makes every tiring action cost
+            more. Rain cuts it further and makes firearms jam. Undeads do not care
+            about any of it &mdash; but they follow scents, and rain makes those
+            fade faster.</p>
+          </div>
+
+          <p><a href="manual.html">The full manual</a> covers the player sheet, every
+          action and command, all skills, all item categories, followers and directives,
+          and friends &amp; foes. It is the original text by the game's author,
+          reformatted for the web.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= Modes ================= -->
+  <section class="section section--tight">
+    <div class="wrap">
+      <p class="eyebrow">Character creation</p>
+      <h2>Three game modes</h2>
+      <p class="lede">Each mode enables or disables a layer of the simulation. Start as a
+      living with a gender and a starting skill, or as an undead and pick a race.</p>
+
+      <div class="table-wrap" style="margin-top:1.25rem">
+        <table>
+          <thead>
+            <tr><th>Mode</th><th>What it changes</th><th>Best for</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><b>STD</b><br><span class="small muted">Standard</span></td>
+              <td>All undead types, and undeads evolve. Livings zombify on death.
+                  No infection, no corpses.</td>
+              <td>Beginners &mdash; the default, and the least chaotic.</td>
+            </tr>
+            <tr>
+              <td><b>C&amp;I</b><br><span class="small muted">Corpses &amp; infection</span></td>
+              <td>Adds infection: bites infect, the infected can die, and their corpses
+                  rise more readily. Adds corpses: they rot, they can rise, the dead eat
+                  them, and the desperate eat them too.</td>
+              <td>Experiencing every feature the game has.</td>
+            </tr>
+            <tr>
+              <td><b>VTG</b><br><span class="small muted">Vintage</span></td>
+              <td>All of C&amp;I, but only zombified men and women rise as undead, with
+                  no evolution. Forces several options off.</td>
+              <td>A more classic, less carnival zombie feel.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout callout--warn" style="margin-top:1.5rem">
+        <span class="callout__label">After you die</span>
+        <p>You can <strong>reincarnate</strong> into another actor in the same district
+        &mdash; your killer, a random survivor, a random undead, one of your followers, or
+        your own zombified self. Restrict yourself to one kind of avatar and the game
+        becomes a challenge run: <em>Succession</em>, <em>Killer</em>, <em>Till the Last
+        Survivor</em>, <em>The Equalizer</em>, or <em>Life After Death</em>.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= Bestiary ================= -->
+  <section class="section section--tight">
+    <div class="wrap">
+      <p class="eyebrow">Bestiary</p>
+      <h2>Who is out there</h2>
+      <p class="lede">Livings and undeads alike are driven by a real AI &mdash; eleven
+      controllers in all. Undeads hunt by scent, some by visual memory; some break doors
+      and furniture to reach you, some call others to the spot, and some turn your dead
+      friends into company.</p>
+
+      <p class="small muted" style="margin-top:1.5rem">The dead</p>
+      <div class="sprite-strip">
+        <div class="sprite-cell"><img src="assets/img/actors/skeleton.webp" alt=""><b>Skeleton</b><span>fragile, fast</span></div>
+        <div class="sprite-cell"><img src="assets/img/actors/red_eyed_skeleton.webp" alt=""><b>Red-eyed skeleton</b><span>tougher</span></div>
+        <div class="sprite-cell"><img src="assets/img/actors/red_skeleton.webp" alt=""><b>Red skeleton</b><span>"Kill it with fire!"</span></div>
+        <div class="sprite-cell"><img src="assets/img/actors/zombie.webp" alt=""><b>Shambler</b><span>slow, but smells you</span></div>
+        <div class="sprite-cell"><img src="assets/img/actors/dark_eyed_zombie.webp" alt=""><b>Dark-eyed shambler</b><span>meaner</span></div>
+        <div class="sprite-cell"><img src="assets/img/actors/dark_zombie.webp" alt=""><b>Dark shambler</b><span>the usual horror</span></div>
+        <div class="sprite-cell"><img src="assets/img/actors/rat_zombie.webp" alt=""><b>Zombie rat</b><span>sewers, very quick</span></div>
+        <div class="sprite-cell"><img src="assets/img/actors/zombie_master.webp" alt=""><b>Zombie master</b><span>"Nice glasses."</span></div>
+        <div class="sprite-cell"><img src="assets/img/actors/zombie_lord.webp" alt=""><b>Zombie lord</b><span>"Lord of Death."</span></div>
+        <div class="sprite-cell"><img src="assets/img/actors/zombie_prince.webp" alt=""><b>Zombie prince</b><span>"Prince of Death."</span></div>
+        <div class="sprite-cell"><img src="assets/img/actors/sewers_thing.webp" alt=""><b>The Sewers Thing</b><span>400 HP. Do not disturb.</span></div>
+      </div>
+
+      <p class="small muted" style="margin-top:1.75rem">The living, and the ones you may meet</p>
+      <div class="sprite-strip">
+        <div class="sprite-cell"><img src="assets/img/actors/player_follower.webp" alt=""><b>Followers</b><span>if you can earn trust</span></div>
+        <div class="sprite-cell"><img src="assets/img/actors/big_bear.webp" alt=""><b>Big Bear</b><span>"FOOLS!"</span></div>
+        <div class="sprite-cell"><img src="assets/img/actors/jason_myers.webp" alt=""><b>Jason Myers</b><span>serial killer, with an axe</span></div>
+        <div class="sprite-cell"><img src="assets/img/actors/santaman.webp" alt=""><b>Santaman</b><span>"Merry Shotmas!"</span></div>
+        <div class="sprite-cell"><img src="assets/img/actors/famu_fataru.webp" alt=""><b>Famu Fataru</b><span>katana</span></div>
+        <div class="sprite-cell"><img src="assets/img/actors/duckman.webp" alt=""><b>Duckman</b><span>unique survivor</span></div>
+        <div class="sprite-cell"><img src="assets/img/actors/hans_von_hanz.webp" alt=""><b>Hans von Hanz</b><span>"Feuer!"</span></div>
+        <div class="sprite-cell"><img src="assets/img/actors/roguedjack.webp" alt=""><b>Roguedjack</b><span>armed with a keyboard</span></div>
+      </div>
+
+      <p class="small muted" style="margin-top:1.75rem">And the places</p>
+      <div class="signs">
+        <img src="assets/img/scenery/char_office.webp" alt="CHAR office">
+        <img src="assets/img/scenery/police_station.webp" alt="Police station">
+        <img src="assets/img/scenery/hospital.webp" alt="Hospital">
+        <img src="assets/img/scenery/shop_gunshop.webp" alt="Gunshop">
+        <img src="assets/img/scenery/shop_pharmacy.webp" alt="Pharmacy">
+        <img src="assets/img/scenery/shop_grocery.webp" alt="Grocery">
+        <img src="assets/img/scenery/shop_general_store.webp" alt="General store">
+        <img src="assets/img/scenery/shop_construction.webp" alt="Construction shop">
+        <img src="assets/img/scenery/shop_sportswear.webp" alt="Sportswear shop">
+        <img src="assets/img/scenery/shop_hunting.webp" alt="Hunting shop">
+        <img src="assets/img/scenery/sewers_building.webp" alt="Sewers maintenance">
+        <img src="assets/img/scenery/subway_building.webp" alt="Subway station">
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= Run it ================= -->
+  <section class="section">
+    <div class="wrap">
+      <p class="eyebrow">Running it</p>
+      <h2>Browser build</h2>
+      <div class="grid grid--2">
+        <div class="card">
+          <h3>Play locally</h3>
+          <p>Requires Node 20 or newer.</p>
+          <p><code>cd web &amp;&amp; npm install &amp;&amp; npm run dev</code></p>
+          <p class="small muted" style="margin-bottom:0">Vite dev server on
+          <a href="http://localhost:3000">localhost:3000</a>, with hot reload.</p>
+        </div>
+        <div class="card">
+          <h3>Production build</h3>
+          <p><code>npm run build:all</code> then <code>npm run serve</code></p>
+          <p class="small muted" style="margin-bottom:0">Serves the bundle on port 8080.
+          There is a <code>Dockerfile</code> at the repo root, and the build is plain
+          static files, so any static host will do.</p>
+        </div>
+      </div>
+
+      <div class="btn-row" style="margin-top:1.5rem">
+        <a class="btn btn--primary" href="https://github.com/taislin/Rogue-Survivor-Reloaded">Source on GitHub</a>
+        <a class="btn" href="info.html">How the port works</a>
+        <a class="btn" href="manual.html">Manual</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="site-footer__grid">
+      <div>
+        <h4>Pages</h4>
+        <ul>
+          <li><a href="index.html">Home</a></li>
+          <li><a href="manual.html">Manual</a></li>
+          <li><a href="controls.html">Controls</a></li>
+          <li><a href="info.html">About the port</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Project</h4>
+        <ul>
+          <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded">Source on GitHub</a></li>
+          <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded/issues">Report an issue</a></li>
+          <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/BROWSER_PORT_PLAN.md">Porting plan</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Original game</h4>
+        <ul>
+          <li><a href="http://roguesurvivor.blogspot.com/">roguedjack's blog</a></li>
+          <li><a href="http://roguesurvivor.proboards.com/">Original forum</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="site-footer__legal">
+      <p><em>Rogue Survivor</em> was created by Jacques Ruiz (roguedjack) in 2012.
+      This site and the browser port are reimplementations of that work and are
+      distributed under the GNU General Public License v3.0 &mdash; see
+      <a href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/LICENSE.txt">LICENSE.txt</a>.</p>
+      <p>Game text, manual and artwork &copy; Jacques Ruiz. Rogue Survivor Reloaded
+      is not affiliated with or endorsed by the original author.</p>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

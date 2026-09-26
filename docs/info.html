@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>About the port &middot; Rogue Survivor Reloaded</title>
+<meta name="description" content="Rogue Survivor Reloaded is a TypeScript and Canvas 2D port of Rogue Survivor by Jacques Ruiz. How the port works, what it replaces, project status, credits and licensing.">
+<link rel="icon" href="assets/img/icon-192.png">
+<link rel="stylesheet" href="assets/css/site.css">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to content</a>
+
+<header class="site-header">
+  <div class="wrap site-header__inner">
+    <a class="brand" href="index.html">
+      <img src="assets/img/icon-192.png" alt="" width="28" height="28">
+      <span>Rogue Survivor <em>Reloaded</em></span>
+    </a>
+    <nav class="site-nav" aria-label="Main">
+      <a href="index.html">Home</a>
+      <a href="manual.html">Manual</a>
+      <a href="controls.html">Controls</a>
+      <a href="info.html" aria-current="page">About</a>
+      <a href="https://github.com/taislin/Rogue-Survivor-Reloaded">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main" class="wrap">
+  <div class="page-head">
+    <p class="eyebrow">About</p>
+    <h1>About this port</h1>
+    <p><em>Rogue Survivor</em> is a 2012 C#/Windows Forms game by Jacques Ruiz
+    (roguedjack). <em>Rogue Survivor Reloaded</em> is a browser port of it: the same
+    game, rewritten in TypeScript against a canvas instead of a GDI surface.</p>
+  </div>
+
+  <div class="callout callout--tip">
+    <span class="callout__label">Why it exists</span>
+    <p>The original needs Windows and the .NET 3.5 runtime, and its
+    <code>System.Drawing</code> drawing code has no browser equivalent. Rather than
+    rewrite the game, the port replaces the three things that cannot survive a
+    browser and leaves the rules alone &mdash; so the behaviour you get is the
+    behaviour the original had.</p>
+  </div>
+
+  <h2 id="how">How the port works</h2>
+  <p>The original draws straight to a GDI surface, blocks on WinForms message loops and
+  reads <code>Keys.D0</code>-style key codes. All of that is replaced. The game rules,
+  the map generators, the AI and the item and skill tables are a direct port, kept
+  line-for-line comparable to the C#.</p>
+
+  <div class="table-wrap" style="margin:1.25rem 0">
+    <table>
+      <thead><tr><th>In the original</th><th>In the port</th></tr></thead>
+      <tbody>
+        <tr><td><code>IRogueUI</code></td><td><code>web/src/engine/IRogueUI.ts</code> &mdash; the rendering and input contract</td></tr>
+        <tr><td>WinForms canvas in <code>RogueForm</code></td><td><code>web/src/ui/CanvasUI.ts</code> &mdash; Canvas 2D</td></tr>
+        <tr><td>Blocking <code>UI_WaitKey</code> / <code>UI_PeekKey</code></td><td>Promises fed by <code>web/src/ui/InputHandler.ts</code></td></tr>
+        <tr><td><code>Application.DoEvents()</code> busy-wait loops</td><td><code>await</code> plus the real DOM event loop</td></tr>
+        <tr><td><code>System.Drawing</code></td><td><code>Point</code> / <code>Rect</code> / <code>Color</code> in <code>web/src/engine/</code></td></tr>
+        <tr><td>CSV resource files</td><td>JSON tables in <code>web/src/gameplay/data/</code></td></tr>
+        <tr><td>PNG sprites, MP3 audio</td><td>Lossless WebP sprites, Ogg audio</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>Most methods in the engine carry a comment pointing at the C# method they came
+  from, for example <code>// C# HandleCredits &mdash; RogueGame.cs:2248</code>. That is
+  deliberate: it is what makes a regression traceable back to the original.</p>
+
+  <h3 id="headless">Running the game without a browser</h3>
+  <p>Because everything reaches the screen through <code>IRogueUI</code>, a second
+  implementation that simply drops every painting call and answers key presses locally
+  lets the entire engine run headless. That is what
+  <a href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/BROWSER_PORT_PLAN.md">the simulator</a>
+  and the test suite are built on: same generators, same AI, same turn loop, in Node.</p>
+
+  <div class="callout callout--warn">
+    <span class="callout__label">This is not a convenience</span>
+    <p>A clean type-check and a clean build do <em>not</em> mean the port works. The
+    first headless run found nine runtime bugs, two of them fatal, and none of them
+    visible to the type-checker. If you change engine code, run the simulator.</p>
+  </div>
+
+  <h2 id="stack">Under the hood</h2>
+  <div class="grid grid--2">
+    <div class="card">
+      <h3>Technology</h3>
+      <ul class="small" style="margin-bottom:0">
+        <li>TypeScript 5, strict mode</li>
+        <li>Vite 5 for the dev server and the bundle</li>
+        <li>Canvas 2D &mdash; no game framework, no UI framework</li>
+        <li>Web Audio API for music and sound</li>
+        <li>Vitest for the test suite</li>
+        <li>Express for the optional production server</li>
+        <li>Node 20 or newer</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Display</h3>
+      <ul class="small" style="margin-bottom:0">
+        <li>1366&times;768 (16:9), the original was 1024&times;768 (4:3)</li>
+        <li>31 tiles across instead of 21 &mdash; the extra width went to the map</li>
+        <li>Two text sizes: the dense in-game HUD, and full-screen menus</li>
+        <li>Offscreen districts keep simulating without you</li>
+        <li>Installable as a PWA, and playable offline</li>
+      </ul>
+    </div>
+  </div>
+
+  <h2 id="status">Status</h2>
+  <p>The port is at <b>alpha 10.1</b>, matching the original's version number. The game
+  content is complete: there are no unported stubs left.</p>
+
+  <div class="table-wrap" style="margin:1.25rem 0">
+    <table>
+      <thead><tr><th>Known limitation</th><th>Detail</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>No touch support</td>
+          <td>Keyboard and mouse only. This is the last item outstanding on the porting plan.</td>
+        </tr>
+        <tr>
+          <td>Minimap does not record explored ground</td>
+          <td>Ground you have seen is not marked as explored, so the minimap under-reports
+              what you know. Known bug, tracked in the porting plan.</td>
+        </tr>
+        <tr>
+          <td>Death screenshots off by default</td>
+          <td>The original wrote a file silently; in a browser that is a download prompt
+              on every death. The option still exists.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="credits">Credits</h2>
+  <div class="card">
+    <h3>Programming, graphics &amp; music &mdash; the original game</h3>
+    <p>Jacques Ruiz (roguedjack), 2012&ndash;2018. The rules, the art, the music, the
+    manual, and the 195 C# source files preserved in <code>src/</code> are all his
+    work. This port exists because of it.</p>
+
+    <div class="table-wrap" style="margin-top:1rem">
+      <table>
+        <tbody>
+          <tr><td>Programming</td><td>C# .NET 3.5, Microsoft Visual Studio Community 2017</td></tr>
+          <tr><td>Graphics software</td><td>Inkscape, Paint.NET</td></tr>
+          <tr><td>Sound &amp; music software</td><td>GuitarPro 7, Audacity</td></tr>
+          <tr><td>Sound samples</td><td>sound-fishing.net, soundsnap.com</td></tr>
+          <tr><td>Blog</td><td><a href="http://roguesurvivor.blogspot.com/">roguesurvivor.blogspot.com</a></td></tr>
+          <tr><td>Forum</td><td><a href="http://roguesurvivor.proboards.com/">roguesurvivor.proboards.com</a></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="small muted" style="margin-top:1rem;margin-bottom:0">&ldquo;Thanks to the
+    players for their feedback and eagerness to die!&rdquo;</p>
+  </div>
+
+  <div class="card" style="margin-top:1rem">
+    <h3>About this website</h3>
+    <p>Static HTML in <code>docs/</code>, served by GitHub Pages. No framework, no
+    build step, no tracking. The manual page is generated from the original
+    <code>RS Manual.txt</code> by <code>docs/tools/build-manual.mjs</code>, which
+    reformats the text and does not rewrite a word of it. Every sprite on the site is
+    the game's own artwork.</p>
+  </div>
+
+  <h2 id="license">License</h2>
+  <p>The original game and this port are both covered by the
+  <b>GNU General Public License v3</b>, inherited from the original project. The full
+  text is in <a href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/LICENSE.txt">LICENSE.txt</a>.</p>
+
+  <div class="callout callout--note">
+    <span class="callout__label">Attribution</span>
+    <p>Game text, manual, artwork and music &copy; Jacques Ruiz. This repository is a
+    port of that work and is not affiliated with or endorsed by the original author.
+    If you redistribute the game or this site, keep the credits and the license
+    intact.</p>
+  </div>
+
+  <p class="btn-row" style="margin-top:2rem">
+    <a class="btn btn--primary" href="https://github.com/taislin/Rogue-Survivor-Reloaded">Source on GitHub</a>
+    <a class="btn" href="manual.html">Read the manual</a>
+  </p>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <div class="site-footer__grid">
+      <div>
+        <h4>Pages</h4>
+        <ul>
+          <li><a href="index.html">Home</a></li>
+          <li><a href="manual.html">Manual</a></li>
+          <li><a href="controls.html">Controls</a></li>
+          <li><a href="info.html">About the port</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Project</h4>
+        <ul>
+          <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded">Source on GitHub</a></li>
+          <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded/issues">Report an issue</a></li>
+          <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/BROWSER_PORT_PLAN.md">Porting plan</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Original game</h4>
+        <ul>
+          <li><a href="http://roguesurvivor.blogspot.com/">roguedjack's blog</a></li>
+          <li><a href="http://roguesurvivor.proboards.com/">Original forum</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="site-footer__legal">
+      <p><em>Rogue Survivor</em> was created by Jacques Ruiz (roguedjack) in 2012.
+      This site and the browser port are reimplementations of that work and are
+      distributed under the GNU General Public License v3.0 &mdash; see
+      <a href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/LICENSE.txt">LICENSE.txt</a>.</p>
+      <p>Game text, manual and artwork &copy; Jacques Ruiz. Rogue Survivor Reloaded
+      is not affiliated with or endorsed by the original author.</p>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
