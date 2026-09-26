@@ -99,46 +99,78 @@ export class NullRogueUI implements IRogueUI {
   }
 
   // ── Canvas painting ────────────────────────────────────────────────────────
+  //
+  // Every painting call is counted when `profiling` is on. Incrementing an
+  // integer is free next to the work these calls do in a browser, and it is
+  // the only way to find out what a frame actually costs without a browser:
+  // see sim/profile.ts, which reports calls-per-frame by method.
+  //
+  // This is how the minimap's per-frame full-map scan was found -- it issues
+  // up to 10 000 UI_SetMinimapColor calls and 10 000 `new Point` allocations on
+  // a 100x100 map, every frame, which is invisible in a type-check and
+  // impossible to eyeball.
 
-  UI_Repaint(): void {}
-  UI_Clear(_color: Color): void {}
-  UI_DrawImage(_imageId: string, _gx: number, _gy: number): void {}
-  UI_DrawImageTinted(_imageId: string, _gx: number, _gy: number, _tint: Color): void {}
-  UI_DrawImageTransform(_imageId: string, _gx: number, _gy: number, _rotation: number, _scale: number): void {}
-  UI_DrawGrayLevelImage(_imageId: string, _gx: number, _gy: number): void {}
-  UI_DrawTransparentImage(_alpha: number, _imageId: string, _gx: number, _gy: number): void {}
+  /** Set true to accumulate `callCounts`. */
+  profiling = false;
 
-  UI_DrawPoint(_color: Color, _gx: number, _gy: number): void {}
-  UI_DrawLine(_color: Color, _gxFrom: number, _gyFrom: number, _gxTo: number, _gyTo: number): void {}
-  UI_DrawRect(_color: Color, _rect: Rect): void {}
-  UI_FillRect(_color: Color, _rect: Rect): void {}
+  /** Painting calls per method, since the last `resetCallCounts()`. */
+  readonly callCounts: Record<string, number> = {};
 
-  UI_DrawString(_color: Color, _text: string, _gx: number, _gy: number, _shadowColor?: Color): void {}
-  UI_DrawStringBold(_color: Color, _text: string, _gx: number, _gy: number, _shadowColor?: Color): void {}
+  private count(name: string): void {
+    if (!this.profiling) return;
+    this.callCounts[name] = (this.callCounts[name] ?? 0) + 1;
+  }
+
+  resetCallCounts(): void {
+    for (const k of Object.keys(this.callCounts)) delete this.callCounts[k];
+  }
+
+  /** Total painting calls recorded, or 0 when not profiling. */
+  get totalCalls(): number {
+    let n = 0;
+    for (const v of Object.values(this.callCounts)) n += v;
+    return n;
+  }
+
+  UI_Repaint(): void { this.count("UI_Repaint"); }
+  UI_Clear(_color: Color): void { this.count("UI_Clear"); }
+  UI_DrawImage(_imageId: string, _gx: number, _gy: number): void { this.count("UI_DrawImage"); }
+  UI_DrawImageTinted(_imageId: string, _gx: number, _gy: number, _tint: Color): void { this.count("UI_DrawImageTinted"); }
+  UI_DrawImageTransform(_imageId: string, _gx: number, _gy: number, _rotation: number, _scale: number): void { this.count("UI_DrawImageTransform"); }
+  UI_DrawGrayLevelImage(_imageId: string, _gx: number, _gy: number): void { this.count("UI_DrawGrayLevelImage"); }
+  UI_DrawTransparentImage(_alpha: number, _imageId: string, _gx: number, _gy: number): void { this.count("UI_DrawTransparentImage"); }
+
+  UI_DrawPoint(_color: Color, _gx: number, _gy: number): void { this.count("UI_DrawPoint"); }
+  UI_DrawLine(_color: Color, _gxFrom: number, _gyFrom: number, _gxTo: number, _gyTo: number): void { this.count("UI_DrawLine"); }
+  UI_DrawRect(_color: Color, _rect: Rect): void { this.count("UI_DrawRect"); }
+  UI_FillRect(_color: Color, _rect: Rect): void { this.count("UI_FillRect"); }
+
+  UI_DrawString(_color: Color, _text: string, _gx: number, _gy: number, _shadowColor?: Color): void { this.count("UI_DrawString"); }
+  UI_DrawStringBold(_color: Color, _text: string, _gx: number, _gy: number, _shadowColor?: Color): void { this.count("UI_DrawStringBold"); }
 
   UI_DrawPopup(
     _lines: string[], _textColor: Color, _borderColor: Color, _fillColor: Color, _gx: number, _gy: number
-  ): void {}
+  ): void { this.count("UI_DrawPopup"); }
 
   UI_DrawPopupTitle(
     _title: string, _titleColor: Color,
     _lines: string[], _textColor: Color,
     _borderColor: Color, _fillColor: Color,
     _gx: number, _gy: number
-  ): void {}
+  ): void { this.count("UI_DrawPopupTitle"); }
 
   UI_DrawPopupTitleColors(
     _title: string, _titleColor: Color,
     _lines: string[], _colors: Color[],
     _borderColor: Color, _fillColor: Color,
     _gx: number, _gy: number
-  ): void {}
+  ): void { this.count("UI_DrawPopupTitleColors"); }
 
   // ── Minimap ────────────────────────────────────────────────────────────────
 
-  UI_ClearMinimap(_color: Color): void {}
-  UI_SetMinimapColor(_x: number, _y: number, _color: Color): void {}
-  UI_DrawMinimap(_gx: number, _gy: number): void {}
+  UI_ClearMinimap(_color: Color): void { this.count("UI_ClearMinimap"); }
+  UI_SetMinimapColor(_x: number, _y: number, _color: Color): void { this.count("UI_SetMinimapColor"); }
+  UI_DrawMinimap(_gx: number, _gy: number): void { this.count("UI_DrawMinimap"); }
 
   // ── Scale ──────────────────────────────────────────────────────────────────
 

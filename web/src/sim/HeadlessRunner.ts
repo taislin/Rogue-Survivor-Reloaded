@@ -72,7 +72,7 @@ export interface HeadlessMetrics {
  * per process (the CLI does exactly that).
  */
 export class HeadlessRunner {
-  private readonly ui = new NullRogueUI();
+  private readonly ui: NullRogueUI;
   private readonly game: RogueGame;
   /** The seed this run was pinned to, or 0 for clock-derived. */
   readonly seed: number;
@@ -80,11 +80,23 @@ export class HeadlessRunner {
   /**
    * @param seed Pin the RNG seed for a reproducible run (0 = random).
    *   Applied before the game exists — see `HeadlessOptions.seed`.
+   * @param ui Optional UI override, used by sim/profile.ts to count draw calls.
    */
-  constructor(seed = 0) {
+  constructor(seed = 0, ui: NullRogueUI = new NullRogueUI()) {
     this.seed = seed;
+    this.ui = ui;
     Session.useSeed(seed);
     this.game = new RogueGame(this.ui, new NullMusicManager());
+  }
+
+  /** The UI the game is driving. Exposed so profilers can inspect it. */
+  get nullUI(): NullRogueUI {
+    return this.ui;
+  }
+
+  /** The live game, for profilers that need to poke at engine state. */
+  get rogueGame(): RogueGame {
+    return this.game;
   }
 
   /** Boots data + options, generates a world, plays `maxTurns` turns. */

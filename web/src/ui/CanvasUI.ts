@@ -32,10 +32,37 @@ export class CanvasUI implements IRogueUI {
   private readonly imageCache = new Map<string, HTMLImageElement | null>();
   private readonly imageLoading = new Map<string, Promise<HTMLImageElement | null>>();
 
-  // Minimap pixel buffer (100 × 100 RGBA)
   private readonly minimapCanvas: OffscreenCanvas;
   private readonly minimapCtx:    OffscreenCanvasRenderingContext2D;
-  private readonly minimapData:   Uint8ClampedArray;
+  /**
+   * The minimap pixel buffer, 100 × 100 RGBA.
+   *
+   * Typed `<ArrayBuffer>` rather than the default `<ArrayBufferLike>`:
+   * `ImageData`'s constructor only accepts the former, and TypeScript does not
+   * narrow it through `new Uint8ClampedArray(...)`.
+   */
+  private readonly minimapData: Uint8ClampedArray<ArrayBuffer>;
+  /**
+   * An `ImageData` view over `minimapData`, built once.
+   *
+   * `new ImageData(minimapData.slice(), ...)` allocated a fresh 40 KB copy of the
+   * buffer on every `UI_DrawMinimap` call — i.e. every frame. `putImageData`
+   * reads the pixels synchronously, so it is safe to hand it a view of the live
+   * buffer instead and let the next mutation be seen by the next draw.
+   */
+  private readonly minimapImage: ImageData;
+
+  /**
+   * Pre-rendered desaturated sprite variants, keyed by image id.
+   *
+   * `UI_DrawGrayLevelImage` is called ~578 times per frame (it is how unexplored
+   * tiles are drawn). Setting `ctx.filter` is expensive enough that browsers
+   * treat it as a pipeline barrier, so doing it per call dominated the frame.
+   * Rendering the variant once with the *same* filter and then blitting the
+   * result is both far cheaper and pixel-identical — it is literally the same
+   * computation, just not repeated 578 times a frame.
+   */
+  private readonly grayCache = new Map<string, OffscreenCanvas>();
 
   constructor(canvas: HTMLCanvasElement, input: InputHandler) {
     const ctx = canvas.getContext("2d");
@@ -49,7 +76,8 @@ export class CanvasUI implements IRogueUI {
     const mCtx = this.minimapCanvas.getContext("2d");
     if (!mCtx) throw new Error("Could not obtain minimap context");
     this.minimapCtx  = mCtx;
-    this.minimapData = new Uint8ClampedArray(MINIMAP_W * MINIMAP_H * 4);
+    this.minimapData = new Uint8ClampedArray(new ArrayBuffer(MINIMAP_W * MINIMAP_H * 4));
+    this.minimapImage = new ImageData(this.minimapData, MINIMAP_W, MINIMAP_H);
   }
 
   // ── Input ─────────────────────────────────────────────────────────────────
@@ -123,10 +151,32 @@ export class CanvasUI implements IRogueUI {
     const img = this.imageCache.get(imageId);
     if (!img) { void this.loadImage(imageId); return; }
 
-    this.ctx.save();
-    this.ctx.filter = "grayscale(100%) brightness(55%)";
-    this.ctx.drawImage(img, gx, gy);
-    this.ctx.restore();
+    const gray = this.grayVariant(imageId, img);
+    if (gray === null) { void this.loadImage(imageId); return; }
+    this.ctx.drawImage(gray, gx, gy);
+  }
+
+  /**
+   * The desaturated + darkened form of a sprite, rendered at most once.
+   *
+   * Uses the same `filter` string as the per-call path it replaces, applied
+   * once to an offscreen canvas, so the output is identical — this is a
+   * de-duplication of work, not an approximation of it.
+   */
+  private grayVariant(imageId: string, img: HTMLImageElement): OffscreenCanvas | null {
+    const cached = this.grayCache.get(imageId);
+    if (cached !== undefined) return cached;
+
+    if (img.naturalWidth === 0 || img.naturalHeight === 0) return null;
+
+    const off = new OffscreenCanvas(img.naturalWidth, img.naturalHeight);
+    const octx = off.getContext("2d");
+    if (!octx) return null;
+    octx.filter = "grayscale(100%) brightness(55%)";
+    octx.drawImage(img, 0, 0);
+
+    this.grayCache.set(imageId, off);
+    return off;
   }
 
   UI_DrawTransparentImage(alpha: number, imageId: string, gx: number, gy: number): void {
@@ -257,11 +307,14 @@ export class CanvasUI implements IRogueUI {
   // ── Minimap ───────────────────────────────────────────────────────────────
 
   UI_ClearMinimap(color: Color): void {
-    for (let i = 0; i < MINIMAP_W * MINIMAP_H; i++) {
-      this.minimapData[i * 4]     = color.r;
-      this.minimapData[i * 4 + 1] = color.g;
-      this.minimapData[i * 4 + 2] = color.b;
-      this.minimapData[i * 4 + 3] = color.a;
+    // A 10 000-iteration pixel loop; `fill` on the typed array is the same
+    // thing without the per-element property access.
+    const { r, g, b, a } = color;
+    for (let i = 0; i < this.minimapData.length; i += 4) {
+      this.minimapData[i]     = r;
+      this.minimapData[i + 1] = g;
+      this.minimapData[i + 2] = b;
+      this.minimapData[i + 3] = a;
     }
   }
 
@@ -274,8 +327,9 @@ export class CanvasUI implements IRogueUI {
   }
 
   UI_DrawMinimap(gx: number, gy: number): void {
-    const img = new ImageData(this.minimapData.slice(), MINIMAP_W, MINIMAP_H);
-    this.minimapCtx.putImageData(img, 0, 0);
+    // No .slice(): putImageData copies synchronously, so a view over the live
+    // buffer is equivalent and saves a 40 KB allocation per frame.
+    this.minimapCtx.putImageData(this.minimapImage, 0, 0);
     this.ctx.drawImage(this.minimapCanvas, gx, gy);
   }
 
