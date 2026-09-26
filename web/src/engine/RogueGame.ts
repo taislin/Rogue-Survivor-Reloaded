@@ -81,7 +81,7 @@ import { GameTips } from "@gameplay/ZoneAttributes";
 import { SkillID, Skills } from "@gameplay/Skills";
 import { BaseTownGenerator, Parameters as TownParameters } from "@gameplay/generators/BaseTownGenerator";
 import { StdTownGenerator } from "@gameplay/generators/StdTownGenerator";
-import { BaseAI } from "@gameplay/ai/BaseAI";
+import { BaseAI, TradeRating } from "@gameplay/ai/BaseAI";
 import { ActionWait } from "@engine/actions/Actions";
 import { OrderableAI } from "@gameplay/ai/OrderableAI";
 import { IMusicManager } from "@engine/audio/IMusicManager";
@@ -4771,58 +4771,396 @@ export class RogueGame {
 
   // C# DoPlayerItemSlot — RogueGame.cs:7157
   DoPlayerItemSlot(player: Actor, slot: number, key: GameKeyEvent): boolean {
-    void player;
-    void slot;
-    void key;
-    throw new Error("not yet ported: DoPlayerItemSlot (RogueGame.cs:7157)");
+    if (key.ctrl)
+      return this.DoPlayerItemSlotUse(player, slot);
+    else if (key.shift)
+      return this.DoPlayerItemSlotTake(player, slot);
+    else if (key.alt)
+      return this.DoPlayerItemSlotDrop(player, slot);
+
+    return false;
   }
 
   // C# DoPlayerItemSlotUse — RogueGame.cs:7174
   DoPlayerItemSlotUse(player: Actor, slot: number): boolean {
-    void player;
-    void slot;
-    throw new Error("not yet ported: DoPlayerItemSlotUse (RogueGame.cs:7174)");
+    const inv = player.inventory!;
+    const it = inv.getItem(slot);
+
+    if (it == null) {
+      this.AddMessage(this.MakeErrorMessage(`No item at inventory slot ${slot + 1}.`));
+      return false;
+    }
+
+    if (it.isEquipped) {
+      const res = this.m_Rules.canActorUnequipItem(player, it);
+      if (res.ok) {
+        this.DoUnequipItem(player, it);
+        return false;
+      } else {
+        this.AddMessage(this.MakeErrorMessage(`Cannot unequip ${it.theName} : ${res.reason}.`));
+        return false;
+      }
+    } else if (it.model.isEquipable) {
+      const res = this.m_Rules.canActorEquipItem(player, it);
+      if (res.ok) {
+        this.DoEquipItem(player, it);
+        return false;
+      } else {
+        this.AddMessage(this.MakeErrorMessage(`Cannot equip ${it.theName} : ${res.reason}.`));
+        return false;
+      }
+    } else {
+      const res = this.m_Rules.canActorUseItem(player, it);
+      if (res.ok) {
+        this.DoUseItem(player, it);
+        return true;
+      } else {
+        this.AddMessage(this.MakeErrorMessage(`Cannot use ${it.theName} : ${res.reason}.`));
+      }
+    }
+
+    return false;
   }
 
   // C# DoPlayerItemSlotTake — RogueGame.cs:7236
   DoPlayerItemSlotTake(player: Actor, slot: number): boolean {
-    void player;
-    void slot;
-    throw new Error("not yet ported: DoPlayerItemSlotTake (RogueGame.cs:7236)");
+    const inv = player.location.map?.getItemsAt(player.location.position) ?? null;
+
+    if (inv == null || inv.isEmpty) {
+      this.AddMessage(this.MakeErrorMessage("No items on ground."));
+      return false;
+    }
+
+    const it = inv.getItem(slot);
+    if (it == null) {
+      this.AddMessage(this.MakeErrorMessage(`No item at ground slot ${slot + 1}.`));
+      return false;
+    }
+
+    const res = this.m_Rules.canActorGetItem(player, it);
+    if (res.ok) {
+      this.DoTakeItem(player, player.location.position, it);
+      return true;
+    } else {
+      this.AddMessage(this.MakeErrorMessage(`Cannot take ${it.theName} : ${res.reason}.`));
+      return false;
+    }
   }
 
   // C# DoPlayerItemSlotDrop — RogueGame.cs:7269
   DoPlayerItemSlotDrop(player: Actor, slot: number): boolean {
-    void player;
-    void slot;
-    throw new Error("not yet ported: DoPlayerItemSlotDrop (RogueGame.cs:7269)");
+    const inv = player.inventory!;
+    const it = inv.getItem(slot);
+
+    if (it == null) {
+      this.AddMessage(this.MakeErrorMessage(`No item at inventory slot ${slot + 1}.`));
+      return false;
+    }
+
+    const res = this.m_Rules.canActorDropItem(player, it);
+    if (res.ok) {
+      this.DoDropItem(player, it);
+      return true;
+    } else {
+      this.AddMessage(this.MakeErrorMessage(`Cannot drop ${it.theName} : ${res.reason}.`));
+      return false;
+    }
   }
 
   // C# HandlePlayerShout — RogueGame.cs:7295
   HandlePlayerShout(player: Actor, text: string | null): boolean {
-    void player;
-    void text;
-    throw new Error("not yet ported: HandlePlayerShout (RogueGame.cs:7295)");
+    const res = this.m_Rules.canActorShout(player);
+    if (!res.ok) {
+      this.AddMessage(this.MakeErrorMessage(`Can't shout : ${res.reason}.`));
+      return false;
+    }
+
+    this.DoShout(player, text);
+    return true;
   }
 
   // C# HandlePlayerGiveItem — RogueGame.cs:7308
-  HandlePlayerGiveItem(player: Actor, screen: Point): boolean {
-    void player;
-    void screen;
-    throw new Error("not yet ported: HandlePlayerGiveItem (RogueGame.cs:7308)");
+  async HandlePlayerGiveItem(player: Actor, screen: Point): Promise<boolean> {
+    const hit = this.MouseToInventoryItem(screen);
+    const inv = hit.inv;
+    const gift = hit.result;
+    if (inv == null || inv !== player.inventory || gift == null)
+      return false;
+
+    let loop = true;
+    let actionDone = false;
+    this.ClearOverlays();
+    this.AddOverlay(new OverlayPopup(this.GIVE_MODE_TEXT, this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+    do {
+      this.AddMessage(new Message(`Giving ${gift.theName} to...`, this.m_Session.worldTime.turnCounter, Color.Yellow));
+      this.RedrawPlayScreen();
+
+      const dir = await this.WaitDirectionOrCancel();
+
+      if (dir == null) {
+        loop = false;
+      } else if (dir !== Direction.NEUTRAL) {
+        const pos = dir.applyTo(player.location.position);
+        if (player.location.map!.isInBoundsPoint(pos)) {
+          const other = player.location.map!.getActorAtPoint(pos);
+          if (other != null) {
+            const res = this.m_Rules.canActorGiveItemTo(player, other, gift);
+            if (res.ok) {
+              actionDone = true;
+              loop = false;
+              this.DoGiveItemTo(player, other, gift);
+            } else {
+              this.AddMessage(this.MakeErrorMessage(`Can't give ${gift.theName} to ${other.name} : ${res.reason}.`));
+            }
+          } else {
+            this.AddMessage(this.MakeErrorMessage("Noone there."));
+          }
+        }
+      }
+    } while (loop);
+
+    this.ClearOverlays();
+    return actionDone;
   }
 
   // C# HandlePlayerTradeNegociation — RogueGame.cs:7379
-  HandlePlayerTradeNegociation(player: Actor, npc: Actor): boolean {
-    void player;
-    void npc;
-    throw new Error("not yet ported: HandlePlayerTradeNegociation (RogueGame.cs:7379)");
+  async HandlePlayerTradeNegociation(player: Actor, npc: Actor): Promise<boolean> {
+    const npcAI = npc.controller as BaseAI;
+    let isOnPlayerInventory = true;
+    let iPlayerSelectedItem = -1;
+    let iNpcSelectedItem = -1;
+    let state = 0;
+
+    const ratingPairs: TradeRating[][] = [];
+    for (let i = 0; i < player.inventory!.countItems; i++) {
+      ratingPairs[i] = [];
+      const offered = player.inventory!.getItem(i)!;
+      for (let j = 0; j < npc.inventory!.countItems; j++) {
+        ratingPairs[i][j] = npcAI != null ? npcAI.rateTradeOffer(this, player, offered, npc.inventory!.getItem(j)!) : TradeRating.REFUSE;
+      }
+    }
+
+    const charismaChance = this.m_Rules.actorCharismaticTradeChance(player);
+    const charismaSuccess = this.m_Session.player_TurnCharismaRoll < charismaChance;
+
+    const isTrustedLeader = (npc.leader === player) && this.m_Rules.isActorTrustingLeader(npc);
+
+    let loop = true;
+    let actionDone = false;
+    const lines: string[] = [];
+    const colors: Color[] = [];
+
+    const tradeToColor = (r: TradeRating): Color => {
+      if (r === TradeRating.ACCEPT) return this.TRADE_COLOR_ACCEPT;
+      if (r === TradeRating.REFUSE) return this.TRADE_COLOR_REFUSE;
+      if (charismaSuccess) return this.TRADE_COLOR_MAYBE_SUCCESS;
+      return this.TRADE_COLOR_MAYBE_FAILED;
+    };
+
+    do {
+      lines.length = 0;
+      colors.length = 0;
+
+      if (state === 2) {
+        lines.push("Mode: Making the offer");
+      } else {
+        if (isOnPlayerInventory) {
+          if (state === 0)
+            lines.push("Mode: Proposing an item");
+          else
+            lines.push("Mode: Selecting your item to exchange");
+        } else {
+          if (state === 0)
+            lines.push("Mode: Asking for an item");
+          else
+            lines.push("Mode: Selecting an item to exchange");
+        }
+      }
+      colors.push(Color.Yellow);
+
+      lines.push(" ");
+      colors.push(Color.Black);
+
+      if (isTrustedLeader) {
+        lines.push(" "); colors.push(Color.White);
+        lines.push(`You are ${this.HimOrHer(npc)} trusted leader, will accept all trades.`);
+        colors.push(Color.LightGreen);
+      }
+
+      if (charismaSuccess) {
+        lines.push(`Charisma roll success ${this.m_Session.player_TurnCharismaRoll}/${charismaChance}%`);
+        colors.push(Color.LightGreen);
+      } else {
+        lines.push(`Charisma roll failed ${this.m_Session.player_TurnCharismaRoll}/${charismaChance}%`);
+        colors.push(Color.Red);
+      }
+
+      const listTradeItems = (a: Actor, isActive: boolean) => {
+        lines.push(`${a.name} items`);
+        colors.push(Color.White);
+        for (let i = 0; i < a.inventory!.countItems; i++) {
+          const it = a.inventory!.getItem(i)!;
+          if (isActive) {
+            lines.push(`${i === 9 ? 0 : (i + 1)}. ${this.DescribeItemShort(it)}`);
+            if (state === 0)
+              colors.push(Color.Yellow);
+            else {
+              const r = (a === player && isActive ? ratingPairs[i][iNpcSelectedItem] : ratingPairs[iPlayerSelectedItem][i]);
+              colors.push(tradeToColor(r));
+            }
+          } else {
+            lines.push(`-. ${this.DescribeItemShort(it)}`);
+            colors.push(i === (a === player ? iPlayerSelectedItem : iNpcSelectedItem) ? this.TRADE_COLOR_SELECTED_ITEM : Color.Gray);
+          }
+        }
+      };
+
+      lines.push(" "); colors.push(Color.Black);
+      listTradeItems(player, isOnPlayerInventory && state !== 2);
+      lines.push(" "); colors.push(Color.Black);
+      listTradeItems(npc, !isOnPlayerInventory && state !== 2);
+
+      if (state !== 0 && !isTrustedLeader) {
+        lines.push(" "); colors.push(Color.White);
+        lines.push("Trade color legend : "); colors.push(Color.White);
+        lines.push("  asked/offered"); colors.push(this.TRADE_COLOR_SELECTED_ITEM);
+        lines.push("  will accept"); colors.push(this.TRADE_COLOR_ACCEPT);
+        lines.push("  will accept due to your charisma"); colors.push(this.TRADE_COLOR_MAYBE_SUCCESS);
+        lines.push("  will refuse due to failed charisma"); colors.push(this.TRADE_COLOR_MAYBE_FAILED);
+        lines.push("  will refuse"); colors.push(this.TRADE_COLOR_REFUSE);
+      }
+
+      this.ClearOverlays();
+      this.AddOverlay(new OverlayPopup(this.TRADING_DIALOG_MODE_TEXT, this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+      const ov = new OverlayPopupTitleColors(
+        `Trading with ${npc.name}`, Color.White,
+        lines, colors,
+        Color.White, Color.Black, new Point(32, 32));
+      this.AddOverlay(ov);
+      this.RedrawPlayScreen();
+
+      if (state === 2) {
+        this.ClearMessages();
+        const offered = player.inventory!.getItem(iPlayerSelectedItem)!;
+        const asked = npc.inventory!.getItem(iNpcSelectedItem)!;
+        this.AddMessage(this.MakeMessage(player, `${this.Conjugate(player, this.VERB_OFFER)} ${offered.theName} for ${asked.theName}.`));
+
+        let r = ratingPairs[iPlayerSelectedItem][iNpcSelectedItem];
+        if (r === TradeRating.MAYBE)
+          r = (charismaSuccess ? TradeRating.ACCEPT : TradeRating.REFUSE);
+
+        if (r === TradeRating.ACCEPT) {
+          this.AddMessage(this.MakeMessage(npc, `${this.Conjugate(npc, this.VERB_ACCEPT_THE_DEAL)}.`));
+          this.SwapActorItems(player, offered, npc, asked);
+          loop = false;
+          actionDone = true;
+          if (player.model.abilities.hasSanity) {
+            this.RegenActorSanity(player, Rules.SANITY_RECOVER_CHAT_OR_TRADE);
+            this.AddMessage(this.MakeMessage(player, `${this.Conjugate(player, this.VERB_FEEL)} better after chatting with`, npc));
+          }
+          if (npc.model.abilities.hasSanity) {
+            this.RegenActorSanity(npc, Rules.SANITY_RECOVER_CHAT_OR_TRADE);
+            this.AddMessage(this.MakeMessage(npc, `${this.Conjugate(npc, this.VERB_FEEL)} better after chatting with`, player));
+          }
+        } else if (r === TradeRating.REFUSE) {
+          this.AddMessage(this.MakeMessage(npc, `${this.Conjugate(npc, this.VERB_REFUSE_THE_DEAL)}.`));
+          isOnPlayerInventory = !isOnPlayerInventory;
+          iPlayerSelectedItem = iNpcSelectedItem = -1;
+          state = 0;
+        }
+
+        await this.AddMessagePressEnter();
+      } else {
+        const inKey = await this.m_UI.UI_WaitKey();
+
+        if (inKey.key === "Escape") {
+          if (state === 0)
+            loop = false;
+          else {
+            state = 0;
+            if (isOnPlayerInventory)
+              iPlayerSelectedItem = -1;
+            else
+              iNpcSelectedItem = -1;
+            isOnPlayerInventory = !isOnPlayerInventory;
+          }
+        } else if (inKey.key === "Tab") {
+          if (state === 0) {
+            isOnPlayerInventory = !isOnPlayerInventory;
+            iPlayerSelectedItem = iNpcSelectedItem = -1;
+          }
+        } else {
+          const slot = this.KeyToChoiceNumber(inKey);
+          if (slot !== -1) {
+            const actualSlot = (slot === 0 ? 9 : slot - 1);
+
+            if (isOnPlayerInventory) {
+              if (actualSlot < player.inventory!.countItems) {
+                iPlayerSelectedItem = actualSlot;
+                if (state === 0) {
+                  state = 1;
+                  isOnPlayerInventory = false;
+                } else {
+                  state = 2;
+                }
+              }
+            } else {
+              if (actualSlot < npc.inventory!.countItems) {
+                iNpcSelectedItem = actualSlot;
+                if (state === 0) {
+                  state = 1;
+                  isOnPlayerInventory = true;
+                } else {
+                  state = 2;
+                }
+              }
+            }
+          }
+        }
+      }
+    } while (loop);
+
+    if (actionDone)
+      this.SpendActorActionPoints(player, Rules.BASE_ACTION_COST);
+
+    this.ClearOverlays();
+    return actionDone;
   }
 
   // C# HandlePlayerNegociateTrade — RogueGame.cs:7663
-  HandlePlayerNegociateTrade(player: Actor): boolean {
-    void player;
-    throw new Error("not yet ported: HandlePlayerNegociateTrade (RogueGame.cs:7663)");
+  async HandlePlayerNegociateTrade(player: Actor): Promise<boolean> {
+    let loop = true;
+    let actionDone = false;
+    this.ClearOverlays();
+    this.AddOverlay(new OverlayPopup(this.NEGOCIATE_TRADE_MODE_TEXT, this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+    do {
+      this.RedrawPlayScreen();
+
+      const dir = await this.WaitDirectionOrCancel();
+
+      if (dir == null) {
+        loop = false;
+      } else if (dir !== Direction.NEUTRAL) {
+        const pos = dir.applyTo(player.location.position);
+        if (player.location.map!.isInBoundsPoint(pos)) {
+          const other = player.location.map!.getActorAtPoint(pos);
+          if (other != null) {
+            const res = this.m_Rules.canActorInitiateTradeWith(player, other);
+            if (res.ok) {
+              actionDone = await this.HandlePlayerTradeNegociation(player, other);
+              loop = false;
+            } else {
+              this.AddMessage(this.MakeErrorMessage(`Can't trade with ${other.name} : ${res.reason}.`));
+            }
+          } else {
+            this.AddMessage(this.MakeErrorMessage("Noone there."));
+          }
+        }
+      }
+    } while (loop);
+
+    this.ClearOverlays();
+    return actionDone;
   }
 
   // C# HandlePlayerRunToggle — RogueGame.cs:7722
@@ -7388,7 +7726,7 @@ export class RogueGame {
   }
 
   // C# DoShout — RogueGame.cs:14835
-  DoShout(speaker: Actor, text: string): void {
+  DoShout(speaker: Actor, text: string | null): void {
     void speaker;
     void text;
     throw new Error("not yet ported: DoShout (RogueGame.cs:14835)");
