@@ -1,7 +1,7 @@
 # Rogue Survivor Reloaded — TypeScript / Browser Port: Full Implementation Plan
 
 > **Status:** Phase 1, 2 & 3 complete (Phase 3 includes `ui/OptionsScreen.ts`). Phase 5 complete — `BaseAI` (184/184 methods), all 11 AI controllers, and all 4 generator files done (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator`, `StdTownGenerator`). Phase 6 & 7 complete.  
-> **Phase 4 in progress:** `engine/RogueGame.ts` scaffold generated (constants, fields, properties, constructor, 492 method stubs, 38 camelCase call-site aliases) and filled slice by slice. **Slice 1 done** (character creation, `StartNewGame`, credits, redefine keys), **slices 4, 5 and 7 in progress** (one agent each), `main.ts` wired to `RogueGame.Run()`. Open slices: 2, 3, 6, 8, 9, 10. `npm run type-check` + `npm run build` clean; 75/75 smoke checks pass.  
+> **Phase 4 in progress:** `engine/RogueGame.ts` scaffold generated (constants, fields, properties, constructor, 492 method stubs, 38 camelCase call-site aliases) and filled slice by slice. **Slices 1 and 2 done** (char creation / credits / redefine keys; `AdvancePlay`, `NextMapTurn`, actor regen/counts, scents), **slices 4, 5 and 7 in progress** (one agent each — slice 7 still has 4 throwing stubs and 8 methods replaced by silent no-op placeholders), `main.ts` wired to `RogueGame.Run()`. Open slices: 3, 6, 8, 9, 10. 379 of 492 stubs remain. `npm run type-check` + `npm run build` clean; 96/96 smoke checks pass.  
 > **Last updated:** 2026-09-26
 
 ---
@@ -377,12 +377,12 @@ combines them with the hand-ported overlay types, constructor and getters into
 |---|----------|----------|--------|
 | scaffold | 1–1414 | Constants, fields, properties, init, messaging, `Run`/`GameLoop`, main menu | ✅ Ported (stubs for input/drawing helpers it calls) |
 | 1 | 1415–2876 | Character creation, `StartNewGame`, credits, options, redefine keys | ✅ Ported |
-| 2 | 2877–4154 | `AdvancePlay`, `NextMapTurn`, actor regen/counts, scents | ⬜ |
+| 2 | 2877–4154 | `AdvancePlay`, `NextMapTurn`, actor regen/counts, scents | ✅ Ported |
 | 3 | 4156–5366 | Events (invasions, refugees, raids, drops) + spawning | ⬜ |
-| 4 | 5367–10255 | FOV, `HandlePlayerActor` and all `HandlePlayerXXX` commands | ✅ Ported |
-| 5 | 10256–12658 | AI actor handling, advisor, input helpers, describe-* | ✅ Ported |
+| 4 | 5367–10255 | FOV, `HandlePlayerActor` and all `HandlePlayerXXX` commands | 🔄 In progress (77 stubs) |
+| 5 | 10256–12658 | AI actor handling, advisor, input helpers, describe-* | 🔄 In progress (35 stubs) |
 | 6 | 12660–16790 | Action primitives `DoMoveActor` … `KillActor`, blood/corpses | ⬜ |
-| 7 | 16791–17986 | Player death, new day/night, skills, infection/zombification | ✅ Ported |
+| 7 | 16791–17986 | Player death, new day/night, skills, infection/zombification | 🔄 In progress (4 stubs, 8 no-op placeholders) |
 | 8 | 17987–19723 | View, drawing, overlays, coordinates, visibility helpers | ⬜ |
 | 9 | 19724–21381 | Save/load, paths, `GenerateWorld`, district maps, map switching | ⬜ |
 | 10 | 21382–23233 | Sim thread, achievements, special events, reincarnation, dev/data | ⬜ |

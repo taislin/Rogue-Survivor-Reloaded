@@ -10,7 +10,7 @@ import type { Actor } from "./Actor";
 import type { MapObject } from "./MapObject";
 import { Inventory } from "./Inventory";
 import type { Corpse } from "./Corpse";
-import type { Odor, OdorScent } from "./Odor";
+import { Odor, OdorScent } from "./Odor";
 import type { TimedTask } from "./TimedTask";
 import { Location } from "./Location";
 import type { Item } from "./Item";
@@ -346,6 +346,22 @@ export class Map {
 
   // ── Ground Items ──────────────────────────────────────────────────────────
 
+  /** C# `Map.GroundInventories`. */
+  get groundInventories(): IterableIterator<Inventory> {
+    return this.groundItemsMap.values();
+  }
+
+  /** C# `Map.GetGroundInventoryPosition(Inventory)`. */
+  getGroundInventoryPosition(groundInv: Inventory): Point | null {
+    for (const [k, inv] of this.groundItemsMap) {
+      if (inv === groundInv) {
+        const [x, y] = k.split(",").map(Number);
+        return new Point(x, y);
+      }
+    }
+    return null;
+  }
+
   getItemsAt(pos: Point): Inventory | null {
     return this.groundItemsMap.get(Map.key(pos.x, pos.y)) ?? null;
   }
@@ -424,6 +440,22 @@ export class Map {
     }
   }
 
+  /** C# `Map.CountCorpses`. */
+  get countCorpses(): number {
+    return this.corpsesList.length;
+  }
+
+  /** C# `Map.TryRemoveCorpseOf(Actor)`. */
+  tryRemoveCorpseOf(a: Actor): boolean {
+    for (const c of this.corpsesList) {
+      if (c.deadGuy === a) {
+        this.removeCorpse(c);
+        return true;
+      }
+    }
+    return false;
+  }
+
   // ── Scents ────────────────────────────────────────────────────────────────
 
   get scents(): readonly OdorScent[] {
@@ -460,10 +492,56 @@ export class Map {
     return scent ? scent.strength : 0;
   }
 
+  /** C# `Map.ModifyScentAt(Odor, int, Point)` — merge or create. */
+  modifyScentAt(odor: Odor, strengthChange: number, position: Point): void {
+    if (!this.isInBoundsPoint(position)) throw new RangeError("position");
+    const oldScent = this.getScentByOdor(odor, position);
+    if (oldScent === null) {
+      // new odor there.
+      this.addScent(new OdorScent(odor, strengthChange, position));
+    } else {
+      // existing odor here.
+      oldScent.change(strengthChange);
+    }
+  }
+
+  /** C# `Map.RefreshScentAt(Odor, int, Point)` — set odor strength if it is stronger (more "fresh"). */
+  refreshScentAt(odor: Odor, freshStrength: number, position: Point): void {
+    if (!this.isInBoundsPoint(position)) {
+      throw new RangeError(`position; (${position.x},${position.y}) map ${this.name} odor ${Odor[odor] ?? odor}`);
+    }
+    const oldScent = this.getScentByOdor(odor, position);
+    if (oldScent === null) {
+      // new odor there.
+      this.addScent(new OdorScent(odor, freshStrength, position));
+    } else {
+      // existing odor here.
+      if (oldScent.strength < freshStrength) oldScent.set(freshStrength);
+    }
+  }
+
+  /** C# `Map.RemoveScent(OdorScent)`. */
+  removeScent(scent: OdorScent): void {
+    const idx = this.scentsList.indexOf(scent);
+    if (idx !== -1) this.scentsList.splice(idx, 1);
+    const k = Map.key(scent.position.x, scent.position.y);
+    const list = this.scentsByPos.get(k);
+    if (list) {
+      const sIdx = list.indexOf(scent);
+      if (sIdx !== -1) list.splice(sIdx, 1);
+      if (list.length === 0) this.scentsByPos.delete(k);
+    }
+  }
+
   // ── Timers ────────────────────────────────────────────────────────────────
 
   get timers(): readonly TimedTask[] {
     return this.timersList;
+  }
+
+  /** C# `Map.CountTimers`. */
+  get countTimers(): number {
+    return this.timersList.length;
   }
 
   addTimer(timer: TimedTask): void {

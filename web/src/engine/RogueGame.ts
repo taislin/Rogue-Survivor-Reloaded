@@ -24,19 +24,19 @@ import { AchievementIDs, Scoring, DifficultySide } from "@engine/Scoring";
 import { MessageManager } from "@engine/MessageManager";
 import { GameSaveManager } from "@engine/GameSave";
 import { GameImages } from "@gameplay/GameImages";
-import { GameMusics } from "@gameplay/GameSounds";
+import { GameMusics, GameSounds } from "@gameplay/GameSounds";
 import { OptionsScreen } from "@ui/OptionsScreen";
 import { HiScoreTable } from "@engine/HiScoreTable";
 import { Keybindings } from "@engine/Keybindings";
 import { GameHintsStatus, AdvisorHint } from "@engine/GameHints";
-import { GameOptions, Options, ReincMode } from "@engine/GameOptions";
+import { GameOptions, Options, ReincMode, ZupDays } from "@engine/GameOptions";
 import { PlayerCommand } from "@engine/PlayerCommand";
 import { IRogueUI, GameKeyEvent, MouseButton } from "@engine/IRogueUI";
 import { TextFile } from "@engine/TextFile";
 import { SayFlags } from "@engine/actions/Actions";
 import { Item } from "@data/Item";
 import { ItemBodyArmor } from "@engine/items/ItemBodyArmor";
-import { ItemExplosive } from "@engine/items/ItemExplosive";
+import { ItemExplosive, ItemExplosiveModel, ItemPrimedExplosive } from "@engine/items/ItemExplosive";
 import { ItemFood } from "@engine/items/ItemFood";
 import { ItemLight } from "@engine/items/ItemLight";
 import { ItemMedicine } from "@engine/items/ItemMedicine";
@@ -53,6 +53,9 @@ import { FireMode } from "@data/Attack";
 import { BlastAttack } from "@data/BlastAttack";
 import { ActorAction } from "@data/ActorAction";
 import { Corpse } from "@data/Corpse";
+import { Odor, OdorScent } from "@data/Odor";
+import { Activity } from "@data/Activity";
+import type { TimedTask } from "@data/TimedTask";
 import { District, DistrictKind } from "@data/District";
 import { DollPart } from "@data/Doll";
 import { Faction } from "@data/Faction";
@@ -75,6 +78,7 @@ import { SkillID, Skills } from "@gameplay/Skills";
 import { BaseTownGenerator, Parameters as TownParameters } from "@gameplay/generators/BaseTownGenerator";
 import { StdTownGenerator } from "@gameplay/generators/StdTownGenerator";
 import { BaseAI } from "@gameplay/ai/BaseAI";
+import { OrderableAI } from "@gameplay/ai/OrderableAI";
 import { IMusicManager } from "@engine/audio/IMusicManager";
 import { NullMusicManager } from "@engine/audio/NullMusicManager";
 
@@ -514,8 +518,8 @@ export class RogueGame {
   readonly m_SimStateLock: object = {};
   m_SimThreadDoRun!: boolean;
   m_SimThreadIsWorking!: boolean;
-  m_DEBUG_prevAiActor!: Actor;
-  m_DEBUG_sameAiActorCount!: number;
+  m_DEBUG_prevAiActor: Actor | null = null;
+  m_DEBUG_sameAiActorCount: number = 0;
   m_isBotMode: boolean = false;
   m_botControl: BaseAI | null = null;
   readonly m_botLock: object = {};
@@ -924,7 +928,7 @@ export class RogueGame {
 
       // play.
       this.m_HasLoadedGame = false;
-      this.AdvancePlay(this.m_Session.currentMap!.district!, SimFlags.NOT_SIMULATING);
+      await this.AdvancePlay(this.m_Session.currentMap!.district!, SimFlags.NOT_SIMULATING);
 
       // if quit, don't bother.
       if (!this.m_IsGameRunning) break;
@@ -2150,133 +2154,930 @@ export class RogueGame {
   }
 
   // C# AdvancePlay — RogueGame.cs:2877 (+1 overloads)
-  AdvancePlay(district: District | Map, sim: SimFlags): void {
-    void district;
-    void sim;
-    throw new Error("not yet ported: AdvancePlay (RogueGame.cs:2877)");
+  // C# has two overloads: AdvancePlay(District, SimFlags) — :2877 and
+  // AdvancePlay(Map, SimFlags) — :3038. They are split into two private
+  // methods here because TS has no overloads by arity only.
+  async AdvancePlay(districtOrMap: District | Map, sim: SimFlags): Promise<void> {
+    if (districtOrMap instanceof Map) {
+      await this.advancePlayMap(districtOrMap, sim);
+    } else {
+      await this.advancePlayDistrict(districtOrMap, sim);
+    }
+  }
+
+  /** C# `AdvancePlay(District district, SimFlags sim)` — RogueGame.cs:2877. */
+  private async advancePlayDistrict(district: District, sim: SimFlags): Promise<void> {
+    // lock (district)  // alpha10 lock district — the browser port is single threaded.
+
+    // 0. Remember if current district.
+    const wasNight = this.m_Session.worldTime.isNight;
+    const prevPhase = this.m_Session.worldTime.phase;
+
+    // 1. Advance all maps.
+    // if player quit/loaded at any time, don't bother!
+    for (const map of district.maps) {
+      const prevLocalTurn = map.localTime.turnCounter;
+      do {
+        // play this map.
+        await this.AdvancePlay(map, sim);
+        // check for reincarnation.
+        if (this.m_Player.isDead) await this.HandleReincarnation();
+        // check stopping game.
+        if (!this.m_IsGameRunning || this.m_HasLoadedGame || this.m_Player.isDead) return;
+      } while (map.localTime.turnCounter === prevLocalTurn);
+    }
+
+    // 2. Advance district.
+    // 2.1. Advance world time if current district.
+    // alpha10 also check weather change
+    if (district === this.m_Session.currentMap?.district) {
+      this.m_Session.worldTime.turnCounter++;
+
+      // sunrise/sunset.
+      const canSeeSky = this.m_Rules.canActorSeeSky(this.m_Player);  // alpha10 message ony if can see sky
+      const isNight = this.m_Session.worldTime.isNight;
+      const newPhase = this.m_Session.worldTime.phase;
+      if (wasNight && !isNight) {
+        if (canSeeSky) this.AddMessage(new Message("The sun is rising again for you...", this.m_Session.worldTime.turnCounter, this.DAY_COLOR));
+        this.OnNewDay();
+      } else if (!wasNight && isNight) {
+        if (canSeeSky) this.AddMessage(new Message("Night is falling upon you...", this.m_Session.worldTime.turnCounter, this.NIGHT_COLOR));
+        this.OnNewNight();
+      } else if (prevPhase !== newPhase) {
+        if (canSeeSky) {
+          this.AddMessage(
+            new Message(`Time passes, it is now ${this.DescribeDayPhase(newPhase)}...`, this.m_Session.worldTime.turnCounter, isNight ? this.NIGHT_COLOR : this.DAY_COLOR)
+          );
+        }
+      }
+
+      // alpha10
+      // if time to change weather do it and roll next change time.
+      if (this.m_Session.worldTime.turnCounter >= this.m_Session.world!.nextWeatherCheckTurn) {
+        this.ChangeWeather();
+        this.m_Session.world!.nextWeatherCheckTurn =
+          this.m_Session.worldTime.turnCounter + this.m_Rules.roll(WEATHER_MIN_DURATION, WEATHER_MAX_DURATION);
+      }
+    }
+
+    // 2.2. Check for events.
+    // C# assumes EntryMap/SewersMap are never null there; the TS types allow
+    // null so the calls are guarded.
+
+    // Entry/Surface map
+    const entryMap = district.entryMap;
+    if (entryMap !== null) {
+      // 1 Invasion?
+      if (this.CheckForEvent_ZombieInvasion(entryMap)) await this.FireEvent_ZombieInvasion(entryMap);
+      // 2 Refugees?
+      if (this.CheckForEvent_RefugeesWave(entryMap)) await this.FireEvent_RefugeesWave(district);
+      // 3 National guard?
+      if (this.CheckForEvent_NationalGuard(entryMap)) await this.FireEvent_NationalGuard(entryMap);
+      // 4 Army drop supplies?
+      if (this.CheckForEvent_ArmySupplies(entryMap)) await this.FireEvent_ArmySupplies(entryMap);
+      // 5 Bikers raid?
+      if (this.CheckForEvent_BikersRaid(entryMap)) await this.FireEvent_BikersRaid(entryMap);
+      // 6 Gangsta raid?
+      if (this.CheckForEvent_GangstasRaid(entryMap)) await this.FireEvent_GangstasRaid(entryMap);
+      // 7 Blackops raid?
+      if (this.CheckForEvent_BlackOpsRaid(entryMap)) await this.FireEvent_BlackOpsRaid(entryMap);
+      // 8 Band of Survivors?
+      if (this.CheckForEvent_BandOfSurvivors(entryMap)) await this.FireEvent_BandOfSurvivors(entryMap);
+    }
+
+    // Sewers
+    // 1 Sewers Invasion?
+    const sewersMap = district.sewersMap;
+    if (sewersMap !== null) {
+      if (this.CheckForEvent_SewersInvasion(sewersMap)) await this.FireEvent_SewersInvasion(sewersMap);
+    }
+
+    // DISABLED Subway — C# wraps this in `#if false`.
+    // if (district.subwayMap !== null && this.CheckForEvent_SubwayInvasion(district.subwayMap)) {
+    //   await this.FireEvent_SubwayInvasion(district.subwayMap);
+    // }
+
+    // 3. Simulate nearby districts?
+    // if player is sleeping in this map and option enabled.
+    if (
+      s_Options.isSimON &&
+      this.m_Player !== null &&
+      this.m_Player.isSleeping &&
+      s_Options.simulateWhenSleeping &&
+      this.m_Player.location.map?.district === district
+    ) {
+      await this.SimulateNearbyDistricts(district);
+    }
+  } // end lock district
+
+  /** C# `AdvancePlay(Map map, SimFlags sim)` — RogueGame.cs:3038. */
+  private async advancePlayMap(map: Map, sim: SimFlags): Promise<void> {
+    //////////////////////////////////////////////////////////
+    // 0. Secret maps.
+    // 1. Get next actor to Act.
+    // 2. If none move to next turn and return.
+    // 3. Ask actor to act. Handle player and AI differently.
+    //////////////////////////////////////////////////////////
+
+    // 0. Secret maps.
+    if (map.isSecret) {
+      // don't play the map at all, jump in time.
+      map.localTime.turnCounter++;
+      return;
+    }
+
+    // 1. Get next actor to Act.
+    const actor = this.m_Rules.getNextActorToAct(map, map.localTime.turnCounter);
+
+    // alpha10 ai loop bug detection
+    if (actor !== null && !actor.isPlayer) {
+      if (actor === this.m_DEBUG_prevAiActor) {
+        if (++this.m_DEBUG_sameAiActorCount >= DEBUG_AI_ACTOR_LOOP_COUNT_WARNING) {
+          // TO DEVS: you might want to add a debug breakpoint here ->
+          //Logger.WriteLine(Logger.Stage.RUN_MAIN, "WARNING: AI actor " + actor.Name + " is probably looping!!");
+          // C# `#if DEBUG` kept looping for debugging; `#else` (release, this build)
+          // force the AI to spend a turn and emote. its better than crashing the game!
+          this.DoWait(actor);
+          this.DoEmote(actor, "My AI is looping, I'll  wait instead of crashing your game :)", true);
+        }
+      } else {
+        this.m_DEBUG_sameAiActorCount = 0;
+        this.m_DEBUG_prevAiActor = actor;
+      }
+    }
+
+    // 2. If none move to next turn and return.
+    if (actor === null) {
+      await this.NextMapTurn(map, sim);
+      return;
+    }
+
+    // 3. Ask actor to act. Handle player and AI differently.
+    actor.previousStaminaPoints = actor.staminaPoints;
+    if (actor.controller === null) {
+      this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+    } else if (actor.isPlayer) {
+      await this.HandlePlayerActor(actor);
+      // if quit, dead or loaded, don't bother.
+      if (!this.m_IsGameRunning || this.m_HasLoadedGame || this.m_Player.isDead) return;
+      // Check special player events
+      await this.CheckSpecialPlayerEventsAfterAction(actor);
+    } else {
+      await this.HandleAiActor(actor);
+    }
+    actor.previousHitPoints = actor.hitPoints;
+    actor.previousFoodPoints = actor.foodPoints;
+    actor.previousSleepPoints = actor.sleepPoints;
+    actor.previousSanity = actor.sanity;
   }
 
   // C# NotifyOrderablesAI — RogueGame.cs:3027
   NotifyOrderablesAI(map: Map, raid: RaidType, position: Point): void {
-    void map;
-    void raid;
-    void position;
-    throw new Error("not yet ported: NotifyOrderablesAI (RogueGame.cs:3027)");
+    for (const a of map.actors) {
+      if (!(a.controller instanceof OrderableAI)) continue;
+      a.controller.onRaid(raid, new Location(map, position), map.localTime.turnCounter);
+    }
   }
 
   // C# SpendActorActionPoints — RogueGame.cs:3124
   SpendActorActionPoints(actor: Actor, actionCost: number): void {
-    void actor;
-    void actionCost;
-    throw new Error("not yet ported: SpendActorActionPoints (RogueGame.cs:3124)");
+    actor.actionPoints -= actionCost;
+    actor.lastActionTurn = actor.location.map!.localTime.turnCounter;
   }
 
   // C# SpendActorStaminaPoints — RogueGame.cs:3130
   SpendActorStaminaPoints(actor: Actor, staminaCost: number): void {
-    void actor;
-    void staminaCost;
-    throw new Error("not yet ported: SpendActorStaminaPoints (RogueGame.cs:3130)");
+    if (actor.model.abilities.canTire) {
+      // night penalty?
+      if (actor.location.map!.localTime.isNight && staminaCost > 0) staminaCost += this.m_Rules.nightStaminaPenalty(actor);
+
+      // exhausted?
+      if (this.m_Rules.isActorExhausted(actor)) staminaCost *= 2;
+
+      // apply.
+      actor.staminaPoints -= staminaCost;
+    } else {
+      actor.staminaPoints = Rules.STAMINA_INFINITE;
+    }
   }
 
   // C# RegenActorStaminaPoints — RogueGame.cs:3149
   RegenActorStaminaPoints(actor: Actor, staminaRegen: number): void {
-    void actor;
-    void staminaRegen;
-    throw new Error("not yet ported: RegenActorStaminaPoints (RogueGame.cs:3149)");
+    if (actor.model.abilities.canTire) {
+      actor.staminaPoints = Math.min(this.m_Rules.actorMaxSTA(actor), actor.staminaPoints + staminaRegen);
+    } else {
+      actor.staminaPoints = Rules.STAMINA_INFINITE;
+    }
   }
 
   // C# RegenActorHitPoints — RogueGame.cs:3157
   RegenActorHitPoints(actor: Actor, hpRegen: number): void {
-    void actor;
-    void hpRegen;
-    throw new Error("not yet ported: RegenActorHitPoints (RogueGame.cs:3157)");
+    actor.hitPoints = Math.min(this.m_Rules.actorMaxHPs(actor), actor.hitPoints + hpRegen);
   }
 
   // C# RegenActorSleep — RogueGame.cs:3162
   RegenActorSleep(actor: Actor, sleepRegen: number): void {
-    void actor;
-    void sleepRegen;
-    throw new Error("not yet ported: RegenActorSleep (RogueGame.cs:3162)");
+    actor.sleepPoints = Math.min(this.m_Rules.actorMaxSleep(actor), actor.sleepPoints + sleepRegen);
   }
 
   // C# SpendActorSanity — RogueGame.cs:3167
   SpendActorSanity(actor: Actor, sanCost: number): void {
-    void actor;
-    void sanCost;
-    throw new Error("not yet ported: SpendActorSanity (RogueGame.cs:3167)");
+    actor.sanity -= sanCost;
+    if (actor.sanity < 0) actor.sanity = 0;
   }
 
   // C# RegenActorSanity — RogueGame.cs:3173
   RegenActorSanity(actor: Actor, sanRegen: number): void {
-    void actor;
-    void sanRegen;
-    throw new Error("not yet ported: RegenActorSanity (RogueGame.cs:3173)");
+    actor.sanity = Math.min(this.m_Rules.actorMaxSanity(actor), actor.sanity + sanRegen);
   }
 
   // C# NextMapTurn — RogueGame.cs:3178
-  NextMapTurn(map: Map, sim: SimFlags): void {
-    void map;
-    void sim;
-    throw new Error("not yet ported: NextMapTurn (RogueGame.cs:3178)");
+  // async: C# blocks on AddMessagePressEnter/AnimDelay (infection messages,
+  // corpse/zombie announcements) — those are awaitable in the port.
+  async NextMapTurn(map: Map, sim: SimFlags): Promise<void> {
+    const isLoDetail = (sim & SimFlags.LODETAIL_TURN) !== 0;
+
+    if (!isLoDetail) {
+      // 0. Raise the deads; Check infections (non STD)
+      const hasCorpses = Rules.hasCorpses(this.m_Session.gameMode);
+      const hasInfection = Rules.hasInfection(this.m_Session.gameMode);
+      if (hasCorpses || hasInfection) {
+        // Corpses
+        if (hasCorpses && map.countCorpses > 0) {
+          // decide who zombify or rots.
+          const tryZombifyCorpses: Corpse[] = [];
+          const rottenCorpses: Corpse[] = [];
+          for (const c of map.corpses) {
+            // zombify?
+            const chanceZombify = this.m_Rules.corpseZombifyChance(c, map.localTime);
+            if (this.m_Rules.rollChance(chanceZombify)) {
+              // zombify this one.
+              tryZombifyCorpses.push(c);
+              continue;
+            }
+            // or rot away?
+            this.InflictDamageToCorpse(c, Rules.corpseDecayPerTurn(c));
+            if (c.hitPoints <= 0) {
+              rottenCorpses.push(c);
+              continue;
+            }
+          }
+          // zombify!
+          if (tryZombifyCorpses.length > 0) {
+            const zombifiedCorpses: Corpse[] = [];
+            for (const c of tryZombifyCorpses) {
+              // only one actor per tile!
+              if (map.getActorAtPoint(c.position) === null) {
+                // C# also computed a `zombifiedHP` from corpse state here but never used it.
+                zombifiedCorpses.push(c);
+                await this.Zombify(null, c.deadGuy, false);
+
+                if (this.IsVisibleToPlayer(map, c.position)) {
+                  this.AddMessage(new Message(`The corpse of ${c.deadGuy.name} rise again!!`, map.localTime.turnCounter, Color.Red));
+                  // FIXME --
+                  // alpha10 this will be a sfx not music (PRIORITY_EVENT dropped: IMusicManager has no priorities)
+                  this.m_MusicManager.play(GameSounds.UNDEAD_RISE);
+                }
+              }
+            }
+            for (const c of zombifiedCorpses) this.DestroyCorpse(c, map);
+          }
+          // rot! (message only)
+          if (this.m_Player !== null && this.m_Player.location.map === map) {
+            for (const c of rottenCorpses) {
+              this.DestroyCorpse(c, map);
+              if (this.IsVisibleToPlayer(map, c.position)) {
+                this.AddMessage(new Message(`The corpse of ${c.deadGuy.name} turns into dust.`, map.localTime.turnCounter, Color.Purple));
+              }
+            }
+          }
+        }
+
+        // Infection effects
+        if (hasInfection) {
+          let infectedToKill: Actor[] | null = null;
+          for (const a of map.actors) {
+            if (a.infection >= Rules.INFECTION_LEVEL_1_WEAK && !a.model.abilities.isUndead) {
+              const infectionP = this.m_Rules.actorInfectionPercent(a);
+
+              if (this.m_Rules.roll(0, 1000) < this.m_Rules.infectionEffectTriggerChance1000(infectionP)) {
+                const isVisible = this.IsVisibleToPlayer(a);
+                const isPlayer = a.isPlayer;  // alpha10.1 consistency fix
+                const isBot = a.isBotPlayer;  // alpha10.1 handle bot
+
+                // if sleeping, wake up.
+                if (a.isSleeping) this.DoWakeUp(a);
+
+                // apply effect.
+                let killHim = false;
+                if (infectionP >= Rules.INFECTION_LEVEL_5_DEATH) {
+                  killHim = true;
+                } else if (infectionP >= Rules.INFECTION_LEVEL_4_BLEED) {
+                  this.DoVomit(a);
+                  a.hitPoints -= Rules.INFECTION_LEVEL_4_BLEED_HP;
+                  if (isVisible) {
+                    if (isPlayer) this.ClearMessages();
+                    this.AddMessage(this.MakeMessage(a, `${this.Conjugate(a, this.VERB_VOMIT)} blood.`, Color.Purple));
+                    if (isPlayer && !isBot) {
+                      await this.AddMessagePressEnter();
+                      this.ClearMessages();
+                    }
+                  }
+                  if (a.hitPoints <= 0) killHim = true;
+                } else if (infectionP >= Rules.INFECTION_LEVEL_3_VOMIT) {
+                  this.DoVomit(a);
+                  if (isVisible) {
+                    if (isPlayer) this.ClearMessages();
+                    this.AddMessage(this.MakeMessage(a, `${this.Conjugate(a, this.VERB_VOMIT)}.`, Color.Purple));
+                    if (isPlayer && !isBot) {
+                      await this.AddMessagePressEnter();
+                      this.ClearMessages();
+                    }
+                  }
+                } else if (infectionP >= Rules.INFECTION_LEVEL_2_TIRED) {
+                  this.SpendActorStaminaPoints(a, Rules.INFECTION_LEVEL_2_TIRED_STA);
+                  a.sleepPoints -= Rules.INFECTION_LEVEL_2_TIRED_SLP;
+                  if (a.sleepPoints < 0) a.sleepPoints = 0;
+                  if (isVisible) {
+                    if (isPlayer) this.ClearMessages();
+                    this.AddMessage(this.MakeMessage(a, `${this.Conjugate(a, this.VERB_FEEL)} sick and tired.`, Color.Purple));
+                    if (isPlayer && !isBot) {
+                      await this.AddMessagePressEnter();
+                      this.ClearMessages();
+                    }
+                  }
+                } else if (infectionP >= Rules.INFECTION_LEVEL_1_WEAK) {
+                  this.SpendActorStaminaPoints(a, Rules.INFECTION_LEVEL_1_WEAK_STA);
+                  if (isVisible) {
+                    if (isPlayer) this.ClearMessages();
+                    this.AddMessage(this.MakeMessage(a, `${this.Conjugate(a, this.VERB_FEEL)} sick and weak.`, Color.Purple));
+                    if (isPlayer && !isBot) {
+                      await this.AddMessagePressEnter();
+                      this.ClearMessages();
+                    }
+                  }
+                }
+
+                // if it kills him, remember.
+                if (killHim) {
+                  if (infectedToKill === null) infectedToKill = [];
+                  infectedToKill.push(a);
+                }
+              } // trigged effect
+            } // is infected
+          } // each actor
+
+          // kill infected to kill (duh)
+          if (infectedToKill !== null) {
+            for (const a of infectedToKill) {
+              if (this.IsVisibleToPlayer(a)) this.AddMessage(this.MakeMessage(a, `${this.Conjugate(a, this.VERB_DIE)} of infection!`));
+              await this.KillActor(null, a, "infection");
+              // if player, force zombify NOW.
+              if (a.isPlayer) {
+                // remove player corpse!
+                map.tryRemoveCorpseOf(a);
+                // zombify player!
+                await this.Zombify(null, a, false);
+
+                // show
+                this.AddMessage(this.MakeMessage(a, `${this.Conjugate(a, "turn")} into a Zombie!`));
+                this.RedrawPlayScreen();
+                await this.AnimDelay(DELAY_LONG);
+              }
+            }
+          }
+        }
+      } // non STD game.
+
+      // 1. Update odors.
+      // alpha10 obsolete     1.1 Odor suppression/generation.
+
+      //      1.2 Odors decay.
+      let scentGarbage: OdorScent[] | null = null;
+
+      // decay map scents
+      for (const scent of map.scents) {
+        // alpha10
+        const decay = this.m_Rules.odorsDecay(map, scent.position, this.m_Session.weather);
+
+        // decay.
+        map.modifyScentAt(scent.odor, -decay, scent.position);
+
+        // garbage?
+        if (scent.strength < OdorScent.MIN_STRENGTH) {
+          if (scentGarbage === null) scentGarbage = [];
+          scentGarbage.push(scent);
+        }
+      }
+      if (scentGarbage !== null) {
+        for (const scent of scentGarbage) map.removeScent(scent);
+      }
+
+      //      1.3 Actors scents.
+      for (const actor of map.actors) {
+        // alpha10
+        this.DropActorScents(actor);
+        this.DecayActorScents(actor);
+      }
+
+      // 2. Regen actors AP & STA
+      // regen.
+      for (const actor of map.actors) {
+        if (!actor.isSleeping) actor.actionPoints += this.m_Rules.actorSpeed(actor);
+
+        if (actor.staminaPoints < this.m_Rules.actorMaxSTA(actor)) this.RegenActorStaminaPoints(actor, Rules.STAMINA_REGEN_PER_TURN);
+      }
+      // reset actor index.
+      map.checkNextActorIndex = 0;
+
+      // 3. Stop tired actors from running.
+      for (const actor of map.actors) {
+        if (actor.isRunning) {
+          if (actor.staminaPoints < Rules.STAMINA_MIN_FOR_ACTIVITY) {
+            actor.isRunning = false;
+            if (actor === this.m_Player) {
+              this.AddMessage(this.MakeMessage(actor, `${this.Conjugate(actor, this.VERB_BE)} too tired to continue running!`));
+              this.RedrawPlayScreen();
+            }
+          }
+        }
+      }
+
+      // 4. Actor gauges & states
+      let actorsStarvedToDeath: Actor[] | null = null;
+      for (const actor of map.actors) {
+        // hunger && rot.
+        if (actor.model.abilities.hasToEat) {
+          // food points loss.
+          --actor.foodPoints;
+          if (actor.foodPoints < 0) actor.foodPoints = 0;
+
+          // May kill starved actors.
+          if (this.m_Rules.isActorStarving(actor)) {
+            // kill him?
+            if (this.m_Rules.rollChance(Rules.FOOD_STARVING_DEATH_CHANCE)) {
+              if (actor.isPlayer || s_Options.nPCCanStarveToDeath) {
+                if (actorsStarvedToDeath === null) actorsStarvedToDeath = [];
+                actorsStarvedToDeath.push(actor);
+              }
+            }
+          }
+        } else if (actor.model.abilities.isRotting) {
+          // rot.
+          --actor.foodPoints;
+          if (actor.foodPoints < 0) actor.foodPoints = 0;
+
+          // rot effects.
+          if (this.m_Rules.isRottingActorStarving(actor)) {
+            // loose 1 HP.
+            if (this.m_Rules.roll(0, 1000) < Rules.ROT_STARVING_HP_CHANCE) {
+              if (this.IsVisibleToPlayer(actor)) {
+                this.AddMessage(this.MakeMessage(actor, "is rotting away."));
+              }
+              if (--actor.hitPoints <= 0) {
+                if (actorsStarvedToDeath === null) actorsStarvedToDeath = [];
+                actorsStarvedToDeath.push(actor);
+              }
+            }
+          } else if (this.m_Rules.isRottingActorHungry(actor)) {
+            // loose a skill.
+            if (this.m_Rules.roll(0, 1000) < Rules.ROT_HUNGRY_SKILL_CHANCE) this.DoLooseRandomSkill(actor);
+          }
+        }
+
+        // sleep.
+        if (actor.model.abilities.hasToSleep) {
+          // sleep vs sleep points loss.
+          if (actor.isSleeping) {
+            // sleeping.
+            // nightmare?
+            if (this.m_Rules.isActorDisturbed(actor) && this.m_Rules.rollChance(Rules.SANITY_NIGHTMARE_CHANCE)) {
+              // wake up, shout, lose sleep and sta.
+              this.DoWakeUp(actor);
+              await this.DoShout(actor, "NO! LEAVE ME ALONE!");
+              actor.sleepPoints -= Rules.SANITY_NIGHTMARE_SLP_LOSS;
+              if (actor.sleepPoints < 0) actor.sleepPoints = 0;
+              this.SpendActorSanity(actor, Rules.SANITY_NIGHTMARE_SAN_LOSS);
+              this.SpendActorStaminaPoints(actor, Rules.SANITY_NIGHTMARE_STA_LOSS);
+              // msg.
+              if (this.IsVisibleToPlayer(actor)) {
+                this.AddMessage(this.MakeMessage(actor, `${this.Conjugate(actor, this.VERB_WAKE_UP)} from a horrible nightmare!`));
+              }
+              // if player, sfx.
+              if (actor.isPlayer) {
+                // FIXME replace with sfx
+                // alpha10
+                this.m_MusicManager.stop();
+                this.m_MusicManager.play(GameSounds.NIGHTMARE);
+              }
+            }
+          } else {
+            // awake.
+            --actor.sleepPoints;
+            if (map.localTime.isNight) --actor.sleepPoints;
+            if (actor.sleepPoints < 0) actor.sleepPoints = 0;
+          }
+
+          //      4.2 Handle sleeping actors.
+          if (actor.isSleeping) {
+            const isOnCouch = this.m_Rules.isOnCouch(actor);
+            // activity.
+            actor.activity = Activity.SLEEPING;
+
+            // regen sleep pts.
+            const sleepRegen = this.m_Rules.actorSleepRegen(actor, isOnCouch);
+            actor.sleepPoints += sleepRegen;
+            actor.sleepPoints = Math.min(actor.sleepPoints, this.m_Rules.actorMaxSleep(actor));
+
+            // heal?
+            if (actor.hitPoints < this.m_Rules.actorMaxHPs(actor)) {
+              let healChance = isOnCouch ? Rules.SLEEP_ON_COUCH_HEAL_CHANCE : 0;
+              healChance += this.m_Rules.actorHealChanceBonus(actor);
+              if (this.m_Rules.rollChance(healChance)) this.RegenActorHitPoints(actor, Rules.SLEEP_HEAL_HITPOINTS);
+            }
+
+            // wake up?
+            // wake up if hungry or fully slept.
+            const wakeUp = this.m_Rules.isActorHungry(actor) || actor.sleepPoints >= this.m_Rules.actorMaxSleep(actor);
+            if (wakeUp) {
+              this.DoWakeUp(actor);
+            } else {
+              if (actor.isPlayer) {
+                // check music.
+                // C# compared m_MusicManager.Music != GameMusics.SLEEP before PlayLooping(SLEEP);
+                // IMusicManager.play() already ignores the track it is already playing.
+                this.m_MusicManager.play(GameMusics.SLEEP);
+                // message.
+                this.AddMessage(new Message("...zzZZZzzZ...", map.localTime.turnCounter, Color.DarkCyan));
+                this.RedrawPlayScreen();
+                // give some time to sim thread.
+                // C#: if (s_Options.SimThread) Thread.Sleep(10); — no sim thread in the browser.
+              } else if (this.m_Rules.rollChance(MESSAGE_NPC_SLEEP_SNORE_CHANCE) && this.IsVisibleToPlayer(actor)) {
+                this.AddMessage(this.MakeMessage(actor, `${this.Conjugate(actor, this.VERB_SNORE)}.`));
+                this.RedrawPlayScreen();
+              }
+            }
+          }
+
+          //      4.3 Exhausted actors might collapse.
+          if (this.m_Rules.isActorExhausted(actor)) {
+            if (this.m_Rules.rollChance(Rules.SLEEP_EXHAUSTION_COLLAPSE_CHANCE)) {
+              // do it
+              this.DoStartSleeping(actor);
+
+              // message.
+              if (this.IsVisibleToPlayer(actor)) {
+                this.AddMessage(this.MakeMessage(actor, `${this.Conjugate(actor, this.VERB_COLLAPSE)} from exhaustion !!`));
+                this.RedrawPlayScreen();
+              }
+
+              // player?
+              if (actor === this.m_Player) {
+                this.UpdatePlayerFOV(this.m_Player);
+                this.ComputeViewRect(this.m_Player.location.position);
+                this.RedrawPlayScreen();
+              }
+            }
+          }
+        }
+
+        // sanity.
+        if (actor.model.abilities.hasSanity) {
+          // sanity loss.
+          if (--actor.sanity <= 0) actor.sanity = 0;
+        }
+
+        // leader trust & leader/follower bond.
+        const leader = actor.leader;
+        if (actor.hasLeader && leader !== null) {
+          // trust.
+          this.ModifyActorTrustInLeader(actor, this.m_Rules.actorTrustIncrease(leader), false);
+          // bond with leader.
+          if (this.m_Rules.hasActorBondWith(actor, leader) && this.m_Rules.rollChance(Rules.SANITY_RECOVER_BOND_CHANCE)) {
+            this.RegenActorSanity(actor, Rules.SANITY_RECOVER_BOND);
+            this.RegenActorSanity(leader, Rules.SANITY_RECOVER_BOND);
+            if (this.IsVisibleToPlayer(actor)) {
+              this.AddMessage(this.MakeMessage(actor, `${this.Conjugate(actor, this.VERB_FEEL)} reassured knowing ${leader.name} is with ${this.HimOrHer(actor)}.`));
+            }
+            if (this.IsVisibleToPlayer(leader)) {
+              this.AddMessage(this.MakeMessage(leader, `${this.Conjugate(leader, this.VERB_FEEL)} reassured knowing ${actor.name} is with ${this.HimOrHer(leader)}.`));
+            }
+          }
+        }
+      }
+
+      // Kill (zombify) starved actors.
+      if (actorsStarvedToDeath !== null) {
+        for (const actor of actorsStarvedToDeath) {
+          // message.
+          if (this.IsVisibleToPlayer(actor)) {
+            this.AddMessage(this.MakeMessage(actor, `${this.Conjugate(actor, this.VERB_DIE_FROM_STARVATION)} !!`));
+            this.RedrawPlayScreen();
+          }
+
+          // kill.
+          await this.KillActor(null, actor, "starvation");
+
+          // zombify?
+          if (
+            !actor.model.abilities.isUndead &&
+            Rules.hasImmediateZombification(this.m_Session.gameMode) &&
+            this.m_Rules.rollChance(s_Options.starvedZombificationChance)
+          ) {
+            // remove morpse!
+            map.tryRemoveCorpseOf(actor);
+            // zombify!
+            await this.Zombify(null, actor, false);
+            // show.
+            if (this.IsVisibleToPlayer(actor)) {
+              this.AddMessage(this.MakeMessage(actor, `${this.Conjugate(actor, "turn")} into a Zombie!`));
+              this.RedrawPlayScreen();
+              await this.AnimDelay(DELAY_LONG);
+            }
+          }
+        }
+      }
+
+      // 5. Check batteries : lights, trackers.
+      for (const actor of map.actors) {
+        const leftItem = actor.getEquippedItem(DollPart.LEFT_HAND);
+        if (leftItem === null) continue;
+
+        // light?
+        if (leftItem instanceof ItemLight) {
+          if (leftItem.batteries > 0) {
+            --leftItem.batteries;
+            if (leftItem.batteries <= 0) {
+              if (this.IsVisibleToPlayer(actor)) {
+                this.AddMessage(this.MakeMessage(actor, `: ${leftItem.theName} light goes off.`));
+              }
+            }
+          }
+          continue;
+        }
+
+        // tracker?
+        if (leftItem instanceof ItemTracker) {
+          if (leftItem.batteries > 0) {
+            --leftItem.batteries;
+            if (leftItem.batteries <= 0) {
+              if (this.IsVisibleToPlayer(actor)) {
+                this.AddMessage(this.MakeMessage(actor, `: ${leftItem.theName} goes off.`));
+              }
+            }
+          }
+          continue;
+        }
+      }
+
+      // 6. Check explosives.
+      // 6.1 Update fuses.
+      let hasExplosivesToExplode = false;
+      // on ground.
+      for (const groundInv of map.groundInventories) {
+        // update each explosive fuse there,
+        // remember which should explode.
+        for (const it of groundInv.items) {
+          if (!(it instanceof ItemPrimedExplosive)) continue;
+
+          // primed explosive, burn fuse.
+          --it.fuseTimeLeft;
+          if (it.fuseTimeLeft <= 0) hasExplosivesToExplode = true;
+        }
+      }
+
+      // on actors.
+      for (const actor of map.actors) {
+        const inv = actor.inventory;
+        if (inv === null || inv.isEmpty) continue;
+
+        // update each explosive fuse there,
+        // remember which should explode.
+        for (const it of inv.items) {
+          if (!(it instanceof ItemPrimedExplosive)) continue;
+
+          // primed explosive, burn fuse.
+          --it.fuseTimeLeft;
+          if (it.fuseTimeLeft <= 0) hasExplosivesToExplode = true;
+        }
+      }
+
+      // 6.2 Explode.
+      if (hasExplosivesToExplode) {
+        let hasExplodedSomething = false;
+        do {
+          // nothing exploded by default.
+          hasExplodedSomething = false;
+
+          // on ground.
+          if (!hasExplodedSomething) {
+            for (const groundInv of map.groundInventories) {
+              const pos = map.getGroundInventoryPosition(groundInv);
+              if (pos === null) throw new Error("explosives : GetGroundInventoryPosition returned null point");
+
+              for (const it of groundInv.items) {
+                if (!(it instanceof ItemPrimedExplosive)) continue;
+
+                if (it.fuseTimeLeft <= 0) {
+                  // boom!
+                  map.removeItemAt(it, pos);
+                  await this.DoBlast(new Location(map, pos), (it.model as ItemExplosiveModel).blastAttack);
+                  hasExplodedSomething = true;
+                  break;
+                }
+              }
+
+              if (hasExplodedSomething) break;
+            }
+          }
+
+          // on actors.
+          if (!hasExplodedSomething) {
+            for (const actor of map.actors) {
+              const inv = actor.inventory;
+              if (inv === null || inv.isEmpty) continue;
+
+              for (const it of inv.items) {
+                if (!(it instanceof ItemPrimedExplosive)) continue;
+
+                if (it.fuseTimeLeft <= 0) {
+                  // boom!
+                  inv.removeAllQuantity(it);
+                  await this.DoBlast(new Location(map, actor.location.position), (it.model as ItemExplosiveModel).blastAttack);
+                  hasExplodedSomething = true;
+                  break;
+                }
+              }
+            }
+          }
+        } while (hasExplodedSomething);
+      }
+
+      // 7. Check fires.
+      // 7.1 Rain has a chance to put out fires.
+      // FIXME there still the weather bug when simulating = weather used is current world weather, not map weather.
+      if (this.m_Rules.isWeatherRain(this.m_Session.weather) && this.m_Rules.rollChance(Rules.FIRE_RAIN_TEST_CHANCE)) {
+        // 7.1.1 Burning objects?
+        for (const obj of map.mapObjects) {
+          if (obj.isOnFire && this.m_Rules.rollChance(Rules.FIRE_RAIN_PUT_OUT_CHANCE)) {
+            // do it.
+            this.UnapplyOnFire(obj);
+            // tell.
+            if (this.IsVisibleToPlayer(obj)) {
+              this.AddMessage(new Message("The rain has put out a fire.", map.localTime.turnCounter));
+            }
+          }
+        }
+      }
+    } // skipped in lodetail turns.
+
+    // -- Check timers.
+    if (map.countTimers > 0) {
+      let timersGarbage: TimedTask[] | null = null;
+      for (const t of map.timers) {
+        t.tick(map);
+        if (t.isCompleted) {
+          if (timersGarbage === null) timersGarbage = [];
+          timersGarbage.push(t);
+        }
+      }
+      if (timersGarbage !== null) {
+        for (const t of timersGarbage) map.removeTimer(t);
+      }
+    }
+
+    // -- Advance local time.
+    const wasLocalNight = map.localTime.isNight;
+    ++map.localTime.turnCounter;
+    const isLocalDay = !map.localTime.isNight;
+
+    // -- Check for NPC upgrade.
+    if (wasLocalNight && isLocalDay) {
+      this.HandleLivingNPCsUpgrade(map);
+    } else if (
+      s_Options.zombifiedsUpgradeDays !== ZupDays.OFF &&
+      !wasLocalNight &&
+      !isLocalDay &&
+      GameOptions.isZupDay(s_Options.zombifiedsUpgradeDays, map.localTime.day)
+    ) {
+      this.HandleUndeadNPCsUpgrade(map);
+    }
   }
 
   // C# DropActorScents — RogueGame.cs:4009
   DropActorScents(actor: Actor): void {
-    void actor;
-    throw new Error("not yet ported: DropActorScents (RogueGame.cs:4009)");
+    // alpha10 dont drop if odor suppressed
+    if (actor.odorSuppressorCounter > 0) return;
+
+    if (actor.model.abilities.isUndead) {
+      // ZM scent?
+      if (actor.model.abilities.isUndeadMaster) {
+        actor.location.map!.refreshScentAt(Odor.UNDEAD_MASTER, Rules.UNDEAD_MASTER_SCENT_DROP, actor.location.position);
+      }
+    } else {
+      // Living scent.
+      actor.location.map!.refreshScentAt(Odor.LIVING, Rules.LIVING_SCENT_DROP, actor.location.position);
+    }
   }
 
   // C# DecayActorScents — RogueGame.cs:4029
   DecayActorScents(actor: Actor): void {
-    void actor;
-    throw new Error("not yet ported: DecayActorScents (RogueGame.cs:4029)");
+    // decay suppressor
+    if (actor.odorSuppressorCounter > 0) {
+      const decay = this.m_Rules.odorsDecay(actor.location.map!, actor.location.position, this.m_Session.weather);
+      actor.odorSuppressorCounter -= decay;
+      if (actor.odorSuppressorCounter < 0) actor.odorSuppressorCounter = 0;
+    }
   }
 
   // C# ModifyActorTrustInLeader — RogueGame.cs:4040
   ModifyActorTrustInLeader(a: Actor, mod: number, addMessage: boolean): void {
-    void a;
-    void mod;
-    void addMessage;
-    throw new Error("not yet ported: ModifyActorTrustInLeader (RogueGame.cs:4040)");
+    // do it.
+    a.trustInLeader += mod;
+    if (a.trustInLeader > Rules.TRUST_MAX) {
+      a.trustInLeader = Rules.TRUST_MAX;
+    } else if (a.trustInLeader < Rules.TRUST_MIN) {
+      a.trustInLeader = Rules.TRUST_MIN;
+    }
+
+    // if leader is player, message.
+    if (addMessage && a.leader !== null && a.leader.isPlayer) {
+      this.AddMessage(new Message(`(${mod} trust with ${a.theName})`, this.m_Session.worldTime.turnCounter, Color.White));
+    }
   }
 
   // C# CountLivings — RogueGame.cs:4056
   CountLivings(map: Map): number {
-    void map;
-    throw new Error("not yet ported: CountLivings (RogueGame.cs:4056)");
+    if (map == null) throw new TypeError("map");
+
+    let count = 0;
+    for (const a of map.actors) if (!a.model.abilities.isUndead) ++count;
+
+    return count;
   }
 
   // C# CountActors — RogueGame.cs:4069
   CountActors(map: Map, predFn: (p0: Actor) => boolean): number {
-    void map;
-    void predFn;
-    throw new Error("not yet ported: CountActors (RogueGame.cs:4069)");
+    if (map == null) throw new TypeError("map");
+
+    let count = 0;
+    for (const a of map.actors) if (predFn(a)) ++count;
+
+    return count;
   }
 
   // C# CountFaction — RogueGame.cs:4082
   CountFaction(map: Map, f: Faction): number {
-    void map;
-    void f;
-    throw new Error("not yet ported: CountFaction (RogueGame.cs:4082)");
+    if (map == null) throw new TypeError("map");
+
+    let count = 0;
+    for (const a of map.actors) if (a.faction === f) ++count;
+
+    return count;
   }
 
   // C# CountUndeads — RogueGame.cs:4095
   CountUndeads(map: Map): number {
-    void map;
-    throw new Error("not yet ported: CountUndeads (RogueGame.cs:4095)");
+    if (map == null) throw new TypeError("map");
+
+    let count = 0;
+    for (const a of map.actors) if (a.model.abilities.isUndead) ++count;
+
+    return count;
   }
 
   // C# CountFoodItemsNutrition — RogueGame.cs:4108
   CountFoodItemsNutrition(map: Map): number {
-    void map;
-    throw new Error("not yet ported: CountFoodItemsNutrition (RogueGame.cs:4108)");
+    if (map == null) throw new TypeError("map");
+
+    // food items on ground.
+    let groundNutrition = 0;
+    for (const inv of map.groundInventories) {
+      if (inv.isEmpty) continue;
+      for (const it of inv.items) {
+        if (it instanceof ItemFood) groundNutrition += this.m_Rules.foodItemNutrition(it, map.localTime.turnCounter);
+      }
+    }
+    // food items carried by actors.
+    let carriedNutrition = 0;
+    for (const a of map.actors) {
+      const inv = a.inventory;
+      if (inv === null || inv.isEmpty) continue;
+      for (const it of inv.items) {
+        if (it instanceof ItemFood) carriedNutrition += this.m_Rules.foodItemNutrition(it, map.localTime.turnCounter);
+      }
+    }
+
+    return groundNutrition + carriedNutrition;
   }
 
   // C# HasActorOfModelID — RogueGame.cs:4142
   HasActorOfModelID(map: Map, actorModelID: ActorID): boolean {
-    void map;
-    void actorModelID;
-    throw new Error("not yet ported: HasActorOfModelID (RogueGame.cs:4142)");
+    if (map == null) throw new TypeError("map");
+
+    for (const a of map.actors) if (a.model.id === actorModelID) return true;
+
+    return false;
   }
 
   // C# CheckForEvent_ZombieInvasion — RogueGame.cs:4157
@@ -4081,7 +4882,7 @@ export class RogueGame {
   }
 
   // C# KillActor — RogueGame.cs:16278
-  KillActor(killer: Actor, deadGuy: Actor, reason: string, canDropCorpse?: boolean): void {
+  KillActor(killer: Actor | null, deadGuy: Actor, reason: string, canDropCorpse?: boolean): void {
     void killer;
     void deadGuy;
     void reason;
@@ -4253,7 +5054,7 @@ export class RogueGame {
   }
 
   // C# Zombify — RogueGame.cs:17901
-  Zombify(zombifier: Actor, deadVictim: Actor, isStartingGame: boolean): Actor {
+  Zombify(zombifier: Actor | null, deadVictim: Actor, isStartingGame: boolean): Actor {
     void zombifier;
     void isStartingGame;
     return deadVictim;
