@@ -19,7 +19,7 @@ import { Direction } from "@engine/Direction";
 import { DiceRoller } from "@engine/DiceRoller";
 import { WorldTime, DayPhase } from "@engine/WorldTime";
 import { Rules } from "@engine/Rules";
-import { Session, GameMode, RaidType, UniqueActor, UniqueMap, UniqueItem } from "@engine/Session";
+import { Session, GameMode, RaidType, ScriptStage, UniqueActor, UniqueMap, UniqueItem } from "@engine/Session";
 import { AchievementIDs, Scoring, DifficultySide } from "@engine/Scoring";
 import { MessageManager } from "@engine/MessageManager";
 import { GameSaveManager } from "@engine/GameSave";
@@ -29,7 +29,7 @@ import { OptionsScreen } from "@ui/OptionsScreen";
 import { HiScore, HiScoreTable } from "@engine/HiScoreTable";
 import { Keybindings, InputTranslator } from "@engine/Keybindings";
 import { GameHintsStatus, AdvisorHint } from "@engine/GameHints";
-import { GameOptions, OptionIDs, Options, ReincMode, ZupDays } from "@engine/GameOptions";
+import { GameOptions, OptionIDs, Options, ReincMode, SimRatio, ZupDays } from "@engine/GameOptions";
 import { PlayerCommand } from "@engine/PlayerCommand";
 import { IRogueUI, GameKeyEvent, MouseButton } from "@engine/IRogueUI";
 import { LOS } from "@engine/LOS";
@@ -39,12 +39,19 @@ import { Item } from "@data/Item";
 import { ItemBodyArmor } from "@engine/items/ItemBodyArmor";
 import { ItemExplosive, ItemExplosiveModel, ItemGrenade, ItemGrenadeModel, ItemGrenadePrimed, ItemGrenadePrimedModel } from "@engine/items/ItemExplosive";
 import { ItemFood } from "@engine/items/ItemFood";
-import { ItemLight } from "@engine/items/ItemLight";
+import { ItemLight, ItemLightModel } from "@engine/items/ItemLight";
 import { ItemMedicine } from "@engine/items/ItemMedicine";
 import { ItemTrap } from "@engine/items/ItemTrap";
 import { AmmoType, ItemAmmo, ItemMeleeWeapon, ItemRangedWeapon, ItemRangedWeaponModel, ItemWeapon, ItemWeaponModel } from "@engine/items/ItemWeapon";
-import { ItemBarricadeMaterial, ItemEntertainment, ItemSprayPaint, ItemSprayScent } from "@engine/items/ItemMisc";
-import { ItemTracker } from "@engine/items/ItemTracker";
+import {
+  ItemBarricadeMaterial,
+  ItemEntertainment,
+  ItemSprayPaint,
+  ItemSprayPaintModel,
+  ItemSprayScent,
+  ItemSprayScentModel,
+} from "@engine/items/ItemMisc";
+import { ItemTracker, ItemTrackerModel } from "@engine/items/ItemTracker";
 import { MapObject, MapObjectBreak, MapObjectFire } from "@data/MapObject";
 import { Board, DoorWindow, Fortification, PowerGenerator } from "@engine/mapobjects/MapObjects";
 import { Actor } from "@data/Actor";
@@ -58,33 +65,46 @@ import { Corpse } from "@data/Corpse";
 import { Odor, OdorScent } from "@data/Odor";
 import { Activity } from "@data/Activity";
 import type { TimedTask } from "@data/TimedTask";
+import { TaskRemoveDecoration } from "@engine/tasks/TaskRemoveDecoration";
 import { District, DistrictKind } from "@data/District";
 import { DollPart } from "@data/Doll";
 import { AIController } from "@data/AIController";
 import { Faction } from "@data/Faction";
 import { Inventory } from "@data/Inventory";
 import { Location } from "@data/Location";
+import { PlayerController } from "@data/PlayerController";
 import { Models } from "@data/Models";
 import { Message } from "@data/Message";
-import { Map } from "@data/Map";
-import { Skill } from "@data/Skill";
+import { Exit, Map, Lighting } from "@data/Map";
+import { Skill, SkillTable } from "@data/Skill";
 import { Tile } from "@data/Tile";
 import { TileModel } from "@data/TileModel";
 import { Verb } from "@data/Verb";
 import { Weather } from "@data/Weather";
 import { World } from "@data/World";
+import { Zone } from "@data/Zone";
 import { GameActors, ActorID } from "@gameplay/GameActors";
 import { GameFactions } from "@gameplay/GameFactions";
 import { FactionID } from "@gameplay/GameFactions";
 import { GameGangs, GangID } from "@gameplay/GameGangs";
 import { GameItems, ItemID } from "@gameplay/GameItems";
-import { GameTiles } from "@gameplay/GameTiles";
-import { GameTips } from "@gameplay/ZoneAttributes";
+import { GameTiles, TileID } from "@gameplay/GameTiles";
+import { GameTips, ZoneAttributes } from "@gameplay/ZoneAttributes";
 import { SkillID, Skills } from "@gameplay/Skills";
 import { BaseTownGenerator, Parameters as TownParameters } from "@gameplay/generators/BaseTownGenerator";
 import { StdTownGenerator } from "@gameplay/generators/StdTownGenerator";
 import { BaseAI, TradeRating } from "@gameplay/ai/BaseAI";
 import { ActionWait } from "@engine/actions/Actions";
+import {
+  ActionBashDoor,
+  ActionBreak,
+  ActionBump,
+  ActionDropItem,
+  ActionSay,
+  ActionShout,
+  ActionUnequipItem,
+  ActionUseItem,
+} from "@engine/actions/Actions";
 import { OrderableAI } from "@gameplay/ai/OrderableAI";
 import { IMusicManager } from "@engine/audio/IMusicManager";
 import { NullMusicManager } from "@engine/audio/NullMusicManager";
@@ -4032,7 +4052,7 @@ export class RogueGame {
               if (await this.HandleAbandonGame()) {
                 this.StopSimThread(true); // alpha10 abort allowed when quitting
                 loop = false;
-                this.KillActor(null, this.m_Player, "suicide");
+                await this.KillActor(null, this.m_Player, "suicide");
               }
               break;
 
@@ -4106,35 +4126,35 @@ export class RogueGame {
 
             case PlayerCommand.MOVE_N:
               if (await this.TryPlayerInsanity()) { loop = false; break; }
-              loop = !this.DoPlayerBump(player, Direction.N);
+              loop = !(await this.DoPlayerBump(player, Direction.N));
               break;
             case PlayerCommand.MOVE_NE:
               if (await this.TryPlayerInsanity()) { loop = false; break; }
-              loop = !this.DoPlayerBump(player, Direction.NE);
+              loop = !(await this.DoPlayerBump(player, Direction.NE));
               break;
             case PlayerCommand.MOVE_E:
               if (await this.TryPlayerInsanity()) { loop = false; break; }
-              loop = !this.DoPlayerBump(player, Direction.E);
+              loop = !(await this.DoPlayerBump(player, Direction.E));
               break;
             case PlayerCommand.MOVE_SE:
               if (await this.TryPlayerInsanity()) { loop = false; break; }
-              loop = !this.DoPlayerBump(player, Direction.SE);
+              loop = !(await this.DoPlayerBump(player, Direction.SE));
               break;
             case PlayerCommand.MOVE_S:
               if (await this.TryPlayerInsanity()) { loop = false; break; }
-              loop = !this.DoPlayerBump(player, Direction.S);
+              loop = !(await this.DoPlayerBump(player, Direction.S));
               break;
             case PlayerCommand.MOVE_SW:
               if (await this.TryPlayerInsanity()) { loop = false; break; }
-              loop = !this.DoPlayerBump(player, Direction.SW);
+              loop = !(await this.DoPlayerBump(player, Direction.SW));
               break;
             case PlayerCommand.MOVE_W:
               if (await this.TryPlayerInsanity()) { loop = false; break; }
-              loop = !this.DoPlayerBump(player, Direction.W);
+              loop = !(await this.DoPlayerBump(player, Direction.W));
               break;
             case PlayerCommand.MOVE_NW:
               if (await this.TryPlayerInsanity()) { loop = false; break; }
-              loop = !this.DoPlayerBump(player, Direction.NW);
+              loop = !(await this.DoPlayerBump(player, Direction.NW));
               break;
             case PlayerCommand.USE_EXIT:
               if (await this.TryPlayerInsanity()) { loop = false; break; }
@@ -5990,7 +6010,7 @@ export class RogueGame {
 
         if (allowed) {
           this.AddMessage(new Message(`${currentActor.theName} is now a personal enemy.`, this.m_Session.worldTime.turnCounter, Color.Orange));
-          this.DoMakeAggression(player, currentActor);
+          await this.DoMakeAggression(player, currentActor);
         }
       }
     } while (loop);
@@ -9300,29 +9320,210 @@ export class RogueGame {
   }
 
   // C# DoMoveActor — RogueGame.cs:12692 (+1 overloads)
-  DoMoveActor(actor: Actor, direction: Location | Direction): void {
-    void actor;
-    void direction;
-    throw new Error("not yet ported: DoMoveActor (RogueGame.cs:12692)");
+  // alpha10.1 common code for crushing gates etc. also needs a corpse move helper;
+  // Map has no MoveCorpseTo, so drop/re-add the corpse at the new position.
+  // async: C# blocks on AnimDelay via OnActorEnterTile.
+  async DoMoveActor(actor: Actor, direction: Location | Direction): Promise<void> {
+    // C# `DoMoveActor(actor, direction)` overload does `actor.Location + direction`.
+    const newLocation: Location =
+      direction instanceof Direction ? actor.location.addDirection(direction) : direction;
+    const oldLocation = actor.location;
+
+    // Try to leave tile.
+    if (!this.TryActorLeaveTile(actor)) {
+      // waste ap.
+      this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+      return;
+    }
+
+    // Do the move.
+    if (oldLocation.map === newLocation.map) newLocation.map!.placeActor(actor, newLocation.position);
+    // C# throws NotImplementedException here ("illegal to change map"); a
+    // Direction argument can never change map, so the port just refuses.
+
+    // If dragging corpse, move it along.
+    const draggedCorpse = actor.draggedCorpse;
+    if (draggedCorpse !== null) {
+      newLocation.map!.removeCorpse(draggedCorpse);
+      draggedCorpse.position = newLocation.position;
+      newLocation.map!.addCorpse(draggedCorpse);
+      if (this.IsVisibleToPlayer(newLocation) || this.IsVisibleToPlayer(oldLocation))
+        this.AddMessage(
+          this.MakeMessage(actor, `${this.Conjugate(actor, this.VERB_DRAG)} ${draggedCorpse.deadGuy.theName} corpse.`)
+        );
+    }
+
+    // Spend AP & STA, check for running, jumping and dragging corpse.
+    let moveCost = Rules.BASE_ACTION_COST;
+
+    // running?
+    if (actor.isRunning) {
+      // x2 faster.
+      moveCost = Math.floor(moveCost / 2);
+      // cost STA.
+      this.SpendActorStaminaPoints(actor, Rules.STAMINA_COST_RUNNING);
+    }
+
+    const mapObj = newLocation.map!.getMapObjectAtPoint(newLocation.position);
+    const isJump = mapObj !== null && !mapObj.isWalkable && mapObj.isJumpable;
+
+    // jumping?
+    if (isJump) {
+      // cost STA.
+      this.SpendActorStaminaPoints(actor, Rules.STAMINA_COST_JUMP);
+
+      // show.
+      if (this.IsVisibleToPlayer(actor)) this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_JUMP_ON), mapObj));
+
+      // if CanJumpStumble ability, has a chance to stumble.
+      if (actor.model.abilities.canJumpStumble && this.m_Rules.rollChance(Rules.JUMP_STUMBLE_CHANCE)) {
+        // stumble!
+        moveCost += Rules.JUMP_STUMBLE_ACTION_COST;
+
+        // show.
+        if (this.IsVisibleToPlayer(actor))
+          this.AddMessage(this.MakeMessage(actor, `${this.Conjugate(actor, this.VERB_STUMBLE)}!`));
+      }
+    }
+
+    // dragging?
+    if (draggedCorpse !== null) {
+      // cost STA.
+      this.SpendActorStaminaPoints(actor, Rules.STAMINA_COST_MOVE_DRAGGED_CORPSE);
+    }
+
+    // spend move AP.
+    this.SpendActorActionPoints(actor, moveCost);
+
+    // If actor can move again, make sure he drops his scent here.
+    // If we don't do this, since scents are dropped only in new turns,
+    // there will be "holes" in the scent paths, and this is not fair
+    // for zombies who will loose track of running livings easily.
+    if (actor.actionPoints > 0) // alpha10 fix; was Rules.BASE_ACTION_COST
+      this.DropActorScents(actor);
+
+    // Screams of terror?
+    if (
+      !actor.isPlayer &&
+      (actor.activity === Activity.FLEEING || actor.activity === Activity.FLEEING_FROM_EXPLOSIVE) &&
+      !actor.model.abilities.isUndead &&
+      actor.model.abilities.canTalk
+    ) {
+      // loud noise.
+      this.OnLoudNoise(newLocation.map!, newLocation.position, "A loud SCREAM");
+
+      // player hears?
+      if (this.m_Rules.rollChance(PLAYER_HEAR_SCREAMS_CHANCE) && !this.IsVisibleToPlayer(actor)) {
+        this.AddMessageIfAudibleForPlayer(
+          actor.location,
+          this.MakePlayerCentricMessage("You hear screams of terror", actor.location.position)
+        );
+      }
+    }
+
+    // Trigger stuff.
+    await this.OnActorEnterTile(actor);
   }
 
   // C# OnActorEnterTile — RogueGame.cs:12804
-  OnActorEnterTile(actor: Actor): void {
+  async OnActorEnterTile(actor: Actor): Promise<void> {
     void actor;
-    throw new Error("not yet ported: OnActorEnterTile (RogueGame.cs:12804)");
+    const map = actor.location.map!;
+    const pos = actor.location.position;
+
+    // Check traps.
+    // Don't check if there is a covering mobj there.
+    if (!this.m_Rules.isTrapCoveringMapObjectThere(map, pos)) {
+      const itemsThere = map.getItemsAt(pos);
+      if (itemsThere !== null) {
+        const removeThem: Item[] = [];
+        for (const it of itemsThere.items) {
+          if (!(it instanceof ItemTrap)) continue;
+          const trap = it as ItemTrap;
+          if (!trap.isActivated) continue;
+          if (await this.TryTriggerTrap(trap, actor)) {
+            removeThem.push(it);
+          }
+        }
+        if (removeThem.length > 0) {
+          for (const it of removeThem) map.removeItemAt(it, pos);
+        }
+        // Kill actor?
+        if (actor.hitPoints <= 0) {
+          await this.KillActor(null, actor, "trap");
+        }
+      }
+    }
   }
 
   // C# TryActorLeaveTile — RogueGame.cs:12840
   TryActorLeaveTile(actor: Actor): boolean {
     void actor;
-    throw new Error("not yet ported: TryActorLeaveTile (RogueGame.cs:12840)");
+    const map = actor.location.map!;
+    const pos = actor.location.position;
+    let canLeave = true;
+
+    // Check traps.
+    if (!this.m_Rules.isTrapCoveringMapObjectThere(map, pos)) {
+      const itemsThere = map.getItemsAt(pos);
+      if (itemsThere !== null) {
+        const removeThem: Item[] = [];
+        let hasTriggeredTraps = false;
+        for (const it of itemsThere.items) {
+          if (!(it instanceof ItemTrap)) continue;
+          const trap = it as ItemTrap;
+          if (!trap.isTriggered) continue;
+          hasTriggeredTraps = true;
+          const res = this.TryEscapeTrap(trap, actor, false);
+          if (!res.ok) {
+            canLeave = false;
+            continue;
+          }
+          if (res.isDestroyed) removeThem.push(it);
+        }
+        if (removeThem.length > 0) {
+          for (const it of removeThem) map.removeItemAt(it, pos);
+        }
+        // if can leave, force un-trigger all traps.
+        if (canLeave && hasTriggeredTraps) this.UntriggerAllTrapsHere(actor.location);
+      }
+    }
+
+    // Check adjacent Z-Grabs
+    const visible = this.IsVisibleToPlayer(actor);
+    const adjList = map.filterAdjacentInMap(pos, (_pt) => true);
+    if (adjList !== null) {
+      for (const adj of adjList) {
+        const grabber = map.getActorAtPoint(adj);
+        if (grabber === null) continue;
+        if (!grabber.model.abilities.isUndead) continue;
+        if (!this.m_Rules.areEnemies(grabber, actor)) continue;
+        const chance = this.m_Rules.zGrabChance(grabber, actor);
+        if (chance === 0) continue;
+        if (this.m_Rules.rollChance(chance)) {
+          // grabbed!
+          if (visible) this.AddMessage(this.MakeMessage(grabber, this.Conjugate(grabber, this.VERB_GRAB), actor));
+          // stuck there!
+          canLeave = false;
+        }
+      }
+    }
+
+    return canLeave;
   }
 
   // C# TryTriggerTrap — RogueGame.cs:12917
-  TryTriggerTrap(trap: ItemTrap, victim: Actor): boolean {
+  async TryTriggerTrap(trap: ItemTrap, victim: Actor): Promise<boolean> {
     void trap;
     void victim;
-    throw new Error("not yet ported: TryTriggerTrap (RogueGame.cs:12917)");
+    // check trigger chance.
+    if (this.m_Rules.checkTrapTriggers(trap, victim)) {
+      await this.DoTriggerTrap(trap, victim.location.map!, victim.location.position, victim, null);
+    } else {
+      if (this.IsVisibleToPlayer(victim)) this.AddMessage(this.MakeMessage(victim, `safely ${this.Conjugate(victim, this.VERB_AVOID)} ${trap.theName}.`));
+    }
+    // destroy?
+    return trap.quantity === 0;
   }
 
   // C# TryEscapeTrap — RogueGame.cs:12938
@@ -9330,141 +9531,613 @@ export class RogueGame {
     void trap;
     void victim;
     void isDestroyed;
-    throw new Error("not yet ported: TryEscapeTrap (RogueGame.cs:12938)");
+    let destroyed = false;
+    const model = trap.trapModel;
+
+    // no brainer.
+    if (model.blockChance <= 0) return { ok: true, isDestroyed: false };
+
+    const visible = this.IsVisibleToPlayer(victim);
+    let canEscape = false;
+
+    // check escape chance.
+    if (this.m_Rules.checkTrapEscape(trap, victim)) {
+      // un-triggered and escape.
+      trap.isTriggered = false;
+      canEscape = true;
+
+      // tell
+      if (visible) this.AddMessage(this.MakeMessage(victim, `${this.Conjugate(victim, this.VERB_ESCAPE)} ${trap.theName}.`));
+
+      // then check break on escape chance.
+      if (this.m_Rules.checkTrapEscapeBreaks(trap, victim)) {
+        if (visible) this.AddMessage(this.MakeMessage(victim, `${this.Conjugate(victim, this.VERB_BREAK)} ${trap.theName}.`));
+        --trap.quantity;
+        destroyed = trap.quantity <= 0;
+      }
+    } else {
+      // tell
+      if (visible) this.AddMessage(this.MakeMessage(victim, `is trapped by ${trap.theName}!`));
+    }
+
+    return { ok: canEscape, isDestroyed: destroyed };
   }
 
   // C# UntriggerAllTrapsHere — RogueGame.cs:12981
   UntriggerAllTrapsHere(loc: Location): void {
     void loc;
-    throw new Error("not yet ported: UntriggerAllTrapsHere (RogueGame.cs:12981)");
+    const itemsThere = loc.map!.getItemsAt(loc.position);
+    if (itemsThere === null) return;
+    for (const it of itemsThere.items) {
+      if (!(it instanceof ItemTrap)) continue;
+      const trap = it as ItemTrap;
+      if (!trap.isTriggered) continue;
+      trap.isTriggered = false;
+    }
   }
 
   // C# CheckMapObjectTriggersTraps — RogueGame.cs:13000
-  CheckMapObjectTriggersTraps(map: Map, pos: Point): void {
+  async CheckMapObjectTriggersTraps(map: Map, pos: Point): Promise<void> {
     void map;
     void pos;
-    throw new Error("not yet ported: CheckMapObjectTriggersTraps (RogueGame.cs:13000)");
+    if (!this.m_Rules.isTrapTriggeringMapObjectThere(map, pos)) return;
+
+    const mobj = map.getMapObjectAtPoint(pos);
+    const itemsThere = map.getItemsAt(pos);
+    if (itemsThere === null) return;
+
+    const removeThem: Item[] = [];
+    for (const it of itemsThere.items) {
+      if (!(it instanceof ItemTrap)) continue;
+      const trap = it as ItemTrap;
+      if (!trap.isActivated) continue;
+      await this.DoTriggerTrap(trap, map, pos, null, mobj);
+      if (trap.quantity <= 0) removeThem.push(it);
+    }
+    if (removeThem.length > 0) {
+      for (const it of removeThem) map.removeItemAt(it, pos);
+    }
   }
 
   // C# DoTriggerTrap — RogueGame.cs:13038
-  DoTriggerTrap(trap: ItemTrap, map: Map, pos: Point, victim: Actor, mobj: MapObject): void {
+  async DoTriggerTrap(trap: ItemTrap, map: Map, pos: Point, victim: Actor | null, mobj: MapObject | null): Promise<void> {
     void trap;
     void map;
     void pos;
     void victim;
     void mobj;
-    throw new Error("not yet ported: DoTriggerTrap (RogueGame.cs:13038)");
+    const model = trap.trapModel;
+    const visible = this.IsVisibleToPlayer(map, pos);
+
+    // flag.
+    trap.isTriggered = true;
+
+    // effect: damage on victim? (actor)
+    const damage = model.damage * trap.quantity;
+    if (damage > 0 && victim !== null) {
+      await this.InflictDamage(victim, damage);
+      if (visible) {
+        this.AddMessage(this.MakeMessage(victim, `is hurt by ${trap.aName} for ${damage} damage!`));
+        try { this.AddOverlay(new OverlayImage(this.MapToScreen(victim.location.position), GameImages.ICON_MELEE_DAMAGE)); } catch (e) {}
+        try { this.AddOverlay(new OverlayText(this.MapToScreen(victim.location.position).add(new Point(DAMAGE_DX, DAMAGE_DY)), Color.White, damage.toString(), Color.Black)); } catch (e) {}
+        this.RedrawPlayScreen();
+        await this.AnimDelay(victim.isPlayer ? DELAY_NORMAL : DELAY_SHORT);
+        try { this.ClearOverlays(); } catch (e) {}
+        this.RedrawPlayScreen();
+      }
+    }
+
+    // effect: noise? (actor, mobj)
+    if (model.isNoisy) {
+      if (visible) {
+        if (victim !== null) this.AddMessage(this.MakeMessage(victim, `stepping on ${trap.aName} makes a bunch of noise!`));
+        else if (mobj !== null) this.AddMessage(new Message(`${this.Capitalize(trap.theName)} makes a lot of noise!`, map.localTime.turnCounter));
+      }
+      this.OnLoudNoise(map, pos, model.noiseName);
+    }
+
+    // if one time trigger = desactivate.
+    if (model.isOneTimeUse) trap.deactivate();
+
+    // then check break chance (actor, mobj)
+    if (this.m_Rules.checkTrapStepOnBreaks(trap, mobj)) {
+      if (visible) {
+        if (victim !== null) this.AddMessage(this.MakeMessage(victim, `${this.Conjugate(victim, this.VERB_CRUSH)} ${trap.theName}.`));
+        else if (mobj !== null) this.AddMessage(new Message(`${this.Capitalize(mobj.theName)} breaks the ${trap.theName}.`, map.localTime.turnCounter));
+      }
+      --trap.quantity;
+    }
   }
 
   // C# DoLeaveMap — RogueGame.cs:13095
-  DoLeaveMap(actor: Actor, exitPoint: Point, askForConfirmation: boolean): boolean {
+  async DoLeaveMap(actor: Actor, exitPoint: Point, askForConfirmation: boolean): Promise<boolean> {
     void actor;
     void exitPoint;
     void askForConfirmation;
-    throw new Error("not yet ported: DoLeaveMap (RogueGame.cs:13095)");
+    const isPlayer = actor.isPlayer;
+    const fromMap = actor.location.map!;
+    const fromPos = actor.location.position;
+
+    // get exit.
+    const exit = fromMap.getExitAt(exitPoint);
+    if (exit === null) {
+      if (isPlayer) this.AddMessage(this.MakeErrorMessage("There is nowhere to go there."));
+      return true;
+    }
+
+    // if player, ask for a confirmation.
+    if (isPlayer && askForConfirmation) {
+      this.ClearMessages();
+      this.AddMessage(this.MakeYesNoMessage(`REALLY LEAVE ${fromMap.name}`));
+      this.RedrawPlayScreen();
+      const confirm = await this.WaitYesOrNo();
+      if (!confirm) {
+        this.AddMessage(new Message("Let's stay here a bit longer...", this.m_Session.worldTime.turnCounter, Color.Yellow));
+        this.RedrawPlayScreen();
+        return false;
+      }
+    }
+
+    // alpha10.1 check autosave before player leaving map
+    if (isPlayer) this.CheckAutoSaveTime();
+
+    // Try to leave tile.
+    if (!this.TryActorLeaveTile(actor)) {
+      // waste ap.
+      this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+      return false;
+    }
+
+    // spend AP **IF AI**
+    if (!actor.isPlayer) this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+    // if player is leaving and changing district, prepare district.
+    let playerChangedDistrict = false;
+    if (isPlayer && !actor.isBotPlayer && exit.toMap!.district !== fromMap.district) {
+      playerChangedDistrict = true;
+      await this.BeforePlayerEnterDistrict(exit.toMap!.district!);
+    }
+
+    /////////////////////////////////////
+    // 1. If spot not available, cancel.
+    // 2. Remove from previous map (+ corpse)
+    // 3. Enter map (+corpse).
+    // 4. Handle followers.
+    /////////////////////////////////////
+
+    // 1. If spot not available, cancel.
+    const other = exit.toMap!.getActorAtPoint(exit.toPosition);
+    if (other !== null) {
+      if (isPlayer) this.AddMessage(this.MakeErrorMessage(`${other.name} is blocking your way.`));
+      return true;
+    }
+    const blockingObj = exit.toMap!.getMapObjectAtPoint(exit.toPosition);
+    if (blockingObj !== null) {
+      const canJump = blockingObj.isJumpable && this.m_Rules.hasActorJumpAbility(actor);
+      const ignoreIt = blockingObj.isCouch;
+      if (!canJump && !ignoreIt) {
+        if (isPlayer) this.AddMessage(this.MakeErrorMessage(`${blockingObj.aName} is blocking your way.`));
+        return true;
+      }
+    }
+
+    // 2. Remove from previous map (+corpse)
+    if (this.IsVisibleToPlayer(actor)) this.AddMessage(this.MakeMessage(actor, `${this.Conjugate(actor, this.VERB_LEAVE)} ${fromMap.name}.`));
+    fromMap.removeActor(actor);
+    if (actor.draggedCorpse !== null) fromMap.removeCorpse(actor.draggedCorpse);
+    if (isPlayer && exit.toMap!.district !== fromMap.district) this.OnPlayerLeaveDistrict();
+
+    // 3. Enter map (+corpse)
+    exit.toMap!.placeActor(actor, exit.toPosition);
+    // moveActorToFirstPosition has no direct analogue in the TS Map API — placing the actor at the exit position is sufficient.
+    if (actor.draggedCorpse !== null) { actor.draggedCorpse.position = exit.toPosition; exit.toMap!.addCorpse(actor.draggedCorpse); }
+    if (this.IsVisibleToPlayer(actor) || isPlayer) this.AddMessage(this.MakeMessage(actor, `${this.Conjugate(actor, this.VERB_ENTER)} ${exit.toMap!.name}.`));
+    if (isPlayer) {
+      // scoring event.
+      if (fromMap.district !== exit.toMap!.district) {
+        this.m_Session.scoring.addEvent(this.m_Session.worldTime.turnCounter, `Entered district ${exit.toMap!.district!.name}.`);
+      }
+
+      // change map.
+      this.SetCurrentMap(exit.toMap!);
+    }
+
+    // Trigger stuff.
+    await this.OnActorEnterTile(actor);
+
+    // 4. Handle followers.
+    if (actor.countFollowers > 0) {
+      await this.DoFollowersEnterMap(actor, fromMap, fromPos, exit.toMap!, exit.toPosition);
+    }
+
+    // handle player changing district
+    if (playerChangedDistrict) this.AfterPlayerEnterDistrict();
+
+    return true;
   }
 
   // C# DoFollowersEnterMap — RogueGame.cs:13237
-  DoFollowersEnterMap(leader: Actor, fromMap: Map, fromPos: Point, toMap: Map, toPos: Point): void {
-    void leader;
-    void fromMap;
-    void fromPos;
-    void toMap;
-    void toPos;
-    throw new Error("not yet ported: DoFollowersEnterMap (RogueGame.cs:13237)");
+  // async: C# blocks on OnActorEnterTile and AddMessagePressEnter.
+  async DoFollowersEnterMap(leader: Actor, fromMap: Map, fromPos: Point, toMap: Map, toPos: Point): Promise<void> {
+    const leavePeopleBehind = toMap.district !== fromMap.district;
+    const isPlayer = this.m_Player === leader;
+    const leftBehind: Actor[] = [];
+
+    for (const fo of leader.followers!) {
+      // can follow only if was adj to leader and find free adj spot on the new map.
+      let canFollow = false;
+      let adjList: Point[] = [];
+
+      if (this.m_Rules.isAdjacent(fromPos, fo.location.position)) {
+        adjList =
+          toMap.filterAdjacentInMap(toPos, (pt) => this.m_Rules.isWalkableFor(fo, toMap, pt.x, pt.y).ok) ?? [];
+        canFollow = adjList.length > 0;
+      }
+
+      if (!canFollow) {
+        // cannot follow.
+        leftBehind.push(fo);
+      } else {
+        // can follow, do it now.
+        // Try to leave tile.
+        if (this.TryActorLeaveTile(fo)) {
+          const spot = adjList[this.m_Rules.roll(0, adjList.length)];
+          fromMap.removeActor(fo);
+          toMap.placeActor(fo, spot);
+          // C# also calls toMap.MoveActorToFirstPosition(fo) - no TS analogue, the
+          // spot is already a free adjacent tile.
+          // Trigger stuff.
+          await this.OnActorEnterTile(fo);
+        }
+      }
+    }
+
+    // make followers left behind leave if must.
+    for (const leaveMe of leftBehind) {
+      if (leavePeopleBehind) {
+        leader.removeFollower(leaveMe);
+        if (isPlayer) {
+          // scoring.
+          this.m_Session.scoring.addEvent(
+            this.m_Session.worldTime.turnCounter,
+            `${leaveMe.theName} was left behind.`
+          );
+
+          // message.
+          this.ClearMessages();
+          this.AddMessage(
+            new Message(
+              `${leaveMe.theName} could not follow you out of the district and left you!`,
+              this.m_Session.worldTime.turnCounter,
+              Color.Red
+            )
+          );
+          await this.AddMessagePressEnter();
+          this.ClearMessages();
+        }
+      } else {
+        if (leaveMe.location.map === fromMap) {
+          if (isPlayer) {
+            // message.
+            this.ClearMessages();
+            this.AddMessage(
+              new Message(
+                `${leaveMe.theName} could not follow and is still in ${fromMap.name}.`,
+                this.m_Session.worldTime.turnCounter,
+                Color.Yellow
+              )
+            );
+            await this.AddMessagePressEnter();
+            this.ClearMessages();
+          }
+        }
+      }
+    }
   }
 
   // C# DoUseExit — RogueGame.cs:13318
-  DoUseExit(actor: Actor, exitPoint: Point): boolean {
+  async DoUseExit(actor: Actor, exitPoint: Point): Promise<boolean> {
     void actor;
     void exitPoint;
-    throw new Error("not yet ported: DoUseExit (RogueGame.cs:13318)");
+    return await this.DoLeaveMap(actor, exitPoint, false);
   }
 
   // C# DoSwitchPlace — RogueGame.cs:13326
   DoSwitchPlace(actor: Actor, other: Actor): void {
-    void actor;
-    void other;
-    throw new Error("not yet ported: DoSwitchPlace (RogueGame.cs:13326)");
+    // spend a bunch of ap.
+    this.SpendActorActionPoints(actor, 2 * Rules.BASE_ACTION_COST);
+
+    // swap positions.
+    const map = other.location.map!;
+    const otherPos = other.location.position;
+    const actorPos = actor.location.position;
+    map.removeActor(other);
+    map.placeActor(actor, otherPos);
+    map.placeActor(other, actorPos);
+
+    // message.
+    if (this.IsVisibleToPlayer(actor) || this.IsVisibleToPlayer(other)) {
+      this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_SWITCH_PLACE_WITH), other));
+    }
   }
 
   // C# DoTakeLead — RogueGame.cs:13345
   DoTakeLead(actor: Actor, other: Actor): void {
-    void actor;
-    void other;
-    throw new Error("not yet ported: DoTakeLead (RogueGame.cs:13345)");
+    // spend AP.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+    // take lead.
+    actor.addFollower(other);
+
+    // reset trust in leader.
+    const prevTrust = other.getTrustIn(actor);
+    other.trustInLeader = prevTrust;
+
+    // message.
+    if (this.IsVisibleToPlayer(actor) || this.IsVisibleToPlayer(other)) {
+      if (actor === this.m_Player) this.ClearMessages();
+      this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_PERSUADE), other, " to join."));
+      if (prevTrust !== 0) this.DoSay(other, actor, "Ah yes I remember you.", SayFlags.IS_FREE_ACTION);
+    }
   }
 
   // C# DoStealLead — RogueGame.cs:13369
+  // alpha10.1
   DoStealLead(actor: Actor, other: Actor): void {
-    void actor;
-    void other;
-    throw new Error("not yet ported: DoStealLead (RogueGame.cs:13369)");
+    const prevLeader = other.leader!;
+
+    // spend AP.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+    // remove from previous leader
+    prevLeader.removeFollower(other);
+
+    // take lead.
+    actor.addFollower(other);
+
+    // reset trust in leader.
+    const prevTrust = other.getTrustIn(actor);
+    other.trustInLeader = prevTrust;
+
+    // message.
+    if (this.IsVisibleToPlayer(actor) || this.IsVisibleToPlayer(other)) {
+      if (actor === this.m_Player) this.ClearMessages();
+      this.AddMessage(
+        this.MakeMessage(
+          actor,
+          this.Conjugate(actor, this.VERB_PERSUADE),
+          other,
+          ` to leave ${prevLeader.name} and join.`
+        )
+      );
+      if (prevTrust !== 0) this.DoSay(other, actor, "Ah yes I remember you.", SayFlags.IS_FREE_ACTION);
+    }
   }
 
   // C# DoCancelLead — RogueGame.cs:13397
   DoCancelLead(actor: Actor, follower: Actor): void {
-    void actor;
-    void follower;
-    throw new Error("not yet ported: DoCancelLead (RogueGame.cs:13397)");
+    // spend AP.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+    // remove lead.
+    actor.removeFollower(follower);
+
+    // reset trust in leader.
+    follower.setTrustIn(actor, follower.trustInLeader);
+    follower.trustInLeader = Rules.TRUST_NEUTRAL;
+
+    // message.
+    if (this.IsVisibleToPlayer(actor) || this.IsVisibleToPlayer(follower)) {
+      if (actor === this.m_Player) this.ClearMessages();
+      this.AddMessage(this.MakeMessage(actor, this.Conjugate(actor, this.VERB_PERSUADE), follower, " to leave."));
+    }
   }
 
   // C# DoWait — RogueGame.cs:13420
   DoWait(actor: Actor): void {
-    void actor;
-    throw new Error("not yet ported: DoWait (RogueGame.cs:13420)");
+    // spend AP.
+    this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+    // message.
+    if (this.IsVisibleToPlayer(actor)) {
+      if (actor.staminaPoints < this.m_Rules.actorMaxSTA(actor))
+        this.AddMessage(
+          this.MakeMessage(actor, `${this.Conjugate(actor, this.VERB_CATCH)} ${this.HisOrHer(actor)} breath.`)
+        );
+      else this.AddMessage(this.MakeMessage(actor, `${this.Conjugate(actor, this.VERB_WAIT)}.`));
+    }
+
+    // regen STA.
+    this.RegenActorStaminaPoints(actor, Rules.STAMINA_REGEN_WAIT);
   }
 
   // C# DoPlayerBump — RogueGame.cs:13440
-  DoPlayerBump(player: Actor, direction: Direction): boolean {
-    void player;
-    void direction;
-    throw new Error("not yet ported: DoPlayerBump (RogueGame.cs:13440)");
+  // async: C# blocks on WaitYesOrNo.
+  async DoPlayerBump(player: Actor, direction: Direction): Promise<boolean> {
+    const bump = new ActionBump(player, this, direction);
+
+    if (bump === null) return false;
+
+    // special case: tearing down barricades as living.
+    // alpha10.1 moved up because civs models can now bash doors as a bump action;
+    // added break check and simplified test.
+    if (
+      (bump.concreteAction instanceof ActionBreak || bump.concreteAction instanceof ActionBashDoor) &&
+      !player.model.abilities.isUndead
+    ) {
+      const doWhat =
+        bump.concreteAction instanceof ActionBreak
+          ? `break ${bump.concreteAction.mapObject.theName}`
+          : "tear down the barricade";
+
+      if (this.m_Rules.isActorTired(player)) {
+        this.AddMessage(this.MakeErrorMessage(`Too tired to ${doWhat}.`));
+        this.RedrawPlayScreen();
+        return false;
+      } else {
+        // ask for confirmation.
+        this.AddMessage(this.MakeYesNoMessage(`Really ${doWhat}`));
+        this.RedrawPlayScreen();
+        const confirm = await this.WaitYesOrNo();
+
+        if (confirm) {
+          bump.concreteAction.perform();
+          return true;
+        } else {
+          this.AddMessage(
+            new Message("Good, keep everything secure.", this.m_Session.worldTime.turnCounter, Color.Yellow)
+          );
+          return false;
+        }
+      }
+    }
+
+    if (bump.isLegal()) {
+      bump.perform();
+      return true;
+    }
+
+    this.AddMessage(this.MakeErrorMessage(`Cannot do that : ${bump.failReason}.`));
+    return false;
   }
 
   // C# DoMakeAggression — RogueGame.cs:13520
-  DoMakeAggression(aggressor: Actor, target: Actor): void {
-    void aggressor;
-    void target;
-    throw new Error("not yet ported: DoMakeAggression (RogueGame.cs:13520)");
+  // async: C# blocks on AddMessagePressEnter via OnMakeEnemyOfCop/Soldier.
+  async DoMakeAggression(aggressor: Actor, target: Actor): Promise<void> {
+    // no need if in enemy factions.
+    if (aggressor.faction.isEnemyOf(target.faction)) return;
+
+    const alreadyEnemies = aggressor.isAggressorOf(target) || target.isAggressorOf(aggressor);
+
+    // if target is AI and has not aggressor as enemy, emote.
+    if (!target.isPlayer && !target.isSleeping && !aggressor.isAggressorOf(target) && !target.isAggressorOf(aggressor))
+      this.DoSay(target, aggressor, "BASTARD! TRAITOR!", SayFlags.IS_FREE_ACTION | SayFlags.IS_DANGER);
+
+    // aggressor and selfdefence
+    aggressor.addAggressorOf(target);
+    target.addSelfDefenceFrom(aggressor);
+
+    // then handle special cases.
+    // make enemy of all faction actors on maps:
+    // 1. Making an enemy of cops.
+    // 2. Making an enemy of soldiers.
+    if (!target.isSleeping) {
+      const tFaction = target.faction;
+      // 1. Making an enemy of cops.
+      if (tFaction.id === FactionID.ThePolice) {
+        // only non-law enforcers or murderers make enemies of cops by attacking cops.
+        if (!aggressor.model.abilities.isLawEnforcer || this.m_Rules.isMurder(aggressor, target))
+          await this.OnMakeEnemyOfCop(aggressor, target, alreadyEnemies);
+      }
+      // 2. Making an enemy of soldiers.
+      else if (tFaction.id === FactionID.TheArmy) {
+        await this.OnMakeEnemyOfSoldier(aggressor, target, alreadyEnemies);
+      }
+    }
   }
 
   // C# OnMakeEnemyOfCop — RogueGame.cs:13562
-  OnMakeEnemyOfCop(aggressor: Actor, cop: Actor, wasAlreadyEnemy: boolean): void {
-    void aggressor;
-    void cop;
-    void wasAlreadyEnemy;
-    throw new Error("not yet ported: OnMakeEnemyOfCop (RogueGame.cs:13562)");
+  // async: C# blocks on AddMessagePressEnter.
+  async OnMakeEnemyOfCop(aggressor: Actor, cop: Actor, wasAlreadyEnemy: boolean): Promise<void> {
+    // say.
+    if (!wasAlreadyEnemy)
+      this.DoSay(
+        cop,
+        aggressor,
+        `TO DISTRICT PATROLS : ${aggressor.theName} MUST DIE!`,
+        SayFlags.IS_FREE_ACTION | SayFlags.IS_DANGER
+      );
+
+    // make enemy of all cops in the district.
+    await this.MakeEnemyOfTargetFactionInDistrict(aggressor, cop, async (a) => {
+      if (a.isPlayer && a !== cop && !a.isSleeping && !this.m_Rules.areEnemies(a, aggressor)) {
+        const turn = this.m_Session.worldTime.turnCounter;
+        this.ClearMessages();
+        this.AddMessage(new Message("You get a message from your police radio.", turn, Color.White));
+        this.AddMessage(
+          new Message(`${aggressor.theName} is armed and dangerous. Shoot on sight!`, turn, Color.White)
+        );
+        this.AddMessage(
+          new Message(
+            `Current location : ${aggressor.location.map!.name}@${aggressor.location.position.x},${aggressor.location.position.y}`,
+            turn,
+            Color.White
+          )
+        );
+        if (!a.isBotPlayer) await this.AddMessagePressEnter();
+      }
+    });
   }
 
   // C# OnMakeEnemyOfSoldier — RogueGame.cs:13586
-  OnMakeEnemyOfSoldier(aggressor: Actor, soldier: Actor, wasAlreadyEnemy: boolean): void {
-    void aggressor;
-    void soldier;
-    void wasAlreadyEnemy;
-    throw new Error("not yet ported: OnMakeEnemyOfSoldier (RogueGame.cs:13586)");
+  // async: C# blocks on AddMessagePressEnter.
+  async OnMakeEnemyOfSoldier(aggressor: Actor, soldier: Actor, wasAlreadyEnemy: boolean): Promise<void> {
+    // say.
+    if (!wasAlreadyEnemy)
+      this.DoSay(
+        soldier,
+        aggressor,
+        `TO DISTRICT SQUADS : ${aggressor.theName} MUST DIE!`,
+        SayFlags.IS_FREE_ACTION | SayFlags.IS_DANGER
+      );
+
+    // make enemy of all cops in the district.
+    await this.MakeEnemyOfTargetFactionInDistrict(aggressor, soldier, async (a) => {
+      if (a.isPlayer && a !== soldier && !a.isSleeping && !this.m_Rules.areEnemies(a, aggressor)) {
+        const turn = this.m_Session.worldTime.turnCounter;
+        this.ClearMessages();
+        this.AddMessage(new Message("You get a message from your army radio.", turn, Color.White));
+        this.AddMessage(new Message(`${aggressor.name} is armed and dangerous. Shoot on sight!`, turn, Color.White));
+        this.AddMessage(
+          new Message(
+            `Current location : ${aggressor.location.map!.name}@${aggressor.location.position.x},${aggressor.location.position.y}`,
+            turn,
+            Color.White
+          )
+        );
+        if (!a.isBotPlayer) await this.AddMessagePressEnter();
+      }
+    });
   }
 
   // C# MakeEnemyOfTargetFactionInDistrict — RogueGame.cs:13615
-  MakeEnemyOfTargetFactionInDistrict(aggressor: Actor, target: Actor, fn: (p0: Actor) => void): void {
-    void aggressor;
-    void target;
-    void fn;
-    throw new Error("not yet ported: MakeEnemyOfTargetFactionInDistrict (RogueGame.cs:13615)");
+  /** @param fn action to call on faction actor BEFORE making aggressor an enemy. */
+  // async: the C# Action<Actor> callback blocks on AddMessagePressEnter.
+  async MakeEnemyOfTargetFactionInDistrict(
+    aggressor: Actor,
+    target: Actor,
+    fn: ((a: Actor) => Promise<void>) | null
+  ): Promise<void> {
+    const tFaction = target.faction;
+    for (const m of target.location.map!.district!.maps) {
+      for (const a of m.actors) {
+        if (a === aggressor || a === target) continue;
+        if (a.faction !== tFaction) continue;
+        if (a.leader === aggressor) continue;
+
+        // perform additional action on actor.
+        if (fn !== null) await fn(a);
+
+        // aggression & self defence.
+        aggressor.addAggressorOf(a);
+        a.addSelfDefenceFrom(aggressor);
+      }
+    }
   }
 
   // C# MakeEnemyOfGroup — RogueGame.cs:13642
   MakeEnemyOfGroup(a: Actor, group: Actor[]): void {
+    // C# has this (and MakeEnemiesGroupsSub) under `#if false`: obsolete, Actor
+    // .HasActorAsPersonalEnemy now checks leaders & followers. Ported as empty.
     void a;
     void group;
-    throw new Error("not yet ported: MakeEnemyOfGroup (RogueGame.cs:13642)");
   }
 
   // C# MakeEnemiesGroupsSub — RogueGame.cs:13654
   MakeEnemiesGroupsSub(groupA: Actor[], groupB: Actor[]): void {
+    // C# has this under `#if false`, see MakeEnemyOfGroup. Ported as empty.
     void groupA;
     void groupB;
-    throw new Error("not yet ported: MakeEnemiesGroupsSub (RogueGame.cs:13654)");
   }
 
   // C# DoMeleeAttack — RogueGame.cs:13669
@@ -9899,64 +10572,572 @@ export class RogueGame {
 
   // C# OnLoudNoise — RogueGame.cs:16184
   OnLoudNoise(map: Map, noisePosition: Point, noiseName: string): void {
-    void map;
-    void noisePosition;
-    void noiseName;
-    throw new Error("not yet ported: OnLoudNoise (RogueGame.cs:16184)");
+    // Check if nearby sleeping actors wake up.
+    // Check long wait interruption.
+    const pmin = map.trimToBounds(
+      noisePosition.x - Rules.LOUD_NOISE_RADIUS,
+      noisePosition.y - Rules.LOUD_NOISE_RADIUS
+    );
+    const pmax = map.trimToBounds(
+      noisePosition.x + Rules.LOUD_NOISE_RADIUS,
+      noisePosition.y + Rules.LOUD_NOISE_RADIUS
+    );
+
+    // Waking up nearby actors.
+    for (let x = pmin.x; x <= pmax.x; x++) {
+      for (let y = pmin.y; y <= pmax.y; y++) {
+        // sleeping actor?
+        const actor = map.getActorAt(x, y);
+        if (actor === null || !actor.isSleeping) continue;
+
+        // ignore if too far.
+        const noiseDistance = this.m_Rules.gridDistance(noisePosition, x, y);
+        if (noiseDistance > Rules.LOUD_NOISE_RADIUS) continue;
+
+        // roll chance of waking up.
+        const wakeupChance = this.m_Rules.actorLoudNoiseWakeupChance(actor, noiseDistance);
+        if (!this.m_Rules.rollChance(wakeupChance)) continue;
+
+        // wake up!
+        this.DoWakeUp(actor);
+        if (this.IsVisibleToPlayer(actor)) {
+          this.AddMessage(
+            new Message(
+              `${noiseName} wakes ${actor.theName} up!`,
+              map.localTime.turnCounter,
+              actor === this.m_Player ? Color.Red : Color.White
+            )
+          );
+          this.RedrawPlayScreen();
+        }
+      }
+    }
+
+    // Interrupting long wait.
+    if (
+      this.m_IsPlayerLongWait &&
+      map === this.m_Player.location.map &&
+      this.IsVisibleToPlayer(map, noisePosition)
+    ) {
+      // interrupt!
+      this.m_IsPlayerLongWaitForcedStop = true;
+    }
   }
 
   // C# InflictDamage — RogueGame.cs:16241
-  InflictDamage(actor: Actor, dmg: number): void {
-    void actor;
-    void dmg;
-    throw new Error("not yet ported: InflictDamage (RogueGame.cs:16241)");
+  // async: C# blocks on AnimDelay.
+  async InflictDamage(actor: Actor, dmg: number): Promise<void> {
+    // HP.
+    actor.hitPoints -= dmg;
+
+    // Stamina.
+    if (actor.model.abilities.canTire) {
+      actor.staminaPoints -= dmg;
+    }
+
+    // Body armor breaks?
+    const torsoItem = actor.getEquippedItem(DollPart.TORSO);
+    if (torsoItem !== null && torsoItem instanceof ItemBodyArmor) {
+      if (this.m_Rules.rollChance(Rules.BODY_ARMOR_BREAK_CHANCE)) {
+        // do it.
+        this.OnUnequipItem(actor, torsoItem);
+        actor.inventory!.removeAllQuantity(torsoItem);
+
+        // message.
+        if (this.IsVisibleToPlayer(actor)) {
+          this.AddMessage(this.MakeMessage(actor, `: ${torsoItem.theName} breaks and is now useless!`));
+          this.RedrawPlayScreen();
+          await this.AnimDelay(actor.isPlayer ? DELAY_NORMAL : DELAY_SHORT);
+        }
+      }
+    }
+
+    // If sleeping, wake up dude!
+    if (actor.isSleeping) this.DoWakeUp(actor);
   }
 
   // C# KillActor — RogueGame.cs:16278
-  KillActor(killer: Actor | null, deadGuy: Actor, reason: string, canDropCorpse?: boolean): void {
-    void killer;
-    void deadGuy;
-    void reason;
-    void canDropCorpse;
-    throw new Error("not yet ported: KillActor (RogueGame.cs:16278)");
+  // alpha10 drop corpse optional
+  // async: C# blocks on PlayerDied/AddMessagePressEnter/AnimDelay/ShowNewAchievement.
+  async KillActor(killer: Actor | null, deadGuy: Actor, reason: string, canDropCorpse = true): Promise<void> {
+    // Sanity check: C# has this under `#if false` (starved actors can trip it).
+
+    // Set dead flag.
+    deadGuy.isDead = true;
+
+    // force to stop dragging corpses.
+    this.DoStopDraggingCorpses(deadGuy);
+
+    // untrigger all traps here.
+    this.UntriggerAllTrapsHere(deadGuy.location);
+
+    // living killing undead = restore sanity.
+    if (
+      killer !== null &&
+      !killer.model.abilities.isUndead &&
+      killer.model.abilities.hasSanity &&
+      deadGuy.model.abilities.isUndead
+    )
+      this.RegenActorSanity(killer, Rules.SANITY_RECOVER_KILL_UNDEAD);
+
+    // death of bonded leader/follower hits sanity.
+    if (deadGuy.hasLeader) {
+      const leader = deadGuy.leader!;
+      if (this.m_Rules.hasActorBondWith(leader, deadGuy)) {
+        this.SpendActorSanity(leader, Rules.SANITY_HIT_BOND_DEATH);
+        if (this.IsVisibleToPlayer(leader)) {
+          if (leader.isPlayer && !leader.isBotPlayer) this.ClearMessages();
+          this.AddMessage(
+            this.MakeMessage(leader, `${this.Conjugate(leader, this.VERB_BE)} deeply disturbed by ${deadGuy.name} sudden death!`)
+          );
+          if (leader.isPlayer && !leader.isBotPlayer) await this.AddMessagePressEnter();
+        }
+      }
+    } else if (deadGuy.countFollowers > 0) {
+      for (const fo of deadGuy.followers!) {
+        if (this.m_Rules.hasActorBondWith(fo, deadGuy)) {
+          this.SpendActorSanity(fo, Rules.SANITY_HIT_BOND_DEATH);
+          if (this.IsVisibleToPlayer(fo)) {
+            if (fo.isPlayer && !fo.isBotPlayer) this.ClearMessages();
+            this.AddMessage(
+              this.MakeMessage(fo, `${this.Conjugate(fo, this.VERB_BE)} deeply disturbed by ${deadGuy.name} sudden death!`)
+            );
+            if (fo.isPlayer && !fo.isBotPlayer) await this.AddMessagePressEnter();
+          }
+        }
+      }
+    }
+
+    // Unique actor?
+    if (deadGuy.isUnique) {
+      if (killer !== null)
+        this.m_Session.scoring.addEvent(
+          deadGuy.location.map!.localTime.turnCounter,
+          `* ${deadGuy.theName} was killed by ${killer.model.name} ${killer.theName}! *`
+        );
+      else
+        this.m_Session.scoring.addEvent(
+          deadGuy.location.map!.localTime.turnCounter,
+          `* ${deadGuy.theName} died by ${reason}! *`
+        );
+    }
+
+    // Player dead?
+    // BEFORE removing followers & dropping items.
+    if (deadGuy === this.m_Player) await this.PlayerDied(killer, reason);
+
+    // Remove followers.
+    deadGuy.removeAllFollowers();
+
+    // Remove from leader.
+    if (deadGuy.leader !== null) {
+      // player's follower killed : scoring and message.
+      if (deadGuy.leader.isPlayer) {
+        let deathEvent: string;
+        if (killer !== null)
+          deathEvent = `Follower ${deadGuy.theName} was killed by ${killer.model.name} ${killer.theName}!`;
+        else deathEvent = `Follower ${deadGuy.theName} died by ${reason}!`;
+        this.m_Session.scoring.addEvent(deadGuy.location.map!.localTime.turnCounter, deathEvent);
+      }
+
+      deadGuy.leader.removeFollower(deadGuy);
+    }
+
+    // Remove aggressor & self defence relations.
+    const wasMurder = killer !== null && this.m_Rules.isMurder(killer, deadGuy);
+    deadGuy.removeAllAgressorSelfDefenceRelations();
+
+    // Remove from map.
+    deadGuy.location.map!.removeActor(deadGuy);
+
+    // Drop some inventory items.
+    {
+      const inv = deadGuy.inventory;
+      if (inv !== null && !inv.isEmpty) {
+        const deadItemsCount = inv.countItems;
+        // C# snapshots the list first, because dropping mutates the inventory.
+        const dropThem: Item[] = [];
+        for (let i = 0; i < deadItemsCount; i++) {
+          const it = inv.getItem(i);
+          if (it !== null) dropThem.push(it);
+        }
+        for (const it of dropThem) {
+          const chance =
+            it instanceof ItemAmmo || it instanceof ItemFood
+              ? Rules.VICTIM_DROP_AMMOFOOD_ITEM_CHANCE
+              : Rules.VICTIM_DROP_GENERIC_ITEM_CHANCE;
+          if (it.model.isUnbreakable || it.isUnique || this.m_Rules.rollChance(chance)) this.DropItem(deadGuy, it);
+        }
+      }
+    }
+
+    // Blood splat/Remains
+    if (!deadGuy.model.abilities.isUndead) this.SplatterBlood(deadGuy.location.map!, deadGuy.location.position);
+    // C# also has the undead-remains branch here, under `#if false` (saved game size).
+
+    // Corpse?
+    if (Rules.hasCorpses(this.m_Session.gameMode)) {
+      if (!deadGuy.model.abilities.isUndead && canDropCorpse) {
+        this.DropCorpse(deadGuy);
+      }
+    }
+
+    // One more kill
+    if (killer !== null) ++killer.killsCount;
+
+    // Player scoring
+    if (killer === this.m_Player) this.PlayerKill(deadGuy);
+
+    // Undead level up?
+    if (killer !== null && Rules.hasEvolution(this.m_Session.gameMode)) {
+      if (killer.model.abilities.isUndead) {
+        // check for evolution.
+        const levelUpModel = this.CheckUndeadEvolution(killer);
+        if (levelUpModel !== null) {
+          // Remember skills if any.
+          let savedSkills: Skill[] | null = null;
+          if (killer.sheet.skillTable !== null && killer.sheet.skillTable.skills !== null)
+            savedSkills = [...killer.sheet.skillTable.skills];
+
+          // Do the transformation.
+          killer.model = levelUpModel;
+
+          // If player, make sure it is setup properly.
+          if (killer.isPlayer) this.PrepareActorForPlayerControl(killer);
+
+          // If had skills, give them back.
+          if (savedSkills !== null) {
+            for (const s of savedSkills) {
+              for (let i = 0; i < s.level; i++) {
+                killer.sheet.skillTable!.addOrIncreaseSkill(s.id);
+                this.OnSkillUpgrade(killer, s.id as SkillID);
+              }
+            }
+            this.m_TownGenerator.recomputeActorStartingStats(killer);
+          }
+
+          // Message.
+          if (this.IsVisibleToPlayer(killer)) {
+            // FIXME: MapToScreen/RedrawPlayScreen are still slice 8 stubs.
+            try {
+              const sp = this.MapToScreen(killer.location.position);
+              this.AddOverlay(new OverlayRect(Color.Yellow, new Rect(sp.x, sp.y, TILE_SIZE, TILE_SIZE)));
+            } catch (e) {}
+            this.AddMessage(
+              this.MakeMessage(killer, `${this.Conjugate(killer, this.VERB_TRANSFORM_INTO)} a ${levelUpModel.name} horror!`)
+            );
+            try {
+              this.RedrawPlayScreen();
+            } catch (e) {}
+            await this.AnimDelay(DELAY_LONG);
+            this.ClearOverlays();
+          }
+        }
+      }
+    }
+
+    // Trust : leader killing a follower target or adjacent enemy.
+    if (killer !== null && killer.countFollowers > 0) {
+      for (const fo of killer.followers!) {
+        let gainTrust = false;
+        if (
+          fo.targetActor === deadGuy ||
+          (this.m_Rules.areEnemies(fo, deadGuy) && this.m_Rules.isAdjacent(fo.location, deadGuy.location))
+        )
+          gainTrust = true;
+
+        if (gainTrust) {
+          this.DoSay(fo, killer, "That was close! Thanks for the help!!", SayFlags.IS_FREE_ACTION);
+          this.ModifyActorTrustInLeader(fo, Rules.TRUST_LEADER_KILL_ENEMY, true);
+        }
+      }
+    }
+
+    // Murder?
+    if (wasMurder) {
+      // one more murder.
+      ++killer!.murdersCounter;
+
+      // if player, log.
+      if (killer!.isPlayer)
+        this.m_Session.scoring.addEvent(
+          this.m_Session.worldTime.turnCounter,
+          `Murdered ${deadGuy.theName} a ${deadGuy.model.name}!`
+        );
+      // message.
+      if (this.IsVisibleToPlayer(killer!)) this.AddMessage(this.MakeMessage(killer!, `murdered ${deadGuy.name}!!`));
+
+      // check for npcs law enforcers witnessing the murder.
+      const map = killer!.location.map!;
+      const killerPos = killer!.location.position;
+      for (const a of map.actors) {
+        // check ability and state/relationship
+        if (
+          !a.model.abilities.isLawEnforcer ||
+          a.isDead ||
+          a.isSleeping ||
+          a.isPlayer ||
+          a === killer ||
+          a === deadGuy ||
+          a.leader === killer ||
+          killer!.leader === a
+        )
+          continue;
+
+        // do as less computations as possible : we don't need all the actor fov,
+        // just the line to the murderer.
+
+        // fov range check.
+        if (
+          this.m_Rules.gridDistance(a.location.position, killerPos) >
+          this.m_Rules.actorFOV(a, map.localTime, this.m_Session.world!.weather)
+        )
+          continue;
+
+        // LOS check.
+        if (!LOS.canTraceViewLine(map, a.location.position, killerPos)) continue;
+
+        // we see the murderer!
+        // make enemy and emote.
+        this.DoSay(
+          a,
+          killer!,
+          `MURDER! ${killer!.theName} HAS KILLED ${deadGuy.theName}!`,
+          SayFlags.IS_FREE_ACTION | SayFlags.IS_IMPORTANT
+        );
+        await this.DoMakeAggression(a, killer!);
+      }
+    }
+
+    // Emote: a law enforcer killing a murderer feels warm and fuzzy inside.
+    if (
+      killer !== null &&
+      deadGuy.murdersCounter > 0 &&
+      killer.model.abilities.isLawEnforcer &&
+      !killer.faction.isEnemyOf(deadGuy.faction)
+    ) {
+      if (killer.isPlayer)
+        this.AddMessage(
+          new Message(
+            "You feel like you did your duty with killing a murderer.",
+            this.m_Session.worldTime.turnCounter,
+            Color.White
+          )
+        );
+      else this.DoSay(killer, deadGuy, "Good riddance, murderer!", SayFlags.IS_FREE_ACTION | SayFlags.IS_DANGER);
+    }
+
+    //////////////////////////////////////////////
+    // Player or Player Followers Killing Uniques
+    //////////////////////////////////////////////
+    // The Sewers Thing
+    if (deadGuy === this.m_Session.uniqueActors.theSewersThing.theActor) {
+      if (killer === this.m_Player || killer?.leader === this.m_Player) {
+        // scoring.
+        this.m_Session.scoring.setCompletedAchievement(AchievementIDs.KILLED_THE_SEWERS_THING);
+
+        // achievement!
+        await this.ShowNewAchievement(AchievementIDs.KILLED_THE_SEWERS_THING);
+      }
+    }
   }
 
   // C# Disarm — RogueGame.cs:16570
-  Disarm(actor: Actor): Item {
-    void actor;
-    throw new Error("not yet ported: Disarm (RogueGame.cs:16570)");
+  // alpha10
+  /** @returns the disarmed item or null if actor had no equipped item. */
+  Disarm(actor: Actor): Item | null {
+    // pick equipped item to disarm : prefer weapon, then any right handed item(?),
+    // then left handed.
+    let disarmIt = actor.getEquippedWeapon();
+    if (disarmIt === null) {
+      disarmIt = actor.getEquippedItem(DollPart.RIGHT_HAND);
+      if (disarmIt === null) {
+        disarmIt = actor.getEquippedItem(DollPart.LEFT_HAND);
+      }
+    }
+
+    if (disarmIt === null) return null;
+
+    // unequip, remove from inv and drop item in a random adjacent tile.
+    // If none possible, will drop on same tile (which then has almost no gameplay
+    // effect because the actor can take it back asap at no ap cost... unless he dies).
+    this.DoUnequipItem(actor, disarmIt, false);
+    actor.inventory!.removeAllQuantity(disarmIt);
+    const map = actor.location.map!;
+    // checking if can drop there is eq to checking if can throw it there
+    const dropTiles = map.filterAdjacentInMap(actor.location.position, (pt) => !map.isBlockingThrow(pt.x, pt.y)) ?? [];
+    let dropOnTile: Point;
+    if (dropTiles.length > 0) dropOnTile = dropTiles[this.m_Rules.roll(0, dropTiles.length)];
+    else dropOnTile = actor.location.position;
+    map.dropItemAt(disarmIt, dropOnTile);
+
+    // done
+    return disarmIt;
   }
 
   // C# CheckUndeadEvolution — RogueGame.cs:16614
-  CheckUndeadEvolution(undead: Actor): ActorModel {
-    void undead;
-    throw new Error("not yet ported: CheckUndeadEvolution (RogueGame.cs:16614)");
+  CheckUndeadEvolution(undead: Actor): ActorModel | null {
+    // check option & game mode.
+    if (!s_Options.allowUndeadsEvolution || !Rules.hasEvolution(this.m_Session.gameMode)) return null;
+
+    // evolve?
+    let evolve = false;
+    switch (undead.model.id) {
+      // zombie master 4 kills  & Day > X -> zombie lord
+      case ActorID.UNDEAD_ZOMBIE_MASTER: {
+        if (undead.killsCount < 4) return null;
+        if (undead.location.map!.localTime.day < ZOMBIE_LORD_EVOLUTION_MIN_DAY && !undead.isPlayer) return null;
+        evolve = true;
+        break;
+      }
+
+      // zombie lord 8 kills -> zombie prince.
+      case ActorID.UNDEAD_ZOMBIE_LORD: {
+        if (undead.killsCount < 8) return null;
+        evolve = true;
+        break;
+      }
+
+      // skeleton 2 kills -> red eyed skeleton
+      case ActorID.UNDEAD_SKELETON: {
+        if (undead.killsCount < 2) return null;
+        evolve = true;
+        break;
+      }
+      // red eye skeleton 4 kills -> red skeleton
+      case ActorID.UNDEAD_RED_EYED_SKELETON: {
+        if (undead.killsCount < 4) return null;
+        evolve = true;
+        break;
+      }
+
+      // zombie -> dark eyed zombie
+      case ActorID.UNDEAD_ZOMBIE:
+        evolve = true;
+        break;
+
+      // dark eyed zombie -> dark zombie
+      case ActorID.UNDEAD_DARK_EYED_ZOMBIE:
+        evolve = true;
+        break;
+
+      // zombified 2 kills -> neophyte
+      case ActorID.UNDEAD_MALE_ZOMBIFIED:
+      case ActorID.UNDEAD_FEMALE_ZOMBIFIED: {
+        if (undead.killsCount < 2) return null;
+        evolve = true;
+        break;
+      }
+
+      // neophyte 4 kills & Day > X -> disciple
+      case ActorID.UNDEAD_MALE_NEOPHYTE:
+      case ActorID.UNDEAD_FEMALE_NEOPHYTE: {
+        if (undead.killsCount < 4) return null;
+        if (undead.location.map!.localTime.day < DISCIPLE_EVOLUTION_MIN_DAY && !undead.isPlayer) return null;
+        evolve = true;
+        break;
+      }
+
+      default:
+        evolve = false;
+        break;
+    }
+
+    // evolve vs no evolution.
+    if (evolve) {
+      const evolutionID = this.NextUndeadEvolution(undead.model.id);
+      if (evolutionID === undead.model.id) return null;
+      else return this.m_GameActors.get(evolutionID);
+    } else return null;
   }
 
   // C# NextUndeadEvolution — RogueGame.cs:16711
   NextUndeadEvolution(fromModelID: ActorID): ActorID {
-    void fromModelID;
-    throw new Error("not yet ported: NextUndeadEvolution (RogueGame.cs:16711)");
+    switch (fromModelID) {
+      case ActorID.UNDEAD_SKELETON:
+        return ActorID.UNDEAD_RED_EYED_SKELETON;
+      case ActorID.UNDEAD_RED_EYED_SKELETON:
+        return ActorID.UNDEAD_RED_SKELETON;
+
+      case ActorID.UNDEAD_ZOMBIE:
+        return ActorID.UNDEAD_DARK_EYED_ZOMBIE;
+      case ActorID.UNDEAD_DARK_EYED_ZOMBIE:
+        return ActorID.UNDEAD_DARK_ZOMBIE;
+
+      case ActorID.UNDEAD_FEMALE_ZOMBIFIED:
+        return ActorID.UNDEAD_FEMALE_NEOPHYTE;
+      case ActorID.UNDEAD_MALE_ZOMBIFIED:
+        return ActorID.UNDEAD_MALE_NEOPHYTE;
+      case ActorID.UNDEAD_FEMALE_NEOPHYTE:
+        return ActorID.UNDEAD_FEMALE_DISCIPLE;
+      case ActorID.UNDEAD_MALE_NEOPHYTE:
+        return ActorID.UNDEAD_MALE_DISCIPLE;
+
+      case ActorID.UNDEAD_ZOMBIE_MASTER:
+        return ActorID.UNDEAD_ZOMBIE_LORD;
+      case ActorID.UNDEAD_ZOMBIE_LORD:
+        return ActorID.UNDEAD_ZOMBIE_PRINCE;
+
+      default:
+        return fromModelID;
+    }
   }
 
   // C# SplatterBlood — RogueGame.cs:16735
   SplatterBlood(map: Map, position: Point): void {
-    void map;
-    void position;
-    throw new Error("not yet ported: SplatterBlood (RogueGame.cs:16735)");
+    // splatter floor there.
+    const tile = map.getTileAt(position.x, position.y);
+    if (tile !== null && map.isWalkable(position.x, position.y) && !tile.hasDecoration(GameImages.DECO_BLOODIED_FLOOR)) {
+      tile.addDecoration(GameImages.DECO_BLOODIED_FLOOR);
+      map.addTimer(
+        new TaskRemoveDecoration(WorldTime.TURNS_PER_DAY, position.x, position.y, GameImages.DECO_BLOODIED_FLOOR)
+      );
+    }
+
+    // splatter adjacent walls.
+    for (const d of Direction.COMPASS) {
+      if (!this.m_Rules.rollChance(BLOOD_WALL_SPLAT_CHANCE)) continue;
+      const next = d.applyTo(position);
+      if (!map.isInBoundsPoint(next)) continue;
+      const tileNext = map.getTileAt(next.x, next.y);
+      if (tileNext === null) continue;
+      if (tileNext.model.isWalkable) continue;
+      if (tileNext.hasDecoration(GameImages.DECO_BLOODIED_WALL)) continue;
+      tileNext.addDecoration(GameImages.DECO_BLOODIED_WALL);
+      map.addTimer(
+        new TaskRemoveDecoration(WorldTime.TURNS_PER_DAY, next.x, next.y, GameImages.DECO_BLOODIED_WALL)
+      );
+    }
   }
 
   // C# UndeadRemains — RogueGame.cs:16763
   UndeadRemains(map: Map, position: Point): void {
-    void map;
-    void position;
-    throw new Error("not yet ported: UndeadRemains (RogueGame.cs:16763)");
+    // add deco there.
+    const tile = map.getTileAt(position.x, position.y);
+    if (tile !== null && map.isWalkable(position.x, position.y) && !tile.hasDecoration(GameImages.DECO_ZOMBIE_REMAINS))
+      tile.addDecoration(GameImages.DECO_ZOMBIE_REMAINS);
   }
 
   // C# DropCorpse — RogueGame.cs:16773
   DropCorpse(deadGuy: Actor): void {
-    void deadGuy;
-    throw new Error("not yet ported: DropCorpse (RogueGame.cs:16773)");
+    // add blood to deadguy.
+    deadGuy.doll.addDecoration(DollPart.TORSO, GameImages.BLOODIED);
+
+    // make and add corpse.
+    const corpseHp = this.m_Rules.actorMaxHPs(deadGuy);
+    let rotation = this.m_Rules.roll(30, 60);
+    if (this.m_Rules.rollChance(50)) rotation = -rotation;
+    const scale = 1.0;
+    const corpse = new Corpse(
+      deadGuy,
+      corpseHp,
+      corpseHp,
+      deadGuy.location.map!.localTime.turnCounter,
+      rotation,
+      scale
+    );
+    // the Corpse ctor takes its position from deadGuy.location.position.
+    deadGuy.location.map!.addCorpse(corpse);
   }
 
   // C# PlayerDied — RogueGame.cs:16789
@@ -11033,244 +12214,1697 @@ export class RogueGame {
 
   // C# ComputeViewRect — RogueGame.cs:17987
   ComputeViewRect(mapCenter: Point): void {
-    void mapCenter;
-    throw new Error("not yet ported: ComputeViewRect (RogueGame.cs:17987)");
+    const left = mapCenter.x - HALF_VIEW_WIDTH;
+    const right = mapCenter.x + HALF_VIEW_WIDTH;
+    const top = mapCenter.y - HALF_VIEW_HEIGHT;
+    const bottom = mapCenter.y + HALF_VIEW_HEIGHT;
+    this.m_MapViewRect = new Rect(left, top, 1 + right - left, 1 + bottom - top);
   }
 
   // C# IsInViewRect — RogueGame.cs:17998
   IsInViewRect(mapPosition: Point): boolean {
-    void mapPosition;
-    throw new Error("not yet ported: IsInViewRect (RogueGame.cs:17998)");
+    return this.m_MapViewRect.contains(mapPosition);
   }
 
   // C# RedrawPlayScreen — RogueGame.cs:18004
   RedrawPlayScreen(): void {
-    throw new Error("not yet ported: RedrawPlayScreen (RogueGame.cs:18004)");
+    // alpha10 dont display some infos
+    const canSeeSky = this.m_Rules.canActorSeeSky(this.m_Player);
+    const canKnowTime = this.m_Rules.canActorKnowTime(this.m_Player);
+
+    this.m_UI.UI_Clear(Color.Black);
+
+    // map & minimap
+    // disabled changing brightness bad for the eyes: TintForDayPhase(m_Session.WorldTime.Phase)
+    const mapTint = Color.White;
+    this.m_UI.UI_DrawLine(Color.DarkGray, RIGHTPANEL_X, 0, RIGHTPANEL_X, MESSAGES_Y);
+    this.DrawMap(this.m_Session.currentMap!, mapTint);
+
+    this.m_UI.UI_DrawLine(Color.DarkGray, RIGHTPANEL_X, MINIMAP_Y - 4, CANVAS_WIDTH, MINIMAP_Y - 4);
+    this.DrawMiniMap(this.m_Session.currentMap!);
+
+    // messages
+    this.m_UI.UI_DrawLine(Color.DarkGray, MESSAGES_X, MESSAGES_Y - 1, CANVAS_WIDTH, MESSAGES_Y - 1);
+    this.DrawMessages();
+
+    // location info.
+    //    x0            x1
+    // y0 <map name>
+    // y1 <zone name>
+    // y2 <day>        <dayphase>
+    // y3 <hour>       <weather>/<lighting>
+    // y4 <turn>       <scoring>@<difficulty> <mode>
+    // y5 <life>/<lives>
+    // y6 <murders>
+    const X0 = LOCATIONPANEL_TEXT_X;
+    const X1 = LOCATIONPANEL_TEXT_X + 128;
+    const Y0 = LOCATIONPANEL_TEXT_Y;
+    const Y1 = Y0 + LINE_SPACING;
+    const Y2 = Y1 + LINE_SPACING;
+    const Y3 = Y2 + LINE_SPACING;
+    const Y4 = Y3 + LINE_SPACING;
+    const Y5 = Y4 + LINE_SPACING;
+    const Y6 = Y5 + LINE_SPACING;
+
+    this.m_UI.UI_DrawLine(Color.DarkGray, LOCATIONPANEL_X, LOCATIONPANEL_Y, LOCATIONPANEL_X, CANVAS_HEIGHT);
+    this.m_UI.UI_DrawString(Color.White, this.m_Session.currentMap!.name, X0, Y0);
+    this.m_UI.UI_DrawString(Color.White, this.LocationText(this.m_Session.currentMap!, this.m_Player), X0, Y1);
+    this.m_UI.UI_DrawString(Color.White, `Day  ${this.m_Session.worldTime.day}`, X0, Y2);
+    if (canKnowTime) {
+      this.m_UI.UI_DrawString(Color.White, `Hour ${this.m_Session.worldTime.hour}`, X0, Y3);
+    } else {
+      this.m_UI.UI_DrawString(Color.White, "Hour ??", X0, Y3);
+    }
+
+    // alpha10 desc day fov effect, not if cant know time
+    let dayPhaseString: string;
+    if (canKnowTime) {
+      dayPhaseString = this.DescribeDayPhase(this.m_Session.worldTime.phase);
+      const timeFovPenalty = this.m_Rules.nightFovPenalty(this.m_Player, this.m_Session.worldTime);
+      if (timeFovPenalty != 0) dayPhaseString += "  fov -" + timeFovPenalty;
+    } else {
+      dayPhaseString = "???";
+    }
+    this.m_UI.UI_DrawString(
+      this.m_Session.worldTime.isNight ? this.NIGHT_COLOR : this.DAY_COLOR,
+      dayPhaseString,
+      X1,
+      Y2,
+    );
+
+    let weatherOrLightingColor: Color;
+    let weatherOrLightingString: string;
+    switch (this.m_Session.currentMap!.lighting) {
+      case Lighting.OUTSIDE:
+        weatherOrLightingColor = this.WeatherColor(this.m_Session.world!.weather);
+        // alpha10 only show weather if can see it
+        if (canSeeSky) {
+          weatherOrLightingString = this.DescribeWeather(this.m_Session.world!.weather);
+          // alpha10 desc weather fov effect
+          const fovPenalty = this.m_Rules.weatherFovPenalty(this.m_Player, this.m_Session.world!.weather);
+          if (fovPenalty != 0) weatherOrLightingString += "  fov -" + fovPenalty;
+        } else {
+          weatherOrLightingString = "???";
+        }
+        break;
+      case Lighting.DARKNESS: {
+        weatherOrLightingColor = Color.Blue;
+        weatherOrLightingString = "Darkness";
+        // alpha10 desc darkness fov effect
+        const darknessFov = this.m_Rules.darknessFov(this.m_Player);
+        if (darknessFov != this.m_Player.sheet.baseViewRange) {
+          weatherOrLightingString += "  fov " + darknessFov;
+        }
+        break;
+      }
+      case Lighting.LIT:
+        weatherOrLightingColor = Color.Yellow;
+        weatherOrLightingString = "Lit";
+        break;
+      default:
+        throw new Error("unhandled lighting");
+    }
+    this.m_UI.UI_DrawString(weatherOrLightingColor, weatherOrLightingString, X1, Y3);
+    this.m_UI.UI_DrawString(Color.White, `Turn ${this.m_Session.worldTime.turnCounter}`, X0, Y4);
+    this.m_UI.UI_DrawString(
+      Color.White,
+      `Score   ${this.m_Session.scoring.totalPoints}@${Math.trunc(
+        100 * Scoring.computeDifficultyRating(
+          s_Options,
+          this.m_Session.scoring.side,
+          this.m_Session.scoring.reincarnationNumber,
+        ),
+      )}% ${Session.descShortGameMode(this.m_Session.gameMode)}`,
+      X1,
+      Y4,
+    );
+    this.m_UI.UI_DrawString(
+      Color.White,
+      `Avatar  ${1 + this.m_Session.scoring.reincarnationNumber}/${1 + s_Options.maxReincarnations}`,
+      X1,
+      Y5,
+    );
+    if (this.m_Player.murdersCounter > 0) {
+      this.m_UI.UI_DrawString(Color.White, `Murders ${this.m_Player.murdersCounter}`, X1, Y6);
+    }
+
+    // character status.
+    if (this.m_Player != null) this.DrawActorStatus(this.m_Player, RIGHTPANEL_TEXT_X, RIGHTPANEL_TEXT_Y);
+
+    // inventories.
+    if (this.m_Player != null) {
+      if (this.m_Player.inventory != null && this.m_Player.model.abilities.hasInventory) {
+        this.DrawInventory(
+          this.m_Player.inventory,
+          "Inventory",
+          true,
+          INVENTORY_SLOTS_PER_LINE,
+          this.m_Player.inventory.maxCapacity,
+          INVENTORYPANEL_X,
+          INVENTORYPANEL_Y,
+        );
+      }
+      this.DrawInventory(
+        this.m_Player.location.map!.getItemsAt(this.m_Player.location.position)!,
+        "Items on ground",
+        true,
+        INVENTORY_SLOTS_PER_LINE,
+        Map.GROUND_INVENTORY_SLOTS,
+        INVENTORYPANEL_X,
+        GROUNDINVENTORYPANEL_Y,
+      );
+      this.DrawCorpsesList(
+        this.m_Player.location.map!.getCorpsesAt(this.m_Player.location.position),
+        "Corpses on ground",
+        INVENTORY_SLOTS_PER_LINE,
+        INVENTORYPANEL_X,
+        CORPSESPANEL_Y,
+      );
+    }
+
+    // character skills.
+    if (
+      this.m_Player != null &&
+      this.m_Player.sheet.skillTable != null &&
+      this.m_Player.sheet.skillTable.countSkills > 0
+    ) {
+      this.DrawActorSkillTable(this.m_Player, RIGHTPANEL_TEXT_X, SKILLTABLE_Y);
+    }
+
+    // overlays
+    for (const o of this.m_Overlays) o.draw(this.m_UI);
+
+    // DEV STATS
+    if (s_Options.DEV_ShowActorsStats) {
+      const countLiving = this.CountLivings(this.m_Session.currentMap!);
+      const countUndead = this.CountUndeads(this.m_Session.currentMap!);
+      this.m_UI.UI_DrawString(
+        Color.White,
+        `Living ${countLiving} vs ${countUndead} Undead`,
+        RIGHTPANEL_TEXT_X,
+        SKILLTABLE_Y - 32,
+      );
+    }
+
+    this.m_UI.UI_Repaint();
   }
 
   // C# LocationText — RogueGame.cs:18154
   LocationText(map: Map, actor: Actor): string {
-    void map;
-    void actor;
-    throw new Error("not yet ported: LocationText (RogueGame.cs:18154)");
+    if (map == null || actor == null) return "";
+
+    let sb = `(${actor.location.position.x},${actor.location.position.y}) `;
+
+    const zones = map.getZonesAt(actor.location.position.x, actor.location.position.y);
+    if (zones == null || zones.length == 0) return sb;
+
+    for (const z of zones) sb += `${z.name} `;
+
+    return sb;
   }
 
   // C# TintForDayPhase — RogueGame.cs:18176
+  /// OBSOLETE
   TintForDayPhase(phase: DayPhase): Color {
-    void phase;
-    throw new Error("not yet ported: TintForDayPhase (RogueGame.cs:18176)");
+    switch (phase) {
+      case DayPhase.MORNING:
+      case DayPhase.MIDDAY:
+      case DayPhase.AFTERNOON:
+        return this.TINT_DAY;
+      case DayPhase.SUNRISE:
+        return this.TINT_SUNRISE;
+      case DayPhase.SUNSET:
+        return this.TINT_SUNSET;
+      case DayPhase.MIDNIGHT:
+        return this.TINT_MIDNIGHT;
+      case DayPhase.DEEP_NIGHT:
+        return this.TINT_NIGHT;
+      case DayPhase.EVENING:
+        return this.TINT_EVENING;
+      default:
+        throw new Error("unhandled dayphase");
+    }
   }
 
   // C# DrawMap — RogueGame.cs:18205
   DrawMap(map: Map, tint: Color): void {
-    void map;
-    void tint;
-    throw new Error("not yet ported: DrawMap (RogueGame.cs:18205)");
+    // trim to outer map bounds.
+    const left = Math.max(-1, this.m_MapViewRect.left);
+    const right = Math.min(map.width + 1, this.m_MapViewRect.right);
+    const top = Math.max(-1, this.m_MapViewRect.top);
+    const bottom = Math.min(map.height + 1, this.m_MapViewRect.bottom);
+
+    // get weather image.
+    let weatherImage: string | null;
+    switch (this.m_Session.world!.weather) {
+      case Weather.RAIN:
+        weatherImage =
+          this.m_Session.worldTime.turnCounter % 2 === 0 ? GameImages.WEATHER_RAIN1 : GameImages.WEATHER_RAIN2;
+        break;
+      case Weather.HEAVY_RAIN:
+        weatherImage =
+          this.m_Session.worldTime.turnCounter % 2 === 0
+            ? GameImages.WEATHER_HEAVY_RAIN1
+            : GameImages.WEATHER_HEAVY_RAIN2;
+        break;
+      default:
+        weatherImage = null;
+        break;
+    }
+
+    ///////////////////////////////////////////
+    // Layered draw:
+    // 1. Tiles.
+    // 2. Corpses.
+    // 3. (Target statut), Map objects.
+    // 4. Scents.
+    // 5. Items, Actors (if visible).
+    // 6. Water cover.
+    // 7. Weather (if visible and not inside).
+    ///////////////////////////////////////////
+    const isUndead = this.m_Player.model.abilities.isUndead;
+    const hasSmell = this.m_Player.model.startingSheet.baseSmellRating > 0;
+    const playerSmellTheshold = this.m_Rules.actorSmellThreshold(this.m_Player);
+    for (let x = left; x < right; x++) {
+      for (let y = top; y < bottom; y++) {
+        const position = new Point(x, y);
+        const toScreen = this.MapToScreen(x, y);
+        const isVisible = this.IsVisibleToPlayer(map, position);
+        let drawWater = false;
+        const tile = map.isInBounds(x, y) ? map.getTileAt(x, y) : null;
+
+        // 1. Tile
+        if (map.isInBounds(x, y)) {
+          if (tile != null) this.DrawTile(tile, toScreen, tint);
+        } else if (map.isOnMapBorder(x, y)) {
+          if (map.getExitAt(position) != null) this.DrawExit(toScreen);
+        }
+
+        // 2. Corpses
+        if (isVisible) {
+          const corpses = map.getCorpsesAt(position);
+          if (corpses != null) {
+            for (const c of corpses) this.DrawCorpse(c, toScreen.x, toScreen.y, tint);
+          }
+        }
+
+        // 3. (TargetStatus), Map objects
+        if (
+          s_Options.showPlayerTargets &&
+          !this.m_Player.isSleeping &&
+          this.m_Player.location.position == position
+        ) {
+          this.DrawPlayerActorTargets(this.m_Player);
+        }
+        const mapObj = map.getMapObjectAt(x, y);
+        if (mapObj != null) {
+          this.DrawMapObject(mapObj, toScreen, tint);
+          drawWater = true;
+        }
+
+        // 4. Scents
+        // scents alpha is low to be able to see objects behind them (eg: scent on a door)
+        // squaring alpha helps increase discrimination for player.
+        if (
+          !this.m_Player.isSleeping &&
+          map.isInBounds(x, y) &&
+          this.m_Rules.gridDistance(this.m_Player.location.position, position) <= 1
+        ) {
+          if (isUndead) {
+            // Undead can see living & zm scents.
+            if (hasSmell) {
+              // living scent?
+              const livingScent = map.getScentByOdorAt(Odor.LIVING, position);
+              if (livingScent >= playerSmellTheshold) {
+                let alpha = (0.9 * livingScent) / OdorScent.MAX_STRENGTH;
+                alpha *= alpha;
+                this.m_UI.UI_DrawTransparentImage(alpha, GameImages.ICON_SCENT_LIVING, toScreen.x, toScreen.y);
+              }
+
+              // zombie master scent?
+              const masterScent = map.getScentByOdorAt(Odor.UNDEAD_MASTER, position);
+              if (masterScent >= playerSmellTheshold) {
+                let alpha = (0.9 * masterScent) / OdorScent.MAX_STRENGTH;
+                alpha *= alpha;
+                this.m_UI.UI_DrawTransparentImage(alpha, GameImages.ICON_SCENT_ZOMBIEMASTER, toScreen.x, toScreen.y);
+              }
+            }
+          }
+          // else: Living can see some perfumes.
+          // alpha10 obsolete // perfume: living suppressor?
+        }
+
+        // 5. Items, Actors (if visible)
+        if (isVisible) {
+          // 4.2. Items
+          const inv = map.getItemsAt(position);
+          if (inv != null) {
+            this.DrawItemsStack(inv, toScreen.x, toScreen.y, tint);
+            drawWater = true;
+          }
+
+          // 4.3. Actors
+          const actor = map.getActorAt(x, y);
+          if (actor != null) {
+            this.DrawActorSprite(actor, toScreen, tint);
+            drawWater = true;
+          }
+        }
+
+        // 6. Water cover.
+        if (tile != null && tile.hasDecorations) drawWater = true;
+        if (drawWater && tile!.model.isWater) this.DrawTileWaterCover(tile!, toScreen, tint);
+
+        // 7. Weather (if visible and not inside).
+        if (isVisible && weatherImage != null && tile != null && !tile.isInside) {
+          this.m_UI.UI_DrawImage(weatherImage, toScreen.x, toScreen.y);
+        }
+      }
+    }
   }
 
   // C# MovingWaterImage — RogueGame.cs:18383
-  MovingWaterImage(model: TileModel, turnCount: number): string {
-    void model;
-    void turnCount;
-    throw new Error("not yet ported: MovingWaterImage (RogueGame.cs:18383)");
+  MovingWaterImage(model: TileModel, turnCount: number): string | null {
+    // C# compares the TileModel instance against GameTiles.FLOOR_SEWER_WATER; GameTiles
+    // stamps TileID onto every model (GameTiles.setModel), so the id check is equivalent.
+    if (model.id === TileID.FLOOR_SEWER_WATER) {
+      const i = turnCount % 3;
+      switch (i) {
+        case 0:
+          return GameImages.TILE_FLOOR_SEWER_WATER_ANIM1;
+        case 1:
+          return GameImages.TILE_FLOOR_SEWER_WATER_ANIM2;
+        default:
+          return GameImages.TILE_FLOOR_SEWER_WATER_ANIM3;
+      }
+    }
+    return null;
   }
 
   // C# DrawTile — RogueGame.cs:18399
   DrawTile(tile: Tile, screen: Point, tint: Color): void {
-    void tile;
-    void screen;
-    void tint;
-    throw new Error("not yet ported: DrawTile (RogueGame.cs:18399)");
+    if (tile.isInView) {
+      // visible
+      // tile.
+      this.m_UI.UI_DrawImageTinted(tile.model.imageId, screen.x, screen.y, tint);
+
+      // animation layer.
+      const movingWater = this.MovingWaterImage(tile.model, this.m_Session.worldTime.turnCounter);
+      if (movingWater != null) this.m_UI.UI_DrawImageTinted(movingWater, screen.x, screen.y, tint);
+
+      // decorations.
+      if (tile.hasDecorations) {
+        for (const deco of tile.getDecorations!) this.m_UI.UI_DrawImageTinted(deco, screen.x, screen.y, tint);
+      }
+    } else if (tile.isVisited && !this.IsPlayerSleeping()) {
+      // memorized
+      // tile.
+      this.m_UI.UI_DrawGrayLevelImage(tile.model.imageId, screen.x, screen.y);
+
+      // animation layer.
+      const movingWater = this.MovingWaterImage(tile.model, this.m_Session.worldTime.turnCounter);
+      if (movingWater != null) this.m_UI.UI_DrawGrayLevelImage(movingWater, screen.x, screen.y);
+
+      // decorations.
+      if (tile.hasDecorations) {
+        for (const deco of tile.getDecorations!) this.m_UI.UI_DrawGrayLevelImage(deco, screen.x, screen.y);
+      }
+    }
   }
 
   // C# DrawTileWaterCover — RogueGame.cs:18433
   DrawTileWaterCover(tile: Tile, screen: Point, tint: Color): void {
-    void tile;
-    void screen;
-    void tint;
-    throw new Error("not yet ported: DrawTileWaterCover (RogueGame.cs:18433)");
+    if (tile.isInView) {
+      // visible
+      this.m_UI.UI_DrawImageTinted(tile.model.waterCoverImageId, screen.x, screen.y, tint);
+    } else if (tile.isVisited && !this.IsPlayerSleeping()) {
+      // memorized
+      this.m_UI.UI_DrawGrayLevelImage(tile.model.waterCoverImageId, screen.x, screen.y);
+    }
   }
 
   // C# DrawExit — RogueGame.cs:18447
   DrawExit(screen: Point): void {
-    void screen;
-    throw new Error("not yet ported: DrawExit (RogueGame.cs:18447)");
+    this.m_UI.UI_DrawImage(GameImages.MAP_EXIT, screen.x, screen.y);
   }
 
   // C# DrawTileRectangle — RogueGame.cs:18452
   DrawTileRectangle(mapPosition: Point, color: Color): void {
-    void mapPosition;
-    void color;
-    throw new Error("not yet ported: DrawTileRectangle (RogueGame.cs:18452)");
+    this.m_UI.UI_DrawRect(color, new Rect(this.MapToScreen(mapPosition).x, this.MapToScreen(mapPosition).y, TILE_SIZE, TILE_SIZE));
   }
 
-  // C# DrawMapObject — RogueGame.cs:18457 (+1 overloads)
-  DrawMapObject(mapObj: MapObject, screen: Point, imageID: Color | string, drawFn: (p0: string, p1: number, p2: number) => void): void {
-    void mapObj;
-    void screen;
-    void imageID;
-    void drawFn;
-    throw new Error("not yet ported: DrawMapObject (RogueGame.cs:18457)");
+  // C# DrawMapObject — RogueGame.cs:18457
+  DrawMapObject(mapObj: MapObject, screen: Point, tint: Color): void;
+  // C# DrawMapObject — RogueGame.cs:18498
+  DrawMapObject(
+    mapObj: MapObject,
+    screen: Point,
+    imageID: string,
+    drawFn: (imageID: string, gx: number, gy: number) => void,
+  ): void;
+  DrawMapObject(
+    mapObj: MapObject,
+    screen: Point,
+    imageOrTint: Color | string,
+    drawFn?: (imageID: string, gx: number, gy: number) => void,
+  ): void {
+    if (drawFn == null) {
+      // C# DrawMapObject(MapObject, Point, Color tint)
+      const tint = imageOrTint as Color;
+      let gx = screen.x;
+      let gy = screen.y;
+
+      // pushables objects in water floating animation.
+      if (
+        mapObj.isMovable &&
+        mapObj.location.map!.getTileAt(mapObj.location.position.x, mapObj.location.position.y)?.model.isWater
+      ) {
+        const yDrift = (mapObj.location.position.x + this.m_Session.worldTime.turnCounter) % 2 === 0 ? -2 : 0;
+        gy -= yDrift;
+      }
+
+      if (this.IsVisibleToPlayer(mapObj)) {
+        this.DrawMapObject(mapObj, new Point(gx, gy), mapObj.imageId, (imageID, dx, dy) =>
+          this.m_UI.UI_DrawImageTinted(imageID, dx, dy, tint),
+        );
+
+        if (mapObj.hitPoints < mapObj.maxHitPoints && mapObj.hitPoints > 0) {
+          this.DrawMapHealthBar(mapObj.hitPoints, mapObj.maxHitPoints, gx, gy);
+        }
+
+        const door = mapObj as DoorWindow;
+        if (door != null && door.barricadePoints > 0) {
+          this.DrawMapHealthBar(door.barricadePoints, Rules.BARRICADING_MAX, gx, gy, Color.Green);
+          this.m_UI.UI_DrawImageTinted(GameImages.EFFECT_BARRICADED, gx, gy, tint);
+        }
+      } else if (this.IsKnownToPlayer(mapObj) && !this.IsPlayerSleeping()) {
+        this.DrawMapObject(mapObj, new Point(gx, gy), mapObj.hiddenImageId, (imageID, dx, dy) =>
+          this.m_UI.UI_DrawGrayLevelImage(imageID, dx, dy),
+        );
+      }
+      return;
+    }
+
+    // C# DrawMapObject(MapObject, Point, string imageID, Action<string,int,int> drawFn)
+    const fn = drawFn;
+    // draw image.
+    fn(imageOrTint as string, screen.x, screen.y);
+
+    // draw effects.
+    if (mapObj.isOnFire) fn(GameImages.EFFECT_ONFIRE, screen.x, screen.y);
   }
 
   // C# DrawActorSprite — RogueGame.cs:18496
   DrawActorSprite(actor: Actor, screen: Point, tint: Color): void {
-    void actor;
-    void screen;
-    void tint;
-    throw new Error("not yet ported: DrawActorSprite (RogueGame.cs:18496)");
+    let gx = screen.x;
+    let gy = screen.y;
+
+    // player follower?
+    if (actor.leader != null && actor.leader === this.m_Player) {
+      if (this.m_Rules.hasActorBondWith(actor, this.m_Player)) {
+        this.m_UI.UI_DrawImageTinted(GameImages.PLAYER_FOLLOWER_BOND, gx, gy, tint);
+      } else if (this.m_Rules.isActorTrustingLeader(actor)) {
+        this.m_UI.UI_DrawImageTinted(GameImages.PLAYER_FOLLOWER_TRUST, gx, gy, tint);
+      } else {
+        this.m_UI.UI_DrawImageTinted(GameImages.PLAYER_FOLLOWER, gx, gy, tint);
+      }
+    }
+
+    gx += ACTOR_OFFSET;
+    gy += ACTOR_OFFSET;
+
+    // model
+    if (actor.model.imageId != null) this.m_UI.UI_DrawImageTinted(actor.model.imageId, gx, gy, tint);
+
+    // skinning/clothing and body equipment.
+    this.DrawActorDecoration(actor, gx, gy, DollPart.SKIN, tint);
+    this.DrawActorDecoration(actor, gx, gy, DollPart.FEET, tint);
+    this.DrawActorDecoration(actor, gx, gy, DollPart.LEGS, tint);
+    this.DrawActorDecoration(actor, gx, gy, DollPart.TORSO, tint);
+    this.DrawActorDecoration(actor, gx, gy, DollPart.TORSO, tint);
+    if (actor.getEquippedItem(DollPart.TORSO) != null) {
+      this.DrawActorEquipment(actor, gx - ACTOR_OFFSET, gy - ACTOR_OFFSET, DollPart.TORSO, tint);
+    }
+    this.DrawActorDecoration(actor, gx, gy, DollPart.EYES, tint);
+    this.DrawActorDecoration(actor, gx, gy, DollPart.HEAD, tint);
+
+    // hands equipment
+    this.DrawActorEquipment(actor, gx - ACTOR_OFFSET, gy - ACTOR_OFFSET, DollPart.LEFT_HAND, tint);
+    this.DrawActorEquipment(actor, gx - ACTOR_OFFSET, gy - ACTOR_OFFSET, DollPart.RIGHT_HAND, tint);
+
+    gx -= ACTOR_OFFSET;
+    gy -= ACTOR_OFFSET;
+
+    // personal enemy?
+    if (this.m_Player != null) {
+      const imSelfDefence = this.m_Player.isSelfDefenceFrom(actor);
+      const imTheAggressor = this.m_Player.isAggressorOf(actor);
+      // alpha10
+      const groupEnemies = !this.m_Player.faction.isEnemyOf(actor.faction) && this.m_Rules.areGroupEnemies(this.m_Player, actor);
+      if (imSelfDefence) {
+        this.m_UI.UI_DrawImageTinted(GameImages.ICON_SELF_DEFENCE, gx, gy, tint);
+      } else if (imTheAggressor) {
+        this.m_UI.UI_DrawImageTinted(GameImages.ICON_AGGRESSOR, gx, gy, tint);
+      } else if (groupEnemies) {
+        this.m_UI.UI_DrawImageTinted(GameImages.ICON_INDIRECT_ENEMIES, gx, gy, tint);
+      }
+    }
+
+    // activity
+    switch (actor.activity) {
+      case Activity.IDLE:
+        break;
+
+      case Activity.CHASING:
+      case Activity.FIGHTING:
+        if (actor.isPlayer) break;
+        if (actor.targetActor == null) break;
+
+        if (actor.targetActor != null && actor.targetActor === this.m_Player) {
+          this.m_UI.UI_DrawImageTinted(GameImages.ACTIVITY_CHASING_PLAYER, gx, gy, tint);
+        } else {
+          this.m_UI.UI_DrawImageTinted(GameImages.ACTIVITY_CHASING, gx, gy, tint);
+        }
+        break;
+
+      case Activity.TRACKING:
+        if (actor.isPlayer) break;
+        this.m_UI.UI_DrawImageTinted(GameImages.ACTIVITY_TRACKING, gx, gy, tint);
+        break;
+
+      case Activity.FLEEING:
+        if (actor.isPlayer) break;
+        this.m_UI.UI_DrawImageTinted(GameImages.ACTIVITY_FLEEING, gx, gy, tint);
+        break;
+
+      case Activity.FLEEING_FROM_EXPLOSIVE:
+        if (actor.isPlayer) break;
+        this.m_UI.UI_DrawImageTinted(GameImages.ACTIVITY_FLEEING_FROM_EXPLOSIVE, gx, gy, tint);
+        break;
+
+      case Activity.FOLLOWING:
+        if (actor.isPlayer) break;
+        if (actor.targetActor == null) break;
+
+        if (actor.targetActor.isPlayer) {
+          this.m_UI.UI_DrawImage(GameImages.ACTIVITY_FOLLOWING_PLAYER, gx, gy);
+        } else if (actor.targetActor === actor.leader) {
+          // alpha10
+          this.m_UI.UI_DrawImage(GameImages.ACTIVITY_FOLLOWING_LEADER, gx, gy);
+        } else {
+          this.m_UI.UI_DrawImage(GameImages.ACTIVITY_FOLLOWING, gx, gy);
+        }
+        break;
+
+      case Activity.FOLLOWING_ORDER:
+        this.m_UI.UI_DrawImage(GameImages.ACTIVITY_FOLLOWING_ORDER, gx, gy);
+        break;
+
+      case Activity.SLEEPING:
+        this.m_UI.UI_DrawImage(GameImages.ACTIVITY_SLEEPING, gx, gy);
+        break;
+
+      default:
+        throw new Error("unhandled activity " + actor.activity);
+    }
+
+    // health bar.
+    const maxHP = this.m_Rules.actorMaxHPs(actor);
+    if (actor.hitPoints < maxHP) {
+      this.DrawMapHealthBar(actor.hitPoints, maxHP, gx, gy);
+    }
+
+    // run/tired icon.
+    if (actor.isRunning) {
+      this.m_UI.UI_DrawImageTinted(GameImages.ICON_RUNNING, gx, gy, tint);
+    } else if (actor.model.abilities.canRun && !this.m_Rules.canActorRun(actor)) {
+      this.m_UI.UI_DrawImageTinted(GameImages.ICON_CANT_RUN, gx, gy, tint);
+    }
+
+    // sleepy, hungry & insane icons.
+    if (actor.model.abilities.hasToSleep) {
+      if (this.m_Rules.isActorExhausted(actor)) {
+        this.m_UI.UI_DrawImageTinted(GameImages.ICON_SLEEP_EXHAUSTED, gx, gy, tint);
+      } else if (this.m_Rules.isActorSleepy(actor)) {
+        this.m_UI.UI_DrawImageTinted(GameImages.ICON_SLEEP_SLEEPY, gx, gy, tint);
+      } else if (this.m_Rules.isAlmostSleepy(actor)) {
+        this.m_UI.UI_DrawImageTinted(GameImages.ICON_SLEEP_ALMOST_SLEEPY, gx, gy, tint);
+      }
+    }
+
+    if (actor.model.abilities.hasToEat) {
+      if (this.m_Rules.isActorStarving(actor)) {
+        this.m_UI.UI_DrawImageTinted(GameImages.ICON_FOOD_STARVING, gx, gy, tint);
+      } else if (this.m_Rules.isActorHungry(actor)) {
+        this.m_UI.UI_DrawImageTinted(GameImages.ICON_FOOD_HUNGRY, gx, gy, tint);
+      } else if (this.IsAlmostHungry(actor)) {
+        this.m_UI.UI_DrawImageTinted(GameImages.ICON_FOOD_ALMOST_HUNGRY, gx, gy, tint);
+      }
+    } else if (actor.model.abilities.isRotting) {
+      if (this.m_Rules.isRottingActorStarving(actor)) {
+        this.m_UI.UI_DrawImageTinted(GameImages.ICON_ROT_STARVING, gx, gy, tint);
+      } else if (this.m_Rules.isRottingActorHungry(actor)) {
+        this.m_UI.UI_DrawImageTinted(GameImages.ICON_ROT_HUNGRY, gx, gy, tint);
+      } else if (this.IsAlmostRotHungry(actor)) {
+        this.m_UI.UI_DrawImageTinted(GameImages.ICON_ROT_ALMOST_HUNGRY, gx, gy, tint);
+      }
+    }
+
+    if (actor.model.abilities.hasSanity) {
+      if (this.m_Rules.isActorInsane(actor)) {
+        this.m_UI.UI_DrawImageTinted(GameImages.ICON_SANITY_INSANE, gx, gy, tint);
+      } else if (this.m_Rules.isActorDisturbed(actor)) {
+        this.m_UI.UI_DrawImageTinted(GameImages.ICON_SANITY_DISTURBED, gx, gy, tint);
+      }
+    }
+
+    // can trade with player icon.
+    // alpha10.1 or has needed item (not for undead player duh)
+    if (this.m_Player != null) {
+      if (actor != this.m_Player && !this.m_Player.model.abilities.isUndead && this.ActorHasVitalItemForPlayer(actor)) {
+        this.m_UI.UI_DrawImageTinted(GameImages.ICON_HAS_VITAL_ITEM, gx, gy, tint);
+      } else if (this.m_Rules.canActorInitiateTradeWith(this.m_Player, actor)) {
+        this.m_UI.UI_DrawImageTinted(GameImages.ICON_CAN_TRADE, gx, gy, tint);
+      }
+    }
+
+    // alpha10 odor suppressed icon (will overlap with sleep healing but its fine)
+    if (actor.odorSuppressorCounter > 0) {
+      this.m_UI.UI_DrawImageTinted(GameImages.ICON_ODOR_SUPPRESSED, gx, gy, tint);
+    }
+
+    // sleep-healing icon.
+    if (actor.isSleeping && (this.m_Rules.isOnCouch(actor) || this.m_Rules.actorHealChanceBonus(actor) > 0)) {
+      this.m_UI.UI_DrawImageTinted(GameImages.ICON_HEALING, gx, gy, tint);
+    }
+
+    // is a leader icon.
+    if (actor.countFollowers > 0) this.m_UI.UI_DrawImageTinted(GameImages.ICON_LEADER, gx, gy, tint);
+
+    // alpha10
+    // z-grab skill warning icon
+    if (actor.sheet.skillTable.getSkillLevel(SkillID.Z_GRAB) > 0) {
+      this.m_UI.UI_DrawImageTinted(GameImages.ICON_ZGRAB, gx, gy, tint);
+    }
+
+    // combat assistant helper.
+    if (s_Options.isCombatAssistantOn) {
+      if (actor != this.m_Player && this.m_Player != null && this.m_Rules.areEnemies(actor, this.m_Player)) {
+        if (this.m_Rules.willActorActAgainBefore(this.m_Player, actor)) {
+          this.m_UI.UI_DrawImageTinted(GameImages.ICON_THREAT_SAFE, gx, gy, tint);
+        } else if (this.m_Rules.willOtherActTwiceBefore(this.m_Player, actor)) {
+          this.m_UI.UI_DrawImageTinted(GameImages.ICON_THREAT_HIGH_DANGER, gx, gy, tint);
+        } else {
+          this.m_UI.UI_DrawImageTinted(GameImages.ICON_THREAT_DANGER, gx, gy, tint);
+        }
+      }
+    }
   }
 
+  // alpha10.1
   // C# ActorHasVitalItemForPlayer — RogueGame.cs:18726
+  // Checks if npc has a vital item for the player:
+  // - Food if player is hungry
+  // - Anti-sleep meds if player is sleepy
+  // - Healing meds if player injured
+  // - Curing meds if player infected
   ActorHasVitalItemForPlayer(actor: Actor): boolean {
-    void actor;
-    throw new Error("not yet ported: ActorHasVitalItemForPlayer (RogueGame.cs:18726)");
+    if (actor.inventory == null) return false;
+    if (actor.inventory.isEmpty) return false;
+
+    // hungry -> food
+    if (this.m_Rules.isActorHungry(this.m_Player) && actor.inventory.hasItemOfType(ItemFood)) return true;
+
+    // sleepy -> anti-sleep meds
+    if (this.m_Rules.isActorSleepy(this.m_Player) && actor.inventory.hasItemMatching((it) => it instanceof ItemMedicine && it.sleepBoost > 0))
+      return true;
+
+    // injured -> healing meds
+    if (this.m_Player.hitPoints < this.m_Rules.actorMaxHPs(this.m_Player) && actor.inventory.hasItemMatching((it) => it instanceof ItemMedicine && it.healing > 0))
+      return true;
+
+    // infected -> curing meds
+    if (this.m_Player.infection > 0 && actor.inventory.hasItemMatching((it) => it instanceof ItemMedicine && it.infectionCure > 0))
+      return true;
+
+    // no vital items
+    return false;
   }
 
-  // C# DrawActorDecoration — RogueGame.cs:18757 (+1 overloads)
-  DrawActorDecoration(actor: Actor, gx: number, gy: number, part: DollPart, rotation: Color | number, scale?: number): void {
-    void actor;
-    void gx;
-    void gy;
-    void part;
-    void rotation;
-    void scale;
-    throw new Error("not yet ported: DrawActorDecoration (RogueGame.cs:18757)");
+  // C# DrawActorDecoration — RogueGame.cs:18757
+  DrawActorDecoration(actor: Actor, gx: number, gy: number, part: DollPart, tint: Color): void;
+  // C# DrawActorDecoration — RogueGame.cs:18767
+  DrawActorDecoration(actor: Actor, gx: number, gy: number, part: DollPart, rotation: number, scale: number): void;
+  DrawActorDecoration(actor: Actor, gx: number, gy: number, part: DollPart, tintOrRotation: Color | number, scale?: number): void {
+    const decos = actor.doll.getDecorations(part);
+    if (decos == null) return;
+
+    if (scale !== undefined) {
+      const rotation = tintOrRotation as number;
+      for (const imageID of decos) this.m_UI.UI_DrawImageTransform(imageID, gx, gy, rotation, scale);
+    } else {
+      const tint = tintOrRotation as Color;
+      for (const imageID of decos) this.m_UI.UI_DrawImageTinted(imageID, gx, gy, tint);
+    }
   }
 
   // C# DrawActorEquipment — RogueGame.cs:18777
   DrawActorEquipment(actor: Actor, gx: number, gy: number, part: DollPart, tint: Color): void {
-    void actor;
-    void gx;
-    void gy;
-    void part;
-    void tint;
-    throw new Error("not yet ported: DrawActorEquipment (RogueGame.cs:18777)");
+    const it = actor.getEquippedItem(part);
+    if (it == null) return;
+
+    this.m_UI.UI_DrawImageTinted(it.imageId, gx, gy, tint);
   }
 
   // C# DrawCorpse — RogueGame.cs:18786
   DrawCorpse(c: Corpse, gx: number, gy: number, tint: Color): void {
-    void c;
-    void gx;
-    void gy;
-    void tint;
-    throw new Error("not yet ported: DrawCorpse (RogueGame.cs:18786)");
+    void tint; // C# also ignores it here.
+    const rotation = c.rotation;
+    const scale = c.scale;
+    const offset = 0; // TILE_SIZE / 2;
+
+    const actor = c.deadGuy;
+
+    gx += ACTOR_OFFSET + offset;
+    gy += ACTOR_OFFSET + offset;
+
+    // model.
+    if (actor.model.imageId != null) this.m_UI.UI_DrawImageTransform(actor.model.imageId, gx, gy, rotation, scale);
+
+    // skinning/clothing.
+    this.DrawActorDecoration(actor, gx, gy, DollPart.SKIN, rotation, scale);
+    this.DrawActorDecoration(actor, gx, gy, DollPart.FEET, rotation, scale);
+    this.DrawActorDecoration(actor, gx, gy, DollPart.LEGS, rotation, scale);
+    this.DrawActorDecoration(actor, gx, gy, DollPart.TORSO, rotation, scale);
+    this.DrawActorDecoration(actor, gx, gy, DollPart.TORSO, rotation, scale);
+    this.DrawActorDecoration(actor, gx, gy, DollPart.EYES, rotation, scale);
+    this.DrawActorDecoration(actor, gx, gy, DollPart.HEAD, rotation, scale);
+
+    gx -= ACTOR_OFFSET + offset;
+    gy -= ACTOR_OFFSET + offset;
+
+    // rotting.
+    const rotLevel = this.m_Rules.corpseRotLevel(c);
+    let img: string | null = null;
+    switch (rotLevel) {
+      case 5:
+      case 4:
+      case 3:
+      case 2:
+      case 1:
+        img = "rot" + rotLevel + "_";
+        break;
+      case 0:
+        break;
+      default:
+        throw new Error("unhandled rot level");
+    }
+    if (img != null) {
+      // anim frame.
+      img += 1 + (this.m_Session.worldTime.turnCounter % 2);
+      // a bit of offset for a nice flies movement effect.
+      const rotdx = (this.m_Session.worldTime.turnCounter % 5) - 2;
+      const rotdy = ((this.m_Session.worldTime.turnCounter / 3) % 5) - 2;
+      this.m_UI.UI_DrawImage(img, gx + rotdx, gy + rotdy);
+    }
   }
 
   // C# DrawCorpsesList — RogueGame.cs:18837
-  DrawCorpsesList(list: Corpse[], title: string, slots: number, gx: number, gy: number): void {
-    void list;
-    void title;
-    void slots;
-    void gx;
-    void gy;
-    throw new Error("not yet ported: DrawCorpsesList (RogueGame.cs:18837)");
+  DrawCorpsesList(list: readonly Corpse[] | null, title: string, slots: number, gx: number, gy: number): void {
+    let x: number;
+    let y: number;
+    let slot = 0;
+
+    // Draw title.
+    const n = list == null ? 0 : list.length;
+    if (n > 0) title += " : " + n;
+    gy -= BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBold(Color.White, title, gx, gy);
+    gy += BOLD_LINE_SPACING;
+
+    // Draw slots.
+    x = gx;
+    y = gy;
+    slot = 0;
+    for (let i = 0; i < slots; i++) {
+      this.m_UI.UI_DrawImage(GameImages.ITEM_SLOT, x, y);
+      x += TILE_SIZE;
+    }
+
+    // Draw corpses.
+    if (list == null) return;
+
+    x = gx;
+    y = gy;
+    slot = 0;
+    for (const c of list) {
+      if (c.isDragged) this.m_UI.UI_DrawImage(GameImages.CORPSE_DRAGGED, x, y);
+      this.DrawCorpse(c, x, y, Color.White);
+      if (++slot >= slots) break;
+      x += TILE_SIZE;
+    }
   }
 
+  // alpha10
   // C# DrawActorRelations — RogueGame.cs:18882
+  // Highlight with overlays which visible actors are
+  // - are the target of this actor
+  // - targeting this actor
+  // - in group with this actor
   DrawActorRelations(actor: Actor): void {
-    void actor;
-    throw new Error("not yet ported: DrawActorRelations (RogueGame.cs:18882)");
+    // target of this actor
+    if (actor.targetActor != null && !actor.targetActor.isDead && this.IsVisibleToPlayer(actor.targetActor)) {
+      this.AddOverlay(
+        new OverlayImage(this.MapToScreen(actor.targetActor.location.position), GameImages.ICON_IS_TARGET),
+      );
+    }
+
+    // actors targeting this actor or in same group
+    let isTargettedHighlighted = false;
+    for (const other of actor.location.map!.actors) {
+      if (other === actor || other.isDead || !this.IsVisibleToPlayer(other)) continue;
+
+      // targetting this actor
+      if (other.targetActor === actor && (other.activity === Activity.CHASING || other.activity === Activity.FIGHTING)) {
+        if (!isTargettedHighlighted) {
+          this.AddOverlay(
+            new OverlayImage(this.MapToScreen(actor.location.position), GameImages.ICON_IS_TARGETTED),
+          );
+          isTargettedHighlighted = true;
+        }
+        this.AddOverlay(new OverlayImage(this.MapToScreen(other.location.position), GameImages.ICON_IS_TARGETING));
+      }
+
+      // in group with actor
+      if (other.isInGroupWith(actor)) {
+        this.AddOverlay(new OverlayImage(this.MapToScreen(other.location.position), GameImages.ICON_IS_IN_GROUP));
+      }
+    }
   }
 
   // C# DrawPlayerActorTargets — RogueGame.cs:18918
+  // immediate mode
   DrawPlayerActorTargets(player: Actor): void {
-    void player;
-    throw new Error("not yet ported: DrawPlayerActorTargets (RogueGame.cs:18918)");
+    if (player.targetActor != null && !player.targetActor.isDead && this.IsVisibleToPlayer(player.targetActor)) {
+      const gpos = this.MapToScreen(player.targetActor.location.position);
+      this.m_UI.UI_DrawImage(GameImages.ICON_IS_TARGET, gpos.x, gpos.y);
+    }
+    for (const a of player.location.map!.actors) {
+      if (a === player || a.isDead || !this.IsVisibleToPlayer(a)) continue;
+      if (a.targetActor === player && (a.activity === Activity.CHASING || a.activity === Activity.FIGHTING)) {
+        const gpos = this.MapToScreen(player.location.position);
+        this.m_UI.UI_DrawImage(GameImages.ICON_IS_TARGETTED, gpos.x, gpos.y);
+        break;
+      }
+    }
   }
 
   // C# DrawItemsStack — RogueGame.cs:18940
   DrawItemsStack(inventory: Inventory, gx: number, gy: number, tint: Color): void {
-    void inventory;
-    void gx;
-    void gy;
-    void tint;
-    throw new Error("not yet ported: DrawItemsStack (RogueGame.cs:18940)");
+    if (inventory == null) return;
+
+    for (const it of inventory.items) this.DrawItem(it, gx, gy, tint);
   }
 
   // C# DrawMapIcon — RogueGame.cs:18949
   DrawMapIcon(position: Point, imageID: string): void {
-    void position;
-    void imageID;
-    throw new Error("not yet ported: DrawMapIcon (RogueGame.cs:18949)");
+    this.m_UI.UI_DrawImage(imageID, position.x * TILE_SIZE, position.y * TILE_SIZE);
   }
 
-  // C# DrawMapHealthBar — RogueGame.cs:18954 (+1 overloads)
-  DrawMapHealthBar(hitPoints: number, maxHitPoints: number, gx: number, gy: number, barColor?: Color): void {
-    void hitPoints;
-    void maxHitPoints;
-    void gx;
-    void gy;
-    void barColor;
-    throw new Error("not yet ported: DrawMapHealthBar (RogueGame.cs:18954)");
+  // C# DrawMapHealthBar — RogueGame.cs:18954
+  DrawMapHealthBar(hitPoints: number, maxHitPoints: number, gx: number, gy: number, barColor: Color = Color.Red): void {
+    const hpX = gx + 4;
+    const hpY = gy + TILE_SIZE - 4;
+    const barLength = Math.trunc((20 * hitPoints) / maxHitPoints);
+    this.m_UI.UI_FillRect(Color.Black, new Rect(hpX, hpY, 20, 4));
+    if (barLength > 0) this.m_UI.UI_FillRect(barColor, new Rect(hpX + 1, hpY + 1, barLength, 2));
   }
 
   // C# DrawBar — RogueGame.cs:18970
-  DrawBar(value: number, previousValue: number, maxValue: number, refValue: number, maxWidth: number, height: number, gx: number, gy: number, fillColor: Color, lossFillColor: Color, gainFillColor: Color, emptyColor: Color): void {
-    void value;
-    void previousValue;
-    void maxValue;
-    void refValue;
-    void maxWidth;
-    void height;
-    void gx;
-    void gy;
-    void fillColor;
-    void lossFillColor;
-    void gainFillColor;
-    void emptyColor;
-    throw new Error("not yet ported: DrawBar (RogueGame.cs:18970)");
+  DrawBar(
+    value: number,
+    previousValue: number,
+    maxValue: number,
+    refValue: number,
+    maxWidth: number,
+    height: number,
+    gx: number,
+    gy: number,
+    fillColor: Color,
+    lossFillColor: Color,
+    gainFillColor: Color,
+    emptyColor: Color,
+  ): void {
+    this.m_UI.UI_FillRect(emptyColor, new Rect(gx, gy, maxWidth, height));
+
+    const prevBarLength = Math.trunc((maxWidth * previousValue) / maxValue);
+    const barLength = Math.trunc((maxWidth * value) / maxValue);
+
+    if (value > previousValue) {
+      // gain
+      if (barLength > 0) this.m_UI.UI_FillRect(gainFillColor, new Rect(gx, gy, barLength, height));
+      if (prevBarLength > 0) this.m_UI.UI_FillRect(fillColor, new Rect(gx, gy, prevBarLength, height));
+    } else if (value < previousValue) {
+      // loss
+      if (prevBarLength > 0) this.m_UI.UI_FillRect(lossFillColor, new Rect(gx, gy, prevBarLength, height));
+      if (barLength > 0) this.m_UI.UI_FillRect(fillColor, new Rect(gx, gy, barLength, height));
+    } else {
+      // no change.
+      if (barLength > 0) this.m_UI.UI_FillRect(fillColor, new Rect(gx, gy, barLength, height));
+    }
+
+    // reference line.
+    const refLength = Math.trunc((maxWidth * refValue) / maxValue);
+    this.m_UI.UI_DrawLine(Color.White, gx + refLength, gy, gx + refLength, gy + height);
   }
 
   // C# DrawMiniMap — RogueGame.cs:19006
   DrawMiniMap(map: Map): void {
-    void map;
-    throw new Error("not yet ported: DrawMiniMap (RogueGame.cs:19006)");
+    // clear minimap.
+    if (s_Options.isMinimapOn) this.m_UI.UI_ClearMinimap(Color.Black);
+
+    // set visited tiles color.
+    if (s_Options.isMinimapOn) {
+      for (let x = 0; x < map.width; x++) {
+        for (let y = 0; y < map.height; y++) {
+          const tile = map.getTileAt(x, y);
+          if (tile != null && tile.isVisited) {
+            // exits override tile color.
+            if (map.getExitAt(new Point(x, y)) != null) this.m_UI.UI_SetMinimapColor(x, y, Color.HotPink);
+            else this.m_UI.UI_SetMinimapColor(x, y, tile.model.minimapColor);
+          }
+        }
+      }
+    }
+
+    // show minimap.
+    if (s_Options.isMinimapOn) this.m_UI.UI_DrawMinimap(MINIMAP_X, MINIMAP_Y);
+
+    // show view rect.
+    this.m_UI.UI_DrawRect(
+      Color.White,
+      new Rect(
+        MINIMAP_X + this.m_MapViewRect.left * MINITILE_SIZE,
+        MINIMAP_Y + this.m_MapViewRect.top * MINITILE_SIZE,
+        this.m_MapViewRect.width * MINITILE_SIZE,
+        this.m_MapViewRect.height * MINITILE_SIZE,
+      ),
+    );
+
+    // show player tags.
+    if (s_Options.showPlayerTagsOnMinimap) {
+      for (let x = 0; x < map.width; x++) {
+        for (let y = 0; y < map.height; y++) {
+          const tile = map.getTileAt(x, y);
+          if (tile != null && tile.isVisited) {
+            let minitag: string | null = null;
+            if (tile.hasDecoration(GameImages.DECO_PLAYER_TAG1)) minitag = GameImages.MINI_PLAYER_TAG1;
+            else if (tile.hasDecoration(GameImages.DECO_PLAYER_TAG2)) minitag = GameImages.MINI_PLAYER_TAG2;
+            else if (tile.hasDecoration(GameImages.DECO_PLAYER_TAG3)) minitag = GameImages.MINI_PLAYER_TAG3;
+            else if (tile.hasDecoration(GameImages.DECO_PLAYER_TAG4)) minitag = GameImages.MINI_PLAYER_TAG4;
+            if (minitag != null) {
+              const pos = new Point(MINIMAP_X + x * MINITILE_SIZE, MINIMAP_Y + y * MINITILE_SIZE);
+              this.m_UI.UI_DrawImage(minitag, pos.x - MINI_TRACKER_OFFSET, pos.y - MINI_TRACKER_OFFSET);
+            }
+          }
+        }
+      }
+    }
+
+    // show player & tracked actors.
+    // add tracked targets images out of player fov on the map.
+    if (this.m_Player != null) {
+      // tracker items.
+      if (!this.m_Player.isSleeping) {
+        const tracker = this.m_Player.getEquippedItem(DollPart.LEFT_HAND) as ItemTracker | null;
+
+        // tracking...
+        if (tracker != null && tracker.batteries > 0) {
+          // ...followers?
+          if (this.m_Player.countFollowers > 0 && tracker.canTrackFollowersOrLeader) {
+            for (const fo of this.m_Player.followers!) {
+              // only track in same map.
+              if (fo.location.map !== this.m_Player.location.map) continue;
+
+              const foTracker = fo.getEquippedItem(DollPart.LEFT_HAND) as ItemTracker | null;
+              if (foTracker != null && foTracker.canTrackFollowersOrLeader) {
+                // show follower position.
+                const foMiniPos = new Point(
+                  MINIMAP_X + fo.location.position.x * MINITILE_SIZE,
+                  MINIMAP_Y + fo.location.position.y * MINITILE_SIZE,
+                );
+                this.m_UI.UI_DrawImage(
+                  GameImages.MINI_FOLLOWER_POSITION,
+                  foMiniPos.x - MINI_TRACKER_OFFSET,
+                  foMiniPos.y - MINI_TRACKER_OFFSET,
+                );
+
+                // if out of FoV but in view, draw on map.
+                if (this.IsInViewRect(fo.location.position) && !this.IsVisibleToPlayer(fo)) {
+                  const screenPos = this.MapToScreen(fo.location.position);
+                  this.m_UI.UI_DrawImage(GameImages.TRACK_FOLLOWER_POSITION, screenPos.x, screenPos.y);
+                }
+              }
+            }
+          }
+
+          // ...undeads?
+          if (tracker.canTrackUndeads) {
+            for (const other of map.actors) {
+              if (other === this.m_Player) continue;
+              if (!other.model.abilities.isUndead) continue;
+              // only track in same map.
+              if (other.location.map !== this.m_Player.location.map) continue;
+              if (this.m_Rules.gridDistance(other.location.position, this.m_Player.location.position) > Rules.ZTRACKINGRADIUS)
+                continue;
+
+              // close undead, show it.
+              const undeadPos = new Point(
+                MINIMAP_X + other.location.position.x * MINITILE_SIZE,
+                MINIMAP_Y + other.location.position.y * MINITILE_SIZE,
+              );
+              this.m_UI.UI_DrawImage(
+                GameImages.MINI_UNDEAD_POSITION,
+                undeadPos.x - MINI_TRACKER_OFFSET,
+                undeadPos.y - MINI_TRACKER_OFFSET,
+              );
+
+              // if out of FoV but in view, draw on map.
+              if (this.IsInViewRect(other.location.position) && !this.IsVisibleToPlayer(other)) {
+                const screenPos = this.MapToScreen(other.location.position);
+                this.m_UI.UI_DrawImage(GameImages.TRACK_UNDEAD_POSITION, screenPos.x, screenPos.y);
+              }
+            }
+          }
+
+          // ...BlackOps?
+          if (tracker.canTrackBlackOps) {
+            for (const other of map.actors) {
+              if (other === this.m_Player) continue;
+              if (other.faction !== this.gameFactions.get(FactionID.TheBlackOps)) continue;
+              // only track in same map.
+              if (other.location.map !== this.m_Player.location.map) continue;
+
+              // blackop, show it.
+              const boPos = new Point(
+                MINIMAP_X + other.location.position.x * MINITILE_SIZE,
+                MINIMAP_Y + other.location.position.y * MINITILE_SIZE,
+              );
+              this.m_UI.UI_DrawImage(
+                GameImages.MINI_BLACKOPS_POSITION,
+                boPos.x - MINI_TRACKER_OFFSET,
+                boPos.y - MINI_TRACKER_OFFSET,
+              );
+
+              // if out of FoV but in view, draw on map.
+              if (this.IsInViewRect(other.location.position) && !this.IsVisibleToPlayer(other)) {
+                const screenPos = this.MapToScreen(other.location.position);
+                this.m_UI.UI_DrawImage(GameImages.TRACK_BLACKOPS_POSITION, screenPos.x, screenPos.y);
+              }
+            }
+          }
+
+          // ...Police?
+          if (tracker.canTrackPolice) {
+            for (const other of map.actors) {
+              if (other === this.m_Player) continue;
+              if (other.faction !== this.gameFactions.get(FactionID.ThePolice)) continue;
+              // only track in same map.
+              if (other.location.map !== this.m_Player.location.map) continue;
+
+              // policeman, show it.
+              const boPos = new Point(
+                MINIMAP_X + other.location.position.x * MINITILE_SIZE,
+                MINIMAP_Y + other.location.position.y * MINITILE_SIZE,
+              );
+              this.m_UI.UI_DrawImage(
+                GameImages.MINI_POLICE_POSITION,
+                boPos.x - MINI_TRACKER_OFFSET,
+                boPos.y - MINI_TRACKER_OFFSET,
+              );
+
+              // if out of FoV but in view, draw on map.
+              if (this.IsInViewRect(other.location.position) && !this.IsVisibleToPlayer(other)) {
+                const screenPos = this.MapToScreen(other.location.position);
+                this.m_UI.UI_DrawImage(GameImages.TRACK_POLICE_POSITION, screenPos.x, screenPos.y);
+              }
+            }
+          }
+        }
+      }
+
+      // player.
+      const pos = new Point(
+        MINIMAP_X + this.m_Player.location.position.x * MINITILE_SIZE,
+        MINIMAP_Y + this.m_Player.location.position.y * MINITILE_SIZE,
+      );
+      this.m_UI.UI_DrawImage(GameImages.MINI_PLAYER_POSITION, pos.x - MINI_TRACKER_OFFSET, pos.y - MINI_TRACKER_OFFSET);
+    }
   }
 
   // C# DrawActorStatus — RogueGame.cs:19211
   DrawActorStatus(actor: Actor, gx: number, gy: number): void {
-    void actor;
-    void gx;
-    void gy;
-    throw new Error("not yet ported: DrawActorStatus (RogueGame.cs:19211)");
+    // 1. Name & occupation
+    this.m_UI.UI_DrawStringBold(
+      actor.isInvincible ? Color.LightGreen : Color.White,
+      `${actor.name}, ${actor.faction.memberName}`,
+      gx,
+      gy,
+    );
+
+    // 2. Bars: Health, Stamina, Food, Sleep, Infection.
+    gy += BOLD_LINE_SPACING;
+    const maxHP = this.m_Rules.actorMaxHPs(actor);
+    this.m_UI.UI_DrawStringBold(Color.White, `HP  ${actor.hitPoints}`, gx, gy);
+    this.DrawBar(
+      actor.hitPoints,
+      actor.previousHitPoints,
+      maxHP,
+      0,
+      100,
+      BOLD_LINE_SPACING,
+      gx + BOLD_LINE_SPACING * 5,
+      gy,
+      Color.Red,
+      Color.DarkRed,
+      Color.OrangeRed,
+      Color.Gray,
+    );
+    this.m_UI.UI_DrawStringBold(Color.White, `${maxHP}`, gx + BOLD_LINE_SPACING * 6 + 100, gy);
+
+    gy += BOLD_LINE_SPACING;
+    if (actor.model.abilities.canTire) {
+      const maxSTA = this.m_Rules.actorMaxSTA(actor);
+      this.m_UI.UI_DrawStringBold(Color.White, `STA ${actor.staminaPoints}`, gx, gy);
+      this.DrawBar(
+        actor.staminaPoints,
+        actor.previousStaminaPoints,
+        maxSTA,
+        Rules.STAMINA_MIN_FOR_ACTIVITY,
+        100,
+        BOLD_LINE_SPACING,
+        gx + BOLD_LINE_SPACING * 5,
+        gy,
+        Color.Green,
+        Color.DarkGreen,
+        Color.LightGreen,
+        Color.Gray,
+      );
+      this.m_UI.UI_DrawStringBold(Color.White, `${maxSTA}`, gx + BOLD_LINE_SPACING * 6 + 100, gy);
+      if (actor.isRunning) {
+        this.m_UI.UI_DrawStringBold(Color.LightGreen, "RUNNING!", gx + BOLD_LINE_SPACING * 9 + 100, gy);
+      } else if (this.m_Rules.canActorRun(actor)) {
+        this.m_UI.UI_DrawStringBold(Color.Green, "can run", gx + BOLD_LINE_SPACING * 9 + 100, gy);
+      } else if (this.m_Rules.isActorTired(actor)) {
+        this.m_UI.UI_DrawStringBold(Color.Gray, "TIRED", gx + BOLD_LINE_SPACING * 9 + 100, gy);
+      }
+    }
+
+    gy += BOLD_LINE_SPACING;
+    if (actor.model.abilities.hasToEat) {
+      const maxFood = this.m_Rules.actorMaxFood(actor);
+      this.m_UI.UI_DrawStringBold(Color.White, `FOO ${actor.foodPoints}`, gx, gy);
+      this.DrawBar(
+        actor.foodPoints,
+        actor.previousFoodPoints,
+        maxFood,
+        Rules.FOOD_HUNGRY_LEVEL,
+        100,
+        BOLD_LINE_SPACING,
+        gx + BOLD_LINE_SPACING * 5,
+        gy,
+        Color.Chocolate,
+        Color.Brown,
+        Color.Beige,
+        Color.Gray,
+      );
+      this.m_UI.UI_DrawStringBold(Color.White, `${maxFood}`, gx + BOLD_LINE_SPACING * 6 + 100, gy);
+      if (this.m_Rules.isActorHungry(actor)) {
+        if (this.m_Rules.isActorStarving(actor)) {
+          this.m_UI.UI_DrawStringBold(Color.Red, "STARVING!", gx + BOLD_LINE_SPACING * 9 + 100, gy);
+        } else {
+          this.m_UI.UI_DrawStringBold(Color.Yellow, "Hungry", gx + BOLD_LINE_SPACING * 9 + 100, gy);
+        }
+      } else {
+        this.m_UI.UI_DrawStringBold(
+          Color.White,
+          `${this.FoodToHoursUntilHungry(actor.foodPoints)}h`,
+          gx + BOLD_LINE_SPACING * 9 + 100,
+          gy,
+        );
+      }
+    } else if (actor.model.abilities.isRotting) {
+      const maxFood = this.m_Rules.actorMaxRot(actor);
+      this.m_UI.UI_DrawStringBold(Color.White, `ROT ${actor.foodPoints}`, gx, gy);
+      this.DrawBar(
+        actor.foodPoints,
+        actor.previousFoodPoints,
+        maxFood,
+        Rules.ROT_HUNGRY_LEVEL,
+        100,
+        BOLD_LINE_SPACING,
+        gx + BOLD_LINE_SPACING * 5,
+        gy,
+        Color.Chocolate,
+        Color.Brown,
+        Color.Beige,
+        Color.Gray,
+      );
+      this.m_UI.UI_DrawStringBold(Color.White, `${maxFood}`, gx + BOLD_LINE_SPACING * 6 + 100, gy);
+      if (this.m_Rules.isRottingActorHungry(actor)) {
+        if (this.m_Rules.isRottingActorStarving(actor)) {
+          this.m_UI.UI_DrawStringBold(Color.Red, "STARVING!", gx + BOLD_LINE_SPACING * 9 + 100, gy);
+        } else {
+          this.m_UI.UI_DrawStringBold(Color.Yellow, "Hungry", gx + BOLD_LINE_SPACING * 9 + 100, gy);
+        }
+      } else {
+        this.m_UI.UI_DrawStringBold(
+          Color.White,
+          `${this.FoodToHoursUntilRotHungry(actor.foodPoints)}h`,
+          gx + BOLD_LINE_SPACING * 9 + 100,
+          gy,
+        );
+      }
+    }
+
+    gy += BOLD_LINE_SPACING;
+    if (actor.model.abilities.hasToSleep) {
+      const maxSleep = this.m_Rules.actorMaxSleep(actor);
+      this.m_UI.UI_DrawStringBold(Color.White, `SLP ${actor.sleepPoints}`, gx, gy);
+      this.DrawBar(
+        actor.sleepPoints,
+        actor.previousSleepPoints,
+        maxSleep,
+        Rules.SLEEP_SLEEPY_LEVEL,
+        100,
+        BOLD_LINE_SPACING,
+        gx + BOLD_LINE_SPACING * 5,
+        gy,
+        Color.Blue,
+        Color.DarkBlue,
+        Color.LightBlue,
+        Color.Gray,
+      );
+      this.m_UI.UI_DrawStringBold(Color.White, `${maxSleep}`, gx + BOLD_LINE_SPACING * 6 + 100, gy);
+      if (this.m_Rules.isActorSleepy(actor)) {
+        if (this.m_Rules.isActorExhausted(actor)) {
+          this.m_UI.UI_DrawStringBold(Color.Red, "EXHAUSTED!", gx + BOLD_LINE_SPACING * 9 + 100, gy);
+        } else {
+          this.m_UI.UI_DrawStringBold(Color.Yellow, "Sleepy", gx + BOLD_LINE_SPACING * 9 + 100, gy);
+        }
+      } else {
+        this.m_UI.UI_DrawStringBold(
+          Color.White,
+          `${this.m_Rules.sleepToHoursUntilSleepy(actor.sleepPoints, this.m_Session.worldTime.isNight)}h`,
+          gx + BOLD_LINE_SPACING * 9 + 100,
+          gy,
+        );
+      }
+    }
+
+    gy += BOLD_LINE_SPACING;
+    if (actor.model.abilities.hasSanity) {
+      const maxSan = this.m_Rules.actorMaxSanity(actor);
+      this.m_UI.UI_DrawStringBold(Color.White, `SAN ${actor.sanity}`, gx, gy);
+      this.DrawBar(
+        actor.sanity,
+        actor.previousSanity,
+        maxSan,
+        this.m_Rules.actorDisturbedLevel(actor),
+        100,
+        BOLD_LINE_SPACING,
+        gx + BOLD_LINE_SPACING * 5,
+        gy,
+        Color.Orange,
+        Color.DarkOrange,
+        Color.OrangeRed,
+        Color.Gray,
+      );
+      this.m_UI.UI_DrawStringBold(Color.White, `${maxSan}`, gx + BOLD_LINE_SPACING * 6 + 100, gy);
+      if (this.m_Rules.isActorDisturbed(actor)) {
+        if (this.m_Rules.isActorInsane(actor)) {
+          this.m_UI.UI_DrawStringBold(Color.Red, "INSANE!", gx + BOLD_LINE_SPACING * 9 + 100, gy);
+        } else {
+          this.m_UI.UI_DrawStringBold(Color.Yellow, "Disturbed", gx + BOLD_LINE_SPACING * 9 + 100, gy);
+        }
+      } else {
+        this.m_UI.UI_DrawStringBold(
+          Color.White,
+          `${this.m_Rules.sanityToHoursUntilUnstable(actor)}h`,
+          gx + BOLD_LINE_SPACING * 9 + 100,
+          gy,
+        );
+      }
+    }
+
+    if (Rules.hasInfection(this.m_Session.gameMode) && !actor.model.abilities.isUndead) {
+      const maxInf = this.m_Rules.actorInfectionHPs(actor);
+      const refInf = Math.trunc((Rules.INFECTION_LEVEL_1_WEAK * maxInf) / 100);
+      gy += BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBold(Color.White, `INF ${actor.infection}`, gx, gy);
+      this.DrawBar(
+        actor.infection,
+        actor.infection,
+        maxInf,
+        refInf,
+        100,
+        BOLD_LINE_SPACING,
+        gx + BOLD_LINE_SPACING * 5,
+        gy,
+        Color.Purple,
+        Color.Black,
+        Color.Black,
+        Color.Gray,
+      );
+      this.m_UI.UI_DrawStringBold(
+        Color.White,
+        `${this.m_Rules.actorInfectionPercent(actor)}%`,
+        gx + BOLD_LINE_SPACING * 6 + 100,
+        gy,
+      );
+    }
+
+    // 3. Melee & Ranged Attacks.
+    gy += BOLD_LINE_SPACING;
+    const melee = this.m_Rules.actorMeleeAttack(actor, actor.currentMeleeAttack, null);
+    const dmgBonusVsUndead = this.m_Rules.actorDamageBonusVsUndeads(actor);
+    this.m_UI.UI_DrawStringBold(
+      Color.White,
+      `Melee  Atk ${padZero(melee.hitValue, 2)}  Dmg ${padZero(melee.damageValue, 2)}/${padZero(
+        melee.damageValue + dmgBonusVsUndead,
+        2,
+      )}`,
+      gx,
+      gy,
+    );
+
+    gy += BOLD_LINE_SPACING;
+    const ranged = this.m_Rules.actorRangedAttack(
+      actor,
+      actor.currentRangedAttack,
+      actor.currentRangedAttack.efficientRange,
+      null,
+    );
+    const rangedWeapon = actor.getEquippedWeapon() as ItemRangedWeapon | null;
+    let ammo = 0;
+    let maxAmmo = 0;
+    if (rangedWeapon != null) {
+      ammo = rangedWeapon.ammo;
+      maxAmmo = (rangedWeapon.model as ItemRangedWeaponModel).maxAmmo;
+      this.m_UI.UI_DrawStringBold(
+        Color.White,
+        `Ranged Atk ${padZero(ranged.hitValue, 2)}  Dmg ${padZero(ranged.damageValue, 2)}/${padZero(
+          ranged.damageValue + dmgBonusVsUndead,
+          2,
+        )} Rng ${ranged.range}-${ranged.efficientRange} Amo ${ammo}/${maxAmmo}`,
+        gx,
+        gy,
+      );
+    }
+
+    // 4. (living)Def, Pro, Spd, FoV & Nb of followers / (undead)Def, Spd, Fov, Sml, Kills
+    gy += BOLD_LINE_SPACING;
+    const defence = this.m_Rules.actorDefence(actor, actor.currentDefence);
+
+    if (actor.model.abilities.isUndead) {
+      this.m_UI.UI_DrawStringBold(
+        Color.White,
+        `Def ${padZero(defence.value, 2)} Spd ${((this.m_Rules.actorSpeed(actor) / Rules.BASE_SPEED) as number).toFixed(
+          2,
+        )} FoV ${this.m_Rules.actorFOV(actor, this.m_Session.worldTime, this.m_Session.world!.weather)} Sml ${this.m_Rules
+          .actorSmell(actor)
+          .toFixed(2)} Kills ${actor.killsCount}`,
+        gx,
+        gy,
+      );
+    } else {
+      this.m_UI.UI_DrawStringBold(
+        Color.White,
+        `Def ${padZero(defence.value, 2)} Arm ${defence.protectionHit}/${defence.protectionShot} Spd ${(
+          this.m_Rules.actorSpeed(actor) / Rules.BASE_SPEED
+        ).toFixed(2)} FoV ${this.m_Rules.actorFOV(actor, this.m_Session.worldTime, this.m_Session.world!.weather)}/${
+          actor.sheet.baseViewRange
+        } Fol ${actor.countFollowers}/${this.m_Rules.actorMaxFollowers(actor)}`,
+        gx,
+        gy,
+      );
+    }
+
+    // 5. Odor suppressor // alpha10
+    gy += BOLD_LINE_SPACING;
+    if (actor.odorSuppressorCounter > 0) {
+      this.m_UI.UI_DrawStringBold(
+        Color.LightBlue,
+        `Odor suppr : ${actor.odorSuppressorCounter} -${this.m_Rules.odorsDecay(
+          actor.location.map!,
+          actor.location.position,
+          this.m_Session.world!.weather,
+        )}`,
+        gx,
+        gy,
+      );
+    }
   }
 
   // C# DrawInventory — RogueGame.cs:19368
-  DrawInventory(inventory: Inventory, title: string, drawSlotsNumbers: boolean, slotsPerLine: number, maxSlots: number, gx: number, gy: number): void {
-    void inventory;
-    void title;
-    void drawSlotsNumbers;
-    void slotsPerLine;
-    void maxSlots;
-    void gx;
-    void gy;
-    throw new Error("not yet ported: DrawInventory (RogueGame.cs:19368)");
+  DrawInventory(
+    inventory: Inventory,
+    title: string,
+    drawSlotsNumbers: boolean,
+    slotsPerLine: number,
+    maxSlots: number,
+    gx: number,
+    gy: number,
+  ): void {
+    let x: number;
+    let y: number;
+    let slot = 0;
+
+    // Draw title.
+    gy -= BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBold(Color.White, title, gx, gy);
+    gy += BOLD_LINE_SPACING;
+
+    // Draw slots.
+    x = gx;
+    y = gy;
+    slot = 0;
+    for (let i = 0; i < maxSlots; i++) {
+      this.m_UI.UI_DrawImage(GameImages.ITEM_SLOT, x, y);
+      if (++slot >= slotsPerLine) {
+        slot = 0;
+        y += TILE_SIZE;
+        x = gx;
+      } else {
+        x += TILE_SIZE;
+      }
+    }
+
+    // Draw items.
+    if (inventory == null) return;
+
+    x = gx;
+    y = gy;
+    slot = 0;
+    for (const it of inventory.items) {
+      if (it.isEquipped) this.m_UI.UI_DrawImage(GameImages.ITEM_EQUIPPED, x, y);
+      if (it instanceof ItemRangedWeapon) {
+        const w = it as ItemRangedWeapon;
+        if (w.ammo <= 0) this.m_UI.UI_DrawImage(GameImages.ICON_OUT_OF_AMMO, x, y);
+        this.DrawBar(
+          w.ammo,
+          w.ammo,
+          (w.model as ItemRangedWeaponModel).maxAmmo,
+          0,
+          28,
+          3,
+          x + 2,
+          y + 27,
+          Color.Blue,
+          Color.Blue,
+          Color.Blue,
+          Color.DarkGray,
+        );
+      } else if (it instanceof ItemSprayPaint) {
+        const sp = it as ItemSprayPaint;
+        this.DrawBar(
+          sp.paintQuantity,
+          sp.paintQuantity,
+          (sp.model as ItemSprayPaintModel).maxPaintQuantity,
+          0,
+          28,
+          3,
+          x + 2,
+          y + 27,
+          Color.Gold,
+          Color.Gold,
+          Color.Gold,
+          Color.DarkGray,
+        );
+      } else if (it instanceof ItemSprayScent) {
+        const sp = it as ItemSprayScent;
+        this.DrawBar(
+          sp.sprayQuantity,
+          sp.sprayQuantity,
+          (sp.model as ItemSprayScentModel).maxSprayQuantity,
+          0,
+          28,
+          3,
+          x + 2,
+          y + 27,
+          Color.Cyan,
+          Color.Cyan,
+          Color.Cyan,
+          Color.DarkGray,
+        );
+      } else if (it instanceof ItemLight) {
+        const lt = it as ItemLight;
+        if (lt.batteries <= 0) this.m_UI.UI_DrawImage(GameImages.ICON_OUT_OF_BATTERIES, x, y);
+        this.DrawBar(
+          lt.batteries,
+          lt.batteries,
+          (lt.model as ItemLightModel).maxBatteries,
+          0,
+          28,
+          3,
+          x + 2,
+          y + 27,
+          Color.Yellow,
+          Color.Yellow,
+          Color.Yellow,
+          Color.DarkGray,
+        );
+      } else if (it instanceof ItemTracker) {
+        const tr = it as ItemTracker;
+        if (tr.batteries <= 0) this.m_UI.UI_DrawImage(GameImages.ICON_OUT_OF_BATTERIES, x, y);
+        this.DrawBar(
+          tr.batteries,
+          tr.batteries,
+          (tr.model as ItemTrackerModel).maxBatteries,
+          0,
+          28,
+          3,
+          x + 2,
+          y + 27,
+          Color.Pink,
+          Color.Pink,
+          Color.Pink,
+          Color.DarkGray,
+        );
+      } else if (it instanceof ItemFood) {
+        const food = it as ItemFood;
+        if (this.m_Rules.isFoodExpired(food, this.m_Session.worldTime.turnCounter)) {
+          this.m_UI.UI_DrawImage(GameImages.ICON_EXPIRED_FOOD, x, y);
+        } else if (this.m_Rules.isFoodSpoiled(food, this.m_Session.worldTime.turnCounter)) {
+          this.m_UI.UI_DrawImage(GameImages.ICON_SPOILED_FOOD, x, y);
+        }
+      } else if (it instanceof ItemTrap) {
+        // alpha10
+        this.DrawTrapItem(it as ItemTrap, x, y);
+      } else if (it instanceof ItemEntertainment) {
+        // alpha10 boring items item centric
+        if (this.m_Player != null && (it as ItemEntertainment).isBoringFor(this.m_Player)) {
+          this.m_UI.UI_DrawImage(GameImages.ICON_BORING_ITEM, x, y);
+        }
+      }
+      this.DrawItem(it, x, y);
+
+      if (++slot >= slotsPerLine) {
+        slot = 0;
+        y += TILE_SIZE;
+        x = gx;
+      } else {
+        x += TILE_SIZE;
+      }
+    }
+
+    // Draw slots numbers.
+    if (drawSlotsNumbers) {
+      x = gx + 4;
+      y = gy + TILE_SIZE;
+      for (let i = 0; i < inventory.maxCapacity; i++) {
+        this.m_UI.UI_DrawString(Color.White, `${i + 1}`, x, y);
+        x += TILE_SIZE;
+      }
+    }
   }
 
-  // C# DrawItem — RogueGame.cs:19476 (+1 overloads)
-  DrawItem(it: Item, gx: number, gy: number, tint?: Color): void {
-    void it;
-    void gx;
-    void gy;
-    void tint;
-    throw new Error("not yet ported: DrawItem (RogueGame.cs:19476)");
+  // C# DrawItem — RogueGame.cs:19476
+  DrawItem(it: Item, gx: number, gy: number, tint: Color = Color.White): void {
+    this.m_UI.UI_DrawImageTinted(it.imageId, gx, gy, tint);
+
+    if (it.model.isStackable) {
+      const q = `${it.quantity}`;
+      let tx = gx + TILE_SIZE - 10;
+      if (it.quantity > 100) tx -= 10;
+      else if (it.quantity > 10) tx -= 4;
+      this.m_UI.UI_DrawString(Color.DarkGray, q, tx + 1, gy + 1);
+      this.m_UI.UI_DrawString(Color.White, q, tx, gy);
+    }
+    if (it instanceof ItemTrap) {
+      // alpha10
+      this.DrawTrapItem(it as ItemTrap, gx, gy);
+    }
   }
 
+  // alpha10 factorized code
   // C# DrawTrapItem — RogueGame.cs:19503
   DrawTrapItem(trap: ItemTrap, gx: number, gy: number): void {
-    void trap;
-    void gx;
-    void gy;
-    throw new Error("not yet ported: DrawTrapItem (RogueGame.cs:19503)");
+    if (trap.isTriggered) {
+      // alpha10
+      if (trap.owner === this.m_Player) this.m_UI.UI_DrawImage(GameImages.ICON_TRAP_TRIGGERED_SAFE_PLAYER, gx, gy);
+      else if (this.m_Rules.isSafeFromTrap(trap, this.m_Player))
+        this.m_UI.UI_DrawImage(GameImages.ICON_TRAP_TRIGGERED_SAFE_GROUP, gx, gy);
+      else this.m_UI.UI_DrawImage(GameImages.ICON_TRAP_TRIGGERED, gx, gy);
+    } else if (trap.isActivated) {
+      // alpha10
+      if (trap.owner === this.m_Player) this.m_UI.UI_DrawImage(GameImages.ICON_TRAP_ACTIVATED_SAFE_PLAYER, gx, gy);
+      else if (this.m_Rules.isSafeFromTrap(trap, this.m_Player))
+        this.m_UI.UI_DrawImage(GameImages.ICON_TRAP_ACTIVATED_SAFE_GROUP, gx, gy);
+      else this.m_UI.UI_DrawImage(GameImages.ICON_TRAP_ACTIVATED, gx, gy);
+    }
   }
 
   // C# DrawActorSkillTable — RogueGame.cs:19527
   DrawActorSkillTable(actor: Actor, gx: number, gy: number): void {
-    void actor;
-    void gx;
-    void gy;
-    throw new Error("not yet ported: DrawActorSkillTable (RogueGame.cs:19527)");
+    gy -= BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBold(Color.White, "Skills", gx, gy);
+    gy += BOLD_LINE_SPACING;
+
+    const skills = actor.sheet.skillTable.skills;
+    if (skills == null) return;
+
+    let x: number;
+    let y: number;
+    let count = 0;
+    x = gx;
+    y = gy;
+    for (const sk of skills) {
+      let skColor = Color.White;
+
+      // alpha10 highlight if active skills are active or not
+      switch (sk.id) {
+        case SkillID.MARTIAL_ARTS:
+          skColor = actor.getEquippedWeapon() == null ? Color.LightGreen : Color.Red;
+          break;
+        case SkillID.HARDY:
+          if (actor.isSleeping) skColor = Color.LightGreen;
+          break;
+      }
+
+      this.m_UI.UI_DrawString(skColor, `${sk.level}-`, x, y);
+      x += 16;
+      this.m_UI.UI_DrawString(skColor, Skills.name(sk.id), x, y);
+      x -= 16;
+
+      if (++count >= SKILLTABLE_LINES) {
+        count = 0;
+        y = gy;
+        x += 120;
+      } else {
+        y += LINE_SPACING;
+      }
+    }
   }
 
   // C# AddOverlay — RogueGame.cs:19573
@@ -11294,43 +13928,52 @@ export class RogueGame {
     return this.m_Overlays.includes(o);
   }
 
-  // C# MapToScreen — RogueGame.cs:19611 (+1 overloads)
+  // C# MapToScreen — RogueGame.cs:19611
+  MapToScreen(mapPosition: Point): Point;
+  MapToScreen(x: number, y: number): Point;
   MapToScreen(mapPosition: Point | number, y?: number): Point {
-    void mapPosition;
-    void y;
-    throw new Error("not yet ported: MapToScreen (RogueGame.cs:19611)");
+    if (typeof mapPosition === "number") {
+      return new Point((mapPosition - this.m_MapViewRect.left) * TILE_SIZE, ((y as number) - this.m_MapViewRect.top) * TILE_SIZE);
+    }
+    return this.MapToScreen(mapPosition.x, mapPosition.y);
   }
 
-  // C# ScreenToMap — RogueGame.cs:19621 (+1 overloads)
+  // C# ScreenToMap — RogueGame.cs:19621
+  ScreenToMap(screenPosition: Point): Point;
+  ScreenToMap(gx: number, gy: number): Point;
   ScreenToMap(gx: Point | number, gy?: number): Point {
-    void gx;
-    void gy;
-    throw new Error("not yet ported: ScreenToMap (RogueGame.cs:19621)");
+    if (typeof gx === "number") {
+      return new Point(
+        this.m_MapViewRect.left + Math.trunc(gx / TILE_SIZE),
+        this.m_MapViewRect.top + Math.trunc((gy as number) / TILE_SIZE),
+      );
+    }
+    return this.ScreenToMap(gx.x, gx.y);
   }
 
-  // C# MouseToMap — RogueGame.cs:19631 (+1 overloads)
+  // C# MouseToMap — RogueGame.cs:19631
+  MouseToMap(mousePosition: Point): Point;
+  MouseToMap(mouseX: number, mouseY: number): Point;
   MouseToMap(mousePosition: Point | number, mouseY?: number): Point {
-    void mousePosition;
-    void mouseY;
-    throw new Error("not yet ported: MouseToMap (RogueGame.cs:19631)");
+    if (typeof mousePosition === "number") {
+      const mx = Math.trunc(mousePosition / this.m_UI.UI_GetCanvasScaleX());
+      const my = Math.trunc((mouseY as number) / this.m_UI.UI_GetCanvasScaleY());
+      return this.ScreenToMap(mx, my);
+    }
+    return this.MouseToMap(mousePosition.x, mousePosition.y);
   }
 
   // C# MouseToInventorySlot — RogueGame.cs:19643
   MouseToInventorySlot(invX: number, invY: number, mouseX: number, mouseY: number): Point {
-    void invX;
-    void invY;
-    void mouseX;
-    void mouseY;
-    throw new Error("not yet ported: MouseToInventorySlot (RogueGame.cs:19643)");
+    const mx = Math.trunc(mouseX / this.m_UI.UI_GetCanvasScaleX());
+    const my = Math.trunc(mouseY / this.m_UI.UI_GetCanvasScaleY());
+
+    return new Point(Math.trunc((mx - invX) / 32), Math.trunc((my - invY) / 32));
   }
 
   // C# InventorySlotToScreen — RogueGame.cs:19651
   InventorySlotToScreen(invX: number, invY: number, slotX: number, slotY: number): Point {
-    void invX;
-    void invY;
-    void slotX;
-    void slotY;
-    throw new Error("not yet ported: InventorySlotToScreen (RogueGame.cs:19651)");
+    return new Point(invX + slotX * 32, invY + slotY * 32);
   }
 
   // C# IsVisibleToPlayer — RogueGame.cs:19658 (+3 overloads)
@@ -11351,16 +13994,22 @@ export class RogueGame {
     return this.IsVisibleToPlayer(target.map!, target.position);
   }
 
-  // C# IsKnownToPlayer — RogueGame.cs:19680 (+2 overloads)
+  // C# IsKnownToPlayer — RogueGame.cs:19680
+  IsKnownToPlayer(map: Map, position: Point): boolean;
+  IsKnownToPlayer(location: Location): boolean;
+  IsKnownToPlayer(mapObj: MapObject): boolean;
   IsKnownToPlayer(location: Map | Location | MapObject, position?: Point): boolean {
-    void location;
-    void position;
-    throw new Error("not yet ported: IsKnownToPlayer (RogueGame.cs:19680)");
+    if (location instanceof Map) {
+      if (position == null) throw new TypeError("IsKnownToPlayer(map, position): position is required");
+      return location.isInBounds(position.x, position.y) && (location.getTileAt(position.x, position.y)?.isVisited ?? false);
+    }
+    if (location instanceof MapObject) return this.IsKnownToPlayer(location.location);
+    return this.IsKnownToPlayer(location.map!, location.position);
   }
 
   // C# IsPlayerSleeping — RogueGame.cs:19695
   IsPlayerSleeping(): boolean {
-    throw new Error("not yet ported: IsPlayerSleeping (RogueGame.cs:19695)");
+    return this.m_Player != null && this.m_Player.isSleeping;
   }
 
   // C# FindLongestLine — RogueGame.cs:19702
@@ -11379,35 +14028,103 @@ export class RogueGame {
 
   // C# HandleSaveGame — RogueGame.cs:19724
   HandleSaveGame(): void {
-    throw new Error("not yet ported: HandleSaveGame (RogueGame.cs:19724)");
+    // alpha10.1
+    // manually saving the game delays (reschedule) the next autosave
+    this.ScheduleNextAutoSave();
+
+    this.DoSaveGame(this.GetUserSave());
   }
 
   // C# CheckAutoSaveTime — RogueGame.cs:19734
   CheckAutoSaveTime(): void {
-    throw new Error("not yet ported: CheckAutoSaveTime (RogueGame.cs:19734)");
+    // sanity checks
+    if (!this.m_IsGameRunning || this.m_Player == null || this.m_Player.isDead) return;
+
+    // option off?
+    if (s_Options.autoSavePeriodInHours <= 0) return;
+
+    // not time yet?
+    if (this.m_Session.worldTime.turnCounter < this.m_Session.nextAutoSaveTime) return;
+
+    // autosave now and reschedule
+    this.ScheduleNextAutoSave();
+    const popup = new OverlayPopup(
+      ["AUTOSAVING..."],
+      Color.Yellow,
+      Color.White,
+      Color.Black,
+      this.MapToScreen(this.m_Player.location.position.x, this.m_Player.location.position.y)
+    );
+    this.AddOverlay(popup);
+    this.DoSaveGame(this.GetUserSave(), true);
+    this.RemoveOverlay(popup);
+    this.RedrawPlayScreen();
   }
 
   // C# ScheduleNextAutoSave — RogueGame.cs:19758
   ScheduleNextAutoSave(): void {
-    throw new Error("not yet ported: ScheduleNextAutoSave (RogueGame.cs:19758)");
+    this.m_Session.nextAutoSaveTime =
+      this.m_Session.worldTime.turnCounter + WorldTime.TURNS_PER_HOUR * s_Options.autoSavePeriodInHours;
   }
 
   // C# HandleLoadGame — RogueGame.cs:19763
   HandleLoadGame(): void {
-    throw new Error("not yet ported: HandleLoadGame (RogueGame.cs:19763)");
+    this.DoLoadGame(this.GetUserSave());
   }
 
   // C# DoSaveGame — RogueGame.cs:19770
   DoSaveGame(saveName: string, isAutoSave?: boolean): void {
-    void saveName;
-    void isAutoSave;
-    throw new Error("not yet ported: DoSaveGame (RogueGame.cs:19770)");
+    this.StopSimThread(false); // alpha10.1
+
+    const savingOrAutosaving = isAutoSave ? "AUTOSAVING" : "SAVING";
+
+    this.ClearMessages();
+    this.AddMessage(
+      new Message(`${savingOrAutosaving} GAME, PLEASE WAIT...`, this.m_Session.worldTime.turnCounter, Color.Yellow)
+    );
+    this.RedrawPlayScreen();
+    this.m_UI.UI_Repaint();
+
+    // save session object. (C# `Session.Save(m_Session, saveName, FORMAT_BIN)` —
+    // the browser port has one localStorage session; the same JSON is also
+    // mirrored into the IndexedDB slot the main menu checks (see GetUserSave).)
+    Session.save(this.m_Session);
+    void GameSaveManager.saveGame(Number(saveName), JSON.parse(localStorage.getItem(Session.STORAGE_KEY) ?? "{}"));
+
+    this.AddMessage(
+      new Message(`${savingOrAutosaving} DONE.`, this.m_Session.worldTime.turnCounter, Color.Yellow)
+    );
+    this.RedrawPlayScreen();
+    this.m_UI.UI_Repaint();
+
+    this.StartSimThread(); // alpha10.1
   }
 
   // C# DoLoadGame — RogueGame.cs:19792
   DoLoadGame(saveName: string): void {
-    void saveName;
-    throw new Error("not yet ported: DoLoadGame (RogueGame.cs:19792)");
+    this.StopSimThread(false); // alpha10.1
+
+    this.ClearMessages();
+    this.AddMessage(
+      new Message("LOADING GAME, PLEASE WAIT...", this.m_Session.worldTime.turnCounter, Color.Yellow)
+    );
+    this.RedrawPlayScreen();
+    this.m_UI.UI_Repaint();
+
+    // C# `LoadGame` is synchronous; browser storage is async, so continue
+    // from the promise instead of blocking the turn loop.
+    void this.LoadGame(saveName).then((loaded) => {
+      if (!loaded) {
+        this.AddMessage(
+          new Message(
+            "LOADING FAILED, NO GAME SAVED OR VERSION NOT COMPATIBLE.",
+            this.m_Session.worldTime.turnCounter,
+            Color.Red
+          )
+        );
+      }
+      this.StartSimThread(); // alpha10.1
+    });
   }
 
   // C# DeleteSavedGame — RogueGame.cs:19809
@@ -11419,8 +14136,32 @@ export class RogueGame {
 
   // C# LoadGame — RogueGame.cs:19819
   async LoadGame(saveName: string): Promise<boolean> {
-    void saveName;
-    throw new Error("not yet ported: LoadGame (RogueGame.cs:19819)");
+    // C# loads the save file named `saveName`; the browser keeps the same
+    // JSON in localStorage (session) and in one IndexedDB slot (see DoSaveGame).
+    const saveFile = await GameSaveManager.loadGame(Number(saveName));
+    if (saveFile != null && saveFile.sessionData != null)
+      localStorage.setItem(Session.STORAGE_KEY, JSON.stringify(saveFile.sessionData));
+
+    // load session object.
+    const loaded = Session.load();
+    if (!loaded) return false;
+
+    this.m_Session = Session.get();
+    this.m_Rules = new Rules(new DiceRoller(this.m_Session.seed));
+
+    this.RefreshPlayer();
+
+    this.AddMessage(new Message("LOADING DONE.", this.m_Session.worldTime.turnCounter, Color.Yellow));
+    this.AddMessage(
+      new Message("Welcome back to Rogue Survivor!", this.m_Session.worldTime.turnCounter, Color.LightGreen)
+    );
+    this.RedrawPlayScreen();
+    this.m_UI.UI_Repaint();
+
+    // Log ;/
+    this.m_Session.scoring.addEvent(this.m_Session.worldTime.turnCounter, "<Loaded game>");
+
+    return true;
   }
 
   // C# LoadOptions — RogueGame.cs:19843
@@ -11557,8 +14298,10 @@ export class RogueGame {
   }
 
   // C# GetUserBasePath — RogueGame.cs:19988
+  // Browser: no user directory — `SetupConfig.DirPath` has no equivalent, so
+  // all derived paths are relative keys (see GetUserSavesPath below).
   GetUserBasePath(): string {
-    throw new Error("not yet ported: GetUserBasePath (RogueGame.cs:19988)");
+    return "";
   }
 
   // C# GetUserSavesPath — RogueGame.cs:19997
@@ -11576,12 +14319,12 @@ export class RogueGame {
 
   // C# GetUserDocsPath — RogueGame.cs:20007
   GetUserDocsPath(): string {
-    throw new Error("not yet ported: GetUserDocsPath (RogueGame.cs:20007)");
+    return `${this.GetUserBasePath()}Docs/`;
   }
 
   // C# GetUserGraveyardPath — RogueGame.cs:20012
   GetUserGraveyardPath(): string {
-    throw new Error("not yet ported: GetUserGraveyardPath (RogueGame.cs:20012)");
+    return `${this.GetUserBasePath()}Graveyard/`;
   }
 
   // C# GetUserNewGraveyardName — RogueGame.cs:20021
@@ -11609,47 +14352,65 @@ export class RogueGame {
 
   // C# GetUserConfigPath — RogueGame.cs:20042
   GetUserConfigPath(): string {
-    throw new Error("not yet ported: GetUserConfigPath (RogueGame.cs:20042)");
+    return `${this.GetUserBasePath()}Config/`;
   }
 
   // C# GetUserOptionsFilePath — RogueGame.cs:20047
   GetUserOptionsFilePath(): string {
-    throw new Error("not yet ported: GetUserOptionsFilePath (RogueGame.cs:20047)");
+    return `${this.GetUserConfigPath()}options.dat`;
   }
 
   // C# GetUserScreenshotsPath — RogueGame.cs:20052
   GetUserScreenshotsPath(): string {
-    throw new Error("not yet ported: GetUserScreenshotsPath (RogueGame.cs:20052)");
+    return `${this.GetUserBasePath()}Screenshots/`;
   }
 
   // C# GetUserNewScreenshotName — RogueGame.cs:20061
   GetUserNewScreenshotName(): string {
-    throw new Error("not yet ported: GetUserNewScreenshotName (RogueGame.cs:20061)");
+    let name = "";
+    let i = 0;
+    let isFreeID = false;
+    do {
+      name = `screenshot_${String(i).padStart(3, "0")}`;
+      // browser: `UI_SaveScreenshot` downloads the file, nothing to check on disk.
+      isFreeID = true;
+      ++i;
+    } while (!isFreeID);
+
+    return name;
   }
 
   // C# ScreenshotFilePath — RogueGame.cs:20077
   ScreenshotFilePath(shotname: string): string {
-    void shotname;
-    throw new Error("not yet ported: ScreenshotFilePath (RogueGame.cs:20077)");
+    return `${this.GetUserScreenshotsPath()}${shotname}.${this.m_UI.UI_ScreenshotExtension()}`;
   }
 
   // C# CreateDirectory — RogueGame.cs:20082
   CreateDirectory(path: string): boolean {
-    void path;
-    throw new Error("not yet ported: CreateDirectory (RogueGame.cs:20082)");
+    void path; // browser: no filesystem, nothing to create.
+    return false;
   }
 
   // C# CheckDirectory — RogueGame.cs:20093
   CheckDirectory(path: string, description: string, gy: { value: number }): boolean {
-    void path;
-    void description;
-    void gy;
-    throw new Error("not yet ported: CheckDirectory (RogueGame.cs:20093)");
+    this.m_UI.UI_DrawString(Color.White, `${description} : ${path}...`, 0, gy.value);
+    gy.value += BOLD_LINE_SPACING;
+    this.m_UI.UI_Repaint();
+    const created = this.CreateDirectory(path);
+    this.m_UI.UI_DrawString(Color.White, "ok.", 0, gy.value);
+    gy.value += BOLD_LINE_SPACING;
+    this.m_UI.UI_Repaint();
+
+    return created;
   }
 
   // C# CheckCopyOfManual — RogueGame.cs:20106
+  // Browser: the manual ships as a static asset (see GetUserManualFilePath),
+  // so there is never a file to copy into the docs directory.
   CheckCopyOfManual(): boolean {
-    throw new Error("not yet ported: CheckCopyOfManual (RogueGame.cs:20106)");
+    logInit("checking for manual...");
+    logInit("checking for manual... done!");
+    return false;
   }
 
   // C# GetUserManualFilePath — RogueGame.cs:20127
@@ -11675,178 +14436,1241 @@ export class RogueGame {
 
   // C# GenerateWorld — RogueGame.cs:20149
   GenerateWorld(isVerbose: boolean, size: number): void {
-    void isVerbose;
-    void size;
-    throw new Error("not yet ported: GenerateWorld (RogueGame.cs:20149)");
+    // say so.
+    if (isVerbose) {
+      this.m_UI.UI_Clear(Color.Black);
+      this.m_UI.UI_DrawStringBold(Color.White, "Generating game world...", 0, 0);
+      this.m_UI.UI_Repaint();
+    }
+
+    //////////////////////
+    // Create blank world
+    //////////////////////
+    if (isVerbose) {
+      this.m_UI.UI_Clear(Color.Black);
+      this.m_UI.UI_DrawStringBold(Color.White, "Creating empty world...", 0, 0);
+      this.m_UI.UI_Repaint();
+    }
+    this.m_Session.world = new World(size);
+    const world = this.m_Session.world!;
+
+    ////////////////////////
+    // Roll initial weather
+    ////////////////////////
+    world.weather = this.m_Rules.roll(Weather.CLEAR, Weather._COUNT) as Weather;
+    world.nextWeatherCheckTurn = this.m_Rules.roll(WEATHER_MIN_DURATION, WEATHER_MAX_DURATION); // alpha10
+
+    //////////////////////////////////////////////
+    // Roll locations of special buildings.
+    // Only ONE special building max per district.
+    //////////////////////////////////////////////
+    const noSpecialDistricts: Point[] = [];
+    for (let x = 0; x < world.size; x++)
+      for (let y = 0; y < world.size; y++) noSpecialDistricts.push(new Point(x, y));
+
+    let districtIdx = this.m_Rules.roll(0, noSpecialDistricts.length);
+    const policeStationDistrictPos = noSpecialDistricts[districtIdx];
+    noSpecialDistricts.splice(districtIdx, 1);
+
+    districtIdx = this.m_Rules.roll(0, noSpecialDistricts.length);
+    const hospitalDistrictPos = noSpecialDistricts[districtIdx];
+    noSpecialDistricts.splice(districtIdx, 1);
+
+    /////////////////////////
+    // Create districts maps
+    /////////////////////////
+    // Surface, Sewers and Subways.
+    for (let x = 0; x < world.size; x++) {
+      for (let y = 0; y < world.size; y++) {
+        if (isVerbose) {
+          this.m_UI.UI_Clear(Color.Black);
+          this.m_UI.UI_DrawStringBold(Color.White, `Creating District@${World.CoordToString(x, y)}...`, 0, 0);
+          this.m_UI.UI_Repaint();
+        }
+
+        // create the district.
+        const district = new District(new Point(x, y), this.GenerateDistrictKind(world, x, y));
+        world.setDistrict(x, y, district);
+
+        // create the entry map.
+        const entryMap = this.GenerateDistrictEntryMap(world, district, policeStationDistrictPos, hospitalDistrictPos);
+        district.entryMap = entryMap;
+        district.name = entryMap.name;
+
+        // create other maps.
+        // - sewers
+        district.sewersMap = this.GenerateDistrictSewersMap(district);
+        // - subway (only in the middle district line)
+        if (y === Math.floor(world.size / 2)) district.subwayMap = this.GenerateDistrictSubwayMap(district);
+      }
+    }
+
+    ///////////////
+    // Unique Maps
+    ///////////////
+    if (isVerbose) {
+      this.m_UI.UI_Clear(Color.Black);
+      this.m_UI.UI_DrawStringBold(Color.White, "Generating unique maps...", 0, 0);
+      this.m_UI.UI_Repaint();
+    }
+    this.m_Session.uniqueMaps.charUndergroundFacility = this.CreateUniqueMap_CHARUndegroundFacility(world);
+
+    /////////////////
+    // Unique Actors
+    /////////////////
+    if (isVerbose) {
+      this.m_UI.UI_Clear(Color.Black);
+      this.m_UI.UI_DrawStringBold(Color.White, "Generating unique actors...", 0, 0);
+      this.m_UI.UI_Repaint();
+    }
+    // "Sewers Thing" - in one of the sewers
+    this.m_Session.uniqueActors.theSewersThing = this.SpawnUniqueSewersThing(world);
+    // Unique survivors NPCs.
+    this.m_Session.uniqueActors.bigBear = this.CreateUniqueBigBear(world);
+    this.m_Session.uniqueActors.famuFataru = this.CreateUniqueFamuFataru(world);
+    this.m_Session.uniqueActors.santaman = this.CreateUniqueSantaman(world);
+    this.m_Session.uniqueActors.roguedjack = this.CreateUniqueRoguedjack(world);
+    this.m_Session.uniqueActors.duckman = this.CreateUniqueDuckman(world);
+    this.m_Session.uniqueActors.hansVonHanz = this.CreateUniqueHansVonHanz(world);
+
+    // alpha10 Make all uniques npcs invincible until spotted
+    // (the prison/jason uniques have no actor yet — C# assumes they do, TS null-guards.)
+    for (const uniqueActor of this.m_Session.uniqueActors.toArray())
+      if (uniqueActor.theActor != null) uniqueActor.theActor.isInvincible = true;
+
+    /////////////////
+    // Unique Items
+    /////////////////
+    // "Subway Worker Badge" - somewhere on the subway tracks...
+    this.m_Session.uniqueItems.theSubwayWorkerBadge = this.SpawnUniqueSubwayWorkerBadge(world);
+
+    //////////////////
+    // Link districts
+    //////////////////
+    for (let x = 0; x < world.size; x++) {
+      for (let y = 0; y < world.size; y++) {
+        if (isVerbose) {
+          this.m_UI.UI_Clear(Color.Black);
+          this.m_UI.UI_DrawStringBold(Color.White, `Linking District@${World.CoordToString(x, y)}...`, 0, 0);
+          this.m_UI.UI_Repaint();
+        }
+
+        // Entry maps (surface) — add exits (from and to).
+        const surfaceMap = world.getDistrict(x, y)!.entryMap!;
+
+        if (y > 0) {
+          // north.
+          const toMap = world.getDistrict(x, y - 1)!.entryMap!;
+          for (let fromX = 0; fromX < surfaceMap.width; fromX++) {
+            const toX = fromX;
+            if (toX >= toMap.width) continue;
+            // link?
+            if (this.m_Rules.rollChance(DISTRICT_EXIT_CHANCE_PER_TILE)) {
+              const ptMapFrom = new Point(fromX, -1);
+              const ptMapTo = new Point(fromX, toMap.height - 1);
+              const ptFromMapFrom = new Point(fromX, toMap.height);
+              const ptFromMapTo = new Point(fromX, 0);
+              if (
+                this.CheckIfExitIsGood(surfaceMap, ptMapFrom, toMap, ptMapTo) &&
+                this.CheckIfExitIsGood(toMap, ptFromMapFrom, surfaceMap, ptFromMapTo)
+              ) {
+                this.GenerateExit(surfaceMap, ptMapFrom, toMap, ptMapTo);
+                this.GenerateExit(toMap, ptFromMapFrom, surfaceMap, ptFromMapTo);
+              }
+            }
+          }
+        }
+        if (x > 0) {
+          // west.
+          const toMap = world.getDistrict(x - 1, y)!.entryMap!;
+          for (let fromY = 0; fromY < surfaceMap.height; fromY++) {
+            const toY = fromY;
+            if (toY >= toMap.height) continue;
+            // link?
+            if (this.m_Rules.rollChance(DISTRICT_EXIT_CHANCE_PER_TILE)) {
+              const ptMapFrom = new Point(-1, fromY);
+              const ptMapTo = new Point(toMap.width - 1, fromY);
+              const ptFromMapFrom = new Point(toMap.width, fromY);
+              const ptFromMapTo = new Point(0, fromY);
+              if (
+                this.CheckIfExitIsGood(surfaceMap, ptMapFrom, toMap, ptMapTo) &&
+                this.CheckIfExitIsGood(toMap, ptFromMapFrom, surfaceMap, ptFromMapTo)
+              ) {
+                this.GenerateExit(surfaceMap, ptMapFrom, toMap, ptMapTo);
+                this.GenerateExit(toMap, ptFromMapFrom, surfaceMap, ptFromMapTo);
+              }
+            }
+          }
+        }
+
+        // Sewers — add exits (from and to).
+        const sewersMap = world.getDistrict(x, y)!.sewersMap!;
+        if (y > 0) {
+          // north.
+          const toMap = world.getDistrict(x, y - 1)!.sewersMap!;
+          for (let fromX = 0; fromX < sewersMap.width; fromX++) {
+            const toX = fromX;
+            if (toX >= toMap.width) continue;
+            const ptMapFrom = new Point(fromX, -1);
+            const ptMapTo = new Point(fromX, toMap.height - 1);
+            const ptFromMapFrom = new Point(fromX, toMap.height);
+            const ptFromMapTo = new Point(fromX, 0);
+            this.GenerateExit(sewersMap, ptMapFrom, toMap, ptMapTo);
+            this.GenerateExit(toMap, ptFromMapFrom, sewersMap, ptFromMapTo);
+          }
+        }
+        if (x > 0) {
+          // west.
+          const toMap = world.getDistrict(x - 1, y)!.sewersMap!;
+          for (let fromY = 0; fromY < sewersMap.height; fromY++) {
+            const toY = fromY;
+            if (toY >= toMap.height) continue;
+
+            const ptMapFrom = new Point(-1, fromY);
+            const ptMapTo = new Point(toMap.width - 1, fromY);
+            const ptFromMapFrom = new Point(toMap.width, fromY);
+            const ptFromMapTo = new Point(0, fromY);
+
+            this.GenerateExit(sewersMap, ptMapFrom, toMap, ptMapTo);
+            this.GenerateExit(toMap, ptFromMapFrom, sewersMap, ptFromMapTo);
+          }
+        }
+
+        // Subways — add exits (from and to).
+        const subwayMap = world.getDistrict(x, y)!.subwayMap;
+        if (subwayMap != null) {
+          if (x > 0) {
+            // west.
+            const toMap = world.getDistrict(x - 1, y)!.subwayMap;
+            if (toMap != null) {
+              for (let fromY = 0; fromY < subwayMap.height; fromY++) {
+                const toY = fromY;
+                if (toY >= toMap.height) continue;
+
+                const ptMapFrom = new Point(-1, fromY);
+                const ptMapTo = new Point(toMap.width - 1, fromY);
+                const ptFromMapFrom = new Point(toMap.width, fromY);
+                const ptFromMapTo = new Point(0, fromY);
+
+                if (!subwayMap.isWalkable(subwayMap.width - 1, fromY)) continue;
+                if (!toMap.isWalkable(0, fromY)) continue;
+
+                this.GenerateExit(subwayMap, ptMapFrom, toMap, ptMapTo);
+                this.GenerateExit(toMap, ptFromMapFrom, subwayMap, ptFromMapTo);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    //////////////////////////////////////////
+    // Easter egg: "roguedjack was here" tag.
+    //////////////////////////////////////////
+    const easterEggTagMap = world.getDistrict(0, 0)!.sewersMap!;
+    const tagObj = easterEggTagMap.getMapObjectAt(1, 1);
+    if (tagObj != null) easterEggTagMap.removeMapObject(tagObj);
+    const tagTile = easterEggTagMap.getTileAt(1, 1)!;
+    tagTile.removeAllDecorations();
+    tagTile.addDecoration(GameImages.DECO_ROGUEDJACK_TAG);
+
+    //////////////////////////////
+    // Spawn player on center map
+    //////////////////////////////
+    if (isVerbose) {
+      this.m_UI.UI_Clear(Color.Black);
+      this.m_UI.UI_DrawStringBold(Color.White, "Spawning player...", 0, 0);
+      this.m_UI.UI_Repaint();
+    }
+    const gridCenter = Math.floor(world.size / 2);
+
+    const startMap = world.getDistrict(gridCenter, gridCenter)!.entryMap!;
+    this.GeneratePlayerOnMap(startMap, this.m_TownGenerator);
+    this.SetCurrentMap(startMap);
+    this.RefreshPlayer();
+    this.UpdatePlayerFOV(this.m_Player); // to make sure we get notified of actors acting before us in turn 0.
+    // #if DEBUG  AddDevCheatItems(); AddDevCheatSkills(); AddDevMiscStuff();  #endif
+    // (debug-only cheats are not ported to the browser.)
+
+    ////////////////////////
+    // Reveal starting map?
+    ////////////////////////
+    if (s_Options.revealStartingDistrict) {
+      const startZones = startMap.getZonesAt(this.m_Player.location.position.x, this.m_Player.location.position.y);
+      if (startZones.length > 0) {
+        const startZone = startZones[0];
+        for (let x = 0; x < startMap.width; x++)
+          for (let y = 0; y < startMap.height; y++) {
+            let revealThisTile = false;
+
+            // reveal if:
+            // - starting zone (house).
+            // - outside.
+
+            // - starting zone (house).
+            const zones = startMap.getZonesAt(x, y);
+            if (zones.length > 0 && zones[0] === startZone) revealThisTile = true;
+            else if (!startMap.getTileAt(x, y)!.isInside) revealThisTile = true;
+
+            // reveal?
+            if (revealThisTile) startMap.getTileAt(x, y)!.isVisited = true;
+          }
+      }
+    }
+
+    /////////
+    // Done.
+    /////////
+    if (isVerbose) {
+      this.m_UI.UI_Clear(Color.Black);
+      this.m_UI.UI_DrawStringBold(Color.White, "Generating game world... done!", 0, 0);
+      this.m_UI.UI_Repaint();
+    }
   }
 
   // C# CheckIfExitIsGood — RogueGame.cs:20494
   CheckIfExitIsGood(fromMap: Map, from: Point, toMap: Map, to: Point): boolean {
-    void fromMap;
+    void fromMap; // unused in C# too.
     void from;
-    void toMap;
-    void to;
-    throw new Error("not yet ported: CheckIfExitIsGood (RogueGame.cs:20494)");
+
+    // Don't if tile not walkable or map object there.
+    const tile = toMap.getTileAt(to.x, to.y);
+    if (tile == null || !tile.model.isWalkable) return false;
+    if (toMap.getMapObjectAt(to.x, to.y) != null) return false;
+
+    // good spot.
+    return true;
   }
 
   // C# GenerateExit — RogueGame.cs:20506
   GenerateExit(fromMap: Map, from: Point, toMap: Map, to: Point): void {
-    void fromMap;
-    void from;
-    void toMap;
-    void to;
-    throw new Error("not yet ported: GenerateExit (RogueGame.cs:20506)");
+    // add exit.
+    fromMap.addExit(from, new Exit(toMap, to));
   }
 
   // C# SpawnUniqueSewersThing — RogueGame.cs:20513
   SpawnUniqueSewersThing(world: World): UniqueActor {
-    void world;
-    throw new Error("not yet ported: SpawnUniqueSewersThing (RogueGame.cs:20513)");
+    ///////////////////////////////////////////////////////
+    // 1. Pick a random sewers map.
+    // 2. Create Sewers Thing.
+    // 3. Spawn in sewers map.
+    // 4. Add warning board in maintenance rooms (if any).
+    ///////////////////////////////////////////////////////
+
+    // 1. Pick a random sewers map.
+    const map = world.getDistrict(this.m_Rules.roll(0, world.size), this.m_Rules.roll(0, world.size))!.sewersMap!;
+
+    // 2. Create Sewers Thing.
+    const model = this.gameActors.get(ActorID.SEWERS_THING);
+    const actor = model.createNamed(this.gameFactions.get(FactionID.TheUndeads), "The Sewers Thing", false, 0);
+
+    // 3. Spawn in sewers map.
+    const roller = new DiceRoller(map.seed);
+    const spawned = this.m_TownGenerator.actorPlace(roller, 10000, map, actor);
+    if (!spawned) throw new Error("could not spawn unique The Sewers Thing");
+
+    // 4. Add warning board in maintenance rooms (if any).
+    const maintenanceZone = map.getZoneByPartialName(NAME_SEWERS_MAINTENANCE);
+    if (maintenanceZone != null) {
+      this.m_TownGenerator.mapObjectPlaceInGoodPosition(
+        map,
+        maintenanceZone.bounds,
+        (pt) => map.isWalkable(pt.x, pt.y) && map.getActorAtPoint(pt) == null && map.getItemsAt(pt) == null,
+        roller,
+        () =>
+          this.m_TownGenerator.makeObjBoard(GameImages.OBJ_BOARD, [
+            "TO SEWER WORKERS :",
+            "- It lives here.",
+            "- Do not disturb.",
+            "- Approach with caution.",
+            "- Watch your back.",
+            "- In case of emergency, take refuge here.",
+            "- Do not let other people interact with it!"
+          ])
+      );
+    }
+
+    // done.
+    const uniqueActor = new UniqueActor();
+    uniqueActor.theActor = actor;
+    uniqueActor.isSpawned = true;
+    return uniqueActor;
   }
 
   // C# CreateUniqueBigBear — RogueGame.cs:20556
   CreateUniqueBigBear(world: World): UniqueActor {
-    void world;
-    throw new Error("not yet ported: CreateUniqueBigBear (RogueGame.cs:20556)");
+    void world; // unused in C# too.
+
+    const model = this.gameActors.get(ActorID.MALE_CIVILIAN);
+    const actor = model.createNamed(this.gameFactions.get(FactionID.TheCivilians), "Big Bear", false, 0);
+    actor.isUnique = true;
+    // actor.controller = new CivilianAI();// alpha10.1 defined by model like other actors
+
+    actor.doll.addDecoration(DollPart.SKIN, GameImages.ACTOR_BIG_BEAR);
+
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HAULER);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HAULER);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HAULER);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HARDY);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HARDY);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HARDY);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HARDY);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HARDY);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.STRONG);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.STRONG);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.STRONG);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.STRONG);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.STRONG);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.TOUGH);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.TOUGH);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.TOUGH);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.TOUGH);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.TOUGH);
+
+    const bat = new ItemMeleeWeapon(this.gameItems.get(ItemID.UNIQUE_BIGBEAR_BAT));
+    bat.isUnique = true;
+    actor.inventory!.addAll(bat);
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+
+    // done.
+    const uniqueActor = new UniqueActor();
+    uniqueActor.theActor = actor;
+    uniqueActor.isSpawned = false;
+    uniqueActor.isWithRefugees = true;
+    uniqueActor.eventMessage = "You hear an angry man shouting 'FOOLS!'";
+    uniqueActor.eventThemeMusic = GameMusics.BIGBEAR_THEME_SONG;
+    return uniqueActor;
   }
 
   // C# CreateUniqueFamuFataru — RogueGame.cs:20605
   CreateUniqueFamuFataru(world: World): UniqueActor {
-    void world;
-    throw new Error("not yet ported: CreateUniqueFamuFataru (RogueGame.cs:20605)");
+    void world; // unused in C# too.
+
+    const model = this.gameActors.get(ActorID.FEMALE_CIVILIAN);
+    const actor = model.createNamed(this.gameFactions.get(FactionID.TheCivilians), "Famu Fataru", false, 0);
+    actor.isUnique = true;
+    // actor.controller = new CivilianAI(); // alpha10.1 defined by model like other actors
+
+    actor.doll.addDecoration(DollPart.SKIN, GameImages.ACTOR_FAMU_FATARU);
+
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HAULER);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HAULER);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HAULER);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HARDY);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HARDY);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HARDY);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HARDY);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HARDY);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.AGILE);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.AGILE);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.AGILE);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.AGILE);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.AGILE);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HIGH_STAMINA);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HIGH_STAMINA);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HIGH_STAMINA);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HIGH_STAMINA);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HIGH_STAMINA);
+
+    const katana = new ItemMeleeWeapon(this.gameItems.get(ItemID.UNIQUE_FAMU_FATARU_KATANA));
+    katana.isUnique = true;
+    actor.inventory!.addAll(katana);
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+
+    // done.
+    const uniqueActor = new UniqueActor();
+    uniqueActor.theActor = actor;
+    uniqueActor.isSpawned = false;
+    uniqueActor.isWithRefugees = true;
+    uniqueActor.eventMessage = "You hear a woman laughing.";
+    uniqueActor.eventThemeMusic = GameMusics.FAMU_FATARU_THEME_SONG;
+    return uniqueActor;
   }
 
   // C# CreateUniqueSantaman — RogueGame.cs:20655
   CreateUniqueSantaman(world: World): UniqueActor {
-    void world;
-    throw new Error("not yet ported: CreateUniqueSantaman (RogueGame.cs:20655)");
+    void world; // unused in C# too.
+
+    const model = this.gameActors.get(ActorID.MALE_CIVILIAN);
+    const actor = model.createNamed(this.gameFactions.get(FactionID.TheCivilians), "Santaman", false, 0);
+    actor.isUnique = true;
+    // actor.controller = new CivilianAI(); // alpha10.1 defined by model like other actors
+
+    actor.doll.addDecoration(DollPart.SKIN, GameImages.ACTOR_SANTAMAN);
+
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HAULER);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HAULER);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HAULER);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HARDY);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HARDY);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HARDY);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HARDY);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HARDY);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.AWAKE);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.AWAKE);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.AWAKE);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.AWAKE);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.AWAKE);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.FIREARMS);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.FIREARMS);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.FIREARMS);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.FIREARMS);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.FIREARMS);
+
+    const shotty = new ItemRangedWeapon(this.gameItems.get(ItemID.UNIQUE_SANTAMAN_SHOTGUN));
+    shotty.isUnique = true;
+    actor.inventory!.addAll(shotty);
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemShotgunAmmo());
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemShotgunAmmo());
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemShotgunAmmo());
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+
+    // done.
+    const uniqueActor = new UniqueActor();
+    uniqueActor.theActor = actor;
+    uniqueActor.isSpawned = false;
+    uniqueActor.isWithRefugees = true;
+    uniqueActor.eventMessage = "You hear christmas music and drunken vomitting.";
+    uniqueActor.eventThemeMusic = GameMusics.SANTAMAN_THEME_SONG;
+    return uniqueActor;
   }
 
   // C# CreateUniqueRoguedjack — RogueGame.cs:20704
   CreateUniqueRoguedjack(world: World): UniqueActor {
-    void world;
-    throw new Error("not yet ported: CreateUniqueRoguedjack (RogueGame.cs:20704)");
+    void world; // unused in C# too.
+
+    const model = this.gameActors.get(ActorID.MALE_CIVILIAN);
+    const actor = model.createNamed(this.gameFactions.get(FactionID.TheCivilians), "Roguedjack", false, 0);
+    actor.isUnique = true;
+    // actor.controller = new CivilianAI(); // alpha10.1 defined by model like other actors
+
+    actor.doll.addDecoration(DollPart.SKIN, GameImages.ACTOR_ROGUEDJACK);
+
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HAULER);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HAULER);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HAULER);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HARDY);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HARDY);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HARDY);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HARDY);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HARDY);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.LEADERSHIP);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.LEADERSHIP);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.LEADERSHIP);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.LEADERSHIP);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.LEADERSHIP);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.CHARISMATIC);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.CHARISMATIC);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.CHARISMATIC);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.CHARISMATIC);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.CHARISMATIC);
+
+    const basher = new ItemMeleeWeapon(this.gameItems.get(ItemID.UNIQUE_ROGUEDJACK_KEYBOARD));
+    basher.isUnique = true;
+    actor.inventory!.addAll(basher);
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+
+    // done.
+    const uniqueActor = new UniqueActor();
+    uniqueActor.theActor = actor;
+    uniqueActor.isSpawned = false;
+    uniqueActor.isWithRefugees = true;
+    uniqueActor.eventMessage = "You hear a man shouting in French.";
+    uniqueActor.eventThemeMusic = GameMusics.ROGUEDJACK_THEME_SONG;
+    return uniqueActor;
   }
 
   // C# CreateUniqueDuckman — RogueGame.cs:20753
   CreateUniqueDuckman(world: World): UniqueActor {
-    void world;
-    throw new Error("not yet ported: CreateUniqueDuckman (RogueGame.cs:20753)");
+    void world; // unused in C# too.
+
+    const model = this.gameActors.get(ActorID.MALE_CIVILIAN);
+    const actor = model.createNamed(this.gameFactions.get(FactionID.TheCivilians), "Duckman", false, 0);
+    actor.isUnique = true;
+    // actor.controller = new CivilianAI(); // alpha10.1 defined by model like other actors
+
+    actor.doll.addDecoration(DollPart.SKIN, GameImages.ACTOR_DUCKMAN);
+
+    // awesome superhero!
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.CHARISMATIC);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.CHARISMATIC);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.CHARISMATIC);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.CHARISMATIC);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.CHARISMATIC);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.LEADERSHIP);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.STRONG);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.STRONG);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.STRONG);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.STRONG);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.STRONG);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HIGH_STAMINA);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HIGH_STAMINA);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HIGH_STAMINA);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HIGH_STAMINA);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HIGH_STAMINA);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.MARTIAL_ARTS);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.MARTIAL_ARTS);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.MARTIAL_ARTS);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.MARTIAL_ARTS);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.MARTIAL_ARTS);
+
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+
+    // done.
+    const uniqueActor = new UniqueActor();
+    uniqueActor.theActor = actor;
+    uniqueActor.isSpawned = false;
+    uniqueActor.isWithRefugees = true;
+    uniqueActor.eventMessage = "You hear loud demented QUACKS.";
+    uniqueActor.eventThemeMusic = GameMusics.DUCKMAN_THEME_SONG;
+    return uniqueActor;
   }
 
   // C# CreateUniqueHansVonHanz — RogueGame.cs:20804
   CreateUniqueHansVonHanz(world: World): UniqueActor {
-    void world;
-    throw new Error("not yet ported: CreateUniqueHansVonHanz (RogueGame.cs:20804)");
+    void world; // unused in C# too.
+
+    const model = this.gameActors.get(ActorID.MALE_CIVILIAN);
+    const actor = model.createNamed(this.gameFactions.get(FactionID.TheCivilians), "Hans von Hanz", false, 0);
+    actor.isUnique = true;
+    // actor.controller = new CivilianAI(); // alpha10.1 defined by model like other actors
+
+    actor.doll.addDecoration(DollPart.SKIN, GameImages.ACTOR_HANS_VON_HANZ);
+
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HAULER);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HAULER);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.HAULER);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.FIREARMS);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.FIREARMS);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.FIREARMS);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.FIREARMS);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.FIREARMS);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.LEADERSHIP);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.LEADERSHIP);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.LEADERSHIP);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.LEADERSHIP);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.LEADERSHIP);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.NECROLOGY);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.NECROLOGY);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.NECROLOGY);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.NECROLOGY);
+    this.m_TownGenerator.giveStartingSkillToActor(actor, SkillID.NECROLOGY);
+
+    const pistol = new ItemRangedWeapon(this.gameItems.get(ItemID.UNIQUE_HANS_VON_HANZ_PISTOL));
+    pistol.isUnique = true;
+    actor.inventory!.addAll(pistol);
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+    actor.inventory!.addAll(this.m_TownGenerator.makeItemCannedFood());
+
+    // done.
+    const uniqueActor = new UniqueActor();
+    uniqueActor.theActor = actor;
+    uniqueActor.isSpawned = false;
+    uniqueActor.isWithRefugees = true;
+    uniqueActor.eventMessage = "You hear a man barking orders in German.";
+    uniqueActor.eventThemeMusic = GameMusics.HANS_VON_HANZ_THEME_SONG;
+    return uniqueActor;
   }
 
   // C# SpawnUniqueSubwayWorkerBadge — RogueGame.cs:20853
   SpawnUniqueSubwayWorkerBadge(world: World): UniqueItem {
-    void world;
-    throw new Error("not yet ported: SpawnUniqueSubwayWorkerBadge (RogueGame.cs:20853)");
+    ///////////////////////////////////
+    // 1. Pick a random Subway map.
+    //    Fails if not found.
+    // 2. Pick a position in the rails.
+    // 3. Drop it.
+    ///////////////////////////////////
+
+    const it = new Item(this.gameItems.get(ItemID.UNIQUE_SUBWAY_BADGE));
+    it.isUnique = true;
+    it.isForbiddenToAI = true;
+
+    // 1. Pick a random Subway map.
+    const allSubways: Map[] = [];
+    for (let x = 0; x < world.size; x++)
+      for (let y = 0; y < world.size; y++) {
+        const district = world.getDistrict(x, y)!;
+        if (district.hasSubway) allSubways.push(district.subwayMap!);
+      }
+    if (allSubways.length === 0) {
+      const uniqueItem = new UniqueItem();
+      uniqueItem.theItem = it;
+      uniqueItem.isSpawned = false;
+      return uniqueItem;
+    }
+    const subway = allSubways[this.m_Rules.roll(0, allSubways.length)];
+
+    // 2. Pick a position in the rails.
+    const railsRect = subway.getZoneByPartialName(NAME_SUBWAY_RAILS)!.bounds;
+    const dropPt = new Point(
+      this.m_Rules.roll(railsRect.left, railsRect.right),
+      this.m_Rules.roll(railsRect.top, railsRect.bottom)
+    );
+
+    // 3. Drop it.
+    subway.dropItemAt(it, dropPt);
+    // blood! deceased worker.
+    subway.getTileAt(dropPt.x, dropPt.y)!.addDecoration(GameImages.DECO_BLOODIED_FLOOR);
+
+    // done.
+    const uniqueItem = new UniqueItem();
+    uniqueItem.theItem = it;
+    uniqueItem.isSpawned = true;
+    return uniqueItem;
   }
 
   // C# CreateUniqueMap_CHARUndegroundFacility — RogueGame.cs:20887
   CreateUniqueMap_CHARUndegroundFacility(world: World): UniqueMap {
-    void world;
-    throw new Error("not yet ported: CreateUniqueMap_CHARUndegroundFacility (RogueGame.cs:20887)");
+    ////////////////////////////////////////////////
+    // 1. Find all business districts with offices.
+    // 2. Pick one business district at random.
+    // 3. Generate underground map there.
+    ////////////////////////////////////////////////
+
+    // 1. Find all business districts with offices.
+    const goodDistricts: District[] = [];
+    for (let x = 0; x < world.size; x++)
+      for (let y = 0; y < world.size; y++) {
+        const district = world.getDistrict(x, y)!;
+        if (district.kind === DistrictKind.BUSINESS) {
+          let hasOffice = false;
+          for (const z of district.entryMap!.zones) {
+            if (z.hasGameAttribute(ZoneAttributes.IS_CHAR_OFFICE)) {
+              hasOffice = true;
+              break;
+            }
+          }
+          if (hasOffice) goodDistricts.push(district);
+        }
+      }
+
+    // 2. Pick one business district at random.
+    if (goodDistricts.length === 0) throw new Error("world has no business districts with offices");
+    const chosenDistrict = goodDistricts[this.m_Rules.roll(0, goodDistricts.length)];
+
+    // 3. Generate underground map there.
+    const offices: Zone[] = [];
+    for (const z of chosenDistrict.entryMap!.zones) {
+      if (z.hasGameAttribute(ZoneAttributes.IS_CHAR_OFFICE)) offices.push(z);
+    }
+    const chosenOffice = offices[this.m_Rules.roll(0, offices.length)];
+    const { map, baseEntryPos } = this.m_TownGenerator.generateUniqueMap_CHARUnderground(
+      chosenDistrict.entryMap!,
+      chosenOffice
+    );
+    map.district = chosenDistrict;
+    map.name = `CHAR Underground Facility @${baseEntryPos.x}-${baseEntryPos.y}`; // alpha10
+    chosenDistrict.addUniqueMap(map);
+
+    const uniqueMap = new UniqueMap();
+    uniqueMap.theMap = map;
+    return uniqueMap;
   }
 
   // C# GenerateDistrictKind — RogueGame.cs:20948
   GenerateDistrictKind(world: World, gridX: number, gridY: number): DistrictKind {
-    void world;
-    void gridX;
-    void gridY;
-    throw new Error("not yet ported: GenerateDistrictKind (RogueGame.cs:20948)");
+    void world; // unused in C# too.
+
+    // Decide district kind - some districts are hardcoded:
+    //   - (0,0) : always Business.
+    if (gridX === 0 && gridY === 0) return DistrictKind.BUSINESS;
+    return this.m_Rules.roll(DistrictKind.GENERAL, DistrictKind._COUNT) as DistrictKind;
   }
 
   // C# GenerateDistrictEntryMap — RogueGame.cs:20958
-  GenerateDistrictEntryMap(world: World, district: District, policeStationDistrictPos: Point, hospitalDistrictPos: Point): Map {
-    void world;
-    void district;
-    void policeStationDistrictPos;
-    void hospitalDistrictPos;
-    throw new Error("not yet ported: GenerateDistrictEntryMap (RogueGame.cs:20958)");
+  GenerateDistrictEntryMap(
+    world: World,
+    district: District,
+    policeStationDistrictPos: Point,
+    hospitalDistrictPos: Point
+  ): Map {
+    const gridX = district.worldPosition.x;
+    const gridY = district.worldPosition.y;
+
+    ///////////////////////////
+    // 1. Compute unique seed.
+    // 2. Set params for kind.
+    // 3. Generate map.
+    ///////////////////////////
+
+    // 1. Compute unique seed.
+    const gridSeed = this.m_Session.seed + gridY * world.size + gridX;
+
+    // 3. Set gen params.
+    // C# `Parameters` is a struct copied from DEFAULT_PARAMS — TS needs a new one.
+    const genParams = new TownParameters();
+    genParams.mapWidth = genParams.mapHeight = s_Options.districtSize;
+    genParams.district = district;
+    const factor = 8;
+    let kindName = "District";
+    switch (district.kind) {
+      case DistrictKind.SHOPPING:
+        // more shops, less other types.
+        kindName = "Shopping District";
+        genParams.charBuildingChance /= factor;
+        genParams.shopBuildingChance *= factor;
+        genParams.parkBuildingChance /= factor;
+        break;
+      case DistrictKind.GREEN:
+        // more parks, less other types.
+        kindName = "Green District";
+        genParams.charBuildingChance /= factor;
+        genParams.parkBuildingChance *= factor;
+        genParams.shopBuildingChance /= factor;
+        break;
+      case DistrictKind.BUSINESS:
+        // more offices, less other types.
+        kindName = "Business District";
+        genParams.charBuildingChance *= factor;
+        genParams.parkBuildingChance /= factor;
+        genParams.shopBuildingChance /= factor;
+        break;
+      case DistrictKind.RESIDENTIAL:
+        // more housings, less other types.
+        kindName = "Residential District";
+        genParams.charBuildingChance /= factor;
+        genParams.parkBuildingChance /= factor;
+        genParams.shopBuildingChance /= factor;
+        break;
+      case DistrictKind.GENERAL:
+        // use default params.
+        kindName = "District";
+        break;
+      default:
+        throw new RangeError("unhandled district kind");
+    }
+
+    // Special params.
+    genParams.generatePoliceStation = district.worldPosition.equals(policeStationDistrictPos);
+    genParams.generateHospital = district.worldPosition.equals(hospitalDistrictPos);
+
+    // 4. Generate map.
+    const prevParams = this.m_TownGenerator.params;
+    this.m_TownGenerator.params = genParams;
+    const map = this.m_TownGenerator.generate(gridSeed);
+    map.name = `${kindName}@${World.CoordToString(gridX, gridY)}`;
+    this.m_TownGenerator.params = prevParams;
+
+    // done.
+    return map;
   }
 
   // C# GenerateDistrictSewersMap — RogueGame.cs:21033
   GenerateDistrictSewersMap(district: District): Map {
-    void district;
-    throw new Error("not yet ported: GenerateDistrictSewersMap (RogueGame.cs:21033)");
+    // Compute unique seed.
+    const sewersSeed = (district.entryMap!.seed << 1) ^ district.entryMap!.seed;
+
+    // Generate map.
+    const sewers = this.m_TownGenerator.generateSewersMap(sewersSeed, district);
+    sewers.name = `Sewers@${district.worldPosition.x}-${district.worldPosition.y}`;
+
+    // done.
+    return sewers;
   }
 
   // C# GenerateDistrictSubwayMap — RogueGame.cs:21046
   GenerateDistrictSubwayMap(district: District): Map {
-    void district;
-    throw new Error("not yet ported: GenerateDistrictSubwayMap (RogueGame.cs:21046)");
+    // Compute unique seed.
+    const subwaySeed = (district.entryMap!.seed << 2) ^ district.entryMap!.seed;
+
+    // Generate map.
+    const subway = this.m_TownGenerator.generateSubwayMap(subwaySeed, district);
+    subway.name = `Subway@${district.worldPosition.x}-${district.worldPosition.y}`;
+
+    // done.
+    return subway;
   }
 
   // C# GeneratePlayerOnMap — RogueGame.cs:21060
   GeneratePlayerOnMap(map: Map, townGen: BaseTownGenerator): void {
-    void map;
-    void townGen;
-    throw new Error("not yet ported: GeneratePlayerOnMap (RogueGame.cs:21060)");
+    const roller = new DiceRoller(map.seed);
+
+    /////////////////////////////////////////////////////
+    // Create player actor : living/undead x male/female
+    /////////////////////////////////////////////////////
+    let player: Actor;
+    if (this.m_CharGen.isUndead) {
+      // Handle specific undead type.
+      // Zombified : need living, then zombify.
+      switch (this.m_CharGen.undeadModel) {
+        case ActorID.UNDEAD_SKELETON: {
+          // Create the Skeleton.
+          player = this.gameActors
+            .get(ActorID.UNDEAD_SKELETON)
+            .createNumberedName(this.gameFactions.get(FactionID.TheUndeads), 0);
+          break;
+        }
+
+        case ActorID.UNDEAD_ZOMBIE: {
+          // Create the Zombie.
+          player = this.gameActors
+            .get(ActorID.UNDEAD_ZOMBIE)
+            .createNumberedName(this.gameFactions.get(FactionID.TheUndeads), 0);
+          break;
+        }
+
+        case ActorID.UNDEAD_MALE_ZOMBIFIED:
+        case ActorID.UNDEAD_FEMALE_ZOMBIFIED: {
+          // First create as living.
+          const playerModel = this.m_CharGen.isMale
+            ? this.gameActors.get(ActorID.MALE_CIVILIAN)
+            : this.gameActors.get(ActorID.FEMALE_CIVILIAN);
+          player = playerModel.createAnonymous(this.gameFactions.get(FactionID.TheCivilians), 0);
+          townGen.dressCivilian(roller, player);
+          townGen.giveNameToActor(roller, player);
+          // Then zombify.
+          player = this.Zombify(null, player, true);
+          break;
+        }
+
+        case ActorID.UNDEAD_ZOMBIE_MASTER: {
+          // Create the ZM.
+          player = this.gameActors
+            .get(ActorID.UNDEAD_ZOMBIE_MASTER)
+            .createNumberedName(this.gameFactions.get(FactionID.TheUndeads), 0);
+          break;
+        }
+
+        default:
+          throw new RangeError("unhandled undeadModel");
+      }
+
+      // Then make sure player related stuff are setup properly.
+      this.PrepareActorForPlayerControl(player);
+    } else {
+      // Create living.
+      const playerModel = this.m_CharGen.isMale
+        ? this.gameActors.get(ActorID.MALE_CIVILIAN)
+        : this.gameActors.get(ActorID.FEMALE_CIVILIAN);
+      player = playerModel.createAnonymous(this.gameFactions.get(FactionID.TheCivilians), 0);
+      townGen.dressCivilian(roller, player);
+      townGen.giveNameToActor(roller, player);
+      player.sheet.skillTable.addOrIncreaseSkill(this.m_CharGen.startingSkill);
+
+      townGen.recomputeActorStartingStats(player);
+      this.OnSkillUpgrade(player, this.m_CharGen.startingSkill);
+      // slightly randomize Food and Sleep - 0..25%.
+      const foodDeviation = Math.floor(0.25 * player.foodPoints);
+      player.foodPoints = player.foodPoints - this.m_Rules.roll(0, foodDeviation);
+      const sleepDeviation = Math.floor(0.25 * player.sleepPoints);
+      player.sleepPoints = player.sleepPoints - this.m_Rules.roll(0, sleepDeviation);
+    }
+
+    player.controller = new PlayerController();
+
+    /////////////
+    // Spawn him.
+    /////////////
+    // living: try to spawn inside on a couch, then if failed spawn anywhere inside.
+    // undead: spawn outside.
+    // NEVER spawn in CHAR Office!!
+    const preferedSpawnOk = townGen.actorPlace(roller, 10 * map.width * map.height, map, player, (pt) => {
+      const isInside = map.getTileAt(pt.x, pt.y)!.isInside;
+      if ((this.m_CharGen.isUndead && isInside) || (!this.m_CharGen.isUndead && !isInside)) return false;
+
+      if (this.IsInCHAROffice(new Location(map, pt))) return false;
+
+      const mapObj = map.getMapObjectAtPoint(pt);
+      if (this.m_CharGen.isUndead) return mapObj == null;
+      return mapObj != null && mapObj.isCouch;
+    });
+
+    if (!preferedSpawnOk) {
+      // no couch, try inside but never in char office.
+      const spawnedInside = townGen.actorPlace(
+        roller,
+        map.width * map.height,
+        map,
+        player,
+        (pt) => map.getTileAt(pt.x, pt.y)!.isInside && !this.IsInCHAROffice(new Location(map, pt))
+      );
+
+      if (!spawnedInside) {
+        // could not spawn inside, do it outside...
+        while (!townGen.actorPlace(roller, 2147483647, map, player, (pt) => !this.IsInCHAROffice(new Location(map, pt))))
+          ;
+      }
+    }
   }
 
   // C# RefreshPlayer — RogueGame.cs:21177
   RefreshPlayer(): void {
-    throw new Error("not yet ported: RefreshPlayer (RogueGame.cs:21177)");
+    // get player.
+    for (const a of this.m_Session.currentMap!.actors) {
+      if (a.isPlayer) {
+        this.m_Player = a;
+        break;
+      }
+    }
+
+    // compute view.
+    if (this.m_Player != null) this.ComputeViewRect(this.m_Player.location.position);
   }
 
   // C# PrepareActorForPlayerControl — RogueGame.cs:21195
   PrepareActorForPlayerControl(newPlayerAvatar: Actor): void {
-    void newPlayerAvatar;
-    throw new Error("not yet ported: PrepareActorForPlayerControl (RogueGame.cs:21195)");
+    // inventory && skills.
+    if (newPlayerAvatar.inventory == null) newPlayerAvatar.inventory = new Inventory(1);
+    if (newPlayerAvatar.sheet.skillTable == null) newPlayerAvatar.sheet.skillTable = new SkillTable();
+
+    // if follower, leave leader.
+    if (newPlayerAvatar.leader != null) newPlayerAvatar.leader.removeFollower(newPlayerAvatar);
   }
 
   // C# SetCurrentMap — RogueGame.cs:21211
   SetCurrentMap(map: Map): void {
-    void map;
-    throw new Error("not yet ported: SetCurrentMap (RogueGame.cs:21211)");
+    // set session field.
+    this.m_Session.currentMap = map;
+
+    // alpha10 update background music
+    this.UpdateBgMusic();
   }
 
   // C# OnPlayerLeaveDistrict — RogueGame.cs:21220
   OnPlayerLeaveDistrict(): void {
-    throw new Error("not yet ported: OnPlayerLeaveDistrict (RogueGame.cs:21220)");
+    // remember when we left the district.
+    this.m_Session.currentMap!.localTime.turnCounter = this.m_Session.worldTime.turnCounter;
   }
 
   // C# BeforePlayerEnterDistrict — RogueGame.cs:21226
-  BeforePlayerEnterDistrict(district: District): void {
-    void district;
-    throw new Error("not yet ported: BeforePlayerEnterDistrict (RogueGame.cs:21226)");
+  // async: C# calls SimulateDistrict() synchronously; the TS one is async.
+  async BeforePlayerEnterDistrict(district: District): Promise<void> {
+    // get entry map.
+    const entryMap = district.entryMap!;
+
+    // get when we left the district.
+    const lastTime = entryMap.localTime.turnCounter;
+
+    // if option set, simulate to catch current turn.
+    // otherwise just jump in time.
+    if (s_Options.isSimON) {
+      const catchupTo = this.m_Session.worldTime.turnCounter; // alpha10
+      const turnsToCatchup = catchupTo - entryMap.localTime.turnCounter; // alpha10
+
+      this.StopSimThread(false); // alpha10
+
+      if (turnsToCatchup > 0) {
+        // music.
+        this.m_MusicManager.stop();
+        this.m_MusicManager.play(GameMusics.INTERLUDE);
+
+        // force player view to darkness (so he gets no messages).
+        // C# `Map.ClearView()` — no TS equivalent, inline the tile loop.
+        if (this.m_Player != null) {
+          const playerMap = this.m_Player.location.map!;
+          for (let x = 0; x < playerMap.width; x++)
+            for (let y = 0; y < playerMap.height; y++) playerMap.getTileAt(x, y)!.isInView = false;
+          for (let x = 0; x < entryMap.width; x++)
+            for (let y = 0; y < entryMap.height; y++) entryMap.getTileAt(x, y)!.isInView = false;
+        }
+
+        // simulate loop.
+        const timerStart = Date.now();
+        let lastRedraw = 0;
+        let aborted = false;
+        while (entryMap.localTime.turnCounter < catchupTo) {
+          // alpha10 changed from <= to <
+          const timerNow = Date.now();
+
+          // time to redraw?
+          const doRedraw =
+            entryMap.localTime.turnCounter === this.m_Session.worldTime.turnCounter || // show last turn
+            entryMap.localTime.turnCounter === lastTime || // show 1st turn
+            timerNow >= lastRedraw + 1000; // show every seconds
+
+          // redraw?
+          if (doRedraw) {
+            // remember we redrawed.
+            lastRedraw = timerNow;
+
+            // show.
+            this.ClearMessages();
+            this.AddMessage(
+              new Message(
+                `Simulating district, please wait ${entryMap.localTime.turnCounter}/${this.m_Session.worldTime.turnCounter}...`,
+                this.m_Session.worldTime.turnCounter,
+                Color.White
+              )
+            );
+            this.AddMessage(
+              new Message("(this is an option you can tune)", this.m_Session.worldTime.turnCounter, Color.White)
+            );
+
+            // estimate turns per seconds and time left.
+            const turnsDone = entryMap.localTime.turnCounter - lastTime;
+            if (turnsDone > 1) {
+              const turnsLeft = this.m_Session.worldTime.turnCounter - entryMap.localTime.turnCounter;
+              const turnsPerSecs = (1000 * turnsDone) / (1 + timerNow - timerStart);
+              this.AddMessage(
+                new Message(`Turns per second    : ${turnsPerSecs.toFixed(2)}.`, this.m_Session.worldTime.turnCounter, Color.White)
+              );
+
+              const secsLeft = Math.floor(turnsLeft / turnsPerSecs);
+              const mins = Math.floor(secsLeft / 60);
+              const secs = secsLeft % 60;
+              const etaFormat = mins > 0 ? `${mins} min ${String(secs).padStart(2, "0")} secs` : `${secs} secs`;
+              this.AddMessage(
+                new Message(`Estimated time left : ${etaFormat}.`, this.m_Session.worldTime.turnCounter, Color.White)
+              );
+            }
+            if (aborted)
+              this.AddMessage(new Message("Simulation aborted!", this.m_Session.worldTime.turnCounter, Color.Red));
+            else
+              this.AddMessage(
+                new Message("<keep ESC pressed to abort the simulation>", this.m_Session.worldTime.turnCounter, Color.Yellow)
+              );
+            this.RedrawPlayScreen();
+          }
+
+          // aborted?
+          if (aborted) break;
+
+          // check for abort.
+          const key = this.m_UI.UI_PeekKey();
+          if (key != null && key.key === "Escape") {
+            // jump in time for each map.
+            for (const map of district.maps) map.localTime.turnCounter = this.m_Session.worldTime.turnCounter;
+            // abort!
+            aborted = true;
+          }
+
+          // if not aborted, simulate the district.
+          if (!aborted) {
+            // sim the district.
+            await this.SimulateDistrict(district);
+          }
+        }
+
+        // Sim ends - either aborted or normal end.
+
+        // remove "ESC" message.
+        this.RemoveLastMessage();
+
+        // since sim arbitrary messes with actor APs, we're not quite sure were they are now.
+        // so force them back to zero to have a clean start.
+        for (const map of district.maps)
+          for (const a of map.actors) if (!a.isSleeping) a.actionPoints = 0;
+
+        // stop music.
+        this.m_MusicManager.stop();
+      } // sim has catchup to do
+    } // sim on
+    else {
+      // jump in time for each map.
+      for (const map of district.maps) map.localTime.turnCounter = this.m_Session.worldTime.turnCounter;
+    }
   }
 
   // C# AfterPlayerEnterDistrict — RogueGame.cs:21368
   AfterPlayerEnterDistrict(): void {
-    throw new Error("not yet ported: AfterPlayerEnterDistrict (RogueGame.cs:21368)");
+    // restart sim thread if on
+    if (s_Options.isSimON && s_Options.simThread) this.StartSimThread();
   }
 
   // C# OnPlayerChangeMap — RogueGame.cs:21375
   OnPlayerChangeMap(): void {
-    throw new Error("not yet ported: OnPlayerChangeMap (RogueGame.cs:21375)");
+    this.RefreshPlayer();
   }
 
   // C# ComputeSimFlagsForTurn — RogueGame.cs:21382
   ComputeSimFlagsForTurn(turn: number): SimFlags {
-    void turn;
-    throw new Error("not yet ported: ComputeSimFlagsForTurn (RogueGame.cs:21382)");
+    let loDetail = false;
+
+    switch (s_Options.simulateDistricts) {
+      case SimRatio.FULL:
+        loDetail = false;
+        break;
+      case SimRatio.THREE_QUARTER: // 3/4, skip 1 out of 4.
+        loDetail = turn % 4 === 3;
+        break;
+      case SimRatio.TWO_THIRDS: // 2/3, skip 1 out of 3.
+        loDetail = turn % 3 === 2;
+        break;
+      case SimRatio.HALF: // 1/2, skip 1 out of 2.
+        loDetail = turn % 2 === 1;
+        break;
+      case SimRatio.ONE_THIRD: // 1/3, play 1 out of 3.
+        loDetail = turn % 3 !== 0;
+        break;
+      case SimRatio.ONE_QUARTER: // 1/4, play 1 out of 4.
+        loDetail = turn % 4 !== 0;
+        break;
+      case SimRatio.OFF:
+        loDetail = true;
+        break;
+      default:
+        throw new Error("unhandled simRatio");
+    }
+
+    return loDetail ? SimFlags.LODETAIL_TURN : SimFlags.HIDETAIL_TURN;
   }
 
   // C# SimulateDistrict — RogueGame.cs:21416
-  SimulateDistrict(d: District): void {
-    void d;
-    throw new Error("not yet ported: SimulateDistrict (RogueGame.cs:21416)");
+  // async: C# calls AdvancePlay() synchronously, the TS one is async.
+  async SimulateDistrict(d: District): Promise<void> {
+    await this.AdvancePlay(d, this.ComputeSimFlagsForTurn(d.entryMap!.localTime.turnCounter));
   }
 
   // C# SimulateNearbyDistricts — RogueGame.cs:21426
-  SimulateNearbyDistricts(d: District): boolean {
-    void d;
-    throw new Error("not yet ported: SimulateNearbyDistricts (RogueGame.cs:21426)");
+  /** @returns true if simulated a district; false if didn't need to simulate. */
+  // async: see SimulateDistrict.
+  async SimulateNearbyDistricts(d: District): Promise<boolean> {
+    let hadToSim = false;
+    // C# passes `xmin`/`ymin` etc. by `ref`; World.trimToBounds mutates its argument.
+    const pmin = { x: d.worldPosition.x - 1, y: d.worldPosition.y - 1 };
+    const pmax = { x: d.worldPosition.x + 1, y: d.worldPosition.y + 1 };
+    const world = this.m_Session.world!;
+    world.trimToBounds(pmin);
+    world.trimToBounds(pmax);
+
+    for (let dx = pmin.x; dx <= pmax.x; dx++) {
+      for (let dy = pmin.y; dy <= pmax.y; dy++) {
+        // don't sim same district!
+        if (dx === d.worldPosition.x && dy === d.worldPosition.y) continue;
+
+        // C# indexes World[dx, dy] and trusts it to be generated.
+        const otherDistrict = world.getDistrict(dx, dy);
+        if (otherDistrict === null || otherDistrict.entryMap === null) continue;
+
+        // don't sim if up to date!
+        const dTurns = d.entryMap!.localTime.turnCounter - otherDistrict.entryMap.localTime.turnCounter;
+        if (dTurns > 0) {
+          hadToSim = true;
+          await this.SimulateDistrict(otherDistrict);
+        }
+      }
+    }
+
+    return hadToSim;
   }
 
   // C# StartSimThread — RogueGame.cs:21471
+  // C# owns a dedicated sim thread, started when `s_Options.IsSimON &&
+  // s_Options.SimThread`; the browser port has no second thread (see
+  // StopSimThread). Catch-up of the neighbouring districts runs inline instead,
+  // from AdvancePlay() when the player sleeps — see advancePlayDistrict().
   StartSimThread(): void {
-    throw new Error("not yet ported: StartSimThread (RogueGame.cs:21471)");
   }
 
   // C# StopSimThread — RogueGame.cs:21501
@@ -11858,8 +15682,8 @@ export class RogueGame {
   }
 
   // C# SimThreadProc — RogueGame.cs:21550
+  // C#'s sim thread main loop; see StartSimThread — there is no thread to run it.
   SimThreadProc(): void {
-    throw new Error("not yet ported: SimThreadProc (RogueGame.cs:21550)");
   }
 
   // C# ShowNewAchievement — RogueGame.cs:21597
@@ -11903,52 +15727,762 @@ export class RogueGame {
   }
 
   // C# ShowSpecialDialogue — RogueGame.cs:21638
-  ShowSpecialDialogue(speaker: Actor, text: string[]): void {
-    void speaker;
-    void text;
-    throw new Error("not yet ported: ShowSpecialDialogue (RogueGame.cs:21638)");
+  // async: C# blocks on AddMessagePressEnter.
+  async ShowSpecialDialogue(speaker: Actor, text: string[]): Promise<void> {
+    // music.
+    // alpha10 this will be a sfx not music (PRIORITY_EVENT dropped: IMusicManager has no priorities)
+    this.m_MusicManager.stop();
+    this.m_MusicManager.play(GameMusics.INTERLUDE);
+
+    // overlays.
+    this.AddOverlay(new OverlayPopup(text, Color.Gold, Color.Gold, Color.DimGray, new Point(0, 0)));
+    // FIXME: MapToScreen is still a slice 8 stub.
+    try {
+      const screenPos = this.MapToScreen(speaker.location.position);
+      this.AddOverlay(new OverlayRect(Color.Yellow, new Rect(screenPos.x, screenPos.y, TILE_SIZE, TILE_SIZE)));
+    } catch (e) {}
+
+    // message & wait enter.
+    this.ClearMessages();
+    if (!this.m_Player.isBotPlayer) await this.AddMessagePressEnter();
+    this.ClearOverlays(); // alpha10 fix
+    this.m_MusicManager.stop();
   }
 
   // C# CheckSpecialPlayerEventsAfterAction — RogueGame.cs:21656
-  CheckSpecialPlayerEventsAfterAction(player: Actor): void {
-    void player;
-    throw new Error("not yet ported: CheckSpecialPlayerEventsAfterAction (RogueGame.cs:21656)");
+  // async: C# blocks on ShowNewAchievement/ShowSpecialDialogue/PlayUniqueActorMusicAndMessage.
+  // Every C# `lock (m_Session)` is dropped: the sim thread it guarded is gone (see
+  // StartSimThread) so the browser port is single threaded.
+  async CheckSpecialPlayerEventsAfterAction(player: Actor): Promise<void> {
+    const map = player.location.map!;
+    const pos = player.location.position;
+
+    // 1. Breaking into CHAR office for the 1st time: !undead !char
+    if (!player.model.abilities.isUndead && player.faction.id !== FactionID.TheCHARCorporation) {
+      if (!this.m_Session.scoring.hasCompletedAchievement(AchievementIDs.CHAR_BROKE_INTO_OFFICE)) {
+        if (this.IsInCHAROffice(player.location)) {
+          // completed.
+          this.m_Session.scoring.setCompletedAchievement(AchievementIDs.CHAR_BROKE_INTO_OFFICE);
+
+          // achievement!
+          await this.ShowNewAchievement(AchievementIDs.CHAR_BROKE_INTO_OFFICE);
+        }
+      }
+    }
+
+    // 2. Visiting CHAR Underground facility for the 1st time.
+    {
+      const cufMap = this.m_Session.uniqueMaps.charUndergroundFacility.theMap;
+      if (!this.m_Session.scoring.hasCompletedAchievement(AchievementIDs.CHAR_FOUND_UNDERGROUND_FACILITY)) {
+        if (map === cufMap) {
+          // completed.
+          this.m_Session.scoring.setCompletedAchievement(AchievementIDs.CHAR_FOUND_UNDERGROUND_FACILITY);
+
+          // achievement!
+          await this.ShowNewAchievement(AchievementIDs.CHAR_FOUND_UNDERGROUND_FACILITY);
+
+          // make sure the player knows about it now and it is activated.
+          this.m_Session.playerKnows_CHARUndergroundFacilityLocation = true;
+          this.m_Session.charUndergroundFacility_Activated = true;
+          cufMap!.isSecret = false;
+
+          // open the exit to and from surface for AIs.
+          const surfaceMap = cufMap!.district!.entryMap!;
+          const surfaceEntry = surfaceMap.findFirstInMap((pt) => {
+            const e = surfaceMap.getExitAt(pt);
+            if (e === null) return false;
+            return e.toMap === cufMap;
+          });
+          if (surfaceEntry === null) throw new Error("could not find exit to CUF in surface map");
+          surfaceMap.getExitAt(surfaceEntry)!.isAnAIExit = true;
+
+          const cufExit = cufMap!.findFirstInMap((pt) => {
+            const e = cufMap!.getExitAt(pt);
+            if (e === null) return false;
+            return e.toMap === surfaceMap;
+          });
+          if (cufExit === null) throw new Error("could not find exit to surface in CUF map");
+          cufMap!.getExitAt(cufExit)!.isAnAIExit = true;
+        }
+      }
+    }
+
+    // 3. Sighting The Sewers Thing : !thesewersthing
+    {
+      const sewersThing = this.m_Session.uniqueActors.theSewersThing.theActor;
+      if (player !== sewersThing) {
+        if (
+          !this.m_Session.playerKnows_TheSewersThingLocation &&
+          map === sewersThing?.location.map &&
+          !sewersThing!.isDead
+        ) {
+          if (this.IsVisibleToPlayer(sewersThing!)) {
+            this.m_Session.playerKnows_TheSewersThingLocation = true;
+
+            // message + music, so the player notices it.
+            this.m_MusicManager.stop();
+            this.m_MusicManager.play(GameMusics.FIGHT);
+            this.ClearMessages();
+            this.AddMessage(
+              new Message("Hey! What's that THING!?", this.m_Session.worldTime.turnCounter, Color.Yellow)
+            );
+            if (!this.m_Player.isBotPlayer) await this.AddMessagePressEnter();
+          }
+        }
+      }
+    }
+
+    // 4. Police Station script.
+    {
+      const prisoner = this.m_Session.uniqueActors.policeStationPrisoner.theActor;
+      if (map === this.m_Session.uniqueMaps.policeStation_JailsLevel.theMap && !prisoner!.isDead) {
+        switch (this.m_Session.scriptStage_PoliceStationPrisoner) {
+          case ScriptStage.STAGE_0: {
+            // nothing happened yet, waiting to offer deal.
+            // alpha10.1 check if near prisoner, not generator because prisoner can now
+            // spawn in any of the cells. Also slightly modified what he/she says.
+            // Player is near the prisoner : offer deal.
+            if (
+              this.m_Rules.gridDistance(pos, prisoner!.location.position) <= 2 &&
+              !prisoner!.isSleeping &&
+              this.IsVisibleToPlayer(prisoner!) // alpha10 fix: and visible!
+            ) {
+              // Offer deal.
+              const text: string[] = [
+                '" Psssst! Hey! You over there! "',
+                `${prisoner!.name} is discretly calling you from ${this.HisOrHer(prisoner!)} cell. You listen closely...`,
+                '" Listen! I shouldn\'t be here! Just drove a bit too fast!',
+                "  Look, I know what's happening! I worked down there! At the CHAR facility!",
+                "  They didn't want me to leave but I did! Like I'm stupid enough to stay down there uh?",
+                "  Now listen! Let's make a deal...",
+                "  Stupid cops won't listen to me. You look clever...",
+                "  You just have to push the button at the end of the corridor to open my cell.",
+                "  The cops are too busy to care about small fish like me!",
+                "  Then I'll tell you where is the underground facility and just get the hell out of here.",
+                "  I don't give a fuck about CHAR anymore, you can do what you want with that!",
+                "  There are plenty of cool stuff to loot down there!",
+                "  Do it PLEASE! I REALLY shoudn't be there! '",
+                `Looks like ${this.HeOrShe(prisoner!)} wants you to turn the generator on to open the cells...`,
+              ];
+              await this.ShowSpecialDialogue(prisoner!, text);
+
+              // Scoring event.
+              this.m_Session.scoring.addEvent(
+                this.m_Session.worldTime.turnCounter,
+                `${prisoner!.name} offered a deal.`
+              );
+
+              // Next stage.
+              this.m_Session.scriptStage_PoliceStationPrisoner = ScriptStage.STAGE_1;
+            }
+            break;
+          }
+
+          case ScriptStage.STAGE_1: {
+            // offered deal, waiting for opened cell.
+            // Wait to get out of cell and next to player.
+            if (
+              !map.hasZonePartiallyNamedAt(prisoner!.location.position, NAME_POLICE_STATION_JAILS_CELL) &&
+              this.m_Rules.isAdjacent(pos, prisoner!.location.position) &&
+              !prisoner!.isSleeping
+            ) {
+              // Thank you and give info.
+              const cufDistrict = this.m_Session.uniqueMaps.charUndergroundFacility.theMap!.district!;
+              const text: string[] = [
+                '" Thank you! Thank you so much!',
+                "  As promised, I'll tell you the big secret!",
+                `  The CHAR Underground Facility is in district ${World.CoordToString(
+                  cufDistrict.worldPosition.x,
+                  cufDistrict.worldPosition.y
+                )}.`,
+                "  Look for a CHAR Office, a room with an iron door.",
+                "  Now I must hurry! Thanks a lot for saving me!",
+                "  I don't want them to... UGGH...",
+                "  What's happening? NO!",
+                '  NO NOT ME! aAAAAAaaaa! NOT NOW! AAAGGGGGGGRRR "',
+              ];
+              await this.ShowSpecialDialogue(prisoner!, text);
+
+              // Scoring event.
+              this.m_Session.scoring.addEvent(
+                this.m_Session.worldTime.turnCounter,
+                `Freed ${prisoner!.name}.`
+              );
+
+              // reveal location.
+              this.m_Session.playerKnows_CHARUndergroundFacilityLocation = true;
+
+              // Scoring event.
+              this.m_Session.scoring.addEvent(
+                this.m_Session.worldTime.turnCounter,
+                "Learned the location of the CHAR Underground Facility."
+              );
+
+              // transformation.
+              // - zombify.
+              await this.KillActor(null, prisoner!, "transformation", false); // alpha10 don't drop corpse!
+              const monster = this.Zombify(null, prisoner!, false);
+              // - turn into a ZP.
+              monster.model = this.m_GameActors.get(ActorID.UNDEAD_ZOMBIE_PRINCE);
+              // - zero AP so player don't get hit asap.
+              monster.actionPoints = 0;
+
+              // Scoring event.
+              this.m_Session.scoring.addEvent(
+                this.m_Session.worldTime.turnCounter,
+                `${prisoner!.name} turned into a ${monster.model.name}!`
+              );
+
+              // fight music!
+              this.m_MusicManager.play(GameMusics.FIGHT);
+
+              // Next stage.
+              this.m_Session.scriptStage_PoliceStationPrisoner = ScriptStage.STAGE_2;
+            }
+            break;
+          }
+
+          case ScriptStage.STAGE_2:
+            // monsterized!
+            // nothing to do...
+            break;
+
+          default:
+            throw new Error(`unhandled script stage ${this.m_Session.scriptStage_PoliceStationPrisoner}`);
+        }
+      }
+    }
+
+    // 5. Sighting Jason Myer : !jasonmyers
+    {
+      const jasonMyers = this.m_Session.uniqueActors.jasonMyers.theActor;
+      if (player !== jasonMyers) {
+        if (!jasonMyers!.isDead) {
+          if (this.IsVisibleToPlayer(jasonMyers!)) {
+            // music.
+            if (this.m_MusicManager.getCurrentMusicId() !== GameMusics.INSANE) {
+              this.m_MusicManager.stop();
+              this.m_MusicManager.play(GameMusics.INSANE);
+            }
+
+            // message if 1st time.
+            if (!this.m_Session.scoring.hasSighted(jasonMyers!.model.id)) {
+              this.ClearMessages();
+              this.AddMessage(
+                new Message("Nice axe you have there!", this.m_Session.worldTime.turnCounter, Color.Yellow)
+              );
+              if (!this.m_Player.isBotPlayer) await this.AddMessagePressEnter();
+            }
+          }
+        }
+      }
+    }
+
+    // 6. Sighting Duckman — alpha10 disabled in C# too.
+
+    // Item interactions.
+    // 1. Subway Worker Badge in Subway maps.
+    //    conditions: In Subway, Must be Equipped, Next to closed gates.
+    //    effects: Turn all generators on.
+    {
+      const badge = this.m_Session.uniqueItems.theSubwayWorkerBadge.theItem;
+      const inv = player.inventory;
+      if (
+        badge !== null &&
+        badge.isEquipped &&
+        inv !== null &&
+        map === map.district!.subwayMap &&
+        inv.contains(badge)
+      ) {
+        // must be adjacent to closed gates.
+        if (
+          map.hasAnyAdjacentInMap(pos, (pt) => {
+            const obj = map.getMapObjectAtPoint(pt);
+            if (obj === null) return false;
+            return obj.imageId === GameImages.OBJ_GATE_CLOSED;
+          })
+        ) {
+          // turn all power on!
+          await this.DoTurnAllGeneratorsOn(map);
+
+          // message.
+          this.AddMessage(
+            new Message(
+              "The gate system scanned your badge and turned the power on!",
+              this.m_Session.worldTime.turnCounter,
+              Color.Green
+            )
+          );
+        }
+      }
+    }
+
+    // Generic 1st time flags.
+    // 1. Visiting a new map.
+    if (!this.m_Session.scoring.hasVisited(map)) {
+      // visit.
+      this.m_Session.scoring.addVisit(this.m_Session.worldTime.turnCounter, map);
+      this.m_Session.scoring.addEvent(this.m_Session.worldTime.turnCounter, `Visited ${map.name}.`);
+    }
+
+    // 2. Sighting an actor : actor model, unique NPCs.
+    for (const p of this.m_PlayerFOV) {
+      const other = map.getActorAtPoint(p);
+      if (other === null || other === player) continue;
+      this.m_Session.scoring.addSighting(other.model.id, this.m_Session.worldTime.turnCounter);
+      // alpha10 unique npcs lose their invincibility when sighted and highlight them.
+      if (other.isUnique) {
+        if (other.isInvincible) {
+          // 1st sighting
+          await this.PlayUniqueActorMusicAndMessage(this.m_Session.actorToUniqueActor(other), false);
+          other.isInvincible = false;
+        }
+      }
+    }
   }
 
   // C# HandleReincarnation — RogueGame.cs:22001
-  HandleReincarnation(): void {
-    throw new Error("not yet ported: HandleReincarnation (RogueGame.cs:22001)");
+  // async: C# blocks on the avatar menu and on WaitEnter/WaitYesOrNo.
+  async HandleReincarnation(): Promise<void> {
+    // Reincarnate?
+    // don't bother if option set to zero.
+    if (s_Options.maxReincarnations <= 0 || !(await this.AskForReincarnation())) {
+      this.m_MusicManager.stop();
+      return;
+    }
+
+    // play music.
+    // alpha10 PlayLooping dropped: the WebAudio backend always loops.
+    this.m_MusicManager.stop();
+    this.m_MusicManager.play(GameMusics.LIMBO);
+
+    // Waiting screen...
+    this.m_UI.UI_Clear(Color.Black);
+    this.m_UI.UI_DrawStringBold(Color.Yellow, "Reincarnation - Purgatory", 0, 0);
+    this.m_UI.UI_DrawStringBold(
+      Color.White,
+      "(preparing reincarnations, please wait...)",
+      0,
+      2 * BOLD_LINE_SPACING
+    );
+    this.m_UI.UI_Repaint();
+
+    // Decide available reincarnation targets.
+    const countDummy = { value: 0 };
+    const randomR = this.FindReincarnationAvatar(ReincMode.RANDOM_ACTOR, countDummy);
+    const countLivings = { value: 0 };
+    const livingR = this.FindReincarnationAvatar(ReincMode.RANDOM_LIVING, countLivings);
+    const countUndeads = { value: 0 };
+    const undeadR = this.FindReincarnationAvatar(ReincMode.RANDOM_UNDEAD, countUndeads);
+    const countFollower = { value: 0 };
+    const followerR = this.FindReincarnationAvatar(ReincMode.RANDOM_FOLLOWER, countFollower);
+    const killerR = this.FindReincarnationAvatar(ReincMode.KILLER, countDummy);
+    const zombifiedR = this.FindReincarnationAvatar(ReincMode.ZOMBIFIED, countDummy);
+
+    // Get fun facts.
+    const funFacts = this.CompileDistrictFunFacts(this.m_Player.location.map!.district!);
+
+    // Reincarnate.
+    // Choose avatar from a set of reincarnation modes.
+    let choiceMade = false;
+    const entries: string[] = [
+      GameOptions.reincModeName(ReincMode.RANDOM_ACTOR),
+      GameOptions.reincModeName(ReincMode.RANDOM_LIVING),
+      GameOptions.reincModeName(ReincMode.RANDOM_UNDEAD),
+      GameOptions.reincModeName(ReincMode.RANDOM_FOLLOWER),
+      GameOptions.reincModeName(ReincMode.KILLER),
+      GameOptions.reincModeName(ReincMode.ZOMBIFIED),
+    ];
+    const values: string[] = [
+      this.DescribeAvatar(randomR),
+      `${this.DescribeAvatar(livingR)}   (out of ${countLivings.value} possibilities)`,
+      `${this.DescribeAvatar(undeadR)}   (out of ${countUndeads.value} possibilities)`,
+      `${this.DescribeAvatar(followerR)}   (out of ${countFollower.value} possibilities)`,
+      this.DescribeAvatar(killerR),
+      this.DescribeAvatar(zombifiedR),
+    ];
+    let selected = 0;
+    let avatar: Actor | null = null;
+    do {
+      // show screen.
+      const gx = 0;
+      let gy = 0;
+      this.m_UI.UI_Clear(Color.Black);
+      this.m_UI.UI_DrawStringBold(Color.Yellow, "Reincarnation - Choose Avatar", gx, gy);
+      gy += 2 * BOLD_LINE_SPACING;
+
+      const gyRef = { value: gy };
+      this.DrawMenuOrOptions(selected, Color.White, entries, Color.LightGreen, values, gx, gyRef);
+      gy = gyRef.value;
+      gy += 2 * BOLD_LINE_SPACING;
+
+      this.m_UI.UI_DrawStringBold(Color.Pink, ".-* District Fun Facts! *-.", gx, gy);
+      gy += BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBold(
+        Color.Pink,
+        `at current date : ${new WorldTime(this.m_Session.worldTime.turnCounter).toString()}.`,
+        gx,
+        gy
+      );
+      gy += 2 * BOLD_LINE_SPACING;
+      for (const fact of funFacts) {
+        this.m_UI.UI_DrawStringBold(Color.Pink, fact, gx, gy);
+        gy += BOLD_LINE_SPACING;
+      }
+
+      this.DrawFootnote(Color.White, "cursor to move, ENTER to select, ESC to cancel and end game");
+
+      this.m_UI.UI_Repaint();
+
+      // get menu action.
+      const key = await this.m_UI.UI_WaitKey();
+      switch (key.key) {
+        case "ArrowUp": // move up
+          if (selected > 0) --selected;
+          else selected = entries.length - 1;
+          break;
+        case "ArrowDown": // move down
+          selected = (selected + 1) % entries.length;
+          break;
+        case "Escape": // cancel & end game
+          choiceMade = true;
+          avatar = null;
+          break;
+
+        case "Enter": // validate
+          switch (selected) {
+            case 0: // random actor
+              avatar = randomR;
+              break;
+            case 1: // random survivor
+              avatar = livingR;
+              break;
+            case 2: // random undead
+              avatar = undeadR;
+              break;
+            case 3: // random follower
+              avatar = followerR;
+              break;
+            case 4: // killer
+              avatar = killerR;
+              break;
+            case 5: // zombified
+              avatar = zombifiedR;
+              break;
+          }
+          choiceMade = avatar !== null;
+          break;
+      }
+    } while (!choiceMade);
+
+    // If canceled, stop.
+    if (avatar === null) {
+      this.m_MusicManager.stop();
+      return;
+    }
+
+    // Perform reincarnation.
+    // 1. Make actor the player.
+    // 2. Update all player-centric data.
+    {
+      // 1. Make actor the player.
+      avatar.controller = new PlayerController();
+      if (avatar.activity !== Activity.SLEEPING) avatar.activity = Activity.IDLE;
+      this.PrepareActorForPlayerControl(avatar);
+
+      // 2. Update all player-centric data.
+      this.m_Player = avatar;
+      this.m_Session.currentMap = avatar.location.map;
+      this.m_Session.scoring.startNewLife(this.m_Session.worldTime.turnCounter);
+      this.m_Session.scoring.addEvent(
+        this.m_Session.worldTime.turnCounter,
+        `(reincarnation ${this.m_Session.scoring.reincarnationNumber})`
+      );
+      this.m_Session.scoring.side = this.m_Player.model.abilities.isUndead
+        ? DifficultySide.FOR_UNDEAD
+        : DifficultySide.FOR_SURVIVOR;
+      this.m_Session.scoring.difficultyRating = Scoring.computeDifficultyRating(
+        s_Options,
+        this.m_Session.scoring.side,
+        this.m_Session.scoring.reincarnationNumber
+      );
+      // forget all maps memory.
+      const world = this.m_Session.world!;
+      for (let dx = 0; dx < world.size; dx++) {
+        for (let dy = 0; dy < world.size; dy++) {
+          const d = world.getDistrict(dx, dy);
+          if (d === null) continue;
+          for (const m of d.maps) m.setAllAsUnvisited();
+        }
+      }
+    }
+
+    // Cleanup and refresh.
+    this.m_MusicManager.stop();
+    this.UpdatePlayerFOV(this.m_Player);
+    this.ComputeViewRect(this.m_Player.location.position);
+    this.ClearMessages();
+    this.AddMessage(
+      new Message(
+        `${this.m_Player.name} feels disoriented for a second...`,
+        this.m_Session.worldTime.turnCounter,
+        Color.Yellow
+      )
+    );
+    this.RedrawPlayScreen();
+
+    // Play reinc sfx or special music for actor.
+    let music = GameMusics.REINCARNATE;
+    if (this.m_Player === this.m_Session.uniqueActors.jasonMyers.theActor) music = GameMusics.INSANE;
+    // apha10 replace with sfx
+    this.m_MusicManager.stop();
+    this.m_MusicManager.play(music);
+
+    // restart sim thread.
+    this.StopSimThread(false); // alpha10 stop-start
+    this.StartSimThread();
   }
 
   // C# DescribeAvatar — RogueGame.cs:22186
-  DescribeAvatar(a: Actor): string {
-    void a;
-    throw new Error("not yet ported: DescribeAvatar (RogueGame.cs:22186)");
+  DescribeAvatar(a: Actor | null): string {
+    if (a === null) return "(N/A)";
+    const isLeader = a.countFollowers > 0;
+    const isFollower = a.hasLeader;
+    return `${a.name}, a ${a.model.name}${isLeader ? ", leader" : isFollower ? ", follower" : ""}`;
   }
 
   // C# AskForReincarnation — RogueGame.cs:22195
-  AskForReincarnation(): boolean {
-    throw new Error("not yet ported: AskForReincarnation (RogueGame.cs:22195)");
+  // async: C# blocks on WaitEnter/WaitYesOrNo.
+  async AskForReincarnation(): Promise<boolean> {
+    // show screen.
+    const gx = 0;
+    let gy = 0;
+    this.m_UI.UI_Clear(Color.Black);
+    this.m_UI.UI_DrawStringBold(Color.Yellow, "Limbo", gx, gy);
+    gy += 2 * BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBold(
+      Color.White,
+      `Leave body ${1 + this.m_Session.scoring.reincarnationNumber}/${1 + s_Options.maxReincarnations}.`,
+      gx,
+      gy
+    );
+    gy += BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBold(Color.White, "Remember lives.", gx, gy);
+    gy += BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBold(Color.White, "Remember purpose.", gx, gy);
+    gy += BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBold(Color.White, "Clear again.", gx, gy);
+    gy += BOLD_LINE_SPACING;
+
+    // ask question or no more lives left.
+    if (this.m_Session.scoring.reincarnationNumber >= s_Options.maxReincarnations) {
+      // no more lives left.
+      this.m_UI.UI_DrawStringBold(Color.LightGreen, "Humans interesting.", gx, gy);
+      gy += BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBold(Color.LightGreen, "Time to leave.", gx, gy);
+      gy += BOLD_LINE_SPACING;
+      gy += 2 * BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBold(Color.Yellow, "No more reincarnations left.", gx, gy);
+      this.DrawFootnote(Color.White, "press ENTER");
+      this.m_UI.UI_Repaint();
+      await this.WaitEnter();
+      return false;
+    } else {
+      // one more life available.
+      this.m_UI.UI_DrawStringBold(Color.White, "Leave?", gx, gy);
+      gy += BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBold(Color.White, "Live?", gx, gy);
+
+      gy += 2 * BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBold(Color.Yellow, "Reincarnate? Y to confirm, N to cancel.", gx, gy);
+      this.m_UI.UI_Repaint();
+
+      // ask question.
+      return this.WaitYesOrNo();
+    }
   }
 
   // C# IsSuitableReincarnation — RogueGame.cs:22243
-  IsSuitableReincarnation(a: Actor, asLiving: boolean): boolean {
-    void a;
-    void asLiving;
-    throw new Error("not yet ported: IsSuitableReincarnation (RogueGame.cs:22243)");
+  IsSuitableReincarnation(a: Actor | null, asLiving: boolean): boolean {
+    if (a === null) return false;
+    if (a.isDead || a.isPlayer) return false;
+
+    // same district only.
+    if (a.location.map!.district !== this.m_Session.currentMap!.district) return false;
+
+    // forbid some special maps.
+    if (a.location.map === this.m_Session.uniqueMaps.charUndergroundFacility.theMap) return false;
+
+    // forbid some special actors.
+    if (a === this.m_Session.uniqueActors.policeStationPrisoner.theActor) return false;
+
+    // (option) not in sewers.
+    if (a.location.map === a.location.map!.district!.sewersMap) return false;
+
+    // living vs undead checks.
+    if (asLiving) {
+      if (a.model.abilities.isUndead) return false;
+      // (option) civilians only.
+      if (s_Options.isLivingReincRestricted && a.faction.id !== FactionID.TheCivilians) return false;
+
+      return true;
+    } else {
+      if (a.model.abilities.isUndead) {
+        // (option) not rats.
+        if (!s_Options.canReincarnateAsRat && GameActors.isRatBranch(a.model)) return false;
+
+        return true;
+      } else return false;
+    }
   }
 
   // C# FindReincarnationAvatar — RogueGame.cs:22298
-  FindReincarnationAvatar(reincMode: ReincMode, matchingActors: number): { result: Actor; matchingActors: number } {
-    void reincMode;
-    void matchingActors;
-    throw new Error("not yet ported: FindReincarnationAvatar (RogueGame.cs:22298)");
+  /**
+   * @param matchingActors C# `out int` — how many actors matched the reincarnation mode.
+   * @returns null if not found.
+   */
+  FindReincarnationAvatar(reincMode: ReincMode, matchingActors: { value: number }): Actor | null {
+    switch (reincMode) {
+      case ReincMode.RANDOM_FOLLOWER: {
+        const followers = this.m_Session.scoring.followersWhendDied;
+        if (followers === null) {
+          matchingActors.value = 0;
+          return null;
+        }
+
+        // list all suitable followers.
+        const suitableFollowers: Actor[] = [];
+        for (const fo of followers) if (this.IsSuitableReincarnation(fo, true)) suitableFollowers.push(fo);
+
+        // make sure we have at least one suitable!
+        matchingActors.value = suitableFollowers.length;
+        if (suitableFollowers.length === 0) return null;
+
+        // random one.
+        return suitableFollowers[this.m_Rules.roll(0, suitableFollowers.length)];
+      }
+
+      case ReincMode.KILLER: {
+        const killer = this.m_Session.scoring.killer;
+        if (this.IsSuitableReincarnation(killer, true) || this.IsSuitableReincarnation(killer, false)) {
+          matchingActors.value = 1;
+          return killer;
+        } else {
+          matchingActors.value = 0;
+          return null;
+        }
+      }
+
+      case ReincMode.RANDOM_ACTOR:
+      case ReincMode.RANDOM_LIVING:
+      case ReincMode.RANDOM_UNDEAD: {
+        // get a list of all suitable actors in the world.
+        const asLiving =
+          reincMode === ReincMode.RANDOM_LIVING ||
+          (reincMode === ReincMode.RANDOM_ACTOR && this.m_Rules.rollChance(50));
+        const allSuitables: Actor[] = [];
+        const world = this.m_Session.world!;
+        for (let dx = 0; dx < world.size; dx++) {
+          for (let dy = 0; dy < world.size; dy++) {
+            const district = world.getDistrict(dx, dy);
+            if (district === null) continue;
+            for (const m of district.maps) {
+              for (const a of m.actors) if (this.IsSuitableReincarnation(a, asLiving)) allSuitables.push(a);
+            }
+          }
+        }
+
+        // pick one at random.
+        matchingActors.value = allSuitables.length;
+        if (allSuitables.length === 0) return null;
+        else return allSuitables[this.m_Rules.roll(0, allSuitables.length)];
+      }
+
+      case ReincMode.ZOMBIFIED: {
+        const zombie = this.m_Session.scoring.zombifiedPlayer;
+        if (this.IsSuitableReincarnation(zombie, false)) {
+          matchingActors.value = 1;
+          return zombie;
+        } else {
+          matchingActors.value = 0;
+          return null;
+        }
+      }
+
+      default:
+        throw new Error(`unhandled reincarnation mode ${reincMode}`);
+    }
   }
 
   // C# GenerateInsaneAction — RogueGame.cs:22395
-  GenerateInsaneAction(actor: Actor): ActorAction {
-    void actor;
-    throw new Error("not yet ported: GenerateInsaneAction (RogueGame.cs:22395)");
+  GenerateInsaneAction(actor: Actor): ActorAction | null {
+    const map = actor.location.map!;
+    const pos = actor.location.position;
+
+    // Let's the insanity flow...
+    switch (this.m_Rules.roll(0, 5)) {
+      // shout
+      case 0:
+        return new ActionShout(actor, this, "AAAAAAAAAAA!!!");
+
+      // random bump
+      case 1:
+        return new ActionBump(actor, this, this.m_Rules.rollDirection());
+
+      // random bash.
+      case 2: {
+        const d = this.m_Rules.rollDirection();
+        const mobj = map.getMapObjectAtPoint(d.applyTo(pos));
+        if (mobj === null) return null;
+        return new ActionBreak(actor, this, mobj);
+      }
+
+      // random use/unequip-drop
+      case 3: {
+        const inv = actor.inventory;
+        if (inv === null || inv.countItems === 0) return null;
+        const it = inv.getItem(this.m_Rules.roll(0, inv.countItems));
+        if (it === null) return null;
+        const useIt = new ActionUseItem(actor, this, it);
+        if (useIt.isLegal()) return useIt;
+        if (it.isEquipped) return new ActionUnequipItem(actor, this, it);
+        return new ActionDropItem(actor, this, it);
+      }
+
+      // random agression.
+      case 4: {
+        const fov = this.m_Rules.actorFOV(actor, map.localTime, this.m_Session.weather);
+        for (const a of map.actors) {
+          if (a === actor) continue;
+          if (this.m_Rules.areEnemies(actor, a)) continue;
+          if (!LOS.canTraceViewLine(map, actor.location.position, a.location.position, fov)) continue;
+          if (this.m_Rules.rollChance(50)) {
+            // force leaving of leader.
+            if (actor.hasLeader) {
+              actor.leader!.removeFollower(actor);
+              actor.trustInLeader = Rules.TRUST_NEUTRAL;
+            }
+            // agress.
+            // DoMakeAggression is async (the cop/soldier radio path blocks on
+            // ENTER), but the aggressor/self-defence links and the emote above
+            // are all applied before its first await, and C# calls this from a
+            // sync action factory - so it is intentionally not awaited here.
+            void this.DoMakeAggression(actor, a);
+            return new ActionSay(
+              actor,
+              this,
+              a,
+              "YOU ARE ONE OF THEM!!",
+              SayFlags.IS_IMPORTANT | SayFlags.IS_DANGER
+            );
+          }
+        }
+        return null;
+      }
+
+      default:
+        return null;
+    }
   }
 
   // C# SeeingCauseInsanity — RogueGame.cs:22454
@@ -11985,119 +16519,502 @@ export class RogueGame {
   }
 
   // C# OnMapPowerGeneratorSwitch — RogueGame.cs:22488
-  OnMapPowerGeneratorSwitch(location: Location, powGen: PowerGenerator): void {
-    void location;
+  // async: C# blocks on AnimDelay inside the gate-crush checks.
+  // Every C# `lock (m_Session)` is dropped: the browser port is single threaded.
+  async OnMapPowerGeneratorSwitch(location: Location, powGen: PowerGenerator): Promise<void> {
     void powGen;
-    throw new Error("not yet ported: OnMapPowerGeneratorSwitch (RogueGame.cs:22488)");
+    const map = location.map!;
+    // Maps:
+    // 1. CHAR Underground Facility.
+    // 2. Subway
+    // 3. Police Station Jails.
+    // 4. Hospital Power.
+
+    // 1. CHAR Underground Facility
+    // Darkness->Lit, TODO: Elevator off->on.
+    if (map === this.m_Session.uniqueMaps.charUndergroundFacility.theMap) {
+      // check all power generators are on.
+      const allAreOn = this.m_Rules.computeMapPowerRatio(map) >= 1.0;
+
+      // change map lighting.
+      if (allAreOn) {
+        if (map.lighting !== Lighting.LIT) {
+          map.lighting = Lighting.LIT;
+
+          // message.
+          if (this.m_Player.location.map === map) {
+            this.ClearMessages();
+            this.AddMessage(new Message("The Facility lights turn on!", map.localTime.turnCounter, Color.Green));
+            this.RedrawPlayScreen();
+          }
+
+          // achievement?
+          if (!this.m_Session.scoring.hasCompletedAchievement(AchievementIDs.CHAR_POWER_UNDERGROUND_FACILITY)) {
+            // completed!
+            this.m_Session.scoring.setCompletedAchievement(AchievementIDs.CHAR_POWER_UNDERGROUND_FACILITY);
+
+            // achievement!
+            await this.ShowNewAchievement(AchievementIDs.CHAR_POWER_UNDERGROUND_FACILITY);
+          }
+        }
+      } else {
+        // part off
+        if (map.lighting !== Lighting.DARKNESS) {
+          map.lighting = Lighting.DARKNESS;
+
+          // message.
+          if (this.m_Player.location.map === map) {
+            this.ClearMessages();
+            this.AddMessage(new Message("The Facility lights turn off!", map.localTime.turnCounter, Color.Red));
+            this.RedrawPlayScreen();
+          }
+        }
+      }
+    }
+
+    // 2. Subway
+    // Darkness->Lit, Gates->open.
+    if (map === map.district!.subwayMap) {
+      // check all power generators are on.
+      const allAreOn = this.m_Rules.computeMapPowerRatio(map) >= 1.0;
+
+      // change map lighting, open/close fences.
+      if (allAreOn) {
+        if (map.lighting !== Lighting.LIT) {
+          // lit.
+          map.lighting = Lighting.LIT;
+
+          // message.
+          if (this.m_Player.location.map === map) {
+            this.ClearMessages();
+            this.AddMessage(new Message("The station power turns on!", map.localTime.turnCounter, Color.Green));
+            this.AddMessage(new Message("You hear the gates opening.", map.localTime.turnCounter, Color.Green));
+            this.RedrawPlayScreen();
+          }
+
+          // open iron gates.
+          this.DoOpenSubwayGates(map);
+        }
+      } else {
+        // part off
+        if (map.lighting !== Lighting.DARKNESS) {
+          // message.
+          if (this.m_Player.location.map === map) {
+            this.ClearMessages();
+            this.AddMessage(new Message("The station power turns off!", map.localTime.turnCounter, Color.Red));
+            this.AddMessage(new Message("You hear the gates closing.", map.localTime.turnCounter, Color.Red));
+            this.RedrawPlayScreen();
+          }
+
+          // darkness.
+          map.lighting = Lighting.DARKNESS;
+
+          // close iron gates.
+          await this.DoCloseSubwayGates(map);
+        }
+      }
+    }
+
+    // 3. Police Station Jails.
+    if (map === this.m_Session.uniqueMaps.policeStation_JailsLevel.theMap) {
+      // check all power generators are on.
+      const allAreOn = this.m_Rules.computeMapPowerRatio(map) >= 1.0;
+
+      // open/close cells.
+      if (allAreOn) {
+        // message.
+        if (this.m_Player.location.map === map) {
+          this.ClearMessages();
+          this.AddMessage(new Message("The cells are opening.", map.localTime.turnCounter, Color.Green));
+          this.RedrawPlayScreen();
+        }
+
+        // open cells.
+        this.DoOpenPoliceJailCells(map);
+      } else {
+        // message.
+        if (this.m_Player.location.map === map) {
+          this.ClearMessages();
+          this.AddMessage(new Message("The cells are closing.", map.localTime.turnCounter, Color.Green));
+          this.RedrawPlayScreen();
+        }
+
+        // close cells.
+        await this.DoClosePoliceJailCells(map);
+      }
+    }
+
+    // 4. Hospital Power.
+    if (map === this.m_Session.uniqueMaps.hospital_Power.theMap) {
+      // check all power generators are on.
+      const allAreOn = this.m_Rules.computeMapPowerRatio(map) >= 1.0;
+
+      // open/close cells.
+      if (allAreOn) {
+        // message.
+        if (this.m_Player.location.map === map) {
+          this.ClearMessages();
+          this.AddMessage(
+            new Message(
+              "The lights turn on and you hear something opening upstairs.",
+              map.localTime.turnCounter,
+              Color.Green
+            )
+          );
+          this.RedrawPlayScreen();
+        }
+
+        // turn power on.
+        this.DoHospitalPowerOn();
+      } else {
+        if (map.lighting !== Lighting.DARKNESS) {
+          // message.
+          if (this.m_Player.location.map === map) {
+            this.ClearMessages();
+            this.AddMessage(
+              new Message(
+                "The lights turn off and you hear something closing upstairs.",
+                map.localTime.turnCounter,
+                Color.Green
+              )
+            );
+            this.RedrawPlayScreen();
+          }
+
+          // turn power off.
+          await this.DoHospitalPowerOff();
+        }
+      }
+    }
   }
 
   // C# CheckForGateClosingCrush — RogueGame.cs:22702
-  CheckForGateClosingCrush(gate: MapObject, crushingDamage: number): boolean {
-    void gate;
-    void crushingDamage;
-    throw new Error("not yet ported: CheckForGateClosingCrush (RogueGame.cs:22702)");
+  // alpha10.1 common code for checking crushing closing gates: they do not
+  // insta-kill the actor but inflict (large) damage, and the gate stays open while
+  // the actor is still in it.
+  /**
+   * @returns true if the gate can close, false if it must stay open.
+   */
+  // async: C# blocks on AnimDelay.
+  async CheckForGateClosingCrush(gate: MapObject, crushingDamage: number): Promise<boolean> {
+    const crushedActor = gate.location.map!.getActorAtPoint(gate.location.position);
+    if (crushedActor === null) return true;
+    if (crushedActor.isInvincible) return false;
+
+    await this.InflictDamage(crushedActor, crushingDamage);
+    if (this.IsVisibleToPlayer(crushedActor)) {
+      this.AddMessage(this.MakeMessage(crushedActor, `is crushed for ${crushingDamage} damage!`));
+      // FIXME: MapToScreen/RedrawPlayScreen are still slice 8 stubs, so the damage
+      // popup is best effort until slice 8 lands.
+      let screenPos: Point | null = null;
+      try {
+        screenPos = this.MapToScreen(crushedActor.location.position);
+      } catch (e) {}
+      if (screenPos !== null) {
+        this.AddOverlay(new OverlayImage(screenPos, GameImages.ICON_MELEE_DAMAGE));
+        this.AddOverlay(
+          new OverlayText(
+            screenPos.add(new Point(DAMAGE_DX, DAMAGE_DY)),
+            Color.White,
+            crushingDamage.toString(),
+            Color.Black
+          )
+        );
+      }
+      try {
+        this.RedrawPlayScreen();
+      } catch (e) {}
+      await this.AnimDelay(crushedActor.isPlayer ? DELAY_NORMAL : DELAY_SHORT);
+      this.ClearOverlays();
+      try {
+        this.RedrawPlayScreen();
+      } catch (e) {}
+    }
+
+    if (crushedActor.hitPoints <= 0) {
+      await this.KillActor(null, crushedActor, "crushed");
+      return true;
+    } else return false;
   }
 
   // C# DoOpenSubwayGates — RogueGame.cs:22732
   DoOpenSubwayGates(map: Map): void {
-    void map;
-    throw new Error("not yet ported: DoOpenSubwayGates (RogueGame.cs:22732)");
+    for (const obj of map.mapObjects) {
+      if (obj.imageId === GameImages.OBJ_GATE_CLOSED) {
+        obj.isWalkable = true;
+        obj.imageId = GameImages.OBJ_GATE_OPEN;
+      }
+    }
   }
 
   // C# DoCloseSubwayGates — RogueGame.cs:22744
-  DoCloseSubwayGates(map: Map): void {
-    void map;
-    throw new Error("not yet ported: DoCloseSubwayGates (RogueGame.cs:22744)");
+  // async: C# blocks on AnimDelay inside CheckForGateClosingCrush.
+  async DoCloseSubwayGates(map: Map): Promise<void> {
+    for (const obj of map.mapObjects) {
+      if (obj.imageId === GameImages.OBJ_GATE_OPEN) {
+        // alpha10.1
+        if (await this.CheckForGateClosingCrush(obj, Rules.CRUSHING_GATES_DAMAGE)) {
+          obj.isWalkable = false;
+          obj.imageId = GameImages.OBJ_GATE_CLOSED;
+        }
+      }
+    }
   }
 
   // C# DoOpenPoliceJailCells — RogueGame.cs:22774
   DoOpenPoliceJailCells(map: Map): void {
-    void map;
-    throw new Error("not yet ported: DoOpenPoliceJailCells (RogueGame.cs:22774)");
+    for (const obj of map.mapObjects) {
+      if (obj.imageId === GameImages.OBJ_GATE_CLOSED) {
+        obj.isWalkable = true;
+        obj.imageId = GameImages.OBJ_GATE_OPEN;
+      }
+    }
   }
 
   // C# DoClosePoliceJailCells — RogueGame.cs:22786
-  DoClosePoliceJailCells(map: Map): void {
-    void map;
-    throw new Error("not yet ported: DoClosePoliceJailCells (RogueGame.cs:22786)");
+  // async: C# blocks on AnimDelay inside CheckForGateClosingCrush.
+  async DoClosePoliceJailCells(map: Map): Promise<void> {
+    for (const obj of map.mapObjects) {
+      if (obj.imageId === GameImages.OBJ_GATE_OPEN) {
+        // alpha10.1
+        if (await this.CheckForGateClosingCrush(obj, Rules.CRUSHING_GATES_DAMAGE)) {
+          obj.isWalkable = false;
+          obj.imageId = GameImages.OBJ_GATE_CLOSED;
+        }
+      }
+    }
   }
 
   // C# DoHospitalPowerOn — RogueGame.cs:22816
   DoHospitalPowerOn(): void {
-    throw new Error("not yet ported: DoHospitalPowerOn (RogueGame.cs:22816)");
+    // turn all hospital lights on.
+    const uniqueMaps = this.m_Session.uniqueMaps;
+    uniqueMaps.hospital_Admissions.theMap!.lighting = Lighting.LIT;
+    uniqueMaps.hospital_Offices.theMap!.lighting = Lighting.LIT;
+    uniqueMaps.hospital_Patients.theMap!.lighting = Lighting.LIT;
+    uniqueMaps.hospital_Power.theMap!.lighting = Lighting.LIT;
+    uniqueMaps.hospital_Storage.theMap!.lighting = Lighting.LIT;
+
+    // open storage gates.
+    for (const obj of uniqueMaps.hospital_Storage.theMap!.mapObjects) {
+      if (obj.imageId === GameImages.OBJ_GATE_CLOSED) {
+        obj.isWalkable = true;
+        obj.imageId = GameImages.OBJ_GATE_OPEN;
+      }
+    }
   }
 
   // C# DoHospitalPowerOff — RogueGame.cs:22836
-  DoHospitalPowerOff(): void {
-    throw new Error("not yet ported: DoHospitalPowerOff (RogueGame.cs:22836)");
+  // async: C# blocks on AnimDelay inside CheckForGateClosingCrush.
+  async DoHospitalPowerOff(): Promise<void> {
+    // turn all hospital lights off.
+    const uniqueMaps = this.m_Session.uniqueMaps;
+    uniqueMaps.hospital_Admissions.theMap!.lighting = Lighting.DARKNESS;
+    uniqueMaps.hospital_Offices.theMap!.lighting = Lighting.DARKNESS;
+    uniqueMaps.hospital_Patients.theMap!.lighting = Lighting.DARKNESS;
+    uniqueMaps.hospital_Power.theMap!.lighting = Lighting.DARKNESS;
+    uniqueMaps.hospital_Storage.theMap!.lighting = Lighting.DARKNESS;
+
+    // close storage gate.
+    const map = uniqueMaps.hospital_Storage.theMap!;
+    for (const obj of map.mapObjects) {
+      if (obj.imageId === GameImages.OBJ_GATE_OPEN) {
+        // alpha10.1
+        if (await this.CheckForGateClosingCrush(obj, Rules.CRUSHING_GATES_DAMAGE)) {
+          obj.isWalkable = false;
+          obj.imageId = GameImages.OBJ_GATE_CLOSED;
+        }
+      }
+    }
   }
 
   // C# DoTurnAllGeneratorsOn — RogueGame.cs:22875
-  DoTurnAllGeneratorsOn(map: Map): void {
-    void map;
-    throw new Error("not yet ported: DoTurnAllGeneratorsOn (RogueGame.cs:22875)");
+  // async: C# calls OnMapPowerGeneratorSwitch, which blocks on AnimDelay.
+  async DoTurnAllGeneratorsOn(map: Map): Promise<void> {
+    for (const obj of map.mapObjects) {
+      if (!(obj instanceof PowerGenerator)) continue;
+      const powGen = obj;
+      if (!powGen.isOn) {
+        powGen.togglePower();
+        await this.OnMapPowerGeneratorSwitch(powGen.location, powGen);
+      }
+    }
   }
 
   // C# IsInCHAROffice — RogueGame.cs:22892
   IsInCHAROffice(location: Location): boolean {
-    void location;
-    throw new Error("not yet ported: IsInCHAROffice (RogueGame.cs:22892)");
+    for (const z of location.map!.getZonesAt(location.position.x, location.position.y)) {
+      if (z.hasGameAttribute(ZoneAttributes.IS_CHAR_OFFICE)) return true;
+    }
+    return false;
   }
 
   // C# IsInCHARProperty — RogueGame.cs:22905
   IsInCHARProperty(location: Location): boolean {
-    void location;
-    throw new Error("not yet ported: IsInCHARProperty (RogueGame.cs:22905)");
+    return (
+      location.map === this.m_Session.uniqueMaps.charUndergroundFacility.theMap ||
+      this.IsInCHAROffice(location)
+    );
   }
 
   // C# AreLinkedByPhone — RogueGame.cs:22914
   AreLinkedByPhone(speaker: Actor, target: Actor): boolean {
-    void speaker;
-    void target;
-    throw new Error("not yet ported: AreLinkedByPhone (RogueGame.cs:22914)");
+    // only leader-follower
+    if (speaker.leader !== target && target.leader !== speaker) return false;
+
+    // check if equipped phones.
+    const trSpeaker = speaker.getEquippedItem(DollPart.LEFT_HAND);
+    if (!(trSpeaker instanceof ItemTracker) || !trSpeaker.canTrackFollowersOrLeader) return false;
+    const trTarget = target.getEquippedItem(DollPart.LEFT_HAND);
+    if (!(trTarget instanceof ItemTracker) || !trTarget.canTrackFollowersOrLeader) return false;
+
+    // yep!
+    return true;
   }
 
   // C# ListWorldActors — RogueGame.cs:22945
-  ListWorldActors(pred: (p0: Actor) => boolean, flags: MapListFlags): Actor[] {
-    void pred;
-    void flags;
-    throw new Error("not yet ported: ListWorldActors (RogueGame.cs:22945)");
+  ListWorldActors(pred: ((a: Actor) => boolean) | null, flags: MapListFlags): Actor[] {
+    const list: Actor[] = [];
+
+    const world = this.m_Session.world!;
+    for (let dx = 0; dx < world.size; dx++) {
+      for (let dy = 0; dy < world.size; dy++) {
+        const district = world.getDistrict(dx, dy);
+        if (district === null) continue;
+        list.push(...this.ListDistrictActors(district, flags, pred));
+      }
+    }
+
+    return list;
   }
 
   // C# ListDistrictActors — RogueGame.cs:22956
-  ListDistrictActors(d: District, flags: MapListFlags, pred: (p0: Actor) => boolean): Actor[] {
-    void d;
-    void flags;
-    void pred;
-    throw new Error("not yet ported: ListDistrictActors (RogueGame.cs:22956)");
+  ListDistrictActors(d: District, flags: MapListFlags, pred: ((a: Actor) => boolean) | null): Actor[] {
+    const list: Actor[] = [];
+
+    for (const m of d.maps) {
+      if ((flags & MapListFlags.EXCLUDE_SECRET_MAPS) !== 0 && m.isSecret) continue;
+      for (const a of m.actors) if (pred === null || pred(a)) list.push(a);
+    }
+
+    return list;
   }
 
   // C# FunFactActorResume — RogueGame.cs:22972
-  FunFactActorResume(a: Actor, info: string): string {
-    void a;
-    void info;
-    throw new Error("not yet ported: FunFactActorResume (RogueGame.cs:22972)");
+  FunFactActorResume(a: Actor | null, info: string): string {
+    if (a === null) return "(N/A)";
+    return `${info} - ${a.theName}, a ${a.model.name} - ${a.location.map!.name}`;
   }
 
   // C# CompileDistrictFunFacts — RogueGame.cs:22980
   CompileDistrictFunFacts(d: District): string[] {
-    void d;
-    throw new Error("not yet ported: CompileDistrictFunFacts (RogueGame.cs:22980)");
+    const list: string[] = [];
+
+    // 1. Oldest actors alive living & undead.
+    // 2. Most kills living & undead.
+    // 3. Most murders.
+
+    // list actors.
+    const allLivings = this.ListDistrictActors(
+      d,
+      MapListFlags.EXCLUDE_SECRET_MAPS,
+      (a) => !a.isDead && !a.model.abilities.isUndead
+    );
+    const allUndeads = this.ListDistrictActors(
+      d,
+      MapListFlags.EXCLUDE_SECRET_MAPS,
+      (a) => !a.isDead && a.model.abilities.isUndead
+    );
+    const allActors = this.ListDistrictActors(d, MapListFlags.EXCLUDE_SECRET_MAPS, null);
+
+    // add player (cause he's dead now)
+    if (this.m_Player.model.abilities.isUndead) allUndeads.push(this.m_Player);
+    else allLivings.push(this.m_Player);
+    allActors.push(this.m_Player);
+
+    // 1. Oldest actors alive living & undead.
+    if (allLivings.length > 0) {
+      allLivings.sort((a, b) => a.spawnTime - b.spawnTime);
+      list.push("- Oldest Livings Surviving");
+      list.push(`    1st ${this.FunFactActorResume(allLivings[0], new WorldTime(allLivings[0].spawnTime).toString())}.`);
+      if (allLivings.length > 1)
+        list.push(`    2nd ${this.FunFactActorResume(allLivings[1], new WorldTime(allLivings[1].spawnTime).toString())}.`);
+    } else list.push("    No living actors alive!");
+
+    if (allUndeads.length > 0) {
+      allUndeads.sort((a, b) => a.spawnTime - b.spawnTime);
+      list.push("- Oldest Undeads Rotting Around");
+      list.push(`    1st ${this.FunFactActorResume(allUndeads[0], new WorldTime(allUndeads[0].spawnTime).toString())}.`);
+      if (allUndeads.length > 1)
+        list.push(`    2nd ${this.FunFactActorResume(allUndeads[1], new WorldTime(allUndeads[1].spawnTime).toString())}.`);
+    } else list.push("    No undeads shambling around!");
+
+    // 2. Most kills living & undead.
+    if (allLivings.length > 0) {
+      allLivings.sort((a, b) => b.killsCount - a.killsCount);
+      list.push("- Deadliest Livings Kicking ass");
+      if (allLivings[0].killsCount > 0) {
+        list.push(`    1st ${this.FunFactActorResume(allLivings[0], allLivings[0].killsCount.toString())}.`);
+        if (allLivings.length > 1 && allLivings[1].killsCount > 0)
+          list.push(`    2nd ${this.FunFactActorResume(allLivings[1], allLivings[1].killsCount.toString())}.`);
+      } else list.push("    Livings can't fight for their lives apparently.");
+    }
+    if (allUndeads.length > 0) {
+      allUndeads.sort((a, b) => b.killsCount - a.killsCount);
+      list.push("- Deadliest Undeads Chewing Brains");
+      if (allUndeads[0].killsCount > 0) {
+        list.push(`    1st ${this.FunFactActorResume(allUndeads[0], allUndeads[0].killsCount.toString())}.`);
+        if (allUndeads.length > 1 && allUndeads[1].killsCount > 0)
+          list.push(`    2nd ${this.FunFactActorResume(allUndeads[1], allUndeads[1].killsCount.toString())}.`);
+      } else list.push("    Undeads don't care for brains apparently.");
+    }
+
+    // 3. Most murders.
+    if (allLivings.length > 0) {
+      allLivings.sort((a, b) => b.murdersCounter - a.murdersCounter);
+      list.push("- Most Murderous Murderer Murdering");
+      if (allLivings[0].murdersCounter > 0) {
+        list.push(`    1st ${this.FunFactActorResume(allLivings[0], allLivings[0].murdersCounter.toString())}.`);
+        if (allLivings.length > 1 && allLivings[1].murdersCounter > 0)
+          list.push(
+            `    2nd ${this.FunFactActorResume(allLivings[1], allLivings[1].murdersCounter.toString())}.`
+          );
+      } else list.push("    No murders committed!");
+    }
+
+    // done.
+    return list;
   }
 
   // C# DEV_ToggleShowActorsStats — RogueGame.cs:23074
   DEV_ToggleShowActorsStats(): void {
-    throw new Error("not yet ported: DEV_ToggleShowActorsStats (RogueGame.cs:23074)");
+    s_Options.DEV_ShowActorsStats = !s_Options.DEV_ShowActorsStats;
   }
 
   // C# DEV_TogglePlayerInvincibility — RogueGame.cs:23080
   DEV_TogglePlayerInvincibility(): void {
-    throw new Error("not yet ported: DEV_TogglePlayerInvincibility (RogueGame.cs:23080)");
+    if (this.m_Session === null || this.m_Player === null) return;
+
+    this.m_Player.isInvincible = !this.m_Player.isInvincible;
+    this.AddMessage(
+      new Message(
+        "DEAR DEV, YOU ARE NOW " + (this.m_Player.isInvincible ? "INVINCIBLE" : "NOT INVINCIBLE"),
+        this.m_Session.worldTime.turnCounter,
+        Color.LightGreen
+      )
+    );
   }
 
   // C# DEV_MaxTrust — RogueGame.cs:23090
   DEV_MaxTrust(): void {
-    throw new Error("not yet ported: DEV_MaxTrust (RogueGame.cs:23090)");
+    if (this.m_Session === null || this.m_Player === null) return;
+    // alpha10.1 fix
+    if (this.m_Player.followers === null) return;
+
+    for (const f of this.m_Player.followers) f.trustInLeader = Rules.TRUST_MAX;
+    this.AddMessage(
+      new Message("DEAR DEV, FOLLOWERS TRUST MAXED.", this.m_Session.worldTime.turnCounter, Color.LightGreen)
+    );
   }
 
   // C# LoadData — RogueGame.cs:23104
@@ -12127,32 +17044,44 @@ export class RogueGame {
 
   // C# UpdateBgMusic — RogueGame.cs:23145
   UpdateBgMusic(): void {
-    throw new Error("not yet ported: UpdateBgMusic (RogueGame.cs:23145)");
+    if (!s_Options.playMusic) return;
+    if (this.m_Player === null) return;
+
+    // alpha10 the "don't interrupt music that has higher priority than bg" guard is
+    // dropped: IMusicManager has no priorities (PRIORITY_BGM/PRIORITY_EVENT).
+
+    // get current map music and play it if not already playing it
+    const mapMusic = this.m_Session.currentMap?.bgMusic ?? "";
+    if (mapMusic.length === 0) return;
+    if (this.m_MusicManager.getCurrentMusicId() === mapMusic && this.m_MusicManager.isPlaying()) return;
+
+    this.m_MusicManager.stop();
+    this.m_MusicManager.play(mapMusic);
   }
 
   // C# AddDevCheatItems — RogueGame.cs:23170
+  // The whole C# body is commented out (`/* ... */`), so there is nothing to port.
   AddDevCheatItems(): void {
-    throw new Error("not yet ported: AddDevCheatItems (RogueGame.cs:23170)");
   }
 
   // C# AddDevCheatSkills — RogueGame.cs:23205
+  // The whole C# body is commented out (`/* ... */`), so there is nothing to port.
   AddDevCheatSkills(): void {
-    throw new Error("not yet ported: AddDevCheatSkills (RogueGame.cs:23205)");
   }
 
   // C# AddDevMiscStuff — RogueGame.cs:23215
+  // Both statements of the C# body are commented out, so there is nothing to port.
   AddDevMiscStuff(): void {
-    throw new Error("not yet ported: AddDevMiscStuff (RogueGame.cs:23215)");
   }
 
   // C# DrawTileDev — RogueGame.cs:23226
+  // Empty in C# too.
   DrawTileDev(m: Map, t: Tile, x: number, y: number, toScreen: Point): void {
     void m;
     void t;
     void x;
     void y;
     void toScreen;
-    throw new Error("not yet ported: DrawTileDev (RogueGame.cs:23226)");
   }
 
   // ── camelCase aliases for `game.doXxx()` call sites (Actions.ts) ──────────
@@ -12203,8 +17132,8 @@ export class RogueGame {
   }
 
   /** camelCase alias for `game.doLeaveMap()` — C# `DoLeaveMap`. */
-  doLeaveMap(actor: Actor, exitPoint: Point, askForConfirmation: boolean): boolean {
-    return this.DoLeaveMap(actor, exitPoint, askForConfirmation);
+  async doLeaveMap(actor: Actor, exitPoint: Point, askForConfirmation: boolean): Promise<boolean> {
+    return await this.DoLeaveMap(actor, exitPoint, askForConfirmation);
   }
 
   /** camelCase alias for `game.doMeleeAttack()` — C# `DoMeleeAttack`. */
@@ -12213,8 +17142,8 @@ export class RogueGame {
   }
 
   /** camelCase alias for `game.doMoveActor()` — C# `DoMoveActor`. */
-  doMoveActor(actor: Actor, direction: Location | Direction): void {
-    this.DoMoveActor(actor, direction);
+  doMoveActor(actor: Actor, direction: Location | Direction): Promise<void> {
+    return this.DoMoveActor(actor, direction);
   }
 
   /** camelCase alias for `game.doOpenDoor()` — C# `DoOpenDoor`. */
@@ -12333,8 +17262,8 @@ export class RogueGame {
   }
 
   /** camelCase alias for `game.doUseExit()` — C# `DoUseExit`. */
-  doUseExit(actor: Actor, exitPoint: Point): boolean {
-    return this.DoUseExit(actor, exitPoint);
+  async doUseExit(actor: Actor, exitPoint: Point): Promise<boolean> {
+    return await this.DoUseExit(actor, exitPoint);
   }
 
   /** camelCase alias for `game.doUseItem()` — C# `DoUseItem`. */

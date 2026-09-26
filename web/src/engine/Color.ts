@@ -72,8 +72,13 @@ export class Color {
   static readonly Snow            = new Color(255, 250, 250);
   static readonly LightBlue      = new Color(173, 216, 230);
   static readonly Pink           = new Color(255, 192, 203);
-  static readonly Purple         = new Color(128, 0, 128);
+  static readonly Purple        = new Color(128, 0, 128);
   static readonly Transparent    = new Color(0, 0, 0, 0);
+  static readonly DarkOrange    = new Color(255, 140, 0);
+  static readonly OrangeRed     = new Color(255, 69, 0);
+  static readonly Chocolate     = new Color(210, 105, 30);
+  static readonly Beige         = new Color(245, 245, 220);
+  static readonly HotPink       = new Color(255, 105, 180);
 
   toString(): string {
     return `rgba(${this.r},${this.g},${this.b},${this.a})`;
