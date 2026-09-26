@@ -63,4 +63,15 @@ export enum PlayerCommand {
   ITEM_SLOT_7,
   ITEM_SLOT_8,
   ITEM_SLOT_9,
+
+  /*
+   * Not in src/Engine/PlayerCommand.cs — browser-port additions.
+   *
+   * Appended, never inserted: `Keybindings` persists bindings as
+   * `[commandNumber, key]` pairs, so every existing stored value keeps meaning
+   * the same command, and `InputTranslator` reaches the item slots by counting
+   * on from `ITEM_SLOT_0`.
+   */
+  ZOOM_IN,
+  ZOOM_OUT,
 }

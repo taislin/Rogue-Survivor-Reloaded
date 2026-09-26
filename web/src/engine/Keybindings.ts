@@ -83,6 +83,16 @@ export class Keybindings {
     this.set(PlayerCommand.USE_EXIT, 'X');
     this.set(PlayerCommand.WAIT_OR_SELF, '.');
     this.set(PlayerCommand.WAIT_LONG, 'W');
+
+    /*
+     * Map zoom. Bound to the unshifted '=' and '-', not to '+' and '_': on a US
+     * layout '+' *is* shift+'=', so the browser reports key "+" with
+     * `shiftKey: true` and `makeKey` would build the description "Shift++",
+     * which matches no binding. `InputTranslator` folds the shifted symbols
+     * back onto the unshifted key, so every one of them still zooms.
+     */
+    this.set(PlayerCommand.ZOOM_IN, '=');
+    this.set(PlayerCommand.ZOOM_OUT, '-');
   }
 
   set(cmd: PlayerCommand, keyDesc: string): void {
@@ -141,6 +151,22 @@ export class Keybindings {
 }
 
 export class InputTranslator {
+  /**
+   * Keys that should reach a binding stored under a different key.
+   *
+   * A symbol key cannot always be typed without a modifier, so the browser
+   * reports a different `key` for it depending on the keyboard: '+' arrives as
+   * key "+" with `shiftKey` set, and the numpad's '+' arrives as "Add" with no
+   * modifier at all. Without folding these onto the unshifted symbol, a
+   * binding on '=' would be unreachable for anyone pressing '+'.
+   */
+  private static readonly KEY_ALIASES: ReadonlyMap<string, string> = new Map([
+    ["+", "="],
+    ["Add", "="],
+    ["_", "-"],
+    ["Subtract", "-"],
+  ]);
+
   static keyToCommand(
     keybindings: Keybindings,
     key: string,
@@ -159,7 +185,20 @@ export class InputTranslator {
       if (cmd !== PlayerCommand.NONE) return cmd;
     }
 
-    // 3. Item slot keys modifier check (Ctrl/Shift/Alt + 0..9)
+    // 3. Same, for the symbol keys a modifier or a keypad spelling got in the
+    //    way of — see KEY_ALIASES.
+    const alias = InputTranslator.KEY_ALIASES.get(key);
+    if (alias != null) {
+      cmd = keybindings.getCommand(alias);
+      if (cmd !== PlayerCommand.NONE) return cmd;
+      // With a modifier held, the description carries it, so match that.
+      if (ctrl || alt || shift) {
+        cmd = keybindings.getCommand(Keybindings.makeKey(alias, ctrl, alt, shift));
+        if (cmd !== PlayerCommand.NONE) return cmd;
+      }
+    }
+
+    // 4. Item slot keys modifier check (Ctrl/Shift/Alt + 0..9)
     if (ctrl || alt || shift) {
       const rawKey = key.toUpperCase();
       for (let i = 0; i <= 9; i++) {

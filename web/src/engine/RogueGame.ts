@@ -154,8 +154,20 @@ export const ACTOR_OFFSET: number = (TILE_SIZE - ACTOR_SIZE) / 2;
  */
 export const TILE_VIEW_WIDTH: number = 31;
 export const TILE_VIEW_HEIGHT: number = 21;
+/**
+ * C#'s camera, kept for reference: at zoom 1 the port derives the same 31x21
+ * tile counts from `MAP_PANEL_* / TILE_SIZE` (see `ComputeViewRect`), which is
+ * what lets a zoom level change the count from one place. Nothing reads these.
+ */
 export const HALF_VIEW_WIDTH: number = 15;
 export const HALF_VIEW_HEIGHT: number = 10;
+/**
+ * The map panel in pixels — the fixed viewport the map is drawn into, at any
+ * zoom. The zoom changes how many tiles fill it, never its size: that is what
+ * lets the side panel, message area and minimap keep their C# positions.
+ */
+export const MAP_PANEL_WIDTH: number = TILE_SIZE * TILE_VIEW_WIDTH;
+export const MAP_PANEL_HEIGHT: number = TILE_SIZE * TILE_VIEW_HEIGHT;
 export const CANVAS_WIDTH: number = 1366;
 export const CANVAS_HEIGHT: number = 768;
 export const DAMAGE_DX: number = 10;
@@ -404,6 +416,29 @@ export class OverlayPopupTitleColors extends Overlay {
 const s_Options = Options;
 let s_KeyBindings = new Keybindings();
 let s_Hints = new GameHintsStatus();
+
+/**
+ * Map zoom: 1 (C#'s fixed 32px tiles) or 2 (64px tiles, half the tiles in view).
+ *
+ * A browser-port addition — the C# original has no zoom, and its
+ * `ComputeViewRect` hard-codes `HALF_VIEW_*`. Only the display changes: the
+ * camera simply covers fewer tiles, and nothing gameplay-related reads the view
+ * rect (FOV, sensors and AI use `rules.actorFOV`), so a zoomed map is the same
+ * map seen through a narrower window. See `RogueGame.withMapZoom`.
+ */
+export const MAP_ZOOM_LEVELS = [1, 2] as const;
+export type MapZoom = (typeof MAP_ZOOM_LEVELS)[number];
+
+const MAP_ZOOM_STORAGE_KEY = "rogue_survivor_map_zoom";
+
+/** Reads the remembered zoom, ignoring anything that is not a supported level. */
+function loadMapZoom(): MapZoom {
+  const raw = storage.getItem(MAP_ZOOM_STORAGE_KEY);
+  const zoom = Number(raw);
+  return (MAP_ZOOM_LEVELS as readonly number[]).includes(zoom) ? (zoom as MapZoom) : 1;
+}
+
+let s_MapZoom: MapZoom = loadMapZoom();
 
 /** Mirrors `Logger.WriteLine` — dropped in the TS port (browser has console). */
 function logInit(text: string): void {
@@ -2199,6 +2234,8 @@ export class RogueGame {
       "Switch Place",
       "Use Exit",
       "Use Spray",
+      "Zoom in",   // browser port
+      "Zoom out",  // browser port
     ];
     // C#'s O_* index constants — one command per menu entry, same order.
     const commands: PlayerCommand[] = [
@@ -2253,6 +2290,8 @@ export class RogueGame {
       PlayerCommand.SWITCH_PLACE,
       PlayerCommand.USE_EXIT,
       PlayerCommand.USE_SPRAY,
+      PlayerCommand.ZOOM_IN,
+      PlayerCommand.ZOOM_OUT,
     ];
     if (commands.length !== menuEntries.length) throw new RangeError("commands/menuEntries length mismatch");
 
@@ -2274,7 +2313,8 @@ export class RogueGame {
       this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Redefine keys", 0, gy);
       gy += MENU_BOLD_LINE_SPACING;
       const gyRef = { value: gy };
-      // 51 entries: scroll a window that fits above the footnote.
+      // 53 entries (51 in C# plus the two zoom binds): scroll a window that
+      // fits above the footnote.
       const keysRows = Math.max(
         5,
         Math.floor((CANVAS_HEIGHT - MENU_BOLD_LINE_SPACING - gyRef.value) / MENU_BOLD_LINE_SPACING)
@@ -4285,6 +4325,16 @@ export class RogueGame {
 
             case PlayerCommand.SCREENSHOT:
               this.HandleScreenshot();
+              break;
+
+            // Browser port: map zoom. Like SCREENSHOT, this redraws and leaves
+            // `loop` alone, so it costs no turn and the player keeps their AP.
+            case PlayerCommand.ZOOM_IN:
+              this.StepMapZoom(1);
+              break;
+
+            case PlayerCommand.ZOOM_OUT:
+              this.StepMapZoom(-1);
               break;
 
             case PlayerCommand.CITY_INFO:
@@ -14536,12 +14586,97 @@ export class RogueGame {
   }
 
   // C# ComputeViewRect — RogueGame.cs:17987
+  // Browser port: the tile counts come from the panel size and the zoom rather
+  // than from HALF_VIEW_*, so that zooming shows the same panel filled with
+  // fewer, larger tiles. At zoom 1 this is exactly C#'s 31x21 camera: the panel
+  // is TILE_VIEW_* tiles wide and half of an odd count is floor((count-1)/2).
   ComputeViewRect(mapCenter: Point): void {
-    const left = mapCenter.x - HALF_VIEW_WIDTH;
-    const right = mapCenter.x + HALF_VIEW_WIDTH;
-    const top = mapCenter.y - HALF_VIEW_HEIGHT;
-    const bottom = mapCenter.y + HALF_VIEW_HEIGHT;
-    this.m_MapViewRect = new Rect(left, top, 1 + right - left, 1 + bottom - top);
+    const tileSize = TILE_SIZE * s_MapZoom;
+    const columns  = Math.ceil(MAP_PANEL_WIDTH / tileSize);
+    const rows     = Math.ceil(MAP_PANEL_HEIGHT / tileSize);
+    const left     = mapCenter.x - Math.floor((columns - 1) / 2);
+    const top      = mapCenter.y - Math.floor((rows - 1) / 2);
+    this.m_MapViewRect = new Rect(left, top, columns, rows);
+  }
+
+  /**
+   * The current map zoom, 1 or 2.
+   *
+   * Display-only, like the widescreen canvas this file already diverges on
+   * (`TILE_VIEW_WIDTH`): a zoomed map is a narrower window on the same map, so
+   * gameplay — FOV, AI, rules — is unaffected.
+   */
+  get MapZoom(): MapZoom {
+    return s_MapZoom;
+  }
+
+  /**
+   * Sets the map zoom, keeping the camera on the player and repainting.
+   *
+   * No-ops at the same level, so holding the key down is free; `RedrawPlayScreen`
+   * is not called in that case because the caller may be mid-turn.
+   */
+  SetMapZoom(zoom: MapZoom): void {
+    if (zoom === s_MapZoom) return;
+    s_MapZoom = zoom;
+    storage.setItem(MAP_ZOOM_STORAGE_KEY, String(zoom));
+    // Nothing to recompute or repaint before a game exists; the first
+    // ComputeViewRect will pick the level up.
+    if (this.m_Player == null) return;
+    this.ComputeViewRect(this.m_Player.location.position);
+    this.RedrawPlayScreen();
+  }
+
+  /**
+   * Moves one level along `MAP_ZOOM_LEVELS`, stopping at either end.
+   *
+   * Key repeat makes the end levels worth handling: holding zoom-in at 2x must
+   * not re-set the level (and repaint) on every repeat.
+   */
+  StepMapZoom(direction: 1 | -1): void {
+    const index = MAP_ZOOM_LEVELS.indexOf(s_MapZoom) + direction;
+    const clamped = Math.min(MAP_ZOOM_LEVELS.length - 1, Math.max(0, index));
+    this.SetMapZoom(MAP_ZOOM_LEVELS[clamped]);
+  }
+
+  /**
+   * Runs `draw` in the map's zoomed space: every sprite, bar and popup twice
+   * its size, at its position computed for 32px tiles.
+   *
+   * The scale lives here rather than in `MapToScreen` because the drawing API
+   * has no destination size — a sprite is blitted at its authored 32px, so
+   * magnifying it means scaling the surface it is blitted to. That in turn means
+   * everything drawn through `MapToScreen` must be inside one of these scopes,
+   * or it would land at an unscaled position. The three callers are the map
+   * itself, the overlays, and the markers `DrawMiniMap` puts on the map (as
+   * opposed to on the minimap).
+   *
+   * `clip` is for the map proper: a magnified map would otherwise paint over the
+   * side panel. Overlays pass false and may spill, exactly as they do at zoom 1
+   * — a mode prompt at the top-left corner is text that must not be cut in half.
+   */
+  private withMapZoom(draw: () => void, clip: boolean = true): void {
+    if (s_MapZoom === 1) {
+      draw();
+      return;
+    }
+    const clipRect = clip ? new Rect(0, 0, MAP_PANEL_WIDTH, MAP_PANEL_HEIGHT) : undefined;
+    this.m_UI.UI_BeginScaledDraw(s_MapZoom, clipRect);
+    draw();
+    this.m_UI.UI_EndScaledDraw();
+  }
+
+  /**
+   * Draws an image on the *map* at a `MapToScreen` position, inside the zoom.
+   *
+   * `DrawMiniMap` interleaves minimap-space draws with map-space ones, so its
+   * map markers cannot share a single scope with the rest of that method — each
+   * needs its own. This helper is the only correct way to put a map-positioned
+   * image on screen; drawing one directly at zoom 2 would leave it at half
+   * size, on the wrong tile.
+   */
+  private DrawMapMarker(imageId: string, screenPosition: Point): void {
+    this.withMapZoom(() => this.m_UI.UI_DrawImage(imageId, screenPosition.x, screenPosition.y));
   }
 
   // C# IsInViewRect — RogueGame.cs:17998
@@ -14561,7 +14696,7 @@ export class RogueGame {
     // disabled changing brightness bad for the eyes: TintForDayPhase(m_Session.WorldTime.Phase)
     const mapTint = Color.White;
     this.m_UI.UI_DrawLine(Color.DarkGray, RIGHTPANEL_X, 0, RIGHTPANEL_X, MESSAGES_Y);
-    this.DrawMap(this.m_Session.currentMap!, mapTint);
+    this.withMapZoom(() => this.DrawMap(this.m_Session.currentMap!, mapTint));
 
     this.m_UI.UI_DrawLine(Color.DarkGray, RIGHTPANEL_X, MINIMAP_Y - 4, CANVAS_WIDTH, MINIMAP_Y - 4);
     this.DrawMiniMap(this.m_Session.currentMap!);
@@ -14715,7 +14850,12 @@ export class RogueGame {
     }
 
     // overlays
-    for (const o of this.m_Overlays) o.draw(this.m_UI);
+    // Anchored to the map — tile and item descriptions, damage icons, target
+    // rings — so they zoom with it; unclipped, since a prompt pinned to the top
+    // left corner must never be cut in half by the map panel's edge.
+    this.withMapZoom(() => {
+      for (const o of this.m_Overlays) o.draw(this.m_UI);
+    }, false);
 
     // DEV STATS
     if (s_Options.DEV_ShowActorsStats) {
@@ -15600,7 +15740,7 @@ export class RogueGame {
                 // if out of FoV but in view, draw on map.
                 if (this.IsInViewRect(fo.location.position) && !this.IsVisibleToPlayer(fo)) {
                   const screenPos = this.MapToScreen(fo.location.position);
-                  this.m_UI.UI_DrawImage(GameImages.TRACK_FOLLOWER_POSITION, screenPos.x, screenPos.y);
+                  this.DrawMapMarker(GameImages.TRACK_FOLLOWER_POSITION, screenPos);
                 }
               }
             }
@@ -15630,7 +15770,7 @@ export class RogueGame {
               // if out of FoV but in view, draw on map.
               if (this.IsInViewRect(other.location.position) && !this.IsVisibleToPlayer(other)) {
                 const screenPos = this.MapToScreen(other.location.position);
-                this.m_UI.UI_DrawImage(GameImages.TRACK_UNDEAD_POSITION, screenPos.x, screenPos.y);
+                  this.DrawMapMarker(GameImages.TRACK_UNDEAD_POSITION, screenPos);
               }
             }
           }
@@ -15657,7 +15797,7 @@ export class RogueGame {
               // if out of FoV but in view, draw on map.
               if (this.IsInViewRect(other.location.position) && !this.IsVisibleToPlayer(other)) {
                 const screenPos = this.MapToScreen(other.location.position);
-                this.m_UI.UI_DrawImage(GameImages.TRACK_BLACKOPS_POSITION, screenPos.x, screenPos.y);
+                  this.DrawMapMarker(GameImages.TRACK_BLACKOPS_POSITION, screenPos);
               }
             }
           }
@@ -15684,7 +15824,7 @@ export class RogueGame {
               // if out of FoV but in view, draw on map.
               if (this.IsInViewRect(other.location.position) && !this.IsVisibleToPlayer(other)) {
                 const screenPos = this.MapToScreen(other.location.position);
-                this.m_UI.UI_DrawImage(GameImages.TRACK_POLICE_POSITION, screenPos.x, screenPos.y);
+                  this.DrawMapMarker(GameImages.TRACK_POLICE_POSITION, screenPos);
               }
             }
           }
@@ -16277,13 +16417,18 @@ export class RogueGame {
   }
 
   // C# ScreenToMap — RogueGame.cs:19621
+  // Browser port: the inverse of the zoomed map. `MapToScreen` still returns
+  // positions for 32px tiles (the scale is applied by `withMapZoom`), so the
+  // divisor has to be the tile size as *displayed*, for the mouse to land on
+  // the tile under the cursor. At zoom 1 this is C#'s `TILE_SIZE` again.
   ScreenToMap(screenPosition: Point): Point;
   ScreenToMap(gx: number, gy: number): Point;
   ScreenToMap(gx: Point | number, gy?: number): Point {
     if (typeof gx === "number") {
+      const tileSize = TILE_SIZE * s_MapZoom;
       return new Point(
-        this.m_MapViewRect.left + Math.trunc(gx / TILE_SIZE),
-        this.m_MapViewRect.top + Math.trunc((gy as number) / TILE_SIZE),
+        this.m_MapViewRect.left + Math.trunc(gx / tileSize),
+        this.m_MapViewRect.top + Math.trunc((gy as number) / tileSize),
       );
     }
     return this.ScreenToMap(gx.x, gx.y);
@@ -16595,7 +16740,7 @@ export class RogueGame {
     /**
      * Maximum rows to draw. When the list is longer, a window around the
      * selection is shown and follows it as it moves (arrow keys wrap, so every
-     * entry stays reachable). Lets long lists — 51 keybindings, 30 skills —
+     * entry stays reachable). Lets long lists — 53 keybindings, 30 skills —
      * use the large menu size instead of shrinking to fit.
      *
      * Omit for short lists, which draw whole as before.

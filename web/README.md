@@ -35,9 +35,21 @@ works. See the "Testing and the headless simulator" section of the root README.
 
 ## Notes specific to this directory
 
-- `index.html` owns a **1366×768** canvas (the C# original was 1024×768), upscaled
-  to fit the viewport. Layout constants live at the top of
-  `src/engine/RogueGame.ts`.
+- `index.html` owns a **1366×768** canvas (the C# original was 1024×768). The game
+  always draws in those logical coordinates; `CanvasUI.computeLayout` sizes the
+  canvas to the largest **whole** multiple that fits the window (proportionally
+  smaller below 1:1) and matches the backing store to the device pixel ratio, so
+  the browser never resamples it — text is rasterised at its final resolution and
+  `image-rendering: pixelated` keeps the 32px sprites pixel-exact. A window
+  smaller than 1366×768 (or one whose size is not a multiple — which includes most
+  1080p and 1440p displays) therefore gets 1:1 with black bars rather than a
+  stretched fill. Layout constants live at the top of `src/engine/RogueGame.ts`.
+- **Map zoom** (`+`/`-`, or `=`/`-`; rebindable, remembered in `localStorage`)
+  doubles the tile size and halves the tiles in view — the map panel, HUD,
+  messages and minimap keep their sizes. Browser-port addition; the C# original
+  has no zoom. The engine keeps `MapToScreen` in 32px-tile coordinates and lets
+  `RogueGame.withMapZoom` scale the drawing surface, since the renderer has no
+  destination-size parameter.
 - Path aliases `@engine`, `@ui`, `@data`, `@gameplay` are configured in
   `vite.config.ts`; `tsconfig.json` mirrors them for the type-checker.
 - Append `?debug=1` to the URL for `[render]` / `[draw]` console logging.

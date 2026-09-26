@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { InputHandler } from "@ui/InputHandler";
 import { GameKeyEvent } from "@engine/IRogueUI";
-
+import { Point } from "@engine/Point";
 /**
  * `UI_PeekKey` must consume the key it returns.
  *
@@ -58,5 +58,69 @@ describe("InputHandler.peekKey", () => {
       expect(k.key).toBe("b");
       expect(input.peekKey()).toBeNull();
     });
+  });
+});
+
+/**
+ * `getMousePosition` must return CSS pixels relative to the canvas, which is
+ * what C# returned as `MouseLocation` (a WinForms client coordinate) and what
+ * `RogueGame.MouseToMap` expects: it divides by `UI_GetCanvasScale*` to reach
+ * canvas coordinates.
+ *
+ * Returning canvas pixels here instead double-converts, and the error scales
+ * with how far the canvas is displayed from 1:1 — the mouse would land on a
+ * different tile the moment the window was not exactly 1366 CSS px wide.
+ * Nothing headless can catch that, since the simulator has no mouse.
+ */
+describe("InputHandler.getMousePosition", () => {
+  /**
+   * Only `getBoundingClientRect` is read any more, but the backing-store size
+   * is part of the stub because it is exactly what the old implementation
+   * multiplied by: with a 2x device pixel ratio, backing is twice the rect.
+   */
+  function fakeCanvas(
+    left: number,
+    top: number,
+    cssWidth: number,
+    cssHeight: number,
+    devicePixelRatio = 1,
+  ): HTMLCanvasElement {
+    return {
+      width: Math.round(cssWidth * devicePixelRatio),
+      height: Math.round(cssHeight * devicePixelRatio),
+      getBoundingClientRect: () => ({ left, top, width: cssWidth, height: cssHeight }) as DOMRect,
+    } as unknown as HTMLCanvasElement;
+  }
+
+  /**
+   * Moves the mouse without a DOM.
+   *
+   * The suite runs in Node, and `attach()` needs a document. `onMouseMove` is
+   * an arrow-function property that only reads `clientX`/`clientY`, so calling
+   * it directly is the same code path a real event takes.
+   */
+  function mouseAt(input: InputHandler, clientX: number, clientY: number): void {
+    (input as unknown as { onMouseMove: (e: { clientX: number; clientY: number }) => void })
+      .onMouseMove({ clientX, clientY });
+  }
+
+  it("reports position relative to the canvas, not to the page", () => {
+    const input = new InputHandler();
+    mouseAt(input, 100 + 448, 50 + 160);
+    expect(input.getMousePosition(fakeCanvas(100, 50, 1366, 768))).toEqual(new Point(448, 160));
+  });
+
+  it("is unaffected by the backing store, so it does not depend on the DPR", () => {
+    // Same cursor, same displayed size, backing store doubled for a 2x display.
+    // The old code scaled by canvas.width / rect.width, so it answered double
+    // here — and MouseToMap then divided by the scale a second time, putting
+    // the mouse on the wrong tile on every HiDPI screen.
+    const input = new InputHandler();
+    mouseAt(input, 448, 160);
+    const atDpr1 = input.getMousePosition(fakeCanvas(0, 0, 1366, 768, 1));
+    const atDpr2 = input.getMousePosition(fakeCanvas(0, 0, 1366, 768, 2));
+
+    expect(atDpr1).toEqual(new Point(448, 160));
+    expect(atDpr2).toEqual(atDpr1);
   });
 });

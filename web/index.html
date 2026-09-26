@@ -38,16 +38,16 @@
       #gameCanvas {
         display: block;
         /*
-         * Smooth scaling, not pixelated. The canvas mixes 32px sprite art with
-         * 8.25pt text; pixelated upscaling keeps sprites crisp but turns the
-         * text into unreadable blocks, and text legibility wins. Sprites stay
-         * sharp at integer scales and soften slightly at fractional ones.
+         * Nearest-neighbour display, so 32px sprite art stays pixel-exact.
+         * The size is deliberately not set here: `CanvasUI.computeLayout` owns
+         * it, sizing the element to a whole multiple of the 1366x768 logical
+         * surface that fits the window and matching the backing store to the
+         * device pixel ratio. The consequence is that the browser never
+         * resamples this canvas — text is rasterised by `fillText` at the
+         * resolution it is displayed at, which is what keeps it from looking
+         * soft (see `CanvasUI.computeLayout`).
          */
-        image-rendering: auto;
-        /* Scale the 1366x768 canvas to fit the viewport while preserving aspect ratio */
-        max-width: 100vw;
-        max-height: 100vh;
-        aspect-ratio: 1366 / 768;
+        image-rendering: pixelated;
       }
 
       #loading {

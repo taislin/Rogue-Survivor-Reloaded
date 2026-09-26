@@ -9,6 +9,30 @@ import { InputHandler } from "./InputHandler";
 const MINIMAP_W = 100;
 const MINIMAP_H = 100;
 
+/**
+ * The game's logical drawing surface, 16:9 like `RogueGame.CANVAS_WIDTH`/
+ * `CANVAS_HEIGHT`.
+ *
+ * Spelled out here rather than imported from the engine: the renderer must not
+ * depend on `RogueGame.ts`, which is ~19 000 lines and pulls the whole
+ * simulation in behind it. Every drawing call in the game uses these logical
+ * coordinates — see `CanvasUI.layout()` for how they reach the screen.
+ */
+const LOGICAL_W = 1366;
+const LOGICAL_H = 768;
+
+/** What `CanvasUI.computeLayout` decided, in CSS pixels and backing-store pixels. */
+export interface CanvasLayout {
+  /** Logical pixels per CSS pixel: a whole number when the window allows one. */
+  scale: number;
+  /** Size of the canvas element, as CSS displays it. */
+  cssW: number;
+  cssH: number;
+  /** Size of the drawing buffer, which additionally carries the pixel ratio. */
+  backingW: number;
+  backingH: number;
+}
+
 /** Font used for normal and bold text, matching the C# "Lucida Console 8.25pt". */
 const FONT_NORMAL = '8.25pt "Lucida Console", "Courier New", monospace';
 const FONT_BOLD   = 'bold 8.25pt "Lucida Console", "Courier New", monospace';
@@ -86,6 +110,115 @@ export class CanvasUI implements IRogueUI {
     this.minimapCtx  = mCtx;
     this.minimapData = new Uint8ClampedArray(new ArrayBuffer(MINIMAP_W * MINIMAP_H * 4));
     this.minimapImage = new ImageData(this.minimapData, MINIMAP_W, MINIMAP_H);
+
+    this.layout();
+    window.addEventListener("resize", this.onViewportChange);
+    this.watchDevicePixelRatio();
+  }
+
+  // ── Layout ────────────────────────────────────────────────────────────────
+
+  /**
+   * Works out how big the canvas should be, given a viewport and a pixel ratio.
+   *
+   * Pure, so the sizing rules can be tested without a browser — the failure
+   * modes here are silent (a stretched aspect ratio, a clipped game, a resampled
+   * backing store), and a canvas in Node is not something a test can look at.
+   */
+  static computeLayout(availW: number, availH: number, dpr: number): CanvasLayout {
+    // A whole multiple of the logical surface keeps every sprite pixel square.
+    // Below 1:1 there is no such multiple, and the window has to be scaled
+    // fractionally rather than clipped: the common case is a 1366-wide browser
+    // window whose *viewport* is shorter than 768 once the chrome is subtracted.
+    // Scaling only one axis to fit would stretch the art.
+    const whole = Math.floor(Math.min(availW / LOGICAL_W, availH / LOGICAL_H));
+    const scale = whole >= 1 ? whole : Math.min(availW / LOGICAL_W, availH / LOGICAL_H);
+    const cssW = LOGICAL_W * scale;
+    const cssH = LOGICAL_H * scale;
+    return {
+      scale,
+      cssW,
+      cssH,
+      backingW: Math.round(cssW * dpr),
+      backingH: Math.round(cssH * dpr),
+    };
+  }
+
+  /**
+   * Sizes the canvas to the display and installs the base transform.
+   *
+   * The game draws in 1366x768 logical pixels, whatever the window is. Two
+   * things then happen, and both matter for legibility:
+   *
+   * 1. The canvas is displayed at a whole multiple of the logical surface when
+   *    the window has room for one, so a CSS pixel is an exact number of
+   *    backing-store pixels and the browser never resamples the canvas.
+   * 2. The backing store is `css size x devicePixelRatio`, and the context is
+   *    scaled by that factor permanently, so a glyph is rasterised at the
+   *    resolution it will be displayed at.
+   *
+   * Together these are what stop the text looking soft. Rasterising `12pt
+   * "Lucida Console"` into a 1366x768 buffer and then letting the browser
+   * stretch that buffer to the window costs a bilinear resample of already
+   * antialiased glyph edges; rasterising it at the final size does not — the
+   * browser's font rasteriser is the only thing antialiasing the text, which is
+   * inherent to a proportional font and not something canvas can switch off.
+   *
+   * `imageSmoothingEnabled = false` keeps the 32px sprite art pixel-exact at
+   * every scale: nearest-neighbour instead of a blur. Note this only affects
+   * `drawImage`; it has no effect on text, which the font rasteriser handles.
+   *
+   * Assigning `canvas.width`/`height` resets the context to its default state,
+   * so the transform and the smoothing flag are (re)installed here rather than
+   * once at construction. Nothing else needs restoring: every draw call sets
+   * the font, baseline and fill style it needs, and save/restore pairs are
+   * balanced within a single call.
+   */
+  private layout(): void {
+    const { cssW, cssH, backingW, backingH } = CanvasUI.computeLayout(
+      window.innerWidth,
+      window.innerHeight,
+      CanvasUI.devicePixelRatio(),
+    );
+
+    this.canvas.style.width  = `${cssW}px`;
+    this.canvas.style.height = `${cssH}px`;
+
+    // Resizing clears the canvas; only touch it when the size really changed,
+    // since a resize mid-frame would wipe what is already drawn.
+    if (this.canvas.width !== backingW) this.canvas.width  = backingW;
+    if (this.canvas.height !== backingH) this.canvas.height = backingH;
+
+    this.ctx.setTransform(backingW / LOGICAL_W, 0, 0, backingH / LOGICAL_H, 0, 0);
+    this.ctx.imageSmoothingEnabled = false;
+  }
+
+  private readonly onViewportChange = (): void => {
+    this.layout();
+    this.watchDevicePixelRatio();
+  };
+
+  /**
+   * Re-lays out when the device pixel ratio changes.
+   *
+   * A window resize usually comes with it (dragging between monitors, browser
+   * zoom), but not always, and `resize` does not fire for a pure DPR change.
+   * The `change` event on a resolution media query is the only notification for
+   * that, and it is one-shot: the old query stops matching once the ratio has
+   * moved, so each handler re-arms a fresh query for the ratio it just saw.
+   */
+  private watchDevicePixelRatio(): void {
+    const dpr = CanvasUI.devicePixelRatio();
+    if (typeof matchMedia !== "function") return;
+
+    const query = matchMedia(`(resolution: ${dpr}dppx)`);
+    query.addEventListener("change", this.onViewportChange, { once: true });
+  }
+
+  /** `devicePixelRatio` is undefined in a few embedded/old browsers; 1 is right there. */
+  private static devicePixelRatio(): number {
+    const dpr = window.devicePixelRatio;
+    return dpr != null && dpr > 0 ? dpr : 1;
   }
 
   // ── Input ─────────────────────────────────────────────────────────────────
@@ -156,7 +289,10 @@ export class CanvasUI implements IRogueUI {
 
   UI_Clear(color: Color): void {
     this.ctx.fillStyle = color.toCssRgba();
-    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    // The logical surface, not `canvas.width`/`height`: the context carries a
+    // scale transform, so backing-store dimensions would be read as logical
+    // coordinates and paint far outside the canvas.
+    this.ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
     // A new frame starts on clear; the repaint that ends it reports the tally.
     this.frameDraws = 0;
     this.frameSkips = 0;
@@ -312,6 +448,37 @@ export class CanvasUI implements IRogueUI {
     this.ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
   }
 
+  // ── Scaled drawing scope ──────────────────────────────────────────────────
+
+  /**
+   * Draws everything until `UI_EndScaledDraw` at `scale` times its logical size,
+   * clipped to `clipRect`.
+   *
+   * This is how the map is zoomed without touching the API: sprites are blitted
+   * at their authored size with no size parameter, so scaling the context is
+   * the only way to magnify them, and the engine's own map coordinates stay in
+   * tiles-as-authored terms. The clip is what keeps a magnified map inside the
+   * panel instead of painting over the side UI; omit it for drawing that is
+   * allowed to spill (the engine's map-anchored popups).
+   *
+   * The clip rectangle is applied *before* the scale, so it is given in the
+   * same logical coordinates as everything else. Pair every begin with an end:
+   * an unbalanced scope would leak the transform into the HUD.
+   */
+  UI_BeginScaledDraw(scale: number, clipRect?: Rect): void {
+    this.ctx.save();
+    if (clipRect != null) {
+      this.ctx.beginPath();
+      this.ctx.rect(clipRect.x, clipRect.y, clipRect.width, clipRect.height);
+      this.ctx.clip();
+    }
+    this.ctx.scale(scale, scale);
+  }
+
+  UI_EndScaledDraw(): void {
+    this.ctx.restore();
+  }
+
   // ── Text ──────────────────────────────────────────────────────────────────
 
   UI_DrawString(color: Color, text: string, gx: number, gy: number, shadowColor?: Color): void {
@@ -442,11 +609,20 @@ export class CanvasUI implements IRogueUI {
 
   // ── Scale ─────────────────────────────────────────────────────────────────
 
+  /**
+   * CSS pixels per logical (game) pixel, horizontally.
+   *
+   * C# `UI_GetCanvasScaleX` is the ratio between the window's pixels and the
+   * canvas's, and `RogueGame.MouseToMap` divides a mouse position by it to get
+   * canvas coordinates. Dividing by `canvas.width` would now mix in the
+   * device-pixel-ratio, so the logical surface is the divisor: the result is
+   * the same CSS-per-game-pixel factor whether the display is 1x or 3x.
+   */
   UI_GetCanvasScaleX(): number {
-    return this.canvas.getBoundingClientRect().width  / this.canvas.width;
+    return this.canvas.getBoundingClientRect().width / LOGICAL_W;
   }
   UI_GetCanvasScaleY(): number {
-    return this.canvas.getBoundingClientRect().height / this.canvas.height;
+    return this.canvas.getBoundingClientRect().height / LOGICAL_H;
   }
 
   // ── Screenshots ───────────────────────────────────────────────────────────

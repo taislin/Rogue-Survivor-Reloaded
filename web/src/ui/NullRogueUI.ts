@@ -150,6 +150,11 @@ export class NullRogueUI implements IRogueUI {
   UI_DrawRect(_color: Color, _rect: Rect): void { this.count("UI_DrawRect"); }
   UI_FillRect(_color: Color, _rect: Rect): void { this.count("UI_FillRect"); }
 
+  // The scale/clip is a property of the drawing surface, which headless has
+  // none of: counted like any other call so the tally still balances.
+  UI_BeginScaledDraw(_scale: number, _clipRect: Rect): void { this.count("UI_BeginScaledDraw"); }
+  UI_EndScaledDraw(): void { this.count("UI_EndScaledDraw"); }
+
   UI_DrawString(_color: Color, _text: string, _gx: number, _gy: number, _shadowColor?: Color): void { this.count("UI_DrawString"); }
   UI_DrawStringBold(_color: Color, _text: string, _gx: number, _gy: number, _shadowColor?: Color): void { this.count("UI_DrawStringBold"); }
   UI_DrawStringLarge(_color: Color, _text: string, _gx: number, _gy: number, _shadowColor?: Color): void { this.count("UI_DrawStringLarge"); }

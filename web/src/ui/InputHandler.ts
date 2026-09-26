@@ -61,13 +61,21 @@ export class InputHandler {
   }
 
   getMousePosition(canvas: HTMLCanvasElement): Point {
-    // Convert page coords to canvas coords, accounting for CSS scaling.
-    const rect  = canvas.getBoundingClientRect();
-    const scaleX = canvas.width  / rect.width;
-    const scaleY = canvas.height / rect.height;
+    // CSS pixels relative to the canvas's top-left corner — deliberately *not*
+    // canvas coordinates. This is the browser's `MouseEvent.clientX/Y` and is
+    // the same quantity C# returned as `MouseLocation` (a WinForms client
+    // coordinate); the conversion to canvas coordinates is
+    // `RogueGame.MouseToMap`, which divides by `UI_GetCanvasScale*` exactly as
+    // the C# original does.
+    //
+    // Scaling by the backing-store size here instead would double-convert, since
+    // the canvas is no longer 1:1 with the logical surface: the result would be
+    // canvas coords divided by the scale a second time, so the mouse would be
+    // wrong by that factor at every window size except 1366 CSS px.
+    const rect = canvas.getBoundingClientRect();
     return new Point(
-      Math.round((this.mouseState.x - rect.left) * scaleX),
-      Math.round((this.mouseState.y - rect.top)  * scaleY),
+      this.mouseState.x - rect.left,
+      this.mouseState.y - rect.top,
     );
   }
 

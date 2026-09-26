@@ -91,6 +91,25 @@ export interface IRogueUI {
   UI_DrawRect(color: Color, rect: Rect): void;
   UI_FillRect(color: Color, rect: Rect): void;
 
+  // ── Scaled drawing scope ──────────────────────────────────────────────────
+
+  /**
+   * Draws everything up to `UI_EndScaledDraw` at `scale` times its size, clipped
+   * to `clipRect` (given in the same coordinates as the draw calls). Omit
+   * `clipRect` to allow the drawing to spill outside.
+   *
+   * Not in `IRogueUI.cs`: C# blits to a `Graphics` whose `ScaleTransform` the
+   * caller sets, and GDI+ clips through `SetClip`, both available directly. The
+   * port has to go through the renderer because the engine only ever hands it
+   * image ids and a position — `UI_DrawImage` has no size parameter — so a
+   * magnified sprite is only possible by scaling the drawing surface itself.
+   * The map uses this to zoom; nothing else should.
+   *
+   * Must be paired: an unbalanced call would leak the scale into later draws.
+   */
+  UI_BeginScaledDraw(scale: number, clipRect?: Rect): void;
+  UI_EndScaledDraw(): void;
+
   UI_DrawString(color: Color, text: string, gx: number, gy: number, shadowColor?: Color): void;
   UI_DrawStringBold(color: Color, text: string, gx: number, gy: number, shadowColor?: Color): void;
 
