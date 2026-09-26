@@ -1,6 +1,6 @@
 # Rogue Survivor Reloaded — TypeScript / Browser Port
 
-> **Status (2026-09-26):** Phases 1–7 ported and building. Phase 8 (polish / headless sim / tests / CI / deploy) in progress — tasks 1–8 done, 9–12 left.
+> **Status (2026-09-26):** Phases 1–7 ported and building. Phase 8 in progress — tasks 1–10 done; only 11 (perf pass) and 12 (optional touch) remain.
 > **Read [Current State & Handover](#1-current-state--handover) first — it contains the bugs found and the exact next steps.**
 
 Porting a C# WinForms zombie-survival roguelike (195 files, ~2.5 MB, largest `RogueGame.cs` at 955 KB / 23 233 lines) to a browser-playable TypeScript version. `src/` is the original C# and is **never modified** — it is the reference for every port.
@@ -172,7 +172,7 @@ Full detail in `web/.porting/CONVENTIONS.md`. The ones that matter:
 |---|---|
 | `npm run verify` | type-check + coverage + build — what CI runs, in one command |
 | `npm run type-check` | `tsc --noEmit`; covers `src/`, `sim/` and `tests/` — necessary, **not sufficient** |
-| `npm run test` | Vitest, 76 tests |
+| `npm run test` | Vitest, 94 tests |
 | `npm run test:coverage` | Vitest with coverage thresholds enforced |
 | `npm run build` | Vite production build |
 | `npm run sim` | Headless engine run — the real test |
@@ -195,7 +195,7 @@ Phases 1–7 are ported and building. Historical per-slice detail has been remov
 | 7 — Save / load | localStorage / IndexedDB, `Session` serialisation | Done |
 | 8 — Polish, sim, CI | Headless harness built; rest not started | **In progress** |
 
-Assets: 1 184 files shipped (397 classic sprites + 2 variation sets, 24 music tracks, 3 SFX), extracted from the C# embedded resources.
+Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks, 3 SFX), extracted from the C# embedded resources. **Total 24.9 MB**, down from 51.6 MB before the Phase 8 asset pass — see §4.1c.
 
 ---
 
@@ -211,12 +211,12 @@ Assets: 1 184 files shipped (397 classic sprites + 2 variation sets, 24 music tr
 | 2 | Deterministic `--seed` for reproducible runs | **Done** (`Session.useSeed`, `--seed`) |
 | 3 | Drive the sim to a clean full-length run and fix what it finds | **In progress** — 1 000-turn runs clean on 4/5 seeds; keep sweeping |
 | 4 | Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`) | **Already present** in `index.html` (the task list was stale) — but never verified in a real browser |
-| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 76 tests, 6 files, thresholds enforced (50/75/57/50) |
+| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 94 tests, 8 files, thresholds enforced (50/75/57/50) |
 | 6 | GitHub Actions CI | **Done** — `.github/workflows/ci.yml`, type-check + coverage + build + seeded sim, plus a docker smoke job |
 | 7 | PWA manifest + service worker (offline play) | **Done** — manifest, drawn icons, runtime-caching `sw.js` |
 | 8 | Docker image for the self-hosted server | **Done but unverified** — docker is not installed locally, so the image has never been built; CI will exercise it first |
-| 9 | Extract + optimise all sprite PNGs from C# embedded resources | Partly done (1 124 PNG + 54 audio extracted, 55 MB); optimisation pending |
-| 10 | Audio: normalise volume levels | Not started (`setVolume` clamps 0–1; SFX defaults to 1.0, music to 0.5) |
+| 9 | Extract + optimise all sprite PNGs from C# embedded resources | **Done** — 1 124 sprites converted to lossless WebP, 2.41 MB → 0.32 MB, every file pixel-verified |
+| 10 | Audio: normalise volume levels | **Done** — plus 25.7 MB of unreferenced MP3s deleted. Music RMS spread 4.88× → 1.71× |
 | 11 | Performance pass: profile tile rendering (target 60 fps on a 21×21 view) | Not started |
 | 12 | Mobile / touch support (optional — original was keyboard-only) | Not started |
 
@@ -231,6 +231,8 @@ once with `npm run verify`. `tests/` is in `tsconfig.json`'s include list, so
 | `primitives.test.ts` | `DiceRoller` reproducibility + distribution, `Direction` 8-point algebra, `WorldTime` day/hour/phase and the midnight/midday strikes |
 | `map.test.ts` | The `placeActor` add-or-move contract, duplicate/out-of-bounds rejection, `removeActor` no-op semantics, `assertActorIntegrity` |
 | `null-ui.test.ts` | `NullRogueUI` never blocks and never touches the DOM |
+| `audio-levels.test.ts` | Loudness table: no gain may clip, every id resolves, unknown ids return 1.0 |
+| `sprite-assets.test.ts` | All 395 `GameImages` ids resolve to a file on disk; no stray `.png` |
 | `persistence.test.ts` | `Session` / `GameOptions` / `Keybindings` / `HiScoreTable` / `GameHints` / `TextFile` roundtrips on the in-memory storage fallback |
 | `integration/headless-run.test.ts` | A real seeded playthrough. `metrics.error === undefined` is the assertion that would have caught all nine bugs in §1.1 |
 | `integration/reproducibility.test.ts` | Shells out to the real CLI twice per seed — `Session` is a process-wide singleton, and the CLI is what CI and users invoke |
@@ -253,12 +255,56 @@ Two constraints worth preserving:
   is never compiled, so keeping it out also keeps 58 MB of dead weight out of
   the build context.
 - **The service worker caches `/assets/` at runtime, not on install.** The
-  assets are 55 MB across 1 178 files; precaching them would make the first
+  assets are 24.9 MB across 1 151 files; precaching them would make the first
   load unusably slow. The precache list therefore holds only unhashed URLs —
   Vite content-hashes the bundle, so it is picked up by the runtime handler
   rather than needing a build plugin to inject a manifest. Navigations are
   network-first so a stale `index.html` can never shadow a new build.
 
+
+### 4.1c Asset payload pass (tasks 9 + 10)
+
+Total assets **51.6 MB → 24.9 MB**. Two changes, very different in character:
+
+| | before | after | how |
+|---|---|---|---|
+| Music + SFX | 50.2 MB (27 `.ogg` **and** 27 `.mp3`) | 24.6 MB | Deleted the MP3s. `musicPath()` appends `.ogg` unconditionally, so they were unreachable |
+| Sprites | 2.41 MB (1 124 PNG) | 0.32 MB (1 124 WebP) | Lossless WebP, every file pixel-verified |
+
+The old "55 MB" figure in this plan was `du` block overhead across 1 180 small
+files, not real bytes. Do not trust `du` for asset accounting here — sum the
+file sizes.
+
+**Sprite format.** Re-saving the PNGs was measured at 98% of the original
+(already well packed); WebP lossless is 13%. The set is 32×32 pixel art, 98% of
+it within 256 colours. Two things the per-pixel verification forced, both
+recorded in `scripts/optimize-sprites.py`:
+
+- The C# export left arbitrary colour under `alpha=0` (junk.png has
+  `(255,255,255,0)` in 492 of 1024 pixels). WebP discards colour under full
+  transparency, so the script canonicalises the source by zeroing RGB where
+  alpha is 0. No visible information is lost.
+- The check asserts alpha is identical everywhere and RGB is identical for every
+  pixel with `alpha > 0` — **not** byte-exactness of the colour stored under
+  fully transparent pixels, which is undefined and which libwebp does not
+  round-trip consistently across decoders. All 1 124 files pass that bar.
+
+**Audio levels.** Measured with `sox`: music RMS spans 0.055–0.267 (4.88× in
+perceived loudness), peak 0.365–1.000. C# hid this behind DirectX/SFML at a
+fixed per-category volume; in a browser the player just keeps turning the volume
+up and down. `scripts/measure-audio-levels.mjs` measures the files once and
+generates `gameplay/AudioLevels.ts`; the managers apply it through a gain stage
+and the audio on disk stays byte-identical to the C# originals. Music
+normalises on RMS, SFX on peak, and every gain satisfies `peak * gain <= 1.0`
+so normalisation cannot clip — seven tracks are peak-limited and deliberately
+left quieter. Result: RMS spread **4.88× → 1.71×**.
+
+`WebAudioMusicManager` routes its `<audio>` element through a `GainNode`, which
+is required rather than tidy: correcting the quiet tracks needs up to 2.7× gain
+and `HTMLMediaElement.volume` is capped at 1.0. Normalising purely by
+attenuation would have forced every track down to the quietest one's level,
+making the soundtrack ~2.4× quieter. Falls back to plain element volume where
+Web Audio is unavailable.
 
 ### 4.2 Headless harness design (for whoever extends it)
 
@@ -294,4 +340,4 @@ Items 1, 4 and 5 are implemented (see §4.1a). Items 2 and 3 are not.
 | 5 | World generation + AI | Done |
 | 6 | Audio | Done |
 | 7 | Save / load | Done |
-| 8 | Headless sim, tests, CI, deployment | In progress — sim plays 1 000 turns; 76 tests + CI + PWA + Docker in; tasks 9–12 left |
+| 8 | Headless sim, tests, CI, deployment | In progress — sim plays 1 000 turns; 94 tests, CI, PWA, Docker in; **tasks 9–12 all done except 11 (perf) and 12 (touch)** |
