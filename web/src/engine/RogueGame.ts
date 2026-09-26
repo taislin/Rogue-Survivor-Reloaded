@@ -5747,43 +5747,262 @@ export class RogueGame {
   }
 
   // C# HandlePlayerPush — RogueGame.cs:8609
-  HandlePlayerPush(player: Actor): boolean {
-    void player;
-    throw new Error("not yet ported: HandlePlayerPush (RogueGame.cs:8609)");
+  async HandlePlayerPush(player: Actor): Promise<boolean> {
+    if (!this.m_Rules.hasActorPushAbility(player)) {
+      this.AddMessage(this.MakeErrorMessage("Cannot push objects."));
+      return false;
+    }
+    if (this.m_Rules.isActorTired(player)) {
+      this.AddMessage(this.MakeErrorMessage("Too tired to push."));
+      return false;
+    }
+
+    let loop = true;
+    let actionDone = false;
+
+    this.ClearOverlays();
+    this.AddOverlay(new OverlayPopup(this.PUSH_MODE_TEXT, this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+
+    do {
+      this.RedrawPlayScreen();
+      const dir = await this.WaitDirectionOrCancel();
+
+      if (dir == null) {
+        loop = false;
+      } else if (dir !== Direction.NEUTRAL) {
+        const pos = player.location.position.add(new Point(dir.dx, dir.dy));
+        if (player.location.map!.isInBoundsPoint(pos)) {
+          const other = player.location.map!.getActorAtPoint(pos);
+          const mapObj = player.location.map!.getMapObjectAt(pos.x, pos.y);
+          if (other != null) {
+            const res = this.m_Rules.canActorShove(player, other);
+            if (res.ok) {
+              if (await this.HandlePlayerShoveActor(player, other)) {
+                loop = false;
+                actionDone = true;
+              }
+            } else {
+              this.AddMessage(this.MakeErrorMessage(`Cannot shove ${other.name} : ${res.reason}.`));
+            }
+          } else if (mapObj != null) {
+            const res = this.m_Rules.canActorPush(player, mapObj);
+            if (res.ok) {
+              if (await this.HandlePlayerPushObject(player, mapObj)) {
+                loop = false;
+                actionDone = true;
+              }
+            } else {
+              this.AddMessage(this.MakeErrorMessage(`Cannot move ${mapObj.theName} : ${res.reason}.`));
+            }
+          } else {
+            this.AddMessage(this.MakeErrorMessage("Nothing to push there."));
+          }
+        }
+      }
+    } while (loop);
+
+    this.ClearOverlays();
+    return actionDone;
   }
 
   // C# HandlePlayerPushObject — RogueGame.cs:8706
-  HandlePlayerPushObject(player: Actor, mapObj: MapObject): boolean {
-    void player;
-    void mapObj;
-    throw new Error("not yet ported: HandlePlayerPushObject (RogueGame.cs:8706)");
+  async HandlePlayerPushObject(player: Actor, mapObj: MapObject): Promise<boolean> {
+    let loop = true;
+    let actionDone = false;
+
+    this.ClearOverlays();
+    this.AddOverlay(new OverlayPopup([`PUSHING ${mapObj.theName} - directions to push, ESC cancels`], this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+    this.AddOverlay(new OverlayRect(Color.Yellow, new Rect(this.MapToScreen(mapObj.location.position).x, this.MapToScreen(mapObj.location.position).y, TILE_SIZE, TILE_SIZE)));
+
+    do {
+      this.RedrawPlayScreen();
+      const dir = await this.WaitDirectionOrCancel();
+
+      if (dir == null) {
+        loop = false;
+      } else if (dir !== Direction.NEUTRAL) {
+        const movePos = mapObj.location.position.add(new Point(dir.dx, dir.dy));
+        if (player.location.map!.isInBoundsPoint(movePos)) {
+          const res = this.m_Rules.canPushObjectTo(mapObj, movePos);
+          if (res.ok) {
+            this.DoPush(player, mapObj, movePos);
+            loop = false;
+            actionDone = true;
+          } else {
+            this.AddMessage(this.MakeErrorMessage(`Cannot move ${mapObj.theName} there : ${res.reason}.`));
+          }
+        }
+      }
+    } while (loop);
+
+    this.ClearOverlays();
+    return actionDone;
   }
 
   // C# HandlePlayerShoveActor — RogueGame.cs:8762
-  HandlePlayerShoveActor(player: Actor, other: Actor): boolean {
-    void player;
-    void other;
-    throw new Error("not yet ported: HandlePlayerShoveActor (RogueGame.cs:8762)");
+  async HandlePlayerShoveActor(player: Actor, other: Actor): Promise<boolean> {
+    let loop = true;
+    let actionDone = false;
+
+    this.ClearOverlays();
+    this.AddOverlay(new OverlayPopup([`SHOVING ${other.name} - directions to shove, ESC cancels`], this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+    this.AddOverlay(new OverlayRect(Color.Yellow, new Rect(this.MapToScreen(other.location.position).x, this.MapToScreen(other.location.position).y, TILE_SIZE, TILE_SIZE)));
+
+    do {
+      this.RedrawPlayScreen();
+      const dir = await this.WaitDirectionOrCancel();
+
+      if (dir == null) {
+        loop = false;
+      } else if (dir !== Direction.NEUTRAL) {
+        const movePos = other.location.position.add(new Point(dir.dx, dir.dy));
+        if (player.location.map!.isInBoundsPoint(movePos)) {
+          const res = this.m_Rules.canShoveActorTo(other, movePos);
+          if (res.ok) {
+            this.DoShove(player, other, movePos);
+            loop = false;
+            actionDone = true;
+          } else {
+            this.AddMessage(this.MakeErrorMessage(`Cannot shove ${other.name} there : ${res.reason}.`));
+          }
+        }
+      }
+    } while (loop);
+
+    this.ClearOverlays();
+    return actionDone;
   }
 
   // C# HandlePlayerPull — RogueGame.cs:8819
-  HandlePlayerPull(player: Actor): boolean {
-    void player;
-    throw new Error("not yet ported: HandlePlayerPull (RogueGame.cs:8819)");
+  async HandlePlayerPull(player: Actor): Promise<boolean> {
+    if (!this.m_Rules.hasActorPushAbility(player)) {
+      this.AddMessage(this.MakeErrorMessage("Cannot pull objects."));
+      return false;
+    }
+    if (this.m_Rules.isActorTired(player)) {
+      this.AddMessage(this.MakeErrorMessage("Too tired to pull."));
+      return false;
+    }
+    const otherMobj = player.location.map!.getMapObjectAt(player.location.position.x, player.location.position.y);
+    if (otherMobj != null) {
+      this.AddMessage(this.MakeErrorMessage(`Cannot pull : ${otherMobj.theName} is blocking.`));
+      return false;
+    }
+
+    let loop = true;
+    let actionDone = false;
+
+    this.ClearOverlays();
+    this.AddOverlay(new OverlayPopup(this.PULL_MODE_TEXT, this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+
+    do {
+      this.RedrawPlayScreen();
+      const dir = await this.WaitDirectionOrCancel();
+
+      if (dir == null) {
+        loop = false;
+      } else if (dir !== Direction.NEUTRAL) {
+        const pos = player.location.position.add(new Point(dir.dx, dir.dy));
+        if (player.location.map!.isInBoundsPoint(pos)) {
+          const mapObj = player.location.map!.getMapObjectAt(pos.x, pos.y);
+          const other = player.location.map!.getActorAtPoint(pos);
+          if (other != null) {
+            const res = this.m_Rules.canActorShove(player, other);
+            if (res.ok) {
+              if (await this.HandlePlayerPullActor(player, other)) {
+                loop = false;
+                actionDone = true;
+              }
+            } else {
+              this.AddMessage(this.MakeErrorMessage(`Cannot pull ${other.name} : ${res.reason}.`));
+            }
+          } else if (mapObj != null) {
+            const res = this.m_Rules.canActorPush(player, mapObj);
+            if (res.ok) {
+              if (await this.HandlePlayerPullObject(player, mapObj)) {
+                loop = false;
+                actionDone = true;
+              }
+            } else {
+              this.AddMessage(this.MakeErrorMessage(`Cannot move ${mapObj.theName} : ${res.reason}.`));
+            }
+          } else {
+            this.AddMessage(this.MakeErrorMessage("Nothing to pull there."));
+          }
+        }
+      }
+    } while (loop);
+
+    this.ClearOverlays();
+    return actionDone;
   }
 
   // C# HandlePlayerPullObject — RogueGame.cs:8921
-  HandlePlayerPullObject(player: Actor, mapObj: MapObject): boolean {
-    void player;
-    void mapObj;
-    throw new Error("not yet ported: HandlePlayerPullObject (RogueGame.cs:8921)");
+  async HandlePlayerPullObject(player: Actor, mapObj: MapObject): Promise<boolean> {
+    let loop = true;
+    let actionDone = false;
+
+    this.ClearOverlays();
+    this.AddOverlay(new OverlayPopup([`PULLING ${mapObj.theName} - directions to walk to, ESC cancels`], this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+    this.AddOverlay(new OverlayRect(Color.Yellow, new Rect(this.MapToScreen(mapObj.location.position).x, this.MapToScreen(mapObj.location.position).y, TILE_SIZE, TILE_SIZE)));
+
+    do {
+      this.RedrawPlayScreen();
+      const dir = await this.WaitDirectionOrCancel();
+
+      if (dir == null) {
+        loop = false;
+      } else if (dir !== Direction.NEUTRAL) {
+        const moveToPos = player.location.position.add(new Point(dir.dx, dir.dy));
+        if (player.location.map!.isInBoundsPoint(moveToPos)) {
+          const res = this.m_Rules.canPullObject(player, mapObj, moveToPos);
+          if (res.ok) {
+            this.DoPull(player, mapObj, moveToPos);
+            loop = false;
+            actionDone = true;
+          } else {
+            this.AddMessage(this.MakeErrorMessage(`Cannot pull there : ${res.reason}.`));
+          }
+        }
+      }
+    } while (loop);
+
+    this.ClearOverlays();
+    return actionDone;
   }
 
   // C# HandlePlayerPullActor — RogueGame.cs:8978
-  HandlePlayerPullActor(player: Actor, other: Actor): boolean {
-    void player;
-    void other;
-    throw new Error("not yet ported: HandlePlayerPullActor (RogueGame.cs:8978)");
+  async HandlePlayerPullActor(player: Actor, other: Actor): Promise<boolean> {
+    let loop = true;
+    let actionDone = false;
+
+    this.ClearOverlays();
+    this.AddOverlay(new OverlayPopup([`PULLING ${other.name} - directions to walk to, ESC cancels`], this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+    this.AddOverlay(new OverlayRect(Color.Yellow, new Rect(this.MapToScreen(other.location.position).x, this.MapToScreen(other.location.position).y, TILE_SIZE, TILE_SIZE)));
+
+    do {
+      this.RedrawPlayScreen();
+      const dir = await this.WaitDirectionOrCancel();
+
+      if (dir == null) {
+        loop = false;
+      } else if (dir !== Direction.NEUTRAL) {
+        const moveToPos = player.location.position.add(new Point(dir.dx, dir.dy));
+        if (player.location.map!.isInBoundsPoint(moveToPos)) {
+          const res = this.m_Rules.canPullActor(player, other, moveToPos);
+          if (res.ok) {
+            this.DoPullActor(player, other, moveToPos);
+            loop = false;
+            actionDone = true;
+          } else {
+            this.AddMessage(this.MakeErrorMessage(`Cannot pull there : ${res.reason}.`));
+          }
+        }
+      }
+    } while (loop);
+
+    this.ClearOverlays();
+    return actionDone;
   }
 
   // C# HandlePlayerUseSpray — RogueGame.cs:9034
