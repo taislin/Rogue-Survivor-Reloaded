@@ -1,6 +1,6 @@
 import { Item } from "@data/Item";
 import { ItemModel } from "@data/ItemModel";
-import { Attack } from "@data/Attack";
+import { Attack, AttackKind } from "@data/Attack";
 
 export class ItemWeaponModel extends ItemModel {
   readonly attack: Attack;
@@ -101,6 +101,14 @@ export class ItemRangedWeaponModel extends ItemWeaponModel {
     super(aName, theNames, imageId, attack);
     this.ammoType = ammoType;
     this.maxAmmo = maxAmmo;
+  }
+
+  get isFireArm(): boolean {
+    return this.attack.kind === AttackKind.FIREARM;
+  }
+
+  get isBow(): boolean {
+    return this.attack.kind === AttackKind.BOW;
   }
 }
 

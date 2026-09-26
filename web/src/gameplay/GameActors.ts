@@ -154,4 +154,16 @@ export class GameActors implements ActorModelDB {
   get(id: number): ActorModel {
     return this.models[id];
   }
+
+  static isSkeletonBranch(m: ActorModel): boolean {
+    return m.id === ActorID.UNDEAD_SKELETON || m.id === ActorID.UNDEAD_RED_EYED_SKELETON || m.id === ActorID.UNDEAD_RED_SKELETON;
+  }
+
+  static isShamblerBranch(m: ActorModel): boolean {
+    return m.id === ActorID.UNDEAD_ZOMBIE || m.id === ActorID.UNDEAD_DARK_EYED_ZOMBIE || m.id === ActorID.UNDEAD_DARK_ZOMBIE;
+  }
+
+  static isRatBranch(m: ActorModel): boolean {
+    return m.id === ActorID.UNDEAD_RAT_ZOMBIE;
+  }
 }

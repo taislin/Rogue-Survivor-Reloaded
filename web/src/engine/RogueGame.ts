@@ -26,12 +26,13 @@ import { GameSaveManager } from "@engine/GameSave";
 import { GameImages } from "@gameplay/GameImages";
 import { GameMusics, GameSounds } from "@gameplay/GameSounds";
 import { OptionsScreen } from "@ui/OptionsScreen";
-import { HiScoreTable } from "@engine/HiScoreTable";
+import { HiScore, HiScoreTable } from "@engine/HiScoreTable";
 import { Keybindings } from "@engine/Keybindings";
 import { GameHintsStatus, AdvisorHint } from "@engine/GameHints";
-import { GameOptions, Options, ReincMode, ZupDays } from "@engine/GameOptions";
+import { GameOptions, OptionIDs, Options, ReincMode, ZupDays } from "@engine/GameOptions";
 import { PlayerCommand } from "@engine/PlayerCommand";
 import { IRogueUI, GameKeyEvent, MouseButton } from "@engine/IRogueUI";
+import { LOS } from "@engine/LOS";
 import { TextFile } from "@engine/TextFile";
 import { SayFlags } from "@engine/actions/Actions";
 import { Item } from "@data/Item";
@@ -41,10 +42,10 @@ import { ItemFood } from "@engine/items/ItemFood";
 import { ItemLight } from "@engine/items/ItemLight";
 import { ItemMedicine } from "@engine/items/ItemMedicine";
 import { ItemTrap } from "@engine/items/ItemTrap";
-import { AmmoType, ItemAmmo, ItemWeapon } from "@engine/items/ItemWeapon";
+import { AmmoType, ItemAmmo, ItemRangedWeapon, ItemRangedWeaponModel, ItemWeapon } from "@engine/items/ItemWeapon";
 import { ItemBarricadeMaterial, ItemEntertainment, ItemSprayPaint, ItemSprayScent } from "@engine/items/ItemMisc";
 import { ItemTracker } from "@engine/items/ItemTracker";
-import { MapObject } from "@data/MapObject";
+import { MapObject, MapObjectFire } from "@data/MapObject";
 import { DoorWindow, Fortification, PowerGenerator } from "@engine/mapobjects/MapObjects";
 import { Actor } from "@data/Actor";
 import { ActorModel } from "@data/ActorModel";
@@ -74,6 +75,7 @@ import { GameFactions } from "@gameplay/GameFactions";
 import { GangID } from "@gameplay/GameGangs";
 import { GameItems } from "@gameplay/GameItems";
 import { GameTiles } from "@gameplay/GameTiles";
+import { GameTips } from "@gameplay/ZoneAttributes";
 import { SkillID, Skills } from "@gameplay/Skills";
 import { BaseTownGenerator, Parameters as TownParameters } from "@gameplay/generators/BaseTownGenerator";
 import { StdTownGenerator } from "@gameplay/generators/StdTownGenerator";
@@ -2199,10 +2201,10 @@ export class RogueGame {
       const newPhase = this.m_Session.worldTime.phase;
       if (wasNight && !isNight) {
         if (canSeeSky) this.AddMessage(new Message("The sun is rising again for you...", this.m_Session.worldTime.turnCounter, this.DAY_COLOR));
-        this.OnNewDay();
+        await this.OnNewDay();
       } else if (!wasNight && isNight) {
         if (canSeeSky) this.AddMessage(new Message("Night is falling upon you...", this.m_Session.worldTime.turnCounter, this.NIGHT_COLOR));
-        this.OnNewNight();
+        await this.OnNewNight();
       } else if (prevPhase !== newPhase) {
         if (canSeeSky) {
           this.AddMessage(
@@ -3425,7 +3427,8 @@ export class RogueGame {
   }
 
   // C# DoTakeScreenshot — RogueGame.cs:6164
-  DoTakeScreenshot(): string {
+  // C# returns `null` when the file cannot be written.
+  DoTakeScreenshot(): string | null {
     throw new Error("not yet ported: DoTakeScreenshot (RogueGame.cs:6164)");
   }
 
@@ -3961,8 +3964,10 @@ export class RogueGame {
 
   // C# KeyToChoiceNumber — RogueGame.cs:11309
   KeyToChoiceNumber(key: GameKeyEvent): number {
-    void key;
-    throw new Error("not yet ported: KeyToChoiceNumber (RogueGame.cs:11309)");
+    // C# maps Keys.D0-D9/NumPad0-NumPad9, default -1. Browser `event.key` is
+    // already "0"-"9" for both the digit row and the numeric keypad.
+    if (key.key.length === 1 && key.key >= "0" && key.key <= "9") return Number(key.key);
+    return -1;
   }
 
   // C# WaitYesOrNo — RogueGame.cs:11358
@@ -4929,10 +4934,86 @@ export class RogueGame {
   }
 
   // C# PlayerDied — RogueGame.cs:16789
-  PlayerDied(killer: Actor, reason: string): void {
-    void killer;
-    void reason;
-    throw new Error("not yet ported: PlayerDied (RogueGame.cs:16789)");
+  async PlayerDied(killer: Actor | null, reason: string): Promise<void> {
+    // stop sim thread.
+    this.StopSimThread(true); // alpha10 abort allowed when dying
+
+    // music.
+    this.m_MusicManager.stop();
+    this.m_MusicManager.play(GameMusics.PLAYER_DEATH);
+
+    ///////////
+    // Scoring
+    ///////////
+    this.m_Session.scoring.turnsSurvived = this.m_Session.worldTime.turnCounter;
+    this.m_Session.scoring.setKiller(killer);
+    if (this.m_Player.countFollowers > 0) {
+      for (const fo of this.m_Player.followers ?? []) this.m_Session.scoring.addFollowerWhenDied(fo);
+    }
+
+    const zones = this.m_Player.location.map!.getZonesAt(this.m_Player.location.position.x, this.m_Player.location.position.y);
+    if (zones.length === 0) {
+      this.m_Session.scoring.deathPlace = this.m_Player.location.map!.name;
+    } else {
+      const zoneName = zones[0].name;
+      this.m_Session.scoring.deathPlace = `${this.m_Player.location.map!.name} at ${zoneName}`;
+    }
+    if (killer != null)
+      this.m_Session.scoring.deathReason = `${this.m_Rules.isMurder(killer, this.m_Player) ? "Murdered" : "Killed"} by ${killer.model.name} ${killer.theName}`;
+    else this.m_Session.scoring.deathReason = `Death by ${reason}`;
+    this.m_Session.scoring.addEvent(this.m_Session.worldTime.turnCounter, "Died.");
+
+    /////////////////////////////////////////
+    // Tip, Message, screenshot & permadeath.
+    /////////////////////////////////////////
+    const iTip = this.m_Rules.roll(0, GameTips.TIPS.length);
+    this.AddOverlay(
+      new OverlayPopup(
+        ["TIP OF THE DEAD", "Did you know that...", GameTips.TIPS[iTip]],
+        Color.White,
+        Color.White,
+        this.POPUP_FILLCOLOR,
+        new Point(0, 0)
+      )
+    );
+
+    this.ClearMessages();
+    this.AddMessage(new Message("**** YOU DIED! ****", this.m_Session.worldTime.turnCounter, Color.Red));
+    if (killer != null)
+      this.AddMessage(
+        new Message(`Killer : ${killer.theName}.`, this.m_Session.worldTime.turnCounter, Color.Red)
+      );
+    this.AddMessage(new Message(`Reason : ${reason}.`, this.m_Session.worldTime.turnCounter, Color.Red));
+    if (this.m_Player.model.abilities.isUndead)
+      this.AddMessage(
+        new Message("You die one last time... Game over!", this.m_Session.worldTime.turnCounter, Color.Red)
+      );
+    else
+      this.AddMessage(
+        new Message("You join the realm of the undeads... Game over!", this.m_Session.worldTime.turnCounter, Color.Red)
+      );
+
+    // if permadeath on delete save file.
+    if (s_Options.isPermadeathOn) await this.DeleteSavedGame(this.GetUserSave());
+
+    // screenshot.
+    if (s_Options.isDeathScreenshotOn) {
+      this.RedrawPlayScreen();
+      const shotname = this.DoTakeScreenshot();
+      if (shotname === null) this.AddMessage(this.MakeErrorMessage("could not save death screenshot."));
+      else
+        this.AddMessage(
+          new Message(`Death screenshot saved : ${shotname}.`, this.m_Session.worldTime.turnCounter, Color.Red)
+        );
+    }
+
+    await this.AddMessagePressEnter();
+
+    // post mortem.
+    await this.HandlePostMortem();
+
+    // music.
+    this.m_MusicManager.stop();
   }
 
   // C# TimeSpanToString — RogueGame.cs:16878
@@ -4952,130 +5033,976 @@ export class RogueGame {
   }
 
   // C# HandlePostMortem — RogueGame.cs:16888
-  HandlePostMortem(): void {
-    throw new Error("not yet ported: HandlePostMortem (RogueGame.cs:16888)");
+  async HandlePostMortem(): Promise<void> {
+    ////////////////
+    // Prepare data.
+    ////////////////
+    const deathTime = new WorldTime();
+    deathTime.turnCounter = this.m_Session.scoring.turnsSurvived;
+    const isMale = this.m_Player.model.dollBody.isMale;
+    const heOrShe = isMale ? "He" : "She";
+    const himOrHer = isMale ? "him" : "her";
+    const name = this.m_Player.theName.replace("(YOU) ", "");
+    const rt = this.m_Session.scoring.realLifePlayingTimeSeconds;
+    const realTimeString = this.TimeSpanToString(rt);
+    this.m_Session.scoring.side = this.m_Player.model.abilities.isUndead
+      ? DifficultySide.FOR_UNDEAD
+      : DifficultySide.FOR_SURVIVOR;
+    this.m_Session.scoring.difficultyRating = Scoring.computeDifficultyRating(
+      s_Options,
+      this.m_Session.scoring.side,
+      this.m_Session.scoring.reincarnationNumber
+    );
+
+    ////////////////////////////////////
+    // Format scoring into a text file.
+    ///////////////////////////////////
+    const graveyard = new TextFile();
+
+    graveyard.append(`ROGUE SURVIVOR ${GAME_VERSION}`);
+    graveyard.append("POST MORTEM");
+
+    // Summary
+    graveyard.append(`${name} was ${this.AorAn(this.m_Player.model.name)} and ${this.AorAn(this.m_Player.faction.memberName)}.`);
+    graveyard.append(`${heOrShe} survived to see ${deathTime.toString()}.`);
+    graveyard.append(`${name}'s spirit guided ${himOrHer} for ${realTimeString}.`);
+    if (this.m_Session.scoring.reincarnationNumber > 0)
+      graveyard.append(`${heOrShe} was reincarnation ${this.m_Session.scoring.reincarnationNumber}.`);
+    graveyard.append(" ");
+
+    graveyard.append("> SCORING");
+    graveyard.append(`${heOrShe} scored a total of ${this.m_Session.scoring.totalPoints} points.`);
+    graveyard.append(`- difficulty rating of ${Math.floor(100 * this.m_Session.scoring.difficultyRating)}%.`);
+    graveyard.append(`- ${this.m_Session.scoring.survivalPoints} base points for survival.`);
+    graveyard.append(`- ${this.m_Session.scoring.killPoints} base points for kills.`);
+    graveyard.append(`- ${this.m_Session.scoring.achievementPoints} base points for achievements.`);
+    graveyard.append(" ");
+
+    graveyard.append("> ACHIEVEMENTS");
+    for (const ach of this.m_Session.scoring.achievements) {
+      if (ach.isDone) graveyard.append(`- ${ach.name} for ${ach.scoreValue} points!`);
+      else graveyard.append(`- Fail : ${ach.teaseName}.`);
+    }
+    if (this.m_Session.scoring.completedAchievementsCount === 0) {
+      graveyard.append("Didn't achieve anything notable. And then died.");
+      graveyard.append(`(unlock all the ${Scoring.MAX_ACHIEVEMENTS} achievements to win this game version)`);
+    } else {
+      graveyard.append(`Total : ${this.m_Session.scoring.completedAchievementsCount}/${Scoring.MAX_ACHIEVEMENTS}.`);
+      if (this.m_Session.scoring.completedAchievementsCount >= Scoring.MAX_ACHIEVEMENTS)
+        graveyard.append(
+          "*** You achieved everything! You can consider having won this version of the game! CONGRATULATIONS! ***"
+        );
+      else graveyard.append("(unlock all the achievements to win this game version)");
+      graveyard.append("(later versions of the game will feature real winning conditions and multiple endings...)");
+    }
+    graveyard.append(" ");
+
+    graveyard.append("> DEATH");
+    graveyard.append(`${this.m_Session.scoring.deathReason} in ${this.m_Session.scoring.deathPlace}.`);
+    graveyard.append(" ");
+
+    graveyard.append("> KILLS");
+    if (this.m_Session.scoring.hasNoKills) {
+      graveyard.append(`${heOrShe} was a pacifist. Or too scared to fight.`);
+    } else {
+      // models kill list.
+      for (const killData of this.m_Session.scoring.kills) {
+        const model = this.m_GameActors.get(killData.actorModelID);
+        const modelName = killData.amount > 1 ? model.pluralName : model.name;
+        graveyard.append(`${padLeft(killData.amount, 4)} ${modelName}.`);
+      }
+    }
+    // murders? only livings.
+    if (!this.m_Player.model.abilities.isUndead) {
+      if (this.m_Player.murdersCounter > 0)
+        graveyard.append(
+          `${heOrShe} committed ${this.m_Player.murdersCounter} murder${this.m_Player.murdersCounter > 1 ? "s" : ""}!`
+        );
+    }
+
+    graveyard.append(" ");
+
+    graveyard.append("> FUN FACTS!");
+    graveyard.append(`While ${name} has died, others are still having fun!`);
+    const funFacts = this.CompileDistrictFunFacts(this.m_Player.location.map!.district!);
+    for (const funFact of funFacts) graveyard.append(funFact);
+    graveyard.append("");
+
+    graveyard.append("> SKILLS");
+    if (this.m_Player.sheet.skillTable.skills == null) {
+      graveyard.append(`${heOrShe} was a jack of all trades. Or an incompetent.`);
+    } else {
+      for (const sk of this.m_Player.sheet.skillTable.skills) {
+        graveyard.append(`${sk.level}-${Skills.name(sk.id as SkillID)}.`);
+      }
+    }
+    graveyard.append(" ");
+
+    graveyard.append("> INVENTORY");
+    if (this.m_Player.inventory!.isEmpty) {
+      graveyard.append(`${heOrShe} was humble. Or dirt poor.`);
+    } else {
+      for (const it of this.m_Player.inventory!.items) {
+        const desc = this.DescribeItemShort(it);
+        if (it.isEquipped) graveyard.append(`- ${desc} (equipped).`);
+        else graveyard.append(`- ${desc}.`);
+      }
+    }
+    graveyard.append(" ");
+
+    graveyard.append("> FOLLOWERS");
+    const followersWhenDied = this.m_Session.scoring.followersWhendDied;
+    if (followersWhenDied == null || followersWhenDied.length === 0) {
+      graveyard.append(`${heOrShe} was doing fine alone. Or everyone else was dead.`);
+    } else {
+      // names.
+      let namesLine = `${heOrShe} was leading`;
+      let firstFo = true;
+      let i = 0;
+      const count = followersWhenDied.length;
+      for (const fo of followersWhenDied) {
+        if (firstFo) namesLine += " ";
+        else {
+          if (i === count) namesLine += ".";
+          else if (i === count - 1) namesLine += " and ";
+          else namesLine += ", ";
+        }
+        namesLine += fo.theName;
+        ++i;
+        firstFo = false;
+      }
+      namesLine += ".";
+      graveyard.append(namesLine);
+
+      // skills.
+      for (const fo of followersWhenDied) {
+        graveyard.append(`${fo.name} skills : `);
+        if (fo.sheet.skillTable != null && fo.sheet.skillTable.skills != null) {
+          for (const sk of fo.sheet.skillTable.skills) {
+            graveyard.append(`${sk.level}-${Skills.name(sk.id as SkillID)}.`);
+          }
+        }
+      }
+    }
+    graveyard.append(" ");
+
+    graveyard.append("> EVENTS");
+    if (this.m_Session.scoring.hasNoEvents) {
+      graveyard.append(`${heOrShe} had a quiet life. Or dull and boring.`);
+    } else {
+      for (const ev of this.m_Session.scoring.events) {
+        const evTime = new WorldTime();
+        evTime.turnCounter = ev.turn;
+        graveyard.append(`- ${padLeft(evTime.toString(), 13)} : ${ev.text}`);
+      }
+    }
+    graveyard.append(" ");
+
+    graveyard.append("> CUSTOM OPTIONS");
+    graveyard.append(`- difficulty rating of ${Math.floor(100 * this.m_Session.scoring.difficultyRating)}%.`);
+    if (s_Options.isPermadeathOn)
+      graveyard.append(`- ${GameOptions.optionName(OptionIDs.GAME_PERMADEATH)} : yes.`);
+    if (!s_Options.allowUndeadsEvolution && Rules.hasEvolution(this.m_Session.gameMode))
+      graveyard.append(
+        `- ${GameOptions.optionName(OptionIDs.GAME_ALLOW_UNDEADS_EVOLUTION)} : ${s_Options.allowUndeadsEvolution ? "yes" : "no"}.`
+      );
+    if (s_Options.citySize !== GameOptions.DEFAULT_CITY_SIZE)
+      graveyard.append(`- ${GameOptions.optionName(OptionIDs.GAME_CITY_SIZE)} : ${s_Options.citySize}.`);
+    if (s_Options.dayZeroUndeadsPercent !== GameOptions.DEFAULT_DAY_ZERO_UNDEADS_PERCENT)
+      graveyard.append(
+        `- ${GameOptions.optionName(OptionIDs.GAME_DAY_ZERO_UNDEADS_PERCENT)} : ${s_Options.dayZeroUndeadsPercent}%.`
+      );
+    if (s_Options.districtSize !== GameOptions.DEFAULT_DISTRICT_SIZE)
+      graveyard.append(`- ${GameOptions.optionName(OptionIDs.GAME_DISTRICT_SIZE)} : ${s_Options.districtSize}.`);
+    if (s_Options.maxCivilians !== GameOptions.DEFAULT_MAX_CIVILIANS)
+      graveyard.append(`- ${GameOptions.optionName(OptionIDs.GAME_MAX_CIVILIANS)} : ${s_Options.maxCivilians}.`);
+    if (s_Options.maxUndeads !== GameOptions.DEFAULT_MAX_UNDEADS)
+      graveyard.append(`- ${GameOptions.optionName(OptionIDs.GAME_MAX_UNDEADS)} : ${s_Options.maxUndeads}.`);
+    if (!s_Options.nPCCanStarveToDeath)
+      graveyard.append(
+        `- ${GameOptions.optionName(OptionIDs.GAME_NPC_CAN_STARVE_TO_DEATH)} : ${s_Options.nPCCanStarveToDeath ? "yes" : "no"}.`
+      );
+    if (s_Options.starvedZombificationChance !== GameOptions.DEFAULT_STARVED_ZOMBIFICATION_CHANCE)
+      graveyard.append(
+        `- ${GameOptions.optionName(OptionIDs.GAME_STARVED_ZOMBIFICATION_CHANCE)} : ${s_Options.starvedZombificationChance}%.`
+      );
+    if (!s_Options.revealStartingDistrict)
+      graveyard.append(
+        `- ${GameOptions.optionName(OptionIDs.GAME_REVEAL_STARTING_DISTRICT)} : ${s_Options.revealStartingDistrict ? "yes" : "no"}.`
+      );
+    if (s_Options.simulateDistricts !== GameOptions.DEFAULT_SIM_DISTRICTS)
+      graveyard.append(
+        `- ${GameOptions.optionName(OptionIDs.GAME_SIMULATE_DISTRICTS)} : ${GameOptions.simRatioName(s_Options.simulateDistricts)}.`
+      );
+    if (s_Options.simulateWhenSleeping)
+      graveyard.append(
+        `- ${GameOptions.optionName(OptionIDs.GAME_SIMULATE_SLEEP)} : ${s_Options.simulateWhenSleeping ? "yes" : "no"}.`
+      );
+    if (s_Options.zombieInvasionDailyIncrease !== GameOptions.DEFAULT_ZOMBIE_INVASION_DAILY_INCREASE)
+      graveyard.append(
+        `- ${GameOptions.optionName(OptionIDs.GAME_ZOMBIE_INVASION_DAILY_INCREASE)} : ${s_Options.zombieInvasionDailyIncrease}%.`
+      );
+    if (s_Options.zombificationChance !== GameOptions.DEFAULT_ZOMBIFICATION_CHANCE)
+      graveyard.append(
+        `- ${GameOptions.optionName(OptionIDs.GAME_ZOMBIFICATION_CHANCE)} : ${s_Options.zombificationChance}%.`
+      );
+    if (s_Options.maxReincarnations !== GameOptions.DEFAULT_MAX_REINCARNATIONS)
+      graveyard.append(
+        `- ${GameOptions.optionName(OptionIDs.GAME_MAX_REINCARNATIONS)} : ${s_Options.maxReincarnations}.`
+      );
+    graveyard.append(" ");
+
+    graveyard.append("> R.I.P");
+    graveyard.append(`May ${this.HisOrHer(this.m_Player)} soul rest in peace.`);
+    graveyard.append(`For ${this.HisOrHer(this.m_Player)} body is now a meal for evil.`);
+    graveyard.append("The End.");
+
+    /////////////////////
+    // Save to graveyard
+    /////////////////////
+    let gx = 0;
+    let gy = 0;
+    this.m_UI.UI_Clear(Color.Black);
+    this.m_UI.UI_DrawStringBold(Color.Yellow, "Saving post mortem to graveyard...", 0, 0);
+    gy += BOLD_LINE_SPACING;
+    this.m_UI.UI_Repaint();
+    const graveName = this.GetUserNewGraveyardName();
+    const graveFile = this.GraveFilePath(graveName);
+    if (!graveyard.save(graveFile)) {
+      this.m_UI.UI_DrawStringBold(Color.Red, "Could not save to graveyard.", 0, gy);
+      gy += BOLD_LINE_SPACING;
+    } else {
+      this.m_UI.UI_DrawStringBold(Color.Yellow, "Grave saved to :", 0, gy);
+      gy += BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawString(Color.White, graveFile, 0, gy);
+      gy += BOLD_LINE_SPACING;
+    }
+    this.DrawFootnote(Color.White, "press ENTER");
+    this.m_UI.UI_Repaint();
+    await this.WaitEnter();
+
+    ///////////////////////////////
+    // Display grave as text file.
+    ///////////////////////////////
+    graveyard.formatLines(TEXTFILE_CHARS_PER_LINE);
+    let iLine = 0;
+    let loop = false;
+    do {
+      // header.
+      this.m_UI.UI_Clear(Color.Black);
+      gx = 0;
+      gy = 0;
+      this.DrawHeader();
+      gy += BOLD_LINE_SPACING;
+
+      // text.
+      let linesThisPage = 0;
+      this.m_UI.UI_DrawStringBold(
+        Color.White,
+        "---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+",
+        0,
+        gy
+      );
+      gy += BOLD_LINE_SPACING;
+      while (linesThisPage < TEXTFILE_LINES_PER_PAGE && iLine < graveyard.formatedLines.length) {
+        const line = graveyard.formatedLines[iLine];
+        this.m_UI.UI_DrawStringBold(Color.White, line, gx, gy);
+        gy += BOLD_LINE_SPACING;
+        ++iLine;
+        ++linesThisPage;
+      }
+
+      // foot.
+      this.m_UI.UI_DrawStringBold(
+        Color.White,
+        "---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+",
+        0,
+        CANVAS_HEIGHT - 2 * BOLD_LINE_SPACING
+      );
+      if (iLine < graveyard.formatedLines.length) this.DrawFootnote(Color.White, "press ENTER for more");
+      else this.DrawFootnote(Color.White, "press ENTER to leave");
+
+      // wait.
+      this.m_UI.UI_Repaint();
+      await this.WaitEnter();
+
+      // loop?
+      loop = iLine < graveyard.formatedLines.length;
+    } while (loop);
+
+    /////////////
+    // Hi Score?
+    /////////////
+    let skillsDesc = "";
+    if (this.m_Player.sheet.skillTable.skills != null) {
+      for (const sk of this.m_Player.sheet.skillTable.skills) {
+        skillsDesc += `${sk.level}-${Skills.name(sk.id as SkillID)} `;
+      }
+    }
+    const newHiScore = HiScore.fromScoring(name, this.m_Session.scoring, skillsDesc);
+    if (this.m_HiScoreTable.register(newHiScore)) {
+      this.SaveHiScoreTable();
+      await this.HandleHiScores(true);
+    }
   }
 
   // C# OnNewNight — RogueGame.cs:17240
-  OnNewNight(): void {
-    this.AddMessage(new Message("Night falls...", this.m_Session.worldTime.turnCounter, Color.Cyan));
+  async OnNewNight(): Promise<void> {
+    this.UpdatePlayerFOV(this.m_Player);
+
+    //----- Upgrade Player (undead only once every 2 nights)
+    if (this.m_Player.model.abilities.isUndead && this.m_Player.location.map!.localTime.day % 2 === 1) {
+      // Mode.
+      this.ClearOverlays();
+      this.AddOverlay(
+        new OverlayPopup(this.UPGRADE_MODE_TEXT, this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0))
+      );
+
+      // music.
+      this.m_MusicManager.stop();
+      this.m_MusicManager.play(GameMusics.INTERLUDE);
+
+      // Message.
+      this.ClearMessages();
+      this.AddMessage(new Message("You will hunt another day!", this.m_Session.worldTime.turnCounter, Color.Green));
+      this.UpdatePlayerFOV(this.m_Player);
+      if (!this.m_Player.isBotPlayer) await this.AddMessagePressEnter();
+
+      // Upgrade time!
+      // alpha10.1 handle bot skill upgrade, bot followers will upgrade as npcs
+      if (this.m_Player.isBotPlayer) {
+        this.HandleNPCSkillUpgrade(this.m_Player);
+      } else {
+        await this.HandlePlayerDecideUpgrade(this.m_Player);
+        await this.HandlePlayerFollowersUpgrade();
+      }
+
+      // Resume play.
+      this.ClearMessages();
+      this.AddMessage(new Message("Welcome to the night.", this.m_Session.worldTime.turnCounter, Color.White));
+      this.ClearOverlays();
+      this.RedrawPlayScreen();
+
+      // music
+      this.m_MusicManager.stop();
+    }
   }
 
   // C# OnNewDay — RogueGame.cs:17285
-  OnNewDay(): void {
-    this.AddMessage(new Message(`Day ${this.m_Session.worldTime.day} begins!`, this.m_Session.worldTime.turnCounter, Color.Yellow));
+  async OnNewDay(): Promise<void> {
+    /////////////////////////
+    // Normal day processing
+    /////////////////////////
+
+    //----- Upgrade Player (living only)
+    if (!this.m_Player.model.abilities.isUndead) {
+      // Mode.
+      this.ClearOverlays();
+      this.AddOverlay(
+        new OverlayPopup(this.UPGRADE_MODE_TEXT, this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0))
+      );
+
+      // music.
+      this.m_MusicManager.stop();
+      this.m_MusicManager.play(GameMusics.INTERLUDE);
+
+      // Message.
+      this.ClearMessages();
+      this.AddMessage(new Message("You survived another night!", this.m_Session.worldTime.turnCounter, Color.Green));
+      this.UpdatePlayerFOV(this.m_Player);
+      if (!this.m_Player.isBotPlayer) await this.AddMessagePressEnter();
+
+      // Upgrade time!
+      // alpha10.1 handle bot skill upgrade, bot followers will upgrade as npcs
+      if (this.m_Player.isBotPlayer) {
+        this.HandleNPCSkillUpgrade(this.m_Player);
+      } else {
+        await this.HandlePlayerDecideUpgrade(this.m_Player);
+        await this.HandlePlayerFollowersUpgrade();
+      }
+
+      // Resume play.
+      this.ClearMessages();
+      this.AddMessage(new Message("Welcome to tomorrow.", this.m_Session.worldTime.turnCounter, Color.White));
+      this.ClearOverlays();
+      this.RedrawPlayScreen();
+
+      // music
+      this.m_MusicManager.stop();
+    }
+
+    //////////////////////////////
+    // New day achievements.
+    // 1. Reached day X (living only)
+    //////////////////////////////
+    if (!this.m_Player.model.abilities.isUndead) {
+      const day = this.m_Session.worldTime.day;
+      if (day === 7) {
+        this.m_Session.scoring.setCompletedAchievement(AchievementIDs.REACHED_DAY_07);
+        await this.ShowNewAchievement(AchievementIDs.REACHED_DAY_07);
+      } else if (day === 14) {
+        this.m_Session.scoring.setCompletedAchievement(AchievementIDs.REACHED_DAY_14);
+        await this.ShowNewAchievement(AchievementIDs.REACHED_DAY_14);
+      } else if (day === 21) {
+        this.m_Session.scoring.setCompletedAchievement(AchievementIDs.REACHED_DAY_21);
+        await this.ShowNewAchievement(AchievementIDs.REACHED_DAY_21);
+      } else if (day === 28) {
+        this.m_Session.scoring.setCompletedAchievement(AchievementIDs.REACHED_DAY_28);
+        await this.ShowNewAchievement(AchievementIDs.REACHED_DAY_28);
+      }
+    }
   }
 
   // C# HandlePlayerDecideUpgrade — RogueGame.cs:17377
-  HandlePlayerDecideUpgrade(upgradeActor: Actor): void {
-    void upgradeActor;
+  async HandlePlayerDecideUpgrade(upgradeActor: Actor): Promise<void> {
+    // roll N skills to updgrade.
+    const upgradeChoices = this.RollSkillsToUpgrade(upgradeActor, 3 * 100);
+
+    // "you" vs follower name.
+    const youName = upgradeActor === this.m_Player ? "You" : upgradeActor.name;
+
+    // loop.
+    let loop = true;
+    do {
+      let popup: OverlayPopupTitle | null = null;
+
+      ///////////////////
+      // 1. Redraw
+      // 2. Read input
+      // 3. Handle input
+      ///////////////////
+
+      // 1. Redraw
+      this.ClearMessages();
+      this.AddMessage(
+        new Message(`${youName} can improve or learn one of these skills. Choose wisely.`, this.m_Session.worldTime.turnCounter, Color.Green)
+      );
+
+      if (upgradeChoices.length === 0) {
+        this.AddMessage(this.MakeErrorMessage(`${youName} can't learn anything new!`));
+      } else {
+        const popupLines: string[] = [];
+        popupLines.push(" ");
+
+        for (let iChoice = 0; iChoice < upgradeChoices.length; iChoice++) {
+          const sk = upgradeChoices[iChoice];
+          const level = upgradeActor.sheet.skillTable.getSkillLevel(sk);
+          const text = `${iChoice + 1}. ${Skills.name(sk)} ${level + 1}/${Skills.maxSkillLevel(sk)}`;
+          this.AddMessage(new Message(text, this.m_Session.worldTime.turnCounter, Color.LightGreen));
+
+          popupLines.push(text);
+          popupLines.push(`    ${this.DescribeSkillShort(sk)}`);
+          popupLines.push(" ");
+        }
+
+        popupLines.push("ESC. don't upgrade");
+
+        if (upgradeActor !== this.m_Player) {
+          popupLines.push(" ");
+          popupLines.push(`${upgradeActor.name} current skills`);
+          for (const sk of upgradeActor.sheet.skillTable.skills ?? []) {
+            popupLines.push(`${Skills.name(sk.id as SkillID)} ${sk.level}`);
+          }
+        }
+
+        popup = new OverlayPopupTitle(
+          upgradeActor === this.m_Player ? "Select skill to upgrade" : `Select skill to upgrade for ${upgradeActor.name}`,
+          Color.White,
+          popupLines,
+          Color.White,
+          Color.White,
+          Color.Black,
+          new Point(64, 64)
+        );
+        this.AddOverlay(popup);
+      }
+      this.AddMessage(new Message("ESC if you don't want to upgrade.", this.m_Session.worldTime.turnCounter, Color.White));
+      this.RedrawPlayScreen();
+
+      // 2. Read input
+      const inKey = await this.m_UI.UI_WaitKey();
+
+      // 3. Handle input
+      if (inKey.key === "Escape") {
+        loop = false;
+        if (popup !== null) this.RemoveOverlay(popup);
+        this.RedrawPlayScreen();
+      } else {
+        // get choice.
+        const choice = this.KeyToChoiceNumber(inKey);
+
+        if (choice >= 1 && choice <= upgradeChoices.length) {
+          // upgrade skill.
+          const skID = upgradeChoices[choice - 1];
+          const sk = this.SkillUpgrade(upgradeActor, skID);
+
+          // message & scoring.
+          if (sk.level === 1) {
+            const msgText = `${upgradeActor.name} learned skill ${Skills.name(sk.id as SkillID)}.`;
+            this.AddMessage(new Message(msgText, this.m_Session.worldTime.turnCounter, Color.LightGreen));
+            this.m_Session.scoring.addEvent(this.m_Session.worldTime.turnCounter, msgText);
+          } else {
+            const msgText = `${upgradeActor.name} improved skill ${Skills.name(sk.id as SkillID)} to level ${sk.level}.`;
+            this.AddMessage(new Message(msgText, this.m_Session.worldTime.turnCounter, Color.LightGreen));
+            this.m_Session.scoring.addEvent(this.m_Session.worldTime.turnCounter, msgText);
+          }
+          await this.AddMessagePressEnter();
+          if (popup !== null) this.RemoveOverlay(popup);
+          this.RedrawPlayScreen();
+          loop = false;
+        }
+      }
+    } while (loop);
   }
 
   // C# HandlePlayerFollowersUpgrade — RogueGame.cs:17483
-  HandlePlayerFollowersUpgrade(): void {}
+  async HandlePlayerFollowersUpgrade(): Promise<void> {
+    // if no followers, nothing to do.
+    if (this.m_Player.countFollowers === 0) return;
+
+    // Message.
+    this.ClearMessages();
+    this.AddMessage(new Message("Your followers learned new skills at your side!", this.m_Session.worldTime.turnCounter, Color.Green));
+    await this.AddMessagePressEnter();
+
+    // Do it.
+    for (const follower of this.m_Player.followers ?? []) {
+      // player pick for the follower.
+      await this.HandlePlayerDecideUpgrade(follower);
+    }
+  }
 
   // C# HandleLivingNPCsUpgrade — RogueGame.cs:17503
   HandleLivingNPCsUpgrade(map: Map): void {
-    void map;
+    for (const a of map.actors) {
+      // ignore player, we do it separatly.
+      if (a === this.m_Player) continue;
+      // ignore player followers (upgraded already)
+      if (a.leader === this.m_Player) continue;
+      // not undeads!
+      if (a.model.abilities.isUndead) continue;
+
+      // do it!
+      this.HandleNPCSkillUpgrade(a); // alpha10.1
+    }
   }
 
+  // alpha10.1 factorized to handle bot skill upgrade
   // C# HandleNPCSkillUpgrade — RogueGame.cs:17523
   HandleNPCSkillUpgrade(a: Actor): void {
-    void a;
+    const upgradeFrom = this.RollSkillsToUpgrade(a, 3 * 100);
+    const chosenSkill = this.NPCPickSkillToUpgrade(a, upgradeFrom);
+    if (chosenSkill === null) return;
+    // upgrade it!
+    this.SkillUpgrade(a, chosenSkill);
   }
 
   // C# HandleUndeadNPCsUpgrade — RogueGame.cs:17533
   HandleUndeadNPCsUpgrade(map: Map): void {
-    void map;
+    for (const a of map.actors) {
+      // ignore player, we do it separatly.
+      if (a === this.m_Player) continue;
+      // ignore player followers (upgraded already)
+      if (a.leader === this.m_Player) continue;
+      // undeads only, and some branches only.
+      if (!a.model.abilities.isUndead) continue;
+      if (!s_Options.skeletonsUpgrade && GameActors.isSkeletonBranch(a.model)) continue;
+      if (!s_Options.ratsUpgrade && GameActors.isRatBranch(a.model)) continue;
+      if (!s_Options.shamblersUpgrade && GameActors.isShamblerBranch(a.model)) continue;
+
+      // do it!
+      const upgradeFrom = this.RollSkillsToUpgrade(a, 3 * 100);
+      const chosenSkill = this.NPCPickSkillToUpgrade(a, upgradeFrom);
+      if (chosenSkill === null) continue;
+      // upgrade it!
+      this.SkillUpgrade(a, chosenSkill);
+    }
   }
 
   // C# RollSkillsToUpgrade — RogueGame.cs:17563
   RollSkillsToUpgrade(actor: Actor, maxTries: number): SkillID[] {
-    void actor;
-    void maxTries;
-    return [];
+    const count = actor.model.abilities.isUndead ? Rules.UNDEAD_UPGRADE_SKILLS_TO_CHOOSE_FROM : Rules.UPGRADE_SKILLS_TO_CHOOSE_FROM;
+    const list: SkillID[] = [];
+
+    for (let i = 0; i < count; i++) {
+      let newSk: SkillID | null;
+      let attempt = 0;
+      do {
+        ++attempt;
+        newSk = this.RollRandomSkillToUpgrade(actor, maxTries);
+        if (newSk === null) return list;
+      } while (list.includes(newSk) && attempt < maxTries);
+
+      list.push(newSk);
+    }
+
+    return list;
   }
 
   // C# NPCPickSkillToUpgrade — RogueGame.cs:17586
   NPCPickSkillToUpgrade(npc: Actor, chooseFrom: SkillID[]): SkillID | null {
-    void npc;
     if (chooseFrom.length === 0) return null;
-    return chooseFrom[0];
+
+    // Compute skill utilities and get best utility.
+    const N = chooseFrom.length;
+    const utilities: number[] = new Array(N);
+    let bestUtility = -1;
+    for (let i = 0; i < N; i++) {
+      utilities[i] = this.NPCSkillUtility(npc, chooseFrom[i]);
+      if (utilities[i] > bestUtility) bestUtility = utilities[i];
+    }
+
+    // Randomly choose on of the best.
+    const bestSkills: SkillID[] = [];
+    for (let i = 0; i < N; i++) if (utilities[i] === bestUtility) bestSkills.push(chooseFrom[i]);
+    return bestSkills[this.m_Rules.roll(0, bestSkills.length)];
   }
 
   // C# NPCSkillUtility — RogueGame.cs:17610
   NPCSkillUtility(actor: Actor, skID: SkillID): number {
-    void actor;
-    void skID;
-    return 1;
+    const USELESS_UTIL = 0;
+    const LOW_UTIL = 1;
+    const AVG_UTIL = 2;
+    const HI_UTIL = 3;
+
+    if (actor.model.abilities.isUndead) {
+      // undeads.
+      switch (skID) {
+        // useful one.
+        case SkillID.Z_GRAB:
+        case SkillID.Z_INFECTOR:
+        case SkillID.Z_LIGHT_EATER:
+          return HI_UTIL;
+
+        // ok ones.
+        case SkillID.Z_AGILE:
+        case SkillID.Z_STRONG:
+        case SkillID.Z_TOUGH:
+        case SkillID.Z_TRACKER:
+          return AVG_UTIL;
+
+        // meh ones.
+        case SkillID.Z_EATER:
+        case SkillID.Z_LIGHT_FEET:
+          return LOW_UTIL;
+
+        default:
+          return USELESS_UTIL;
+      }
+    } else {
+      switch (skID) {
+        case SkillID.AGILE:
+          return AVG_UTIL;
+
+        case SkillID.AWAKE:
+          // useful only if has to sleep.
+          return actor.model.abilities.hasToSleep ? HI_UTIL : USELESS_UTIL;
+
+        case SkillID.BOWS: {
+          // useful only if has bow weapon.
+          if (actor.inventory != null) {
+            for (const it of actor.inventory.items)
+              if (it instanceof ItemRangedWeapon) {
+                if ((it.model as ItemRangedWeaponModel).isBow) return HI_UTIL;
+              }
+          }
+          return USELESS_UTIL;
+        }
+
+        case SkillID.CARPENTRY:
+          return LOW_UTIL;
+
+        case SkillID.CHARISMATIC:
+          // useful only if leader.
+          return actor.countFollowers > 0 ? LOW_UTIL : USELESS_UTIL;
+
+        case SkillID.FIREARMS: {
+          // useful only if has firearm weapon.
+          if (actor.inventory != null) {
+            for (const it of actor.inventory.items)
+              if (it instanceof ItemRangedWeapon) {
+                if ((it.model as ItemRangedWeaponModel).isFireArm) return HI_UTIL;
+              }
+          }
+          return USELESS_UTIL;
+        }
+
+        case SkillID.HARDY:
+          // useful only if has to sleep.
+          return actor.model.abilities.hasToSleep ? HI_UTIL : USELESS_UTIL;
+
+        case SkillID.HAULER:
+          return HI_UTIL;
+
+        case SkillID.HIGH_STAMINA:
+          return HI_UTIL; // alpha10; was previously rated as avg
+
+        case SkillID.LEADERSHIP:
+          // useful only if not follower.
+          return actor.hasLeader ? USELESS_UTIL : LOW_UTIL;
+
+        case SkillID.LIGHT_EATER:
+          // useful only if has to eat.
+          return actor.model.abilities.hasToEat ? HI_UTIL : USELESS_UTIL;
+
+        case SkillID.LIGHT_FEET:
+          return AVG_UTIL;
+
+        case SkillID.LIGHT_SLEEPER:
+          // useful only if has to sleep.
+          return actor.model.abilities.hasToSleep ? AVG_UTIL : USELESS_UTIL;
+
+        case SkillID.MARTIAL_ARTS: {
+          // useless if any weapon in inventory.
+          if (actor.inventory != null) {
+            for (const it of actor.inventory.items) {
+              if (it instanceof ItemWeapon) return LOW_UTIL;
+            }
+          }
+          return AVG_UTIL;
+        }
+
+        case SkillID.MEDIC:
+          return LOW_UTIL;
+
+        case SkillID.NECROLOGY:
+          return LOW_UTIL; // alpha10 ; was previously rated as useless
+
+        case SkillID.STRONG:
+          return AVG_UTIL;
+
+        case SkillID.STRONG_PSYCHE:
+          // useful only if has sanity.
+          return actor.model.abilities.hasSanity ? HI_UTIL : USELESS_UTIL;
+
+        case SkillID.TOUGH:
+          return HI_UTIL;
+
+        case SkillID.UNSUSPICIOUS:
+          // useful only if murderer and not law enforcer.
+          return actor.murdersCounter > 0 && !actor.model.abilities.isLawEnforcer ? LOW_UTIL : USELESS_UTIL;
+
+        default:
+          return USELESS_UTIL;
+      }
+    }
   }
 
   // C# RollRandomSkillToUpgrade — RogueGame.cs:17757
   RollRandomSkillToUpgrade(actor: Actor, maxTries: number): SkillID | null {
-    void actor;
-    void maxTries;
-    return null;
+    let attempt = 0;
+    let skID: SkillID;
+    const isUndead = actor.model.abilities.isUndead;
+
+    do {
+      ++attempt;
+      skID = isUndead ? Skills.rollUndead(this.m_Rules.diceRoller) : Skills.rollLiving(this.m_Rules.diceRoller);
+    } while (actor.sheet.skillTable.getSkillLevel(skID) >= Skills.maxSkillLevel(skID) && attempt < maxTries);
+
+    if (attempt >= maxTries) return null;
+    else return skID;
   }
 
   // C# DoLooseRandomSkill — RogueGame.cs:17776
   DoLooseRandomSkill(actor: Actor): void {
-    void actor;
+    const skills = actor.sheet.skillTable.skillsList;
+    if (skills == null) return;
+
+    // pick a skill.
+    const iSkill = this.m_Rules.roll(0, skills.length);
+    const lostSkill = skills[iSkill] as SkillID;
+
+    // regress.
+    actor.sheet.skillTable.decOrRemoveSkill(lostSkill);
+
+    // message.
+    if (this.IsVisibleToPlayer(actor)) this.AddMessage(this.MakeMessage(actor, `regressed in ${Skills.name(lostSkill)}!`));
   }
 
   // C# SkillUpgrade — RogueGame.cs:17793
   SkillUpgrade(actor: Actor, id: SkillID): Skill {
     actor.sheet.skillTable.addOrIncreaseSkill(id);
-    return actor.sheet.skillTable.getSkill(id)!;
+    const sk = actor.sheet.skillTable.getSkill(id)!;
+    this.OnSkillUpgrade(actor, id);
+
+    return sk;
   }
 
   // C# OnSkillUpgrade — RogueGame.cs:17802
   OnSkillUpgrade(actor: Actor, id: SkillID): void {
-    void actor;
-    void id;
+    switch (id) {
+      case SkillID.HAULER:
+        if (actor.inventory != null) actor.inventory.maxCapacity = this.m_Rules.actorMaxInv(actor);
+        break;
+
+      default:
+        // no special upkeep to do.
+        break;
+    }
   }
 
   // C# ChangeWeather — RogueGame.cs:17817
   ChangeWeather(): void {
-    const r = this.m_Rules.roll(0, 100);
-    if (r < 25) this.m_Session.weather = Weather.CLEAR;
-    else if (r < 50) this.m_Session.weather = Weather.CLOUDY;
-    else if (r < 80) this.m_Session.weather = Weather.RAIN;
-    else this.m_Session.weather = Weather.HEAVY_RAIN;
+    const canSeeWeather = this.m_Rules.canActorSeeSky(this.m_Player); // alpha10
+
+    // roll & annouce new weather.
+    let desc: string;
+    let newWeather: Weather;
+    switch (this.m_Session.weather) {
+      case Weather.CLEAR:
+        newWeather = Weather.CLOUDY;
+        desc = "Clouds are covering the sun.";
+        break;
+
+      case Weather.CLOUDY:
+        if (this.m_Rules.rollChance(50)) {
+          newWeather = Weather.CLEAR;
+          desc = "The sky is clear again.";
+        } else {
+          newWeather = Weather.RAIN;
+          desc = "Rain is starting to fall.";
+        }
+        break;
+
+      case Weather.RAIN:
+        if (this.m_Rules.rollChance(50)) {
+          newWeather = Weather.CLOUDY;
+          desc = "The rain has stopped.";
+        } else {
+          newWeather = Weather.HEAVY_RAIN;
+          desc = "The weather is getting worse!";
+        }
+        break;
+
+      case Weather.HEAVY_RAIN:
+        newWeather = Weather.RAIN;
+        desc = "The rain is less heavy.";
+        break;
+
+      default:
+        throw new RangeError("unhandled weather");
+    }
+
+    // change.
+    this.m_Session.weather = newWeather;
+
+    // message.
+    if (canSeeWeather) this.AddMessage(new Message(desc, this.m_Session.worldTime.turnCounter, Color.White));
+
+    // scoring.
+    this.m_Session.scoring.addEvent(
+      this.m_Session.worldTime.turnCounter,
+      `The weather changed to ${this.DescribeWeather(this.m_Session.weather)}.`
+    );
   }
 
+  /// <summary>
+  /// Add kill to scoring record.
+  /// </summary>
+  /// <param name="victim"></param>
   // C# PlayerKill — RogueGame.cs:17881
   PlayerKill(victim: Actor): void {
-    void victim;
+    // scoring.
+    this.m_Session.scoring.addKill(this.m_Player, victim, this.m_Session.worldTime.turnCounter);
   }
 
   // C# InfectActor — RogueGame.cs:17889
   InfectActor(actor: Actor, addInfection: number): void {
-    actor.infection += addInfection;
+    actor.infection = Math.min(this.m_Rules.actorInfectionHPs(actor), actor.infection + addInfection);
   }
 
+  /// <summary>
+  /// Zombify an actor during the game or zombify the player at game start.
+  /// </summary>
+  /// <param name="zombifier"></param>
+  /// <param name="deadVictim"></param>
+  /// <param name="isStartingGame"></param>
+  /// <returns></returns>
   // C# Zombify — RogueGame.cs:17901
   Zombify(zombifier: Actor | null, deadVictim: Actor, isStartingGame: boolean): Actor {
-    void zombifier;
-    void isStartingGame;
-    return deadVictim;
+    const newZombie = this.m_TownGenerator.makeZombified(
+      zombifier,
+      deadVictim,
+      isStartingGame ? 0 : deadVictim.location.map!.localTime.turnCounter
+    );
+
+    // add to map.
+    if (!isStartingGame) deadVictim.location.map!.placeActor(newZombie, deadVictim.location.position);
+
+    // reset AP - dont act this turn.
+    newZombie.actionPoints = 0;
+
+    // if zombifying player, remember it!
+    if (deadVictim === this.m_Player || deadVictim.isPlayer) this.m_Session.scoring.setZombifiedPlayer(newZombie);
+
+    // keep half of the skills from living form at random.
+    const livingSkills = deadVictim.sheet.skillTable;
+    if (livingSkills != null && livingSkills.countSkills > 0) {
+      const nbLivingSkills = livingSkills.countSkills;
+      const nbSkillsToKeep = Math.floor(livingSkills.countTotalSkillLevels / 2);
+      for (let i = 0; i < nbSkillsToKeep; i++) {
+        const keepSkill = livingSkills.skillsList![this.m_Rules.roll(0, nbLivingSkills)] as SkillID;
+        const zombiefiedSkill = this.ZombifySkill(keepSkill);
+        if (zombiefiedSkill !== null) this.SkillUpgrade(newZombie, zombiefiedSkill);
+      }
+      this.m_TownGenerator.recomputeActorStartingStats(newZombie);
+    }
+
+    // cause insanity.
+    if (!isStartingGame)
+      this.SeeingCauseInsanity(
+        newZombie,
+        newZombie.location,
+        Rules.SANITY_HIT_ZOMBIFY,
+        `${deadVictim.name} turning into a zombie`
+      );
+
+    // done.
+    return newZombie;
   }
 
   // C# ZombifySkill — RogueGame.cs:17942
   ZombifySkill(skill: SkillID): SkillID | null {
-    void skill;
-    throw new Error("not yet ported: ZombifySkill (RogueGame.cs:17942)");
+    switch (skill) {
+      case SkillID.AGILE:
+        return SkillID.Z_AGILE;
+      case SkillID.LIGHT_EATER:
+        return SkillID.Z_LIGHT_EATER;
+      case SkillID.LIGHT_FEET:
+        return SkillID.Z_LIGHT_FEET;
+      case SkillID.MEDIC:
+        return SkillID.Z_INFECTOR;
+      case SkillID.STRONG:
+        return SkillID.Z_STRONG;
+      case SkillID.TOUGH:
+        return SkillID.Z_TOUGH;
+      default:
+        return null;
+    }
   }
 
+  /// <summary>
+  /// Put the object on fire : firestate = onfire, jump -1.
+  /// </summary>
+  /// <param name="mapObj"></param>
   // C# ApplyOnFire — RogueGame.cs:17963
   ApplyOnFire(mapObj: MapObject): void {
-    void mapObj;
-    throw new Error("not yet ported: ApplyOnFire (RogueGame.cs:17963)");
+    // put object on fire.
+    mapObj.fireState = MapObjectFire.ONFIRE;
+    // can't jump on it.
+    --mapObj.jumpLevel;
   }
 
+  /// <summary>
+  /// Unapply fire effects. FIXME: need to distinguish Unapply (burnable again) vs PutOutFire (ashes)?
+  /// </summary>
+  /// <param name="mapObj"></param>
   // C# UnapplyOnFire — RogueGame.cs:17975
   UnapplyOnFire(mapObj: MapObject): void {
-    void mapObj;
-    throw new Error("not yet ported: UnapplyOnFire (RogueGame.cs:17975)");
+    // restore jumpability.
+    ++mapObj.jumpLevel;
+    // extinguish fire, burnable again.
+    mapObj.fireState = MapObjectFire.BURNABLE;
   }
 
   // C# ComputeViewRect — RogueGame.cs:17987
@@ -5322,25 +6249,23 @@ export class RogueGame {
 
   // C# AddOverlay — RogueGame.cs:19573
   AddOverlay(o: Overlay): void {
-    void o;
-    throw new Error("not yet ported: AddOverlay (RogueGame.cs:19573)");
+    this.m_Overlays.push(o);
   }
 
   // C# ClearOverlays — RogueGame.cs:19581
   ClearOverlays(): void {
-    throw new Error("not yet ported: ClearOverlays (RogueGame.cs:19581)");
+    this.m_Overlays.length = 0;
   }
 
   // C# RemoveOverlay — RogueGame.cs:19589
   RemoveOverlay(o: Overlay): void {
-    void o;
-    throw new Error("not yet ported: RemoveOverlay (RogueGame.cs:19589)");
+    const i = this.m_Overlays.indexOf(o);
+    if (i >= 0) this.m_Overlays.splice(i, 1);
   }
 
   // C# HasOverlay — RogueGame.cs:19598
   HasOverlay(o: Overlay): boolean {
-    void o;
-    throw new Error("not yet ported: HasOverlay (RogueGame.cs:19598)");
+    return this.m_Overlays.includes(o);
   }
 
   // C# MapToScreen — RogueGame.cs:19611 (+1 overloads)
@@ -5383,10 +6308,21 @@ export class RogueGame {
   }
 
   // C# IsVisibleToPlayer — RogueGame.cs:19658 (+3 overloads)
-  IsVisibleToPlayer(actor: Location | Map | Actor | MapObject, position?: Point): boolean {
-    void actor;
-    void position;
-    throw new Error("not yet ported: IsVisibleToPlayer (RogueGame.cs:19658)");
+  // C# overloads: (Location), (Map, Point), (Actor), (MapObject).
+  IsVisibleToPlayer(target: Location | Map | Actor | MapObject, position?: Point): boolean {
+    if (target instanceof Map) {
+      if (position == null) throw new TypeError("IsVisibleToPlayer(map, position): position is required");
+      const map = target;
+      return (
+        this.m_Player != null &&
+        map === this.m_Player.location.map &&
+        map.isInBounds(position.x, position.y) &&
+        (map.getTileAt(position.x, position.y)?.isInView ?? false)
+      );
+    }
+    if (target instanceof Actor) return target === this.m_Player || this.IsVisibleToPlayer(target.location);
+    if (target instanceof MapObject) return this.IsVisibleToPlayer(target.location);
+    return this.IsVisibleToPlayer(target.map!, target.position);
   }
 
   // C# IsKnownToPlayer — RogueGame.cs:19680 (+2 overloads)
@@ -5402,9 +6338,17 @@ export class RogueGame {
   }
 
   // C# FindLongestLine — RogueGame.cs:19702
-  FindLongestLine(lines: string[]): number {
-    void lines;
-    throw new Error("not yet ported: FindLongestLine (RogueGame.cs:19702)");
+  FindLongestLine(lines: readonly string[]): number {
+    if (lines == null || lines.length === 0) return 0;
+
+    let max = -2147483648; // Int32.MinValue
+
+    for (const s of lines) {
+      if (s == null) continue; // sanity check.
+      if (s.length > max) max = s.length;
+    }
+
+    return max;
   }
 
   // C# HandleSaveGame — RogueGame.cs:19724
@@ -5441,9 +6385,10 @@ export class RogueGame {
   }
 
   // C# DeleteSavedGame — RogueGame.cs:19809
-  DeleteSavedGame(saveName: string): void {
-    void saveName;
-    throw new Error("not yet ported: DeleteSavedGame (RogueGame.cs:19809)");
+  // C# deletes the save file synchronously; saves live in IndexedDB/localStorage
+  // so the browser equivalent is async.
+  async DeleteSavedGame(saveName: string): Promise<void> {
+    await GameSaveManager.deleteSave(Number(saveName));
   }
 
   // C# LoadGame — RogueGame.cs:19819
@@ -5614,14 +6559,26 @@ export class RogueGame {
   }
 
   // C# GetUserNewGraveyardName — RogueGame.cs:20021
+  // C# loops until `!File.Exists(GraveFilePath(name))`; in the browser graves are
+  // stored in localStorage under `textfile:` (see `TextFile.save`).
   GetUserNewGraveyardName(): string {
-    throw new Error("not yet ported: GetUserNewGraveyardName (RogueGame.cs:20021)");
+    let name = "";
+    let i = 0;
+    let isFreeID = false;
+    do {
+      name = `grave_${String(i).padStart(3, "0")}`;
+      isFreeID = typeof localStorage === "undefined" || localStorage.getItem(`textfile:${this.GraveFilePath(name)}`) === null;
+      ++i;
+    } while (!isFreeID);
+
+    return name;
   }
 
   // C# GraveFilePath — RogueGame.cs:20037
+  // C# appends the user graveyard directory (`GetUserGraveyardPath()`, a filesystem
+  // path); `TextFile.save` keys by file name alone, so the directory is dropped.
   GraveFilePath(graveName: string): string {
-    void graveName;
-    throw new Error("not yet ported: GraveFilePath (RogueGame.cs:20037)");
+    return `${graveName}.txt`;
   }
 
   // C# GetUserConfigPath — RogueGame.cs:20042
@@ -5867,9 +6824,11 @@ export class RogueGame {
   }
 
   // C# StopSimThread — RogueGame.cs:21501
+  // C# owns a dedicated sim thread (`m_SimThread.Abort()` / cooperative stop);
+  // the browser port has no second thread — district simulation runs inside the
+  // single async game loop — so there is nothing to stop or abort here.
   StopSimThread(abort: boolean): void {
     void abort;
-    throw new Error("not yet ported: StopSimThread (RogueGame.cs:21501)");
   }
 
   // C# SimThreadProc — RogueGame.cs:21550
@@ -5878,9 +6837,43 @@ export class RogueGame {
   }
 
   // C# ShowNewAchievement — RogueGame.cs:21597
-  ShowNewAchievement(id: AchievementIDs): void {
-    void id;
-    throw new Error("not yet ported: ShowNewAchievement (RogueGame.cs:21597)");
+  async ShowNewAchievement(id: AchievementIDs): Promise<void> {
+    // one more achievement.
+    ++this.m_Session.scoring.completedAchievementsCount;
+
+    // get data.
+    const ach = this.m_Session.scoring.getAchievement(id);
+    const musicToPlay = ach.musicId;
+    const title = ach.name;
+    const text = ach.text;
+
+    // add event.
+    this.m_Session.scoring.addEvent(
+      this.m_Session.worldTime.turnCounter,
+      `** Achievement : ${title} for ${ach.scoreValue} points. **`
+    );
+
+    // music.
+    this.m_MusicManager.stop();
+    this.m_MusicManager.play(musicToPlay);
+
+    // prepare banner.
+    const longestLine = this.FindLongestLine(text);
+    const starsLine = "*".repeat(Math.max(longestLine, 50));
+    const lines: string[] = [];
+    lines.push(starsLine);
+    lines.push(`ACHIEVEMENT : ${title}`);
+    lines.push("CONGRATULATIONS!");
+    for (const line of text) lines.push(line);
+    lines.push(`Achievements : ${this.m_Session.scoring.completedAchievementsCount}/${Scoring.MAX_ACHIEVEMENTS}.`);
+    lines.push(starsLine);
+
+    // banner.
+    const pos = new Point(0, 0);
+    this.AddOverlay(new OverlayPopup(lines, Color.Gold, Color.Gold, Color.DimGray, pos));
+    this.ClearMessages();
+    if (!this.m_Player.isBotPlayer) await this.AddMessagePressEnter();
+    this.ClearOverlays();
   }
 
   // C# ShowSpecialDialogue — RogueGame.cs:21638
@@ -5934,11 +6927,35 @@ export class RogueGame {
 
   // C# SeeingCauseInsanity — RogueGame.cs:22454
   SeeingCauseInsanity(whoDoesTheAction: Actor, loc: Location, sanCost: number, what: string): void {
-    void whoDoesTheAction;
-    void loc;
-    void sanCost;
-    void what;
-    throw new Error("not yet ported: SeeingCauseInsanity (RogueGame.cs:22454)");
+    const map = loc.map!;
+    for (const a of map.actors) {
+      if (!a.model.abilities.hasSanity) continue;
+
+      // can't see if sleeping or out of fov.
+      if (a.isSleeping) continue;
+      const fov = this.m_Rules.actorFOV(a, map.localTime, this.m_Session.weather);
+      if (!LOS.canTraceViewLine(map, loc.position, a.location.position, fov)) continue;
+
+      // san hit.
+      this.SpendActorSanity(a, sanCost);
+
+      // msg.
+      if (whoDoesTheAction === a) {
+        if (a.isPlayer)
+          this.AddMessage(
+            new Message("That was a very disturbing thing to do...", map.localTime.turnCounter, Color.Orange)
+          );
+        else if (this.IsVisibleToPlayer(a))
+          this.AddMessage(this.MakeMessage(a, `${this.Conjugate(a, this.VERB_HAVE)} done something very disturbing...`));
+      } else {
+        if (a.isPlayer)
+          this.AddMessage(
+            new Message(`Seeing ${what} is very disturbing...`, map.localTime.turnCounter, Color.Orange)
+          );
+        else if (this.IsVisibleToPlayer(a))
+          this.AddMessage(this.MakeMessage(a, `${this.Conjugate(a, this.VERB_SEE)} something very disturbing...`));
+      }
+    }
   }
 
   // C# OnMapPowerGeneratorSwitch — RogueGame.cs:22488

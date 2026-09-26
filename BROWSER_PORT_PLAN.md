@@ -1,7 +1,7 @@
 # Rogue Survivor Reloaded — TypeScript / Browser Port: Full Implementation Plan
 
 > **Status:** Phase 1, 2 & 3 complete (Phase 3 includes `ui/OptionsScreen.ts`). Phase 5 complete — `BaseAI` (184/184 methods), all 11 AI controllers, and all 4 generator files done (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator`, `StdTownGenerator`). Phase 6 & 7 complete.  
-> **Phase 4 in progress:** `engine/RogueGame.ts` scaffold generated (constants, fields, properties, constructor, 492 method stubs, 38 camelCase call-site aliases) and filled slice by slice. **Slices 1 and 2 done** (char creation / credits / redefine keys; `AdvancePlay`, `NextMapTurn`, actor regen/counts, scents), **slices 4, 5 and 7 in progress** (one agent each — slice 7 still has 4 throwing stubs and 8 methods replaced by silent no-op placeholders), `main.ts` wired to `RogueGame.Run()`. Open slices: 3, 6, 8, 9, 10. 379 of 492 stubs remain. `npm run type-check` + `npm run build` clean; 96/96 smoke checks pass.  
+> **Phase 4 in progress:** `engine/RogueGame.ts` scaffold generated (constants, fields, properties, constructor, 492 method stubs, 38 camelCase call-site aliases) and filled slice by slice. **Slices 1, 2 and 7 done** (char creation / credits / redefine keys; `AdvancePlay`, `NextMapTurn`, actor regen/counts, scents; player death, new day/night, skills, infection/zombification), **slices 4 and 5 in progress**, `main.ts` wired to `RogueGame.Run()`. Open slices: 3, 6, 8, 9, 10. 361 of 492 stubs remain. `npm run type-check` + `npm run build` clean; 146/146 smoke checks pass.  
 > **Last updated:** 2026-09-26
 
 ---
@@ -382,7 +382,7 @@ combines them with the hand-ported overlay types, constructor and getters into
 | 4 | 5367–10255 | FOV, `HandlePlayerActor` and all `HandlePlayerXXX` commands | 🔄 In progress (77 stubs) |
 | 5 | 10256–12658 | AI actor handling, advisor, input helpers, describe-* | 🔄 In progress (35 stubs) |
 | 6 | 12660–16790 | Action primitives `DoMoveActor` … `KillActor`, blood/corpses | ⬜ |
-| 7 | 16791–17986 | Player death, new day/night, skills, infection/zombification | 🔄 In progress (4 stubs, 8 no-op placeholders) |
+| 7 | 16791–17986 | Player death, new day/night, skills, infection/zombification | ✅ Ported |
 | 8 | 17987–19723 | View, drawing, overlays, coordinates, visibility helpers | ⬜ |
 | 9 | 19724–21381 | Save/load, paths, `GenerateWorld`, district maps, map switching | ⬜ |
 | 10 | 21382–23233 | Sim thread, achievements, special events, reincarnation, dev/data | ⬜ |
