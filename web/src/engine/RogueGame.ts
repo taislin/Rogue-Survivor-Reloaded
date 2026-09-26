@@ -37,7 +37,7 @@ import { TextFile } from "@engine/TextFile";
 import { SayFlags } from "@engine/actions/Actions";
 import { Item } from "@data/Item";
 import { ItemBodyArmor } from "@engine/items/ItemBodyArmor";
-import { ItemExplosive, ItemExplosiveModel, ItemGrenade, ItemGrenadeModel, ItemPrimedExplosive } from "@engine/items/ItemExplosive";
+import { ItemExplosive, ItemExplosiveModel, ItemGrenade, ItemGrenadeModel, ItemGrenadePrimed, ItemGrenadePrimedModel } from "@engine/items/ItemExplosive";
 import { ItemFood } from "@engine/items/ItemFood";
 import { ItemLight } from "@engine/items/ItemLight";
 import { ItemMedicine } from "@engine/items/ItemMedicine";
@@ -2843,7 +2843,7 @@ export class RogueGame {
         // update each explosive fuse there,
         // remember which should explode.
         for (const it of groundInv.items) {
-          if (!(it instanceof ItemPrimedExplosive)) continue;
+          if (!(it instanceof ItemGrenadePrimed)) continue;
 
           // primed explosive, burn fuse.
           --it.fuseTimeLeft;
@@ -2859,7 +2859,7 @@ export class RogueGame {
         // update each explosive fuse there,
         // remember which should explode.
         for (const it of inv.items) {
-          if (!(it instanceof ItemPrimedExplosive)) continue;
+          if (!(it instanceof ItemGrenadePrimed)) continue;
 
           // primed explosive, burn fuse.
           --it.fuseTimeLeft;
@@ -2881,7 +2881,7 @@ export class RogueGame {
               if (pos === null) throw new Error("explosives : GetGroundInventoryPosition returned null point");
 
               for (const it of groundInv.items) {
-                if (!(it instanceof ItemPrimedExplosive)) continue;
+                if (!(it instanceof ItemGrenadePrimed)) continue;
 
                 if (it.fuseTimeLeft <= 0) {
                   // boom!
@@ -2903,7 +2903,7 @@ export class RogueGame {
               if (inv === null || inv.isEmpty) continue;
 
               for (const it of inv.items) {
-                if (!(it instanceof ItemPrimedExplosive)) continue;
+                if (!(it instanceof ItemGrenadePrimed)) continue;
 
                 if (it.fuseTimeLeft <= 0) {
                   // boom!
@@ -5165,69 +5165,585 @@ export class RogueGame {
 
   // C# HandlePlayerRunToggle — RogueGame.cs:7722
   HandlePlayerRunToggle(player: Actor): void {
-    void player;
-    throw new Error("not yet ported: HandlePlayerRunToggle (RogueGame.cs:7722)");
+    const res = this.m_Rules.canActorRun(player);
+    if (!res.ok) {
+      this.AddMessage(this.MakeErrorMessage(`Cannot run now : ${res.reason}.`));
+      return;
+    }
+
+    player.isRunning = !player.isRunning;
+    this.AddMessage(this.MakeMessage(player, `${this.Conjugate(player, player.isRunning ? this.VERB_START : this.VERB_STOP)} running.`));
   }
 
   // C# HandlePlayerCloseDoor — RogueGame.cs:7736
-  HandlePlayerCloseDoor(player: Actor): boolean {
-    void player;
-    throw new Error("not yet ported: HandlePlayerCloseDoor (RogueGame.cs:7736)");
+  async HandlePlayerCloseDoor(player: Actor): Promise<boolean> {
+    let loop = true;
+    let actionDone = false;
+
+    this.ClearOverlays();
+    this.AddOverlay(new OverlayPopup(this.CLOSE_DOOR_MODE_TEXT, this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+
+    do {
+      this.RedrawPlayScreen();
+      const dir = await this.WaitDirectionOrCancel();
+
+      if (dir == null) {
+        loop = false;
+      } else if (dir !== Direction.NEUTRAL) {
+        const pos = player.location.position.add(new Point(dir.dx, dir.dy));
+        if (player.location.map!.isInBoundsPoint(pos)) {
+          const mapObj = player.location.map!.getMapObjectAt(pos.x, pos.y);
+          if (mapObj != null && mapObj instanceof DoorWindow) {
+            const door = mapObj as DoorWindow;
+            const res = this.m_Rules.isClosableFor(player, door);
+            if (res.ok) {
+              this.DoCloseDoor(player, door);
+              this.RedrawPlayScreen();
+              loop = false;
+              actionDone = true;
+            } else {
+              this.AddMessage(this.MakeErrorMessage(`Can't close ${door.theName} : ${res.reason}.`));
+            }
+          } else {
+            this.AddMessage(this.MakeErrorMessage("Nothing to close there."));
+          }
+        }
+      }
+    } while (loop);
+
+    this.ClearOverlays();
+    return actionDone;
   }
 
   // C# HandlePlayerBarricade — RogueGame.cs:7799
-  HandlePlayerBarricade(player: Actor): boolean {
-    void player;
-    throw new Error("not yet ported: HandlePlayerBarricade (RogueGame.cs:7799)");
+  async HandlePlayerBarricade(player: Actor): Promise<boolean> {
+    let loop = true;
+    let actionDone = false;
+
+    this.ClearOverlays();
+    this.AddOverlay(new OverlayPopup(this.BARRICADE_MODE_TEXT, this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+
+    do {
+      this.RedrawPlayScreen();
+      const dir = await this.WaitDirectionOrCancel();
+
+      if (dir == null) {
+        loop = false;
+      } else if (dir !== Direction.NEUTRAL) {
+        const pos = player.location.position.add(new Point(dir.dx, dir.dy));
+        if (player.location.map!.isInBoundsPoint(pos)) {
+          const mapObj = player.location.map!.getMapObjectAt(pos.x, pos.y);
+          if (mapObj != null) {
+            if (mapObj instanceof DoorWindow) {
+              const door = mapObj as DoorWindow;
+              const res = this.m_Rules.canActorBarricadeDoor(player, door);
+              if (res.ok) {
+                this.DoBarricadeDoor(player, door);
+                this.RedrawPlayScreen();
+                loop = false;
+                actionDone = true;
+              } else {
+                this.AddMessage(this.MakeErrorMessage(`Cannot barricade ${door.theName} : ${res.reason}.`));
+              }
+            } else if (mapObj instanceof Fortification) {
+              const fort = mapObj as Fortification;
+              const res = this.m_Rules.canActorRepairFortification(player, fort);
+              if (res.ok) {
+                this.DoRepairFortification(player, fort);
+                this.RedrawPlayScreen();
+                loop = false;
+                actionDone = true;
+              } else {
+                this.AddMessage(this.MakeErrorMessage(`Cannot repair ${fort.theName} : ${res.reason}.`));
+              }
+            } else {
+              this.AddMessage(this.MakeErrorMessage(`${mapObj.theName} cannot be repaired or barricaded.`));
+            }
+          } else {
+            this.AddMessage(this.MakeErrorMessage("Nothing to barricade there."));
+          }
+        }
+      }
+    } while (loop);
+
+    this.ClearOverlays();
+    return actionDone;
   }
 
   // C# HandlePlayerBreak — RogueGame.cs:7885
-  HandlePlayerBreak(player: Actor): boolean {
-    void player;
-    throw new Error("not yet ported: HandlePlayerBreak (RogueGame.cs:7885)");
+  async HandlePlayerBreak(player: Actor): Promise<boolean> {
+    let loop = true;
+    let actionDone = false;
+
+    this.ClearOverlays();
+    this.AddOverlay(new OverlayPopup(this.BREAK_MODE_TEXT, this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+
+    do {
+      this.RedrawPlayScreen();
+      const dir = await this.WaitDirectionOrCancel();
+
+      if (dir == null) {
+        loop = false;
+      } else {
+        if (dir === Direction.NEUTRAL) {
+          const exitThere = player.location.map!.getExitAt(player.location.position);
+          if (exitThere == null) {
+            this.AddMessage(this.MakeErrorMessage("No exit there."));
+          } else {
+            const mapTo = exitThere.toMap!;
+            const actorTo = mapTo.getActorAtPoint(exitThere.toPosition);
+            if (actorTo != null) {
+              if (this.m_Rules.areEnemies(player, actorTo)) {
+                const res = this.m_Rules.canActorMeleeAttack(player, actorTo);
+                if (res.ok) {
+                  this.DoMeleeAttack(player, actorTo);
+                  loop = false;
+                  actionDone = true;
+                } else {
+                  this.AddMessage(this.MakeErrorMessage(`Cannot attack ${actorTo.name} : ${res.reason}.`));
+                }
+              } else {
+                this.AddMessage(this.MakeErrorMessage(`${actorTo.name} is not your enemy.`));
+              }
+            } else {
+              const objTo = mapTo.getMapObjectAt(exitThere.toPosition.x, exitThere.toPosition.y);
+              if (objTo != null) {
+                const res = this.m_Rules.isBreakableFor(player, objTo);
+                if (res.ok) {
+                  this.DoBreak(player, objTo);
+                  loop = false;
+                  actionDone = true;
+                } else {
+                  this.AddMessage(this.MakeErrorMessage(`Cannot break ${objTo.theName} : ${res.reason}.`));
+                }
+              } else {
+                this.AddMessage(this.MakeErrorMessage("Nothing to break or attack on the other side."));
+              }
+            }
+          }
+        } else {
+          const pos = player.location.position.add(new Point(dir.dx, dir.dy));
+          if (player.location.map!.isInBoundsPoint(pos)) {
+            const mapObj = player.location.map!.getMapObjectAt(pos.x, pos.y);
+            if (mapObj != null) {
+              const res = this.m_Rules.isBreakableFor(player, mapObj);
+              if (res.ok) {
+                this.DoBreak(player, mapObj);
+                this.RedrawPlayScreen();
+                loop = false;
+                actionDone = true;
+              } else {
+                this.AddMessage(this.MakeErrorMessage(`Cannot break ${mapObj.theName} : ${res.reason}.`));
+              }
+            } else {
+              this.AddMessage(this.MakeErrorMessage("Nothing to break there."));
+            }
+          }
+        }
+      }
+    } while (loop);
+
+    this.ClearOverlays();
+    return actionDone;
   }
 
   // C# HandlePlayerBuildFortification — RogueGame.cs:8003
-  HandlePlayerBuildFortification(player: Actor, isLarge: boolean): boolean {
-    void player;
-    void isLarge;
-    throw new Error("not yet ported: HandlePlayerBuildFortification (RogueGame.cs:8003)");
+  async HandlePlayerBuildFortification(player: Actor, isLarge: boolean): Promise<boolean> {
+    if (player.sheet.skillTable.getSkillLevel(SkillID.CARPENTRY) === 0) {
+      this.AddMessage(this.MakeErrorMessage("need carpentry skill."));
+      return false;
+    }
+    const need = this.m_Rules.actorBarricadingMaterialNeedForFortification(player, isLarge);
+    if (this.m_Rules.countBarricadingMaterial(player) < need) {
+      this.AddMessage(this.MakeErrorMessage(`not enough barricading material, need ${need}.`));
+      return false;
+    }
+
+    let loop = true;
+    let actionDone = false;
+
+    this.ClearOverlays();
+    this.AddOverlay(new OverlayPopup(isLarge ? this.BUILD_LARGE_FORT_MODE_TEXT : this.BUILD_SMALL_FORT_MODE_TEXT, this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+
+    do {
+      this.RedrawPlayScreen();
+      const dir = await this.WaitDirectionOrCancel();
+
+      if (dir == null) {
+        loop = false;
+      } else if (dir !== Direction.NEUTRAL) {
+        const pos = player.location.position.add(new Point(dir.dx, dir.dy));
+        if (player.location.map!.isInBoundsPoint(pos)) {
+          const res = this.m_Rules.canActorBuildFortification(player, pos, isLarge);
+          if (res.ok) {
+            this.DoBuildFortification(player, pos, isLarge);
+            this.RedrawPlayScreen();
+            loop = false;
+            actionDone = true;
+          } else {
+            this.AddMessage(this.MakeErrorMessage(`Cannot build here : ${res.reason}.`));
+          }
+        }
+      }
+    } while (loop);
+
+    this.ClearOverlays();
+    return actionDone;
   }
 
   // C# HandlePlayerFireMode — RogueGame.cs:8074
-  HandlePlayerFireMode(player: Actor): boolean {
-    void player;
-    throw new Error("not yet ported: HandlePlayerFireMode (RogueGame.cs:8074)");
+  async HandlePlayerFireMode(player: Actor): Promise<boolean> {
+    let loop = true;
+    let actionDone = false;
+
+    const grenade = player.getEquippedWeapon() instanceof ItemGrenade ? player.getEquippedWeapon() as ItemGrenade : null;
+    const primedGrenade = player.getEquippedWeapon() instanceof ItemGrenadePrimed ? player.getEquippedWeapon() as ItemGrenadePrimed : null;
+    if (grenade != null || primedGrenade != null)
+      return await this.HandlePlayerThrowGrenade(player);
+
+    const rangedWeapon = player.getEquippedWeapon() instanceof ItemRangedWeapon ? player.getEquippedWeapon() as ItemRangedWeapon : null;
+    if (rangedWeapon == null) {
+      this.AddMessage(this.MakeErrorMessage("No weapon ready to fire."));
+      this.RedrawPlayScreen();
+      return false;
+    }
+    if (rangedWeapon.ammo <= 0) {
+      this.AddMessage(this.MakeErrorMessage("No ammo left."));
+      this.RedrawPlayScreen();
+      return false;
+    }
+
+    const fov = LOS.computeFOVFor(this.m_Rules, player, this.m_Session.worldTime, this.m_Session.world!.weather);
+    const potentialTargets = this.m_Rules.getEnemiesInFov(player, fov);
+
+    if (potentialTargets == null || potentialTargets.length === 0) {
+      this.AddMessage(this.MakeErrorMessage("No targets to fire at."));
+      this.RedrawPlayScreen();
+      return false;
+    }
+
+    const rangedAttack = this.m_Rules.actorRangedAttack(player, player.currentRangedAttack!, 0, null);
+    let iCurrentTarget = 0;
+    const lof: Point[] = [];
+    let mode = this.m_Session.player_CurrentFireMode;
+    do {
+      const currentTarget = potentialTargets[iCurrentTarget];
+      lof.length = 0;
+      const res = this.m_Rules.canActorFireAt(player, currentTarget, lof);
+      const dToTarget = this.m_Rules.gridDistance(player.location.position, currentTarget.location.position);
+
+      let modeDesc: string;
+      if (mode === FireMode.RAPID)
+        modeDesc = `RAPID fire average hit chances ${this.m_Rules.computeChancesRangedHit(player, currentTarget, 1)}% ${this.m_Rules.computeChancesRangedHit(player, currentTarget, 2)}%`;
+      else
+        modeDesc = `Normal fire average hit chance ${this.m_Rules.computeChancesRangedHit(player, currentTarget, 0)}%`;
+
+      const overlayPopupText = [...this.FIRE_MODE_TEXT, modeDesc];
+      this.ClearOverlays();
+      this.AddOverlay(new OverlayPopup(overlayPopupText, this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+      const targetScreen = this.MapToScreen(currentTarget.location.position);
+      this.AddOverlay(new OverlayImage(targetScreen, GameImages.ICON_TARGET));
+      const lineImage = res.ok ? (dToTarget <= (rangedAttack?.efficientRange ?? 0) ? GameImages.ICON_LINE_CLEAR : GameImages.ICON_LINE_BAD) : GameImages.ICON_LINE_BLOCKED;
+      for (const pt of lof) {
+        const screenPt = this.MapToScreen(pt);
+        this.AddOverlay(new OverlayImage(screenPt, lineImage));
+      }
+      this.RedrawPlayScreen();
+
+      const key = await this.m_UI.UI_WaitKey();
+
+      if (key.key === "Escape") {
+        loop = false;
+      } else if (key.key === "t" || key.key === "T") {
+        iCurrentTarget = (iCurrentTarget + 1) % potentialTargets.length;
+      } else if (key.key === "m" || key.key === "M") {
+        mode = ((mode + 1) % FireMode._COUNT) as FireMode;
+        this.AddMessage(new Message(`Switched to ${FireMode[mode]} fire mode.`, this.m_Session.worldTime.turnCounter, Color.Yellow));
+        this.m_Session.player_CurrentFireMode = mode;
+      } else if (key.key === "f" || key.key === "F") {
+        if (res.ok) {
+          this.DoRangedAttack(player, currentTarget, lof, mode);
+          this.RedrawPlayScreen();
+          loop = false;
+          actionDone = true;
+        } else {
+          this.AddMessage(this.MakeErrorMessage(`Can't fire at ${currentTarget.theName} : ${res.reason}.`));
+        }
+      }
+    } while (loop);
+
+    this.ClearOverlays();
+    return actionDone;
   }
 
   // C# HandlePlayerMarkEnemies — RogueGame.cs:8199
-  HandlePlayerMarkEnemies(player: Actor): void {
-    void player;
-    throw new Error("not yet ported: HandlePlayerMarkEnemies (RogueGame.cs:8199)");
+  async HandlePlayerMarkEnemies(player: Actor): Promise<void> {
+    if (player.model.abilities.isUndead) {
+      this.AddMessage(this.MakeErrorMessage("Undeads can't have personal enemies."));
+      return;
+    }
+
+    const map = player.location.map!;
+    const visibleActors: Actor[] = [];
+    for (const p of this.m_PlayerFOV) {
+      const a = map.getActorAtPoint(p);
+      if (a == null || a.isPlayer)
+        continue;
+      visibleActors.push(a);
+    }
+    if (visibleActors.length === 0) {
+      this.AddMessage(this.MakeErrorMessage("No visible actors to mark."));
+      this.RedrawPlayScreen();
+      return;
+    }
+
+    let loop = true;
+    let iCurrentActor = 0;
+    do {
+      const currentActor = visibleActors[iCurrentActor];
+
+      this.ClearOverlays();
+      this.AddOverlay(new OverlayPopup(this.MARK_ENEMIES_MODE, this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+      const targetScreen = this.MapToScreen(currentActor.location.position);
+      this.AddOverlay(new OverlayImage(targetScreen, GameImages.ICON_TARGET));
+      this.RedrawPlayScreen();
+
+      const key = await this.m_UI.UI_WaitKey();
+
+      if (key.key === "Escape") {
+        loop = false;
+      } else if (key.key === "t" || key.key === "T") {
+        iCurrentActor = (iCurrentActor + 1) % visibleActors.length;
+      } else if (key.key === "e" || key.key === "E") {
+        let allowed = true;
+        if (currentActor.leader === player) {
+          this.AddMessage(this.MakeErrorMessage("Can't make a follower your enemy."));
+          allowed = false;
+        } else if (player.leader === currentActor) {
+          this.AddMessage(this.MakeErrorMessage("Can't make your leader your enemy."));
+          allowed = false;
+        } else if (this.m_Rules.areEnemies(this.m_Player, currentActor)) {
+          this.AddMessage(this.MakeErrorMessage("Already enemies."));
+          allowed = false;
+        }
+
+        if (allowed) {
+          this.AddMessage(new Message(`${currentActor.theName} is now a personal enemy.`, this.m_Session.worldTime.turnCounter, Color.Orange));
+          this.DoMakeAggression(player, currentActor);
+        }
+      }
+    } while (loop);
+
+    this.ClearOverlays();
   }
 
   // C# HandlePlayerThrowGrenade — RogueGame.cs:8297
-  HandlePlayerThrowGrenade(player: Actor): boolean {
-    void player;
-    throw new Error("not yet ported: HandlePlayerThrowGrenade (RogueGame.cs:8297)");
+  async HandlePlayerThrowGrenade(player: Actor): Promise<boolean> {
+    let loop = true;
+    let actionDone = false;
+
+    const unprimedGrenade = player.getEquippedWeapon() instanceof ItemGrenade ? player.getEquippedWeapon() as ItemGrenade : null;
+    const primedGrenade = player.getEquippedWeapon() instanceof ItemGrenadePrimed ? player.getEquippedWeapon() as ItemGrenadePrimed : null;
+    if (unprimedGrenade == null && primedGrenade == null) {
+      this.AddMessage(this.MakeErrorMessage("No grenade to throw."));
+      this.RedrawPlayScreen();
+      return false;
+    }
+    let grenadeModel: ItemGrenadeModel;
+    if (unprimedGrenade != null)
+      grenadeModel = unprimedGrenade.model as ItemGrenadeModel;
+    else
+      grenadeModel = ((primedGrenade!.model as ItemGrenadePrimedModel)).grenadeModel;
+
+    const map = player.location.map!;
+    let targetThrow = player.location.position;
+    const maxThrowDist = this.m_Rules.actorMaxThrowRange(player, grenadeModel.maxThrowDistance);
+
+    const lot: Point[] = [];
+    do {
+      lot.length = 0;
+      const res = this.m_Rules.canActorThrowTo(player, targetThrow, lot);
+
+      this.ClearOverlays();
+      this.AddOverlay(new OverlayPopup(this.THROW_GRENADE_MODE_TEXT, this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+      const lineImage = res.ok ? GameImages.ICON_LINE_CLEAR : GameImages.ICON_LINE_BLOCKED;
+      for (const pt of lot) {
+        const screenPt = this.MapToScreen(pt);
+        this.AddOverlay(new OverlayImage(screenPt, lineImage));
+      }
+      this.RedrawPlayScreen();
+
+      const key = await this.m_UI.UI_WaitKey();
+      const command = InputTranslator.keyToCommand(RogueGame.KeyBindings(), key.key, key.ctrl, key.alt, key.shift);
+
+      if (key.key === "Escape") {
+        loop = false;
+      } else if (key.key === "f" || key.key === "F") {
+        if (res.ok) {
+          let doIt = true;
+          if (this.m_Rules.gridDistance(player.location.position, targetThrow) <= grenadeModel.blastAttack.radius) {
+            this.ClearMessages();
+            this.AddMessage(new Message("You are in the blast radius!", this.m_Session.worldTime.turnCounter, Color.Yellow));
+            this.AddMessage(this.MakeYesNoMessage("Really throw there"));
+            this.RedrawPlayScreen();
+            doIt = await this.WaitYesOrNo();
+            this.ClearMessages();
+            this.RedrawPlayScreen();
+          }
+
+          if (doIt) {
+            if (unprimedGrenade != null)
+              this.DoThrowGrenadeUnprimed(player, targetThrow);
+            else
+              this.DoThrowGrenadePrimed(player, targetThrow);
+            this.RedrawPlayScreen();
+            loop = false;
+            actionDone = true;
+          }
+        } else {
+          this.AddMessage(this.MakeErrorMessage(`Can't throw there : ${res.reason}.`));
+        }
+      } else {
+        const dir = this.CommandToDirection(command);
+        if (dir != null) {
+          const pos = targetThrow.add(new Point(dir.dx, dir.dy));
+          if (map.isInBoundsPoint(pos) && this.m_Rules.gridDistance(player.location.position, pos) <= maxThrowDist)
+            targetThrow = pos;
+        }
+      }
+    } while (loop);
+
+    this.ClearOverlays();
+    return actionDone;
   }
 
   // C# HandlePlayerSleep — RogueGame.cs:8413
-  HandlePlayerSleep(player: Actor): boolean {
-    void player;
-    throw new Error("not yet ported: HandlePlayerSleep (RogueGame.cs:8413)");
+  async HandlePlayerSleep(player: Actor): Promise<boolean> {
+    const res = this.m_Rules.canActorSleep(player);
+    if (!res.ok) {
+      this.AddMessage(this.MakeErrorMessage(`Cannot sleep now : ${res.reason}.`));
+      return false;
+    }
+
+    this.AddMessage(this.MakeYesNoMessage("Really sleep there"));
+    this.RedrawPlayScreen();
+    const confirm = await this.WaitYesOrNo();
+    if (!confirm) {
+      this.AddMessage(new Message("Good, keep those eyes wide open.", this.m_Session.worldTime.turnCounter, Color.Yellow));
+      return false;
+    }
+
+    this.CheckAutoSaveTime();
+
+    this.AddMessage(new Message("Goodnight, happy nightmares!", this.m_Session.worldTime.turnCounter, Color.Yellow));
+    this.DoStartSleeping(player);
+    this.RedrawPlayScreen();
+    this.m_MusicManager.stop();
+    this.m_MusicManager.play(GameMusics.SLEEP);
+    return true;
   }
 
   // C# HandlePlayerSwitchPlace — RogueGame.cs:8446
-  HandlePlayerSwitchPlace(player: Actor): boolean {
-    void player;
-    throw new Error("not yet ported: HandlePlayerSwitchPlace (RogueGame.cs:8446)");
+  async HandlePlayerSwitchPlace(player: Actor): Promise<boolean> {
+    let loop = true;
+    let actionDone = false;
+
+    this.ClearOverlays();
+    this.AddOverlay(new OverlayPopup(this.SWITCH_PLACE_MODE_TEXT, this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+
+    do {
+      this.RedrawPlayScreen();
+      const dir = await this.WaitDirectionOrCancel();
+
+      if (dir == null) {
+        loop = false;
+      } else if (dir !== Direction.NEUTRAL) {
+        const pos = player.location.position.add(new Point(dir.dx, dir.dy));
+        if (player.location.map!.isInBoundsPoint(pos)) {
+          const other = player.location.map!.getActorAtPoint(pos);
+          if (other != null) {
+            const switchRes = this.m_Rules.canActorSwitchPlaceWith(player, other);
+            if (switchRes.ok) {
+              actionDone = true;
+              loop = false;
+              this.DoSwitchPlace(player, other);
+            } else {
+              this.AddMessage(this.MakeErrorMessage(`Can't switch place : ${switchRes.reason}`));
+            }
+          } else {
+            this.AddMessage(this.MakeErrorMessage("Noone there."));
+          }
+        }
+      }
+    } while (loop);
+
+    this.ClearOverlays();
+    return actionDone;
   }
 
   // C# HandlePlayerTakeLead — RogueGame.cs:8508
-  HandlePlayerTakeLead(player: Actor): boolean {
-    void player;
-    throw new Error("not yet ported: HandlePlayerTakeLead (RogueGame.cs:8508)");
+  async HandlePlayerTakeLead(player: Actor): Promise<boolean> {
+    let loop = true;
+    let actionDone = false;
+
+    this.ClearOverlays();
+    this.AddOverlay(new OverlayPopup(this.TAKE_LEAD_MODE_TEXT, this.MODE_TEXTCOLOR, this.MODE_BORDERCOLOR, this.MODE_FILLCOLOR, new Point(0, 0)));
+
+    do {
+      this.RedrawPlayScreen();
+      const dir = await this.WaitDirectionOrCancel();
+
+      if (dir == null) {
+        loop = false;
+      } else if (dir !== Direction.NEUTRAL) {
+        const pos = player.location.position.add(new Point(dir.dx, dir.dy));
+        if (player.location.map!.isInBoundsPoint(pos)) {
+          const other = player.location.map!.getActorAtPoint(pos);
+          if (other != null) {
+            const res = this.m_Rules.canActorTakeLead(player, other);
+            if (res.ok) {
+              actionDone = true;
+              loop = false;
+
+              if (other.hasLeader)
+                this.DoStealLead(player, other);
+              else
+                this.DoTakeLead(player, other);
+
+              this.m_Session.scoring.addEvent(this.m_Session.worldTime.turnCounter, `Recruited ${other.name}.`);
+
+              this.AddMessage(new Message("(you can now set directives and orders for your new follower).", this.m_Session.worldTime.turnCounter, Color.White));
+              this.AddMessage(new Message(`(to give order : press <${s_KeyBindings.get(PlayerCommand.ORDER_MODE)?.toString() ?? ""}>).`, this.m_Session.worldTime.turnCounter, Color.White));
+
+            } else if (other.leader === player) {
+              const cancelRes = this.m_Rules.canActorCancelLead(player, other);
+              if (cancelRes.ok) {
+                this.AddMessage(this.MakeYesNoMessage(`Really ask ${other.name} to leave`));
+                this.RedrawPlayScreen();
+                const confirm = await this.WaitYesOrNo();
+                if (confirm) {
+                  actionDone = true;
+                  loop = false;
+                  this.DoCancelLead(player, other);
+                  this.m_Session.scoring.addEvent(this.m_Session.worldTime.turnCounter, `Fired ${other.name}.`);
+                } else {
+                  this.AddMessage(new Message("Good, together you are strong.", this.m_Session.worldTime.turnCounter, Color.Yellow));
+                }
+              } else {
+                this.AddMessage(this.MakeErrorMessage(`${other.name} can't leave : ${cancelRes.reason}.`));
+              }
+            } else {
+              this.AddMessage(this.MakeErrorMessage(`Can't lead ${other.name} : ${res.reason}.`));
+            }
+          } else {
+            this.AddMessage(this.MakeErrorMessage("Noone there."));
+          }
+        }
+      }
+    } while (loop);
+
+    this.ClearOverlays();
+    return actionDone;
   }
 
   // C# HandlePlayerPush — RogueGame.cs:8609
@@ -6875,7 +7391,7 @@ export class RogueGame {
     const lines: string[] = [];
 
     const m = ex.model as ItemExplosiveModel;
-    const primed = ex instanceof ItemPrimedExplosive ? ex : null;
+    const primed = ex instanceof ItemGrenadePrimed ? ex : null;
 
     lines.push("> explosive");
 
