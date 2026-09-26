@@ -167,6 +167,13 @@ export class HeadlessRunner {
         turnsPlayed++;
         step(`turn ${turn} done (world turn ${session.worldTime.turnCounter})`);
 
+        // Catch actor-list corruption at the turn it starts. `Map.placeActor`
+        // once appended a duplicate per player step, which surfaced 40 turns
+        // later as an inexplicable starvation death; this makes that class of
+        // bug fail on the turn it begins. O(n) in actors, against a turn that
+        // costs orders of magnitude more, so it stays on in every run.
+        session.currentMap?.assertActorIntegrity();
+
         if (opts.verbose) {
           const p = game.player;
           process.stdout.write(

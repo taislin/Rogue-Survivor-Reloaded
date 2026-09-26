@@ -334,22 +334,86 @@ export class Map {
     return this.getActorAt(p.x, p.y);
   }
 
+  /** C# `HasActor` — is this actor currently in *this* map? */
+  hasActor(actor: Actor): boolean {
+    return this.actorsList.includes(actor);
+  }
+
+  /**
+   * C# `PlaceActorAt` — **add or move** an actor to a position.
+   *
+   * The add-or-move distinction is load-bearing and this method used to get it
+   * wrong: it always pushed onto `actorsList`, so every call made for an actor
+   * already on the map left a permanent duplicate behind. `DoMoveActor` routes
+   * all movement through here (as C# does), so the player accumulated two
+   * duplicate entries per step taken. Nothing crashed — the per-turn gauge loop
+   * just iterated the duplicates, so the player starved to death on turn 9 and
+   * the actor count only ever grew.
+   *
+   * Note the ordering: an actor moving to an occupied tile is rejected, so
+   * callers that swap two actors must `removeActor` the occupant first (which
+   * `DoSwitchPlace` and `DoShoveActor` already do).
+   */
   placeActor(actor: Actor, pos: Point): void {
-    const k = Map.key(pos.x, pos.y);
-    if (this.actorsByPos.has(k)) {
-      throw new Error(`Tile ${pos.toString()} already has an actor`);
+    const other = this.getActorAt(pos.x, pos.y);
+    if (other === actor) throw new Error("actor already at position");
+    if (other !== null) throw new Error(`another actor already at position (${pos.toString()})`);
+    if (!this.isInBounds(pos.x, pos.y))
+      throw new RangeError(`position out of map bounds (${pos.x},${pos.y})`);
+
+    if (this.hasActor(actor)) {
+      // Moving: reindex, but keep the single list entry.
+      this.actorsByPos.delete(Map.key(actor.location.position.x, actor.location.position.y));
+    } else {
+      this.actorsList.push(actor);
     }
+    this.actorsByPos.set(Map.key(pos.x, pos.y), actor);
     actor.location = new Location(this, pos);
-    this.actorsList.push(actor);
-    this.actorsByPos.set(k, actor);
     this.m_checkNextActorIndex = 0; // invalidated
   }
 
-  removeActor(actor: Actor): void {
-    const idx = this.actorsList.indexOf(actor);
-    if (idx !== -1) {
-      this.actorsList.splice(idx, 1);
+  /**
+   * Throws if the actor list and the position index have drifted apart.
+   *
+   * Not a C# method: C# gets this consistency for free from
+   * `List.Contains` + a dictionary, and a duplicate there is a silent
+   * performance bug rather than a correctness one. In TypeScript the same
+   * mistake is silent *and* corrupts the simulation, as `placeActor` above
+   * did. The headless sim calls this once per turn so the next regression of
+   * this class fails loudly at the turn it starts, rather than as a strange
+   * death 40 turns later. O(n); a turn costs far more than that.
+   */
+  assertActorIntegrity(): void {
+    const seen = new Set<Actor>();
+    for (const actor of this.actorsList) {
+      if (seen.has(actor))
+        throw new Error(
+          `Map "${this.name}": actor "${actor.theName}" appears ${this.actorsList.filter((a) => a === actor).length}x in the actor list`
+        );
+      seen.add(actor);
+
+      const pos = actor.location.position;
+      if (actor.location.map !== this)
+        throw new Error(`Map "${this.name}": actor "${actor.theName}" is listed here but located on another map`);
+      if (this.getActorAt(pos.x, pos.y) !== actor)
+        throw new Error(
+          `Map "${this.name}": actor "${actor.theName}" is at ${pos.toString()} but the index has ${this.getActorAt(pos.x, pos.y)?.theName ?? "nothing"}`
+        );
     }
+    if (this.actorsByPos.size !== this.actorsList.length)
+      throw new Error(
+        `Map "${this.name}": ${this.actorsList.length} actors listed but ${this.actorsByPos.size} indexed by position`
+      );
+  }
+
+  removeActor(actor: Actor): void {
+    // C# returns early if the actor is not in this map's list, and crucially
+    // does *not* touch the position index. Deleting unconditionally (as this
+    // once did) would evict whichever unrelated actor stands at that point.
+    if (!this.hasActor(actor)) return;
+
+    const idx = this.actorsList.indexOf(actor);
+    this.actorsList.splice(idx, 1);
     const pos = actor.location.position;
     this.actorsByPos.delete(Map.key(pos.x, pos.y));
     this.m_checkNextActorIndex = 0; // invalidated
