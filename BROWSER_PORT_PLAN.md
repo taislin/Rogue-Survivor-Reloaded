@@ -379,10 +379,10 @@ combines them with the hand-ported overlay types, constructor and getters into
 | 1 | 1415–2876 | Character creation, `StartNewGame`, credits, options, redefine keys | ✅ Ported |
 | 2 | 2877–4154 | `AdvancePlay`, `NextMapTurn`, actor regen/counts, scents | ⬜ |
 | 3 | 4156–5366 | Events (invasions, refugees, raids, drops) + spawning | ⬜ |
-| 4 | 5367–10255 | FOV, `HandlePlayerActor` and all `HandlePlayerXXX` commands | 🔄 In progress |
-| 5 | 10256–12658 | AI actor handling, advisor, input helpers, describe-* | 🔄 In progress |
+| 4 | 5367–10255 | FOV, `HandlePlayerActor` and all `HandlePlayerXXX` commands | ✅ Ported |
+| 5 | 10256–12658 | AI actor handling, advisor, input helpers, describe-* | ✅ Ported |
 | 6 | 12660–16790 | Action primitives `DoMoveActor` … `KillActor`, blood/corpses | ⬜ |
-| 7 | 16791–17986 | Player death, new day/night, skills, infection/zombification | ⬜ |
+| 7 | 16791–17986 | Player death, new day/night, skills, infection/zombification | ✅ Ported |
 | 8 | 17987–19723 | View, drawing, overlays, coordinates, visibility helpers | ⬜ |
 | 9 | 19724–21381 | Save/load, paths, `GenerateWorld`, district maps, map switching | ⬜ |
 | 10 | 21382–23233 | Sim thread, achievements, special events, reincarnation, dev/data | ⬜ |
