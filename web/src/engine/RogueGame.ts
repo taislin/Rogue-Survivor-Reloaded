@@ -89,6 +89,18 @@ function shadowColorOf(c: Color): Color {
   return Color.fromArgb(Math.floor(c.r / 2), Math.floor(c.g / 2), Math.floor(c.b / 2), c.a);
 }
 
+/** C# numeric/string format alignment: `{0,3}`, `{0,6}` (right aligned). */
+export function padLeft(s: string | number, width: number): string {
+  void width;
+  return String(s);
+}
+
+/** C# numeric/string format alignment: `{0,-25}` (left aligned). */
+export function padRight(s: string | number, width: number): string {
+  void width;
+  return String(s);
+}
+
 // ── C# Constants (module level so initializers and static methods can see them)
 export const MAP_MAX_HEIGHT: number = 100;
 export const MAP_MAX_WIDTH: number = 100;
@@ -484,7 +496,8 @@ export class RogueGame {
   m_TownGenerator!: BaseTownGenerator;
   m_PlayedIntro!: boolean;
   m_MusicManager!: IMusicManager;
-  m_CharGen!: CharGen;
+  /** C# `struct CharGen` — a struct is zero-initialized, so the field starts out filled. */
+  m_CharGen: CharGen = new CharGen();
   m_Manual: TextFile | null = null;
   m_ManualLine!: number;
   m_GameFactions!: GameFactions;
@@ -1607,8 +1620,16 @@ export class RogueGame {
 
   // C# UpdatePlayerFOV — RogueGame.cs:5368
   UpdatePlayerFOV(player: Actor): void {
-    void player;
-    throw new Error("not yet ported: UpdatePlayerFOV (RogueGame.cs:5368)");
+    const map = player.location.map;
+    if (!map) return;
+    const fovKeys = this.m_Rules.computeFOVFor(player, map.localTime, this.m_Session.weather);
+    this.m_PlayerFOV.clear();
+    for (const key of fovKeys) {
+      const parts = key.split(",");
+      if (parts.length === 2) {
+        this.m_PlayerFOV.add(new Point(parseInt(parts[0], 10), parseInt(parts[1], 10)));
+      }
+    }
   }
 
   // C# BotToggleControl — RogueGame.cs:5385
@@ -2171,14 +2192,20 @@ export class RogueGame {
   }
 
   // C# WaitEnter — RogueGame.cs:11284
-  // Blocking in C#; async here (Phase 4 slice 5 fills the body).
+  // Blocking in C#; async here.
   async WaitEnter(): Promise<void> {
-    throw new Error("not yet ported: WaitEnter (RogueGame.cs:11284)");
+    for (;;) {
+      const key = await this.m_UI.UI_WaitKey();
+      if (key.key === "Enter") return;
+    }
   }
 
   // C# WaitEscape — RogueGame.cs:11294
-  WaitEscape(): void {
-    throw new Error("not yet ported: WaitEscape (RogueGame.cs:11294)");
+  async WaitEscape(): Promise<void> {
+    for (;;) {
+      const key = await this.m_UI.UI_WaitKey();
+      if (key.key === "Escape") return;
+    }
   }
 
   // C# KeyToChoiceNumber — RogueGame.cs:11309
@@ -2188,8 +2215,12 @@ export class RogueGame {
   }
 
   // C# WaitYesOrNo — RogueGame.cs:11358
-  WaitYesOrNo(): boolean {
-    throw new Error("not yet ported: WaitYesOrNo (RogueGame.cs:11358)");
+  async WaitYesOrNo(): Promise<boolean> {
+    for (;;) {
+      const key = await this.m_UI.UI_WaitKey();
+      if (key.key === "y" || key.key === "Y") return true;
+      if (key.key === "n" || key.key === "N" || key.key === "Escape") return false;
+    }
   }
 
   // C# DescribeStuffAt — RogueGame.cs:11372
@@ -2351,8 +2382,71 @@ export class RogueGame {
 
   // C# DescribeSkillShort — RogueGame.cs:12509
   DescribeSkillShort(id: SkillID): string {
-    void id;
-    throw new Error("not yet ported: DescribeSkillShort (RogueGame.cs:12509)");
+    switch (id) {
+      case SkillID.AGILE:
+        return `+${Rules.SKILL_AGILE_ATK_BONUS} melee ATK, +${Rules.SKILL_AGILE_DEF_BONUS} DEF`;
+      case SkillID.AWAKE:
+        return `+${Math.floor(100 * Rules.SKILL_AWAKE_SLEEP_BONUS)}% max SLP, +${Math.floor(100 * Rules.SKILL_AWAKE_SLEEP_REGEN_BONUS)}% SLP regen `;
+      case SkillID.BOWS:
+        return `bows +${Rules.SKILL_BOWS_ATK_BONUS} ATK, +${Rules.SKILL_BOWS_DMG_BONUS} DMG`;
+      case SkillID.CARPENTRY:
+        return `build, -${Rules.SKILL_CARPENTRY_LEVEL3_BUILD_BONUS} mat. at lvl 3, +${Math.floor(100 * Rules.SKILL_CARPENTRY_BARRICADING_BONUS)}% barricading`;
+      case SkillID.CHARISMATIC:
+        // alpha10.1 steal followers
+        return `+${Rules.SKILL_CHARISMATIC_TRUST_BONUS} trust per turn, +${Rules.SKILL_CHARISMATIC_TRADE_BONUS}% trade rolls, steal followers`;
+      case SkillID.FIREARMS:
+        return `firearms +${Rules.SKILL_FIREARMS_ATK_BONUS} ATK, +${Rules.SKILL_FIREARMS_DMG_BONUS} DMG`;
+      case SkillID.HARDY:
+        return `sleeping anywhere heals, +${Rules.SKILL_HARDY_HEAL_CHANCE_BONUS}% chance to heal when sleeping`;
+      case SkillID.HAULER:
+        return `+${Rules.SKILL_HAULER_INV_BONUS} inventory slots`;
+      case SkillID.HIGH_STAMINA:
+        return `+${Rules.SKILL_HIGH_STAMINA_STA_BONUS} STA`;
+      case SkillID.LEADERSHIP:
+        return `+${Rules.SKILL_LEADERSHIP_FOLLOWER_BONUS} max Followers`;
+      case SkillID.LIGHT_EATER:
+        return `+${Math.floor(100 * Rules.SKILL_LIGHT_EATER_MAXFOOD_BONUS)}% max FOO, +${Math.floor(100 * Rules.SKILL_LIGHT_EATER_FOOD_BONUS)}% items food points`;
+      case SkillID.LIGHT_FEET:
+        return `+${Rules.SKILL_LIGHT_FEET_TRAP_BONUS}% to avoid and escape traps`;
+      case SkillID.LIGHT_SLEEPER:
+        return `+${Rules.SKILL_LIGHT_SLEEPER_WAKEUP_CHANCE_BONUS}% noise wake up chance`;
+      case SkillID.MARTIAL_ARTS:
+        return `unarmed only +${Rules.SKILL_MARTIAL_ARTS_ATK_BONUS} ATK, +${Rules.SKILL_MARTIAL_ARTS_DMG_BONUS} DMG, +${Rules.SKILL_MARTIAL_ARTS_DISARM_BONUS}% disarm`;
+      case SkillID.MEDIC:
+        return `+${Math.floor(100 * Rules.SKILL_MEDIC_BONUS)}% medicine items effects, +${Rules.SKILL_MEDIC_REVIVE_BONUS}% revive `;
+      case SkillID.NECROLOGY:
+        return `+${Rules.SKILL_NECROLOGY_UNDEAD_BONUS}/+${Rules.SKILL_NECROLOGY_CORPSE_BONUS} DMG vs undeads/corpses, data on corpses`;
+      case SkillID.STRONG:
+        return `+${Rules.SKILL_STRONG_DMG_BONUS} melee DMG, +${Rules.SKILL_STRONG_RESIST_DISARM_BONUS}% resist disarming, +${Rules.SKILL_STRONG_THROW_BONUS} throw range`;
+      case SkillID.STRONG_PSYCHE:
+        return `+${Math.floor(100 * Rules.SKILL_STRONG_PSYCHE_LEVEL_BONUS)}% SAN threshold`;
+      case SkillID.TOUGH:
+        return `+${Rules.SKILL_TOUGH_HP_BONUS} HP`;
+      case SkillID.UNSUSPICIOUS:
+        return `+${Rules.SKILL_UNSUSPICIOUS_BONUS}% unnoticed by law enforcers and gangs`;
+
+      case SkillID.Z_AGILE:
+        return `+${Rules.SKILL_ZAGILE_ATK_BONUS} melee ATK, +${Rules.SKILL_ZAGILE_DEF_BONUS} DEF, can jump`;
+      case SkillID.Z_EATER:
+        return `+${Math.floor(100 * Rules.SKILL_ZEATER_REGEN_BONUS)}% eating HP regen`;
+      case SkillID.Z_GRAB:
+        return `can grab enemies, +${Rules.SKILL_ZGRAB_CHANCE}% per level`;
+      case SkillID.Z_INFECTOR:
+        return `+${Math.floor(100 * Rules.SKILL_ZINFECTOR_BONUS)}% infection damage`;
+      case SkillID.Z_LIGHT_EATER:
+        return `+${Math.floor(100 * Rules.SKILL_ZLIGHT_EATER_MAXFOOD_BONUS)}% max ROT, +${Math.floor(100 * Rules.SKILL_ZLIGHT_EATER_FOOD_BONUS)}% from eating`;
+      case SkillID.Z_LIGHT_FEET:
+        return `+${Rules.SKILL_ZLIGHT_FEET_TRAP_BONUS}% to avoid traps`;
+      case SkillID.Z_STRONG:
+        return `+${Rules.SKILL_ZSTRONG_DMG_BONUS} melee DMG, can push`;
+      case SkillID.Z_TOUGH:
+        return `+${Rules.SKILL_ZTOUGH_HP_BONUS} HP`;
+      case SkillID.Z_TRACKER:
+        return `+${Math.floor(100 * Rules.SKILL_ZTRACKER_SMELL_BONUS)}% smell`;
+
+      default:
+        throw new RangeError("unhandled skill id");
+    }
   }
 
   // C# DescribeDayPhase — RogueGame.cs:12578
@@ -3077,9 +3171,19 @@ export class RogueGame {
   }
 
   // C# TimeSpanToString — RogueGame.cs:16878
+  // `TimeSpan` here is seconds (`Scoring.RealLifePlayingTime` → `realLifePlayingTimeSeconds`).
   TimeSpanToString(rt: TimeSpan): string {
-    void rt;
-    throw new Error("not yet ported: TimeSpanToString (RogueGame.cs:16878)");
+    const totalSeconds = Math.floor(rt);
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor(totalSeconds / 3600) % 24;
+    const minutes = Math.floor(totalSeconds / 60) % 60;
+    const seconds = totalSeconds % 60;
+    // alpha10 shortened
+    const timeDays = days === 0 ? "" : `${days} d `;
+    const timeHours = hours === 0 ? "" : `${String(hours).padStart(2, "0")} h `;
+    const timeMinutes = minutes === 0 ? "" : `${String(minutes).padStart(2, "0")} m `;
+    const timeSeconds = seconds === 0 ? "" : `${String(seconds).padStart(2, "0")} s`;
+    return `${timeDays}${timeHours}${timeMinutes}${timeSeconds}`;
   }
 
   // C# HandlePostMortem — RogueGame.cs:16888
@@ -3731,8 +3835,10 @@ export class RogueGame {
   }
 
   // C# GetUserSavesPath — RogueGame.cs:19997
+  // The browser port has no filesystem; `HiScoreTable` stores into localStorage and
+  // ignores the path, so these only matter as display/`TextFile` keys.
   GetUserSavesPath(): string {
-    throw new Error("not yet ported: GetUserSavesPath (RogueGame.cs:19997)");
+    return "";
   }
 
   // C# GetUserSave — RogueGame.cs:20002
@@ -3815,17 +3921,17 @@ export class RogueGame {
 
   // C# GetUserHiScorePath — RogueGame.cs:20132
   GetUserHiScorePath(): string {
-    throw new Error("not yet ported: GetUserHiScorePath (RogueGame.cs:20132)");
+    return this.GetUserSavesPath();
   }
 
   // C# GetUserHiScoreFilePath — RogueGame.cs:20137
   GetUserHiScoreFilePath(): string {
-    throw new Error("not yet ported: GetUserHiScoreFilePath (RogueGame.cs:20137)");
+    return this.GetUserHiScorePath() + "hiscores.dat";
   }
 
   // C# GetUserHiScoreTextFilePath — RogueGame.cs:20142
   GetUserHiScoreTextFilePath(): string {
-    throw new Error("not yet ported: GetUserHiScoreTextFilePath (RogueGame.cs:20142)");
+    return this.GetUserHiScorePath() + "hiscores.txt";
   }
 
   // C# GenerateWorld — RogueGame.cs:20149

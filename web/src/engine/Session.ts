@@ -12,6 +12,7 @@ import { District } from "@data/District";
 import { Map as GameMap } from "@data/Map";
 import { World } from "@data/World";
 import { WorldTime } from "@engine/WorldTime";
+import { Weather } from "@data/Weather";
 import { GameOptions, Options } from "@engine/GameOptions";
 import { Scoring } from "@engine/Scoring";
 
@@ -127,6 +128,7 @@ export class Session {
   private m_WorldTime: WorldTime | null = null;
   private m_World: World | null = null;
   private m_CurrentMap: GameMap | null = null;
+  private m_Weather: Weather = Weather.CLEAR;
 
   // ── Scoring ─────────────────────────────────────────────────────────────
   private m_Scoring: Scoring | null = null;
@@ -186,6 +188,13 @@ export class Session {
   }
   set currentMap(value: GameMap | null) {
     this.m_CurrentMap = value;
+  }
+
+  get weather(): Weather {
+    return this.m_Weather;
+  }
+  set weather(value: Weather) {
+    this.m_Weather = value;
   }
 
   get scoring(): Scoring {
