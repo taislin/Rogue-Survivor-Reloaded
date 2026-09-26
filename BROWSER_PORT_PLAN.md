@@ -36,22 +36,43 @@ The Phase 8 headless simulator was the first thing ever to actually *run* the po
 | 7 | Unsafe `Percept` → `Actor` cast | `gameplay/ai/CivilianAI.ts` | `undefined.abilities`. Now an `instanceof` check. |
 | 8 | Bot's fixed 250 ms action delay was a hard-coded `await sleep()` | `engine/RogueGame.ts` | Made headless runs 250× slower. Now `botDelayMs`, set to 0 by the runner. |
 | 9 | No headless UI, so the engine could not be driven outside a browser | `ui/NullRogueUI.ts` *(new)* | Blocking. Now solved. |
+| 10 | `Map.placeActor` always appended, dropping C#'s add-or-move branch | `data/Map.ts` | **Silent corruption.** Every step the player took added a permanent duplicate to the actor list, so the per-turn gauge loop ran 2, 4, 6, 8… times per turn: the player starved on turn 9 and the actor count only ever grew. See §1.2. |
 
 **Takeaway for the next agent: "0 stubs + green type-check" is not a definition of done for this project. The headless sim is.**
 
-### 1.2 Where the simulator stands
+### 1.2 The harness now runs real games
 
-The harness works and is doing its job. World generation completes in ~250 ms. It then runs real turns and crashes on further latent bugs — the long tail is not finished.
-
-Last two runs (note: **not reproducible**, see 1.4):
+Runs are reproducible (`--seed`, §1.4) and the map no longer corrupts itself
+(§1.1 bug 10). At 3×3 / 1 000 turns, 4 of 5 seeds play all 1 000 turns with the
+player alive and no exception:
 
 ```
-turns played : 8      →  Cannot read properties of undefined (reading 'register')
-                         at Map.placeActor → DoSwitchPlace → ActionSwitchPlace.perform
-turns played : 1      →  Tile (39, 3) already has an actor
+seed 1    turns played : 1000  player : alive (52 hp)  actors : 870 (565 undead / 305 living)
+seed 2    turns played : 1000  player : alive (67 hp)  actors : 898 (582 undead / 316 living)
+seed 3    turns played :   48  player : dead (-20 hp)
+seed 7    turns played : 1000  player : alive (56 hp)  actors : 880 (565 undead / 315 living)
+seed 42   turns played : 1000  player : alive (57 hp)  actors : 858 (561 undead / 297 living)
 ```
 
-Both are genuine unported/misported behaviour, not harness bugs.
+`Map.assertActorIntegrity()` runs every turn, so this class of bug now fails on
+the turn it starts rather than as a strange death 40 turns later. It is not dead
+code — reintroducing bug 10 makes it report the duplicate on turn 1.
+
+### 1.2a Two things that look like bugs but are not
+
+Do not re-investigate these:
+
+- **Players still die at full HP (30) around turn ~100 when run as a survivor.**
+  The bot exhausts its 100 food points because it never eats. The engine is
+  behaving correctly. `--undead` sidesteps it cleanly (undead do not have to
+  eat) and is what the long runs above use.
+- **`hitPoints` can go negative** (seed 3 ends at −20). C# `InflictDamage` also
+  does `HitPoints -= dmg` with no clamp, so this is faithful.
+
+One real but unrelated divergence is still open: `Actor.hitPoints` is a plain
+public field in TS, so the C# `HitPoints` setter's `m_IsInvincible` guard
+(`Actor.cs:245`) is never enforced. That only affects the alpha10 invincibility
+cheat, not normal play.
 
 ### 1.3 How to run it
 
@@ -60,31 +81,55 @@ cd web
 npm install
 npm run type-check
 npm run build
-npm run sim                              # default 3x3 world, 200 turns
-npm run sim -- --size 1 --turns 30       # fast smoke run
-npm run sim -- --size 1 --turns 30 --trace   # per-actor + bot decisions
+npm run sim                                    # default 3x3 world, 200 turns
+npm run sim -- --size 1 --turns 30             # fast smoke run
+npm run sim -- --size 3 --turns 1000 --seed 7 --undead   # long run, reproducible
+npm run sim -- --size 1 --turns 30 --trace     # per-actor + bot decisions
 ```
 
-Other flags: `--undead <n>`, `--bot <true|false>`, `--verbose`.
+Other flags: `--seed <n>`, `--undead`, `--bot <true|false>`, `--verbose`.
 
-### 1.4 Known issue: runs are not reproducible
+### 1.4 Runs are now reproducible
 
-`Session` seeds from `Date.now()` (`engine/Session.ts:219`), so every run explores a different world and fails in a different place. **This is the first thing to fix** — without a seed flag, each bug is found by luck and cannot be regression-tested. Add `HeadlessRunner.run({ seed })` overriding `session.seed` (a `Session.seed` field already exists and is used by save/load).
+`Session.reset()` used to seed from `Date.now()`, so every run explored a
+different world and failed in a different place. `Session.useSeed(seed)` now pins
+it and `reset()` honours it, exposed as `npm run sim -- --seed <n>`. Verified:
+`--seed 12345` gives byte-identical metrics across 3 runs, and seeds 1/2/999 give
+three different worlds.
+
+The flag lives on the `HeadlessRunner` **constructor**, not `run()`: `RogueGame`'s
+constructor builds `Rules` from `Session.get().seed`, so a seed applied later
+would reseed world generation while leaving the rules roller on the old value —
+half a deterministic run, which is worse than none.
 
 ### 1.5 Next steps, in priority order
 
-1. **Add a `--seed` flag** to the sim (1.4). Without it, nothing below is verifiable.
-2. **Keep running the sim to failure and fix what it finds.** Loop: `npm run sim -- --size 1 --turns 30` → fix → repeat. Work down from the smallest world / fewest turns. Current known failures are `DoSwitchPlace` → `Map.placeActor` and a tile-collision assert in `placeActor`.
-3. **Widen the run** once 1×1 is clean: `--size 3 --turns 200`, then the default. Watch for hangs, not just crashes — a turn that never returns is usually a blocking `UI_Wait*`.
-4. **Add the test suite** (Phase 8 task 5, entirely unstarted — no Vitest, no coverage, no CI yet). See §4.
-5. **Audit the remaining AI files for bug 3.** The `filterActors` fix was central, but any other `percepted as Actor` cast followed by a dereference is still suspect. Grep for the pattern.
-6. Then work down the Phase 8 task list in §4.
+1. **Keep running the sim to failure and fix what it finds.** Now that the map
+   stops corrupting itself, 1 000-turn runs are reachable. Loop over seeds:
+   `for s in 1 2 3 4 5; do npm run sim -- --size 3 --turns 1000 --seed $s --undead; done`
+   Watch for hangs, not just crashes — a turn that never returns is usually a
+   blocking `UI_Wait*`.
+2. **Add the test suite** (Phase 8 task 5, entirely unstarted — no Vitest, no
+   coverage, no CI yet). The harness is now trustworthy enough to assert on, which
+   is exactly what §4.3 item 1 needs. See §4.
+3. **Audit the remaining AI files for bug 3.** The `filterActors` fix was central,
+   but any other `percepted as Actor` cast followed by a dereference is still
+   suspect. Grep for the pattern.
+4. **Restore C#'s `isInvincible` guard** on `Actor.hitPoints` (§1.2a).
+5. Then work down the Phase 8 task list in §4.
 
 ### 1.6 Git state
 
 - `master`, tracking `origin/master`.
-- Phase 4 completion committed as `0bc8e7f`; the Phase 4 async audit (18 detached calls awaited, stale notes fixed) as `389a845`.
-- The headless harness + the 9 fixes above were committed together as the Phase 8 simulator commit.
+- Phase 4 completion committed as `0bc8e7f`; the Phase 4 async audit (18 detached
+  calls awaited, stale notes fixed) as `389a845`.
+- The headless harness + the 9 fixes above were committed together as the Phase 8
+  simulator commit (`3154dee`).
+- `c181116` — `--seed`, the `engine/storage.ts` wrapper (all 16 `localStorage` call
+  sites in 8 modules, which threw `ReferenceError` in Node), and the runner's missing
+  hi-score-table init.
+- `43adb9d` — the `Map.placeActor` add-or-move fix (§1.1 bug 10), `removeActor`
+  parity, and `assertActorIntegrity()`.
 
 ---
 
@@ -136,7 +181,7 @@ Phases 1–7 are ported and building. Historical per-slice detail has been remov
 | 1 — Scaffold & primitives | Vite + Express, `IRogueUI`, `CanvasUI`, `InputHandler`, `Point`/`Rect`/`Color`, `DiceRoller` | Done |
 | 2 — Data layer | `Actor`, `Map`, `World`, `ActorModel`, `GameItems`, `GameActors`, `GameImages` | Done |
 | 3 — Engine core | `Rules`, `LOS`, `Session`, `Scoring`, `GameOptions`, `ui/OptionsScreen.ts` | Done |
-| 4 — Game loop | `RogueGame.ts` (~18 KLOC) all 10 slices | Ported, **0 stubs — but see §1.1: not behaviourally verified** |
+| 4 — Game loop | `RogueGame.ts` (~18 KLOC) all 10 slices | Ported, **0 stubs — and now behaviourally exercised: 1 000-turn runs, see §1.2** |
 | 5 — World gen & AI | `BaseAI` (184/184), all 11 AI controllers, 4 generator files (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator` 5 814 lines, `StdTownGenerator`) | Done |
 | 6 — Audio | Web Audio SFX + music | Done |
 | 7 — Save / load | localStorage / IndexedDB, `Session` serialisation | Done |
@@ -154,9 +199,9 @@ Assets: 1 184 files shipped (397 classic sprites + 2 variation sets, 24 music tr
 
 | # | Task | Status |
 |---|------|--------|
-| 1 | Headless simulator (`NullRogueUI` + `HeadlessRunner` + CLI) | **Built; surfacing bugs. Not yet running clean.** |
-| 2 | Deterministic `--seed` for reproducible runs | **Not started** — blocks verification (§1.4) |
-| 3 | Drive the sim to a clean full-length run and fix what it finds | **Not started** |
+| 1 | Headless simulator (`NullRogueUI` + `HeadlessRunner` + CLI) | **Built; playing 1 000-turn games. See §1.2.** |
+| 2 | Deterministic `--seed` for reproducible runs | **Done** (`Session.useSeed`, `--seed`) |
+| 3 | Drive the sim to a clean full-length run and fix what it finds | **In progress** — 1 000-turn runs clean on 4/5 seeds; keep sweeping |
 | 4 | Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`) | Not started |
 | 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds, CI running type-check + coverage + build + a short sim | **Not started** |
 | 6 | GitHub Actions CI | Not started (bundled with 5) |
@@ -173,10 +218,13 @@ Assets: 1 184 files shipped (397 classic sprites + 2 variation sets, 24 music tr
 - **`sim/HeadlessRunner.ts`** — boots the real `RogueGame`, loads data, `StartNewGame`, optionally `BotTakeControl`, then loops `AdvancePlay`. Collects metrics: turns played, final turn/day, player alive + HP, actors alive (undead/living), corpses, kills, score, duration, error.
 - **`RogueGame.botDelayMs`** — the bot's action delay, defaulting to the original `BOT_DELAY`. The runner sets it to 0; without this a 1-turn run costs 250 ms × every AI actor.
 - **`RogueGame.debugTrace`** — opt-in (`null` by default) per-actor/bot decision logging, enabled by `--trace`. Guarded by optional chaining so it costs nothing when off.
+- **`Map.assertActorIntegrity()`** — called by the runner every turn. Verifies no actor appears twice in `actorsList`, that each listed actor is indexed at its own position, and that the two agree in size. Not a C# method; see §1.2.
+- **`Session.useSeed(seed)`** — pins the RNG seed. Must be called before `RogueGame` is constructed; the runner takes the seed as a constructor argument for that reason.
+- **`engine/storage.ts`** — the `localStorage` wrapper. Falls back to an in-memory `Map` in Node. Every persistence module goes through it; naming the bare global threw `ReferenceError` outside a browser.
 
 ### 4.3 Test strategy (not yet implemented)
 
-1. **Headless integration tests** — boot a small world, play N turns, assert no crash, actor counts stay consistent, the world clock advances, and the player is never soft-locked. Cheapest high-value tests; build these first.
+1. **Headless integration tests** — boot a small world, play N turns, assert no crash, actor counts stay consistent, the world clock advances, and the player is never soft-locked. Cheapest high-value tests; build these first. Now unblocked: the sim is reproducible (`--seed`) and the map no longer self-corrupts, so these can assert on real invariants rather than smoke-testing.
 2. **AI behaviour tests** — zombie pursuit, line-of-sight tracking, scent aggregation, civilian self-preservation, in isolated map scenarios.
 3. **Generator integrity tests** — town/building/sewer generators must produce fully reachable nav-graphs with no deadlocks or out-of-bounds writes.
 4. **Save/load roundtrip** — serialise a complex running game to JSON, deserialise, assert deep equality across actors, items, maps, world clocks.
@@ -191,8 +239,8 @@ Assets: 1 184 files shipped (397 classic sprites + 2 variation sets, 24 music tr
 | 1 | Scaffold + primitives | Done |
 | 2 | Data layer | Done |
 | 3 | Engine core | Done |
-| 4 | Game loop | Ported, 0 stubs — **behaviour unverified, see §1.1** |
+| 4 | Game loop | Ported, 0 stubs — **behaviourally exercised: 1 000-turn runs, see §1.2** |
 | 5 | World generation + AI | Done |
 | 6 | Audio | Done |
 | 7 | Save / load | Done |
-| 8 | Headless sim, tests, CI, deployment | In progress — harness built, long-tail bug hunt next |
+| 8 | Headless sim, tests, CI, deployment | In progress — sim plays 1 000 turns; tests/CI unstarted |
