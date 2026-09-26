@@ -75,6 +75,7 @@ import { Weather } from "@data/Weather";
 import { World } from "@data/World";
 import { GameActors, ActorID } from "@gameplay/GameActors";
 import { GameFactions } from "@gameplay/GameFactions";
+import { FactionID } from "@gameplay/GameFactions";
 import { GameGangs, GangID } from "@gameplay/GameGangs";
 import { GameItems, ItemID } from "@gameplay/GameItems";
 import { GameTiles } from "@gameplay/GameTiles";
@@ -1351,8 +1352,8 @@ export class RogueGame {
 
   // C# HandleNewCharacterGender — RogueGame.cs:1719
   async HandleNewCharacterGender(roller: DiceRoller, isMale: boolean): Promise<{ ok: boolean; isMale: boolean }> {
-    const maleModel = this.m_GameActors.get(ActorID.MALE_CIVILIAN);
-    const femaleModel = this.m_GameActors.get(ActorID.FEMALE_CIVILIAN);
+    const maleModel = this.gameActors.get(ActorID.MALE_CIVILIAN);
+    const femaleModel = this.gameActors.get(ActorID.FEMALE_CIVILIAN);
 
     const menuEntries: string[] = ["*Random*", "Male", "Female"];
     const descs: string[] = [
@@ -1453,11 +1454,11 @@ export class RogueGame {
     roller: DiceRoller,
     modelID: ActorID
   ): Promise<{ ok: boolean; modelID: ActorID }> {
-    const skeletonModel = this.m_GameActors.get(ActorID.UNDEAD_SKELETON);
-    const shamblerModel = this.m_GameActors.get(ActorID.UNDEAD_ZOMBIE);
-    const maleModel = this.m_GameActors.get(ActorID.UNDEAD_MALE_ZOMBIFIED);
-    const femaleModel = this.m_GameActors.get(ActorID.UNDEAD_FEMALE_ZOMBIFIED);
-    const masterModel = this.m_GameActors.get(ActorID.UNDEAD_ZOMBIE_MASTER);
+    const skeletonModel = this.gameActors.get(ActorID.UNDEAD_SKELETON);
+    const shamblerModel = this.gameActors.get(ActorID.UNDEAD_ZOMBIE);
+    const maleModel = this.gameActors.get(ActorID.UNDEAD_MALE_ZOMBIFIED);
+    const femaleModel = this.gameActors.get(ActorID.UNDEAD_FEMALE_ZOMBIFIED);
+    const masterModel = this.gameActors.get(ActorID.UNDEAD_ZOMBIE_MASTER);
 
     const menuEntries: string[] = [
       "*Random*",
@@ -1476,7 +1477,7 @@ export class RogueGame {
       this.DescribeUndeadModelStatLine(masterModel),
     ];
 
-    // C# `out GameActors.IDs modelID` — seeded with the caller's value (C# assigns UNDEAD_MALE_ZOMBIFIED).
+    // C# `out ActorID modelID` — seeded with the caller's value (C# assigns UNDEAD_MALE_ZOMBIFIED).
     let model = modelID;
     let loop = true;
     let choiceDone = false;
@@ -1541,7 +1542,7 @@ export class RogueGame {
               }
 
               gy += BOLD_LINE_SPACING;
-              this.m_UI.UI_DrawStringBold(Color.White, `Type : ${this.m_GameActors.get(model).name}.`, gx, gy);
+              this.m_UI.UI_DrawStringBold(Color.White, `Type : ${this.gameActors.get(model).name}.`, gx, gy);
               gy += BOLD_LINE_SPACING;
               this.m_UI.UI_DrawStringBold(Color.Yellow, "Is that OK? Y to confirm, N to cancel.", gx, gy);
               this.m_UI.UI_Repaint();
@@ -3088,310 +3089,769 @@ export class RogueGame {
 
   // C# CheckForEvent_ZombieInvasion — RogueGame.cs:4157
   CheckForEvent_ZombieInvasion(map: Map): boolean {
-    void map;
-    throw new Error("not yet ported: CheckForEvent_ZombieInvasion (RogueGame.cs:4157)");
+    if (!map.localTime.isStrikeOfMidnight)
+      return false;
+
+    const undeads = this.CountUndeads(map);
+    if (undeads >= s_Options.maxUndeads)
+      return false;
+
+    return true;
   }
 
   // C# FireEvent_ZombieInvasion — RogueGame.cs:4172
-  FireEvent_ZombieInvasion(map: Map): void {
-    void map;
-    throw new Error("not yet ported: FireEvent_ZombieInvasion (RogueGame.cs:4172)");
+  async FireEvent_ZombieInvasion(map: Map): Promise<void> {
+    if (map === this.m_Player.location.map && !this.m_Player.isSleeping && !this.m_Player.model.abilities.isUndead) {
+      this.AddMessage(new Message("It is Midnight! Zombies are invading!", this.m_Session.worldTime.turnCounter, Color.Red));
+      this.RedrawPlayScreen();
+    }
+
+    const undeads = this.CountUndeads(map);
+    const invasionRatio = Math.min(1.0, (map.localTime.day * s_Options.zombieInvasionDailyIncrease + s_Options.dayZeroUndeadsPercent) / 100.0);
+    const targetUndeadsCount = 1 + Math.floor(invasionRatio * s_Options.maxUndeads);
+    const undeadsToSpawn = targetUndeadsCount - undeads;
+    for (let i = 0; i < undeadsToSpawn; i++)
+      this.SpawnNewUndead(map, map.localTime.day);
   }
 
   // C# CheckForEvent_SewersInvasion — RogueGame.cs:4194
   CheckForEvent_SewersInvasion(map: Map): boolean {
-    void map;
-    throw new Error("not yet ported: CheckForEvent_SewersInvasion (RogueGame.cs:4194)");
+    if (!Rules.hasZombiesInSewers(this.m_Session.gameMode))
+      return false;
+
+    if (!this.m_Rules.rollChance(SEWERS_INVASION_CHANCE))
+      return false;
+
+    const undeads = this.CountUndeads(map);
+    if (undeads >= s_Options.maxUndeads * SEWERS_UNDEADS_FACTOR)
+      return false;
+
+    return true;
   }
 
   // C# FireEvent_SewersInvasion — RogueGame.cs:4213
   FireEvent_SewersInvasion(map: Map): void {
-    void map;
-    throw new Error("not yet ported: FireEvent_SewersInvasion (RogueGame.cs:4213)");
+    const undeads = this.CountUndeads(map);
+    const invasionRatio = Math.min(1.0, (map.localTime.day * s_Options.zombieInvasionDailyIncrease + s_Options.dayZeroUndeadsPercent) / 100.0);
+    const targetUndeadsCount = 1 + Math.floor(invasionRatio * s_Options.maxUndeads * SEWERS_UNDEADS_FACTOR);
+    const undeadsToSpawn = targetUndeadsCount - undeads;
+    for (let i = 0; i < undeadsToSpawn; i++)
+      this.SpawnNewSewersUndead(map, map.localTime.day);
   }
 
   // C# CheckForEvent_SubwayInvasion — RogueGame.cs:4228
   CheckForEvent_SubwayInvasion(map: Map): boolean {
-    void map;
-    throw new Error("not yet ported: CheckForEvent_SubwayInvasion (RogueGame.cs:4228)");
+    if (!this.m_Rules.rollChance(SUBWAY_INVASION_CHANCE))
+      return false;
+
+    const undeads = this.CountUndeads(map);
+    if (undeads >= s_Options.maxUndeads * SUBWAY_UNDEADS_FACTOR)
+      return false;
+
+    return true;
   }
 
   // C# FireEvent_SubwayInvasion — RogueGame.cs:4243
   FireEvent_SubwayInvasion(map: Map): void {
-    void map;
-    throw new Error("not yet ported: FireEvent_SubwayInvasion (RogueGame.cs:4243)");
+    const undeads = this.CountUndeads(map);
+    const invasionRatio = Math.min(1.0, (map.localTime.day * s_Options.zombieInvasionDailyIncrease + s_Options.dayZeroUndeadsPercent) / 100.0);
+    const targetUndeadsCount = 1 + Math.floor(invasionRatio * s_Options.maxUndeads * SUBWAY_UNDEADS_FACTOR);
+    const undeadsToSpawn = targetUndeadsCount - undeads;
+    for (let i = 0; i < undeadsToSpawn; i++)
+      this.SpawnNewSubwayUndead(map, map.localTime.day);
   }
 
   // C# CheckForEvent_RefugeesWave — RogueGame.cs:4258
   CheckForEvent_RefugeesWave(map: Map): boolean {
-    void map;
-    throw new Error("not yet ported: CheckForEvent_RefugeesWave (RogueGame.cs:4258)");
+    if (!map.localTime.isStrikeOfMidday)
+      return false;
+
+    return true;
   }
 
   // C# RefugeesEventDistrictFactor — RogueGame.cs:4280
   RefugeesEventDistrictFactor(d: District): number {
-    void d;
-    throw new Error("not yet ported: RefugeesEventDistrictFactor (RogueGame.cs:4280)");
+    const dx = d.worldPosition.x;
+    const dy = d.worldPosition.y;
+    const border = this.m_Session.world!.size - 1;
+    const center = Math.floor(border / 2);
+
+    return (dx === 0 || dy === 0 || dx === border || dy === border ? 2.0 :
+      dx === center && dy === center ? 0.5 :
+      1.0);
   }
 
   // C# FireEvent_RefugeesWave — RogueGame.cs:4292
-  FireEvent_RefugeesWave(district: District): void {
-    void district;
-    throw new Error("not yet ported: FireEvent_RefugeesWave (RogueGame.cs:4292)");
+  async FireEvent_RefugeesWave(district: District): Promise<void> {
+    if (district === this.m_Player.location.map?.district && !this.m_Player.isSleeping && !this.m_Player.model.abilities.isUndead) {
+      this.AddMessage(new Message("A new wave of refugees has arrived!", this.m_Session.worldTime.turnCounter, Color.Pink));
+      this.RedrawPlayScreen();
+    }
+
+    const civilians = this.CountActors(district.entryMap!, (a) => a.faction === this.gameFactions.get(FactionID.TheCivilians) || a.faction === this.gameFactions.get(FactionID.ThePolice));
+    const size = 1 + Math.floor(REFUGEES_WAVE_SIZE * this.RefugeesEventDistrictFactor(district) * s_Options.maxCivilians);
+    const civiliansToSpawn = Math.min(size, s_Options.maxCivilians - civilians);
+    let spawnMap: Map | null = null;
+    for (let i = 0; i < civiliansToSpawn; i++) {
+      if (this.m_Rules.rollChance(REFUGEE_SURFACE_SPAWN_CHANCE))
+        spawnMap = district.entryMap;
+      else {
+        if (district.hasSubway)
+          spawnMap = this.m_Rules.rollChance(50) ? district.subwayMap : district.sewersMap;
+        else
+          spawnMap = district.sewersMap;
+      }
+      if (spawnMap != null)
+        this.SpawnNewRefugee(spawnMap);
+    }
+
+    if (this.m_Rules.rollChance(UNIQUE_REFUGEE_CHECK_CHANCE)) {
+      const array = Array.from(this.m_Session.uniqueActors.toArray());
+      const mayArrive = array.filter(
+        (unique) => unique.isWithRefugees && !unique.isSpawned && !unique.theActor!.isDead
+      );
+      if (mayArrive.length > 0) {
+        const iArrive = this.m_Rules.roll(0, mayArrive.length);
+        this.FireEvent_UniqueActorArrive(district.entryMap!, mayArrive[iArrive]);
+      }
+    }
   }
 
   // C# FireEvent_UniqueActorArrive — RogueGame.cs:4344
   FireEvent_UniqueActorArrive(map: Map, unique: UniqueActor): void {
-    void map;
-    void unique;
-    throw new Error("not yet ported: FireEvent_UniqueActorArrive (RogueGame.cs:4344)");
+    const spawned = this.SpawnActorOnMapBorder(map, unique.theActor!, SPAWN_DISTANCE_TO_PLAYER, true);
+    if (!spawned)
+      return;
+
+    unique.isSpawned = true;
+
+    if (map === this.m_Player.location.map && !this.m_Player.isSleeping && !this.m_Player.model.abilities.isUndead) {
+      this.PlayUniqueActorMusicAndMessage(unique, true);
+      this.m_Session.scoring.addEvent(this.m_Session.worldTime.turnCounter, `${unique.theActor!.name} arrived.`);
+    }
   }
 
   // C# PlayUniqueActorMusicAndMessage — RogueGame.cs:4382
-  PlayUniqueActorMusicAndMessage(unique: UniqueActor, hasArrived: boolean): void {
-    void unique;
-    void hasArrived;
-    throw new Error("not yet ported: PlayUniqueActorMusicAndMessage (RogueGame.cs:4382)");
+  async PlayUniqueActorMusicAndMessage(unique: UniqueActor, hasArrived: boolean): Promise<void> {
+    if (unique.eventMessage != null) {
+      let highlightOverlay: Overlay | null = null;
+
+      if (unique.eventThemeMusic != null) {
+        this.m_MusicManager.stop();
+        this.m_MusicManager.play(unique.eventThemeMusic);
+      }
+
+      this.ClearMessages();
+      this.AddMessage(new Message(unique.eventMessage, this.m_Session.worldTime.turnCounter, Color.Pink));
+      if (hasArrived)
+        this.AddMessage(this.MakePlayerCentricMessage("Seems to come from", unique.theActor!.location.position));
+      else {
+        highlightOverlay = new OverlayRect(Color.Pink, new Rect(this.MapToScreen(unique.theActor!.location.position).x, this.MapToScreen(unique.theActor!.location.position).y, TILE_SIZE, TILE_SIZE));
+        this.AddOverlay(highlightOverlay);
+      }
+      if (!this.m_Player.isBotPlayer) {
+        await this.AddMessagePressEnter();
+        this.ClearMessages();
+      }
+      if (highlightOverlay != null)
+        this.RemoveOverlay(highlightOverlay);
+    }
   }
 
   // C# CheckForEvent_NationalGuard — RogueGame.cs:4415
   CheckForEvent_NationalGuard(map: Map): boolean {
-    void map;
-    throw new Error("not yet ported: CheckForEvent_NationalGuard (RogueGame.cs:4415)");
+    if (s_Options.natGuardFactor === 0)
+      return false;
+
+    if (map.localTime.isNight)
+      return false;
+
+    if (map.localTime.day < NATGUARD_DAY)
+      return false;
+    if (map.localTime.day >= NATGUARD_END_DAY)
+      return false;
+
+    if (!this.m_Rules.rollChance(NATGUARD_INTERVENTION_CHANCE))
+      return false;
+
+    const livings = this.CountLivings(map) + this.CountFaction(map, this.gameFactions.get(FactionID.TheArmy));
+    const undeads = this.CountUndeads(map);
+    const undeadsPerLiving = undeads / (livings === 0 ? 1 : livings);
+    if (undeadsPerLiving * (s_Options.natGuardFactor / 100.0) < NATGUARD_INTERVENTION_FACTOR)
+      return false;
+
+    return true;
   }
 
   // C# FireEvent_NationalGuard — RogueGame.cs:4446
-  FireEvent_NationalGuard(map: Map): void {
-    void map;
-    throw new Error("not yet ported: FireEvent_NationalGuard (RogueGame.cs:4446)");
+  async FireEvent_NationalGuard(map: Map): Promise<void> {
+    const squadLeader = this.SpawnNewNatGuardLeader(map);
+    if (squadLeader != null) {
+      for (let i = 0; i < NATGUARD_SQUAD_SIZE - 1; i++) {
+        const trooper = this.SpawnNewNatGuardTrooper(map, squadLeader.location.position);
+        if (trooper != null)
+          squadLeader.addFollower(trooper);
+      }
+    }
+    if (squadLeader == null)
+      return;
+
+    this.NotifyOrderablesAI(map, RaidType.NATGUARD, squadLeader.location.position);
+
+    if (map === this.m_Player.location.map && !this.m_Player.isSleeping && !this.m_Player.model.abilities.isUndead) {
+      this.m_MusicManager.stop();
+      this.m_MusicManager.play(GameMusics.ARMY);
+
+      this.ClearMessages();
+      this.AddMessage(new Message("A National Guard squad has arrived!", this.m_Session.worldTime.turnCounter, Color.LightGreen));
+      this.AddMessage(this.MakePlayerCentricMessage("Soldiers seem to come from", squadLeader.location.position));
+      if (!this.m_Player.isBotPlayer) {
+        await this.AddMessagePressEnter();
+        this.ClearMessages();
+      }
+    }
+
+    if (map === this.m_Player.location.map) {
+      this.m_Session.scoring.addEvent(this.m_Session.worldTime.turnCounter, "A National Guard squad arrived.");
+    }
   }
 
   // C# CheckForEvent_ArmySupplies — RogueGame.cs:4496
   CheckForEvent_ArmySupplies(map: Map): boolean {
-    void map;
-    throw new Error("not yet ported: CheckForEvent_ArmySupplies (RogueGame.cs:4496)");
+    if (s_Options.suppliesDropFactor === 0)
+      return false;
+
+    if (map.localTime.isNight)
+      return false;
+
+    if (map.localTime.day < ARMY_SUPPLIES_DAY)
+      return false;
+
+    if (!this.m_Rules.rollChance(ARMY_SUPPLIES_CHANCE))
+      return false;
+
+    const livingsNeedFood = 1 + this.CountActors(map, (a) => !a.model.abilities.isUndead && a.model.abilities.hasToEat && a.faction === this.gameFactions.get(FactionID.TheCivilians));
+    const food = 1 + this.CountFoodItemsNutrition(map);
+    const foodPerLiving = food / livingsNeedFood;
+    if (foodPerLiving >= (s_Options.suppliesDropFactor / 100.0) * ARMY_SUPPLIES_FACTOR)
+      return false;
+
+    return true;
   }
 
   // C# FireEvent_ArmySupplies — RogueGame.cs:4525
-  FireEvent_ArmySupplies(map: Map): void {
-    void map;
-    throw new Error("not yet ported: FireEvent_ArmySupplies (RogueGame.cs:4525)");
+  async FireEvent_ArmySupplies(map: Map): Promise<void> {
+    const dropPoint: Point = new Point(0, 0);
+    const dropped = this.FindDropSuppliesPoint(map, dropPoint);
+    if (!dropped)
+      return;
+
+    const xmin = dropPoint.x - ARMY_SUPPLIES_SCATTER;
+    const xmax = dropPoint.x + ARMY_SUPPLIES_SCATTER;
+    const ymin = dropPoint.y - ARMY_SUPPLIES_SCATTER;
+    const ymax = dropPoint.y + ARMY_SUPPLIES_SCATTER;
+    // trim to bounds
+    for (let sx = xmin; sx <= xmax; sx++)
+      for (let sy = ymin; sy <= ymax; sy++) {
+        if (!map.isInBounds(sx, sy)) continue;
+        if (!this.IsSuitableDropSuppliesPoint(map, sx, sy))
+          continue;
+
+        const it = this.m_Rules.rollChance(80) ? this.m_TownGenerator.makeItemArmyRation() : this.m_TownGenerator.makeItemMedikit();
+        map.dropItemAt(it, new Point(sx, sy));
+      }
+
+    this.NotifyOrderablesAI(map, RaidType.ARMY_SUPLLIES, dropPoint);
+
+    if (map === this.m_Player.location.map && !this.m_Player.isSleeping && !this.m_Player.model.abilities.isUndead) {
+      this.m_MusicManager.stop();
+      this.m_MusicManager.play(GameMusics.ARMY);
+
+      this.ClearMessages();
+      this.AddMessage(new Message("An Army chopper has dropped supplies!", this.m_Session.worldTime.turnCounter, Color.LightGreen));
+      this.AddMessage(this.MakePlayerCentricMessage("The drop point seems to be", dropPoint));
+      if (!this.m_Player.isBotPlayer) {
+        await this.AddMessagePressEnter();
+        this.ClearMessages();
+      }
+    }
+
+    if (map === this.m_Player.location.map) {
+      this.m_Session.scoring.addEvent(this.m_Session.worldTime.turnCounter, "An army chopper dropped supplies.");
+    }
   }
 
   // C# IsSuitableDropSuppliesPoint — RogueGame.cs:4586
   IsSuitableDropSuppliesPoint(map: Map, x: number, y: number): boolean {
-    void map;
-    void x;
-    void y;
-    throw new Error("not yet ported: IsSuitableDropSuppliesPoint (RogueGame.cs:4586)");
+    if (!map.isInBounds(x, y))
+      return false;
+
+    const tile = map.getTileAt(x, y);
+    if (tile!.isInside || !tile!.model.isWalkable)
+      return false;
+
+    if (map.getActorAt(x, y) != null || map.getMapObjectAt(x, y) != null)
+      return false;
+
+    if (this.DistanceToPlayer(map, x, y) < SPAWN_DISTANCE_TO_PLAYER)
+      return false;
+
+    return true;
   }
 
   // C# FindDropSuppliesPoint — RogueGame.cs:4617
-  FindDropSuppliesPoint(map: Map, dropPoint: Point): { ok: boolean; dropPoint: Point } {
-    void map;
-    void dropPoint;
-    throw new Error("not yet ported: FindDropSuppliesPoint (RogueGame.cs:4617)");
+  FindDropSuppliesPoint(map: Map, dropPoint: Point): boolean {
+    const maxAttempts = 4 * map.width;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const x = this.m_Rules.rollX(map);
+      const y = this.m_Rules.rollY(map);
+
+      if (!this.IsSuitableDropSuppliesPoint(map, x, y))
+        continue;
+
+      // mutate dropPoint
+      (dropPoint as any).x = x;
+      (dropPoint as any).y = y;
+      return true;
+    }
+    return false;
   }
 
   // C# HasRaidHappenedSince — RogueGame.cs:4643
   HasRaidHappenedSince(raid: RaidType, district: District, mapTime: WorldTime, sinceNTurns: number): boolean {
-    void raid;
-    void district;
-    void mapTime;
-    void sinceNTurns;
-    throw new Error("not yet ported: HasRaidHappenedSince (RogueGame.cs:4643)");
+    return this.m_Session.hasRaidHappened(raid, district) && mapTime.turnCounter - this.m_Session.lastRaidTime(raid, district) < sinceNTurns;
   }
 
   // C# CheckForEvent_BikersRaid — RogueGame.cs:4649
   CheckForEvent_BikersRaid(map: Map): boolean {
-    void map;
-    throw new Error("not yet ported: CheckForEvent_BikersRaid (RogueGame.cs:4649)");
+    if (map.localTime.day < BIKERS_RAID_DAY)
+      return false;
+    if (map.localTime.day >= BIKERS_END_DAY)
+      return false;
+
+    if (this.HasRaidHappenedSince(RaidType.BIKERS, map.district!, map.localTime, BIKERS_RAID_DAYS_GAP * WorldTime.TURNS_PER_DAY))
+      return false;
+
+    if (!this.m_Rules.rollChance(BIKERS_RAID_CHANCE_PER_TURN))
+      return false;
+
+    return true;
   }
 
   // C# FireEvent_BikersRaid — RogueGame.cs:4676
-  FireEvent_BikersRaid(map: Map): void {
-    void map;
-    throw new Error("not yet ported: FireEvent_BikersRaid (RogueGame.cs:4676)");
+  async FireEvent_BikersRaid(map: Map): Promise<void> {
+    this.m_Session.setLastRaidTime(RaidType.BIKERS, map.district!, map.localTime.turnCounter);
+
+    const gangId = GameGangs.BIKERS[this.m_Rules.roll(0, GameGangs.BIKERS.length)];
+
+    const raidLeader = this.SpawnNewBikerLeader(map, gangId);
+    if (raidLeader != null) {
+      for (let i = 0; i < BIKERS_RAID_SIZE - 1; i++) {
+        const squadie = this.SpawnNewBiker(map, gangId, raidLeader.location.position);
+        if (squadie != null)
+          raidLeader.addFollower(squadie);
+      }
+    }
+    if (raidLeader == null)
+      return;
+
+    this.NotifyOrderablesAI(map, RaidType.BIKERS, raidLeader.location.position);
+
+    if (map === this.m_Player.location.map && !this.m_Player.isSleeping && !this.m_Player.model.abilities.isUndead) {
+      this.m_MusicManager.stop();
+      this.m_MusicManager.play(GameMusics.BIKER);
+
+      this.ClearMessages();
+      this.AddMessage(new Message("You hear the sound of roaring engines!", this.m_Session.worldTime.turnCounter, Color.LightGreen));
+      this.AddMessage(this.MakePlayerCentricMessage("Motorbikes seem to come from", raidLeader.location.position));
+      if (!this.m_Player.isBotPlayer) {
+        await this.AddMessagePressEnter();
+        this.ClearMessages();
+      }
+    }
+
+    if (map === this.m_Player.location.map) {
+      this.m_Session.scoring.addEvent(this.m_Session.worldTime.turnCounter, "Bikers raided the district.");
+    }
   }
 
   // C# CheckForEvent_GangstasRaid — RogueGame.cs:4731
   CheckForEvent_GangstasRaid(map: Map): boolean {
-    void map;
-    throw new Error("not yet ported: CheckForEvent_GangstasRaid (RogueGame.cs:4731)");
+    if (map.localTime.day < GANGSTAS_RAID_DAY)
+      return false;
+    if (map.localTime.day >= GANGSTAS_END_DAY)
+      return false;
+
+    if (this.HasRaidHappenedSince(RaidType.GANGSTA, map.district!, map.localTime, GANGSTAS_RAID_DAYS_GAP * WorldTime.TURNS_PER_DAY))
+      return false;
+
+    if (!this.m_Rules.rollChance(GANGSTAS_RAID_CHANCE_PER_TURN))
+      return false;
+
+    return true;
   }
 
   // C# FireEvent_GangstasRaid — RogueGame.cs:4758
-  FireEvent_GangstasRaid(map: Map): void {
-    void map;
-    throw new Error("not yet ported: FireEvent_GangstasRaid (RogueGame.cs:4758)");
+  async FireEvent_GangstasRaid(map: Map): Promise<void> {
+    this.m_Session.setLastRaidTime(RaidType.GANGSTA, map.district!, map.localTime.turnCounter);
+
+    const gangId = GameGangs.GANGSTAS[this.m_Rules.roll(0, GameGangs.GANGSTAS.length)];
+
+    const raidLeader = this.SpawnNewGangstaLeader(map, gangId);
+    if (raidLeader != null) {
+      for (let i = 0; i < GANGSTAS_RAID_SIZE - 1; i++) {
+        const squadie = this.SpawnNewGangsta(map, gangId, raidLeader.location.position);
+        if (squadie != null)
+          raidLeader.addFollower(squadie);
+      }
+    }
+    if (raidLeader == null)
+      return;
+
+    this.NotifyOrderablesAI(map, RaidType.GANGSTA, raidLeader.location.position);
+
+    if (map === this.m_Player.location.map && !this.m_Player.isSleeping && !this.m_Player.model.abilities.isUndead) {
+      this.m_MusicManager.stop();
+      this.m_MusicManager.play(GameMusics.GANGSTA);
+
+      this.ClearMessages();
+      this.AddMessage(new Message("You hear obnoxious loud music!", this.m_Session.worldTime.turnCounter, Color.LightGreen));
+      this.AddMessage(this.MakePlayerCentricMessage("Cars seem to come from", raidLeader.location.position));
+      if (!this.m_Player.isBotPlayer) {
+        await this.AddMessagePressEnter();
+        this.ClearMessages();
+      }
+    }
+
+    if (map === this.m_Player.location.map) {
+      this.m_Session.scoring.addEvent(this.m_Session.worldTime.turnCounter, "Gangstas raided the district.");
+    }
   }
 
   // C# CheckForEvent_BlackOpsRaid — RogueGame.cs:4813
   CheckForEvent_BlackOpsRaid(map: Map): boolean {
-    void map;
-    throw new Error("not yet ported: CheckForEvent_BlackOpsRaid (RogueGame.cs:4813)");
+    if (map.localTime.day < BLACKOPS_RAID_DAY)
+      return false;
+
+    if (this.HasRaidHappenedSince(RaidType.BLACKOPS, map.district!, map.localTime, BLACKOPS_RAID_DAY_GAP * WorldTime.TURNS_PER_DAY))
+      return false;
+
+    if (!this.m_Rules.rollChance(BLACKOPS_RAID_CHANCE_PER_TURN))
+      return false;
+
+    return true;
   }
 
   // C# FireEvent_BlackOpsRaid — RogueGame.cs:4831
-  FireEvent_BlackOpsRaid(map: Map): void {
-    void map;
-    throw new Error("not yet ported: FireEvent_BlackOpsRaid (RogueGame.cs:4831)");
+  async FireEvent_BlackOpsRaid(map: Map): Promise<void> {
+    this.m_Session.setLastRaidTime(RaidType.BLACKOPS, map.district!, map.localTime.turnCounter);
+
+    const raidLeader = this.SpawnNewBlackOpsLeader(map);
+    if (raidLeader != null) {
+      for (let i = 0; i < BLACKOPS_RAID_SIZE - 1; i++) {
+        const squadie = this.SpawnNewBlackOpsTrooper(map, raidLeader.location.position);
+        if (squadie != null)
+          raidLeader.addFollower(squadie);
+      }
+    }
+    if (raidLeader == null)
+      return;
+
+    this.NotifyOrderablesAI(map, RaidType.BLACKOPS, raidLeader.location.position);
+
+    if (map === this.m_Player.location.map && !this.m_Player.isSleeping && !this.m_Player.model.abilities.isUndead) {
+      this.m_MusicManager.stop();
+      this.m_MusicManager.play(GameMusics.ARMY);
+
+      this.ClearMessages();
+      this.AddMessage(new Message("You hear a chopper flying over the city!", this.m_Session.worldTime.turnCounter, Color.LightGreen));
+      this.AddMessage(this.MakePlayerCentricMessage("The chopper has dropped something", raidLeader.location.position));
+      if (!this.m_Player.isBotPlayer) {
+        await this.AddMessagePressEnter();
+        this.ClearMessages();
+      }
+    }
+
+    if (map === this.m_Player.location.map) {
+      this.m_Session.scoring.addEvent(this.m_Session.worldTime.turnCounter, "BlackOps raided the district.");
+    }
   }
 
   // C# CheckForEvent_BandOfSurvivors — RogueGame.cs:4883
   CheckForEvent_BandOfSurvivors(map: Map): boolean {
-    void map;
-    throw new Error("not yet ported: CheckForEvent_BandOfSurvivors (RogueGame.cs:4883)");
+    if (map.localTime.day < SURVIVORS_BAND_DAY)
+      return false;
+
+    if (this.HasRaidHappenedSince(RaidType.SURVIVORS, map.district!, map.localTime, SURVIVORS_BAND_DAY_GAP * WorldTime.TURNS_PER_DAY))
+      return false;
+
+    if (!this.m_Rules.rollChance(SURVIVORS_BAND_CHANCE_PER_TURN))
+      return false;
+
+    return true;
   }
 
   // C# FireEvent_BandOfSurvivors — RogueGame.cs:4901
-  FireEvent_BandOfSurvivors(map: Map): void {
-    void map;
-    throw new Error("not yet ported: FireEvent_BandOfSurvivors (RogueGame.cs:4901)");
-  }
+  async FireEvent_BandOfSurvivors(map: Map): Promise<void> {
+    this.m_Session.setLastRaidTime(RaidType.SURVIVORS, map.district!, map.localTime.turnCounter);
 
-  // C# DistanceToPlayer — RogueGame.cs:4951 (+1 overloads)
-  DistanceToPlayer(map: Map, pos: number | Point, y?: number): number {
-    void map;
-    void pos;
-    void y;
-    throw new Error("not yet ported: DistanceToPlayer (RogueGame.cs:4951)");
-  }
+    const bandScout = this.SpawnNewSurvivor(map);
+    if (bandScout != null) {
+      for (let i = 0; i < SURVIVORS_BAND_SIZE - 1; i++)
+        this.SpawnNewSurvivor(map, bandScout.location.position);
+    }
+    if (bandScout == null)
+      return;
 
-  // C# IsAdjacentToEnemy — RogueGame.cs:4963 (slice 3 borrow: advisor hints need it)
-  IsAdjacentToEnemy(map: Map, pos: Point, actor: Actor): boolean {
-    for (let x = pos.x - 1; x <= pos.x + 1; x++)
-      for (let y = pos.y - 1; y <= pos.y + 1; y++) {
-        if (x === pos.x && y === pos.y) continue;
-        if (!map.isInBounds(x, y)) continue;
-        const other = map.getActorAt(x, y);
-        if (other == null) continue;
-        if (this.m_Rules.areEnemies(actor, other)) return true;
+    this.NotifyOrderablesAI(map, RaidType.SURVIVORS, bandScout.location.position);
+
+    if (map === this.m_Player.location.map && !this.m_Player.isSleeping && !this.m_Player.model.abilities.isUndead) {
+      this.m_MusicManager.stop();
+      this.m_MusicManager.play(GameMusics.SURVIVORS);
+
+      this.ClearMessages();
+      this.AddMessage(new Message("You hear shooting and honking in the distance.", this.m_Session.worldTime.turnCounter, Color.LightGreen));
+      this.AddMessage(this.MakePlayerCentricMessage("A van has stopped", bandScout.location.position));
+      if (!this.m_Player.isBotPlayer) {
+        await this.AddMessagePressEnter();
+        this.ClearMessages();
       }
-    return false;
+    }
+
+    if (map === this.m_Player.location.map) {
+      this.m_Session.scoring.addEvent(this.m_Session.worldTime.turnCounter, "A Band of Survivors entered the district.");
+    }
+  }
+
+  // C# DistanceToPlayer — RogueGame.cs:4951
+  DistanceToPlayer(map: Map, posOrX: number | Point, y?: number): number {
+    if (this.m_Player == null || this.m_Player.location.map !== map)
+      return Number.MAX_SAFE_INTEGER;
+    const pt = typeof posOrX === "number" ? new Point(posOrX, y!) : posOrX;
+    return this.m_Rules.gridDistance(this.m_Player.location.position, pt);
   }
 
   // C# SpawnActorOnMapBorder — RogueGame.cs:4987
   SpawnActorOnMapBorder(map: Map, actorToSpawn: Actor, minDistToPlayer: number, mustBeOutside: boolean): boolean {
-    void map;
-    void actorToSpawn;
-    void minDistToPlayer;
-    void mustBeOutside;
-    throw new Error("not yet ported: SpawnActorOnMapBorder (RogueGame.cs:4987)");
+    const maxTries = 4 * (map.width + map.height);
+    let i = 0;
+    const pos = new Point(0, 0);
+    do {
+      ++i;
+      let x = (this.m_Rules.rollChance(50) ? 0 : map.width - 1);
+      let y = (this.m_Rules.rollChance(50) ? 0 : map.height - 1);
+      if (this.m_Rules.rollChance(50))
+        x = this.m_Rules.rollX(map);
+      else
+        y = this.m_Rules.rollY(map);
+
+      (pos as any).x = x;
+      (pos as any).y = y;
+
+      if (mustBeOutside && map.getTileAt(pos.x, pos.y)!.isInside)
+        continue;
+      if (!this.m_Rules.isWalkableFor(actorToSpawn, map, pos.x, pos.y))
+        continue;
+      if (this.DistanceToPlayer(map, pos) < minDistToPlayer)
+        continue;
+      if (this.IsAdjacentToEnemy(map, pos, actorToSpawn))
+        continue;
+
+      map.placeActor(actorToSpawn, pos);
+      this.OnActorEnterTile(actorToSpawn);
+      return true;
+    } while (i <= maxTries);
+
+    return false;
   }
 
   // C# SpawnActorNear — RogueGame.cs:5030
   SpawnActorNear(map: Map, actorToSpawn: Actor, minDistToPlayer: number, nearPoint: Point, maxDistToPoint: number): boolean {
-    void map;
-    void actorToSpawn;
-    void minDistToPlayer;
-    void nearPoint;
-    void maxDistToPoint;
-    throw new Error("not yet ported: SpawnActorNear (RogueGame.cs:5030)");
+    const maxTries = 4 * (map.width + map.height);
+    let i = 0;
+    const pos = new Point(0, 0);
+    do {
+      ++i;
+      const x = nearPoint.x + this.m_Rules.roll(1, maxDistToPoint + 1) - this.m_Rules.roll(1, maxDistToPoint + 1);
+      const y = nearPoint.y + this.m_Rules.roll(1, maxDistToPoint + 1) - this.m_Rules.roll(1, maxDistToPoint + 1);
+
+      (pos as any).x = x;
+      (pos as any).y = y;
+      /* trim */ (pos);
+
+      if (map.getTileAt(pos.x, pos.y)!.isInside)
+        continue;
+      if (!this.m_Rules.isWalkableFor(actorToSpawn, map, pos.x, pos.y))
+        continue;
+      if (this.DistanceToPlayer(map, pos) < minDistToPlayer)
+        continue;
+      if (this.IsAdjacentToEnemy(map, pos, actorToSpawn))
+        continue;
+
+      map.placeActor(actorToSpawn, pos);
+      return true;
+    } while (i <= maxTries);
+
+    return false;
   }
 
   // C# SpawnNewUndead — RogueGame.cs:5070
   SpawnNewUndead(map: Map, day: number): void {
-    void map;
-    void day;
-    throw new Error("not yet ported: SpawnNewUndead (RogueGame.cs:5070)");
+    const newUndead = this.m_TownGenerator.createNewUndead(map.localTime.turnCounter);
+
+    if (s_Options.allowUndeadsEvolution && Rules.hasEvolution(this.m_Session.gameMode)) {
+      const levelupChance = Math.min(75, day * 2);
+      let doLevelUp = false;
+      let levelupID = newUndead.model.id as unknown as ActorID;
+      if (this.m_Rules.rollChance(levelupChance)) {
+        doLevelUp = true;
+        levelupID = this.NextUndeadEvolution(newUndead.model.id as unknown as ActorID);
+        if (this.m_Rules.rollChance(levelupChance))
+          levelupID = this.NextUndeadEvolution(levelupID);
+      }
+
+      if (levelupID === ActorID.UNDEAD_ZOMBIE_LORD && day < ZOMBIE_LORD_EVOLUTION_MIN_DAY)
+        doLevelUp = false;
+
+      if (doLevelUp) {
+        newUndead.model = this.gameActors.get(levelupID)!;
+      }
+    }
+
+    this.SpawnActorOnMapBorder(map, newUndead, SPAWN_DISTANCE_TO_PLAYER, true);
   }
 
   // C# SpawnNewSewersUndead — RogueGame.cs:5111
-  SpawnNewSewersUndead(map: Map, day: number): void {
-    void map;
-    void day;
-    throw new Error("not yet ported: SpawnNewSewersUndead (RogueGame.cs:5111)");
+  SpawnNewSewersUndead(map: Map, _day: number): void {
+    const newUndead = this.m_TownGenerator.createNewSewersUndead(map.localTime.turnCounter);
+    this.SpawnActorOnMapBorder(map, newUndead, SPAWN_DISTANCE_TO_PLAYER, false);
   }
 
   // C# SpawnNewSubwayUndead — RogueGame.cs:5124
-  SpawnNewSubwayUndead(map: Map, day: number): void {
-    void map;
-    void day;
-    throw new Error("not yet ported: SpawnNewSubwayUndead (RogueGame.cs:5124)");
+  SpawnNewSubwayUndead(map: Map, _day: number): void {
+    const newUndead = this.m_TownGenerator.createNewSubwayUndead(map.localTime.turnCounter);
+    this.SpawnActorOnMapBorder(map, newUndead, SPAWN_DISTANCE_TO_PLAYER, false);
   }
 
   // C# SpawnNewRefugee — RogueGame.cs:5138
   SpawnNewRefugee(map: Map): void {
-    void map;
-    throw new Error("not yet ported: SpawnNewRefugee (RogueGame.cs:5138)");
+    const newCivilian = this.m_TownGenerator.createNewRefugee(map.localTime.turnCounter, REFUGEES_WAVE_ITEMS);
+    this.SpawnActorOnMapBorder(map, newCivilian, SPAWN_DISTANCE_TO_PLAYER, true);
   }
 
-  // C# SpawnNewSurvivor — RogueGame.cs:5151 (+1 overloads)
-  SpawnNewSurvivor(map: Map, bandPos?: Point): Actor {
-    void map;
-    void bandPos;
-    throw new Error("not yet ported: SpawnNewSurvivor (RogueGame.cs:5151)");
+  // C# SpawnNewSurvivor — RogueGame.cs:5151
+  SpawnNewSurvivor(map: Map, bandPos?: Point): Actor | null {
+    const newSurvivor = this.m_TownGenerator.createNewSurvivor(map.localTime.turnCounter);
+    if (bandPos != null) {
+      if (this.SpawnActorNear(map, newSurvivor, SPAWN_DISTANCE_TO_PLAYER, bandPos, 3))
+        return newSurvivor;
+      return null;
+    } else {
+      if (this.SpawnActorOnMapBorder(map, newSurvivor, SPAWN_DISTANCE_TO_PLAYER, true))
+        return newSurvivor;
+      return null;
+    }
   }
 
   // C# SpawnNewNatGuardLeader — RogueGame.cs:5183
-  SpawnNewNatGuardLeader(map: Map): Actor {
-    void map;
-    throw new Error("not yet ported: SpawnNewNatGuardLeader (RogueGame.cs:5183)");
+  SpawnNewNatGuardLeader(map: Map): Actor | null {
+    const newNatLeader = this.m_TownGenerator.createNewArmyNationalGuard(map.localTime.turnCounter, "Sgt");
+    this.m_TownGenerator.giveStartingSkillToActor(newNatLeader, SkillID.LEADERSHIP);
+
+    if (map.localTime.day > NATGUARD_ZTRACKER_DAY) {
+      newNatLeader.inventory!.addAll(this.m_TownGenerator.makeItemZTracker());
+    }
+
+    const spawned = this.SpawnActorOnMapBorder(map, newNatLeader, SPAWN_DISTANCE_TO_PLAYER, true);
+    return spawned ? newNatLeader : null;
   }
 
   // C# SpawnNewNatGuardTrooper — RogueGame.cs:5208
-  SpawnNewNatGuardTrooper(map: Map, leaderPos: Point): Actor {
-    void map;
-    void leaderPos;
-    throw new Error("not yet ported: SpawnNewNatGuardTrooper (RogueGame.cs:5208)");
+  SpawnNewNatGuardTrooper(map: Map, leaderPos: Point): Actor | null {
+    const newNatGuard = this.m_TownGenerator.createNewArmyNationalGuard(map.localTime.turnCounter, "Pvt");
+    if (this.m_Rules.rollChance(50))
+      newNatGuard.inventory!.addAll(this.m_TownGenerator.makeItemCombatKnife());
+    else
+      newNatGuard.inventory!.addAll(this.m_TownGenerator.makeItemGrenade());
+
+    const spawned = this.SpawnActorNear(map, newNatGuard, SPAWN_DISTANCE_TO_PLAYER, leaderPos, 3);
+    return spawned ? newNatGuard : null;
   }
 
   // C# SpawnNewBikerLeader — RogueGame.cs:5230
-  SpawnNewBikerLeader(map: Map, gangId: GangID): Actor {
-    void map;
-    void gangId;
-    throw new Error("not yet ported: SpawnNewBikerLeader (RogueGame.cs:5230)");
+  SpawnNewBikerLeader(map: Map, gangId: GangID): Actor | null {
+    const newBikerLeader = this.m_TownGenerator.createNewBikerMan(map.localTime.turnCounter, gangId);
+    this.m_TownGenerator.giveStartingSkillToActor(newBikerLeader, SkillID.LEADERSHIP);
+    this.m_TownGenerator.giveStartingSkillToActor(newBikerLeader, SkillID.TOUGH);
+    this.m_TownGenerator.giveStartingSkillToActor(newBikerLeader, SkillID.TOUGH);
+    this.m_TownGenerator.giveStartingSkillToActor(newBikerLeader, SkillID.TOUGH);
+    this.m_TownGenerator.giveStartingSkillToActor(newBikerLeader, SkillID.STRONG);
+    this.m_TownGenerator.giveStartingSkillToActor(newBikerLeader, SkillID.STRONG);
+    this.m_TownGenerator.giveStartingSkillToActor(newBikerLeader, SkillID.STRONG);
+
+    const spawned = this.SpawnActorOnMapBorder(map, newBikerLeader, SPAWN_DISTANCE_TO_PLAYER, true);
+    return spawned ? newBikerLeader : null;
   }
 
   // C# SpawnNewBiker — RogueGame.cs:5255
-  SpawnNewBiker(map: Map, gangId: GangID, leaderPos: Point): Actor {
-    void map;
-    void gangId;
-    void leaderPos;
-    throw new Error("not yet ported: SpawnNewBiker (RogueGame.cs:5255)");
+  SpawnNewBiker(map: Map, gangId: GangID, leaderPos: Point): Actor | null {
+    const newBiker = this.m_TownGenerator.createNewBikerMan(map.localTime.turnCounter, gangId);
+    this.m_TownGenerator.giveStartingSkillToActor(newBiker, SkillID.TOUGH);
+    this.m_TownGenerator.giveStartingSkillToActor(newBiker, SkillID.STRONG);
+
+    const spawned = this.SpawnActorNear(map, newBiker, SPAWN_DISTANCE_TO_PLAYER, leaderPos, 3);
+    return spawned ? newBiker : null;
   }
 
   // C# SpawnNewGangstaLeader — RogueGame.cs:5275
-  SpawnNewGangstaLeader(map: Map, gangId: GangID): Actor {
-    void map;
-    void gangId;
-    throw new Error("not yet ported: SpawnNewGangstaLeader (RogueGame.cs:5275)");
+  SpawnNewGangstaLeader(map: Map, gangId: GangID): Actor | null {
+    const newGangstaLeader = this.m_TownGenerator.createNewGangstaMan(map.localTime.turnCounter, gangId);
+    this.m_TownGenerator.giveStartingSkillToActor(newGangstaLeader, SkillID.LEADERSHIP);
+    this.m_TownGenerator.giveStartingSkillToActor(newGangstaLeader, SkillID.AGILE);
+    this.m_TownGenerator.giveStartingSkillToActor(newGangstaLeader, SkillID.AGILE);
+    this.m_TownGenerator.giveStartingSkillToActor(newGangstaLeader, SkillID.AGILE);
+    this.m_TownGenerator.giveStartingSkillToActor(newGangstaLeader, SkillID.FIREARMS);
+
+    const spawned = this.SpawnActorOnMapBorder(map, newGangstaLeader, SPAWN_DISTANCE_TO_PLAYER, true);
+    return spawned ? newGangstaLeader : null;
   }
 
   // C# SpawnNewGangsta — RogueGame.cs:5298
-  SpawnNewGangsta(map: Map, gangId: GangID, leaderPos: Point): Actor {
-    void map;
-    void gangId;
-    void leaderPos;
-    throw new Error("not yet ported: SpawnNewGangsta (RogueGame.cs:5298)");
+  SpawnNewGangsta(map: Map, gangId: GangID, leaderPos: Point): Actor | null {
+    const newGangsta = this.m_TownGenerator.createNewGangstaMan(map.localTime.turnCounter, gangId);
+    this.m_TownGenerator.giveStartingSkillToActor(newGangsta, SkillID.AGILE);
+
+    const spawned = this.SpawnActorNear(map, newGangsta, SPAWN_DISTANCE_TO_PLAYER, leaderPos, 3);
+    return spawned ? newGangsta : null;
   }
 
   // C# SpawnNewBlackOpsLeader — RogueGame.cs:5317
-  SpawnNewBlackOpsLeader(map: Map): Actor {
-    void map;
-    throw new Error("not yet ported: SpawnNewBlackOpsLeader (RogueGame.cs:5317)");
+  SpawnNewBlackOpsLeader(map: Map): Actor | null {
+    const newBOLeader = this.m_TownGenerator.createNewBlackOps(map.localTime.turnCounter, "Officer");
+    this.m_TownGenerator.giveStartingSkillToActor(newBOLeader, SkillID.LEADERSHIP);
+    this.m_TownGenerator.giveStartingSkillToActor(newBOLeader, SkillID.AGILE);
+    this.m_TownGenerator.giveStartingSkillToActor(newBOLeader, SkillID.AGILE);
+    this.m_TownGenerator.giveStartingSkillToActor(newBOLeader, SkillID.AGILE);
+    this.m_TownGenerator.giveStartingSkillToActor(newBOLeader, SkillID.FIREARMS);
+    this.m_TownGenerator.giveStartingSkillToActor(newBOLeader, SkillID.FIREARMS);
+    this.m_TownGenerator.giveStartingSkillToActor(newBOLeader, SkillID.FIREARMS);
+    this.m_TownGenerator.giveStartingSkillToActor(newBOLeader, SkillID.TOUGH);
+    this.m_TownGenerator.giveStartingSkillToActor(newBOLeader, SkillID.TOUGH);
+    this.m_TownGenerator.giveStartingSkillToActor(newBOLeader, SkillID.TOUGH);
+
+    const spawned = this.SpawnActorOnMapBorder(map, newBOLeader, SPAWN_DISTANCE_TO_PLAYER, true);
+    return spawned ? newBOLeader : null;
   }
 
   // C# SpawnNewBlackOpsTrooper — RogueGame.cs:5345
-  SpawnNewBlackOpsTrooper(map: Map, leaderPos: Point): Actor {
-    void map;
-    void leaderPos;
-    throw new Error("not yet ported: SpawnNewBlackOpsTrooper (RogueGame.cs:5345)");
-  }
+  SpawnNewBlackOpsTrooper(map: Map, leaderPos: Point): Actor | null {
+    const newBO = this.m_TownGenerator.createNewBlackOps(map.localTime.turnCounter, "Agent");
+    this.m_TownGenerator.giveStartingSkillToActor(newBO, SkillID.AGILE);
+    this.m_TownGenerator.giveStartingSkillToActor(newBO, SkillID.FIREARMS);
+    this.m_TownGenerator.giveStartingSkillToActor(newBO, SkillID.TOUGH);
 
-  // C# UpdatePlayerFOV — RogueGame.cs:5368
-  UpdatePlayerFOV(player: Actor): void {
-    const map = player.location.map;
-    if (!map) return;
-    const fovKeys = this.m_Rules.computeFOVFor(player, map.localTime, this.m_Session.weather);
-    this.m_PlayerFOV.clear();
-    for (const key of fovKeys) {
-      const parts = key.split(",");
-      if (parts.length === 2) {
-        this.m_PlayerFOV.add(new Point(parseInt(parts[0], 10), parseInt(parts[1], 10)));
-      }
-    }
+    const spawned = this.SpawnActorNear(map, newBO, SPAWN_DISTANCE_TO_PLAYER, leaderPos, 3);
+    return spawned ? newBO : null;
   }
 
   // C# BotToggleControl — RogueGame.cs:5385
@@ -9673,7 +10133,7 @@ export class RogueGame {
     } else {
       // models kill list.
       for (const killData of this.m_Session.scoring.kills) {
-        const model = this.m_GameActors.get(killData.actorModelID);
+        const model = this.gameActors.get(killData.actorModelID);
         const modelName = killData.amount > 1 ? model.pluralName : model.name;
         graveyard.append(`${padLeft(killData.amount, 4)} ${modelName}.`);
       }
@@ -11885,5 +12345,36 @@ export class RogueGame {
   /** camelCase alias for `game.doWait()` — C# `DoWait`. */
   doWait(actor: Actor): void {
     this.DoWait(actor);
+  }
+
+  UpdatePlayerFOV(player: Actor): void {
+    const rawFov = LOS.computeFOVFor(this.m_Rules, player, this.m_Session.worldTime, this.m_Session.world!.weather);
+    this.m_PlayerFOV = new Set<Point>();
+    for (const key of rawFov) {
+      // parse "x,y" to Point
+      const parts = key.split(",");
+      if (parts.length === 2) {
+        this.m_PlayerFOV.add(new Point(parseInt(parts[0], 10), parseInt(parts[1], 10)));
+      }
+    }
+  }
+
+  IsAdjacentToEnemy(map: Map, pos: Point, actor: Actor): boolean {
+    const xmin = Math.max(0, pos.x - 1);
+    const xmax = Math.min(map.width - 1, pos.x + 1);
+    const ymin = Math.max(0, pos.y - 1);
+    const ymax = Math.min(map.height - 1, pos.y + 1);
+
+    for (let x = xmin; x <= xmax; x++)
+      for (let y = ymin; y <= ymax; y++) {
+        if (x === pos.x && y === pos.y)
+          continue;
+        const other = map.getActorAt(x, y);
+        if (other == null)
+          continue;
+        if (this.m_Rules.areEnemies(actor, other))
+          return true;
+      }
+    return false;
   }
 }
