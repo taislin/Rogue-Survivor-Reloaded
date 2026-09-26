@@ -1,9 +1,17 @@
 # Rogue Survivor Reloaded — TypeScript / Browser Port
 
-> **Status (2026-09-26):** Phases 1–7 ported and building. Phase 8 tasks 1–11 done; only 12 (optional touch support) remains.
+> **Status (2026-09-27):** Phases 1–7 ported and playable. Phase 8 tasks 1–11 done; only 12 (optional touch support) remains.
+> **The game now runs end to end in a browser.** A further 5 runtime bugs were found and fixed on 2026-09-27 — see §1.1b, which is the newest section and supersedes parts of §1.4a.
 > **Read [Current State & Handover](#1-current-state--handover) first — it contains the bugs found and the exact next steps.**
 
 Porting a C# WinForms zombie-survival roguelike (195 files, ~2.5 MB, largest `RogueGame.cs` at 955 KB / 23 233 lines) to a browser-playable TypeScript version. `src/` is the original C# and is **never modified** — it is the reference for every port.
+
+> **Do not delete `src/`.** Nothing compiles or ships it (the Dockerfile copies
+> only `web/`, and `.dockerignore` excludes it), so removing it saves no build
+> time and no bundle size. It is the only statement of intended behaviour, and
+> every one of the 15 bugs in §1.1 and §1.1b was found by diffing the port
+> against it. Four of the six tasks still open in §1.5 are fidelity work that
+> *cannot be done* without it. Revisit only once those close.
 
 ---
 
@@ -14,6 +22,7 @@ Porting a C# WinForms zombie-survival roguelike (195 files, ~2.5 MB, largest `Ro
 3. [Phase Status](#3-phase-status)
 4. [Phase 8 — Polish, Headless Simulation & Deployment](#4-phase-8--polish-headless-simulation--deployment)
 5. [Summary Timeline](#5-summary-timeline)
+6. [Future Plans](#6-future-plans) — mobile/touch, HTML menus, outstanding housekeeping
 
 ---
 
@@ -39,6 +48,49 @@ The Phase 8 headless simulator was the first thing ever to actually *run* the po
 | 10 | `Map.placeActor` always appended, dropping C#'s add-or-move branch | `data/Map.ts` | **Silent corruption.** Every step the player took added a permanent duplicate to the actor list, so the per-turn gauge loop ran 2, 4, 6, 8… times per turn: the player starved on turn 9 and the actor count only ever grew. See §1.2. |
 
 **Takeaway for the next agent: "0 stubs + green type-check" is not a definition of done for this project. The headless sim is.**
+
+### 1.1b Five more bugs, found by playing the thing (2026-09-27)
+
+With the simulator green and the game "done", the port was run in a browser for
+the first time. It was unplayable. All five of these are **C#-fidelity
+divergences** — the port had silently dropped or inverted something the original
+does — and none was visible to `tsc`, to the Vite build, or to the headless sim.
+They are recorded here because the pattern recurs: *a port that type-checks and
+runs headless can still be visibly, obviously broken on screen.*
+
+| # | Bug | C# reference | Impact |
+|---|-----|--------------|--------|
+| 11 | `UpdatePlayerFOV` never pushed the FOV onto the map — `Map.SetViewAndMarkVisited(m_PlayerFOV)` had no counterpart | `RogueGame.cs:5373` | **Game-breaking.** `IsVisibleToPlayer` and `DrawTile` both read `tile.isInView`, so no tile was ever in view: the map drew empty — no tiles, no items, no corpses, no actors, not even the player. Also fixed the minimap (§1.4a). |
+| 12 | `UI_PeekKey` was a true peek; C# **consumes** the key it returns (`m_HasKey = false` before returning) | `RogueForm.cs:135` | **Game-breaking.** `WaitKeyOrMouse` polls in a loop, so it was handed the same key forever. The first keypress wedged the game loop, which replayed that one command endlessly and never read the keyboard again: no movement, no help, no response. |
+| 13 | Every living actor was mapped to `GameImages.ACTOR_ZOMBIE`, plus a `?? ACTOR_ZOMBIE` backstop that swallowed the legitimate `null`s | `GameActors.cs:659` onward passes `null` for all living actors | Living actors rendered as bare zombies. The sprite draws *under* the doll layers, so the player still looked human — just wearing a zombie's torso — while NPCs, which get no doll, had no head, hair or clothes at all. |
+| 14 | `UI_DrawImageTinted` composited in three steps (drawImage → multiply fill → `destination-in` re-blit) and produced **no visible pixels** | `DXGameCanvas.DrawImage(…, tint)` is a plain blit for an opaque tint | Every in-view tile and every actor was invisible. Only visited ("grey") tiles rendered, because that path does not use the composite — which made it look like a *map/FOV* bug and sent the investigation in the wrong direction twice. |
+| 15 | Sprites loaded lazily and **every draw silently skipped an uncached image**, so the map painted itself in progressively in draw order | C# preloads all images before the first frame | Tiles simply missing wherever a sprite had not arrived yet. Looked exactly like a positional/FOV bug. Fixed by preloading (`IRogueUI.UI_PreloadImages`); the dead `CanvasUI.preloadImages` that should have done it had no callers. |
+
+#### How they were found, and the lesson
+
+Bugs 11–13 and 15 were all reachable by reading the port against the C#.
+Bugs 14–15 took much longer, and the reason is worth recording:
+
+- `[render]`/`[draw]` logging (`?debug=1`, added in this commit) proved the FOV
+  set was healthy (46 tiles, own tile in view, view rect centred, doll fully
+  dressed) **and** that ~500 draw calls per frame executed with zero missing
+  images. Both facts together excluded every candidate except the canvas layer.
+- `skips=0` was the decisive datum: it eliminated the "lazy load" theory for the
+  *in-view* tiles, which is what pointed at the composite.
+
+**If you touch the renderer, turn on `?debug=1` first.** The `[draw]` tally
+distinguishes "the call never ran" from "the call ran and drew nothing", which
+is the difference between an engine bug and a canvas bug — and this project has
+now produced one of each, in the same feature, in the same session.
+
+#### Regression tests added alongside
+
+Each fix is pinned, because all five are the kind that a future refactor
+reintroduces silently: `tests/map.test.ts` (view/visited flags),
+`tests/input-handler.test.ts` (the consumes-key contract),
+`tests/actor-sprites.test.ts` (sprite-vs-doll mapping, including a check that
+the two lists partition the enum), `tests/sprite-assets.test.ts` (preload
+manifest completeness). **146 tests pass.**
 
 ### 1.2 The harness now runs real games
 
@@ -102,15 +154,14 @@ constructor builds `Rules` from `Session.get().seed`, so a seed applied later
 would reseed world generation while leaving the rules roller on the old value —
 half a deterministic run, which is worse than none.
 
-### 1.4a Open bug: the minimap never reveals explored ground
+### 1.4a Minimap reveal bug — FIXED, and the diagnosis here was wrong
 
-Found while profiling the frame cost (task 11), and **not fixed** — it is a
-gameplay change, not a performance one, so it is reported rather than bundled
-in.
+Found while profiling the frame cost (task 11). **Fixed 2026-09-27** as
+§1.1b bug 11; this section is kept because its *reasoning* was wrong in a way
+that cost real time, and that is the part worth learning from.
 
-`RogueGame.UpdatePlayerFOV` (web/src/engine/RogueGame.ts:19400) only computes
-`m_PlayerFOV`. It never pushes that set into the map. C# does, one line later
-than the equivalent:
+`RogueGame.UpdatePlayerFOV` (web/src/engine/RogueGame.ts) only computed
+`m_PlayerFOV`. It never pushed that set into the map. C# does, one line later:
 
 ```csharp
 // src/Engine/RogueGame.cs:5373, inside UpdatePlayerFOV
@@ -118,50 +169,85 @@ player.Location.Map.SetViewAndMarkVisited(m_PlayerFOV);
 ```
 
 `Map.SetViewAndMarkVisited` (src/Data/Map.cs:953) sets `IsInView` **and**
-`IsVisited` for every visible tile. The TS port has no equivalent — the only
-two places that touch `isVisited` are the starting-zone reveal in
-`RogueGame.cs:16837` and `Map.setAllAsUnvisited`.
+`IsVisited` for every visible tile. The TS port had no equivalent — the only
+two places that touched `isVisited` were the starting-zone reveal and
+`Map.setAllAsUnvisited`.
 
-Consequence: the visited set never grows after the initial reveal, so the
-minimap shows only the starting area for the entire game. `isInView` is also
-never set, though nothing appears to read it — `DrawMap` uses `m_PlayerFOV`
-directly, which is why the game still *looks* right.
+The minimap symptom was as described: the visited set never grew after the
+initial reveal, so the minimap showed only the starting area for the whole game,
+and `ClearMinimap` was called exactly once per run.
 
-Evidence: a 40-turn headless run ends with 1 822 explored tiles and
-`ClearMinimap` called exactly once — the raster is built during world
-generation and never rebuilt, because nothing marks anything visited.
+> **The original note here claimed** "`isInView` is also never set, though
+> nothing appears to read it — `DrawMap` uses `m_PlayerFOV` directly, which is
+> why the game still *looks* right." **Both halves of that were wrong.**
+> `DrawMap` does *not* use `m_PlayerFOV` for tile visibility — it calls
+> `IsVisibleToPlayer(map, position)`, which reads `tile.isInView`, and
+> `DrawTile` picks its lit-vs-memorised sprite from `isInView`/`isVisited` too.
+> So the missing call did not merely freeze the minimap: it blanked the entire
+> in-game map. The note was written while looking at the minimap only, and the
+> minimap has its own independent path, so the in-game renderer was never
+> checked against it.
+>
+> **Lesson:** when a port is missing a call, do not assume the call is
+> cosmetic. Trace every reader of the state it would have written. Here two
+> independent renderers read the same flags and one of them was fatal.
 
-The fix is to port `setViewAndMarkVisited` (and `markAsVisited` /
-`setAllAsVisited`, which `RogueForm.cs:180` uses for a debug cheat) and call it
-from `UpdatePlayerFOV`. Note this will make the minimap rebuild far more often
-than it does today — once per FOV change rather than never — which is what the
-`minimapRevision` cache in §4.1d exists to make cheap. The two changes belong
-together.
+**Fix shipped:** `Map.clearView()` / `Map.setViewAndMarkVisited()` (replacing the
+inlined `ClearView` loop in the district-sim catchup), called from
+`UpdatePlayerFOV`. Marking routes through `markVisited` so `minimapRevision`
+tracks the visited set and the §4.1d cache stays correct. Verified: FOV of 46
+tiles with the player's own tile in view, and the minimap raster now rebuilds as
+ground is explored rather than once per run.
 
 ### 1.5 Next steps, in priority order
 
-0. **Fix the minimap reveal bug above (1.4a).** Small, self-contained, and the
-   profile harness can verify it: `ClearMinimap` should go from 1 to roughly
-   "number of FOV changes", and explored tiles should keep growing.
-1. **Keep running the sim to failure and fix what it finds.** Now that the map
+0. ~~**Fix the minimap reveal bug** (§1.4a).~~ **Done 2026-09-27** — see
+   §1.1b bug 11. It turned out to be the whole in-game map, not just the minimap.
+1. **Play the game, don't just sim it.** This is now the highest-value activity
+   and it is the step that was skipped: all five bugs in §1.1b were found by
+   opening a browser, and the sim found none of them because they were all
+   *presentation-layer* faults the headless UI deliberately drops. If you make a
+   rendering change, open the game and look at it. The corollary is the reverse
+   of the old lesson: *the sim is the definition of done for the engine; the
+   browser is the definition of done for the renderer.* Neither substitutes for
+   the other, and both were green while the game was unplayable.
+2. **Keep running the sim to failure and fix what it finds.** Now that the map
    stops corrupting itself, 1 000-turn runs are reachable. Loop over seeds:
    `for s in 1 2 3 4 5; do npm run sim -- --size 3 --turns 1000 --seed $s --undead; done`
    Watch for hangs, not just crashes — a turn that never returns is usually a
    blocking `UI_Wait*`.
-2. **Write the AI behaviour and generator integrity tests** (Phase 8 §4.3 items
+3. **Write the AI behaviour and generator integrity tests** (Phase 8 §4.3 items
    2 and 3, the only test work left). The harness is trustworthy enough to
    assert on now, and the headless integration tests in `tests/integration/`
    are the pattern to follow. Generator integrity is the higher-value of the
    two: nothing currently checks that a generated town is fully reachable.
-3. **Audit the remaining AI files for bug 3.** The `filterActors` fix was central,
+4. **Audit the remaining AI files for bug 3.** The `filterActors` fix was central,
    but any other `percepted as Actor` cast followed by a dereference is still
    suspect. Grep for the pattern.
-4. **Restore C#'s `isInvincible` guard** on `Actor.hitPoints` (§1.2a).
-5. **Serialise the world/map graph in `Session.save`** — the `TODO(phase 4)`
+5. **Restore C#'s `isInvincible` guard** on `Actor.hitPoints` (§1.2a).
+6. **Serialise the world/map graph in `Session.save`** — the `TODO(phase 4)`
    there blocks any true save/load roundtrip test.
-6. Then work down the rest of the Phase 8 task list in §4 (tasks 9–12).
+7. Then work down the rest of the Phase 8 task list in §4 (tasks 9–12).
 
-### 1.6 Git state
+**Items 3–6 all require reading `src/`.** See the warning at the top of this
+file before considering its removal.
+
+### 1.6 Known non-bugs (do not re-investigate)
+
+- **`tests/integration/reproducibility.test.ts` fails on Windows** with
+  `spawnSync npx ENOENT`. `execFileSync` cannot spawn `npx.ps1`. Confirmed
+  failing on a clean tree; unrelated to the port. Consequence: `npm run verify`
+  halts before its build step, so run `type-check`, `test` and `build`
+  separately until it is fixed.
+- **The untracked `icon.png` in the repo root** is not referenced by anything
+  (the app uses `web/public/icon-192.png` and friends) and was not produced by
+  any code in the tree. Left uncommitted rather than guessing at it.
+- **The first load is slow** (~395 sprites before the menu appears). That is
+  correct — C# preloads too — and the service worker caches them so later loads
+  are instant. Bump `CACHE_VERSION` in `web/public/sw.js` when releasing, or
+  clients keep the old bundle and the update only lands on the *next* load.
+
+### 1.7 Git state
 
 - `master`, tracking `origin/master`.
 - Phase 4 completion committed as `0bc8e7f`; the Phase 4 async audit (18 detached
@@ -173,6 +259,13 @@ together.
   hi-score-table init.
 - `43adb9d` — the `Map.placeActor` add-or-move fix (§1.1 bug 10), `removeActor`
   parity, and `assertActorIntegrity()`.
+- `f61a9b2` — the five §1.1b bugs (11–15) plus the display pass: widescreen
+  1366×768, the 12pt menu font with scrolling windows, death screenshots
+  defaulting off, the service-worker 206/`CACHE_VERSION` fix, and the
+  `?debug=1` `[render]`/`[draw]` diagnostics. Also rewrote the root `README.md`
+  (it had described only the 2012 C# source) and trimmed `web/README.md`.
+  146 tests pass; the reproducibility suite is the pre-existing Windows failure
+  in §1.6.
 
 ---
 
@@ -211,7 +304,7 @@ Full detail in `web/.porting/CONVENTIONS.md`. The ones that matter:
 |---|---|
 | `npm run verify` | type-check + coverage + build — what CI runs, in one command |
 | `npm run type-check` | `tsc --noEmit`; covers `src/`, `sim/` and `tests/` — necessary, **not sufficient** |
-| `npm run test` | Vitest, 104 tests |
+| `npm run test` | Vitest, 146 tests |
 | `npm run test:coverage` | Vitest with coverage thresholds enforced |
 | `npm run build` | Vite production build |
 | `npm run sim` | Headless engine run — the real test |
@@ -229,7 +322,7 @@ Phases 1–7 are ported and building. Historical per-slice detail has been remov
 | 1 — Scaffold & primitives | Vite + Express, `IRogueUI`, `CanvasUI`, `InputHandler`, `Point`/`Rect`/`Color`, `DiceRoller` | Done |
 | 2 — Data layer | `Actor`, `Map`, `World`, `ActorModel`, `GameItems`, `GameActors`, `GameImages` | Done |
 | 3 — Engine core | `Rules`, `LOS`, `Session`, `Scoring`, `GameOptions`, `ui/OptionsScreen.ts` | Done |
-| 4 — Game loop | `RogueGame.ts` (~18 KLOC) all 10 slices | Ported, **0 stubs — and now behaviourally exercised: 1 000-turn runs, see §1.2** |
+| 4 — Game loop | `RogueGame.ts` (~19.7 KLOC) all 10 slices | Ported, **0 stubs — and now behaviourally exercised: 1 000-turn runs headless (§1.2) *and* played in a browser (§1.1b)** |
 | 5 — World gen & AI | `BaseAI` (184/184), all 11 AI controllers, 4 generator files (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator` 5 814 lines, `StdTownGenerator`) | Done |
 | 6 — Audio | Web Audio SFX + music | Done |
 | 7 — Save / load | localStorage / IndexedDB, `Session` serialisation | Done |
@@ -250,15 +343,15 @@ Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks,
 | 1 | Headless simulator (`NullRogueUI` + `HeadlessRunner` + CLI) | **Built; playing 1 000-turn games. See §1.2.** |
 | 2 | Deterministic `--seed` for reproducible runs | **Done** (`Session.useSeed`, `--seed`) |
 | 3 | Drive the sim to a clean full-length run and fix what it finds | **In progress** — 1 000-turn runs clean on 4/5 seeds; keep sweeping |
-| 4 | Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`) | **Already present** in `index.html` (the task list was stale) — but never verified in a real browser |
-| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 104 tests, 9 files, thresholds enforced (50/75/57/50) |
+| 4 | Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`) | **Done and verified in a browser** — now 1366×768 widescreen, smooth filtering (the old `image-rendering: pixelated` made upscaled text unreadable) |
+| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 146 tests, 11 files, thresholds enforced (50/75/57/50) |
 | 6 | GitHub Actions CI | **Done** — `.github/workflows/ci.yml`, type-check + coverage + build + seeded sim, plus a docker smoke job |
 | 7 | PWA manifest + service worker (offline play) | **Done** — manifest, drawn icons, runtime-caching `sw.js` |
 | 8 | Docker image for the self-hosted server | **Done but unverified** — docker is not installed locally, so the image has never been built; CI will exercise it first |
 | 9 | Extract + optimise all sprite PNGs from C# embedded resources | **Done** — 1 124 sprites converted to lossless WebP, 2.41 MB → 0.32 MB, every file pixel-verified |
 | 10 | Audio: normalise volume levels | **Done** — plus 25.7 MB of unreferenced MP3s deleted. Music RMS spread 4.88× → 1.71× |
-| 11 | Performance pass: profile tile rendering (target 60 fps on a 21×21 view) | **Done for draw calls** — `npm run profile`; 3 058 → 658 calls/frame, engine 1.86 → 1.11 ms/frame. See §4.1d. Frame *rate* still unverified (needs a browser) |
-| 12 | Mobile / touch support (optional — original was keyboard-only) | Not started |
+| 11 | Performance pass: profile tile rendering (target 60 fps on a 21×21 view) | **Done for draw calls** — `npm run profile`; 3 058 → 658 calls/frame, engine 1.86 → 1.11 ms/frame. See §4.1d. Frame *rate* still unverified (needs a browser). Note the view is now 31×21 after the widescreen change (§1.1b), so re-profile if that matters |
+| 12 | Mobile / touch support (optional — original was keyboard-only) | Not started — scoped in §6.1 |
 
 ### 4.1a Test suite layout
 
@@ -423,8 +516,92 @@ Items 1, 4 and 5 are implemented (see §4.1a). Items 2 and 3 are not.
 | 1 | Scaffold + primitives | Done |
 | 2 | Data layer | Done |
 | 3 | Engine core | Done |
-| 4 | Game loop | Ported, 0 stubs — **behaviourally exercised: 1 000-turn runs, see §1.2** |
+| 4 | Game loop | Ported, 0 stubs — **behaviourally exercised headless (1 000-turn runs, §1.2) and in a browser (§1.1b)** |
 | 5 | World generation + AI | Done |
 | 6 | Audio | Done |
 | 7 | Save / load | Done |
-| 8 | Headless sim, tests, CI, deployment | In progress — sim plays 1 000 turns; 104 tests, CI, PWA, Docker, asset pass and frame-cost pass all in. Only 12 (optional touch) remains |
+| 8 | Headless sim, tests, CI, deployment | In progress — sim plays 1 000 turns; 146 tests, CI, PWA, Docker, asset pass and frame-cost pass all in. Only 12 (optional touch) remains |
+
+---
+
+## 6. Future Plans
+
+Not scheduled, not started. Recorded so the next person does not have to
+rediscover the context. Ordered roughly by value-per-effort.
+
+### 6.1 Mobile / touch support (Phase 8 task 12)
+
+The original was keyboard-and-mouse only, so this is a genuine new feature
+rather than a port. It is the one Phase 8 task left open.
+
+**What actually blocks it.** The game is not a port of a touch UI; it is a port
+of a *keyboard* UI. Nothing in `web/src/ui/` knows a finger exists:
+
+- **Movement is a held-direction model.** `InputHandler` synthesises one
+  `GameKeyEvent` per `keydown`, and the game loop consumes exactly one per turn
+  (§`GameLoop`). There is no notion of a direction being *held*, so there is
+  nothing to hook a virtual D-pad to. A naive touch D-pad that fires on
+  `touchstart` will repeat-turn correctly but cannot express "keep walking
+  north while I do something else", and diagonal movement needs two held
+  directions — which the current one-event-per-turn model cannot represent
+  without a change.
+- **`UI_WaitKey()` is the only input primitive.** Every menu, popup and targeting
+  mode is written as "draw, await one key, switch on it". Touch needs press,
+  hold, drag and release semantics plus hit-testing, and a second pointer for
+  pinch-zoom. The natural shape is a pointer abstraction the game already
+  understands: translate a finger into the same `GameKeyEvent`s the keyboard
+  produces, and leave every one of those call sites untouched.
+- **Mouse is already a first-class path.** `WaitKeyOrMouse` already returns
+  `{key, mousePos, mouseButtons}` and the targeting/inventory/mouse-look code is
+  pointer-driven rather than key-driven. That is the part worth building on:
+  touch-to-pointer is a small mapping, whereas touch-to-keyboard is not.
+- **The canvas is now 1366×768 with 32 px tiles.** At phone scale the HUD text is
+  unreadable and a tile is a few CSS pixels across. Touch support is really a
+  *layout* project as much as an input one, and the fixed-size canvas plus
+  `image-rendering` scaling will have to give way to something responsive.
+- **The audio unlock and the PWA path already work** (service worker, manifest,
+  Web Audio), so install-to-homescreen and offline play are largely done.
+
+**Suggested order of attack:** (1) a virtual D-pad that emits synthesised
+`GameKeyEvent`s, (2) a touch→pointer mapping feeding the existing mouse path,
+(3) a responsive layout, (4) a pass over the long-list screens for scrolling
+gestures. Steps 1 and 2 are independent and can ship separately; a phone is
+already playable with only 1 and 2 on a small screen.
+
+**Do not** start by touching `RogueGame`. The input abstraction is the seam; if
+that is done right, the 19.7 KLOC game loop does not need to know.
+
+### 6.2 Finish the fidelity work first
+
+Cheaper and higher value than 6.1, and blocked on `src/` (see the warning at
+the top). In order: the AI behaviour and generator integrity tests, the
+`isInvincible` guard, world/map serialisation for a true save/load roundtrip,
+and the audit for the `percepted as Actor` pattern. See §1.5.
+
+### 6.3 Renderer and layout
+
+- **HTML menus.** Discussed and deliberately deferred. All ~206 text/popup call
+  sites go through `IRogueUI` and input is already Promise-based, so a menu
+  flow ("draw → await key → redraw") maps one-to-one onto an async DOM dialog.
+  Worth doing for the full-screen screens only — main menu, character creation,
+  help, manual, options, keybindings, hiscores, message log, post-mortem — where
+  real buttons, mouse clicks and real scrolling would be worth having. **Leave
+  the in-game popups on canvas**: they overlay the live map and interleave with
+  a redraw on every keypress, so they are the hard case, not the easy one. The
+  interim 12pt font (f61a9b2) exists to make the canvas version readable until
+  this happens.
+- **Frame rate is still unmeasured.** Draw calls were cut 78% (§4.1d) and the
+  view grew from 21×21 to 31×21 tiles, so a real browser measurement of actual
+  fps is still outstanding, as is a re-profile at the new view size.
+- **The 12pt menu font and the 8.25pt HUD font are a stopgap.** Once menus are
+  HTML, the two-tier canvas font split can collapse back to one size.
+
+### 6.4 Housekeeping
+
+- `tests/integration/reproducibility.test.ts` cannot run on Windows
+  (`execFileSync` cannot spawn `npx.ps1`) — see §1.6. Fix by resolving the
+  binary path instead of relying on `npx` being spawnable.
+- The `icon.png` in the repo root is unexplained and untracked (§1.6); someone
+  should work out what writes it before it becomes a committed mystery.
+- The Docker image has never been built locally (§4 task 8); CI exercises it
+  first, and that is the first time anyone will know whether it works.
