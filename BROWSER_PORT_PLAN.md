@@ -1,6 +1,6 @@
 # Rogue Survivor Reloaded — TypeScript / Browser Port
 
-> **Status (2026-09-26):** Phases 1–7 ported and building. Phase 8 (polish / headless sim / CI) in progress.
+> **Status (2026-09-26):** Phases 1–7 ported and building. Phase 8 (polish / headless sim / tests / CI / deploy) in progress — tasks 1–8 done, 9–12 left.
 > **Read [Current State & Handover](#1-current-state--handover) first — it contains the bugs found and the exact next steps.**
 
 Porting a C# WinForms zombie-survival roguelike (195 files, ~2.5 MB, largest `RogueGame.cs` at 955 KB / 23 233 lines) to a browser-playable TypeScript version. `src/` is the original C# and is **never modified** — it is the reference for every port.
@@ -109,14 +109,18 @@ half a deterministic run, which is worse than none.
    `for s in 1 2 3 4 5; do npm run sim -- --size 3 --turns 1000 --seed $s --undead; done`
    Watch for hangs, not just crashes — a turn that never returns is usually a
    blocking `UI_Wait*`.
-2. **Add the test suite** (Phase 8 task 5, entirely unstarted — no Vitest, no
-   coverage, no CI yet). The harness is now trustworthy enough to assert on, which
-   is exactly what §4.3 item 1 needs. See §4.
+2. **Write the AI behaviour and generator integrity tests** (Phase 8 §4.3 items
+   2 and 3, the only test work left). The harness is trustworthy enough to
+   assert on now, and the headless integration tests in `tests/integration/`
+   are the pattern to follow. Generator integrity is the higher-value of the
+   two: nothing currently checks that a generated town is fully reachable.
 3. **Audit the remaining AI files for bug 3.** The `filterActors` fix was central,
    but any other `percepted as Actor` cast followed by a dereference is still
    suspect. Grep for the pattern.
 4. **Restore C#'s `isInvincible` guard** on `Actor.hitPoints` (§1.2a).
-5. Then work down the Phase 8 task list in §4.
+5. **Serialise the world/map graph in `Session.save`** — the `TODO(phase 4)`
+   there blocks any true save/load roundtrip test.
+6. Then work down the rest of the Phase 8 task list in §4 (tasks 9–12).
 
 ### 1.6 Git state
 
@@ -166,9 +170,13 @@ Full detail in `web/.porting/CONVENTIONS.md`. The ones that matter:
 
 | Command | Purpose |
 |---|---|
-| `npm run type-check` | `tsc --noEmit` — necessary, **not sufficient** |
+| `npm run verify` | type-check + coverage + build — what CI runs, in one command |
+| `npm run type-check` | `tsc --noEmit`; covers `src/`, `sim/` and `tests/` — necessary, **not sufficient** |
+| `npm run test` | Vitest, 76 tests |
+| `npm run test:coverage` | Vitest with coverage thresholds enforced |
 | `npm run build` | Vite production build |
 | `npm run sim` | Headless engine run — the real test |
+| `npm run serve` | Express production server (needs `build:all` first) |
 
 ---
 
@@ -202,15 +210,55 @@ Assets: 1 184 files shipped (397 classic sprites + 2 variation sets, 24 music tr
 | 1 | Headless simulator (`NullRogueUI` + `HeadlessRunner` + CLI) | **Built; playing 1 000-turn games. See §1.2.** |
 | 2 | Deterministic `--seed` for reproducible runs | **Done** (`Session.useSeed`, `--seed`) |
 | 3 | Drive the sim to a clean full-length run and fix what it finds | **In progress** — 1 000-turn runs clean on 4/5 seeds; keep sweeping |
-| 4 | Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`) | Not started |
-| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds, CI running type-check + coverage + build + a short sim | **Not started** |
-| 6 | GitHub Actions CI | Not started (bundled with 5) |
-| 7 | PWA manifest + service worker (offline play) | Not started |
-| 8 | Docker image for the self-hosted server | Not started |
-| 9 | Extract + optimise all sprite PNGs from C# embedded resources | Partly done (1 184 files extracted); optimisation pending |
-| 10 | Audio: normalise volume levels | Not started |
+| 4 | Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`) | **Already present** in `index.html` (the task list was stale) — but never verified in a real browser |
+| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 76 tests, 6 files, thresholds enforced (50/75/57/50) |
+| 6 | GitHub Actions CI | **Done** — `.github/workflows/ci.yml`, type-check + coverage + build + seeded sim, plus a docker smoke job |
+| 7 | PWA manifest + service worker (offline play) | **Done** — manifest, drawn icons, runtime-caching `sw.js` |
+| 8 | Docker image for the self-hosted server | **Done but unverified** — docker is not installed locally, so the image has never been built; CI will exercise it first |
+| 9 | Extract + optimise all sprite PNGs from C# embedded resources | Partly done (1 124 PNG + 54 audio extracted, 55 MB); optimisation pending |
+| 10 | Audio: normalise volume levels | Not started (`setVolume` clamps 0–1; SFX defaults to 1.0, music to 0.5) |
 | 11 | Performance pass: profile tile rendering (target 60 fps on a 21×21 view) | Not started |
 | 12 | Mobile / touch support (optional — original was keyboard-only) | Not started |
+
+### 4.1a Test suite layout
+
+`web/tests/`, run with `npm run test` / `test:coverage`, or all three checks at
+once with `npm run verify`. `tests/` is in `tsconfig.json`'s include list, so
+`type-check` and `build` check the tests too.
+
+| File | Covers |
+|------|--------|
+| `primitives.test.ts` | `DiceRoller` reproducibility + distribution, `Direction` 8-point algebra, `WorldTime` day/hour/phase and the midnight/midday strikes |
+| `map.test.ts` | The `placeActor` add-or-move contract, duplicate/out-of-bounds rejection, `removeActor` no-op semantics, `assertActorIntegrity` |
+| `null-ui.test.ts` | `NullRogueUI` never blocks and never touches the DOM |
+| `persistence.test.ts` | `Session` / `GameOptions` / `Keybindings` / `HiScoreTable` / `GameHints` / `TextFile` roundtrips on the in-memory storage fallback |
+| `integration/headless-run.test.ts` | A real seeded playthrough. `metrics.error === undefined` is the assertion that would have caught all nine bugs in §1.1 |
+| `integration/reproducibility.test.ts` | Shells out to the real CLI twice per seed — `Session` is a process-wide singleton, and the CLI is what CI and users invoke |
+
+Two constraints worth preserving:
+
+- **One simulation per test file.** `Session.get()` is a singleton and the model
+  databases self-register into `Models` statics, so two games in one process
+  share state. Vitest isolates each file into a fresh worker, which is what
+  makes the single `beforeAll` run clean.
+- **Vitest is pinned to 3.2.x on purpose.** Vitest 5 declares
+  `peerDependencies.vite: ^6.4 || ^7 || ^8` and would force a Vite major
+  upgrade. Vitest 3 accepts Vite 5.
+
+### 4.1b Deployment notes
+
+- **Docker is built from the repository root**, not `web/`:
+  `docker build -t rogue-survivor-web .` then `docker run -p 8080:8080`.
+  `.dockerignore` excludes the C# `src/` tree — it is the port's reference and
+  is never compiled, so keeping it out also keeps 58 MB of dead weight out of
+  the build context.
+- **The service worker caches `/assets/` at runtime, not on install.** The
+  assets are 55 MB across 1 178 files; precaching them would make the first
+  load unusably slow. The precache list therefore holds only unhashed URLs —
+  Vite content-hashes the bundle, so it is picked up by the runtime handler
+  rather than needing a build plugin to inject a manifest. Navigations are
+  network-first so a stale `index.html` can never shadow a new build.
+
 
 ### 4.2 Headless harness design (for whoever extends it)
 
@@ -222,13 +270,16 @@ Assets: 1 184 files shipped (397 classic sprites + 2 variation sets, 24 music tr
 - **`Session.useSeed(seed)`** — pins the RNG seed. Must be called before `RogueGame` is constructed; the runner takes the seed as a constructor argument for that reason.
 - **`engine/storage.ts`** — the `localStorage` wrapper. Falls back to an in-memory `Map` in Node. Every persistence module goes through it; naming the bare global threw `ReferenceError` outside a browser.
 
-### 4.3 Test strategy (not yet implemented)
+### 4.3 Test strategy
 
-1. **Headless integration tests** — boot a small world, play N turns, assert no crash, actor counts stay consistent, the world clock advances, and the player is never soft-locked. Cheapest high-value tests; build these first. Now unblocked: the sim is reproducible (`--seed`) and the map no longer self-corrupts, so these can assert on real invariants rather than smoke-testing.
-2. **AI behaviour tests** — zombie pursuit, line-of-sight tracking, scent aggregation, civilian self-preservation, in isolated map scenarios.
-3. **Generator integrity tests** — town/building/sewer generators must produce fully reachable nav-graphs with no deadlocks or out-of-bounds writes.
-4. **Save/load roundtrip** — serialise a complex running game to JSON, deserialise, assert deep equality across actors, items, maps, world clocks.
-5. **Coverage** — `@vitest/coverage-v8`, thresholds set from a measured baseline (do not pick aspirational numbers on day one; the port is not at full coverage and a failing threshold will just be disabled again).
+Items 1, 4 and 5 are implemented (see §4.1a). Items 2 and 3 are not.
+
+1. **Headless integration tests** — ✅ `tests/integration/headless-run.test.ts`. Boots a seeded 1×1 world, plays 40 turns, asserts no crash, actor accounting stays consistent, the world clock advances, and the run is neither instant nor hung.
+2. **AI behaviour tests** — ⬜ zombie pursuit, line-of-sight tracking, scent aggregation, civilian self-preservation, in isolated map scenarios.
+3. **Generator integrity tests** — ⬜ town/building/sewer generators must produce fully reachable nav-graphs with no deadlocks or out-of-bounds writes.
+4. **Save/load roundtrip** — ✅ `tests/persistence.test.ts`, for the six persistence modules. Note the gap: `Session` does not serialise the world/map object graph yet (see the `TODO(phase 4)` in `Session.save`), so a full "complex running game" roundtrip is not possible until that lands.
+5. **Coverage** — ✅ `@vitest/coverage-v8`, thresholds at 50/75/57/50, set ~1–1.5 points under the measured 51.1/76.4/58.9 baseline rather than at an aspirational number.
+
 
 ---
 
@@ -243,4 +294,4 @@ Assets: 1 184 files shipped (397 classic sprites + 2 variation sets, 24 music tr
 | 5 | World generation + AI | Done |
 | 6 | Audio | Done |
 | 7 | Save / load | Done |
-| 8 | Headless sim, tests, CI, deployment | In progress — sim plays 1 000 turns; tests/CI unstarted |
+| 8 | Headless sim, tests, CI, deployment | In progress — sim plays 1 000 turns; 76 tests + CI + PWA + Docker in; tasks 9–12 left |
