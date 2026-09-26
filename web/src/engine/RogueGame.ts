@@ -19,7 +19,7 @@ import { Direction } from "@engine/Direction";
 import { DiceRoller } from "@engine/DiceRoller";
 import { WorldTime, DayPhase } from "@engine/WorldTime";
 import { Rules } from "@engine/Rules";
-import { Session, RaidType, UniqueActor, UniqueMap, UniqueItem } from "@engine/Session";
+import { Session, GameMode, RaidType, UniqueActor, UniqueMap, UniqueItem } from "@engine/Session";
 import { AchievementIDs, Scoring, DifficultySide } from "@engine/Scoring";
 import { MessageManager } from "@engine/MessageManager";
 import { GameSaveManager } from "@engine/GameSave";
@@ -71,7 +71,7 @@ import { GameFactions } from "@gameplay/GameFactions";
 import { GangID } from "@gameplay/GameGangs";
 import { GameItems } from "@gameplay/GameItems";
 import { GameTiles } from "@gameplay/GameTiles";
-import { SkillID } from "@gameplay/Skills";
+import { SkillID, Skills } from "@gameplay/Skills";
 import { BaseTownGenerator, Parameters as TownParameters } from "@gameplay/generators/BaseTownGenerator";
 import { StdTownGenerator } from "@gameplay/generators/StdTownGenerator";
 import { BaseAI } from "@gameplay/ai/BaseAI";
@@ -1012,7 +1012,7 @@ export class RogueGame {
           switch (selected) {
             case 0:
               if (await this.HandleNewCharacter()) {
-                this.StartNewGame();
+                await this.StartNewGame();
                 loop = false;
               }
               break;
@@ -1068,46 +1068,591 @@ export class RogueGame {
 
   // C# HandleNewCharacter — RogueGame.cs:1415
   async HandleNewCharacter(): Promise<boolean> {
-    throw new Error("not yet ported: HandleNewCharacter (RogueGame.cs:1415)");
+    const roller = new DiceRoller();
+
+    // Reset session
+    this.m_Session.reset();
+
+    // Game Mode
+    if (!(await this.HandleNewGameMode())) return false;
+
+    // Choose living/undead
+    const race = await this.HandleNewCharacterRace(roller, false);
+    if (!race.ok) return false;
+    this.m_CharGen.isUndead = race.isUndead;
+
+    // Choose gender/undead type
+    if (race.isUndead) {
+      const undead = await this.HandleNewCharacterUndeadType(roller, ActorID.UNDEAD_MALE_ZOMBIFIED);
+      if (!undead.ok) return false;
+      this.m_CharGen.undeadModel = undead.modelID;
+    } else {
+      const gender = await this.HandleNewCharacterGender(roller, true);
+      if (!gender.ok) return false;
+      this.m_CharGen.isMale = gender.isMale;
+    }
+
+    // Choose skill (living only)
+    if (!race.isUndead) {
+      const skill = await this.HandleNewCharacterSkill(roller, SkillID.AGILE);
+      if (!skill.ok) return false;
+      this.m_CharGen.startingSkill = skill.skID;
+      // scoring : starting skill.
+      this.m_Session.scoring.startingSkill = skill.skID;
+    } else {
+      // undead.
+    }
+
+    // done
+    return true;
   }
 
   // C# HandleNewGameMode — RogueGame.cs:1477
-  HandleNewGameMode(): boolean {
-    throw new Error("not yet ported: HandleNewGameMode (RogueGame.cs:1477)");
+  async HandleNewGameMode(): Promise<boolean> {
+    const menuEntries: string[] = [
+      Session.descGameMode(GameMode.GM_STANDARD),
+      Session.descGameMode(GameMode.GM_CORPSES_INFECTION),
+      Session.descGameMode(GameMode.GM_VINTAGE),
+    ];
+    const descs: string[] = [
+      "Rogue Survivor standard game.",
+      "Don't get a cold. Keep an eye on your deceased diseased friends.",
+      "The classic zombies next door.",
+    ];
+
+    let loop = true;
+    let choiceDone = false;
+    let selected = 0;
+    do {
+      // display.
+      this.m_UI.UI_Clear(Color.Black);
+      const gx = 0;
+      let gy = 0;
+      this.m_UI.UI_DrawStringBold(Color.Yellow, "New Game - Choose Game Mode", gx, gy);
+      gy += 2 * BOLD_LINE_SPACING;
+      const gyRef = { value: gy };
+      this.DrawMenuOrOptions(selected, Color.White, menuEntries, Color.LightGray, descs, gx, gyRef);
+      gy = gyRef.value;
+      gy += 2 * BOLD_LINE_SPACING;
+
+      let descMode: string[] = [];
+      switch (selected) {
+        case 0:
+          descMode = [
+            "This is the standard game setting.",
+            "Recommended for beginners.",
+            "- All the kinds of undeads.",
+            "- Undeads can evolve to stronger forms.",
+            "- Livings can zombify instantly when dead.",
+            "- No infection.",
+            "- No corpses.",
+          ];
+          break;
+        case 1:
+          descMode = [
+            "This is the standard game setting plus corpses and infection.",
+            "Recommended to experience all the features of the game.",
+            "- All the kinds of undeads.",
+            "- Undeads can evolve to stronger forms.",
+            "- Infection:",
+            "  - some undeads can infect livings when biting them.",
+            "  - infected livings can become ill and die.",
+            "  - infected corpses have more chances to rise as zombies.",
+            "- Corpses:",
+            "  - livings that die drop corpses that will rot away.",
+            "  - corpses may rise as zombies.",
+            "  - undeads can eat corpses.",
+            "  - livings can eat corpses if desperate.",
+          ];
+          break;
+        case 2:
+          descMode = [
+            "This is the classic zombies for hardcore zombie fans.",
+            "Recommended if you want classic movies zombies.",
+            "- Undeads are only zombified men and women.",
+            "- Undeads don't evolve to stronger forms.",
+            "- Infection:",
+            "  - some undeads can infect livings when biting them.",
+            "  - infected livings can become ill and die.",
+            "  - infected corpses have more chances to rise as zombies.",
+            "- Corpses:",
+            "  - livings that die drop corpses that will rot away.",
+            "  - corpses may rise as zombies.",
+            "  - undeads can eat corpses.",
+            "  - livings can eat corpses if desperate.",
+            "",
+            "NOTE:",
+            "This mode force some options OFF.",
+            "Remember to set them back ON again when you play other modes!",
+          ];
+          break;
+      }
+      for (const str of descMode) {
+        this.m_UI.UI_DrawStringBold(Color.Gray, str, gx, gy);
+        gy += BOLD_LINE_SPACING;
+      }
+
+      this.DrawFootnote(Color.White, "cursor to move, ENTER to select, ESC to cancel");
+      this.m_UI.UI_Repaint();
+
+      // get menu action.
+      const key = await this.m_UI.UI_WaitKey();
+      switch (key.key) {
+        case "ArrowUp": // move up
+          if (selected > 0) --selected;
+          else selected = menuEntries.length - 1;
+          break;
+        case "ArrowDown": // move down
+          selected = (selected + 1) % menuEntries.length;
+          break;
+
+        case "Escape":
+          choiceDone = false;
+          loop = false;
+          break;
+
+        case "Enter":
+          // validate
+          switch (selected) {
+            case 0: // standard
+              this.m_Session.gameMode = GameMode.GM_STANDARD;
+              choiceDone = true;
+              loop = false;
+              break;
+
+            case 1: // corpses & infection
+              this.m_Session.gameMode = GameMode.GM_CORPSES_INFECTION;
+              choiceDone = true;
+              loop = false;
+              break;
+
+            case 2: // vintage
+              this.m_Session.gameMode = GameMode.GM_VINTAGE;
+
+              // force some options off.
+              s_Options.allowUndeadsEvolution = false;
+              s_Options.shamblersUpgrade = false;
+              s_Options.ratsUpgrade = false;
+              s_Options.skeletonsUpgrade = false;
+              this.ApplyOptions(false);
+
+              choiceDone = true;
+              loop = false;
+              break;
+          }
+          break;
+      }
+    } while (loop);
+
+    // done.
+    return choiceDone;
   }
 
   // C# HandleNewCharacterRace — RogueGame.cs:1627
-  HandleNewCharacterRace(roller: DiceRoller, isUndead: boolean): { ok: boolean; isUndead: boolean } {
-    void roller;
-    void isUndead;
-    throw new Error("not yet ported: HandleNewCharacterRace (RogueGame.cs:1627)");
+  async HandleNewCharacterRace(roller: DiceRoller, isUndead: boolean): Promise<{ ok: boolean; isUndead: boolean }> {
+    const menuEntries: string[] = ["*Random*", "Living", "Undead"];
+    const descs: string[] = [
+      "(picks a race at random for you)",
+      "Try to survive.",
+      "Eat brains and die again.",
+    ];
+
+    // C# `out bool isUndead` — seeded with the caller's value (C# assigns `false` first).
+    let undead = isUndead;
+    let loop = true;
+    let choiceDone = false;
+    let selected = 0;
+    do {
+      // display.
+      this.m_UI.UI_Clear(Color.Black);
+      const gx = 0;
+      let gy = 0;
+      this.m_UI.UI_DrawStringBold(
+        Color.Yellow,
+        `[${Session.descGameMode(this.m_Session.gameMode)}] New Character - Choose Race`,
+        gx,
+        gy
+      );
+      gy += 2 * BOLD_LINE_SPACING;
+      const gyRef = { value: gy };
+      this.DrawMenuOrOptions(selected, Color.White, menuEntries, Color.LightGray, descs, gx, gyRef);
+      gy = gyRef.value;
+      gy += 2 * BOLD_LINE_SPACING;
+
+      this.DrawFootnote(Color.White, "cursor to move, ENTER to select, ESC to cancel");
+      this.m_UI.UI_Repaint();
+
+      // get menu action.
+      const key = await this.m_UI.UI_WaitKey();
+      switch (key.key) {
+        case "ArrowUp": // move up
+          if (selected > 0) --selected;
+          else selected = menuEntries.length - 1;
+          break;
+        case "ArrowDown": // move down
+          selected = (selected + 1) % menuEntries.length;
+          break;
+
+        case "Escape":
+          choiceDone = false;
+          loop = false;
+          break;
+
+        case "Enter":
+          // validate
+          switch (selected) {
+            case 0: // random
+              undead = roller.rollChance(50);
+
+              gy += BOLD_LINE_SPACING;
+              this.m_UI.UI_DrawStringBold(Color.White, `Race : ${undead ? "Undead" : "Living"}.`, gx, gy);
+              gy += BOLD_LINE_SPACING;
+              this.m_UI.UI_DrawStringBold(Color.Yellow, "Is that OK? Y to confirm, N to cancel.", gx, gy);
+              this.m_UI.UI_Repaint();
+              if (await this.WaitYesOrNo()) {
+                choiceDone = true;
+                loop = false;
+              }
+              break;
+
+            case 1: // living
+              undead = false;
+              choiceDone = true;
+              loop = false;
+              break;
+
+            case 2: // undead
+              undead = true;
+              choiceDone = true;
+              loop = false;
+              break;
+          }
+          break;
+      }
+    } while (loop);
+
+    // done.
+    return { ok: choiceDone, isUndead: undead };
   }
 
   // C# HandleNewCharacterGender — RogueGame.cs:1719
-  HandleNewCharacterGender(roller: DiceRoller, isMale: boolean): { ok: boolean; isMale: boolean } {
-    void roller;
-    void isMale;
-    throw new Error("not yet ported: HandleNewCharacterGender (RogueGame.cs:1719)");
+  async HandleNewCharacterGender(roller: DiceRoller, isMale: boolean): Promise<{ ok: boolean; isMale: boolean }> {
+    const maleModel = this.m_GameActors.get(ActorID.MALE_CIVILIAN);
+    const femaleModel = this.m_GameActors.get(ActorID.FEMALE_CIVILIAN);
+
+    const menuEntries: string[] = ["*Random*", "Male", "Female"];
+    const descs: string[] = [
+      "(picks a gender at random for you)",
+      `HP:${padLeft(maleModel.startingSheet.baseHitPoints, 2)}  Def:${padLeft(maleModel.startingSheet.baseDefence.value, 2)}  Dmg:${padLeft(maleModel.startingSheet.unarmedAttack.damageValue, 1)}`,
+      `HP:${padLeft(femaleModel.startingSheet.baseHitPoints, 2)}  Def:${padLeft(femaleModel.startingSheet.baseDefence.value, 2)}  Dmg:${padLeft(femaleModel.startingSheet.unarmedAttack.damageValue, 1)}`,
+    ];
+
+    // C# `out bool isMale` — seeded with the caller's value (C# assigns `true` first).
+    let male = isMale;
+    let loop = true;
+    let choiceDone = false;
+    let selected = 0;
+    do {
+      // display.
+      this.m_UI.UI_Clear(Color.Black);
+      const gx = 0;
+      let gy = 0;
+      this.m_UI.UI_DrawStringBold(
+        Color.Yellow,
+        `[${Session.descGameMode(this.m_Session.gameMode)}] New Living - Choose Gender`,
+        gx,
+        gy
+      );
+      gy += 2 * BOLD_LINE_SPACING;
+      const gyRef = { value: gy };
+      this.DrawMenuOrOptions(selected, Color.White, menuEntries, Color.LightGray, descs, gx, gyRef);
+      gy = gyRef.value;
+      this.DrawFootnote(Color.White, "cursor to move, ENTER to select, ESC to cancel");
+      this.m_UI.UI_Repaint();
+
+      // get menu action.
+      const key = await this.m_UI.UI_WaitKey();
+      switch (key.key) {
+        case "ArrowUp": // move up
+          if (selected > 0) --selected;
+          else selected = menuEntries.length - 1;
+          break;
+        case "ArrowDown": // move down
+          selected = (selected + 1) % menuEntries.length;
+          break;
+
+        case "Escape":
+          choiceDone = false;
+          loop = false;
+          break;
+
+        case "Enter":
+          // validate
+          switch (selected) {
+            case 0: // random
+              male = roller.rollChance(50);
+
+              gy += BOLD_LINE_SPACING;
+              this.m_UI.UI_DrawStringBold(Color.White, `Gender : ${male ? "Male" : "Female"}.`, gx, gy);
+              gy += BOLD_LINE_SPACING;
+              this.m_UI.UI_DrawStringBold(Color.Yellow, "Is that OK? Y to confirm, N to cancel.", gx, gy);
+              this.m_UI.UI_Repaint();
+              if (await this.WaitYesOrNo()) {
+                choiceDone = true;
+                loop = false;
+              }
+              break;
+
+            case 1: // male
+              male = true;
+              choiceDone = true;
+              loop = false;
+              break;
+
+            case 2: // female
+              male = false;
+              choiceDone = true;
+              loop = false;
+              break;
+          }
+          break;
+      }
+    } while (loop);
+
+    // done.
+    return { ok: choiceDone, isMale: male };
   }
 
   // C# DescribeUndeadModelStatLine — RogueGame.cs:1812
   DescribeUndeadModelStatLine(m: ActorModel): string {
-    void m;
-    throw new Error("not yet ported: DescribeUndeadModelStatLine (RogueGame.cs:1812)");
+    const sheet = m.startingSheet;
+    return (
+      `HP:${padLeft(sheet.baseHitPoints, 3)}  Spd:${(m.dollBody.speed / 100).toFixed(2)}` +
+      `  Atk:${padLeft(sheet.unarmedAttack.hitValue, 2)}  Def:${padLeft(sheet.baseDefence.value, 2)}` +
+      `  Dmg:${padLeft(sheet.unarmedAttack.damageValue, 2)}  FoV:${sheet.baseViewRange.toFixed(1)}` +
+      `  Sml:${sheet.baseSmellRating.toFixed(2)}`
+    );
   }
 
   // C# HandleNewCharacterUndeadType — RogueGame.cs:1820
-  HandleNewCharacterUndeadType(roller: DiceRoller, modelID: ActorID): { ok: boolean; modelID: ActorID } {
-    void roller;
-    void modelID;
-    throw new Error("not yet ported: HandleNewCharacterUndeadType (RogueGame.cs:1820)");
+  async HandleNewCharacterUndeadType(
+    roller: DiceRoller,
+    modelID: ActorID
+  ): Promise<{ ok: boolean; modelID: ActorID }> {
+    const skeletonModel = this.m_GameActors.get(ActorID.UNDEAD_SKELETON);
+    const shamblerModel = this.m_GameActors.get(ActorID.UNDEAD_ZOMBIE);
+    const maleModel = this.m_GameActors.get(ActorID.UNDEAD_MALE_ZOMBIFIED);
+    const femaleModel = this.m_GameActors.get(ActorID.UNDEAD_FEMALE_ZOMBIFIED);
+    const masterModel = this.m_GameActors.get(ActorID.UNDEAD_ZOMBIE_MASTER);
+
+    const menuEntries: string[] = [
+      "*Random*",
+      skeletonModel.name,
+      shamblerModel.name,
+      maleModel.name,
+      femaleModel.name,
+      masterModel.name,
+    ];
+    const descs: string[] = [
+      "(picks a type at random for you)",
+      this.DescribeUndeadModelStatLine(skeletonModel),
+      this.DescribeUndeadModelStatLine(shamblerModel),
+      this.DescribeUndeadModelStatLine(maleModel),
+      this.DescribeUndeadModelStatLine(femaleModel),
+      this.DescribeUndeadModelStatLine(masterModel),
+    ];
+
+    // C# `out GameActors.IDs modelID` — seeded with the caller's value (C# assigns UNDEAD_MALE_ZOMBIFIED).
+    let model = modelID;
+    let loop = true;
+    let choiceDone = false;
+    let selected = 0;
+    do {
+      // display.
+      this.m_UI.UI_Clear(Color.Black);
+      const gx = 0;
+      let gy = 0;
+      this.m_UI.UI_DrawStringBold(
+        Color.Yellow,
+        `[${Session.descGameMode(this.m_Session.gameMode)}] New Undead - Choose Type`,
+        gx,
+        gy
+      );
+      gy += 2 * BOLD_LINE_SPACING;
+      const gyRef = { value: gy };
+      this.DrawMenuOrOptions(selected, Color.White, menuEntries, Color.LightGray, descs, gx, gyRef);
+      gy = gyRef.value;
+      this.DrawFootnote(Color.White, "cursor to move, ENTER to select, ESC to cancel");
+      this.m_UI.UI_Repaint();
+
+      // get menu action.
+      const key = await this.m_UI.UI_WaitKey();
+      switch (key.key) {
+        case "ArrowUp": // move up
+          if (selected > 0) --selected;
+          else selected = menuEntries.length - 1;
+          break;
+        case "ArrowDown": // move down
+          selected = (selected + 1) % menuEntries.length;
+          break;
+
+        case "Escape":
+          choiceDone = false;
+          loop = false;
+          break;
+
+        case "Enter":
+          // validate
+          switch (selected) {
+            case 0: // random
+              selected = roller.roll(0, 5);
+              switch (selected) {
+                case 0:
+                  model = ActorID.UNDEAD_SKELETON;
+                  break;
+                case 1:
+                  model = ActorID.UNDEAD_ZOMBIE;
+                  break;
+                case 2:
+                  model = ActorID.UNDEAD_MALE_ZOMBIFIED;
+                  break;
+                case 3:
+                  model = ActorID.UNDEAD_FEMALE_ZOMBIFIED;
+                  break;
+                case 4:
+                  model = ActorID.UNDEAD_ZOMBIE_MASTER;
+                  break;
+                default:
+                  throw new RangeError("unhandled select " + selected);
+              }
+
+              gy += BOLD_LINE_SPACING;
+              this.m_UI.UI_DrawStringBold(Color.White, `Type : ${this.m_GameActors.get(model).name}.`, gx, gy);
+              gy += BOLD_LINE_SPACING;
+              this.m_UI.UI_DrawStringBold(Color.Yellow, "Is that OK? Y to confirm, N to cancel.", gx, gy);
+              this.m_UI.UI_Repaint();
+              if (await this.WaitYesOrNo()) {
+                choiceDone = true;
+                loop = false;
+              }
+              break;
+
+            case 1: // skeleton
+              model = ActorID.UNDEAD_SKELETON;
+              choiceDone = true;
+              loop = false;
+              break;
+
+            case 2: // shambler
+              model = ActorID.UNDEAD_ZOMBIE;
+              choiceDone = true;
+              loop = false;
+              break;
+
+            case 3: // male zombified
+              model = ActorID.UNDEAD_MALE_ZOMBIFIED;
+              this.m_CharGen.isMale = true;
+              choiceDone = true;
+              loop = false;
+              break;
+
+            case 4: // female zombified
+              model = ActorID.UNDEAD_FEMALE_ZOMBIFIED;
+              this.m_CharGen.isMale = false;
+              choiceDone = true;
+              loop = false;
+              break;
+
+            case 5: // zm
+              model = ActorID.UNDEAD_ZOMBIE_MASTER;
+              choiceDone = true;
+              loop = false;
+              break;
+          }
+          break;
+      }
+    } while (loop);
+
+    // done.
+    return { ok: choiceDone, modelID: model };
   }
 
   // C# HandleNewCharacterSkill — RogueGame.cs:1952
-  HandleNewCharacterSkill(roller: DiceRoller, skID: SkillID): { ok: boolean; skID: SkillID } {
-    void roller;
-    void skID;
-    throw new Error("not yet ported: HandleNewCharacterSkill (RogueGame.cs:1952)");
+  async HandleNewCharacterSkill(roller: DiceRoller, skID: SkillID): Promise<{ ok: boolean; skID: SkillID }> {
+    // Make table of all skills.
+    const allSkills: SkillID[] = new Array<SkillID>(Skills.LAST_LIVING + 1);
+    const menuEntries: string[] = new Array<string>(allSkills.length + 1);
+    const skillDesc: string[] = new Array<string>(allSkills.length + 1);
+    menuEntries[0] = "*Random*";
+    skillDesc[0] = "(picks a skill at random for you)";
+    for (let i = Skills.FIRST_LIVING; i < Skills.LAST_LIVING + 1; i++) {
+      allSkills[i] = i as SkillID;
+      menuEntries[i + 1] = Skills.name(allSkills[i]);
+      skillDesc[i + 1] = `${Skills.maxSkillLevel(allSkills[i])} max - ${this.DescribeSkillShort(allSkills[i])}`;
+    }
+
+    // Loop until choice done
+    // C# `out Skills.IDs skID` — seeded with the caller's value (C# assigns _FIRST).
+    let skill = skID;
+    let loop = true;
+    let choiceDone = false;
+    let selected = 0;
+    do {
+      // display.
+      this.m_UI.UI_Clear(Color.Black);
+      const gx = 0;
+      let gy = 0;
+      this.m_UI.UI_DrawStringBold(
+        Color.Yellow,
+        `[${Session.descGameMode(this.m_Session.gameMode)}] New ${this.m_CharGen.isMale ? "Male" : "Female"} Character - Choose Starting Skill`,
+        gx,
+        gy
+      );
+      gy += 2 * BOLD_LINE_SPACING;
+      const gyRef = { value: gy };
+      this.DrawMenuOrOptions(selected, Color.White, menuEntries, Color.LightGray, skillDesc, gx, gyRef);
+      gy = gyRef.value;
+      this.DrawFootnote(Color.White, "cursor to move, ENTER to select, ESC to cancel");
+      this.m_UI.UI_Repaint();
+
+      // get menu action.
+      const key = await this.m_UI.UI_WaitKey();
+      switch (key.key) {
+        case "ArrowUp": // move up
+          if (selected > 0) --selected;
+          else selected = menuEntries.length - 1;
+          break;
+        case "ArrowDown": // move down
+          selected = (selected + 1) % menuEntries.length;
+          break;
+
+        case "Escape":
+          choiceDone = false;
+          loop = false;
+          break;
+
+        case "Enter":
+          // validate
+          if (selected === 0)
+            // random
+            skill = Skills.rollLiving(roller);
+          else skill = (selected - 1 + Skills.FIRST_LIVING) as SkillID;
+
+          gy += BOLD_LINE_SPACING;
+          this.m_UI.UI_DrawStringBold(Color.White, `Skill : ${Skills.name(skill)}.`, gx, gy);
+          gy += BOLD_LINE_SPACING;
+          this.m_UI.UI_DrawStringBold(Color.Yellow, "Is that OK? Y to confirm, N to cancel.", gx, gy);
+          this.m_UI.UI_Repaint();
+          if (await this.WaitYesOrNo()) {
+            choiceDone = true;
+            loop = false;
+          }
+          break;
+      }
+    } while (loop);
+
+    // done.
+    return { ok: choiceDone, skID: skill };
   }
 
   // C# LoadManual — RogueGame.cs:2034
@@ -1147,8 +1692,91 @@ export class RogueGame {
 
   // C# HandleHiScores — RogueGame.cs:2072
   async HandleHiScores(saveToTextfile: boolean): Promise<void> {
-    void saveToTextfile;
-    throw new Error("not yet ported: HandleHiScores (RogueGame.cs:2072)");
+    const file = saveToTextfile ? new TextFile() : null;
+
+    this.m_UI.UI_Clear(Color.Black);
+    let gy = 0;
+    this.DrawHeader();
+    gy += BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBold(Color.Yellow, "Hi Scores", 0, gy);
+    gy += BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBold(
+      Color.White,
+      "---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+",
+      0,
+      gy
+    );
+    gy += BOLD_LINE_SPACING;
+
+    // display.
+    this.m_UI.UI_DrawStringBold(
+      Color.White,
+      "Rank | Name, Skills, Death       |  Score |Difficulty|Survival|  Kills |Achievm.|      Game Time | Playing time",
+      0,
+      gy
+    );
+    gy += BOLD_LINE_SPACING;
+
+    // text.
+    if (file) {
+      file.append(`ROGUE SURVIVOR ${GAME_VERSION}`);
+      file.append("Hi Scores");
+      file.append("Rank | Name, Skills, Death       |  Score |Difficulty|Survival|  Kills |Achievm.|      Game Time | Playing time");
+    }
+
+    // individual entries.
+    for (let i = 0; i < this.m_HiScoreTable.count; i++) {
+      // display.
+      const rankColor =
+        i === 0 ? Color.LightYellow : i === 1 ? Color.LightCyan : i === 2 ? Color.LightGreen : Color.DimGray;
+      this.m_UI.UI_DrawStringBold(
+        rankColor,
+        "------------------------------------------------------------------------------------------------------------------------",
+        0,
+        gy
+      );
+      gy += BOLD_LINE_SPACING;
+      const hi = this.m_HiScoreTable.get(i);
+      const line =
+        `${padLeft(i + 1, 3)}. | ${padRight(this.TruncateString(hi.name, 25), 25)} | ${padLeft(hi.totalPoints, 6)}` +
+        ` |     ${padLeft(hi.difficultyPercent, 3)}% | ${padLeft(hi.survivalPoints, 6)} | ${padLeft(hi.killPoints, 6)}` +
+        ` | ${padLeft(hi.achievementPoints, 6)} | ${padLeft(new WorldTime(hi.turnSurvived).toString(), 14)}` +
+        ` | ${this.TimeSpanToString(hi.playingTimeSeconds)}`;
+      this.m_UI.UI_DrawStringBold(rankColor, line, 0, gy);
+      gy += BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBold(rankColor, `     | ${hi.skillsDescription}.`, 0, gy);
+      gy += BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBold(rankColor, `     | ${hi.death}.`, 0, gy);
+      gy += BOLD_LINE_SPACING;
+
+      // text.
+      if (file) {
+        file.append("------------------------------------------------------------------------------------------------------------------------");
+        file.append(line);
+        file.append(`     | ${hi.skillsDescription}`);
+        file.append(`     | ${hi.death}`);
+      }
+    }
+
+    // save.
+    const textfilePath = this.GetUserHiScoreTextFilePath();
+    if (file) file.save(textfilePath);
+
+    // display.
+    this.m_UI.UI_DrawStringBold(
+      Color.White,
+      "---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+",
+      0,
+      gy
+    );
+    gy += BOLD_LINE_SPACING;
+    if (file) {
+      this.m_UI.UI_DrawStringBold(Color.White, textfilePath, 0, gy);
+      gy += BOLD_LINE_SPACING;
+    }
+    this.DrawFootnote(Color.White, "press ESC to leave");
+    this.m_UI.UI_Repaint();
+    await this.WaitEscape();
   }
 
   // C# LoadHiScoreTable — RogueGame.cs:2146
@@ -1179,13 +1807,138 @@ export class RogueGame {
   }
 
   // C# StartNewGame — RogueGame.cs:2178
-  StartNewGame(): void {
-    throw new Error("not yet ported: StartNewGame (RogueGame.cs:2178)");
+  async StartNewGame(): Promise<void> {
+    const isUndead = this.m_CharGen.isUndead;
+
+    // generate world.
+    this.GenerateWorld(true, s_Options.citySize);
+
+    // scoring : hello there.
+    this.m_Session.scoring.addVisit(this.m_Session.worldTime.turnCounter, this.m_Player.location.map!);
+    this.m_Session.scoring.addEvent(
+      this.m_Session.worldTime.turnCounter,
+      `${isUndead ? "Rose in" : "Woke up in"} ${this.m_Player.location.map!.name}.`
+    );
+
+    // setup proper scoring mode.
+    this.m_Session.scoring.side = isUndead ? DifficultySide.FOR_UNDEAD : DifficultySide.FOR_SURVIVOR;
+
+    // alpha10.1
+    // schedule first autosave.
+    this.ScheduleNextAutoSave();
+
+    // advisor on?
+    // alpha10 not if undead
+    if (s_Options.isAdvisorEnabled) {
+      this.ClearMessages();
+      this.ClearMessagesHistory();
+      if (this.m_Player.model.abilities.isUndead) {
+        this.AddMessage(
+          new Message("The Advisor is enabled but you will get no hint when playing undead.", 0, Color.Red)
+        );
+      } else {
+        this.AddMessage(
+          new Message("The Advisor is enabled and will give you hints during the game.", 0, Color.LightGreen)
+        );
+        this.AddMessage(
+          new Message("The hints help a beginner learning the basic controls.", 0, Color.LightGreen)
+        );
+        this.AddMessage(
+          new Message("You can disable the Advisor by going to the Options screen.", 0, Color.LightGreen)
+        );
+      }
+      this.AddMessage(
+        new Message(
+          `Press ${s_KeyBindings.get(PlayerCommand.OPTIONS_MODE) ?? ""} during the game to change the options.`,
+          0,
+          Color.LightGreen
+        )
+      );
+      this.AddMessage(new Message("<press ENTER>", 0, Color.Yellow));
+      this.RedrawPlayScreen();
+      await this.WaitEnter();
+    }
+
+    // welcome banner.
+    this.ClearMessages();
+    this.ClearMessagesHistory();
+    this.AddMessage(new Message("*****************************", 0, Color.LightGreen));
+    this.AddMessage(new Message("* Welcome to Rogue Survivor *", 0, Color.LightGreen));
+    this.AddMessage(new Message("* We hope you like Zombies  *", 0, Color.LightGreen));
+    this.AddMessage(new Message("*****************************", 0, Color.LightGreen));
+    this.AddMessage(
+      new Message(`Press ${s_KeyBindings.get(PlayerCommand.HELP_MODE) ?? ""} for help`, 0, Color.LightGreen)
+    );
+    this.AddMessage(
+      new Message(
+        `Press ${s_KeyBindings.get(PlayerCommand.KEYBINDING_MODE) ?? ""} to redefine keys`,
+        0,
+        Color.LightGreen
+      )
+    );
+    this.AddMessage(new Message("<press ENTER>", 0, Color.Yellow));
+    this.RefreshPlayer();
+    this.RedrawPlayScreen();
+    await this.WaitEnter();
+
+    // wake up!
+    this.ClearMessages();
+    this.AddMessage(new Message(`${isUndead ? `${this.m_Player.name} rises...` : `${this.m_Player.name} wakes up.`}`, 0, Color.White));
+    this.RedrawPlayScreen();
+
+    // alpha10.1 reset/cleanup bot from previous session (C# `#if DEBUG` block — no bot in the browser port).
+
+    // start simulation thread.
+    this.StopSimThread(false); // alpha10 stop-start
+    this.StartSimThread();
   }
 
   // C# HandleCredits — RogueGame.cs:2248
   async HandleCredits(): Promise<void> {
-    throw new Error("not yet ported: HandleCredits (RogueGame.cs:2248)");
+    const left = 0;
+    const right = 256;
+    let gy = 0;
+
+    // music.
+    this.m_MusicManager.stop();
+    this.m_MusicManager.play(GameMusics.SLEEP);
+
+    // draw.
+    this.m_UI.UI_Clear(Color.Black);
+    this.DrawHeader();
+    gy += BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBold(Color.Yellow, "Credits", 0, gy);
+    gy += 2 * BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBold(Color.White, "Programming, Graphics & Music by Jacques Ruiz (roguedjack) 2018", 0, gy);
+    gy += 2 * BOLD_LINE_SPACING;
+
+    this.m_UI.UI_DrawStringBold(Color.White, "Programming", left, gy);
+    this.m_UI.UI_DrawString(Color.White, "- C# NET 3.5, Microsoft Visual Studio Community 2017", right, gy);
+    gy += BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBold(Color.White, "Graphic softwares", left, gy);
+    this.m_UI.UI_DrawString(Color.White, "- Inkscape, Paint.NET", right, gy);
+    gy += BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBold(Color.White, "Sound & Music softwares", left, gy);
+    this.m_UI.UI_DrawString(Color.White, "- GuitarPro 7, Audacity", right, gy);
+    gy += BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBold(Color.White, "Sound samples", left, gy);
+    this.m_UI.UI_DrawString(Color.White, "- http://www.sound-fishing.net  http://www.soundsnap.com/", right, gy);
+
+    gy += 2 * BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBold(Color.White, "Contact", 0, gy);
+    gy += BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawString(Color.White, "Email      : roguedjack@yahoo.fr", 0, gy);
+    gy += BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawString(Color.White, "Blog       : http://roguesurvivor.blogspot.com/", 0, gy);
+    gy += BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawString(Color.White, "Fans Forum : http://roguesurvivor.proboards.com/", 0, gy);
+    gy += BOLD_LINE_SPACING;
+    this.m_UI.UI_DrawStringBold(Color.White, "Thanks to the players for their feedback and eagerness to die!", 0, gy);
+    gy += BOLD_LINE_SPACING;
+
+    this.DrawFootnote(Color.White, "ESC to leave");
+    this.m_UI.UI_Repaint();
+    await this.WaitEscape();
   }
 
   // C# HandleOptions — RogueGame.cs:2295
@@ -1196,7 +1949,200 @@ export class RogueGame {
 
   // C# HandleRedefineKeys — RogueGame.cs:2570
   async HandleRedefineKeys(): Promise<void> {
-    throw new Error("not yet ported: HandleRedefineKeys (RogueGame.cs:2570)");
+    const menuEntries: string[] = [
+      "Move N",
+      "Move NE",
+      "Move E",
+      "Move SE",
+      "Move S",
+      "Move SW",
+      "Move W",
+      "Move NW",
+      "Wait",
+      "Wait 1 hour",
+      "Abandon Game",
+      "Advisor Hint",
+      "Barricade",
+      "Break",
+      "Build Large Fortification",
+      "Build Small Fortification",
+      "City Info",
+      "Close",
+      "Fire",
+      "Give",
+      "Help",
+      "Hints screen",
+      "Negociate Trade",
+      "Item 1 slot",
+      "Item 2 slot",
+      "Item 3 slot",
+      "Item 4 slot",
+      "Item 5 slot",
+      "Item 6 slot",
+      "Item 7 slot",
+      "Item 8 slot",
+      "Item 9 slot",
+      "Item 10 slot",
+      "Lead",
+      "Load Game",
+      "Mark Enemies",
+      "Messages Log",
+      "Options",
+      "Order",
+      "Pull", // alpha10
+      "Push",
+      "Quit Game",
+      "Redefine Keys",
+      "Run",
+      "Save Game",
+      "Screenshot",
+      "Shout",
+      "Sleep",
+      "Switch Place",
+      "Use Exit",
+      "Use Spray",
+    ];
+    // C#'s O_* index constants — one command per menu entry, same order.
+    const commands: PlayerCommand[] = [
+      PlayerCommand.MOVE_N,
+      PlayerCommand.MOVE_NE,
+      PlayerCommand.MOVE_E,
+      PlayerCommand.MOVE_SE,
+      PlayerCommand.MOVE_S,
+      PlayerCommand.MOVE_SW,
+      PlayerCommand.MOVE_W,
+      PlayerCommand.MOVE_NW,
+      PlayerCommand.WAIT_OR_SELF,
+      PlayerCommand.WAIT_LONG,
+      PlayerCommand.ABANDON_GAME,
+      PlayerCommand.ADVISOR,
+      PlayerCommand.BARRICADE_MODE,
+      PlayerCommand.BREAK_MODE,
+      PlayerCommand.BUILD_LARGE_FORTIFICATION,
+      PlayerCommand.BUILD_SMALL_FORTIFICATION,
+      PlayerCommand.CITY_INFO,
+      PlayerCommand.CLOSE_DOOR,
+      PlayerCommand.FIRE_MODE,
+      PlayerCommand.GIVE_ITEM,
+      PlayerCommand.HELP_MODE,
+      PlayerCommand.HINTS_SCREEN_MODE,
+      PlayerCommand.NEGOCIATE_TRADE,
+      PlayerCommand.ITEM_SLOT_0,
+      PlayerCommand.ITEM_SLOT_1,
+      PlayerCommand.ITEM_SLOT_2,
+      PlayerCommand.ITEM_SLOT_3,
+      PlayerCommand.ITEM_SLOT_4,
+      PlayerCommand.ITEM_SLOT_5,
+      PlayerCommand.ITEM_SLOT_6,
+      PlayerCommand.ITEM_SLOT_7,
+      PlayerCommand.ITEM_SLOT_8,
+      PlayerCommand.ITEM_SLOT_9,
+      PlayerCommand.LEAD_MODE,
+      PlayerCommand.LOAD_GAME,
+      PlayerCommand.MARK_ENEMIES_MODE,
+      PlayerCommand.MESSAGE_LOG,
+      PlayerCommand.OPTIONS_MODE,
+      PlayerCommand.ORDER_MODE,
+      PlayerCommand.PULL_MODE,
+      PlayerCommand.PUSH_MODE,
+      PlayerCommand.QUIT_GAME,
+      PlayerCommand.KEYBINDING_MODE,
+      PlayerCommand.RUN_TOGGLE,
+      PlayerCommand.SAVE_GAME,
+      PlayerCommand.SCREENSHOT,
+      PlayerCommand.SHOUT,
+      PlayerCommand.SLEEP,
+      PlayerCommand.SWITCH_PLACE,
+      PlayerCommand.USE_EXIT,
+      PlayerCommand.USE_SPRAY,
+    ];
+    if (commands.length !== menuEntries.length) throw new RangeError("commands/menuEntries length mismatch");
+
+    let loop = true;
+    let selected = 0;
+    let conflict = false;
+    do {
+      // check for conflict.
+      conflict = s_KeyBindings.checkForConflict();
+
+      // draw
+      const values: string[] = commands.map((cmd) => s_KeyBindings.get(cmd) ?? "");
+
+      const gx = 0;
+      let gy = 0;
+      this.m_UI.UI_Clear(Color.Black);
+      this.DrawHeader();
+      gy += BOLD_LINE_SPACING;
+      this.m_UI.UI_DrawStringBold(Color.Yellow, "Redefine keys", 0, gy);
+      gy += BOLD_LINE_SPACING;
+      const gyRef = { value: gy };
+      this.DrawMenuOrOptions(selected, Color.White, menuEntries, Color.LightGreen, values, gx, gyRef);
+      gy = gyRef.value;
+      if (conflict) {
+        this.m_UI.UI_DrawStringBold(
+          Color.Red,
+          "Conflicting keys. Please redefine the keys so the commands don't overlap.",
+          gx,
+          gy
+        );
+        gy += BOLD_LINE_SPACING;
+      }
+      this.DrawFootnote(Color.White, "cursor to move, ENTER to rebind a key, ESC to save and leave");
+      this.m_UI.UI_Repaint();
+
+      // handle
+      // get menu action.
+      const key = await this.m_UI.UI_WaitKey();
+      switch (key.key) {
+        case "ArrowUp": // move up
+          if (selected > 0) --selected;
+          else selected = menuEntries.length - 1;
+          break;
+        case "ArrowDown": // move down
+          selected = (selected + 1) % menuEntries.length;
+          break;
+
+        case "Escape": // leave.
+          if (!conflict) {
+            loop = false;
+          }
+          break;
+
+        case "Enter": {
+          // rebind
+          // say.
+          this.m_UI.UI_DrawStringBold(
+            Color.Yellow,
+            `rebinding ${menuEntries[selected]}, press the new key.`,
+            gx,
+            gy
+          );
+          this.m_UI.UI_Repaint();
+
+          // read new key.
+          let loopNewKey = true;
+          let newKeyData = "";
+          do {
+            const newKey = await this.m_UI.UI_WaitKey();
+            // ignore Shift and Control alone.
+            if (newKey.key === "Shift" || newKey.key === "Control") continue;
+            // always ignore Alt.
+            if (newKey.alt) continue;
+            // done!
+            newKeyData = Keybindings.makeKey(newKey.key, newKey.ctrl, newKey.alt, newKey.shift);
+            loopNewKey = false;
+          } while (loopNewKey);
+
+          // bind it.
+          s_KeyBindings.set(commands[selected], newKeyData);
+
+          break;
+        }
+      }
+    } while (loop);
+
+    // Save.
+    this.SaveKeybindings();
   }
 
   // C# AdvancePlay — RogueGame.cs:2877 (+1 overloads)
@@ -2451,50 +3397,64 @@ export class RogueGame {
 
   // C# DescribeDayPhase — RogueGame.cs:12578
   DescribeDayPhase(phase: DayPhase): string {
-    void phase;
-    throw new Error("not yet ported: DescribeDayPhase (RogueGame.cs:12578)");
+    switch (phase) {
+      case DayPhase.SUNSET: return "Sunset";
+      case DayPhase.EVENING: return "Evening";
+      case DayPhase.MIDNIGHT: return "Midnight";
+      case DayPhase.DEEP_NIGHT: return "Deep Night";
+      case DayPhase.SUNRISE: return "Sunrise";
+      case DayPhase.MORNING: return "Morning";
+      case DayPhase.MIDDAY: return "Midday";
+      case DayPhase.AFTERNOON: return "Afternoon";
+      default: return "Unknown";
+    }
   }
 
   // C# DescribeWeather — RogueGame.cs:12595
   DescribeWeather(weather: Weather): string {
-    void weather;
-    throw new Error("not yet ported: DescribeWeather (RogueGame.cs:12595)");
+    switch (weather) {
+      case Weather.CLEAR: return "Clear";
+      case Weather.CLOUDY: return "Cloudy";
+      case Weather.RAIN: return "Rain";
+      case Weather.HEAVY_RAIN: return "Heavy Rain";
+      default: return "Unknown";
+    }
   }
 
   // C# WeatherColor — RogueGame.cs:12609
   WeatherColor(weather: Weather): Color {
-    void weather;
-    throw new Error("not yet ported: WeatherColor (RogueGame.cs:12609)");
+    switch (weather) {
+      case Weather.CLEAR: return Color.Yellow;
+      case Weather.CLOUDY: return Color.Gray;
+      case Weather.RAIN: return Color.Cyan;
+      case Weather.HEAVY_RAIN: return Color.Blue;
+      default: return Color.White;
+    }
   }
 
   // C# BatteriesToHours — RogueGame.cs:12623
   BatteriesToHours(batteries: number): number {
-    void batteries;
-    throw new Error("not yet ported: BatteriesToHours (RogueGame.cs:12623)");
+    return Math.floor(batteries / WorldTime.TURNS_PER_HOUR);
   }
 
   // C# FoodToHoursUntilHungry — RogueGame.cs:12628
   FoodToHoursUntilHungry(food: number): number {
-    void food;
-    throw new Error("not yet ported: FoodToHoursUntilHungry (RogueGame.cs:12628)");
+    return Math.floor(food / (Rules.FOOD_BASE_POINTS / 24));
   }
 
   // C# FoodToHoursUntilRotHungry — RogueGame.cs:12636
   FoodToHoursUntilRotHungry(food: number): number {
-    void food;
-    throw new Error("not yet ported: FoodToHoursUntilRotHungry (RogueGame.cs:12636)");
+    return Math.floor(food / (Rules.FOOD_BASE_POINTS / 24));
   }
 
   // C# IsAlmostHungry — RogueGame.cs:12644
   IsAlmostHungry(actor: Actor): boolean {
-    void actor;
-    throw new Error("not yet ported: IsAlmostHungry (RogueGame.cs:12644)");
+    return actor.foodPoints < Rules.FOOD_HUNGRY_LEVEL;
   }
 
   // C# IsAlmostRotHungry — RogueGame.cs:12651
   IsAlmostRotHungry(actor: Actor): boolean {
-    void actor;
-    throw new Error("not yet ported: IsAlmostRotHungry (RogueGame.cs:12651)");
+    return actor.foodPoints < Rules.ROT_HUNGRY_LEVEL;
   }
 
   // C# CommandToDirection — RogueGame.cs:12660
