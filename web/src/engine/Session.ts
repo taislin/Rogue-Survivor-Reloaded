@@ -1,8 +1,9 @@
 /**
  * Game session state - port of src/Engine/Session.cs
  *
- * C# binary/SOAP/XML serialization → `localStorage` JSON.
- * The `world` object graph is not serialized yet (Phase 4).
+ * C# binary/SOAP/XML serialization → `localStorage` JSON. The C# gets that for
+ * free from `BinaryFormatter`, which walks the whole object graph; the port has
+ * to do it by hand, and the world/map graph is in `engine/serialization/`.
  */
 
 import { Actor } from "@data/Actor";
@@ -16,7 +17,8 @@ import { Weather } from "@data/Weather";
 import { GameOptions, Options } from "@engine/GameOptions";
 import { Scoring } from "@engine/Scoring";
 import { storage } from "@engine/storage";
-import { GRAPH_VERSION } from "@engine/serialization/SessionGraph";
+import { GRAPH_VERSION, type GraphData } from "@engine/serialization/SessionGraph";
+import { readSessionGraph, writeSessionGraph, findPlayerActor } from "@engine/serialization/sessionGraphRoot";
 
 export enum GameMode {
   GM_STANDARD,
@@ -282,6 +284,7 @@ export class Session {
     this.player_TurnCharismaRoll = 0;
     // alpha10.1
     this.m_NextAutoSaveTime = 0;
+    this.m_LoadedPlayer = null;
   }
 
   // ── Events ──────────────────────────────────────────────────────────────
@@ -303,15 +306,21 @@ export class Session {
   // ── Saving & Loading ────────────────────────────────────────────────────
 
   /**
-   * Serializes the session's scalar state.
+   * Serializes the whole session: its scalars, and the world/map object graph.
    *
-   * The `world`/`currentMap` object graph is not serialized yet — see
-   * `engine/serialization/SessionGraph.ts` for the machinery and the list of
-   * classes still to do. Until every one of them is implemented, `graph` is
-   * written as `null` and `load` refuses the save, which is deliberate: a load
-   * that restores the scalars and silently drops the world is a half-loaded
-   * game, and half-loaded is worse than not loaded. `graphVersion` is written
-   * even now, so the save format is declared rather than implied.
+   * The graph is written by `writeSessionGraph` — see
+   * `engine/serialization/SessionGraph.ts` for the format and for why it is not
+   * `JSON.stringify`. `graphVersion` goes in alongside it, and `load` refuses
+   * anything that does not carry a complete graph at this version: a load that
+   * restores the scalars and silently drops the world is a half-loaded game, and
+   * half-loaded is worse than not loaded.
+   *
+   * Throws rather than swallowing: a graph that cannot be written (an object with
+   * no codec, a field JSON cannot carry) is a bug in the port, and writing a
+   * partial save over a good one would turn a loud failure into a silent one.
+   *
+   * The one failure it does *not* throw on is storage refusing the write, because
+   * a full world is legitimately bigger than the string store — see `adopt`.
    */
   static save(session: Session, _format: SaveFormat = SaveFormat.FORMAT_JSON): void {
     const data = {
@@ -326,17 +335,97 @@ export class Session {
       scriptStage_PoliceStationPrisoner: session.scriptStage_PoliceStationPrisoner,
       player_CurrentFireMode: session.player_CurrentFireMode,
       player_TurnCharismaRoll: session.player_TurnCharismaRoll,
+      weather: session.m_Weather,
       worldTime: session.m_WorldTime ? session.m_WorldTime.turnCounter : 0,
       graphVersion: GRAPH_VERSION,
-      graph: null as unknown, // the world graph, once SessionGraph can write it
+      graph: Session.writeGraph(session),
     };
-    storage.setItem(Session.STORAGE_KEY, JSON.stringify(data));
+    // Serialized before it is stored, so a failure above cannot leave a
+    // half-written save behind: `adopt` is the only call that touches storage.
+    Session.adopt(JSON.stringify(data));
+  }
+
+  /**
+   * Holds a save for `load` to read, in storage if it fits and in memory if not.
+   *
+   * A save used to be small enough that `localStorage` was the obvious place for
+   * it. It is not any more: a 3x3 world with nine districts and 56 maps measures
+   * **4.6 MB** of JSON, and the string store is a ~5 MB budget shared with
+   * everything else on the origin — and it counts UTF-16, so ~2.5 M characters.
+   * Writing one there throws `QuotaExceededError`, which on its own would take the
+   * game down on the very key a player presses to keep their game.
+   *
+   * So the buffer is best-effort: stored when it fits, remembered when it does
+   * not. Nothing is lost either way, because the durable copy is the save slot —
+   * `GameSaveManager` already falls back to IndexedDB for exactly this, and
+   * `DoLoadGame` reads the slot back through it. This buffer only has to survive
+   * the hop from "the player pressed S" to "the player pressed L".
+   */
+  private static s_Buffer: string | null = null;
+
+  /** The save `load` will read, wherever it ended up. */
+  private static readBuffer(): string | null {
+    try {
+      return storage.getItem(Session.STORAGE_KEY) ?? Session.s_Buffer;
+    } catch {
+      return Session.s_Buffer;
+    }
+  }
+
+  /**
+   * Makes `json` the save `load` reads, preferring storage.
+   *
+   * Called with a save that has just been written, and with one that has just been
+   * read back out of a slot — which is why `RogueGame.LoadGame` uses this rather
+   * than writing to storage itself: a loaded save can be just as large as a
+   * written one.
+   */
+  static adopt(json: string): void {
+    Session.s_Buffer = json;
+    try {
+      storage.setItem(Session.STORAGE_KEY, json);
+    } catch {
+      // The in-memory copy above is the fallback; see the note on `s_Buffer`.
+    }
+  }
+
+  /**
+   * The save as JSON, from wherever it ended up.
+   *
+   * `DoSaveGame` needs the text to hand to `GameSaveManager`, and it must not read
+   * storage directly: for a world bigger than the string store the copy is only in
+   * memory, and reading storage would come back empty — a save that reported
+   * success and wrote nothing.
+   */
+  static savedJson(): string | null {
+    return Session.readBuffer();
+  }
+
+  /**
+   * The graph for this session, or null when there is no world to write.
+   *
+   * Null is a legitimate answer — a session that has been reset, or a world that
+   * was never generated — and `load` refuses it, so the save that gets written
+   * says "no graph" rather than pretending to have one.
+   */
+  private static writeGraph(session: Session): GraphData | null {
+    const world = session.m_World;
+    const currentMap = session.m_CurrentMap;
+    if (world == null || currentMap == null) return null;
+    return writeSessionGraph(
+      world,
+      currentMap,
+      session.scoring,
+      session,
+      findPlayerActor(currentMap),
+      session.m_WorldTime ? session.m_WorldTime.turnCounter : 0
+    );
   }
 
   /** Try to load, false if failed. */
   static load(_format: SaveFormat = SaveFormat.FORMAT_JSON): boolean {
     try {
-      const raw = storage.getItem(Session.STORAGE_KEY);
+      const raw = Session.readBuffer();
       if (raw === null) return false;
 
       const data = JSON.parse(raw) as Record<string, unknown>;
@@ -349,19 +438,22 @@ export class Session {
        * map and the scoring, so validating afterwards would refuse the load
        * *and* wipe what the player was standing in.
        *
-       *  - No graph: the port writes scalars only while
-       *    `SessionGraph.PENDING_GRAPH_CLASSES` is non-empty. Restoring the
-       *    scalars into a session with no actors would be a half-loaded game,
-       *    and half-loaded is worse than not loaded.
+       *  - No graph: a session that was saved with no world, or one written by a
+       *    build that could not. Restoring the scalars into a session with no
+       *    actors would be a half-loaded game.
        *  - Wrong `graphVersion`: a format this build cannot read, which is what
        *    the C# does for an unknown `SaveFormat` and what "VERSION NOT
        *    COMPATIBLE" in `DoLoadGame` means.
        *
-       * Both are checked on the *data*, not on a save-file version string, so
-       * the day the graph lands the guard lifts by itself.
+       * Both are checked on the *data*, not on a save-file version string.
        */
       if (data.graph == null) return false;
       if ((data.graphVersion as number) !== GRAPH_VERSION) return false;
+
+      // The graph is read before anything is installed, so a graph that cannot be
+      // read (a truncated save, an unresolvable reference) leaves the live session
+      // exactly as it was rather than half-replaced.
+      const loaded = readSessionGraph(data.graph as GraphData);
 
       const session = Session.get();
       session.reset();
@@ -378,7 +470,27 @@ export class Session {
       session.scriptStage_PoliceStationPrisoner = data.scriptStage_PoliceStationPrisoner as ScriptStage;
       session.player_CurrentFireMode = data.player_CurrentFireMode as FireMode;
       session.player_TurnCharismaRoll = data.player_TurnCharismaRoll as number;
-      session.worldTime.turnCounter = data.worldTime as number;
+      session.m_Weather = (data.weather as Weather) ?? Weather.CLEAR;
+
+      /*
+       * The clock and the scoring are assigned to the backing fields, not through
+       * the `worldTime` and `scoring` getters: both getters *create* a blank
+       * object when their field is null, so writing through them on a session
+       * that has just been reset would build a fresh `WorldTime(0)` and a fresh
+       * `Scoring` and then quietly keep the blank one.
+       */
+      session.m_WorldTime = new WorldTime(loaded.worldTimeTurn);
+      session.m_Scoring = loaded.scoring;
+      session.m_World = loaded.world;
+      session.m_CurrentMap = loaded.currentMap;
+      session.uniqueActors = loaded.uniqueActors;
+      session.uniqueItems = loaded.uniqueItems;
+      session.uniqueMaps = loaded.uniqueMaps;
+
+      // The player comes back without a controller — controllers are not part of
+      // the graph — so the actor that was the player is recorded here and
+      // `RogueGame.LoadGame` reattaches one.
+      session.m_LoadedPlayer = loaded.player;
 
       return true;
     } catch {
@@ -393,6 +505,19 @@ export class Session {
        */
       return false;
     }
+  }
+
+  /**
+   * The actor the player was controlling in the save just loaded, if any.
+   *
+   * Cleared by `reset()`. `RogueGame.LoadGame` reads it once and hands the actor a
+   * `PlayerController`; nothing else should need it.
+   */
+  private m_LoadedPlayer: Actor | null = null;
+
+  /** The player actor restored by the last successful `load`, else null. */
+  get loadedPlayer(): Actor | null {
+    return this.m_LoadedPlayer;
   }
 
   static delete(_filepath: string | null = null): boolean {

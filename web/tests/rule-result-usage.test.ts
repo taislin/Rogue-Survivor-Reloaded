@@ -90,6 +90,12 @@ describe("RuleResult is never used as a boolean", () => {
           if (end < 0) continue;
           const after = code.slice(end, end + 8).trimStart();
           if (after.startsWith(".ok") || after.startsWith("?.")) continue;
+          // The `.ok` may sit on the next line, which a formatter will do to any
+          // call that gets long. That is still a correct call site, and a guard
+          // that reports a line break as a truthiness bug trains people to ignore
+          // it — which is the one thing this test cannot afford.
+          const nextLine = (lines[n + 1] ?? "").trim();
+          if (nextLine.startsWith(".ok") || nextLine.startsWith("?.")) continue;
           offenders.push(
             `${relative(join(__dirname, ".."), file)}:${n + 1}  ${m[1]}()\n      ${lines[n].trim()}`
           );

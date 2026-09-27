@@ -97,9 +97,28 @@ export class Map {
     return this.isInBounds(p.x, p.y);
   }
 
-  /** C# `Map.IsOnMapBorder(int, int)`. */
+  /**
+   * C# `Map.IsOnMapBorder(int, int)` — the ring of tiles *on* the map's edge,
+   * i.e. coordinates that are still in bounds.
+   */
   isOnMapBorder(x: number, y: number): boolean {
     return x === 0 || x === this.width - 1 || y === 0 || y === this.height - 1;
+  }
+
+  /**
+   * C# `Map.IsMapBoundary(int, int)` — the ring immediately *outside* the map.
+   *
+   * Distinct from `isOnMapBorder` above, and the two names in the C# are close
+   * enough to invite swapping. This one is the out-of-bounds ring, and it is
+   * the only test `DrawMap` uses to decide whether to draw an exit marker:
+   * exits are stored one tile beyond the edge (`x === -1`, `x === width`, ...)
+   * rather than on it, so the label has to be tested against this ring to be
+   * found at all. Testing the in-bounds ring instead finds nothing except the
+   * two corner-adjacent cases, and the district-exit labels silently never
+   * appear.
+   */
+  isMapBoundary(x: number, y: number): boolean {
+    return x === -1 || x === this.width || y === -1 || y === this.height;
   }
 
   getTileAt(x: number, y: number): Tile | null {
