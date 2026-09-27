@@ -122,26 +122,7 @@ export class GameActors implements ActorModelDB {
       const hasSanity =
         isLiving && i !== ActorID.FERAL_DOG && i !== ActorID.JASON_MYERS;
 
-      const abilities = new Abilities();
-      abilities.isUndead = isUndead;
-      abilities.hasInventory = isLiving;
-      abilities.canUseItems = isLiving;
-      abilities.canTalk = isLiving;
-      abilities.canTrade = isLiving;
-      abilities.canRun = isLiving || i >= ActorID.UNDEAD_MALE_NEOPHYTE;
-      abilities.hasToEat = isLiving;
-      abilities.hasToSleep = isLiving;
-      abilities.hasSanity = hasSanity;
-      abilities.canTire = isLiving;
-
-      if (isUndead) {
-        abilities.isRotting = true;
-        abilities.canZombifyKilled = true;
-        abilities.canBashDoors = true;
-        abilities.canBreakObjects = true;
-        abilities.zombieAIExplore = true;
-        abilities.aiCanUseAIExits = true;
-      }
+      const abilities = GameActors.abilitiesFor(i);
 
       const verb = isUndead ? (i < ActorID.UNDEAD_ZOMBIE ? "claw" : "bite") : "punch";
       const attack = Attack.meleeAttack(new Verb(verb), d.ATK, d.DMG);
@@ -197,6 +178,157 @@ export class GameActors implements ActorModelDB {
       model.flavorDescription = d.FLAVOR ?? "";
       this.setModel(i, model);
     }
+  }
+
+  /**
+   * Per-actor abilities, transcribed from the C#'s `new Abilities() { … }`
+   * block for each of the 27 models (GameActors.cs, `#region Init`).
+   *
+   * This used to be inferred from `isLiving` / `isUndead`, which is wrong in
+   * both directions and cost the player most of the game. Every `Abilities`
+   * field defaults to `false`, so an unlisted flag is *off* — and the old
+   * blanket loop left these off for the player:
+   *
+   *   canUseMapObjects, canBashDoors, canBreakObjects, canJump,
+   *   canBarricade, canPush, isIntelligent, aiCanUseAIExits
+   *
+   * The visible symptom was doors. `Rules.isBumpableFor` tries, in order, move
+   * → fight/chat → open door → bash door → container → break, and returns the
+   * *last* failure reason. With `canUseMapObjects` off, opening failed
+   * ("no ability to open"); with `canBashDoors` off, bashing failed; so it fell
+   * through to breaking and the player was told "cannot break objects" while
+   * standing at a perfectly ordinary door. Reported as "bumping doesn't open
+   * doors".
+   *
+   * It was also wrong for the undead in the other direction: skeletons and the
+   * rat zombie were given `canBashDoors`/`canBreakObjects`/`isRotting`/
+   * `canZombifyKilled` by the old loop, none of which the C# grants them
+   * (GameActors.cs:255-301, 620-650), and `isUndeadMaster` was never set on the
+   * zombie master / lord / prince despite `Rules` and the AI testing it.
+   *
+   * The `isRotting` flag drives the rot meter, so that one had teeth: skeletons
+   * were rotting even though their sheet has NO_FOOD.
+   */
+  private static abilitiesFor(id: ActorID): Abilities {
+    const a = new Abilities();
+    const set = (...flags: Array<keyof Abilities>) => {
+      for (const f of flags) (a[f] as boolean) = true;
+    };
+
+    switch (id) {
+      // ── Undead: skeletons (GameActors.cs:255-301) ──
+      case ActorID.UNDEAD_SKELETON:
+      case ActorID.UNDEAD_RED_EYED_SKELETON:
+      case ActorID.UNDEAD_RED_SKELETON:
+        set("isUndead", "aiCanUseAIExits");
+        break;
+
+      // ── Undead: rotting branch (GameActors.cs:308-430) ──
+      case ActorID.UNDEAD_ZOMBIE:
+      case ActorID.UNDEAD_DARK_EYED_ZOMBIE:
+      case ActorID.UNDEAD_DARK_ZOMBIE:
+      case ActorID.UNDEAD_MALE_ZOMBIFIED:
+      case ActorID.UNDEAD_FEMALE_ZOMBIFIED:
+        set("isUndead", "isRotting", "canZombifyKilled", "canBashDoors",
+            "canBreakObjects", "zombieAIExplore", "aiCanUseAIExits");
+        break;
+
+      // ── Undead: neophytes and disciples, which can also push (440-527) ──
+      case ActorID.UNDEAD_MALE_NEOPHYTE:
+      case ActorID.UNDEAD_FEMALE_NEOPHYTE:
+      case ActorID.UNDEAD_MALE_DISCIPLE:
+      case ActorID.UNDEAD_FEMALE_DISCIPLE:
+        set("isUndead", "isRotting", "canZombifyKilled", "canBashDoors",
+            "canBreakObjects", "canPush", "zombieAIExplore", "aiCanUseAIExits");
+        break;
+
+      // ── Undead masters, which can use map objects and jump (530-615) ──
+      case ActorID.UNDEAD_ZOMBIE_MASTER:
+      case ActorID.UNDEAD_ZOMBIE_LORD:
+      case ActorID.UNDEAD_ZOMBIE_PRINCE:
+        set("isUndead", "isUndeadMaster", "isRotting", "canZombifyKilled",
+            "canBashDoors", "canBreakObjects", "canUseMapObjects", "canJump",
+            "canJumpStumble", "canPush", "zombieAIExplore", "aiCanUseAIExits");
+        break;
+
+      // ── Rat zombie: small, so it slips past closed doors (620-650) ──
+      case ActorID.UNDEAD_RAT_ZOMBIE:
+        set("isUndead", "isSmall", "aiCanUseAIExits");
+        break;
+
+      // ── Sewers thing: no exits, no rot (652-660) ──
+      case ActorID.SEWERS_THING:
+        set("isUndead", "canBashDoors", "canBreakObjects");
+        break;
+
+      // ── Livings: civilians (668-724) ──
+      case ActorID.MALE_CIVILIAN:
+      case ActorID.FEMALE_CIVILIAN:
+        set("hasInventory", "hasToEat", "hasToSleep", "hasSanity", "canTalk",
+            "canUseMapObjects", "canBreakObjects", "canBashDoors", "canJump",
+            "canTire", "canRun", "canUseItems", "canTrade", "canBarricade",
+            "canPush", "isIntelligent", "aiCanUseAIExits");
+        break;
+
+      // ── CHAR guard: no HasToEat, unlike every other living (727-755) ──
+      case ActorID.CHAR_GUARD:
+        set("hasInventory", "canUseMapObjects", "canBreakObjects", "canJump",
+            "canTire", "canRun", "canUseItems", "hasToSleep", "hasSanity",
+            "canTalk", "canPush", "canBarricade", "isIntelligent");
+        break;
+
+      // ── National guard: as CHAR, plus CanTalk ordering aside no HasToEat (758-789) ──
+      case ActorID.ARMY_NATIONAL_GUARD:
+        set("hasInventory", "canUseMapObjects", "canBreakObjects", "canJump",
+            "canTire", "canRun", "canUseItems", "canTalk", "hasToSleep",
+            "hasSanity", "canPush", "canBarricade", "isIntelligent");
+        break;
+
+      // ── Biker: the only one that ignores ranged weapons (792-820) ──
+      case ActorID.BIKER_MAN:
+        set("hasInventory", "canUseMapObjects", "canBreakObjects", "canJump",
+            "canTire", "canRun", "canUseItems", "hasToEat", "hasToSleep",
+            "hasSanity", "canTalk", "canPush", "canBarricade", "canTrade",
+            "isIntelligent", "aiNotInterestedInRangedWeapons");
+        break;
+
+      // ── Gangsta (823-851) ──
+      case ActorID.GANGSTA_MAN:
+        set("hasInventory", "canUseMapObjects", "canBreakObjects", "canJump",
+            "canTire", "canRun", "canUseItems", "hasToEat", "hasToSleep",
+            "hasSanity", "canTalk", "canPush", "canBarricade", "canTrade",
+            "isIntelligent");
+        break;
+
+      // ── Policeman: law enforcer (854-889) ──
+      case ActorID.POLICEMAN:
+        set("hasInventory", "hasToEat", "hasToSleep", "hasSanity", "canTalk",
+            "canUseMapObjects", "canBreakObjects", "canJump", "canTire",
+            "canRun", "canUseItems", "canTrade", "canBarricade", "canPush",
+            "aiCanUseAIExits", "isLawEnforcer", "isIntelligent");
+        break;
+
+      // ── BlackOps: no HasToEat (892-918) ──
+      case ActorID.BLACKOPS_MAN:
+        set("hasInventory", "canUseMapObjects", "canBreakObjects", "canJump",
+            "canTire", "canRun", "canUseItems", "canTalk", "hasToSleep",
+            "hasSanity", "canPush", "canBarricade", "isIntelligent");
+        break;
+
+      // ── Feral dog: no sanity, no talking, no trading (921-946) ──
+      case ActorID.FERAL_DOG:
+        set("hasInventory", "hasToEat", "hasToSleep", "canBreakObjects",
+            "canJump", "canTire", "canRun", "aiCanUseAIExits");
+        break;
+
+      // ── Jason Myers: RAGE, so no eating and no sleeping (949-978) ──
+      case ActorID.JASON_MYERS:
+        set("hasInventory", "canUseMapObjects", "canBreakObjects", "canJump",
+            "canTire", "canRun", "canUseItems", "canTalk", "canPush",
+            "canBarricade", "aiCanUseAIExits");
+        break;
+    }
+    return a;
   }
 
   private setModel(id: ActorID, model: ActorModel): void {

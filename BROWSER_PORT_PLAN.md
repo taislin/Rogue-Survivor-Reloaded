@@ -9,7 +9,7 @@ Porting a C# WinForms zombie-survival roguelike (195 files, ~2.5 MB, largest `Ro
 > **Do not delete `src/`.** Nothing compiles or ships it (the Dockerfile copies
 > only `web/`, and `.dockerignore` excludes it), so removing it saves no build
 > time and no bundle size. It is the only statement of intended behaviour, and
-> every one of the 33 bugs in §1.1, §1.1b and §1.1c was found by diffing the port
+> every one of the 52 bugs in §1.1, §1.1b, §1.1c and §1.1d was found by diffing the port
 > against it. Four of the six tasks still open in §1.5 are fidelity work that
 > *cannot be done* without it. Revisit only once those close.
 
@@ -22,7 +22,7 @@ Porting a C# WinForms zombie-survival roguelike (195 files, ~2.5 MB, largest `Ro
 3. [Phase Status](#3-phase-status)
 4. [Phase 8 — Polish, Headless Simulation & Deployment](#4-phase-8--polish-headless-simulation--deployment)
 5. [Summary Timeline](#5-summary-timeline)
-6. [Future Plans](#6-future-plans) — mobile/touch, HTML menus, outstanding housekeeping
+6. [Future Plans](#6-future-plans) — mobile/touch, HTML menus, a first-person/pseudo-3D view mode, outstanding housekeeping
 
 ---
 
@@ -173,6 +173,48 @@ corrected ones now *differs* from the C# default. Both were verified to fail
 when the corresponding bug is reintroduced. **273 tests passed at that point**;
 the suite is now larger, see §4.1a.
 
+
+### 1.1d Nineteen bugs in the per-actor abilities (2026-09-27)
+
+Found from a player report: *"bumping doesn't open doors, it just says that I
+cannot break them."* The cause was much larger than doors, and it is the **same
+shape** as §1.1c: a single loop standing in for per-actor detail.
+
+`GameActors` inferred abilities from `isLiving` / `isUndead` and set **9 of the
+23 flags**. `Abilities` defaults every flag to `false`, so everything unlisted
+was off.
+
+| # | Bug | C# reference | Impact |
+|---|-----|--------------|--------|
+| 34 | The blanket ability loop left **eight** flags off for the player: `canUseMapObjects`, `canBashDoors`, `canBreakObjects`, `canJump`, `canBarricade`, `canPush`, `isIntelligent`, `aiCanUseAIExits` | `GameActors.cs:668-679` | **Game-breaking.** The player could not open doors, break objects, bash, jump, barricade, push, or use map exits. See the chain below. |
+| 35 | The same loop gave **skeletons and the rat zombie** `isRotting`, `canBashDoors`, `canBreakObjects`, `canZombifyKilled` | `GameActors.cs:255-301`, `:620-650` | The undead could bash and break things the C# forbids them, and could zombify kills. |
+| 36 | …of which `isRotting` drives the rot meter | `Abilities.isRotting` | Skeletons were rotting despite the C# giving their sheet `NO_FOOD`. |
+| 37 | `isUndeadMaster` was never set on the zombie master, lord or prince | `GameActors.cs:530-615` | `Rules` and `ZombieAI` both test it; the three most capable undead were treated as ordinary zombies. |
+| 38 | `isSmall` was never set on the rat zombie | `GameActors.cs:620-624` | It could not slip past closed doors, which is the rat zombie's defining trait. |
+| 39 | `isLawEnforcer` was never set on the policeman | `GameActors.cs:854-880` | The one law-enforcement NPC in the game was not one. |
+| 40 | `aiNotInterestedInRangedWeapons` was never set on the biker | `GameActors.cs:792-812` | The one actor that ignores ranged weapons did not. |
+| 41 | `canJumpStumble` was never set on the zombie masters | `GameActors.cs:530-615` | — |
+
+**Why the door message was so misleading.** `Rules.isBumpableFor` tries, in
+order, move → fight/chat → **open door** → **bash door** → container → **break**,
+and returns the *last* failure reason (`Rules.cs:1345-1491`). With
+`canUseMapObjects` off, opening failed with "no ability to open"; with
+`canBashDoors` off, bashing failed too; so it fell through to breaking and
+reported **"cannot break objects"** — a true statement about the last thing it
+tried, and no hint that the first two had failed for a different reason. The
+message was accurate; it was answering the wrong question.
+
+Fixed by transcribing all 27 actors' `new Abilities() { … }` blocks from the C#
+into a per-actor `abilitiesFor()` table, replacing the loop. Note the C#'s
+`ZombieAI_AssaultBreakables` is commented out as obsolete
+(`Abilities.cs:151`) and is genuinely absent, so it is not in the table.
+Pinned by `tests/actor-abilities.test.ts` (31 cases), which asserts the exact
+granted set for every actor.
+
+**The lesson is §1.1c's lesson again, and that is twice now:** the port
+replaced a 700-line, per-actor, hand-written C# table with a loop, and the loop
+could not express the table. A blanket rule over heterogeneous data is a silent
+truncation of it. *When the original is a long literal table, port the table.*
 
 ### 1.2 The harness now runs real games
 
@@ -468,8 +510,9 @@ them — but do not let it fail silently.
 - `f629e83` — the `isInvincible` guard on all six Actor point properties
   (§1.5 item 5) and the `percepted as Actor` audit (§1.5 item 4), with
   `actor-invincible.test.ts` and `ai-percept-filters.test.ts`.
-- *(uncommitted at time of writing)* — `generator-integrity.test.ts`
-  (§4.3 item 3). 310 tests pass.
+- `25b914e` — `generator-integrity.test.ts` (§4.3 item 3).
+- *(uncommitted at time of writing)* — the per-actor abilities fix (§1.1d) and
+  `actor-abilities.test.ts`. 341 tests pass.
 
 ---
 
@@ -508,7 +551,7 @@ Full detail in `web/.porting/CONVENTIONS.md`. The ones that matter:
 |---|---|
 | `npm run verify` | type-check + coverage + build — what CI runs, in one command |
 | `npm run type-check` | `tsc --noEmit`; covers `src/`, `sim/` and `tests/` — necessary, **not sufficient** |
-| `npm run test` | Vitest, 310 tests |
+| `npm run test` | Vitest, 341 tests |
 | `npm run test:coverage` | Vitest with coverage thresholds enforced |
 | `npm run build` | Vite production build |
 | `npm run sim` | Headless engine run — the real test |
@@ -548,7 +591,7 @@ Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks,
 | 2 | Deterministic `--seed` for reproducible runs | **Done** (`Session.useSeed`, `--seed`) |
 | 3 | Drive the sim to a clean full-length run and fix what it finds | **In progress** — 1 000-turn runs clean on 4/5 seeds; keep sweeping |
 | 4 | Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`) | **Done and verified in a browser** — now 1366×768 widescreen, smooth filtering (the old `image-rendering: pixelated` made upscaled text unreadable) |
-| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 310 tests, 19 files, thresholds enforced (50/75/57/50) |
+| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 341 tests, 20 files, thresholds enforced (50/75/57/50) |
 | 6 | GitHub Actions CI | **Done** — `.github/workflows/ci.yml`, type-check + coverage + build + seeded sim, plus a docker smoke job |
 | 7 | PWA manifest + service worker (offline play) | **Done** — manifest, drawn icons, runtime-caching `sw.js` |
 | 8 | Docker image for the self-hosted server | **Done but unverified** — docker is not installed locally, so the image has never been built; CI will exercise it first |
@@ -577,6 +620,7 @@ once with `npm run verify`. `tests/` is in `tsconfig.json`'s include list, so
 | `skills-data.test.ts` | `Skills.csv` actually reaches the `Rules.SKILL_*` statics, with the right `(int)` truncation, and each of the 7 corrected values differs from the C# default (53 cases) |
 | `actor-invincible.test.ts` | C#'s `m_IsInvincible` guard on all six Actor point properties, including that `Infection`'s guard is inverted (21 cases) |
 | `ai-percept-filters.test.ts` | The AI percept filters reject non-Actor percepts, and `filterSameMap` still admits them (9 cases, characterisation — see §1.5 item 4) |
+| `actor-abilities.test.ts` | Every actor's granted ability set, transcribed from the C#; specifically that the player can open doors, and that skeletons/rat zombie do not rot (§1.1d, 31 cases) |
 | `generator-integrity.test.ts` | A generated world is sound: no actor on a wall, nothing out of bounds, the player starts passable in the largest region, no surface district sealed. One game per file, seed 42 = the worst world measured (7 cases) |
 
 Two constraints worth preserving:
@@ -729,7 +773,7 @@ Items 1, 4 and 5 are implemented (see §4.1a). Items 2 and 3 are not.
 | 5 | World generation + AI | Done |
 | 6 | Audio | Done |
 | 7 | Save / load | Done |
-| 8 | Headless sim, tests, CI, deployment | In progress — 310 tests, CI, PWA, Docker, asset pass and frame-cost pass all in. Only 12 (optional touch) remains; see §1.2 for why 1 000-turn runs no longer complete |
+| 8 | Headless sim, tests, CI, deployment | In progress — 341 tests, CI, PWA, Docker, asset pass and frame-cost pass all in. Only 12 (optional touch) remains; see §1.2 for why 1 000-turn runs no longer complete |
 
 ---
 
@@ -805,7 +849,135 @@ and the audit for the `percepted as Actor` pattern. See §1.5.
 - **The 12pt menu font and the 8.25pt HUD font are a stopgap.** Once menus are
   HTML, the two-tier canvas font split can collapse back to one size.
 
-### 6.4 Housekeeping
+### 6.4 First-person / pseudo-3D view mode
+
+Not scheduled, not started. A second renderer that presents the same game in
+first person, built entirely from the sprites that already ship. No new art.
+Recorded here because the enabling facts are not obvious and are expensive to
+re-derive.
+
+**The art already suits it.** This is the finding that makes the idea viable,
+and it is the opposite of what a top-down game's assets usually look like.
+Checked directly in `src/Resources/Images/`: `Actors/zombie.png` is a
+front-facing figure with raised arms, `MapObjects/car1.png` is a head-on car
+rather than a plan view, and `Tiles/wall_brick.png` is a flat brick *texture* —
+exactly what column-based wall rendering wants. The original artist drew
+everything facing the viewer even though the game is top-down, so billboarding
+these sprites will likely look better than the current view does. Two caveats:
+small items are isometric rather than front-on (`Items/item_bandages.png` is a
+side view), and tile decorations are flat icons that only work as wall decals.
+
+**The data model cooperates.** Recorded precisely, because the whole design
+rests on it:
+
+- **Walls are real grid cells** (ids 12–18, `isWalkable` and `isTransparent`
+  both false), not a property of adjacent floors. A DDA ray terminates on
+  `!tile.model.isWalkable`.
+- **Walls are exactly one tile thick** — `MapGenerator.tileRectangle`
+  (`MapGenerator.ts:154-202`) fills a four-line outline, not a band. This is
+  load-bearing: no ray starting in walkable space can reach an interior wall
+  face, so the face normal is derivable from the ray direction alone and **no
+  autotiling or per-face data is needed**, which is the thing that usually makes
+  a grid raycaster expensive.
+- `isWalkable === isTransparent` for all 18 defined models. The single
+  exception is `TileModel.UNDEF` (`false, true`) — not walkable but see-through —
+  so terminate rays on `isWalkable` and unfilled space correctly occludes.
+- 7 wall ids share only **5 distinct images**: `WALL_POLICE_STATION`,
+  `WALL_STONE` and `WALL_SUBWAY` all render `TILE_WALL_STONE`
+  (`GameTiles.ts:65-68`), differing only in minimap colour. A first-person view
+  will make that aliasing visible where it is currently invisible.
+- Every sprite is a single 32×32 still image — 1124 files, no sprite sheets.
+  Billboard scale is therefore a constant over ray distance.
+- `Map.lighting` (`DARKNESS`/`OUTSIDE`/`LIT`) is per **map**, not per tile.
+  There is no per-tile lighting to compute, so any fog is a synthesis and should
+  be commented as one.
+
+**Two engine changes, both small.** Everything else lives in the UI layer:
+
+1. `RogueGame.DrawMap` branches on a render mode and calls a new
+   `IRogueUI.UI_DrawScene(scene)` instead of the tile loop. `NullRogueUI` no-ops
+   it — the headless sim is the test harness and must stay untouched — and
+   `CanvasUI` ignores it. Precedent: `UI_BeginScaledDraw` was added the same way,
+   with a comment recording why it is not in `IRogueUI.cs`.
+2. **Redirect `RogueGame.ScreenToMap` through a new
+   `UI_ScreenToMap(gx, gy): Point | null`.** Today it converts a cursor position
+   to a tile for hover and click; in first person a click is a *ray*. Without
+   this, tooltips and click-to-interact break silently. `CanvasUI` keeps today's
+   arithmetic, `FirstPersonUI` ray-picks. Easy to overlook and it is not
+   testable by inspection.
+
+**The one genuine gameplay conflict: FOV is a circle, a first-person view is a
+cone.** `Rules.actorFOV` returns 8 for a living, and `Rules.losDistance` is
+`0.866 × Euclidean` (`Rules.ts:1881`), so the player can see a circle of radius
+**~9.24 tiles in every direction**, and `IsVisibleToPlayer` reads `tile.isInView`
+across that whole circle. A 90° cone shows roughly a quarter of it.
+
+**Resolution: mouse-look is free, decided.** Rotation costs no turn and no
+stamina; only movement and actions do. The player surveys their full FOV by
+turning, as in any grid FPS, and the engine rules stay byte-identical to the
+original. Camera angle is then a free float while actions still snap to the
+existing 8-way `Direction.COMPASS`, separating presentation angle from rules
+direction. The game already ships `Icons/threat_high_danger` and friends, so
+off-screen threat markers are free reuses of existing art.
+
+**The floor is the whole cost problem.** Walls are ~496 `drawImage` calls at
+2 px columns and billboards are cheap, but a mode 7 floor is a per-texel
+operation: the 992×672 view is ~992×336 texels below the horizon, which even at
+quarter resolution is **~20 000 calls/frame** against the 658/frame treated as
+the budget in §4.1d. On a GPU that is one fragment shader; in Canvas2D it is
+roughly 40–120 ms/frame. Two routes to a textured floor:
+
+- **Per-tile subdivided quads in Canvas2D.** Project each visible floor tile to
+  a screen quad, `setTransform`, subdivide near tiles (2×2 → 4×4) to hide affine
+  error where the trapezoid skew is worst. ~400–1800 calls. Some warping on
+  nearby tiles; not very visible at 32 px art. No new technology.
+- **A small raw-WebGL2 offscreen canvas** for the 3D view only, composited under
+  the existing 2D HUD. True mode 7 at full resolution, trivially 60 fps, and
+  still zero dependencies — raw WebGL2 is ~250 lines, not a framework. The cost
+  is a second rendering path, and `CanvasUI`/`NullRogueUI` must exist regardless
+  for the sim.
+
+**Not yet decided between those two.** It is the one open decision in this
+section, and it should be made with a measured draw-call profile rather than a
+guess — see the profiling note at the end.
+
+**Modules.** `FirstPerson/{Camera,Raycaster,Projector,Scene}.ts` and
+`ui/FirstPersonUI.ts`. `Raycaster` and `Projector` take a `Map` and have no DOM
+dependency, so they unit-test in Node — that is where the tests belong, since a
+raycaster is only geometry. Note the grid is **y-down**, so the usual
+left-handed raycaster basis must be flipped; easy to get backwards and hard to
+see.
+
+**Commit order,** on a branch, once the data work in §1.5 has landed:
+
+1. `Raycaster` + tests, no UI at all
+2. Walls only, flat-shaded floor — proves the camera and the seam
+3. Billboards (actors, corpses, ground items, non-blocking map objects,
+   decorations), far→near, per-column depth-tested against a `Float32Array` of
+   wall distances so a zombie half behind a door clips correctly
+4. Floor
+5. Sky/ceiling from `tile.isInside`, one full-screen gradient for distance fog
+   (the cheap way to make the night/rain FOV penalties read, at zero per-texel
+   cost), rain overlay
+6. Mode toggle, persisted via `storage` the way `MapZoom` already is
+
+**If the frame budget bites, cut in this order:** billboard partial occlusion
+first — draw whole sprites and accept a little pop through doorways; it is the
+nicest feature to lose and the most expensive. Then floor subdivision depth.
+Walls and the raycaster stay.
+
+**Do not** start by touching the 19.7 KLOC `RogueGame` beyond the two changes
+above. The `IRogueUI` seam exists for exactly this; the same advice as §6.1, and
+for the same reason.
+
+**And per §1.5 item 1: this is a renderer change, so the browser is the
+definition of done, not the sim.** The sim will be green throughout, because
+`NullRogueUI` drops every painting call. A raycaster that projects every sprite
+off-screen, or picks the wrong wall face, is invisible to `npm test` and to
+`npm run sim` — both will pass on a completely broken renderer. Profile with
+`npm run profile`, then open the game and look at it.
+
+### 6.5 Housekeeping
 
 - `tests/integration/reproducibility.test.ts` cannot run on Windows
   (`execFileSync` cannot spawn `npx.ps1`) — see §1.6. Fix by resolving the
