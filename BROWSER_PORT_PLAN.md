@@ -2,9 +2,10 @@
 
 > **Status (2026-09-27):** Phases 1–7 ported and playable. Phase 8 tasks 1–11 done; only 12 (optional touch support) remains.
 > **The game now runs end to end in a browser.** 5 runtime bugs were found and fixed on 2026-09-27 by playing it — see §1.1b. A later audit of the CSV → JSON data layer found 18 more — see §1.1c. A fidelity sweep of the four previously-unaudited tables found 6 more — see §1.1f. A sim sweep found 6 more — see §1.1h. Two more came from playing the build that shipped those fixes — see §1.1i.
-> **All 64 recorded bugs are now fixed.** The one remaining *feature* gap is
-> world/map serialisation (§1.5 item 6), which is under way; load currently
-> refuses a save rather than half-restoring one. Read
+> **All 64 recorded bugs are now fixed, and the last feature gap is closed.** World/map
+> serialisation landed 2026-09-27 (§1.5 item 6): a save now carries the whole object
+> graph and `load` restores it, verified field by field against a played world —
+> see §1.5a. Read
 > [Current State & Handover](#1-current-state--handover) first.
 >
 > **The bug sections are the history of this port, and they are deliberately kept
@@ -1135,6 +1136,67 @@ To support building lightweight native desktop applications (Windows, Linux, mac
 - **Desktop Commands**:
   - `npm run neu:dev` — starts Neutralino in development mode.
   - `npm run build:desktop` (or `npm run neu:build`) — builds the Vite bundle and packages the native desktop application binaries.
+
+#### The 6.9.0 upgrade broke the packaging in four separate ways
+
+Neutralino was moved from 5.3.0 to 6.9.0, and the config kept several 5.x key
+names. 6.x does not complain about an unknown key — it reads `undefined` and
+carries on — so each one surfaced as a different symptom, and the only report was
+"the desktop build is broken". Worth keeping as a list, because none of it is
+visible from reading the config:
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `neu: ERRR ENOENT … stat 'web/undefined'` | 5.x `cli.resDir` was renamed; 6.x reads `cli.resourcesPath`. Undefined, then joined into a path | `resourcesPath: "dist/"` |
+| Package in `dist/undefined/`, binaries called `undefined-win_x64.exe` | `cli.binaryName` unset — 5.x defaulted it, 6.x does not | `binaryName: "RogueSurvivorReloaded"` |
+| **Black screen**, window opens | `enableServer` defaults to **false**, so the binary served nothing and opened **no listening socket at all** | `enableServer: true` |
+| `NE_RS_UNBLDRE: Unable to load /dist/js/neutralino.js` | The Neutralino client lived in `web/js/`, *outside* Vite's `public/`, so it was never copied into `dist/` — and `dist/` is all a packaged app serves | `git mv web/js web/public/js` |
+
+Two of these are rules rather than fixes:
+
+- **A renamed key is not an error, it is `undefined`.** That is why the first two
+  produced nonsense paths (`web/undefined`) instead of a message, and why the
+  config should be read against the published
+  [schema](https://raw.githubusercontent.com/neutralinojs/neutralinojs/main/schemas/neutralino.config.schema.json)
+  rather than from memory of the old one.
+- **Turn on `logging` while diagnosing this.** `logging: {enabled, writeToLogFile}`
+  makes the binary write `neutralinojs.log` beside the executable, naming the exact
+  resource it could not load. Without it the log is empty and the only symptom is a
+  black window — which is how two of the four above were narrowed at all.
+
+**`documentRoot: "/dist/"` with `url: "/index.html"` looks like a mistake and is
+not.** `cli.resourcesPath` keeps its *directory name* as a prefix inside
+`resources.neu`, so with `resourcesPath: "dist/"` the archive holds
+`dist/index.html`, and `documentRoot: "/dist/"` is what resolves `/index.html` to
+it. Changing it to `/` looks tidier and 404s on `/dist/dist/index.html`. (Learned
+from the working project at `D:\GitHub\project_genesis\project_genesis`, whose
+`scripts/build.js` states the rule outright — after I had already "fixed" it the
+wrong way.)
+
+**Where the package lands, and what is in it.** `neu build` writes
+`web/dist/<binaryName>/`, which is *inside* the directory it packages, because
+that directory is `resourcesPath`:
+
+```
+dist/RogueSurvivorReloaded/
+├── resources.neu                        29.0 MB — the whole game, packed
+├── RogueSurvivorReloaded-win_x64.exe     2.4 MB
+├── RogueSurvivorReloaded-{linux,mac}_*   2.2–5.6 MB each
+└── neutralinojs.log
+```
+
+**Yes — it copies the full game into that folder**, and the folder is what you
+ship. `resources.neu` is Neutralino's own archive format rather than a zip, and it
+is essentially all 28.7 MB of `dist/`: the JS bundle, ~1 100 sprites and the music.
+Note the collision: `web/dist/` is *also* Vite's output, so a later `npm run build`
+wipes the desktop package. Rebuilding is cheap, but do not expect `build:desktop`
+output to survive a web build.
+
+Verified by running the packaged binary and asking its own server, which beats
+eyeballing a window: with `enableServer` on it listens, `/index.html`,
+`/js/neutralino.js` and a sprite all return 200, and the error log is empty.
+`--res-mode=directory` (ship loose files, skip the archive) does **not** work with
+the flag alone — it also needs a path — so the archive stays the shipped form.
 
 ### 4.2 Headless harness design (for whoever extends it)
 

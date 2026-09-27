@@ -5,8 +5,13 @@
   "name": "RogueSurvivorReloaded",
   "defaultMode": "window",
   "port": 0,
+  "enableServer": true,
   "documentRoot": "/dist/",
   "url": "/index.html",
+  "logging": {
+    "enabled": true,
+    "writeToLogFile": true
+  },
   "modes": {
     "window": {
       "title": "Rogue Survivor Reloaded",
@@ -15,20 +20,21 @@
       "minWidth": 800,
       "minHeight": 600,
       "fullScreen": false,
-      "icon": "/icon-reloaded.png",
-      "enableInspector": true,
+      "icon": "dist/icon-reloaded.png",
+      "enableInspector": false,
       "maximize": false
     }
   },
   "cli": {
+    "binaryName": "RogueSurvivorReloaded",
     "binaryVersion": "6.9.0",
-    "clientLibrary": "js/neutralino.js",
+    "clientVersion": "6.9.0",
+    "clientLibrary": "public/js/neutralino.js",
+    "resourcesPath": "dist/",
+    "extensionsPath": "extensions/",
     "frontendLibrary": {
-      "runCommand": "npm run dev",
       "buildCommand": "npm run build",
-      "sourceDir": "dist"
-    },
-    "resDir": "dist/",
-    "clientVersion": "6.9.0"
+      "devCommand": "npm run dev"
+    }
   }
 }
