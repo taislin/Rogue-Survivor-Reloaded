@@ -1,5 +1,11 @@
 import { IRogueUI, GameKeyEvent, MouseButton } from "@engine/IRogueUI";
-import { imagePath } from "@engine/AssetPaths";
+import {
+  DEFAULT_IMAGE_SET,
+  getImageSet,
+  getImageSetGeneration,
+  imagePathIn,
+  type ImageSet,
+} from "@engine/AssetPaths";
 import { Color } from "@engine/Color";
 import { Point } from "@engine/Point";
 import { Rect }  from "@engine/Rect";
@@ -257,6 +263,10 @@ export class CanvasUI implements IRogueUI {
   private static readonly PRELOAD_CONCURRENCY = 16;
 
   async UI_PreloadImages(ids: string[], onProgress?: (loaded: number, total: number) => void): Promise<void> {
+    // Before the "already have it" filter below: a preload started after the
+    // sprite style changed must actually refetch, and the filter would otherwise
+    // see the previous style's cache and skip the lot.
+    this.invalidateImagesIfSetChanged();
     const pending = ids.filter((id) => this.imageLoading.has(id) === false && this.imageCache.has(id) === false);
     const total = ids.length;
     let loaded = total - pending.length;
@@ -684,28 +694,73 @@ export class CanvasUI implements IRogueUI {
   /**
    * Loads an image by ID. The path uses forward-slashes; we normalise the
    * C# backslash-based IDs at call-time.
+   *
+   * A sprite that the selected set does not have is retried out of `classic`,
+   * which is the complete set: the other two are variations of it and are
+   * missing entries. Without that, choosing a variation would leave a screen of
+   * holes that no error explains.
+   *
+   * The set a sprite actually came from is remembered per id, so the retry
+   * happens once rather than on every frame for the rest of the session.
    */
   private loadImage(imageId: string): Promise<HTMLImageElement | null> {
+    this.invalidateImagesIfSetChanged();
     if (this.imageLoading.has(imageId)) return this.imageLoading.get(imageId)!;
 
-    const src = imagePath(imageId);
-    const promise = new Promise<HTMLImageElement | null>((resolve) => {
-      const img  = new Image();
-      img.onload  = () => { this.imageCache.set(imageId, img); resolve(img); };
-      img.onerror = () => {
-        // Cache the failure, or every frame would retry it forever. Report it
-        // once: a silent skip is what made this class of bug hard to see.
-        this.imageCache.set(imageId, null);
-        this.failedImages.add(imageId);
-        console.warn(`[RogueSurvivor] sprite failed to load: ${src}`);
-        resolve(null);
-      };
-      img.src     = src;
-    });
+    const attempt = (set: ImageSet): Promise<HTMLImageElement | null> => {
+      const src = imagePathIn(set, imageId);
+      return new Promise<HTMLImageElement | null>((resolve) => {
+        const img  = new Image();
+        img.onload  = () => { this.imageCache.set(imageId, img); resolve(img); };
+        img.onerror = () => {
+          if (set !== DEFAULT_IMAGE_SET) {
+            // Not in this set: fall back to `classic` and remember, so the next
+            // ask for this id goes straight there.
+            this.imageFallbacks.set(imageId, DEFAULT_IMAGE_SET);
+            resolve(attempt(DEFAULT_IMAGE_SET));
+            return;
+          }
+          // Cache the failure, or every frame would retry it forever. Report it
+          // once: a silent skip is what made this class of bug hard to see.
+          this.imageCache.set(imageId, null);
+          this.failedImages.add(imageId);
+          console.warn(`[RogueSurvivor] sprite failed to load: ${src}`);
+          resolve(null);
+        };
+        img.src     = src;
+      });
+    };
 
+    const set = this.imageFallbacks.get(imageId) ?? getImageSet();
+    const promise = attempt(set);
     this.imageLoading.set(imageId, promise);
     return promise;
   }
+
+  /**
+   * Drops every cached sprite when the sprite set has changed underneath us.
+   *
+   * The cache is keyed by image *id* and holds resolved URLs, so it cannot see
+   * that the set moved; without this, choosing a different style would keep
+   * drawing the old one until the page was reloaded. Keyed on the generation
+   * rather than on a callback from the options screen so that every way of
+   * changing the set is covered, including ones that do not exist yet.
+   */
+  private invalidateImagesIfSetChanged(): void {
+    if (this.imageCacheGeneration === getImageSetGeneration()) return;
+    this.imageCacheGeneration = getImageSetGeneration();
+    this.imageCache.clear();
+    this.imageLoading.clear();
+    // The fallbacks are per-set, so they are stale too: a sprite that was
+    // missing from the old style may well be present in the new one.
+    this.imageFallbacks.clear();
+  }
+
+  /** Which set each sprite was actually found in, when it was not the current one. */
+  private readonly imageFallbacks = new Map<string, ImageSet>();
+
+  /** The set generation `imageCache` was filled under. */
+  private imageCacheGeneration = getImageSetGeneration();
 
   /** Sprite ids that failed to load, for diagnostics. */
   readonly failedImages = new Set<string>();

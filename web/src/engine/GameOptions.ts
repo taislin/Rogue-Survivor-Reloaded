@@ -6,6 +6,11 @@
 
 import { GameMode } from "@engine/Session";
 import { storage } from "@engine/storage";
+import {
+  DEFAULT_IMAGE_SET,
+  setImageSet,
+  type ImageSet,
+} from "@engine/AssetPaths";
 
 export enum OptionIDs {
   UI_MUSIC,
@@ -50,6 +55,7 @@ export enum OptionIDs {
   GAME_SKELETONS_UPGRADE,
   GAME_SHAMBLERS_UPGRADE,
   GAME_AUTOSAVE_PERIOD, // alpha10.1
+  UI_SPRITE_STYLE, // browser port
 }
 
 export enum ZupDays {
@@ -112,6 +118,7 @@ export class GameOptions {
   static readonly DEFAULT_SUPPLIESDROP_FACTOR = 100;
   static readonly DEFAULT_ZOMBIFIEDS_UPGRADE_DAYS: ZupDays = ZupDays.THREE;
   static readonly DEFAULT_AUTOSAVE_PERIOD = 24; // alpha10.1
+  static readonly DEFAULT_SPRITE_STYLE: ImageSet = DEFAULT_IMAGE_SET;
 
   // ── Fields ──────────────────────────────────────────────────────────────
   private m_DistrictSize = 0;
@@ -162,6 +169,18 @@ export class GameOptions {
   private m_SkeletonsUpgrade = false;
   private m_ShamblersUpgrade = false;
   private m_AutoSavePeriodInHours = 0; // alpha10.1
+
+  /**
+   * Which sprite set to draw, as one of the folder names in `assets/images/`.
+   *
+   * A string rather than an enum of its own, unlike `simulateDistricts` and
+   * `zombifiedsUpgradeDays`. Those enums exist because the *values* are the
+   * option; here the values are already a list that has to exist somewhere else
+   * anyway (`AssetPaths.IMAGE_SETS`, which is what is actually on disk), and a
+   * second copy of the list would be a second thing to forget to update. The
+   * option bounds in the options screen come from that array instead.
+   */
+  private m_SpriteStyle: ImageSet = DEFAULT_IMAGE_SET;
 
   // dev only options (hidden)
   DEV_ShowActorsStats = false;
@@ -504,6 +523,29 @@ export class GameOptions {
     this.m_AutoSavePeriodInHours = value;
   }
 
+  /**
+   * The sprite set to draw, applied as soon as it is set.
+   *
+   * The setter pushes the value into `AssetPaths` rather than only recording it,
+   * so choosing a style in the options screen changes what the next frame draws
+   * without a reload. The consequence is that the setter is the *only* supported
+   * way to change it — assigning `m_SpriteStyle` directly (which is what
+   * `load()` and `copyFrom()` do) leaves `AssetPaths` on the old set, so
+   * `applySpriteStyle()` exists to re-apply, and both of those call it.
+   */
+  get spriteStyle(): ImageSet {
+    return this.m_SpriteStyle;
+  }
+  set spriteStyle(value: ImageSet) {
+    this.m_SpriteStyle = value;
+    this.applySpriteStyle();
+  }
+
+  /** Pushes the stored sprite style into `AssetPaths`, which is what draws. */
+  applySpriteStyle(): void {
+    setImageSet(this.m_SpriteStyle);
+  }
+
   // ── Init ────────────────────────────────────────────────────────────────
   resetToDefaultValues(): void {
     this.m_DistrictSize = GameOptions.DEFAULT_DISTRICT_SIZE;
@@ -547,6 +589,8 @@ export class GameOptions {
     this.m_SkeletonsUpgrade = false;
     this.m_ShamblersUpgrade = false;
     this.m_AutoSavePeriodInHours = GameOptions.DEFAULT_AUTOSAVE_PERIOD; // alpha10.1
+    this.m_SpriteStyle = GameOptions.DEFAULT_SPRITE_STYLE;
+    this.applySpriteStyle();
     this.DEV_ShowActorsStats = false;
   }
 
@@ -560,6 +604,11 @@ export class GameOptions {
       if (key.startsWith("m_")) dst[key] = from[key];
     }
     dst.DEV_ShowActorsStats = from.DEV_ShowActorsStats;
+    // The sprite set is the one option with an effect outside this object, so
+    // copying the field is not enough: `AssetPaths` has to be told too. Without
+    // this, "R" (restore previous) in the options screen would put the numbers
+    // back and leave the screen drawn in the style the player just rejected.
+    this.applySpriteStyle();
   }
 
   /** Returns a new instance holding a copy of this option set. */
@@ -652,8 +701,10 @@ export class GameOptions {
         return "  (Help) Show Other Actors Targets";
       case OptionIDs.UI_SHOW_PLAYER_TARGETS:
         return "  (Help) Show Player Targets";
-      case OptionIDs.GAME_AUTOSAVE_PERIOD:
-        return "  (Save) AutoSave Period"; // alpha10.1
+    case OptionIDs.GAME_AUTOSAVE_PERIOD:
+      return "  (Save) AutoSave Period"; // alpha10.1
+    case OptionIDs.UI_SPRITE_STYLE:
+      return "  (Gfx) Sprite Style";
       default:
         throw new Error("unhandled option");
     }
@@ -768,8 +819,10 @@ export class GameOptions {
         return "When mouse over an actor, will draw icons on actors that are targeting, are targeted or are in group with this actor.";
       case OptionIDs.UI_SHOW_PLAYER_TARGETS:
         return "Will draw icons on actors that are targeting you.";
-      case OptionIDs.GAME_AUTOSAVE_PERIOD: // alpha10.1
-        return "Will autosave at regular intervals when you start sleeping, start a long wait or change map.\nManually saving the game will reschedule the next autosave.";
+    case OptionIDs.GAME_AUTOSAVE_PERIOD: // alpha10.1
+      return "Will autosave at regular intervals when you start sleeping, start a long wait or change map.\nManually saving the game will reschedule the next autosave.";
+    case OptionIDs.UI_SPRITE_STYLE:
+      return "Which sprite set to draw the game with.\nThe other sets are variations of the classic one and do not contain every sprite: anything they are missing is drawn from classic, so a missing entry falls back rather than leaving a hole.";
       default:
         throw new Error("unhandled option");
     }
@@ -836,8 +889,19 @@ export class GameOptions {
     }
   }
 
-  static zupDaysName(d: ZupDays): string {
-    switch (d) {
+  /**
+   * The display name of a sprite set: the folder name, minus the `webp`-era
+   * underscores, so `deonapocalypse_v9_r1` reads as "Deonapocalypse v9 r1".
+   *
+   * `classic` is annotated as the complete set, because that is what makes the
+   * fallback invisible and the player does not need to know it is happening.
+   */
+  static spriteStyleName(set: ImageSet): string {
+    const pretty = set.replace(/_/g, " ");
+    return set === DEFAULT_IMAGE_SET ? `${pretty}  (complete set)` : pretty;
+  }
+
+  static zupDaysName(d: ZupDays): string {    switch (d) {
       case ZupDays.OFF:
         return "OFF";
       case ZupDays.ONE:
@@ -985,8 +1049,10 @@ export class GameOptions {
         return this.showPlayerTargets ? "ON    (default ON)" : "OFF   (default ON)";
       case OptionIDs.UI_SHOW_TARGETS:
         return this.showTargets ? "ON    (default ON)" : "OFF   (default ON)";
-      case OptionIDs.GAME_AUTOSAVE_PERIOD: // alpha10.1
-        return `${(this.autoSavePeriodInHours === 0 ? "OFF" : `${this.autoSavePeriodInHours}h`).padEnd(4)}  (default ${GameOptions.DEFAULT_AUTOSAVE_PERIOD}h)`;
+    case OptionIDs.GAME_AUTOSAVE_PERIOD: // alpha10.1
+      return `${(this.autoSavePeriodInHours === 0 ? "OFF" : `${this.autoSavePeriodInHours}h`).padEnd(4)}  (default ${GameOptions.DEFAULT_AUTOSAVE_PERIOD}h)`;
+    case OptionIDs.UI_SPRITE_STYLE:
+      return GameOptions.spriteStyleName(this.spriteStyle);
       default:
         return "???";
     }
@@ -1019,6 +1085,9 @@ export class GameOptions {
         }
       }
       options.simulateDistricts = options.m_SimulateDistricts; // refresh cached ratio
+    // Same reason: `load` writes the field, not through the setter, so the
+    // sprite set `AssetPaths` is drawing with would stay at the default.
+    options.applySpriteStyle();
     } catch {
       // failed to load options (no custom options?) -> return default values.
       return new GameOptions();

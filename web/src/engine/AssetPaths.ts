@@ -35,18 +35,52 @@ export const DEFAULT_IMAGE_SET: ImageSet = "classic";
 
 let currentImageSet: ImageSet = DEFAULT_IMAGE_SET;
 
+/**
+ * Bumped every time the set changes.
+ *
+ * A cache that holds resolved URLs cannot see that the set it resolved them
+ * against is no longer current, so whoever caches images needs a way to notice.
+ * Publishing a generation is what makes that structural rather than a
+ * responsibility: `CanvasUI` compares the generation it filled its cache under,
+ * and any future cache does the same, instead of every caller having to remember
+ * to invalidate. This is the same argument as the one for the save format's
+ * version — a cache that silently serves the previous answer is worse than no
+ * cache.
+ */
+let imageSetGeneration = 0;
+
 export function getImageSet(): ImageSet {
   return currentImageSet;
 }
 
+/** The current set's generation; see `getImageSet`. */
+export function getImageSetGeneration(): number {
+  return imageSetGeneration;
+}
+
 /** Switches the sprite set; unknown names fall back to the default set. */
 export function setImageSet(set: string): void {
-  currentImageSet = (IMAGE_SETS as readonly string[]).includes(set) ? (set as ImageSet) : DEFAULT_IMAGE_SET;
+  const next = (IMAGE_SETS as readonly string[]).includes(set) ? (set as ImageSet) : DEFAULT_IMAGE_SET;
+  if (next === currentImageSet) return;
+  currentImageSet = next;
+  imageSetGeneration++;
 }
 
 /** `Activities/chasing` (or `Activities\chasing`) -> `/assets/images/classic/Activities/chasing.webp`. */
 export function imagePath(imageId: string): string {
-  return `${IMAGES_ROOT}/${currentImageSet}/${imageId.replace(/\\/g, "/")}.${IMAGE_EXTENSION}`;
+  return imagePathIn(currentImageSet, imageId);
+}
+
+/**
+ * The same path, resolved against a *named* set rather than the current one.
+ *
+ * Needed for the fallback: a sprite missing from the selected set has to be
+ * retried out of `classic`, and by then the current set is still the selected one.
+ * Exported so the retry is a plain function call rather than a temporary change
+ * of global state that something else could observe mid-draw.
+ */
+export function imagePathIn(set: ImageSet, imageId: string): string {
+  return `${IMAGES_ROOT}/${set}/${imageId.replace(/\\/g, "/")}.${IMAGE_EXTENSION}`;
 }
 
 /** `army` -> `/assets/music/RS - Army.ogg`; already-resolved `*_FILE` values pass through. */

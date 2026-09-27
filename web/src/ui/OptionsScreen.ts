@@ -8,6 +8,7 @@ import {
 	ZupDays,
 } from "@engine/GameOptions";
 import type { IRogueUI } from "@engine/IRogueUI";
+import { IMAGE_SETS } from "@engine/AssetPaths";
 import { DifficultySide, Scoring } from "@engine/Scoring";
 import { Session } from "@engine/Session";
 
@@ -49,6 +50,8 @@ export class OptionsScreen {
 		OptionIDs.UI_ANIM_DELAY,
 		OptionIDs.UI_SHOW_MINIMAP,
 		OptionIDs.UI_SHOW_PLAYER_TAG_ON_MINIMAP,
+		// sprites
+		OptionIDs.UI_SPRITE_STYLE,
 		// helpers
 		OptionIDs.UI_ADVISOR,
 		OptionIDs.UI_COMBAT_ASSISTANT,
@@ -501,6 +504,24 @@ export class OptionsScreen {
 			case OptionIDs.GAME_AUTOSAVE_PERIOD:
 				o.autoSavePeriodInHours += dir * 12;
 				break; // alpha10.1
+			case OptionIDs.UI_SPRITE_STYLE: {
+				/*
+				 * Bounded index arithmetic over the list of sets that exist on
+				 * disk, in the same shape as the SimRatio and ZupDays cases:
+				 * clamped, not wrapped, so Left on the first set is a no-op
+				 * rather than a jump to the last.
+				 *
+				 * The list is `AssetPaths.IMAGE_SETS` rather than an enum
+				 * because that is the thing that has to agree with the folders
+				 * in `assets/images/` — see `GameOptions.spriteStyle`.
+				 */
+				const index = IMAGE_SETS.indexOf(o.spriteStyle);
+				const next = index + dir;
+				if (next >= 0 && next < IMAGE_SETS.length) {
+					o.spriteStyle = IMAGE_SETS[next]!;
+				}
+				break;
+			}
 			default:
 				break;
 		}
