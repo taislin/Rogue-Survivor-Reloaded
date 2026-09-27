@@ -62,30 +62,32 @@
             <li>GPLv3</li>
           </ul>
         </div>
+        <div class="hero__visual">
+          <figure class="shot" style="margin:0;">
+            <img class="shot__img" src="assets/img/screens/screen2.webp" width="1562" height="867"
+              alt="Gameplay screenshot of Rogue Survivor Reloaded.">
+          </figure>
+        </div>
       </div>
     </section>
 
     <!-- ================= Screenshots ================= -->
     <section class="section section--tight">
       <div class="wrap">
-        <p class="eyebrow">In game</p>
-        <h2>It runs on a canvas, and it looks like this</h2>
-        <p class="lede">Both shots are the real thing at 1366&times;768: the city grid on
-          the left, your vitals and inventory on the right, and the message log along the
-          bottom. The sidebar is 498&nbsp;px of it, because the map only needs 27 tiles
-          across.</p>
+        <p class="eyebrow">Port &amp; Comparison</p>
+        <h2>From C# WinForms to TypeScript</h2>
+        <p class="lede">Rogue Survivor Reloaded is a faithful TypeScript and HTML5 Canvas port of Jacques Ruiz's original 2012 C# survival roguelike. Below is a comparison between the original version and the modern browser port, preserving the exact layout, mechanics, and gameplay experience.</p>
 
         <div class="shots" style="margin-top:1.5rem">
           <figure class="shot">
-            <img class="shot__img" src="assets/img/screens/screen_original.webp" width="1562" height="867"
-              alt="Gameplay screenshot of the original version.">
-            <figcaption class="shot__cap">A screenshot of the original version.</figcaption>
+            <img class="shot__img" src="assets/img/screens/screen_original.webp" width="1282" height="960"
+              alt="Gameplay screenshot of the original C# WinForms version.">
+            <figcaption class="shot__cap">The original version by roguedjack (2012).</figcaption>
           </figure>
           <figure class="shot">
             <img class="shot__img" src="assets/img/screens/screen1.webp" width="1562" height="867"
-              alt="Gameplay screenshot of this version.">
-            <figcaption class="shot__cap">A screenshot of the Reloaded version. Note that this is zoomed in, you can
-              zoom out to match the original!</figcaption>
+              alt="Gameplay screenshot of the TypeScript browser port.">
+            <figcaption class="shot__cap">The Reloaded browser port in TypeScript &amp; HTML5 Canvas.</figcaption>
           </figure>
         </div>
       </div>
@@ -191,8 +193,16 @@
     <section class="section">
       <div class="wrap">
         <p class="eyebrow">Running it</p>
-        <h2>Browser build</h2>
-        <div class="grid grid--2">
+        <h2>Running the game</h2>
+        <p class="lede">If you just want to play, you can download the latest release for desktop or play in your browser. For developers, the project can be run and tested locally.</p>
+        <div class="grid grid--2" style="margin-top:1.5rem">
+          <div class="card card--feature">
+            <h3>Download &amp; Play</h3>
+            <p>Just want to play? Grab the latest release from GitHub for desktop or play online without setting up a development environment.</p>
+            <p class="small muted" style="margin-bottom:0">
+              <a href="https://github.com/taislin/Rogue-Survivor-Reloaded/releases/latest">Download latest release</a>
+            </p>
+          </div>
           <div class="card">
             <h3>Play locally</h3>
             <p>Requires Node 20 or newer.</p>

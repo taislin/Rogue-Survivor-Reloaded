@@ -300,6 +300,8 @@ hr {
   align-items: center;
 }
 
+.hero__visual { display: block; }
+
 .hero h1 { margin-bottom: 0.4em; }
 
 .hero__title-accent {
@@ -746,6 +748,7 @@ q { quotes: "\201C" "\201D"; color: inherit; }
 
 @media (max-width: 900px) {
   .hero__grid { grid-template-columns: 1fr; gap: 2.5rem; }
+  .hero__visual { display: none; }
   .shots { grid-template-columns: 1fr; }
 }
 
