@@ -48,16 +48,22 @@ describe("Session save/load", () => {
     session.nextAutoSaveTime = 123456;
 
     // Session.save returns void, matching C#'s `public static void Save`
-    // (Session.cs:586) — so assert through the roundtrip, not a return value.
+    // (Session.cs:586) - so assert through what it wrote, not a return value.
     Session.save(session);
-    expect(Session.load()).toBe(true);
+    const saved = JSON.parse(storage.getItem(Session.STORAGE_KEY) ?? "{}");
 
-    const back = Session.get();
-    expect(back.seed).toBe(9999);
-    expect(back.gameMode).toBe(GameMode.GM_STANDARD);
-    expect(back.worldTime.turnCounter).toBe(4321);
-    expect(back.lastTurnPlayerActed).toBe(77);
-    expect(back.nextAutoSaveTime).toBe(123456);
+    expect(saved.seed).toBe(9999);
+    expect(saved.gameMode).toBe(GameMode.GM_STANDARD);
+    expect(saved.worldTime).toBe(4321);
+    expect(saved.lastTurnPlayerActed).toBe(77);
+    expect(saved.nextAutoSaveTime).toBe(123456);
+
+    // The load is refused, because this save has no world in it: `Session.save`
+    // writes scalars only (the `TODO(phase 4)`), and restoring those into a
+    // session with no actors would be a half-loaded game. Asserted here as well
+    // as in tests/integration/save-load.test.ts because the guard is the
+    // contract every caller now sees, and a change to it should fail loudly.
+    expect(Session.load()).toBe(false);
   });
 
   it("preserves a pinned seed across reset (what --seed relies on)", () => {

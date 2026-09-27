@@ -334,6 +334,23 @@ export class Session {
       if (raw === null) return false;
 
       const data = JSON.parse(raw) as Record<string, unknown>;
+
+      /*
+       * A save with no world in it cannot be restored, so it must not be
+       * allowed to half-restore: `reset()` below clears the world, the current
+       * map and the scoring, and the C#-parity scalar fields would come back
+       * pointing at a session with no actors in it. Checking *before* reset is
+       * what keeps a failed load from also destroying the game in progress.
+       *
+       * The C# cannot reach this state — `SaveBin` hands the whole object graph
+       * to a BinaryFormatter, so a save always has a world. The port writes
+       * scalars only (see the `TODO(phase 4)` in `save`), so until the world
+       * graph is serialised every load legitimately fails, and failing loudly
+       * is the only honest outcome: `RogueGame.LoadGame` reports it and the
+       * player keeps playing. See tests/integration/save-load.test.ts.
+       */
+      if (data.world == null) return false;
+
       const session = Session.get();
       session.reset();
 
@@ -353,8 +370,15 @@ export class Session {
 
       return true;
     } catch {
-      // failed to load session (no save game?)
-      Session.s_TheSession = null;
+      /*
+       * Failed to load the session. The C# nulls `s_TheSession` here
+       * (`Session.cs:659`) because a load happens at startup, when the only
+       * session is the one being replaced. In the browser `LoadGame` runs
+       * mid-game, so nulling the singleton would orphan the live game: the
+       * `RogueGame` holds its own reference and would keep going, while the next
+       * `Session.get()` handed out a *different* object. Leaving it alone is
+       * both safer and closer to what the player expects from a failed load.
+       */
       return false;
     }
   }

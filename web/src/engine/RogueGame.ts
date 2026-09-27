@@ -16653,8 +16653,26 @@ export class RogueGame {
 
     // C# `LoadGame` is synchronous; browser storage is async, so continue
     // from the promise instead of blocking the turn loop.
-    void this.LoadGame(saveName).then((loaded) => {
-      if (!loaded) {
+    //
+    // The catch matters: without it a throw anywhere in the load became an
+    // unhandled rejection, so the player saw neither the failure message nor
+    // anything else — the game simply stopped responding, with the sim thread
+    // stopped and never restarted. A failed load is a message, not a dead game.
+    void this.LoadGame(saveName)
+      .then((loaded) => {
+        if (!loaded) {
+          this.AddMessage(
+            new Message(
+              "LOADING FAILED, NO GAME SAVED OR VERSION NOT COMPATIBLE.",
+              this.m_Session.worldTime.turnCounter,
+              Color.Red
+            )
+          );
+        }
+      })
+      .catch((e: unknown) => {
+        // eslint-disable-next-line no-console
+        console.error("[RogueSurvivor] load failed", e);
         this.AddMessage(
           new Message(
             "LOADING FAILED, NO GAME SAVED OR VERSION NOT COMPATIBLE.",
@@ -16662,9 +16680,10 @@ export class RogueGame {
             Color.Red
           )
         );
-      }
-      this.StartSimThread(); // alpha10.1
-    });
+      })
+      .finally(() => {
+        this.StartSimThread(); // alpha10.1
+      });
   }
 
   // C# DeleteSavedGame — RogueGame.cs:19809
@@ -17989,8 +18008,15 @@ export class RogueGame {
 
   // C# RefreshPlayer — RogueGame.cs:21177
   RefreshPlayer(): void {
+    // C# walks `m_Session.CurrentMap.Actors` too, but C# can only get here with a
+    // world loaded. The port reaches it from `LoadGame`, which can fail, so the
+    // map may legitimately be null: a null map means "no player to find", not a
+    // crash. See Session.load() on why a load can fail.
+    const map = this.m_Session.currentMap;
+    if (map == null) return;
+
     // get player.
-    for (const a of this.m_Session.currentMap!.actors) {
+    for (const a of map.actors) {
       if (a.isPlayer) {
         this.m_Player = a;
         break;
