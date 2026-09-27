@@ -6,9 +6,12 @@
 # them fatal. So this runs the engine, not just the compiler:
 #
 #   1. type-check   - includes tests/ (they are in tsconfig.json's include list)
-#   2. coverage     - 76 tests incl. a real headless playthrough, thresholds enforced
+#   2. coverage     - 148 tests incl. a real headless playthrough, thresholds enforced
 #   3. build        - the real Vite production build
 #   4. sim          - a short seeded headless run, as an independent smoke check
+#
+# A second job builds the production Docker image from the repository root and
+# smoke-tests the container over HTTP.
 #
 # Step 4 is deliberately redundant with the integration test. It exercises the
 # shipped `npm run sim` path (esbuild bundle + node), which the in-process test
@@ -28,15 +31,20 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-defaults:
-  run:
-    working-directory: web
-
 jobs:
   verify:
     name: type-check, test, build, sim
     runs-on: ubuntu-latest
     timeout-minutes: 20
+
+    # Scoped to this job on purpose, NOT set workflow-wide. The npm scripts all
+    # live in web/, but the Dockerfile is built from the repository root, and a
+    # workflow-level `defaults.run.working-directory` silently applies to every
+    # job -- which is how `docker build .` came to run inside web/ and look for
+    # web/Dockerfile.
+    defaults:
+      run:
+        working-directory: web
 
     steps:
       - uses: actions/checkout@v4
@@ -76,6 +84,13 @@ jobs:
     name: docker image builds
     runs-on: ubuntu-latest
     timeout-minutes: 20
+
+    # No working-directory override, so these steps run at the repository root.
+    # That is required: the Dockerfile's context is the repo root, because it
+    # COPYs web/package-lock.json and relies on .dockerignore keeping the C#
+    # original in src/ (58 MB) out of the upload. `docker build .` from web/
+    # fails with "no such file or directory", so keep this job off the web/
+    # default that the verify job sets.
     steps:
       - uses: actions/checkout@v4
 
