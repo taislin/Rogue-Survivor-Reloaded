@@ -1,20 +1,24 @@
 # Rogue Survivor Reloaded — TypeScript / Browser Port
 
 > **Status (2026-09-27):** Phases 1–7 ported and playable. Phase 8 tasks 1–11 done; only 12 (optional touch support) remains.
-> **The game now runs end to end in a browser.** 5 runtime bugs were found and fixed on 2026-09-27 by playing it — see §1.1b. A later audit of the CSV → JSON data layer found 18 more — see §1.1c. A fidelity sweep of the four previously-unaudited tables found 6 more — see §1.1f. A sim sweep found 6 more — see §1.1h. Two more came from playing the build that shipped those fixes — see §1.1i.
-> **All 64 recorded bugs are now fixed, and the last feature gap is closed.** World/map
-> serialisation landed 2026-09-27 (§1.5 item 6): a save now carries the whole object
-> graph and `load` restores it, verified field by field against a played world —
-> see §1.5a. Read
+> **The game now runs end to end in a browser.** 5 runtime bugs were found and fixed on 2026-09-27 by playing it — see §1.1b. A later audit of the CSV → JSON data layer found 18 more — see §1.1c. A fidelity sweep of the four previously-unaudited tables found 6 more — see §1.1f. A sim sweep found 6 more — see §1.1h. Two came from playing the build that shipped those fixes — see §1.1i. A renderer and HUD sweep found 6 more — see §1.1j.
+> **70 bugs are recorded; 65 are fixed. Five are still open, plus one cosmetic gap
+> and one latent divergence, and all of them are in §1.1f** — one consequential
+> (the rain FOV penalty never reaches any AI actor) and four small colour/helper
+> slips. §1.5 item 6 is the list of what is actually left; earlier revisions of
+> this file claimed everything was closed, and that was wrong.
+> World/map serialisation landed 2026-09-27 (§1.5a), which closed the last
+> feature gap and made a real save/load roundtrip possible. Read
 > [Current State & Handover](#1-current-state--handover) first.
 >
 > **The bug sections are the history of this port, and they are deliberately kept
 > in order rather than merged:** §1.1 (engine), §1.1b (found by playing it),
 > §1.1c (data layer), §1.1d (per-actor abilities), §1.1e (data binding), §1.1f
-> (table fidelity sweep), §1.1g (what is now proven clean). Each is a different
-> *class* of mistake, and the point of keeping them separate is that the class is
-> the lesson — §1.1c and §1.1d have the same root cause four sections apart.
-> §1.1g exists so the next audit starts from what is already proven.
+> (table fidelity sweep), §1.1g (what is now proven clean), §1.1h–§1.1i (sim and
+> play sweeps), §1.1j (renderer and HUD sweep). Each is a different *class* of
+> mistake, and the point of keeping them separate is that the class is the lesson
+> — §1.1c and §1.1d have the same root cause four sections apart. §1.1g exists so
+> the next audit starts from what is already proven.
 
 Porting a C# WinForms zombie-survival roguelike (195 files, ~2.5 MB, largest `RogueGame.cs` at 955 KB / 23 233 lines) to a browser-playable TypeScript version. `src/` is the original C# and is **never modified** — it is the reference for every port.
 
@@ -23,26 +27,27 @@ Porting a C# WinForms zombie-survival roguelike (195 files, ~2.5 MB, largest `Ro
 > to outgrow it where the original is provably wrong — a crash, a hang, a dead
 > code path. Each such divergence is marked in the code at the fix, with the C#
 > line reference and the reason. This settles the three "open decisions" that
-> §1.5 item 7 used to carry; see that item.
+> §1.5 item 8 used to carry; see that item.
 
 > **Do not delete `src/`.** Nothing compiles or ships it (the Dockerfile copies
 > only `web/`, and `.dockerignore` excludes it), so removing it saves no build
 > time and no bundle size. It is the only statement of intended behaviour, and
-> every one of the 62 bugs in §1.1, §1.1b, §1.1c, §1.1d, §1.1e, §1.1f and
-> §1.1h was found by diffing the port against it. Six of the eight items in
-> §1.5 are still open (one of them, item 3, is half-closed), and all six are
-> fidelity work that *cannot be done* without it. Revisit only once those close.
+> every one of the 70 bugs in §1.1, §1.1b, §1.1c, §1.1d, §1.1e, §1.1f, §1.1h,
+> §1.1i and §1.1j was found by diffing the port against it — or, for §1.1j, by
+> playing the port and reading the C# afterwards to explain what was wrong. The
+> five that remain open (§1.5 item 6) are all fidelity work that *cannot be done*
+> without it. Revisit only once those close.
 
 ---
 
 ## Table of Contents
 
 1. [Current State & Handover](#1-current-state--handover)
-   - [1.1 The bug log — 56 bugs](#11-the-bug-log--56-bugs) · [the four bug classes](#the-four-bug-classes-below-and-the-one-lesson-that-covers-them)
-   - [1.1b](#11b-five-more-bugs-found-by-playing-the-thing-2026-09-27) found by playing it · [1.1c](#11c-eighteen-bugs-in-the-csv--json-data-layer-2026-09-27) the data layer · [1.1d](#11d-eight-bugs-in-the-per-actor-abilities-2026-09-27) per-actor abilities · [1.1e](#11e-the-actor-data-table-was-bound-by-position-not-by-id-2026-09-27) data binding · [1.1f](#11f-six-more-fidelity-bugs-from-a-sweep-of-the-four-unaudited-tables-2026-09-27) table fidelity · [1.1g](#11g-what-that-sweep-proved-clean--do-not-re-audit) **proven clean**
+   - [1.1 The bug log — 70 bugs](#11-the-bug-log--70-bugs) · [the four bug classes](#the-four-bug-classes-below-and-the-one-lesson-that-covers-them)
+   - [1.1b](#11b-five-more-bugs-found-by-playing-the-thing-2026-09-27) found by playing it · [1.1c](#11c-eighteen-bugs-in-the-csv--json-data-layer-2026-09-27) the data layer · [1.1d](#11d-eight-bugs-in-the-per-actor-abilities-2026-09-27) per-actor abilities · [1.1e](#11e-the-actor-data-table-was-bound-by-position-not-by-id-2026-09-27) data binding · [1.1f](#11f-six-more-fidelity-bugs-from-a-sweep-of-the-four-unaudited-tables-2026-09-27) table fidelity · [1.1g](#11g-what-that-sweep-proved-clean--do-not-re-audit) **proven clean** · [1.1h](#11h-six-bugs-a-ruleresult-tested-as-a-boolean-and-two-livelocks-2026-09-27) sim sweep · [1.1i](#11i-two-bugs-from-playing-the-build-that-ships-the-fixes-above-2026-09-27) play sweep · [1.1j](#11j-six-bugs-from-the-renderer-and-hud-sweep-2026-09-27) **newest**
    - [1.2](#12-the-harness-now-runs-real-games) sim baseline · [1.2a](#12a-four-things-that-look-like-bugs-but-are-not) **not bugs**
    - [1.3](#13-how-to-run-it) commands · [1.4](#14-runs-are-now-reproducible) seeding · [1.4a](#14a-minimap-reveal-bug--fixed-and-the-diagnosis-here-was-wrong) a wrong diagnosis, kept · [1.4b](#14b-the-world-behind-the-player-stopped-running-2026-09-27) **the background sim had no thread**
-   - [1.5](#15-next-steps) **next steps** · [1.6](#16-known-non-bugs-do-not-re-investigate) · [1.7](#17-git-state)
+   - [1.5](#15-next-steps) **next steps** · [1.5a](#15a-world--map-serialisation--done-2026-09-27) serialisation · [1.6](#16-known-non-bugs-do-not-re-investigate) · [1.7](#17-git-state)
 2. [Quick Reference](#2-quick-reference) — layout, porting rules, build commands
 3. [Phase Status](#3-phase-status)
 4. [Phase 8 — Polish, Headless Simulation & Deployment](#4-phase-8--polish-headless-simulation--deployment)
@@ -55,14 +60,16 @@ Porting a C# WinForms zombie-survival roguelike (195 files, ~2.5 MB, largest `Ro
 
 ## 1. Current State & Handover
 
-### 1.1 The bug log — 56 bugs
+### 1.1 The bug log — 70 bugs
 
-**§1.1 through §1.1g are one bug log, in the order the bugs were found.** They are
+**§1.1 through §1.1j are one bug log, in the order the bugs were found.** They are
 kept as separate subsections rather than merged into a single table because each
 is a different *class* of mistake, and the class is the lesson — §1.1c and §1.1d
 turn out to have the same root cause four sections apart. Bugs 1–10 are below;
 11–15 in §1.1b, 16–33 in §1.1c, 34–41 in §1.1d, 42–50 in §1.1e, 51–56 in §1.1f,
-and §1.1g lists what is now proven clean so it is not re-audited.
+57–62 in §1.1h, 63–64 in §1.1i, and 65–70 in §1.1j. **§1.1g lists what is now
+proven clean so it is not re-audited. The only bugs still open are §1.1f's
+51–55** — everything else here is fixed and pinned by a test.
 
 **A clean `tsc` and a clean Vite build do not mean the port works.** Phase 4 was
 marked "complete" on the basis of zero remaining `not yet ported` stubs plus a
@@ -464,6 +471,35 @@ save graph's machinery and its coverage ledger are in
 (`ItemMeleeWeaponModel.cs:18`) rather than `> 0`, which differed only for a
 negative tool bonus and would have stayed latent until a penalised item existed.
 
+### 1.1j Six bugs from the renderer and HUD sweep (2026-09-27)
+
+All six found by playing the build, in one sitting, and all six are the §1.1b
+shape: a presentation fault no headless run can see, because `NullRogueUI` drops
+every painting call. Three of them are **coordinate-space mismatches** — the same
+shape as bug 51, where the port kept two coordinate systems that C# had collapsed
+into one — and that is the whole lesson of this section.
+
+| # | Bug | C# reference | Impact |
+|---|-----|--------------|--------|
+| 65 | `SIDEPANEL_SECTION_HEIGHT` was computed by adding up the icon row and the slot-number line but **not the title**, which `DrawInventory` draws `BOLD_LINE_SPACING` above the row. The 12 px that remained was called "air" | `RogueGame.cs:19368` | Every panel's slot numbers printed **across the next panel's title**. `hud-layout.test.ts` asserted the same incomplete arithmetic, which is why it passed. |
+| 66 | `MouseToInventorySlot` divided by `TILE_SIZE` with no bounds check, and its callers only asked whether the index was under `maxCapacity`. All three panels share one x origin | `RogueGame.cs:19643` | A click on a panel's title, on its slot numbers, or between two sections still hit something, with the highlight and popup offset from the icon. Since the numbers were drawn across the *next* panel's title (65), clicking the numbers selected an item of the panel **below**. |
+| 67 | Popups were drawn inside the map's `withMapZoom` scope, which `ctx.scale(2,2)`s — so at 2× their text doubled along with their fill — and `drawPopupBox` had **no clamp at all** | `RogueGame.cs:19042` | The actor description at 2× was a box twice the size of the thing it described, covering the tiles the player had zoomed in to read, and anchored in pre-scale coordinates so it landed off the bottom right. The side panel's item and corpse highlights and the corner-pinned prompts were displaced the same way. |
+| 68 | `UI_DrawMinimap` took only a position, so `drawImage` used the raster's own size (100×100, one pixel per tile) while the view rect, player tag and FOV boxes are all positioned at `MINITILE_SIZE` = 2 px per tile | `RogueGame.cs:19042` | The map rendered at half size and the **view box sat at twice its offset from the minimap's origin**, out in the empty part of the panel. |
+| 69 | `setFontChoice` awaited the face load before pointing the canvas at the new family, so `currentStack` only moved after the fetch resolved — and the game draws on demand, not on a frame loop, so nothing repainted it afterwards | *(port-only; no C# equivalent)* | A typeface change was invisible until the next keypress or a refresh. Self-inflicted: the `await` was added to avoid drawing a frame in the fallback stack, and **both halves are needed** — switch synchronously, and redraw when the promise resolves. |
+| 70 | `HandleMouseLook` claimed the mouse by **tile grid**, and the play loop skips the inventory and corpse handlers when it claims one. In C# the grid *was* the panel — 27 tiles × 32 px is exactly `MAP_PANEL_WIDTH` — but `ScreenToMap` divides by the *displayed* tile size, so at 2× the 14-tile view covered 0..896 against a panel ending at 864 | `RogueGame.cs:6622` | 32 px of panel was swallowed, and the panel starts at 872, which is inside the first item slot: **24 of slot 1's 32 px were unclickable** at 2×, and only at 2×. Slots 2+ were past 896 and fine, so it read as a slot bug rather than a zoom one. The same 32 px was eaten off the bottom of the map. |
+
+**The lesson, and it is §1.1f's for the fifth time: keep one coordinate space.**
+Three of these are arithmetic that silently assumed two spaces agreed — the CSS
+scale and the logical canvas (66), the displayed tile size and the panel width
+(70), the raster size and the minimap's on-screen size (68). C# had a single
+number in each case; the port has two, and nothing in the type system objects
+when they drift, because both are `number`. Bug 65 is the same idea in one
+dimension: three things stacked in a fixed budget, and the budget was computed
+from two of them. **Every one of these had a test nearby that asserted the wrong
+arithmetic, or no test at all** — which is §1.1's lesson again, and the reason
+the new tests assert the *relationship* between the two numbers rather than a
+value.
+
 ### 1.2 The harness now runs real games
 
 Runs are reproducible (`--seed`, §1.4) and the map no longer corrupts itself
@@ -502,36 +538,40 @@ does not try to do.
 fails on the turn it starts rather than as a strange death 40 turns later. It is
 not dead code — reintroducing bug 10 makes it report the duplicate on turn 1.
 
-### 1.2a Four things that look like bugs but are not
+### 1.2a Three things that look like bugs but are not
 
 Do not re-investigate these:
 
-- **~~Players die at full HP around turn ~100 when run as a survivor.~~ No longer
-  true, and the old explanation was a symptom of §1.1c bug 16.** The bot used to
-  exhaust "its 100 food points" because the meter really was capped at 100. It
-  is 1 440 now, and a survivor bot reaches turn 400+ alive. The 1 000-turn
-  survivor runs still do not complete, but the cause is combat, not starvation —
-  which is what §1.2 now shows.
+- ~~**Players die at full HP around turn ~100 when run as a survivor.**~~ No
+  longer true, and the old explanation was a symptom of §1.1c bug 16. The bot
+  used to exhaust "its 100 food points" because the meter really was capped at
+  100. It is 1 440 now, and a survivor bot reaches turn 400+ alive. The
+  1 000-turn survivor runs still do not complete, but the cause is combat, not
+  starvation — which is what §1.2 now shows.
 - **`hitPoints` can go negative** (seed 3 ends at −20). C# `InflictDamage` also
   does `HitPoints -= dmg` with no clamp, so this is faithful.
-- **`SpawnActorOnMapBorder` can throw `another actor already at position`**
-  (seed 2 above, and any survivor run past turn 720). **Faithful**: C#
-  `Map.PlaceActorAt` throws `InvalidOperationException` with that exact string
-  (`Map.cs:488`), and the port's spawner calls it with the same unguarded
-  retry loop as `RogueGame.cs:4987`. The chosen border tile can already be
-  occupied because `isWalkableFor` does not exclude tiles holding an actor. This
-  is a genuine upstream bug that the port reproduces. It was unreachable while
-  every run died of starvation first; fixing it would be a deliberate divergence
-  from the original, so it needs a decision rather than a drive-by fix.
+- ~~**`SpawnActorOnMapBorder` can throw `another actor already at position`.**~~
+  Was faithful, and **is now fixed in the port** (§1.5 item 8). C#
+  `Map.PlaceActorAt` does throw that string (`Map.cs:488`) and the port's
+  spawner called it with the same unguarded retry loop as `RogueGame.cs:4987`,
+  so a border tile that already held an actor ended the run. The whole gap was
+  that `isWalkableFor` tests the tile *model*, not occupancy. Both spawners now
+  reject an occupied tile and try the next candidate. This was a **deliberate
+  divergence** — a crash is not behaviour worth preserving — and it is the one
+  item in this file that was an upstream bug reproduced faithfully and then
+  deliberately chosen against.
 
-
-One real but unrelated divergence was open here and is now **fixed** — see
-§1.5 item 5. It was wider than it looked: the C# puts an `m_IsInvincible` guard
-in **six** property setters, not one, and the guard is not uniform. Five block
-a *decrease* (`HitPoints`, `StaminaPoints`, `FoodPoints`, `SleepPoints`,
-`Sanity` — `Actor.cs:240,257,274,291,308`); `Infection` is inverted and blocks
-an *increase* (`Actor.cs:465`), so curing an invincible actor still works. All
-six were plain public fields in the port, so the guard was absent on every one.
+**One more was recorded here as open and is closed:** C#'s `m_IsInvincible` guard,
+which this section once described as one property. It is **six**, and the guard
+is not uniform: five block a *decrease* (`HitPoints`, `StaminaPoints`,
+`FoodPoints`, `SleepPoints`, `Sanity` — `Actor.cs:240,257,274,291,308`),
+`Infection` is inverted and blocks an *increase* (`Actor.cs:465`), so curing an
+invincible actor still works. All six were plain public fields, so the guard was
+absent on every one. Now getter/setter pairs over `_`-fields; the external syntax
+is unchanged, so no call site moved. Pinned by `tests/actor-invincible.test.ts`
+(21 cases), including a check that no own instance field shadows the prototype
+accessor — with `useDefineForClassFields: true` that would silently reintroduce
+the bug. §1.5 item 5.
 
 ### 1.3 How to run it
 
@@ -773,17 +813,63 @@ expensive to re-derive.
    moved. Pinned by `tests/actor-invincible.test.ts` (21 cases), including a
    check that no own instance field shadows the prototype accessor — with
    `useDefineForClassFields: true` that would silently reintroduce the bug.
- 6. **Fix the six §1.1f bugs.** They are small and mostly one-liners, but bug 51
-    is not cosmetic: the rain FOV penalty never reaches any AI actor, and because
-    the player's own view is correct the game looks self-consistent while every
-    NPC sees 1–2 tiles too far. Bugs 53–55 are three wrong colour constants and
-    need `Color.BurlyWood` **added** to `Color.ts` (it does not exist).
-    §1.1g lists what is now proven clean, so this is the whole remaining
-    fidelity surface in those four tables.
-6. **Serialise the world/map graph in `Session.save`** — the `TODO(phase 4)`
-   at `Session.ts:324` blocks any true save/load roundtrip test, and is why
-   §4.3 item 4 is only a partial pass.
-7. ~~**The three open decisions.**~~ **All three resolved 2026-09-27**, and none
+6. **Fix the five §1.1f bugs that are still open.** This is the whole remaining
+   fidelity surface in the four audited tables, and it is small:
+   - **51, the only consequential one.** `Rules.weather` is a port-only fallback
+     field, **never assigned**, and `GameplaySensors.sense` calls
+     `computeFOVFor(actor)` / `actorFOV(actor)` without the weather argument the
+     C# threads through (`LOSSensor.cs:64-65` passes
+     `game.Session.World.Weather` explicitly; C# has no such field at all). So
+     `weatherFovPenalty` only ever sees `CLEAR` and **every AI actor sees 1–2
+     tiles further than the C# in rain**. The player's own view is correct, so
+     the game looks self-consistent while every NPC sees too far — the §1.1c
+     shape exactly: a plausible default standing in for a parameter the original
+     supplies.
+   - **52.** The trade screen calls `HimOrHer(npc)` where C# calls
+     `HisOrHer(npc)` (`RogueGame.cs:7459` ↔ `RogueGame.ts:5813`), so a **male**
+     trusted-leader NPC reads *"You are him trusted leader"*. One line.
+   - **53, 54, 55.** Three wrong colour constants in a table of nineteen:
+     `DRK_GRAY1` is `DarkGray` where C# has `DimGray`; `WALL_POLICE_STATION` is
+     `Cyan` where C# has `CadetBlue`; `LIT_BROWN` is `Brown` where C# has
+     `BurlyWood`. All three are minimap-only, and **55 needs
+     `Color.BurlyWood` added** — it does not exist in `Color.ts` at all, which is
+     the only structural excuse among the three. 53 and 54 are provable slips:
+     both correct colours already exist in `Color.ts` and are used correctly
+     elsewhere in the port.
+
+   Bug 56 (`DollPart._FIRST` missing from the TS enum) is recorded as a naming gap
+   with no behavioural effect — `_FIRST` and `RIGHT_HAND` are both 1 — so it is
+   not work.
+
+   Two more were found after §1.1f was written and are also still open:
+   - **`Item.OptimizeBeforeSaving` was never ported** (`Item.cs:111`, overridden by
+     `ItemEntertainment` to prune dead actors from `m_BoringFor` and by `ItemTrap`
+     to null a dead owner). The TS base `Item` has no such method. Mostly inert,
+     because `ItemTrap`'s self-cleaning `owner` getter *was* ported and the save
+     path is `JSON.stringify` rather than a binary serialiser. The one reachable
+     consequence: in C# a revived actor **forgets** a boring item — the C# says so
+     in a comment — where the TS keeps them in `boringForList` and `isBoringFor`
+     keeps returning `true`. Now that the save graph exists (§1.5a) this is worth
+     doing rather than leaving as a comment.
+   *(Its sibling latent item, `IsTool` using `> 0` where C# uses `!= 0`, is
+     fixed: `ItemWeapon.ts` now tests `!== 0`.)*
+
+   **Checked and *not* a bug, recorded here because it looked like one.** The
+   minimap raster cache does not track exits: `UI_ClearMinimap` moved *inside*
+   the `minimapRevision` guard (C# clears every frame, `RogueGame.cs:19011`), and
+   `Map.ts` documents exits as deliberately outside the revision because they are
+   static after generation. That looked like it would hide an exit appearing
+   mid-game. It cannot: all six `GenerateExit` call sites are inside
+   `GenerateWorld`, which finishes before the player ever sees the map, and the
+   raster is first built on the first draw after that. The cache is only wrong if
+   something carves an exit *after* a map has been displayed, and nothing does.
+   Worth keeping as a note on the cache's contract rather than a defect — if a
+   future feature does add a mid-game exit, this is the line that has to change
+   with it.
+7. ~~**Serialise the world/map graph in `Session.save`.**~~ **Done 2026-09-27** —
+   see §1.5a. The `TODO(phase 4)` is gone, and §4.3 item 4 is now a full pass
+   rather than a partial one.
+8. ~~**The three open decisions.**~~ **All three resolved 2026-09-27**, and none
    of them needed a ruling — see the `src/` rule at the top of this file.
    - **`Skills.csv` cannot be loaded by the C# at all** (§1.1c). The port
      works around it by matching on `NAME`. The workaround **stays** and `src/`
@@ -800,29 +886,83 @@ expensive to re-derive.
      the tile *model*, not occupancy — that is the whole gap. Pinned by
      `tests/spawn-occupancy.test.ts`, which fills a map completely so every
      candidate is rejected, plus a control that a free tile still spawns.
-8. Then work down the rest of the Phase 8 task list in §4. **Of tasks 9–12 only
+9. Then work down the rest of the Phase 8 task list in §4. **Of tasks 9–12 only
    12 remains** — 9 (sprites), 10 (audio) and 11 (frame cost) are done, so this
    item is now just "task 12, if it is ever wanted", scoped in §6.1.
 
-**Open items 2–7 all require reading `src/`.** See the warning at the top of
-this file before considering its removal. (Item 1 does not — it needs a browser.)
+**Open items 1, 2 and 6 are what is left.** Items 1 and 2 need no `src/`; item 6
+does, and is the only one where the C# is the specification rather than a
+cross-check. See the warning at the top of this file before considering `src/`'s
+removal.
 
-**Watch the coverage margins.** They were raised well clear of their thresholds
-(measured 65.15 / 80.49 / 73.21 / 65.15 against 50 / 75 / 57 / 50), so `verify`
-will not trip on coverage for a while — but the baseline moves every time a
-large unaudited area becomes reachable. Re-measure and re-set these together
-rather than letting `verify` fail on them, or lowering them to hide it.
+**Watch the coverage margins.** The thresholds sit at 50/75/57/50 and the measured
+baseline is now **61.7 / 81.1 / 74.9 / 61.7** (statements/branches/functions/lines).
+Note the direction of travel: statements and lines have *fallen* from 65.15,
+because the renderer, HUD, options, font and serialisation work added a lot of
+reachable UI code that the suites do not cover as thoroughly as the engine does.
+Re-measure and re-set the four together rather than lowering them to hide it.
 
 #### Closed items, kept for what they record
 
 | Item | Closed | What is worth keeping |
 |---|---|---|
-| 0 — minimap reveal | 2026-09-27 | It was the whole in-game map, not the minimap. §1.4a keeps the *wrong* diagnosis too. |
-| 0b — CSV → JSON data audit | 2026-09-27 | 18 bugs, §1.1c. Left three open decisions (now item 7) and found two upstream data defects. |
+| 0 — minimap reveal | 2026-09-27 | It was the whole in-game map, not just the minimap. §1.4a keeps the *wrong* diagnosis too. |
+| 0b — CSV → JSON data audit | 2026-09-27 | 18 bugs, §1.1c. Left three open decisions (now item 8) and found two upstream data defects. |
 | 3 — AI behaviour + generator integrity tests | 2026-09-27 | The 60% reachability threshold is **measured, not guessed**: a six-seed sweep found 75.6%–100%. Seed 42 is pinned because it measured the worst district. Asserting 100% would assert the original has no unreachable rooms — not established, and not the point. The AI behaviour expectations come from the C# strategy order rather than from reading the port. |
 | 4 — `percepted as Actor` audit | 2026-09-27 | 43 sites, **no live bug**. Four had the bug-3 shape and all four are harmless — the detail is in the list above and is the clearest statement in this file that a grep is a hypothesis generator, not a verdict. |
 | 5 — `isInvincible` guard | 2026-09-27 | **Six** properties, not one, and the guard is not uniform: five block a decrease, `Infection` blocks an *increase*. `useDefineForClassFields: true` means a stray own field would silently shadow the accessor. |
+| 7 — world/map serialisation | 2026-09-27 | See §1.5a. It closed the last feature gap and turned §4.3 item 4 from a partial pass into a real one. |
+| 8 — the three open decisions | 2026-09-27 | None needed a ruling. One of the three (`maxSkillLevel`) was the *plan* being wrong about a faithful port, which is worth remembering as its own kind of error. |
 | §1.4b — the world behind the player stopped running | 2026-09-27 | A **performance** divergence only playing could find: 60 turns of play left the neighbours 60 turns behind, and entering a district cost a 274 ms blocking burst. No Worker — the graph is shared mutable state, which is why the C# needed a lock and then dropped it. The slack is the player's idle time instead. |
+
+### 1.5a World/map serialisation, and the options that landed with it — done 2026-09-27
+
+Closes §1.5 item 7, the `TODO(phase 4)` that had been in `Session.save` since
+Phase 4. A save now carries the whole object graph and `load` restores it.
+
+**What it is.** `engine/serialization/SessionGraph.ts` walks the live world and
+writes every node the C#'s `SaveBin` would, `specs.ts` declares the per-type field
+lists, and `sessionGraphRoot.ts` is the entry point. `Session.save` and
+`Session.load` route through it, `Session.adopt` takes an already-built graph
+(used by the load path so a failed load cannot half-reset the world), and
+`RogueGame.reattachPlayer` re-links the player controller after deserialisation. A
+3×3 world's graph is roughly 4.6 MB.
+
+**Verified field by field against a played world**, not by asserting that
+`load(save(x))` does not throw — which is the mistake §1.1i bug 64 records.
+`tests/save-graph-coverage.test.ts` asserts every declared field is actually
+written, and `tests/save-graph-roundtrip.test.ts` walks a real played world
+through save/load and compares it.
+
+**The option work that landed alongside it**, all browser-only, all pinned:
+
+- **Multi-key bindings, and distinct numpad keys.** `Keybindings` holds several
+  keys per command, and matching is on `KeyboardEvent.code`, so `Digit7` reaches
+  the item row while `Numpad7` moves northwest — the C#'s numpad movement
+  defaults are restored. `tests/keybindings-multi.test.ts`, 16 cases. The lesson
+  is the option's own: a single-key binding cannot express "both 7 and numpad-7",
+  so the alternative was a second binding, not a better matcher.
+- **A sprite-style option** with a complete `classic` fallback set, so a missing
+  or partial image set is never a hard failure. `tests/sprite-style-option.test.ts`.
+- **A typeface option**, since expanded to four vendored families (JetBrains Mono,
+  Iosevka Term Slab, Hack, IBM Plex Mono) plus the platform stack. All are 0.6 em
+  monospace, so `MENU_CHAR_WIDTH` and every menu column position stay correct
+  whichever is selected. The faces are subset to the range the game can draw —
+  Iosevka is 1.76 MB a face upstream and 25 KB subset — and
+  `tests/game-font.test.ts` scans the sources for non-ASCII characters and
+  reports anything outside the range, because a glyph outside it is not a crash,
+  it is a silent mid-word fallback. The subset command is recorded in
+  `src/ui/fonts.ts`.
+  **Licensing note:** JetBrains Mono, Iosevka Term Slab and IBM Plex Mono are
+  OFL-1.1; **Hack is not** — it is MIT co-licensed with the Bitstream Vera
+  licence, since it descends from Bitstream Vera Sans Mono. The faces are
+  subsetted, which is a modification, so read `LICENSE-Hack.txt` before
+  redistributing.
+- **Option text is now covered by a test.** `tests/options-coverage.test.ts`
+  walks every option id and asserts `optionName` and `describe` both have text,
+  because a missing `describe` case throws *"unhandled option"* the moment the
+  player scrolls to that row — which is how the font option shipped with a blank
+  description in the first place.
 
 ### 1.6 Known non-bugs (do not re-investigate)
 
@@ -845,52 +985,30 @@ rather than letting `verify` fail on them, or lowering them to hide it.
 
 ### 1.7 Git state
 
-- `master`, tracking `origin/master`.
-- Phase 4 completion committed as `0bc8e7f`; the Phase 4 async audit (18 detached
-  calls awaited, stale notes fixed) as `389a845`.
-- The headless harness + the 9 fixes above were committed together as the Phase 8
-  simulator commit (`3154dee`).
-- `c181116` — `--seed`, the `engine/storage.ts` wrapper (all 16 `localStorage` call
-  sites in 8 modules, which threw `ReferenceError` in Node), and the runner's missing
-  hi-score-table init.
-- `43adb9d` — the `Map.placeActor` add-or-move fix (§1.1 bug 10), `removeActor`
-  parity, and `assertActorIntegrity()`.
-- `f61a9b2` — the five §1.1b bugs (11–15) plus the display pass: widescreen
-  1366×768, the 12pt menu font with scrolling windows, death screenshots
-  defaulting off, the service-worker 206/`CACHE_VERSION` fix, and the
-  `?debug=1` `[render]`/`[draw]` diagnostics. Also rewrote the root `README.md`
-  (it had described only the 2012 C# source) and trimmed `web/README.md`.
-  146 tests pass; the reproducibility suite is the pre-existing Windows failure
-  in §1.6.
-- `280430c` — the eighteen §1.1c data-layer bugs, the `convert-csv.js` `COLUMNS`
-  table, `Skills.load()`, and the two new data suites. 273 tests pass.
-- `423bfad` — the §1.1c documentation pass, including the corrected sim baseline.
-- `f629e83` — the `isInvincible` guard on all six Actor point properties
-  (§1.5 item 5) and the `percepted as Actor` audit (§1.5 item 4), with
-  `actor-invincible.test.ts` and `ai-percept-filters.test.ts`.
-- `25b914e` — `generator-integrity.test.ts` (§4.3 item 3).
-- `18987a1` — the per-actor abilities fix (§1.1d) and `actor-abilities.test.ts`.
-- `5864c4b` — the CSV→model binding fix (§1.1e) and `model-data-binding.test.ts`.
-  384 tests pass, 21 files.
-- `2a8ee93` — corrected two miscounts in the bug log.
-- `b0e4038` — the §1.1f fidelity sweep (bugs 51–56) and the §1.1g clean-bill,
-  together with the Neutralino desktop wrapper. The sweep itself was
-  documentation-only, so the bug count it changed was 6 newly recorded and then
-  fixed in the same commit.
-- `fc667e6` — the hover/input freeze, plus the item-pickup coverage that pins
-  input mapping at both 1× and 2× display scale.
-- `8d7b5dc` — the DPR-correct canvas (integer scaling, pixel-art rendering) and
-  the 1×/2× map zoom.
-- `652aa26` — a save that cannot be restored now fails loudly instead of killing
-  the game (§1.1i bug 64), after `Session.load` was found to reset the world
-  *before* validating.
-- `825c9f0` — the occupied-tile spawn crash (§1.5 item 7), the `src/` rule that
-  decides upstream-vs-port fixes, and the `SessionGraph` serialisation ledger
-  that item 6 will build on.
-- `447bbdf` — the Windows `verify` halt and the colliding screenshot filenames
-  (§1.6).
-- `1c27589` — the idle catch-up (§1.4b), and the `AddMessagePressEnter` guard it
-  needed. 501 tests, 34 files.
+- `master`, tracking `origin/master`, clean and in sync with the remote.
+- **`git log --oneline` is the history.** This section used to enumerate every
+  commit with its test count, which went stale within one commit and duplicated
+  what git already answers better. The bug log (§1.1 and its subsections) is the
+  record of *what* was wrong; git is the record of *when*.
+- The milestones a log line does not explain, in the order they landed: Phase 4
+  completion `0bc8e7f`; the Phase 8 simulator and its first nine fixes `3154dee`;
+  `--seed` and the `storage` wrapper `c181116`; the `Map.placeActor`
+  add-or-move fix `43adb9d`; the five §1.1b bugs and the widescreen display pass
+  `f61a9b2`; the eighteen data-layer bugs `280430c`; `isInvincible` and the
+  `percepted as Actor` audit `f629e83`; per-actor abilities `18987a1`; the
+  positional→by-ID data binding `5864c4b`; the §1.1f sweep plus the Neutralino
+  wrapper `b0e4038`; the DPR-correct canvas and 1×/2× map zoom `8d7b5dc`; the
+  honest load failure `652aa26`; the occupied-tile spawn fix and the `src/` rule
+  `825c9f0`; the Windows `verify` halt `447bbdf`; the idle catch-up `1c27589`;
+  Neutralino 6.9 packaging `0c5e770`; whole-world serialisation `ae08a31`;
+  JetBrains Mono `46ac665`; the sprite-style option `03f8a73`; multi-key bindings
+  `5b2dc59`; the side panel, hitbox, popup and minimap fixes `4a6e845` and
+  `2ebdddf`; the four typeface families `47c5b64`; and the look-handler and
+  typeface-repaint fixes `6977b63`.
+- **Current state: 650 tests across 41 files, `npm run verify` green end to end
+  (type-check, coverage, build), working tree clean.**
+- Bump `CACHE_VERSION` in `web/public/sw.js` when releasing, or clients keep the
+  old bundle and the update only lands on the *next* load (§1.6).
 
 ---
 
@@ -929,7 +1047,7 @@ Full detail in `web/.porting/CONVENTIONS.md`. The ones that matter:
 |---|---|
 | `npm run verify` | type-check + coverage + build — what CI runs, in one command |
 | `npm run type-check` | `tsc --noEmit`; covers `src/`, `sim/` and `tests/` — necessary, **not sufficient** |
-| `npm run test` | Vitest, 409 tests |
+| `npm run test` | Vitest, 650 tests in 41 files |
 | `npm run test:coverage` | Vitest with coverage thresholds enforced |
 | `npm run build` | Vite production build |
 | `npm run sim` | Headless engine run — the real test |
@@ -947,11 +1065,11 @@ Phases 1–7 are ported and building. Historical per-slice detail has been remov
 | 1 — Scaffold & primitives | Vite + Express, `IRogueUI`, `CanvasUI`, `InputHandler`, `Point`/`Rect`/`Color`, `DiceRoller` | Done |
 | 2 — Data layer | `Actor`, `Map`, `World`, `ActorModel`, `GameItems`, `GameActors`, `GameImages` | Done |
 | 3 — Engine core | `Rules`, `LOS`, `Session`, `Scoring`, `GameOptions`, `ui/OptionsScreen.ts` | Done |
-| 4 — Game loop | `RogueGame.ts` (~19.7 KLOC) all 10 slices | Ported, **0 stubs — and now behaviourally exercised: 1 000-turn runs headless (§1.2) *and* played in a browser (§1.1b)** |
+| 4 — Game loop | `RogueGame.ts` (~26 KLOC) all 10 slices | Ported, **0 stubs — and now behaviourally exercised headless (§1.2) *and* played in a browser (§1.1b, §1.1i, §1.1j)** |
 | 5 — World gen & AI | `BaseAI` (184/184), all 11 AI controllers, 4 generator files (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator` 5 814 lines, `StdTownGenerator`) | Done |
 | 6 — Audio | Web Audio SFX + music | Done |
 | 7 — Save / load | localStorage / IndexedDB, `Session` serialisation | Done |
-| 8 — Polish, sim, CI | Headless harness, 384 tests, CI, PWA, Docker, asset pass, frame-cost pass | **In progress** — 11 of 12 tasks done; only 12 (optional touch) remains. See §4.1 |
+| 8 — Polish, sim, CI | Headless harness, 650 tests, CI, PWA, Docker, asset pass, frame-cost pass, desktop wrapper | **In progress** — 11 of 12 tasks done; only 12 (optional touch) remains. See §4.1 |
 
 Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks, 3 SFX), extracted from the C# embedded resources. **Total 24.9 MB**, down from 51.6 MB before the Phase 8 asset pass — see §4.1c.
 
@@ -967,15 +1085,15 @@ Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks,
 |---|------|--------|
 | 1 | Headless simulator (`NullRogueUI` + `HeadlessRunner` + CLI) | **Built; playing 1 000-turn games. See §1.2.** |
 | 2 | Deterministic `--seed` for reproducible runs | **Done** (`Session.useSeed`, `--seed`) |
-| 3 | Drive the sim to a clean full-length run and fix what it finds | **In progress** — 1 000-turn runs clean on 4/5 seeds; keep sweeping |
+| 3 | Drive the sim to a clean full-length run and fix what it finds | **In progress, and the goal changed** — no seed now reaches 1 000 turns, because that is *correct* behaviour (§1.2: the undead bot is shot by survivors). Keep sweeping seeds for crashes, not for turn count |
 | 4 | Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`) | **Done and verified in a browser** — now 1366×768 widescreen, smooth filtering (the old `image-rendering: pixelated` made upscaled text unreadable) |
-| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 409 tests, 24 files, thresholds enforced (50/75/57/50) |
+| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 650 tests, 41 files, thresholds enforced (50/75/57/50) |
 | 6 | GitHub Actions CI | **Done** — `.github/workflows/ci.yml`, type-check + coverage + build + seeded sim, plus a docker smoke job |
 | 7 | PWA manifest + service worker (offline play) | **Done** — manifest, drawn icons, runtime-caching `sw.js` |
 | 8 | Docker image for the self-hosted server | **Done but unverified** — docker is not installed locally, so the image has never been built; CI will exercise it first |
 | 9 | Extract + optimise all sprite PNGs from C# embedded resources | **Done** — 1 124 sprites converted to lossless WebP, 2.41 MB → 0.32 MB, every file pixel-verified |
 | 10 | Audio: normalise volume levels | **Done** — plus 25.7 MB of unreferenced MP3s deleted. Music RMS spread 4.88× → 1.71× |
-| 11 | Performance pass: profile tile rendering (target 60 fps on a 21×21 view) | **Done for draw calls** — `npm run profile`; 3 058 → 658 calls/frame, engine 1.86 → 1.11 ms/frame. See §4.1d. Frame *rate* still unverified (needs a browser). Note the view is now 31×21 after the widescreen change (§1.1b), so re-profile if that matters |
+| 11 | Performance pass: profile tile rendering (target 60 fps on a 21×21 view) | **Done for draw calls** — `npm run profile`; 3 058 → 658 calls/frame, engine 1.86 → 1.11 ms/frame. See §4.1d. Frame *rate* still unverified (needs a browser). The view is now 27×21 after the widescreen change (§1.1b), so re-profile if that matters |
 | 12 | Mobile / touch support (optional — original was keyboard-only) | Not started — scoped in §6.1 |
 
 ### 4.1a Test suite layout
@@ -1010,6 +1128,23 @@ once with `npm run verify`. `tests/` is in `tsconfig.json`'s include list, so
 | `map-zoom.test.ts` | Map zoom state, persisted through the `storage` wrapper |
 | `headless-zoom.test.ts` | Zoom behaviour under a headless run |
 | `canvas-layout.test.ts` | Canvas sizing, scaling and the 1366×768 widescreen layout |
+| `hud-layout.test.ts` | The HUD's hardcoded vertical stack: status → inventory → ground → corpses → skills → minimap → log, with nothing overlapping. Also the minimap/view-rect coordinate space, which is where §1.1j bug 68 lived |
+| `panel-hitboxes.test.ts` | The side panel's hitboxes are the drawn grid: titles, number rows and inter-section gaps are not slots (§1.1j bugs 66, 70). Overlays declare whether the map zoom may move them, and a popup is never drawn scaled (§1.1j bug 67) |
+| `map-border-rings.test.ts` | The map border and its ring markers |
+| `tile-palette.test.ts` | Tile model ids, image ids and the walkable/transparent flags |
+| `gender-helpers.test.ts` | `HisOrHer` / `HimOrHer` and the rest — the family §1.1f bug 52 belongs to, which is the one that is still open |
+| `lossensor-weather.test.ts` | FOV and the weather penalty, the surface §1.1f bug 51 is about |
+| `idle-district-sim.test.ts` | The idle catch-up keeps the districts behind the player in step (§1.4b) |
+| `spawn-occupancy.test.ts` | Both spawners reject an occupied tile and try the next candidate (§1.5 item 8) |
+| `keybindings-multi.test.ts` | Several keys per command, and `Digit7` vs `Numpad7` resolving to different commands (§1.5a) |
+| `sprite-style-option.test.ts` | The sprite-style option, its `classic` fallback, image generation and persistence |
+| `game-font.test.ts` | Every vendored face is on disk and really a woff2, each family ships its licence, the subset covers what the sources can draw, and the canvas strings name the chosen family. **Hack is MIT + Bitstream Vera, not OFL**, so the licence assertion is deliberately not "there is an OFL somewhere" |
+| `options-coverage.test.ts` | Every option id has a name, a description and a value. `describe` **throws** for an unhandled id, which is a black screen the moment the player scrolls to that row — this suite exists because the font option shipped that way |
+| `screenshot-naming.test.ts` | `UI_SaveScreenshot` uses the path it is given and produces a safe filename |
+| `save-graph-coverage.test.ts` | Every field the save specs declare is actually written, so a spec cannot drift into a field nothing persists |
+| `save-graph-roundtrip.test.ts` | A real played world through save/load, compared field by field (§1.5a) — the check §1.1i bug 64 shows is not "it did not throw" |
+| `integration/save-load.test.ts` | The same at the `Session` level, including a save that cannot be restored failing loudly instead of killing the game |
+| `integration/mouse-paths.test.ts` | Inventory and corpse hit-testing through real mouse positions, at 1× and 2× display scale |
 
 Two constraints worth preserving:
 
@@ -1119,6 +1254,15 @@ Two things to preserve:
 - **`setTileModelAt` bumps the revision on purpose.** Every caller today is
   world generation, so it is not needed yet, but a tile model carries its
   minimap colour and a future runtime tile change would otherwise be invisible.
+
+**Exits are outside the revision, and that is correct — do not "fix" it.** They
+are the one input the cache does not track, because they are static after
+generation: all six `GenerateExit` call sites are inside `GenerateWorld`, which
+finishes before the map is ever displayed, so the raster's first build already
+sees them. This is worth stating because the arrangement looks wrong next to
+`UI_ClearMinimap` now sitting inside the guard where C# cleared every frame. If a
+feature ever adds a mid-game exit, *this* is the line that has to change with it,
+and the reason will not be obvious from the code.
 
 Also worth knowing when touching the renderer: `UI_DrawGrayLevelImage` is
 called ~578 times a frame (it is how unexplored tiles are drawn) and setting
@@ -1256,8 +1400,20 @@ All three cost a wrong conclusion first:
 1. **Headless integration tests** — ✅ `tests/integration/headless-run.test.ts`. Boots a seeded 1×1 world, plays 40 turns, asserts no crash, actor accounting stays consistent, the world clock advances, and the run is neither instant nor hung.
 2. **AI behaviour tests** — ✅ `tests/ai-behaviour.test.ts`, 14 cases. Zombie pursuit by sight, LOS gating (with the no-wall control), scent aggregation, and civilian self-preservation, each in an isolated flattened map. Expectations come from the C# strategy order, not from reading the port — see the note below.
 3. **Generator integrity tests** — ✅ `tests/generator-integrity.test.ts`, 7 cases. No actor on a wall or out of bounds, nothing out of bounds, every map has a passable tile, the player starts passable in the largest region, and no surface district is sealed. The connectivity threshold is measured, not guessed: 75.6%–100% across a six-seed sweep, so it is set at 60%.
-4. **Save/load roundtrip** — ✅ `tests/persistence.test.ts`, for the six persistence modules. Note the gap: `Session` does not serialise the world/map object graph yet (see the `TODO(phase 4)` in `Session.save`), so a full "complex running game" roundtrip is not possible until that lands.
-5. **Coverage** — ✅ `@vitest/coverage-v8`, thresholds at 50/75/57/50, set ~1–1.5 points under the measured baseline rather than at an aspirational number. **The baseline is now 65.15/80.49/73.21/65.15** (statements/branches/functions/lines), up from 52.68/77.14/59.97 with §1.1c — the later fidelity sweeps added both a lot of newly-reachable engine code and the suites that cover it. Margins are wide again; re-measure and re-set together when the next large area becomes reachable, rather than letting `verify` fail on them.
+4. **Save/load roundtrip** — ✅ and now a **full** pass rather than the partial one
+   this item used to record. `tests/save-graph-roundtrip.test.ts` walks a played
+   world through save/load and compares it field by field, `save-graph-coverage.test.ts`
+   asserts every declared field is actually written, and `persistence.test.ts` still
+   covers the other five persistence modules. The `TODO(phase 4)` in
+   `Session.save` that blocked this is gone (§1.5a).
+5. **Coverage** — ✅ `@vitest/coverage-v8`, thresholds at 50/75/57/50, set under the
+   measured baseline rather than at an aspirational number. **The baseline is now
+   61.7/81.1/74.9/61.7** (statements/branches/functions/lines), against 52.68/77.14/59.97
+   when §1.1c landed. Note statements and lines have *fallen* from a peak of
+   65.15/65.15: the renderer, HUD, options, font and serialisation work added
+   reachable UI code that the suites cover less thoroughly than the engine does.
+   Margins are still wide; re-measure and re-set all four together rather than
+   letting `verify` fail on them or lowering them to hide a drop.
 
 
 ---
@@ -1269,11 +1425,11 @@ All three cost a wrong conclusion first:
 | 1 | Scaffold + primitives | Done |
 | 2 | Data layer | Done |
 | 3 | Engine core | Done |
-| 4 | Game loop | Ported, 0 stubs — **behaviourally exercised headless (1 000-turn runs, §1.2) and in a browser (§1.1b)** |
+| 4 | Game loop | Ported, 0 stubs — **behaviourally exercised headless (§1.2) and played in a browser three times over (§1.1b, §1.1i, §1.1j)** |
 | 5 | World generation + AI | Done |
 | 6 | Audio | Done |
-| 7 | Save / load | Done |
-| 8 | Headless sim, tests, CI, deployment | In progress — 501 tests, CI, PWA, Docker, asset pass and frame-cost pass all in. Only 12 (optional touch) remains; see §1.2 for why 1 000-turn runs no longer complete |
+| 7 | Save / load | Done — **including the world graph** (§1.5a) |
+| 8 | Headless sim, tests, CI, deployment | In progress — 650 tests, CI, PWA, Docker, asset pass, frame-cost pass, PWA precache, Neutralino desktop wrapper and four typeface families all in. Only 12 (optional touch) remains; see §1.2 for why 1 000-turn runs no longer complete |
 
 ---
 
@@ -1322,26 +1478,28 @@ gestures. Steps 1 and 2 are independent and can ship separately; a phone is
 already playable with only 1 and 2 on a small screen.
 
 **Do not** start by touching `RogueGame`. The input abstraction is the seam; if
-that is done right, the 19.7 KLOC game loop does not need to know.
+that is done right, the ~26 KLOC game loop does not need to know.
 
 ### 6.2 Finish the fidelity work first
 
 Cheaper and higher value than 6.1, and blocked on `src/` (see the warning at the
-top). **This list was written before §1.5 items 3–5 and the §1.1f sweep closed
-most of it**, so it is now down to two items plus a sweep:
+top). **This list is now down to one item plus a sweep** — the other five
+entries were closed in the same week they were written:
 
-- ~~The AI behaviour and generator integrity tests~~ — generator integrity **done**;
-  AI behaviour **open** (§1.5 item 3).
-- ~~The `isInvincible` guard~~ — **done**, and it turned out to be six properties
-  rather than one (§1.5 item 5).
-- ~~The audit for the `percepted as Actor` pattern~~ — **done**, 43 sites, no live
-  bug (§1.5 item 4).
-- **The six §1.1f bugs** — the last of the four unaudited tables (§1.5 item 6).
-- **World/map serialisation** for a true save/load roundtrip (§1.5 item 7). The
-  `TODO(phase 4)` in `Session.save` is the blocker, and it is the reason §4.3
-  item 4 is only a partial pass.
-- **Whatever the next sweep finds.** §1.1g records the surface now proven clean,
-  so the next audit should start outside it rather than repeat it.
+- ~~The AI behaviour and generator integrity tests~~ — **both done**
+  (§1.5 item 3).
+- ~~The `isInvincible` guard~~ — **done**, and it turned out to be six
+  properties rather than one (§1.5 item 5).
+- ~~The audit for the `percepted as Actor` pattern~~ — **done**, 43 sites, no
+  live bug (§1.5 item 4).
+- ~~World/map serialisation~~ — **done** (§1.5a). This was the reason §4.3 item 4
+  was only a partial pass; it is a full pass now.
+- **The five §1.1f bugs** — the last of the four unaudited tables (§1.5 item 6).
+  One consequential (the rain FOV penalty never reaches an AI actor) and four
+  small, three of which are wrong colour constants. This is the whole remaining
+  fidelity surface in those tables, and §1.1g records what is proven clean so the
+  next audit starts outside it.
+- **Whatever the next sweep finds.**
 
 ### 6.3 Renderer and layout
 
@@ -1356,10 +1514,18 @@ most of it**, so it is now down to two items plus a sweep:
   interim 12pt font (f61a9b2) exists to make the canvas version readable until
   this happens.
 - **Frame rate is still unmeasured.** Draw calls were cut 78% (§4.1d) and the
-  view grew from 21×21 to 31×21 tiles, so a real browser measurement of actual
+  view grew from 21×21 to 27×21 tiles, so a real browser measurement of actual
   fps is still outstanding, as is a re-profile at the new view size.
-- **The 12pt menu font and the 8.25pt HUD font are a stopgap.** Once menus are
-  HTML, the two-tier canvas font split can collapse back to one size.
+- **The two-tier canvas font is a stopgap.** Once menus are HTML, the 10pt/12pt
+  split can collapse back to one size. Note the HUD face is **10pt, not the
+  8.25pt** this section used to claim: the port raised it to match the larger
+  widescreen layout, and every panel constant (`SIDEPANEL_SECTION_HEIGHT` among
+  them) was re-derived against the larger leading. §1.1j bug 65 is what happens
+  when that re-derivation is done from two of the three terms.
+- **The typeface is now an option, so the "one fixed face" assumption is gone.**
+  Four vendored families plus the platform stack, all 0.6 em, all subset to the
+  charset the game can draw. Anything that hard-codes a *glyph shape* expectation
+  rather than a width will now meet four sets of shapes.
 
 ### 6.4 First-person / pseudo-3D view mode
 
@@ -1478,7 +1644,7 @@ first — draw whole sprites and accept a little pop through doorways; it is the
 nicest feature to lose and the most expensive. Then floor subdivision depth.
 Walls and the raycaster stay.
 
-**Do not** start by touching the 19.7 KLOC `RogueGame` beyond the two changes
+**Do not** start by touching `RogueGame` beyond the two changes
 above. The `IRogueUI` seam exists for exactly this; the same advice as §6.1, and
 for the same reason.
 
