@@ -83,7 +83,7 @@ describe("NullRogueUI", () => {
       ui.UI_DrawStringBoldLarge(Color.White, "hello", 1, 1);
       ui.UI_ClearMinimap(Color.Black);
       ui.UI_SetMinimapColor(1, 1, Color.White);
-      ui.UI_DrawMinimap(0, 0);
+      ui.UI_DrawMinimap(0, 0, 200, 200);
     }).not.toThrow();
   });
 

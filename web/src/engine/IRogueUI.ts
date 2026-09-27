@@ -170,7 +170,13 @@ export interface IRogueUI {
 
   UI_ClearMinimap(color: Color): void;
   UI_SetMinimapColor(x: number, y: number, color: Color): void;
-  UI_DrawMinimap(gx: number, gy: number): void;
+  /**
+   * `width`/`height` are the minimap's size on screen, which is not the raster's
+   * own size: the engine owns the layout and scales the map to fit the panel.
+   * Omitting them drew the map at 1:1 while everything positioned on it used
+   * the scaled-up coordinates.
+   */
+  UI_DrawMinimap(gx: number, gy: number, width: number, height: number): void;
 
   // ── Scale ─────────────────────────────────────────────────────────────────
 

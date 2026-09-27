@@ -12,9 +12,17 @@ import { Rect }  from "@engine/Rect";
 import { InputHandler } from "./InputHandler";
 import { fontHud, fontHudBold, fontMenu, fontMenuBold } from "./fonts";
 
-/** Size of the minimap in tiles (matches C# constants). */
-const MINIMAP_W = 100;
-const MINIMAP_H = 100;
+/**
+ * Size of the minimap raster, in pixels *and* in tiles: one pixel per map tile
+ * (matches C#'s 100x100 bitmap). Exported so a test can hold the renderer to the
+ * engine's `MAP_MAX_*` and catch the two drifting apart.
+ *
+ * The raster's size is not the minimap's size on screen. The engine scales it by
+ * `MINITILE_SIZE` and owns the result, which is why `UI_DrawMinimap` is told the
+ * destination size rather than working it out here.
+ */
+export const MINIMAP_W = 100;
+export const MINIMAP_H = 100;
 
 /**
  * The game's logical drawing surface, 16:9 like `RogueGame.CANVAS_WIDTH`/
@@ -682,11 +690,17 @@ export class CanvasUI implements IRogueUI {
     this.minimapData[idx + 3] = color.a;
   }
 
-  UI_DrawMinimap(gx: number, gy: number): void {
+  UI_DrawMinimap(gx: number, gy: number, width: number, height: number): void {
     // No .slice(): putImageData copies synchronously, so a view over the live
     // buffer is equivalent and saves a 40 KB allocation per frame.
     this.minimapCtx.putImageData(this.minimapImage, 0, 0);
-    this.ctx.drawImage(this.minimapCanvas, gx, gy);
+    // The destination size is the engine's, not the raster's: the raster is one
+    // pixel per tile and the map is drawn larger than that. Passing no size drew
+    // it 1:1, so the view rect, the player tag and the field-of-view boxes --
+    // all of which position themselves in the *scaled* coordinates -- landed off
+    // the map, in the empty part of the panel. `imageSmoothingEnabled` is off, so
+    // scaling up stays crisp.
+    this.ctx.drawImage(this.minimapCanvas, gx, gy, width, height);
   }
 
   // ── Scale ─────────────────────────────────────────────────────────────────

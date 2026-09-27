@@ -2,7 +2,11 @@ import { describe, it, expect } from "vitest";
 import {
   RogueGame,
   Overlay,
+  OverlayRect,
   OverlayPopup,
+  OverlayPopupTitle,
+  OverlayPopupTitleColors,
+  PopupOverlay,
   INVENTORYPANEL_X,
   INVENTORYPANEL_Y,
   GROUNDINVENTORYPANEL_Y,
@@ -153,21 +157,108 @@ describe("PanelSlotAtMouse: the hitbox is the drawn grid", () => {
 
 describe("overlays know whether the map zoom may move them", () => {
   it("defaults to zooming with the map", () => {
-    // Tile descriptions, damage icons and target rings are anchored to a tile, so
-    // they belong in the map's scaled scope.
-    const onMap = new OverlayPopup(["hi"], Color.White, Color.White, Color.Black, new Point(0, 0));
+    // Target rings, damage icons and the lines joining them are anchored to a
+    // tile, so they belong in the map's scaled scope.
+    const onMap = new OverlayRect(Color.Cyan, new Rect(0, 0, 32, 32));
     expect(onMap.zoomsWithMap).toBe(true);
   });
 
   it("can opt out for anything anchored in screen space", () => {
-    // The flag exists so the side panel's highlights and descriptions, and the
-    // corner-pinned prompts, are not displaced and doubled by the map zoom.
     class Probe extends Overlay {
       zoomsWithMap = false;
       draw(): void {}
     }
     const onScreen = new Probe();
     expect(onScreen.zoomsWithMap).toBe(false);
+  });
+});
+
+describe("a popup is never drawn scaled", () => {
+  /**
+   * The reason: the map is drawn through a 2x transform, and popups used to be
+   * drawn inside it, so their text doubled along with their fill. The box ended
+   * up twice the size of the thing it described -- covering the tiles the player
+   * had just zoomed in to read -- and, anchored in pre-scale coordinates, in the
+   * bottom right corner of the screen.
+   *
+   * The fix is that only the anchor follows the zoom. The map panel is a fixed
+   * size in screen pixels whatever the zoom, so a popup drawn at 1x over it stays
+   * proportional at both levels.
+   */
+  const ANCHOR = new Point(448, 320);
+
+  /** Captures where a popup was actually asked to be drawn. */
+  function recordingUI(): { ui: IRogueUI; drawn: { x: number; y: number }[] } {
+    const drawn: { x: number; y: number }[] = [];
+    const ui = {
+      UI_DrawPopup: (_l: string[], _t: Color, _b: Color, _f: Color, x: number, y: number) => {
+        drawn.push({ x, y });
+      },
+      UI_DrawPopupTitle: (
+        _ti: string, _tc: Color, _l: string[], _t: Color,
+        _b: Color, _f: Color, x: number, y: number,
+      ) => {
+        drawn.push({ x, y });
+      },
+      UI_DrawPopupTitleColors: (
+        _ti: string, _tc: Color, _l: string[], _c: Color[],
+        _b: Color, _f: Color, x: number, y: number,
+      ) => {
+        drawn.push({ x, y });
+      },
+    } as unknown as IRogueUI;
+    return { ui, drawn };
+  }
+
+  it("scales the anchor of a map-anchored popup, not the box", () => {
+    const { ui, drawn } = recordingUI();
+    const popup = new OverlayPopup(
+      ["a civilian"], Color.White, Color.White, Color.CornflowerBlue, ANCHOR,
+    );
+    expect(popup).toBeInstanceOf(PopupOverlay);
+    popup.drawAt(ui, 2);
+    expect(drawn).toEqual([{ x: ANCHOR.x * 2, y: ANCHOR.y * 2 }]);
+  });
+
+  it("draws a screen-anchored popup at scale 1, where it is anchored", () => {
+    // The side panel's descriptions and the corner-pinned prompts are already in
+    // screen coordinates, so their anchor must not move at all.
+    const { ui, drawn } = recordingUI();
+    const popup = new OverlayPopup(
+      ["a medikit"], Color.White, Color.White, Color.CornflowerBlue, ANCHOR, false,
+    );
+    popup.drawAt(ui, 1);
+    expect(drawn).toEqual([{ x: ANCHOR.x, y: ANCHOR.y }]);
+  });
+
+  it("draws unscaled for a direct caller that does not pass a scale", () => {
+    const { ui, drawn } = recordingUI();
+    new OverlayPopup(
+      ["hi"], Color.White, Color.White, Color.Black, ANCHOR,
+    ).draw(ui);
+    expect(drawn).toEqual([{ x: ANCHOR.x, y: ANCHOR.y }]);
+  });
+
+  it("keeps the other two popup shapes on the same rule", () => {
+    const { ui, drawn } = recordingUI();
+    new OverlayPopupTitle(
+      "Select skill", Color.White, ["1-Agile"], Color.White,
+      Color.White, Color.Black, ANCHOR,
+    ).drawAt(ui, 2);
+    new OverlayPopupTitleColors(
+      "Select skill", Color.White, ["1-Agile"], [Color.White],
+      Color.White, Color.Black, ANCHOR,
+    ).drawAt(ui, 2);
+    expect(drawn).toEqual([
+      { x: ANCHOR.x * 2, y: ANCHOR.y * 2 },
+      { x: ANCHOR.x * 2, y: ANCHOR.y * 2 },
+    ]);
+  });
+
+  it("leaves non-popup overlays out of the popup rule", () => {
+    // They are not boxes, so they keep scaling with the map: a target ring
+    // around a 64px tile has to be 64px too, or it stops pointing at anything.
+    expect(new OverlayRect(Color.Cyan, new Rect(0, 0, 32, 32))).not.toBeInstanceOf(PopupOverlay);
   });
 });
 

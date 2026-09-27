@@ -192,7 +192,7 @@ export class NullRogueUI implements IRogueUI {
 
   UI_ClearMinimap(_color: Color): void { this.count("UI_ClearMinimap"); }
   UI_SetMinimapColor(_x: number, _y: number, _color: Color): void { this.count("UI_SetMinimapColor"); }
-  UI_DrawMinimap(_gx: number, _gy: number): void { this.count("UI_DrawMinimap"); }
+  UI_DrawMinimap(_gx: number, _gy: number, _w: number, _h: number): void { this.count("UI_DrawMinimap"); }
 
   // ── Scale ──────────────────────────────────────────────────────────────────
 

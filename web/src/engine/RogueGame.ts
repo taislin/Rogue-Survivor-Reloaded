@@ -475,20 +475,47 @@ export class CharGen {
 
 export abstract class Overlay {
 	/**
-	 * Whether this overlay is anchored to the map and must be drawn inside the
-	 * map zoom's scaled scope, so that it stays locked to its tile.
+	 * Whether this overlay is anchored to the map rather than to the screen.
 	 *
-	 * Browser port: C# drew every overlay in one pass after the map, with a
-	 * single 32px tile size. Here the map is drawn through `withMapZoom`, so
-	 * map-anchored overlays (tile descriptions, damage icons, target rings) are
-	 * drawn in that same scope. Anything positioned in *screen* space instead
-	 * must opt out, or the map zoom would both move and double it: the side
-	 * panel's item and corpse highlights and descriptions, and the prompts
-	 * pinned to a corner (give mode, skill upgrade).
+	 * Browser port: C# drew every overlay in one pass after the map, at a single
+	 * 32px tile size. Here the map is drawn through `withMapZoom`, so overlays
+	 * that belong *on* the map (target rings, damage icons, the lines joining
+	 * them) are drawn in that same scaled scope and scale with it. Anything
+	 * positioned in *screen* space instead must opt out, or the map zoom would
+	 * move it: the side panel's item and corpse highlights and descriptions, and
+	 * the prompts pinned to a corner (give mode, skill upgrade).
 	 */
 	zoomsWithMap: boolean = true;
 
 	abstract draw(ui: IRogueUI): void;
+}
+
+/**
+ * A popup box, which is never drawn scaled.
+ *
+ * A popup annotates one thing -- a tile, an item, a corpse -- and the map zoom
+ * is a property of the map, not of the annotation. Drawing the box inside the
+ * zoom scope doubled its text along with its fill, so at 2x the actor
+ * description was a box twice the size of the thing it described, covering the
+ * very tiles the player had zoomed in to read.
+ *
+ * So only the *anchor* follows the zoom: `scale` is the factor that turns a
+ * position from `MapToScreen`'s 32px-tile coordinates into the pixels actually
+ * on screen, and the box is then drawn once, unscaled, over unscaled text. A
+ * screen-anchored popup is given `1` and behaves exactly as before.
+ */
+export abstract class PopupOverlay extends Overlay {
+	constructor(zoomsWithMap: boolean = true) {
+		super();
+		this.zoomsWithMap = zoomsWithMap;
+	}
+
+	/** Draws the box at its natural size, anchored at `screenPosition * scale`. */
+	abstract drawAt(ui: IRogueUI, scale: number): void;
+
+	draw(ui: IRogueUI): void {
+		this.drawAt(ui, 1);
+	}
 }
 
 export class OverlayImage extends Overlay {
@@ -581,7 +608,7 @@ export class OverlayRect extends Overlay {
 	}
 }
 
-export class OverlayPopup extends Overlay {
+export class OverlayPopup extends PopupOverlay {
 	constructor(
 		public lines: string[] | null,
 		public textColor: Color,
@@ -590,23 +617,22 @@ export class OverlayPopup extends Overlay {
 		public screenPosition: Point,
 		zoomsWithMap: boolean = true,
 	) {
-		super();
-		this.zoomsWithMap = zoomsWithMap;
+		super(zoomsWithMap);
 	}
-	draw(ui: IRogueUI): void {
+	drawAt(ui: IRogueUI, scale: number): void {
 		if (this.lines === null) return;
 		ui.UI_DrawPopup(
 			this.lines,
 			this.textColor,
 			this.boxBorderColor,
 			this.boxFillColor,
-			this.screenPosition.x,
-			this.screenPosition.y,
+			this.screenPosition.x * scale,
+			this.screenPosition.y * scale,
 		);
 	}
 }
 
-export class OverlayPopupTitle extends Overlay {
+export class OverlayPopupTitle extends PopupOverlay {
 	constructor(
 		public title: string,
 		public titleColor: Color,
@@ -617,10 +643,9 @@ export class OverlayPopupTitle extends Overlay {
 		public screenPosition: Point,
 		zoomsWithMap: boolean = true,
 	) {
-		super();
-		this.zoomsWithMap = zoomsWithMap;
+		super(zoomsWithMap);
 	}
-	draw(ui: IRogueUI): void {
+	drawAt(ui: IRogueUI, scale: number): void {
 		ui.UI_DrawPopupTitle(
 			this.title,
 			this.titleColor,
@@ -628,13 +653,13 @@ export class OverlayPopupTitle extends Overlay {
 			this.textColor,
 			this.boxBorderColor,
 			this.boxFillColor,
-			this.screenPosition.x,
-			this.screenPosition.y,
+			this.screenPosition.x * scale,
+			this.screenPosition.y * scale,
 		);
 	}
 }
 
-export class OverlayPopupTitleColors extends Overlay {
+export class OverlayPopupTitleColors extends PopupOverlay {
 	constructor(
 		public title: string,
 		public titleColor: Color,
@@ -643,10 +668,11 @@ export class OverlayPopupTitleColors extends Overlay {
 		public boxBorderColor: Color,
 		public boxFillColor: Color,
 		public screenPosition: Point,
+		zoomsWithMap: boolean = true,
 	) {
-		super();
+		super(zoomsWithMap);
 	}
-	draw(ui: IRogueUI): void {
+	drawAt(ui: IRogueUI, scale: number): void {
 		ui.UI_DrawPopupTitleColors(
 			this.title,
 			this.titleColor,
@@ -654,8 +680,8 @@ export class OverlayPopupTitleColors extends Overlay {
 			this.colors,
 			this.boxBorderColor,
 			this.boxFillColor,
-			this.screenPosition.x,
-			this.screenPosition.y,
+			this.screenPosition.x * scale,
+			this.screenPosition.y * scale,
 		);
 	}
 }
@@ -19984,22 +20010,24 @@ export class RogueGame {
 		}
 
 		// overlays
-		// Map-anchored overlays — tile and item descriptions, damage icons, target
-		// rings — are drawn inside the map's zoom scope so they stay locked to
-		// their tiles; unclipped, since a prompt pinned to the top left corner
-		// must never be cut in half by the map panel's edge. Overlays anchored in
-		// screen space (the side panel's item and corpse highlights and
-		// descriptions, the give-mode and skill-upgrade prompts) opt out via
-		// `zoomsWithMap`, since the map zoom would otherwise displace and double
-		// them -- the panel itself is drawn unscaled, so its highlights must be
-		// too, and the item popup would otherwise land off the canvas at 2x.
+		// Overlays that belong *on* the map -- damage icons, target rings, the
+		// lines joining them -- are drawn inside the map's zoom scope so they
+		// scale with the map they annotate; unclipped, since a prompt pinned in
+		// the map's top left must never be cut in half by the panel's edge.
+		// Everything else is drawn unscaled, in two groups: popups, whose anchor
+		// is the only part that follows the zoom (`zoomsWithMap` decides whether
+		// it does), and screen-anchored overlays, which the zoom must not move at
+		// all -- the side panel's item and corpse highlights and descriptions,
+		// and the give-mode and skill-upgrade prompts.
 		this.withMapZoom(() => {
 			for (const o of this.m_Overlays) {
-				if (o.zoomsWithMap) o.draw(this.m_UI);
+				if (o.zoomsWithMap && !(o instanceof PopupOverlay)) o.draw(this.m_UI);
 			}
 		}, false);
 		for (const o of this.m_Overlays) {
-			if (!o.zoomsWithMap) o.draw(this.m_UI);
+			if (o instanceof PopupOverlay)
+				o.drawAt(this.m_UI, o.zoomsWithMap ? s_MapZoom : 1);
+			else if (!o.zoomsWithMap) o.draw(this.m_UI);
 		}
 
 		// DEV STATS
@@ -21187,8 +21215,17 @@ export class RogueGame {
 				}
 			}
 
-			// show minimap. Cheap: one putImageData of an unchanged 100x100 buffer.
-			this.m_UI.UI_DrawMinimap(MINIMAP_X, MINIMAP_Y);
+			// Show minimap. Cheap: one putImageData of an unchanged 100x100 buffer.
+			// The size is passed in because it is not the raster's size: the map is
+			// drawn at `MINITILE_SIZE` per tile, and everything positioned on the
+			// minimap below -- the view rect, the player tag, the field-of-view
+			// boxes -- works in those scaled coordinates.
+			this.m_UI.UI_DrawMinimap(
+				MINIMAP_X,
+				MINIMAP_Y,
+				MAP_MAX_WIDTH * MINITILE_SIZE,
+				MAP_MAX_HEIGHT * MINITILE_SIZE,
+			);
 		}
 
 		// show view rect.

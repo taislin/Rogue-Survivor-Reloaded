@@ -25,6 +25,8 @@ import {
   MINITILE_SIZE,
   MAP_MAX_WIDTH,
   MAP_MAX_HEIGHT,
+  TILE_VIEW_WIDTH,
+  TILE_VIEW_HEIGHT,
   LOCATIONPANEL_Y,
   LOCATIONPANEL_TEXT_Y,
   LOCATIONPANEL_LINE_SPACING,
@@ -38,6 +40,7 @@ import {
 } from "@engine/RogueGame";
 import { Skills } from "@gameplay/Skills";
 import { Session, GameMode } from "@engine/Session";
+import { MINIMAP_W, MINIMAP_H } from "@ui/CanvasUI";
 
 /**
  * The HUD has no layout engine. Every block is a hardcoded pixel offset, and the
@@ -111,6 +114,71 @@ describe("HUD vertical stack: nothing overlaps", () => {
     expect(MINIMAP_X + MAP_MAX_WIDTH * MINITILE_SIZE).toBeLessThanOrEqual(CANVAS_WIDTH);
     expect(MINIMAP_Y).toBeGreaterThanOrEqual(SKILLTABLE_Y);
     expect(MINIMAP_Y + MAP_MAX_HEIGHT * MINITILE_SIZE).toBeLessThanOrEqual(CANVAS_HEIGHT);
+  });
+});
+
+describe("the minimap and what is drawn on it share one coordinate space", () => {
+  /**
+   * `UI_DrawMinimap` used to take only a position and drew the raster at its own
+   * size, i.e. 1px per tile, while everything positioned on the minimap worked in
+   * `MINITILE_SIZE` pixels per tile. The map therefore came out at half size, and
+   * the view rect -- the box showing where the player is and what the screen
+   * covers -- sat at twice its offset from the minimap's origin, out in the empty
+   * part of the panel.
+   *
+   * So the drawn size is now the engine's to state, and these checks are here to
+   * hold the two sides together: the raster is one pixel per tile, the drawn map
+   * is `MINITILE_SIZE` per tile, and every box on it stays inside.
+   */
+  const drawnW = MAP_MAX_WIDTH * MINITILE_SIZE;
+  const drawnH = MAP_MAX_HEIGHT * MINITILE_SIZE;
+
+  it("keeps the renderer's raster at one pixel per map tile", () => {
+    // If the raster's size and the engine's idea of the maximum map size ever
+    // diverge, the scale factor below stops meaning "pixels per tile".
+    expect(MINIMAP_W).toBe(MAP_MAX_WIDTH);
+    expect(MINIMAP_H).toBe(MAP_MAX_HEIGHT);
+  });
+
+  it("draws the map larger than its raster", () => {
+    expect(drawnW).toBeGreaterThan(MINIMAP_W);
+    expect(drawnH).toBeGreaterThan(MINIMAP_H);
+  });
+
+  it("puts the view rect on the map, wherever the camera is", () => {
+    // The view rect is drawn at `MINIMAP_X + left * MINITILE_SIZE`, so the only
+    // way it can miss the map is if the two disagree on the scale. Check all
+    // four corners of the map against the drawn extent.
+    for (const [x, y] of [[0, 0], [MAP_MAX_WIDTH, 0], [0, MAP_MAX_HEIGHT], [MAP_MAX_WIDTH, MAP_MAX_HEIGHT]]) {
+      const rectX = MINIMAP_X + x * MINITILE_SIZE;
+      const rectY = MINIMAP_Y + y * MINITILE_SIZE;
+      expect(rectX).toBeGreaterThanOrEqual(MINIMAP_X);
+      expect(rectY).toBeGreaterThanOrEqual(MINIMAP_Y);
+      expect(rectX).toBeLessThanOrEqual(MINIMAP_X + drawnW);
+      expect(rectY).toBeLessThanOrEqual(MINIMAP_Y + drawnH);
+    }
+  });
+
+  it("fits a full-width view rect inside the drawn map", () => {
+    // The widest the camera ever gets, at the far corner, has to land on the map
+    // rather than past its edge.
+    const viewW = TILE_VIEW_WIDTH * MINITILE_SIZE;
+    const viewH = TILE_VIEW_HEIGHT * MINITILE_SIZE;
+    expect(viewW).toBeLessThanOrEqual(drawnW);
+    expect(viewH).toBeLessThanOrEqual(drawnH);
+    expect(MINIMAP_X + (MAP_MAX_WIDTH - TILE_VIEW_WIDTH) * MINITILE_SIZE + viewW)
+      .toBeLessThanOrEqual(MINIMAP_X + drawnW);
+  });
+
+  it("has no room to grow without taking from the skill table", () => {
+    // `MINIMAP_Y` is derived from the bottom strip, and the skill table is packed
+    // against it: 1 px of air above, none below, and the drawn map already fills
+    // the strip exactly. So `MINITILE_SIZE` is not free to go up -- going from 2
+    // to 3 wants 100 more px and would have to come out of the skill table or the
+    // log. Pinning the numbers means that has to be done on purpose.
+    const tableBottom = SKILLTABLE_Y + SKILLTABLE_LINES * LINE_SPACING;
+    expect(MINIMAP_Y - tableBottom).toBe(1);
+    expect(MINIMAP_Y + drawnH).toBe(MESSAGES_Y - 1);
   });
 });
 
