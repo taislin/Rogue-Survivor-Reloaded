@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { GameOptions, OptionIDs, SimRatio } from "@engine/GameOptions";
+import { GameOptions, OptionIDs } from "@engine/GameOptions";
 import { Session } from "@engine/Session";
 
 /**

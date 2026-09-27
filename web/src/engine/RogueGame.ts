@@ -243,13 +243,52 @@ export const RIGHTPANEL_TEXT_Y: number = RIGHTPANEL_Y + 4;
 export const INVENTORYPANEL_X: number = RIGHTPANEL_TEXT_X;
 export const INVENTORYPANEL_Y: number = RIGHTPANEL_TEXT_Y + 170;
 /**
- * Height reserved for each of the three stacked item panels (inventory, ground,
- * corpses). C# used 64; at 10 pt the skill table below them needs the room, so
- * this is 56. It is not arbitrary: one panel is a single row of `TILE_SIZE`
- * item icons with the slot numbers drawn on the next text line, which needs
- * 32 + 12 = 44, leaving 12 px of air.
+ * Side-panel leading, raised from C#'s 12/14 to match the 10 pt HUD font.
+ *
+ * `DrawActorStatus` uses `BOLD_LINE_SPACING` as its horizontal unit as well as
+ * its row step (`gx + BOLD_LINE_SPACING * 5` is where the HP bar starts), so
+ * widening the panel and enlarging the text are the same edit: the bar and its
+ * trailing status word both scale with this number and stay in step with the
+ * glyphs.
+ *
+ * Declared above the item panels below, which size themselves from
+ * `LINE_SPACING`.
  */
-export const SIDEPANEL_SECTION_HEIGHT: number = 56;
+export const LINE_SPACING: number = 15;
+export const BOLD_LINE_SPACING: number = 17;
+/**
+ * Leading above an item panel's row of icons, where `DrawInventory` draws the
+ * panel's title.
+ *
+ * C# stepped back by `BOLD_LINE_SPACING`; the browser port uses the narrower
+ * regular leading instead, because the side panel's vertical budget is already
+ * spent (see `SIDEPANEL_SECTION_HEIGHT`) and 2 px is the whole difference
+ * between the slot numbers of one panel colliding with the next panel's title
+ * and clearing it.
+ */
+export const SIDEPANEL_TITLE_LEADING: number = LINE_SPACING;
+/**
+ * Height reserved for each of the three stacked item panels (inventory, ground,
+ * corpses). C# used 64.
+ *
+ * It is not free to grow: the skill table below has to end above the minimap,
+ * and 60 is what is left of the 1366x768 side panel. So the budget is spent
+ * exactly, and it has to be spent in the right places. One section holds:
+ *
+ *  - `SIDEPANEL_TITLE_LEADING` (15) for the title `DrawInventory` draws above
+ *    the row, and
+ *  - `TILE_SIZE` (32) for the row of icons itself, and
+ *  - a 13 px text line for the slot numbers `DrawInventory` draws on the line
+ *    below the icons.
+ *
+ * The previous value of 56 came from adding up only the last two and calling the
+ * 12 px that remained "air", which ignored the title: the numbers' line ended
+ * 6 px *below* where the next panel's title began, so every panel's numbers
+ * printed across the next panel's title, and a click there selected an item of
+ * the panel below. The test `hud-layout.test.ts` encoded the same incomplete
+ * arithmetic, which is why it passed.
+ */
+export const SIDEPANEL_SECTION_HEIGHT: number = 60;
 export const GROUNDINVENTORYPANEL_Y: number =
 	INVENTORYPANEL_Y + SIDEPANEL_SECTION_HEIGHT;
 export const CORPSESPANEL_Y: number =
@@ -291,17 +330,6 @@ export const MINI_TRACKER_OFFSET: number = 1;
 export const DELAY_SHORT: number = 250;
 export const DELAY_NORMAL: number = 500;
 export const DELAY_LONG: number = 1000;
-/**
- * Side-panel leading, raised from C#'s 12/14 to match the 10 pt HUD font.
- *
- * `DrawActorStatus` uses `BOLD_LINE_SPACING` as its horizontal unit as well as
- * its row step (`gx + BOLD_LINE_SPACING * 5` is where the HP bar starts), so
- * widening the panel and enlarging the text are the same edit: the bar and its
- * trailing status word both scale with this number and stay in step with the
- * glyphs.
- */
-export const LINE_SPACING: number = 15;
-export const BOLD_LINE_SPACING: number = 17;
 /**
  * Leading for the bottom-right location panel, which is deliberately *not*
  * `LINE_SPACING`. It has seven fixed rows (map, zone, day, hour, turn, score,
@@ -446,6 +474,20 @@ export class CharGen {
 // ── C# `#region Overlays` (RogueGame.cs:452) ────────────────────────────────
 
 export abstract class Overlay {
+	/**
+	 * Whether this overlay is anchored to the map and must be drawn inside the
+	 * map zoom's scaled scope, so that it stays locked to its tile.
+	 *
+	 * Browser port: C# drew every overlay in one pass after the map, with a
+	 * single 32px tile size. Here the map is drawn through `withMapZoom`, so
+	 * map-anchored overlays (tile descriptions, damage icons, target rings) are
+	 * drawn in that same scope. Anything positioned in *screen* space instead
+	 * must opt out, or the map zoom would both move and double it: the side
+	 * panel's item and corpse highlights and descriptions, and the prompts
+	 * pinned to a corner (give mode, skill upgrade).
+	 */
+	zoomsWithMap: boolean = true;
+
 	abstract draw(ui: IRogueUI): void;
 }
 
@@ -529,8 +571,10 @@ export class OverlayRect extends Overlay {
 	constructor(
 		public color: Color,
 		public rectangle: Rect,
+		zoomsWithMap: boolean = true,
 	) {
 		super();
+		this.zoomsWithMap = zoomsWithMap;
 	}
 	draw(ui: IRogueUI): void {
 		ui.UI_DrawRect(this.color, this.rectangle);
@@ -544,8 +588,10 @@ export class OverlayPopup extends Overlay {
 		public boxBorderColor: Color,
 		public boxFillColor: Color,
 		public screenPosition: Point,
+		zoomsWithMap: boolean = true,
 	) {
 		super();
+		this.zoomsWithMap = zoomsWithMap;
 	}
 	draw(ui: IRogueUI): void {
 		if (this.lines === null) return;
@@ -569,8 +615,10 @@ export class OverlayPopupTitle extends Overlay {
 		public boxBorderColor: Color,
 		public boxFillColor: Color,
 		public screenPosition: Point,
+		zoomsWithMap: boolean = true,
 	) {
 		super();
+		this.zoomsWithMap = zoomsWithMap;
 	}
 	draw(ui: IRogueUI): void {
 		ui.UI_DrawPopupTitle(
@@ -7110,13 +7158,16 @@ export class RogueGame {
 		let hasDoneAction = false;
 		this.ClearOverlays();
 		const itemPos = hit.itemPos;
+		// The last `false` on every overlay here: these are anchored to the side
+		// panel, which is drawn unscaled, so the map zoom must leave them be.
 		this.AddOverlay(
-			new OverlayRect(Color.Cyan, new Rect(itemPos.x, itemPos.y, 32, 32)),
+			new OverlayRect(Color.Cyan, new Rect(itemPos.x, itemPos.y, 32, 32), false),
 		);
 		this.AddOverlay(
 			new OverlayRect(
 				Color.Cyan,
 				new Rect(itemPos.x + 1, itemPos.y + 1, 30, 30),
+				false,
 			),
 		);
 		const it = hit.result;
@@ -7133,6 +7184,7 @@ export class RogueGame {
 					Color.White,
 					this.POPUP_FILLCOLOR,
 					new Point(ovX, ovY),
+					false,
 				),
 			);
 
@@ -7161,15 +7213,14 @@ export class RogueGame {
 		if (this.m_Player == null) return { result: null, inv, itemPos, iSlot };
 
 		const playerInv = this.m_Player.inventory!;
-		const playerSlot = this.MouseToInventorySlot(
+		const playerSlot = this.PanelSlotAtMouse(
 			INVENTORYPANEL_X,
 			INVENTORYPANEL_Y,
+			playerInv.maxCapacity,
 			screen.x,
 			screen.y,
 		);
-		const playerItemIndex =
-			playerSlot.x + playerSlot.y * INVENTORY_SLOTS_PER_LINE;
-		if (playerItemIndex >= 0 && playerItemIndex < playerInv.maxCapacity) {
+		if (playerSlot != null) {
 			inv = playerInv;
 			itemPos = this.InventorySlotToScreen(
 				INVENTORYPANEL_X,
@@ -7177,9 +7228,9 @@ export class RogueGame {
 				playerSlot.x,
 				playerSlot.y,
 			);
-			iSlot = playerItemIndex;
+			iSlot = playerSlot.index;
 			return {
-				result: playerInv.getItem(playerItemIndex),
+				result: playerInv.getItem(playerSlot.index),
 				inv,
 				itemPos,
 				iSlot,
@@ -7189,26 +7240,25 @@ export class RogueGame {
 		const groundInv =
 			this.m_Player.location.map?.getItemsAt(this.m_Player.location.position) ??
 			null;
-		const groundSlot = this.MouseToInventorySlot(
+		if (groundInv == null) return { result: null, inv, itemPos, iSlot };
+		const groundSlot = this.PanelSlotAtMouse(
 			INVENTORYPANEL_X,
 			GROUNDINVENTORYPANEL_Y,
+			groundInv.maxCapacity,
 			screen.x,
 			screen.y,
 		);
-		itemPos = this.InventorySlotToScreen(
-			INVENTORYPANEL_X,
-			GROUNDINVENTORYPANEL_Y,
-			groundSlot.x,
-			groundSlot.y,
-		);
-		if (groundInv == null) return { result: null, inv, itemPos, iSlot };
-		const groundItemIndex =
-			groundSlot.x + groundSlot.y * INVENTORY_SLOTS_PER_LINE;
-		if (groundItemIndex >= 0 && groundItemIndex < groundInv.maxCapacity) {
+		if (groundSlot != null) {
 			inv = groundInv;
-			iSlot = groundItemIndex;
+			itemPos = this.InventorySlotToScreen(
+				INVENTORYPANEL_X,
+				GROUNDINVENTORYPANEL_Y,
+				groundSlot.x,
+				groundSlot.y,
+			);
+			iSlot = groundSlot.index;
 			return {
-				result: groundInv.getItem(groundItemIndex),
+				result: groundInv.getItem(groundSlot.index),
 				inv,
 				itemPos,
 				iSlot,
@@ -7307,13 +7357,20 @@ export class RogueGame {
 		let hasDoneAction = false;
 		this.ClearOverlays();
 		const corpsePos = hit.corpsePos;
+		// Side-panel anchored, like the item highlights: the map zoom must not
+		// move or enlarge them.
 		this.AddOverlay(
-			new OverlayRect(Color.Cyan, new Rect(corpsePos.x, corpsePos.y, 32, 32)),
+			new OverlayRect(
+				Color.Cyan,
+				new Rect(corpsePos.x, corpsePos.y, 32, 32),
+				false,
+			),
 		);
 		this.AddOverlay(
 			new OverlayRect(
 				Color.Cyan,
 				new Rect(corpsePos.x + 1, corpsePos.y + 1, 30, 30),
+				false,
 			),
 		);
 		if (corpse != null) {
@@ -7329,6 +7386,7 @@ export class RogueGame {
 					Color.White,
 					this.POPUP_FILLCOLOR,
 					new Point(ovX, ovY),
+					false,
 				),
 			);
 
@@ -7355,23 +7413,21 @@ export class RogueGame {
 			) ?? null;
 		if (corpsesList == null) return { result: null, corpsePos };
 
-		const corpseSlot = this.MouseToInventorySlot(
+		const corpseSlot = this.PanelSlotAtMouse(
 			INVENTORYPANEL_X,
 			CORPSESPANEL_Y,
+			corpsesList.length,
 			screen.x,
 			screen.y,
 		);
+		if (corpseSlot == null) return { result: null, corpsePos };
 		corpsePos = this.InventorySlotToScreen(
 			INVENTORYPANEL_X,
 			CORPSESPANEL_Y,
 			corpseSlot.x,
 			corpseSlot.y,
 		);
-		const corpseIndex = corpseSlot.x + corpseSlot.y * INVENTORY_SLOTS_PER_LINE;
-		if (corpseIndex >= 0 && corpseIndex < corpsesList.length)
-			return { result: corpsesList[corpseIndex], corpsePos };
-
-		return { result: null, corpsePos };
+		return { result: corpsesList[corpseSlot.index], corpsePos };
 	}
 
 	// C# OnLMBCorpse — RogueGame.cs:6880
@@ -7844,6 +7900,7 @@ export class RogueGame {
 				this.MODE_BORDERCOLOR,
 				this.MODE_FILLCOLOR,
 				new Point(0, 0),
+				false,
 			),
 		);
 		do {
@@ -19012,6 +19069,7 @@ export class RogueGame {
 					Color.White,
 					Color.Black,
 					new Point(64, 64),
+					false,
 				);
 				this.AddOverlay(popup);
 			}
@@ -19926,12 +19984,23 @@ export class RogueGame {
 		}
 
 		// overlays
-		// Anchored to the map — tile and item descriptions, damage icons, target
-		// rings — so they zoom with it; unclipped, since a prompt pinned to the top
-		// left corner must never be cut in half by the map panel's edge.
+		// Map-anchored overlays — tile and item descriptions, damage icons, target
+		// rings — are drawn inside the map's zoom scope so they stay locked to
+		// their tiles; unclipped, since a prompt pinned to the top left corner
+		// must never be cut in half by the map panel's edge. Overlays anchored in
+		// screen space (the side panel's item and corpse highlights and
+		// descriptions, the give-mode and skill-upgrade prompts) opt out via
+		// `zoomsWithMap`, since the map zoom would otherwise displace and double
+		// them -- the panel itself is drawn unscaled, so its highlights must be
+		// too, and the item popup would otherwise land off the canvas at 2x.
 		this.withMapZoom(() => {
-			for (const o of this.m_Overlays) o.draw(this.m_UI);
+			for (const o of this.m_Overlays) {
+				if (o.zoomsWithMap) o.draw(this.m_UI);
+			}
 		}, false);
+		for (const o of this.m_Overlays) {
+			if (!o.zoomsWithMap) o.draw(this.m_UI);
+		}
 
 		// DEV STATS
 		if (s_Options.DEV_ShowActorsStats) {
@@ -21777,9 +21846,9 @@ export class RogueGame {
 		let slot = 0;
 
 		// Draw title.
-		gy -= BOLD_LINE_SPACING;
+		gy -= SIDEPANEL_TITLE_LEADING;
 		this.m_UI.UI_DrawStringBold(Color.White, title, gx, gy);
-		gy += BOLD_LINE_SPACING;
+		gy += SIDEPANEL_TITLE_LEADING;
 
 		// Draw slots.
 		x = gx;
@@ -22098,20 +22167,44 @@ export class RogueGame {
 		return this.MouseToMap(mousePosition.x, mousePosition.y);
 	}
 
-	// C# MouseToInventorySlot — RogueGame.cs:19643
-	MouseToInventorySlot(
-		invX: number,
-		invY: number,
+	/**
+	 * The panel slot under the mouse, or `null` when the pointer is not over one
+	 * of the icons `DrawInventory` laid out at (`panelX`, `panelY`).
+	 *
+	 * Replaces C#'s `MouseToInventorySlot` (RogueGame.cs:19643), which returned
+	 * an unbounded grid position: it divided by `TILE_SIZE` and stopped, leaving
+	 * the callers to ask only whether the index was below `maxCapacity`. All
+	 * three item panels share one x origin, so a click on a panel's title or
+	 * slot-number row, or in the pixels between two sections, still produced a
+	 * slot -- and the cyan highlight and description popup then appeared offset
+	 * from the icon they belonged to. Worst of all, one panel's slot numbers are
+	 * drawn across the next panel's title, so clicking the numbers selected an
+	 * item of the panel *below*.
+	 *
+	 * The bounds use `Math.floor` rather than C#'s truncating division: a
+	 * pointer above a panel is a negative row, and truncating toward zero folds
+	 * the panel's own title into row 0. With both axes checked the hitbox is
+	 * exactly the drawn grid, which is the whole point -- the draw side and the
+	 * hit side have to agree, and they can only do that if there is one
+	 * implementation of the grid between them.
+	 */
+	PanelSlotAtMouse(
+		panelX: number,
+		panelY: number,
+		maxSlots: number,
 		mouseX: number,
 		mouseY: number,
-	): Point {
+		slotsPerLine: number = INVENTORY_SLOTS_PER_LINE,
+	): { x: number; y: number; index: number } | null {
 		const mx = Math.trunc(mouseX / this.m_UI.UI_GetCanvasScaleX());
 		const my = Math.trunc(mouseY / this.m_UI.UI_GetCanvasScaleY());
 
-		return new Point(
-			Math.trunc((mx - invX) / 32),
-			Math.trunc((my - invY) / 32),
-		);
+		const x = Math.floor((mx - panelX) / TILE_SIZE);
+		const y = Math.floor((my - panelY) / TILE_SIZE);
+		if (x < 0 || y < 0 || x >= slotsPerLine) return null;
+
+		const index = x + y * slotsPerLine;
+		return index < maxSlots ? { x, y, index } : null;
 	}
 
 	// C# InventorySlotToScreen — RogueGame.cs:19651

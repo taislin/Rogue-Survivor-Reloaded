@@ -335,6 +335,19 @@ export class CanvasUI implements IRogueUI {
   private frameSkips = 0;
   private readonly frameSkippedIds = new Set<string>();
 
+  /**
+   * Scale of the innermost `UI_BeginScaledDraw` scope, `1` at the top level.
+   *
+   * The map is drawn through a 2x transform, and map-anchored overlays share
+   * that scope so they stay locked to their tiles. Anything that has to reason
+   * about "where is the edge of the screen" -- currently `drawPopupBox`, which
+   * clamps a box to the visible area -- divides the logical canvas by this, so
+   * it gets the same numbers the transform does.
+   */
+  private scaledDrawScale = 1;
+  /** `scaledDrawScale` for each open scope, restored by `UI_EndScaledDraw`. */
+  private readonly scaledDrawStack: number[] = [];
+
   private tallyDraw(imageId: string | null, drew: boolean): void {
     if (!CanvasUI.debugDraw) return;
     if (drew) {
@@ -489,6 +502,8 @@ export class CanvasUI implements IRogueUI {
    */
   UI_BeginScaledDraw(scale: number, clipRect?: Rect): void {
     this.ctx.save();
+    this.scaledDrawStack.push(this.scaledDrawScale);
+    this.scaledDrawScale *= scale;
     if (clipRect != null) {
       this.ctx.beginPath();
       this.ctx.rect(clipRect.x, clipRect.y, clipRect.width, clipRect.height);
@@ -499,6 +514,7 @@ export class CanvasUI implements IRogueUI {
 
   UI_EndScaledDraw(): void {
     this.ctx.restore();
+    this.scaledDrawScale = this.scaledDrawStack.pop() ?? 1;
   }
 
   // ── Text ──────────────────────────────────────────────────────────────────
@@ -560,6 +576,38 @@ export class CanvasUI implements IRogueUI {
     this.drawPopupBox(lines, colors, title, titleColor, borderColor, fillColor, gx, gy);
   }
 
+  /**
+   * Nudges a popup's top-left so the whole box stays on screen.
+   *
+   * A popup is placed relative to whatever it describes, so a description of
+   * something in the last row or column hangs off the edge. C# clipped that off
+   * against the map panel; the browser port draws its popups unclipped (a
+   * prompt pinned in the map's top left must not be cut in half), so the box has
+   * to be moved instead.
+   *
+   * `scale` is the ambient `UI_BeginScaledDraw` scale, because the visible area
+   * in the current transform is the logical canvas *divided* by it: the map's 2x
+   * scope shows the same 1366x768 of screen through half as much canvas space,
+   * so clamping against the unscaled canvas would let a box sit well past the
+   * right and bottom edges. Dividing is what makes this one clamp correct both at
+   * 1x, where the answer is the canvas itself, and inside the map's scope, where
+   * the same box ends up in the same place on screen.
+   *
+   * A box wider or taller than the visible area is left at the origin rather than
+   * given a negative coordinate: it will overflow either way, and starting at 0
+   * keeps as much of it as possible readable.
+   */
+  static clampPopupBox(
+    gx: number, gy: number, boxW: number, boxH: number, scale: number,
+  ): { x: number; y: number } {
+    const viewW = LOGICAL_W / scale;
+    const viewH = LOGICAL_H / scale;
+    return {
+      x: Math.max(0, Math.min(gx, viewW - boxW)),
+      y: Math.max(0, Math.min(gy, viewH - boxH)),
+    };
+  }
+
   private drawPopupBox(
     lines: string[], colors: Color[],
     title: string | null, titleColor: Color | null,
@@ -578,6 +626,18 @@ export class CanvasUI implements IRogueUI {
     const padX = 6, padY = 6;
     const boxW = maxWidth + padX * 2;
     const boxH = totalLines * this.MENU_LINE_H + padY * 2;
+
+    // Keep the whole box on screen. Popups are positioned relative to whatever
+    // they describe -- the hovered tile, an item slot, a corner -- and C# let
+    // the map panel clip whatever hung off the edge. There is no such clip here
+    // (the overlay pass draws its popups unclipped so a prompt in the map's top
+    // left is never cut in half), so a long description near the right or bottom
+    // edge would simply run off the canvas; at 2x map zoom, where the transform
+    // doubles both the anchor and the box, it landed in the bottom right corner
+    // and off the screen entirely.
+    const clamped = CanvasUI.clampPopupBox(gx, gy, boxW, boxH, this.scaledDrawScale);
+    gx = clamped.x;
+    gy = clamped.y;
 
     // Background
     this.ctx.fillStyle = fillColor.toCssRgba();

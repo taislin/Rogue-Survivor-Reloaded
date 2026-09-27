@@ -10,6 +10,7 @@ import {
   RIGHTPANEL_TEXT_Y,
   INVENTORYPANEL_Y,
   SIDEPANEL_SECTION_HEIGHT,
+  SIDEPANEL_TITLE_LEADING,
   GROUNDINVENTORYPANEL_Y,
   CORPSESPANEL_Y,
   SKILLTABLE_Y,
@@ -79,11 +80,21 @@ describe("HUD vertical stack: nothing overlaps", () => {
     expect(blockBottom).toBeLessThanOrEqual(INVENTORYPANEL_Y);
   });
 
-  it("each item panel gets enough room for one icon row plus its slot numbers", () => {
-    // One row of TILE_SIZE icons, with the slot numbers drawn on the next text
-    // line, is 32 + 12 = 44 px. Less than that and the numbers of one panel
-    // print inside the next.
-    expect(SIDEPANEL_SECTION_HEIGHT).toBeGreaterThanOrEqual(TILE_SIZE + GLYPH_HEIGHT);
+  it("each item panel gets enough room for its title, icon row and slot numbers", () => {
+    // `DrawInventory` draws three things per panel: the title, stepped back by
+    // `SIDEPANEL_TITLE_LEADING`; a row of `TILE_SIZE` icons; and the slot numbers
+    // on the text line below the icons. The previous version of this check added
+    // up only the last two (32 + 13) and treated the remainder as air, which
+    // ignored the title: at 56 the numbers' line ended 6 px *below* where the
+    // next panel's title began, so every panel's numbers printed across the next
+    // panel's title. Sizing from all three is what keeps them apart.
+    const perSection = SIDEPANEL_TITLE_LEADING + TILE_SIZE + GLYPH_HEIGHT;
+    expect(SIDEPANEL_SECTION_HEIGHT).toBeGreaterThanOrEqual(perSection);
+    // The overlap itself, in the drawing's own terms: one panel's numbers must
+    // end above where the next panel's title starts.
+    expect(INVENTORYPANEL_Y + TILE_SIZE + GLYPH_HEIGHT).toBeLessThanOrEqual(
+      GROUNDINVENTORYPANEL_Y - SIDEPANEL_TITLE_LEADING,
+    );
     expect(GROUNDINVENTORYPANEL_Y).toBe(INVENTORYPANEL_Y + SIDEPANEL_SECTION_HEIGHT);
     expect(CORPSESPANEL_Y).toBe(GROUNDINVENTORYPANEL_Y + SIDEPANEL_SECTION_HEIGHT);
     expect(SKILLTABLE_Y).toBe(CORPSESPANEL_Y + SIDEPANEL_SECTION_HEIGHT);
