@@ -865,6 +865,8 @@ export class GameOptions {
       return "Will autosave at regular intervals when you start sleeping, start a long wait or change map.\nManually saving the game will reschedule the next autosave.";
     case OptionIDs.UI_SPRITE_STYLE:
       return "Which sprite set to draw the game with.\nThe other sets are variations of the classic one and do not contain every sprite: anything they are missing is drawn from classic, so a missing entry falls back rather than leaving a hole.";
+    case OptionIDs.UI_FONT_CHOICE:
+      return "Which typeface to draw the text with.\nJetBrains Mono is bundled, so it looks the same everywhere and works offline. Classic uses the system's own monospace font, which is what this game was drawn with before.";
       default:
         throw new Error("unhandled option");
     }
