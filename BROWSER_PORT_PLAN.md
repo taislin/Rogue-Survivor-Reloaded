@@ -40,7 +40,7 @@ Porting a C# WinForms zombie-survival roguelike (195 files, ~2.5 MB, largest `Ro
    - [1.1 The bug log — 56 bugs](#11-the-bug-log--56-bugs) · [the four bug classes](#the-four-bug-classes-below-and-the-one-lesson-that-covers-them)
    - [1.1b](#11b-five-more-bugs-found-by-playing-the-thing-2026-09-27) found by playing it · [1.1c](#11c-eighteen-bugs-in-the-csv--json-data-layer-2026-09-27) the data layer · [1.1d](#11d-eight-bugs-in-the-per-actor-abilities-2026-09-27) per-actor abilities · [1.1e](#11e-the-actor-data-table-was-bound-by-position-not-by-id-2026-09-27) data binding · [1.1f](#11f-six-more-fidelity-bugs-from-a-sweep-of-the-four-unaudited-tables-2026-09-27) table fidelity · [1.1g](#11g-what-that-sweep-proved-clean--do-not-re-audit) **proven clean**
    - [1.2](#12-the-harness-now-runs-real-games) sim baseline · [1.2a](#12a-four-things-that-look-like-bugs-but-are-not) **not bugs**
-   - [1.3](#13-how-to-run-it) commands · [1.4](#14-runs-are-now-reproducible) seeding · [1.4a](#14a-minimap-reveal-bug--fixed-and-the-diagnosis-here-was-wrong) a wrong diagnosis, kept
+   - [1.3](#13-how-to-run-it) commands · [1.4](#14-runs-are-now-reproducible) seeding · [1.4a](#14a-minimap-reveal-bug--fixed-and-the-diagnosis-here-was-wrong) a wrong diagnosis, kept · [1.4b](#14b-the-world-behind-the-player-stopped-running-2026-09-27) **the background sim had no thread**
    - [1.5](#15-next-steps) **next steps** · [1.6](#16-known-non-bugs-do-not-re-investigate) · [1.7](#17-git-state)
 2. [Quick Reference](#2-quick-reference) — layout, porting rules, build commands
 3. [Phase Status](#3-phase-status)
@@ -611,6 +611,74 @@ tracks the visited set and the §4.1d cache stays correct. Verified: FOV of 46
 tiles with the player's own tile in view, and the minimap raster now rebuilds as
 ground is explored rather than once per run.
 
+### 1.4b The world behind the player stopped running (2026-09-27)
+
+Not a crash and not a wrong number — a **performance** divergence that only
+shows up while playing, which is why §1.5 item 1 is the highest-value activity on
+this list.
+
+The C# ran `SimulateNearbyDistricts` on a real thread every 10 ms
+(`SimThreadProc`, `RogueGame.cs:21550`), with the mutex that would have
+serialised it against the player's turn commented out as obsolete. So the
+original kept neighbouring districts continuously current, and entering one cost
+nothing. The port has no thread: `StartSimThread` / `SimThreadProc` are empty
+bodies. The same catch-up runs inline from `advancePlayDistrict`, but **only
+while the player is sleeping**.
+
+Measured on a 1×1 world: after 60 turns of normal play the neighbours were **60
+turns behind**, and paying the whole deficit on entry cost **274 ms** in one
+blocking burst — rising with how long the game has been running, since the
+deficit accumulates.
+
+**A Worker is the wrong answer, not a missing one.** `World` / `Session` /
+`Scoring` are shared mutable state; that is precisely why the C# needed a lock
+and then abandoned it. So the fix spends the *player's* idle time instead of a
+second core: a turn-based game is most idle exactly when its player is
+thinking, and that slack is free. The catch-up runs inside `WaitKeyOrMouse`,
+one turn of the **most-behind** neighbour per poll (~22 ms), instead of
+`SimulateNearbyDistricts`'s all-at-once 274 ms. Most-behind rather than
+round-robin so it converges evenly; one district rather than all of them so
+preemption stays at a turn boundary.
+
+The choices worth not relitigating:
+
+- **Mouse movement is not activity.** A player reading the map moves the cursor
+  over it constantly, and counting that would starve the catch-up during exactly
+  the thinking time it exists to fill. Only key presses and mouse *buttons*
+  reset the clock.
+- **The delay is 1 s** (`idleSimDelayMs`, a field rather than a `GameOptions`
+  entry, like `botDelayMs` — the C# had a thread with a 10 ms sleep, not a
+  setting, so there is no original to name an option after).
+- **It is gated on `s_Options.isSimON`**, the same gate the sleep-path catch-up
+  uses. A district simulation the player has switched off stays off.
+- **Reproducibility is intact by construction, not by luck.** The headless
+  simulator is never idle — `NullRogueUI.UI_PeekKey` always hands back a
+  synthesised key, so the wait returns immediately and the branch is never
+  reached. `tests/integration/reproducibility.test.ts` enforces it.
+- **Preemption can only happen at a turn boundary** (~22 ms). A keypress
+  arriving mid-turn waits for that turn to finish, and only while the player is
+  idle, which is the only time any of this runs.
+
+**A background turn must never take a keypress.** `AddMessagePressEnter` is
+background-reachable through `ShowNewAchievement`, which awards achievements for
+activity anywhere in the world and then blocks on ENTER without checking that
+the player is present. On the C# sim thread that was harmless — nobody was typing
+into it — but here the catch-up runs *inside the input wait*, so an achievement
+earned two districts away would swallow the keypress the player was about to
+make and drop a `<press ENTER>` into their log. It now returns early while a
+background turn runs, leaving the informative message the caller already added.
+Every other input-blocking helper needed no guard: they are all player-only
+flows, or they gate on `IsVisibleToPlayer`, which is false for every actor in a
+district being caught up.
+
+Pinned by `tests/idle-district-sim.test.ts` (8 cases), including the two that
+matter most: that the catch-up converges *exactly* (no overshoot, no spin) and
+stops, and that mouse movement does not reset the clock.
+
+**Lesson: the headless sim cannot find this class of bug at all.** It never
+idles, and the burst it would have hit only happens on district entry. The
+measurement that found it was 60 player turns and a stopwatch, not a test.
+
 ### 1.5 Next steps
 
 **Open work, in priority order.** Struck-through items are closed and kept below
@@ -738,11 +806,11 @@ expensive to re-derive.
 **Open items 2–7 all require reading `src/`.** See the warning at the top of
 this file before considering its removal. (Item 1 does not — it needs a browser.)
 
-**Watch the coverage margins.** Statements (52.68 vs 50) and functions (59.97 vs
-57) clear their thresholds by under three points, so the next sizeable chunk of
-untested code will trip `npm run verify` for a reason unrelated to whether the
-game works. Raise the thresholds deliberately when the baseline moves, or lower
-them — but do not let it fail silently.
+**Watch the coverage margins.** They were raised well clear of their thresholds
+(measured 65.15 / 80.49 / 73.21 / 65.15 against 50 / 75 / 57 / 50), so `verify`
+will not trip on coverage for a while — but the baseline moves every time a
+large unaudited area becomes reachable. Re-measure and re-set these together
+rather than letting `verify` fail on them, or lowering them to hide it.
 
 #### Closed items, kept for what they record
 
@@ -753,6 +821,7 @@ them — but do not let it fail silently.
 | 3 — AI behaviour + generator integrity tests | 2026-09-27 | The 60% reachability threshold is **measured, not guessed**: a six-seed sweep found 75.6%–100%. Seed 42 is pinned because it measured the worst district. Asserting 100% would assert the original has no unreachable rooms — not established, and not the point. The AI behaviour expectations come from the C# strategy order rather than from reading the port. |
 | 4 — `percepted as Actor` audit | 2026-09-27 | 43 sites, **no live bug**. Four had the bug-3 shape and all four are harmless — the detail is in the list above and is the clearest statement in this file that a grep is a hypothesis generator, not a verdict. |
 | 5 — `isInvincible` guard | 2026-09-27 | **Six** properties, not one, and the guard is not uniform: five block a decrease, `Infection` blocks an *increase*. `useDefineForClassFields: true` means a stray own field would silently shadow the accessor. |
+| §1.4b — the world behind the player stopped running | 2026-09-27 | A **performance** divergence only playing could find: 60 turns of play left the neighbours 60 turns behind, and entering a district cost a 274 ms blocking burst. No Worker — the graph is shared mutable state, which is why the C# needed a lock and then dropped it. The slack is the player's idle time instead. |
 
 ### 1.6 Known non-bugs (do not re-investigate)
 
@@ -803,9 +872,24 @@ them — but do not let it fail silently.
 - `5864c4b` — the CSV→model binding fix (§1.1e) and `model-data-binding.test.ts`.
   384 tests pass, 21 files.
 - `2a8ee93` — corrected two miscounts in the bug log.
-- *(this commit)* — the §1.1f fidelity sweep (bugs 51–56) and the §1.1g clean-bill.
-  **Documentation only — no code was changed**, so the bug count is unchanged by
-  it; the sweep found 6 more, which are recorded and unfixed.
+- `b0e4038` — the §1.1f fidelity sweep (bugs 51–56) and the §1.1g clean-bill,
+  together with the Neutralino desktop wrapper. The sweep itself was
+  documentation-only, so the bug count it changed was 6 newly recorded and then
+  fixed in the same commit.
+- `fc667e6` — the hover/input freeze, plus the item-pickup coverage that pins
+  input mapping at both 1× and 2× display scale.
+- `8d7b5dc` — the DPR-correct canvas (integer scaling, pixel-art rendering) and
+  the 1×/2× map zoom.
+- `652aa26` — a save that cannot be restored now fails loudly instead of killing
+  the game (§1.1i bug 64), after `Session.load` was found to reset the world
+  *before* validating.
+- `825c9f0` — the occupied-tile spawn crash (§1.5 item 7), the `src/` rule that
+  decides upstream-vs-port fixes, and the `SessionGraph` serialisation ledger
+  that item 6 will build on.
+- `447bbdf` — the Windows `verify` halt and the colliding screenshot filenames
+  (§1.6).
+- `1c27589` — the idle catch-up (§1.4b), and the `AddMessagePressEnter` guard it
+  needed. 501 tests, 34 files.
 
 ---
 
@@ -1111,7 +1195,7 @@ All three cost a wrong conclusion first:
 2. **AI behaviour tests** — ✅ `tests/ai-behaviour.test.ts`, 14 cases. Zombie pursuit by sight, LOS gating (with the no-wall control), scent aggregation, and civilian self-preservation, each in an isolated flattened map. Expectations come from the C# strategy order, not from reading the port — see the note below.
 3. **Generator integrity tests** — ✅ `tests/generator-integrity.test.ts`, 7 cases. No actor on a wall or out of bounds, nothing out of bounds, every map has a passable tile, the player starts passable in the largest region, and no surface district is sealed. The connectivity threshold is measured, not guessed: 75.6%–100% across a six-seed sweep, so it is set at 60%.
 4. **Save/load roundtrip** — ✅ `tests/persistence.test.ts`, for the six persistence modules. Note the gap: `Session` does not serialise the world/map object graph yet (see the `TODO(phase 4)` in `Session.save`), so a full "complex running game" roundtrip is not possible until that lands.
-5. **Coverage** — ✅ `@vitest/coverage-v8`, thresholds at 50/75/57/50, set ~1–1.5 points under the measured baseline rather than at an aspirational number. **The baseline moved to 52.68/77.14/59.97 with §1.1c** (the two new suites cover a lot of previously-untested data code). Statements and functions now clear their thresholds by under three points, so re-measure and re-set these together rather than letting `verify` fail on them.
+5. **Coverage** — ✅ `@vitest/coverage-v8`, thresholds at 50/75/57/50, set ~1–1.5 points under the measured baseline rather than at an aspirational number. **The baseline is now 65.15/80.49/73.21/65.15** (statements/branches/functions/lines), up from 52.68/77.14/59.97 with §1.1c — the later fidelity sweeps added both a lot of newly-reachable engine code and the suites that cover it. Margins are wide again; re-measure and re-set together when the next large area becomes reachable, rather than letting `verify` fail on them.
 
 
 ---
@@ -1127,7 +1211,7 @@ All three cost a wrong conclusion first:
 | 5 | World generation + AI | Done |
 | 6 | Audio | Done |
 | 7 | Save / load | Done |
-| 8 | Headless sim, tests, CI, deployment | In progress — 409 tests, CI, PWA, Docker, asset pass and frame-cost pass all in. Only 12 (optional touch) remains; see §1.2 for why 1 000-turn runs no longer complete |
+| 8 | Headless sim, tests, CI, deployment | In progress — 501 tests, CI, PWA, Docker, asset pass and frame-cost pass all in. Only 12 (optional touch) remains; see §1.2 for why 1 000-turn runs no longer complete |
 
 ---
 

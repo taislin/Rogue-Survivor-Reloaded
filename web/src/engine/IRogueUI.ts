@@ -127,10 +127,15 @@ export interface IRogueUI {
    * Large text for full-screen menus and reading screens (help, manual,
    * hiscores, message log, character creation, death screens).
    *
-   * The base `UI_DrawString` pair stays at C#'s 8.25pt because the in-game HUD
-   * (side panel, message area) is densely packed for it. Menus have room, so
-   * they get 12pt via these methods instead. Splitting by method rather than
-   * by size parameter keeps every existing call site untouched.
+   * The base `UI_DrawString` pair is the 10pt HUD font (side panel, message log,
+   * location panel); menus get 12pt via these methods. Splitting by method
+   * rather than by size parameter keeps every existing call site untouched.
+   *
+   * Note that the HUD size and the menu size are both deliberate divergences
+   * from C#'s single 8.25pt: the browser is not running at C#'s 1024x768, and
+   * at this display scale 8.25pt lands around 11 device px. The HUD paid for its
+   * 10pt in geometry — see `TILE_VIEW_WIDTH` — and the menus paid for theirs in
+   * column placement, see `MENU_CHAR_WIDTH`.
    */
   UI_DrawStringLarge(color: Color, text: string, gx: number, gy: number, shadowColor?: Color): void;
   UI_DrawStringBoldLarge(color: Color, text: string, gx: number, gy: number, shadowColor?: Color): void;

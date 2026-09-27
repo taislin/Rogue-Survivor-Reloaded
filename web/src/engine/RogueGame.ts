@@ -201,6 +201,17 @@ export const CORPSESPANEL_Y: number = GROUNDINVENTORYPANEL_Y + SIDEPANEL_SECTION
 export const INVENTORY_SLOTS_PER_LINE: number = 10;
 export const SKILLTABLE_Y: number = CORPSESPANEL_Y + SIDEPANEL_SECTION_HEIGHT;
 export const SKILLTABLE_LINES: number = 8;
+/**
+ * Skill-table columns, sized for the 10 pt font.
+ *
+ * `SKILLTABLE_LEVEL_WIDTH` fits the "5-" level prefix; the column pitch leaves
+ * room for the longest name in `Skills.NAMES` ("Z-Light Eater", 13 chars, ~104
+ * px) with air to spare. C# used 16/120, which at 8.25 pt left 104 px too but
+ * with nothing to spare -- one character wider and the columns would touch.
+ * Three columns of 150 px reach x=1322, inside the 498 px panel.
+ */
+export const SKILLTABLE_LEVEL_WIDTH: number = 18;
+export const SKILLTABLE_COLUMN_PITCH: number = 150;
 export const LOCATIONPANEL_X: number = RIGHTPANEL_X;
 export const LOCATIONPANEL_TEXT_X: number = LOCATIONPANEL_X + 4;
 export const MESSAGES_X: number = 4;
@@ -247,6 +258,38 @@ export const LOCATIONPANEL_LINE_SPACING: number = 12;
  */
 export const MENU_LINE_SPACING: number = 16;
 export const MENU_BOLD_LINE_SPACING: number = 18;
+/**
+ * Nominal advance of one glyph in the 12pt menu font, in logical pixels.
+ *
+ * The font stack is `"Lucida Console", "Courier New", monospace` -- all three
+ * are 0.6em monospace, so 0.6 * 16px = 9.6px. Rounded up to 10 to leave a
+ * little slack, because this is used to place a column *before* drawing, and
+ * a column that is a pixel short overlaps rather than merely looking tight.
+ */
+export const MENU_CHAR_WIDTH: number = 10;
+/** Blank columns between a menu label and its value text. */
+export const MENU_COLUMN_GAP: number = 24;
+/**
+ * Glyphs `DrawMenuOrOptions` puts in front of every label: `"---> "` when the
+ * row is selected, five spaces when it is not. The selected form is the wider
+ * of the two, and it is the one that has to clear the value column.
+ */
+export const MENU_LABEL_PREFIX: number = 6;
+
+/**
+ * X at which `DrawMenuOrOptions` should start the value column, given the menu
+ * labels it has to clear.
+ *
+ * `rightPadding` is a floor, not the answer: it keeps the generous gap the C#
+ * menus had for their short labels, and anything wider than that is measured
+ * from the text so the column moves rather than overlapping. See the comment in
+ * `DrawMenuOrOptions` for why the fixed offset stopped working at 12pt.
+ */
+export function menuValueColumnX(gx: number, entries: readonly string[], rightPadding: number): number {
+  let labelGlyphs = 0;
+  for (const e of entries) labelGlyphs = Math.max(labelGlyphs, MENU_LABEL_PREFIX + e.length);
+  return gx + Math.max(rightPadding, labelGlyphs * MENU_CHAR_WIDTH + MENU_COLUMN_GAP);
+}
 export const CREDIT_CHAR_SPACING: number = 8;
 export const CREDIT_LINE_SPACING: number = LINE_SPACING;
 export const TEXTFILE_CHARS_PER_LINE: number = 120;
@@ -16674,14 +16717,14 @@ export class RogueGame {
       }
 
       this.m_UI.UI_DrawString(skColor, `${sk.level}-`, x, y);
-      x += 16;
+      x += SKILLTABLE_LEVEL_WIDTH;
       this.m_UI.UI_DrawString(skColor, Skills.name(sk.id), x, y);
-      x -= 16;
+      x -= SKILLTABLE_LEVEL_WIDTH;
 
       if (++count >= SKILLTABLE_LINES) {
         count = 0;
         y = gy;
-        x += 120;
+        x += SKILLTABLE_COLUMN_PITCH;
       } else {
         y += LINE_SPACING;
       }
@@ -17069,7 +17112,9 @@ export class RogueGame {
      */
     maxRows?: number
   ): void {
-    const right = gx + rightPadding;
+    // The value column starts past the widest *label*, not at a fixed offset.
+    // See `menuValueColumnX` for why a flat offset stopped working at 12pt.
+    const right = menuValueColumnX(gx, entries, rightPadding);
 
     if (values != null && entries.length !== values.length)
       throw new RangeError("values length!= choices length");
