@@ -17,29 +17,45 @@ Porting a C# WinForms zombie-survival roguelike (195 files, ~2.5 MB, largest `Ro
 > **Do not delete `src/`.** Nothing compiles or ships it (the Dockerfile copies
 > only `web/`, and `.dockerignore` excludes it), so removing it saves no build
 > time and no bundle size. It is the only statement of intended behaviour, and
-> every one of the 62 bugs in §1.1, §1.1b, §1.1c, §1.1d, §1.1e and §1.1f was
-> found by diffing the port against it. Four of the six tasks still open in §1.5
-> are fidelity work that *cannot be done* without it. Revisit only once those
-> close.
+> every one of the 62 bugs in §1.1, §1.1b, §1.1c, §1.1d, §1.1e, §1.1f and
+> §1.1h was found by diffing the port against it. Six of the eight items in
+> §1.5 are still open (one of them, item 3, is half-closed), and all six are
+> fidelity work that *cannot be done* without it. Revisit only once those close.
 
 ---
 
 ## Table of Contents
 
 1. [Current State & Handover](#1-current-state--handover)
-2. [Quick Reference](#2-quick-reference)
+   - [1.1 The bug log — 56 bugs](#11-the-bug-log--56-bugs) · [the four bug classes](#the-four-bug-classes-below-and-the-one-lesson-that-covers-them)
+   - [1.1b](#11b-five-more-bugs-found-by-playing-the-thing-2026-09-27) found by playing it · [1.1c](#11c-eighteen-bugs-in-the-csv--json-data-layer-2026-09-27) the data layer · [1.1d](#11d-eight-bugs-in-the-per-actor-abilities-2026-09-27) per-actor abilities · [1.1e](#11e-the-actor-data-table-was-bound-by-position-not-by-id-2026-09-27) data binding · [1.1f](#11f-six-more-fidelity-bugs-from-a-sweep-of-the-four-unaudited-tables-2026-09-27) table fidelity · [1.1g](#11g-what-that-sweep-proved-clean--do-not-re-audit) **proven clean**
+   - [1.2](#12-the-harness-now-runs-real-games) sim baseline · [1.2a](#12a-four-things-that-look-like-bugs-but-are-not) **not bugs**
+   - [1.3](#13-how-to-run-it) commands · [1.4](#14-runs-are-now-reproducible) seeding · [1.4a](#14a-minimap-reveal-bug--fixed-and-the-diagnosis-here-was-wrong) a wrong diagnosis, kept
+   - [1.5](#15-next-steps) **next steps** · [1.6](#16-known-non-bugs-do-not-re-investigate) · [1.7](#17-git-state)
+2. [Quick Reference](#2-quick-reference) — layout, porting rules, build commands
 3. [Phase Status](#3-phase-status)
 4. [Phase 8 — Polish, Headless Simulation & Deployment](#4-phase-8--polish-headless-simulation--deployment)
+   - [4.1](#41-task-list) tasks · [4.1a](#41a-test-suite-layout) tests · [4.1b](#41b-deployment-notes) deploy · [4.1c](#41c-asset-payload-pass-tasks-9--10) assets · [4.1d](#41d-frame-cost-task-11) frame cost
+   - [4.2](#42-headless-harness-design-for-whoever-extends-it) harness internals · [4.3](#43-test-strategy) test strategy
 5. [Summary Timeline](#5-summary-timeline)
-6. [Future Plans](#6-future-plans) — mobile/touch, HTML menus, a first-person/pseudo-3D view mode, outstanding housekeeping
+6. [Future Plans](#6-future-plans) — [6.1](#61-mobile--touch-support-phase-8-task-12) touch · [6.2](#62-finish-the-fidelity-work-first) · [6.3](#63-renderer-and-layout) · [6.4](#64-first-person--pseudo-3d-view-mode) · [6.5](#65-housekeeping)
 
 ---
 
 ## 1. Current State & Handover
 
-### 1.1 The headline finding
+### 1.1 The bug log — 56 bugs
 
-**A clean `tsc` and a clean Vite build do not mean the port works.** Phase 4 was marked "complete" on the basis of zero remaining `not yet ported` stubs plus a green type-check. Neither test executes the game.
+**§1.1 through §1.1g are one bug log, in the order the bugs were found.** They are
+kept as separate subsections rather than merged into a single table because each
+is a different *class* of mistake, and the class is the lesson — §1.1c and §1.1d
+turn out to have the same root cause four sections apart. Bugs 1–10 are below;
+11–15 in §1.1b, 16–33 in §1.1c, 34–41 in §1.1d, 42–50 in §1.1e, 51–56 in §1.1f,
+and §1.1g lists what is now proven clean so it is not re-audited.
+
+**A clean `tsc` and a clean Vite build do not mean the port works.** Phase 4 was
+marked "complete" on the basis of zero remaining `not yet ported` stubs plus a
+green type-check. Neither test executes the game.
 
 The Phase 8 headless simulator was the first thing ever to actually *run* the ported engine. In its first hour it found **9 runtime bugs**, two of which made the game completely non-functional:
 
@@ -545,26 +561,17 @@ tracks the visited set and the §4.1d cache stays correct. Verified: FOV of 46
 tiles with the player's own tile in view, and the minimap raster now rebuilds as
 ground is explored rather than once per run.
 
-### 1.5 Next steps, in priority order
+### 1.5 Next steps
+
+**Open work, in priority order.** Struck-through items are closed and kept below
+the list rather than deleted — each carries a measurement or a decision that is
+expensive to re-derive.
 
 0. ~~**Fix the minimap reveal bug** (§1.4a).~~ **Done 2026-09-27** — see
    §1.1b bug 11. It turned out to be the whole in-game map, not just the minimap.
 0b. ~~**Audit the CSV → JSON data layer.**~~ **Done 2026-09-27** — see §1.1c,
-   18 bugs across five layers, and two new suites that pin the layer shut.
-   *Remaining from that audit, both needing a decision rather than work:*
-   - **`Skills.csv` cannot be loaded by the C#** (§1.1c). The port works around
-     it by matching on `NAME`. Repairing the file means editing `src/`, which
-     this project forbids — decide whether `src/` may be corrected for a
-     provable data bug, or leave the workaround and document it.
-   - **`Skills.maxSkillLevel` is a port invention.** The C# has no such
-     function; `AddOrIncreaseSkill` just increments. The port hardcodes
-     HAULER 3 / else 5, and that gates the level-up cap in three places
-     (`BaseMapGenerator.ts:382`, `RogueGame.ts:14380`) and prints as "5 max" in
-     two UI paths. Either find the intended cap or drop the fiction.
-   - **`SpawnActorOnMapBorder` throws on an occupied tile** (§1.2a). Faithful to
-     the C#, which throws the same string from `Map.cs:488`. Fixing it means
-     diverging from the original — decide whether a crash is the intended
-     behaviour or an upstream bug the port should outgrow.
+   18 bugs across five layers, and two new suites that pin the layer shut. It
+   left **three open decisions**, now item 7 below.
 1. **Play the game, don't just sim it.** This is now the highest-value activity
    and it is the step that was skipped: all five bugs in §1.1b were found by
    opening a browser, and the sim found none of them because they were all
@@ -576,14 +583,22 @@ ground is explored rather than once per run.
    **The §1.1c data bugs make the same point a third way:** the sim is blind to
    *content* faults too, because an `undefined` stat still produces valid
    engine behaviour. Only the browser shows a player standing at 100/100 food.
-2. **Keep running the sim to failure and fix what it finds.** Now that the map
-   stops corrupting itself, 1 000-turn runs are reachable. Loop over seeds:
+2. **Keep running the sim to failure and fix what it finds.**
    `for s in 1 2 3 4 5; do npm run sim -- --size 3 --turns 1000 --seed $s --undead; done`
    Watch for hangs, not just crashes — a turn that never returns is usually a
    blocking `UI_Wait*`.
-3. ~~**Write the AI behaviour and generator integrity tests.**~~ Generator
-   integrity **done 2026-09-27** — `tests/generator-integrity.test.ts`, 7 cases.
-   AI behaviour tests **still open** (the remaining half of §4.3 item 2).
+   **The premise of this item has changed twice.** It originally read "now that
+   the map stops corrupting itself, 1 000-turn runs are reachable" — which was
+   true, and then stopped being true when §1.1c restored `maxAmmo` and every
+   survivor started shooting the undead bot (§1.2). No seed now reaches 1 000
+   turns: the undead bot dies to ranged fire, and long survivor runs hit the
+   `SpawnActorOnMapBorder` throw (§1.2a). Both are faithful behaviour on a
+   correct build. The item survives because sweeping seeds still finds crashes —
+   it is the crash-hunt, not the turn count, that is worth repeating.
+3. ~~**Write the AI behaviour and generator integrity tests.**~~ **Both done
+   2026-09-27** — `tests/generator-integrity.test.ts` (7 cases) and
+   `tests/ai-behaviour.test.ts` (14 cases). §4.3 items 2 and 3 are now closed,
+   which was the last test work on the Phase 8 list.
    The generator suite asserts the invariants that hold unconditionally — no
    actor on a wall or out of bounds, no map object out of bounds, every map has
    a passable tile, the player starts passable and inside their map's largest
@@ -646,18 +661,46 @@ ground is explored rather than once per run.
     need `Color.BurlyWood` **added** to `Color.ts` (it does not exist).
     §1.1g lists what is now proven clean, so this is the whole remaining
     fidelity surface in those four tables.
- 7. **Serialise the world/map graph in `Session.save`** — the `TODO(phase 4)`
-    at `Session.ts:324` blocks any true save/load roundtrip test.
- 8. Then work down the rest of the Phase 8 task list in §4 (tasks 9–12).
+6. **Serialise the world/map graph in `Session.save`** — the `TODO(phase 4)`
+   at `Session.ts:324` blocks any true save/load roundtrip test, and is why
+   §4.3 item 4 is only a partial pass.
+7. **The three open decisions**, carried from item 0b below. None is work you can
+   just do; each needs a ruling on whether the port may diverge from the C#:
+   - **`Skills.csv` cannot be loaded by the C# at all** (§1.1c). The port
+     works around it by matching on `NAME`. Repairing the file means editing
+     `src/`, which this project forbids — decide whether `src/` may be corrected
+     for a provable data bug, or leave the workaround and document it.
+   - **`Skills.maxSkillLevel` is a port invention.** The C# has no such
+     function; `AddOrIncreaseSkill` just increments. The port hardcodes
+     HAULER 3 / else 5, and that gates the level-up cap in three places
+     (`BaseMapGenerator.ts:382`, `RogueGame.ts:14380`) and prints as "5 max" in
+     two UI paths. Either find the intended cap or drop the fiction.
+   - **`SpawnActorOnMapBorder` throws on an occupied tile** (§1.2a). Faithful to
+     the C#, which throws the same string from `Map.cs:488`. Fixing it means
+     diverging from the original — decide whether a crash is the intended
+     behaviour or an upstream bug the port should outgrow.
+8. Then work down the rest of the Phase 8 task list in §4. **Of tasks 9–12 only
+   12 remains** — 9 (sprites), 10 (audio) and 11 (frame cost) are done, so this
+   item is now just "task 12, if it is ever wanted", scoped in §6.1.
 
-**Items 3–7 all require reading `src/`.** See the warning at the top of this
-file before considering its removal.
+**Open items 2–7 all require reading `src/`.** See the warning at the top of
+this file before considering its removal. (Item 1 does not — it needs a browser.)
 
 **Watch the coverage margins.** Statements (52.68 vs 50) and functions (59.97 vs
 57) clear their thresholds by under three points, so the next sizeable chunk of
 untested code will trip `npm run verify` for a reason unrelated to whether the
 game works. Raise the thresholds deliberately when the baseline moves, or lower
 them — but do not let it fail silently.
+
+#### Closed items, kept for what they record
+
+| Item | Closed | What is worth keeping |
+|---|---|---|
+| 0 — minimap reveal | 2026-09-27 | It was the whole in-game map, not the minimap. §1.4a keeps the *wrong* diagnosis too. |
+| 0b — CSV → JSON data audit | 2026-09-27 | 18 bugs, §1.1c. Left three open decisions (now item 7) and found two upstream data defects. |
+| 3 — AI behaviour + generator integrity tests | 2026-09-27 | The 60% reachability threshold is **measured, not guessed**: a six-seed sweep found 75.6%–100%. Seed 42 is pinned because it measured the worst district. Asserting 100% would assert the original has no unreachable rooms — not established, and not the point. The AI behaviour expectations come from the C# strategy order rather than from reading the port. |
+| 4 — `percepted as Actor` audit | 2026-09-27 | 43 sites, **no live bug**. Four had the bug-3 shape and all four are harmless — the detail is in the list above and is the clearest statement in this file that a grep is a hypothesis generator, not a verdict. |
+| 5 — `isInvincible` guard | 2026-09-27 | **Six** properties, not one, and the guard is not uniform: five block a decrease, `Infection` blocks an *increase*. `useDefineForClassFields: true` means a stray own field would silently shadow the accessor. |
 
 ### 1.6 Known non-bugs (do not re-investigate)
 
@@ -745,7 +788,7 @@ Full detail in `web/.porting/CONVENTIONS.md`. The ones that matter:
 |---|---|
 | `npm run verify` | type-check + coverage + build — what CI runs, in one command |
 | `npm run type-check` | `tsc --noEmit`; covers `src/`, `sim/` and `tests/` — necessary, **not sufficient** |
-| `npm run test` | Vitest, 395 tests |
+| `npm run test` | Vitest, 409 tests |
 | `npm run test:coverage` | Vitest with coverage thresholds enforced |
 | `npm run build` | Vite production build |
 | `npm run sim` | Headless engine run — the real test |
@@ -785,7 +828,7 @@ Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks,
 | 2 | Deterministic `--seed` for reproducible runs | **Done** (`Session.useSeed`, `--seed`) |
 | 3 | Drive the sim to a clean full-length run and fix what it finds | **In progress** — 1 000-turn runs clean on 4/5 seeds; keep sweeping |
 | 4 | Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`) | **Done and verified in a browser** — now 1366×768 widescreen, smooth filtering (the old `image-rendering: pixelated` made upscaled text unreadable) |
-| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 395 tests, 23 files, thresholds enforced (50/75/57/50) |
+| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 409 tests, 24 files, thresholds enforced (50/75/57/50) |
 | 6 | GitHub Actions CI | **Done** — `.github/workflows/ci.yml`, type-check + coverage + build + seeded sim, plus a docker smoke job |
 | 7 | PWA manifest + service worker (offline play) | **Done** — manifest, drawn icons, runtime-caching `sw.js` |
 | 8 | Docker image for the self-hosted server | **Done but unverified** — docker is not installed locally, so the image has never been built; CI will exercise it first |
@@ -814,6 +857,7 @@ once with `npm run verify`. `tests/` is in `tsconfig.json`'s include list, so
 | `skills-data.test.ts` | `Skills.csv` actually reaches the `Rules.SKILL_*` statics, with the right `(int)` truncation, and each of the 7 corrected values differs from the C# default (53 cases) |
 | `actor-invincible.test.ts` | C#'s `m_IsInvincible` guard on all six Actor point properties, including that `Infection`'s guard is inverted (21 cases) |
 | `ai-percept-filters.test.ts` | The AI percept filters reject non-Actor percepts, and `filterSameMap` still admits them (9 cases, characterisation — see §1.5 item 4) |
+| `ai-behaviour.test.ts` | The four §4.3 item-2 behaviours in isolated map scenarios: zombie pursuit by sight, LOS gating, scent aggregation, civilian self-preservation (14 cases) |
 | `rule-result-usage.test.ts` | No `RuleResult` is ever tested for truthiness — the bug class behind §1.1h bugs 57-60. Parses `Rules.ts` for the 44 `RuleResult` methods and reports any call site missing `.ok`, by file and line (3 cases) |
 | `headless-no-hang.test.ts` | Seeds that hung or died in the sweep finish under a wall-clock deadline, so a livelock fails loudly instead of eating the CI timeout (8 cases) |
 | `model-data-binding.test.ts` | Every actor model binds to its own CSV row, unique weapons stay unbreakable, lights do not auto-equip, the badge is holdable. Also fails if `Actors.csv` is ever reordered into enum order (43 cases, §1.1e) |
@@ -954,11 +998,52 @@ what a call-counting harness can show.
 
 ### 4.3 Test strategy
 
-Items 1, 4 and 5 are implemented (see §4.1a). Items 2 and 3 are not.
+**All five items are now implemented.** Items 2 and 3 were the last test work on
+the Phase 8 list and both landed 2026-09-27.
+
+#### How to write the AI behaviour tests without writing a tautology
+
+The hazard in item 2 is reading the port and asserting what it does, which
+produces a test that passes forever and proves nothing. `tests/ai-behaviour.test.ts`
+takes the **expectations from the C# strategy order** and checks the port
+against them:
+
+- `ZombieAI.SelectAction` (ZombieAI.cs:118-215) is a numbered priority list —
+  bump the nearest visible enemy → melee → master → **strongest master scent** →
+  **strongest living scent** → push objects → explore → wander. Scent tracking
+  is only reached when nothing nearer applies, and `filterStrongestScent` picks
+  the trail.
+- Civilians retreat from a hostile rather than engaging.
+
+What that does *not* prove is that the port matches the C# line for line — that
+is the fidelity sweeps in §1.1c–h. What it does prove is the observable
+contract, and that is where the wiring bugs actually lived: §1.1 bug 3 was
+`filterActors` letting a non-Actor percept through, and no amount of reading
+`selectAction` would have found it. Both discriminators were confirmed by
+breaking the code: collapsing `filterStrongestScent` to "first scent" fails the
+scent test, and shrinking the FOV sensor to one tile fails 7 of the 14.
+
+#### Three things about these scenarios that are easy to get wrong
+
+All three cost a wrong conclusion first:
+
+- **Clear the scent grid.** World generation leaves ~33 scents on the map, and
+  the smell sensor reads a 3×3 neighbourhood of that grid, so a leftover
+  `LIVING` trail is picked up as if the test had placed it.
+- **Scent is not long-range, and it has a high floor.** The sensor reads 3×3,
+  and `actorSmellThreshold` is 163 for a zombie (SMELL 40 of
+  `OdorScent.MAX_STRENGTH` 270). A trail below that is discarded before
+  `filterStrongestScent` sees it — an early draft used strengths of 90 and 10,
+  both under the floor, and concluded the AI followed the *weak* trail.
+- **The zombie and the civilian acquire threats differently.** The zombie needs
+  line of sight; civilians are unscented (`SMELL = 0`) so a zombie must *see*
+  them, while a civilian reacts to a zombie through a wall because it hears one
+  (AUDIO 16). Measured, not assumed: the civilian retreats at every gap 1–5,
+  not only when adjacent.
 
 1. **Headless integration tests** — ✅ `tests/integration/headless-run.test.ts`. Boots a seeded 1×1 world, plays 40 turns, asserts no crash, actor accounting stays consistent, the world clock advances, and the run is neither instant nor hung.
-2. **AI behaviour tests** — ⬜ zombie pursuit, line-of-sight tracking, scent aggregation, civilian self-preservation, in isolated map scenarios.
-3. **Generator integrity tests** — ⬜ town/building/sewer generators must produce fully reachable nav-graphs with no deadlocks or out-of-bounds writes.
+2. **AI behaviour tests** — ✅ `tests/ai-behaviour.test.ts`, 14 cases. Zombie pursuit by sight, LOS gating (with the no-wall control), scent aggregation, and civilian self-preservation, each in an isolated flattened map. Expectations come from the C# strategy order, not from reading the port — see the note below.
+3. **Generator integrity tests** — ✅ `tests/generator-integrity.test.ts`, 7 cases. No actor on a wall or out of bounds, nothing out of bounds, every map has a passable tile, the player starts passable in the largest region, and no surface district is sealed. The connectivity threshold is measured, not guessed: 75.6%–100% across a six-seed sweep, so it is set at 60%.
 4. **Save/load roundtrip** — ✅ `tests/persistence.test.ts`, for the six persistence modules. Note the gap: `Session` does not serialise the world/map object graph yet (see the `TODO(phase 4)` in `Session.save`), so a full "complex running game" roundtrip is not possible until that lands.
 5. **Coverage** — ✅ `@vitest/coverage-v8`, thresholds at 50/75/57/50, set ~1–1.5 points under the measured baseline rather than at an aspirational number. **The baseline moved to 52.68/77.14/59.97 with §1.1c** (the two new suites cover a lot of previously-untested data code). Statements and functions now clear their thresholds by under three points, so re-measure and re-set these together rather than letting `verify` fail on them.
 
@@ -976,7 +1061,7 @@ Items 1, 4 and 5 are implemented (see §4.1a). Items 2 and 3 are not.
 | 5 | World generation + AI | Done |
 | 6 | Audio | Done |
 | 7 | Save / load | Done |
-| 8 | Headless sim, tests, CI, deployment | In progress — 395 tests, CI, PWA, Docker, asset pass and frame-cost pass all in. Only 12 (optional touch) remains; see §1.2 for why 1 000-turn runs no longer complete |
+| 8 | Headless sim, tests, CI, deployment | In progress — 409 tests, CI, PWA, Docker, asset pass and frame-cost pass all in. Only 12 (optional touch) remains; see §1.2 for why 1 000-turn runs no longer complete |
 
 ---
 
@@ -1029,10 +1114,22 @@ that is done right, the 19.7 KLOC game loop does not need to know.
 
 ### 6.2 Finish the fidelity work first
 
-Cheaper and higher value than 6.1, and blocked on `src/` (see the warning at
-the top). In order: the AI behaviour and generator integrity tests, the
-`isInvincible` guard, world/map serialisation for a true save/load roundtrip,
-and the audit for the `percepted as Actor` pattern. See §1.5.
+Cheaper and higher value than 6.1, and blocked on `src/` (see the warning at the
+top). **This list was written before §1.5 items 3–5 and the §1.1f sweep closed
+most of it**, so it is now down to two items plus a sweep:
+
+- ~~The AI behaviour and generator integrity tests~~ — generator integrity **done**;
+  AI behaviour **open** (§1.5 item 3).
+- ~~The `isInvincible` guard~~ — **done**, and it turned out to be six properties
+  rather than one (§1.5 item 5).
+- ~~The audit for the `percepted as Actor` pattern~~ — **done**, 43 sites, no live
+  bug (§1.5 item 4).
+- **The six §1.1f bugs** — the last of the four unaudited tables (§1.5 item 6).
+- **World/map serialisation** for a true save/load roundtrip (§1.5 item 7). The
+  `TODO(phase 4)` in `Session.save` is the blocker, and it is the reason §4.3
+  item 4 is only a partial pass.
+- **Whatever the next sweep finds.** §1.1g records the surface now proven clean,
+  so the next audit should start outside it rather than repeat it.
 
 ### 6.3 Renderer and layout
 

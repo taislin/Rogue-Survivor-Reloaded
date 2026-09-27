@@ -192,7 +192,7 @@ triageable without attaching a debugger to someone's browser.
 
 ```bash
 cd web
-npm run verify     # type-check + 395 tests + build
+npm run verify     # type-check + 409 tests + build
 npm run sim        # play a full game headless
 ```
 
@@ -221,7 +221,7 @@ shipping stale balance numbers, and `skills-data.test.ts` checks that
 
 - **`tests/integration/reproducibility.test.ts` fails on Windows** with
   `spawnSync npx ENOENT`. `execFileSync` cannot spawn `npx.ps1`. Pre-existing
-  and unrelated to engine behaviour; the rest of the suite (395 tests) passes.
+  and unrelated to engine behaviour; the rest of the suite (409 tests) passes.
 - Death screenshots default to **off**. C# defaults them on, but there it is a
   silent file write while in a browser it is a download prompt on every death.
   The option is still on the options screen.
