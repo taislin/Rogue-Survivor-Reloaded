@@ -1,17 +1,10 @@
 # Rogue Survivor Reloaded — Browser Port
 
-A browser-playable TypeScript port of **Rogue Survivor** by
-[Jacques Ruiz (roguedjack)](http://roguesurvivor.blogspot.com/), whose original
-2012 C#/Windows Forms source is preserved in [`src/`](src/) and used as the
-reference for every line of the port.
+A browser-playable TypeScript port of **Rogue Survivor** by [Jacques Ruiz (roguedjack)](http://roguesurvivor.blogspot.com/), whose original 2012 C#/Windows Forms source can be found [here](https://github.com/roguedjack/Rogue-Survivor-Alpha-9) and was used as the reference for every line of the port (version 10.1).
 
-The game is a turn-based, real-time survival roguelike: you play a survivor
-(or an undead) in a procedurally generated city, scavenging while the district
-behind you floods with the dead. Survive the nights.
+The game is a turn-based, real-time survival roguelike: you play a survivor (or an undead) in a procedurally generated city, scavenging while the district behind you floods with the dead. Survive the nights.
 
-**Website** — the manual, controls and project notes live in
-[`docs/`](docs/), published with GitHub Pages. See [`docs/README.md`](docs/README.md)
-for how to enable it.
+**Website**: the manual, controls and project notes live in [`docs/`](docs/), published with GitHub Pages. See [`docs/README.md`](docs/README.md) for how to enable it if editing.
 
 ## Why This Port?
 
@@ -23,32 +16,12 @@ For now, the game will be as close to a 1:1 port as possible; the only changes w
 
 Feel free to submit PRs/suggestions!
 
-**See the [web port README](./web/README.md) for setup, architecture, and project
-overview.**
+> [!NOTE]
+> See the [web port README](./web/README.md) for setup, architecture, and technical project overview.
 
----
+## Running the Game
 
-## Contents
-
-- [Rogue Survivor Reloaded — Browser Port](#rogue-survivor-reloaded--browser-port)
-  - [Why This Port?](#why-this-port)
-  - [Contents](#contents)
-  - [Running it](#running-it)
-    - [Development](#development)
-    - [Production](#production)
-    - [Offline play](#offline-play)
-  - [Scripts](#scripts)
-  - [Layout](#layout)
-  - [How the port is organised](#how-the-port-is-organised)
-  - [Assets](#assets)
-  - [Display](#display)
-  - [Testing and the headless simulator](#testing-and-the-headless-simulator)
-  - [Known issues](#known-issues)
-  - [Porting notes](#porting-notes)
-  - [Website](#website)
-  - [License](#license)
-
----
+If you're only interested in running the game (not developing), download the latest release from the [Releases page](https://github.com/taislin/Rogue-Survivor-Reloaded/releases/latest). This is ready to run out of the box for Windows, Linux and MacOS. For development instructions, including how to run from the source code, check the [web port README](./web/README.md) (requires NodeJS).
 
 ## License
 
