@@ -46,16 +46,80 @@ export class Actor {
   inventory: Inventory | null = null;
   doll!: Doll;
 
-  hitPoints: number = 0;
+  // C# exposes these as properties whose setters carry the alpha10
+  // `m_IsInvincible` guard, so an invincible actor cannot be worn down. The
+  // port had them as plain public fields, which silently dropped the guard on
+  // all six. The external syntax is identical (`actor.hitPoints = x` still
+  // works), so no call site changes -- only the write is now filtered.
+  //
+  // `infection` is the odd one out: invincibility blocks infection *rising*,
+  // not falling, so curing an invincible actor still works (Actor.cs:470).
+  private _hitPoints = 0;
+  private _staminaPoints = 0;
+  private _foodPoints = 0;
+  private _sleepPoints = 0;
+  private _sanity = 0;
+  private _infection = 0;
+
   previousHitPoints: number = 0;
-  staminaPoints: number = 0;
   previousStaminaPoints: number = 0;
-  foodPoints: number = 0;
   previousFoodPoints: number = 0;
-  sleepPoints: number = 0;
   previousSleepPoints: number = 0;
-  sanity: number = 0;
   previousSanity: number = 0;
+
+  /** C# `HitPoints` — Actor.cs:240 */
+  get hitPoints(): number {
+    return this._hitPoints;
+  }
+  set hitPoints(value: number) {
+    if (this.isInvincible && value < this._hitPoints) return;
+    this._hitPoints = value;
+  }
+
+  /** C# `StaminaPoints` — Actor.cs:257 */
+  get staminaPoints(): number {
+    return this._staminaPoints;
+  }
+  set staminaPoints(value: number) {
+    if (this.isInvincible && value < this._staminaPoints) return;
+    this._staminaPoints = value;
+  }
+
+  /** C# `FoodPoints` — Actor.cs:274 */
+  get foodPoints(): number {
+    return this._foodPoints;
+  }
+  set foodPoints(value: number) {
+    if (this.isInvincible && value < this._foodPoints) return;
+    this._foodPoints = value;
+  }
+
+  /** C# `SleepPoints` — Actor.cs:291 */
+  get sleepPoints(): number {
+    return this._sleepPoints;
+  }
+  set sleepPoints(value: number) {
+    if (this.isInvincible && value < this._sleepPoints) return;
+    this._sleepPoints = value;
+  }
+
+  /** C# `Sanity` — Actor.cs:308 */
+  get sanity(): number {
+    return this._sanity;
+  }
+  set sanity(value: number) {
+    if (this.isInvincible && value < this._sanity) return;
+    this._sanity = value;
+  }
+
+  /** C# `Infection` — Actor.cs:465. Inverted guard, see above. */
+  get infection(): number {
+    return this._infection;
+  }
+  set infection(value: number) {
+    if (this.isInvincible && value > this._infection) return;
+    this._infection = value;
+  }
 
   location: Location = new Location();
   actionPoints: number = 0;
@@ -78,7 +142,6 @@ export class Actor {
   private selfDefenceFromList: Actor[] | null = null;
   private boringItemsList: Item[] | null = null;
   murdersCounter: number = 0;
-  infection: number = 0;
   draggedCorpse: Corpse | null = null;
 
   isInvincible: boolean = false;

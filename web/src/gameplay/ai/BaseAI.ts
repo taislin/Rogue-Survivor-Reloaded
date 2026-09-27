@@ -186,8 +186,21 @@ export abstract class BaseAI extends AIController {
     if (!percepts || percepts.length === 0) return null;
     const list: Percept[] = [];
     for (const p of percepts) {
-      const other = p.percepted as Actor;
-      if (other && other !== this.controlledActor && game.rules.areEnemies(this.controlledActor, other)) {
+      // C# is `Actor other = p.Percepted as Actor; if (other != null && ...)`
+      // (BaseAI.cs:187-188), and the null test is load-bearing: `as` yields
+      // null for a non-actor. A TS `as` is compile-time only, so the faithful
+      // equivalent is an instanceof check.
+      //
+      // Not a live bug, but worth stating precisely: the previous
+      // `if (other && ...)` did let a MapObject through, and
+      // `areEnemies(actor, mapObject)` returns false rather than throwing
+      // (`Faction.isEnemyOf` uses `enemyList.includes(undefined)`), so the
+      // MapObject was dropped anyway. §1.1 bug 3 was the same shape in
+      // `filterActors`, where the leaked value *was* dereferenced. This is the
+      // same mistake, one call away from mattering.
+      if (!(p.percepted instanceof ActorClass)) continue;
+      const other = p.percepted;
+      if (other !== this.controlledActor && game.rules.areEnemies(this.controlledActor, other)) {
         list.push(p);
       }
     }
@@ -236,8 +249,20 @@ export abstract class BaseAI extends AIController {
     let pBest: Percept | null = null;
     let bestStrength = -1;
     for (const p of scents) {
-      const aiScent = p.percepted as AIScent;
-      if (aiScent && (pBest === null || aiScent.strength > bestStrength)) {
+      // C# throws `InvalidOperationException("percept not an aiScent")` on a
+      // non-scent (BaseAI.cs:278-280) -- it treats the invariant as a hard
+      // precondition. Two divergences here, both deliberate: skip rather than
+      // throw, because throwing inside the game loop over scent data would be
+      // worse than ignoring a malformed percept; and make the test explicit,
+      // because the previous `aiScent &&` was not equivalent. On the first
+      // iteration `pBest === null` short-circuits the strength comparison, so a
+      // truthy non-scent was *returned* as the strongest scent rather than
+      // dropped. Unreachable today -- the only caller passes
+      // `SmellSensor.scents`, which is AIScent by construction -- so this is a
+      // latent trap, not a live bug.
+      if (!(p.percepted instanceof AIScent)) continue;
+      const aiScent = p.percepted;
+      if (pBest === null || aiScent.strength > bestStrength) {
         bestStrength = aiScent.strength;
         pBest = p;
       }
@@ -247,7 +272,13 @@ export abstract class BaseAI extends AIController {
 
   protected filterActorsModel(_game: Game, percepts: Percept[] | null, model: ActorModel): Percept[] | null {
     if (!percepts || percepts.length === 0) return null;
-    const list = percepts.filter(p => (p.percepted as Actor)?.model === model);
+    // C# is `Actor a = p.Percepted as Actor; if (a != null && a.Model == model)`
+    // (BaseAI.cs:372-373). The previous port code leaned on
+    // `(p.percepted as Actor)?.model === model` evaluating to false for a
+    // non-Actor because it has no `model` -- correct today, but it would stop
+    // being correct the moment a MapObject grew a `model` field. Not a live
+    // bug; stated explicitly so the reliance is visible.
+    const list = percepts.filter(p => p.percepted instanceof ActorClass && p.percepted.model === model);
     return list.length > 0 ? list : null;
   }
 

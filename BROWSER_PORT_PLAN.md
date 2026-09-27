@@ -170,7 +170,8 @@ regenerating the JSON fails the build instead of quietly shipping stale balance.
 `tests/skills-data.test.ts` (53 cases) asserts all 43 `SKILL_*` constants equal
 their CSV value with the right `(int)` truncation, and that each of the 7
 corrected ones now *differs* from the C# default. Both were verified to fail
-when the corresponding bug is reintroduced. **273 tests pass across 16 files.**
+when the corresponding bug is reintroduced. **273 tests passed at that point**;
+the suite is now larger, see §4.1a.
 
 
 ### 1.2 The harness now runs real games
@@ -233,12 +234,13 @@ Do not re-investigate these:
   from the original, so it needs a decision rather than a drive-by fix.
 
 
-One real but unrelated divergence is still open: `Actor`'s points are plain
-public fields in TS, so the C# setters' `m_IsInvincible` guards are never
-enforced. It is **four** properties, not one — `HitPoints`, `StaminaPoints`,
-`FoodPoints` and `SleepPoints` (`Actor.cs:245,262,279,296`) versus
-`Actor.ts:49-57`. Only affects the alpha10 invincibility cheat, not normal
-play. Tracked as §1.5 item 5.
+One real but unrelated divergence was open here and is now **fixed** — see
+§1.5 item 5. It was wider than it looked: the C# puts an `m_IsInvincible` guard
+in **six** property setters, not one, and the guard is not uniform. Five block
+a *decrease* (`HitPoints`, `StaminaPoints`, `FoodPoints`, `SleepPoints`,
+`Sanity` — `Actor.cs:240,257,274,291,308`); `Infection` is inverted and blocks
+an *increase* (`Actor.cs:465`), so curing an invincible actor still works. All
+six were plain public fields in the port, so the guard was absent on every one.
 
 ### 1.3 How to run it
 
@@ -360,15 +362,41 @@ ground is explored rather than once per run.
    assert on now, and the headless integration tests in `tests/integration/`
    are the pattern to follow. Generator integrity is the higher-value of the
    two: nothing currently checks that a generated town is fully reachable.
-4. **Audit the remaining AI files for bug 3.** The `filterActors` fix was central,
-   but any other `percepted as Actor` cast followed by a dereference is still
-   suspect. Grep for the pattern — **44 sites** across `gameplay/ai/*.ts`, of
-   which only `BaseAI.ts:821` currently carries the documented guard.
-   `BaseAI.ts:189`, `:1894`, `:1919` and `:1997` cast then dereference.
-5. **Restore C#'s `isInvincible` guard** (§1.2a). **Four properties, not one:**
-   the C# setter guards `HitPoints`, `StaminaPoints`, `FoodPoints` *and*
-   `SleepPoints` (`Actor.cs:245,262,279,296`) and all four are plain public
-   fields in the port (`Actor.ts:49-57`).
+4. ~~**Audit the remaining AI files for bug 3.**~~ **Done 2026-09-27** — 43
+   `percepted as Actor` sites across the 11 AI controllers, all downstream of
+   the filters in `BaseAI`, so securing the filters secures them. **The honest
+   result: no live bug.** Four sites had the bug-3 shape (`if (other && ...)`,
+   where a MapObject percept is truthy and the C# relies on `as` yielding
+   null), and all four turn out to be currently harmless:
+   - `filterEnemies` — `areEnemies(actor, mapObject)` returns false rather than
+     throwing, because `Faction.isEnemyOf` does `enemyList.includes(undefined)`.
+   - `filterActorsModel` — a non-Actor has no `.model`; breaks only if
+     `MapObject` ever grows one.
+   - `filterStrongestScent` — the closest to real: on the first iteration
+     `pBest === null` short-circuits the strength compare, so a truthy
+     non-scent was *returned* rather than dropped. Unreachable, since the only
+     caller passes `SmellSensor.scents` (which is why the C# throws instead).
+   - `CivilianAI`'s inline `isSoldier` predicate — the one site fed the **raw**
+     `mapPercepts`, so a MapObject really does arrive; but `isSoldier` guards
+     internally.
+
+   All four are now explicit `instanceof` checks, matching the C# line for line,
+   and pinned by `tests/ai-percept-filters.test.ts` (9 cases) as a
+   *characterisation* suite: it locks the current behaviour so a future change
+   to `areEnemies`, `isSoldier` or `MapObject` cannot turn a harmless
+   truthiness check into a live one. **Lesson worth keeping: the pattern match
+   found four instances and the behaviour check cleared all four. A grep is a
+   hypothesis generator, not a verdict.**
+5. ~~**Restore C#'s `isInvincible` guard.**~~ **Done 2026-09-27.** Wider than
+   §1.2a claimed: **six** properties, not four, and the guard is not uniform.
+   Five block a *decrease* (`HitPoints`, `StaminaPoints`, `FoodPoints`,
+   `SleepPoints`, `Sanity` — `Actor.cs:240,257,274,291,308`); `Infection` is
+   inverted and blocks an *increase* (`Actor.cs:465`), so curing an invincible
+   actor still works. All six were plain public fields. Now getter/setter pairs
+   with backing `_`-fields; the external syntax is unchanged, so no call site
+   moved. Pinned by `tests/actor-invincible.test.ts` (21 cases), including a
+   check that no own instance field shadows the prototype accessor — with
+   `useDefineForClassFields: true` that would silently reintroduce the bug.
 6. **Serialise the world/map graph in `Session.save`** — the `TODO(phase 4)`
    at `Session.ts:324` blocks any true save/load roundtrip test.
 7. Then work down the rest of the Phase 8 task list in §4 (tasks 9–12).
@@ -418,6 +446,11 @@ them — but do not let it fail silently.
   in §1.6.
 - `280430c` — the eighteen §1.1c data-layer bugs, the `convert-csv.js` `COLUMNS`
   table, `Skills.load()`, and the two new data suites. 273 tests pass.
+- `423bfad` — the §1.1c documentation pass, including the corrected sim baseline.
+- *(uncommitted at time of writing)* — the `isInvincible` guard on all six
+  Actor point properties (§1.5 item 5) and the `percepted as Actor` audit
+  (§1.5 item 4), with `actor-invincible.test.ts` and
+  `ai-percept-filters.test.ts`. 303 tests pass.
 
 ---
 
@@ -456,7 +489,7 @@ Full detail in `web/.porting/CONVENTIONS.md`. The ones that matter:
 |---|---|
 | `npm run verify` | type-check + coverage + build — what CI runs, in one command |
 | `npm run type-check` | `tsc --noEmit`; covers `src/`, `sim/` and `tests/` — necessary, **not sufficient** |
-| `npm run test` | Vitest, 273 tests |
+| `npm run test` | Vitest, 303 tests |
 | `npm run test:coverage` | Vitest with coverage thresholds enforced |
 | `npm run build` | Vite production build |
 | `npm run sim` | Headless engine run — the real test |
@@ -496,7 +529,7 @@ Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks,
 | 2 | Deterministic `--seed` for reproducible runs | **Done** (`Session.useSeed`, `--seed`) |
 | 3 | Drive the sim to a clean full-length run and fix what it finds | **In progress** — 1 000-turn runs clean on 4/5 seeds; keep sweeping |
 | 4 | Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`) | **Done and verified in a browser** — now 1366×768 widescreen, smooth filtering (the old `image-rendering: pixelated` made upscaled text unreadable) |
-| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 273 tests, 16 files, thresholds enforced (50/75/57/50) |
+| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 303 tests, 18 files, thresholds enforced (50/75/57/50) |
 | 6 | GitHub Actions CI | **Done** — `.github/workflows/ci.yml`, type-check + coverage + build + seeded sim, plus a docker smoke job |
 | 7 | PWA manifest + service worker (offline play) | **Done** — manifest, drawn icons, runtime-caching `sw.js` |
 | 8 | Docker image for the self-hosted server | **Done but unverified** — docker is not installed locally, so the image has never been built; CI will exercise it first |
@@ -523,6 +556,8 @@ once with `npm run verify`. `tests/` is in `tsconfig.json`'s include list, so
 | `integration/reproducibility.test.ts` | Shells out to the real CLI twice per seed — `Session` is a process-wide singleton, and the CLI is what CI and users invoke |
 | `data-tables.test.ts` | Every generated JSON against its source CSV: canonical column names, no key containing a space, and values equal positionally. Catches the whole §1.1c class (45 cases) |
 | `skills-data.test.ts` | `Skills.csv` actually reaches the `Rules.SKILL_*` statics, with the right `(int)` truncation, and each of the 7 corrected values differs from the C# default (53 cases) |
+| `actor-invincible.test.ts` | C#'s `m_IsInvincible` guard on all six Actor point properties, including that `Infection`'s guard is inverted (21 cases) |
+| `ai-percept-filters.test.ts` | The AI percept filters reject non-Actor percepts, and `filterSameMap` still admits them (9 cases, characterisation — see §1.5 item 4) |
 
 Two constraints worth preserving:
 
@@ -674,7 +709,7 @@ Items 1, 4 and 5 are implemented (see §4.1a). Items 2 and 3 are not.
 | 5 | World generation + AI | Done |
 | 6 | Audio | Done |
 | 7 | Save / load | Done |
-| 8 | Headless sim, tests, CI, deployment | In progress — sim plays 1 000 turns; 273 tests, CI, PWA, Docker, asset pass and frame-cost pass all in. Only 12 (optional touch) remains |
+| 8 | Headless sim, tests, CI, deployment | In progress — 303 tests, CI, PWA, Docker, asset pass and frame-cost pass all in. Only 12 (optional touch) remains; see §1.2 for why 1 000-turn runs no longer complete |
 
 ---
 

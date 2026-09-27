@@ -709,8 +709,16 @@ export class CivilianAI extends OrderableAI {
     // 25 tell friend about latest soldier.
     // update percept.
     const seeingSoldier = this.filterFirst(game, mapPercepts, p => {
-      const other = p.percepted as Actor;
-      if (!other || other === actor) return false;
+      // C# is `if (other == null || other == m_Actor)` (CivilianAI.cs:868-869).
+      // `!other` is not the same test, because a MapObject is truthy. Not a
+      // live bug, though: `isSoldier` (BaseAI.ts:4075) null-checks and tests
+      // `controller instanceof AIController` itself, so a MapObject returns
+      // false there regardless. `mapPercepts` is the raw list, so this is the
+      // one place where a non-Actor genuinely arrives -- it just happens to be
+      // harmless. Made explicit so it stays harmless if isSoldier changes.
+      if (!(p.percepted instanceof Actor)) return false;
+      const other = p.percepted;
+      if (other === this.controlledActor) return false;
       return this.isSoldier(other);
     });
     if (seeingSoldier) this.m_LastSoldierSaw = seeingSoldier;
