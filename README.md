@@ -192,7 +192,7 @@ triageable without attaching a debugger to someone's browser.
 
 ```bash
 cd web
-npm run verify     # type-check + 146 tests + build
+npm run verify     # type-check + 273 tests + build
 npm run sim        # play a full game headless
 ```
 
@@ -202,13 +202,18 @@ makes runs byte-reproducible, which is what the reproducibility test checks.
 
 This is not a convenience. A clean `tsc` and a clean build do **not** mean the
 port works: the first headless run found nine runtime bugs, two of them fatal,
-and none of them visible to the type-checker. `BROWSER_PORT_PLAN.md` has the
-full list. If you change engine code, run the sim.
+and none of them visible to the type-checker. A later audit of the CSV → JSON
+data layer found eighteen more, none of which the sim could see either.
+`BROWSER_PORT_PLAN.md` has the full list. If you change engine code, run the sim.
 
 The suite covers the primitives, save/load, asset resolution, the input
-contract, actor sprite mapping, map view/visited flags, and the minimap cache
-invalidation rules — each pinned against a specific bug that shipped past a
-green build.
+contract, actor sprite mapping, map view/visited flags, the minimap cache
+invalidation rules, and the data tables — each pinned against a specific bug
+that shipped past a green build. The last two are worth calling out:
+`data-tables.test.ts` checks every generated JSON against its source CSV, so
+editing a CSV without regenerating the JSON fails the build rather than quietly
+shipping stale balance numbers, and `skills-data.test.ts` checks that
+`Skills.csv` actually reaches the `Rules.SKILL_*` constants.
 
 ---
 
@@ -216,7 +221,7 @@ green build.
 
 - **`tests/integration/reproducibility.test.ts` fails on Windows** with
   `spawnSync npx ENOENT`. `execFileSync` cannot spawn `npx.ps1`. Pre-existing
-  and unrelated to engine behaviour; the rest of the suite (146 tests) passes.
+  and unrelated to engine behaviour; the rest of the suite (273 tests) passes.
 - Death screenshots default to **off**. C# defaults them on, but there it is a
   silent file write while in a browser it is a download prompt on every death.
   The option is still on the options screen.

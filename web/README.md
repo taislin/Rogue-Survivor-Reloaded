@@ -26,7 +26,7 @@ npm run serve       # http://localhost:8080
 ## Verification
 
 ```bash
-npm run verify   # type-check + 146 tests + build
+npm run verify   # type-check + 273 tests + build
 npm run sim      # headless simulation: plays a full game in Node
 ```
 

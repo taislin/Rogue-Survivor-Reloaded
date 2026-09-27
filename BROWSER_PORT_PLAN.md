@@ -1,7 +1,7 @@
 # Rogue Survivor Reloaded — TypeScript / Browser Port
 
 > **Status (2026-09-27):** Phases 1–7 ported and playable. Phase 8 tasks 1–11 done; only 12 (optional touch support) remains.
-> **The game now runs end to end in a browser.** A further 5 runtime bugs were found and fixed on 2026-09-27 — see §1.1b, which is the newest section and supersedes parts of §1.4a.
+> **The game now runs end to end in a browser.** 5 runtime bugs were found and fixed on 2026-09-27 by playing it — see §1.1b. A later audit of the CSV → JSON data layer found 18 more — see §1.1c, the newest section.
 > **Read [Current State & Handover](#1-current-state--handover) first — it contains the bugs found and the exact next steps.**
 
 Porting a C# WinForms zombie-survival roguelike (195 files, ~2.5 MB, largest `RogueGame.cs` at 955 KB / 23 233 lines) to a browser-playable TypeScript version. `src/` is the original C# and is **never modified** — it is the reference for every port.
@@ -9,7 +9,7 @@ Porting a C# WinForms zombie-survival roguelike (195 files, ~2.5 MB, largest `Ro
 > **Do not delete `src/`.** Nothing compiles or ships it (the Dockerfile copies
 > only `web/`, and `.dockerignore` excludes it), so removing it saves no build
 > time and no bundle size. It is the only statement of intended behaviour, and
-> every one of the 15 bugs in §1.1 and §1.1b was found by diffing the port
+> every one of the 33 bugs in §1.1, §1.1b and §1.1c was found by diffing the port
 > against it. Four of the six tasks still open in §1.5 are fidelity work that
 > *cannot be done* without it. Revisit only once those close.
 
@@ -90,41 +90,155 @@ reintroduces silently: `tests/map.test.ts` (view/visited flags),
 `tests/input-handler.test.ts` (the consumes-key contract),
 `tests/actor-sprites.test.ts` (sprite-vs-doll mapping, including a check that
 the two lists partition the enum), `tests/sprite-assets.test.ts` (preload
-manifest completeness). **146 tests pass.**
+manifest completeness). **146 tests pass** at that point in the port's history.
+
+### 1.1c Eighteen bugs in the CSV → JSON data layer (2026-09-27)
+
+Found by auditing every data table against `src/`, after a report that the
+food/sleep/sanity meters were capped at 100. That turned out to be the top of
+**five stacked layers, each hiding the next** — the reported symptom was in the
+last one, and the four beneath it were all invisible.
+
+Every one of these is invisible to `tsc`, to the build, **and to the headless
+sim**, because the rows are read as `any`: a key that does not exist is
+`undefined`, and `undefined` propagates through arithmetic and comparisons
+without complaint. This is the same lesson as §1.1 and §1.1b wearing a
+different disguise — *absence of an error is not evidence of correctness.*
+
+| # | Bug | C# reference | Impact |
+|---|-----|--------------|--------|
+| 16 | Sheet meters hardcoded: `const food = isLiving ? 100 : 0`, same for sleep and sanity, while `Rules.FOOD_BASE_POINTS` etc. sat unused. Thresholds were never changed. | `GameActors.cs:204-212` | **Game-breaking.** 1440/1800/2880 became 100/100/100, so every actor spawned already "Hungry" *and* "Sleepy" *and* "Disturbed", and every `HoursUntil*` helper returned 0. |
+| 17 | Undead food was `0` for everyone; C# gives the rotting branch `ROT_BASE_POINTS` (2880) and reserves `NO_FOOD` for the three skeletons, the rat zombie and the sewers thing. | `GameActors.cs:175`, `:260-650` | No zombie could ever rot. |
+| 18 | `hasSanity` was `isLiving`, a combination C# never pairs with `NO_SANITY` | `GameActors.cs:938`, `:970` | The feral dog and Jason Myers drew an empty SAN bar. |
+| 19 | Inventory capacity a flat `6` for the living | `HUMAN_INVENTORY = 7`, `DOG_INVENTORY = 1` | One slot short of the original's "Inventory 1-7". |
+| 20 | `convert-csv.js` used the **raw CSV header cell** as the JSON key. Headers spell out units and ask questions: `"NUTRITION ratio of base food points"`, `"BATTERIES in hours"`, `"ACTIVATES WHEN DROPPED?"`. | C# reads by column *index*, so the text is decorative there | **Game-breaking, and silent.** 15 columns across 6 files produced keys no reader asks for: nutrition, bestBefore, batteries, FOV and every trap flag were all `undefined`. Food restored nothing; flashlights had no battery. |
+| 21 | `d.ENCUMBRANCE` (column is `ENC`) | `GameItems.cs:424-434` | Every piece of body armor had encumbrance 0 — weighed nothing. |
+| 22 | `d.STA_PENALTY`, `d.FRAGILE`, `d.TOOL_BASH`, `d.TOOL_BUILD` (columns are `STA`, `ISFRAGILE`, `TOOLBASHDMGBONUS`, `TOOLBUILDBONUS`) | `GameItems.cs:209-232` | Melee weapons lost their stamina penalty, fragility and tool bonuses. |
+| 23 | `d.MAX_AMMO` (column is `MAXAMMO`) | `GameItems.cs:280-300` | Every ranged weapon had `maxAmmo: undefined` — no magazine. |
+| 24 | `d.STACKING` on the barricade table (column is `STACKINGLIMIT`) | `GameItems.cs:384-410` | Wooden planks were never stackable. |
+| 25 | `d.VERB` — **there is no `VERB` column at all.** The C# spells the verb out at each construction site. | `GameItems.cs:778-1086` | Every melee and ranged weapon had an undefined verb: the UI said *"undefined the zombie"*. |
+| 26 | The `* WorldTime.TURNS_PER_HOUR` unit conversions the C# does at load were skipped in three tables | `GameItems.cs:1237,1311,1332` | A cell phone's **72 hours** of battery was 72 *turns* — 2.4 hours. Same for both lights and the stench killer. |
+| 27 | `Items_Scentsprays.json` was never imported; the lone model was hand-written | `GameItems.cs:1325-1336` | Quantity 10 instead of 40, strength 60 instead of 90. A whole orphaned table. |
+| 28 | `Skills.csv` was never read. All 43 `Rules.SKILL_*` statics were hardcoded to the C# **compile-time defaults** — the values the game has *before* `LoadSkillsFromCSV` runs. | `Skills.cs:310-430` | 36 coincide with the CSV, which is why it went unnoticed. **7 are the vanilla balance, not Reloaded's:** Strong 2 vs 3 damage, Z-Grab 4% vs 2%, Z-Tracker 10% vs 4% smell, Z-Tough 4 vs 3 HP, Z-Eater 0.2 vs 0.15 regen, Z-Light-Eater's two values swapped. |
+| 29 | Food was cross-wired: the loader indexed rows positionally, but `Items_Food.csv` lists Ration, Canned, Groceries while the `ItemID` enum is Ration, Groceries, Canned | `GameItems.cs:751-774` | Every food got the wrong `ItemID` *and* the wrong sprite, and the `-1` "never expires" sentinel landed on groceries — so `makeItemGroceries` built a `freshUntil` of −360 and `new WorldTime` **threw**, failing three test files. |
+| 30 | The C#'s post-processing pass is the only place `IsStackable` is finally decided: `model.StackingLimit > 1`, applied to every model, overriding all constructor assignments. The port decided it per table with `> 0`. | `GameItems.cs:1410-1421` | Every single-stack item (both foods but canned food, the plank, both uniques) was wrongly stackable. |
+| 31 | `isPlural` was never set on anything | `GameItems.cs:703-743`, `:1092-1127` | `Item.ts:29` falls back to singular, so one round read as *"a light pistol ammo"*. |
+| 32 | `isAn` used `/^[aeiou]/`; C#'s `StartsWithVowel` counts **`y`** | `GameItems.cs:681` | "Yellow…" items missed the "an". |
+| 33 | The ammo table was invented: "light pistol ammo" instead of "light pistol **bullets**", and quantities 30/30/30/20/16/12 instead of 20/12/14/20/10/30. `EquipmentPart = LEFT_HAND` was also missing on trackers, spray paints and scent sprays, though the equip logic reads it. | `GameItems.cs:1088-1130` | Wrong names, wrong pack sizes, and three item types that could not be held correctly. |
+
+#### The pattern, and why the sim could not have found any of it
+
+Bugs 16–33 are all *data* faults, and the headless simulator is structurally
+blind to them: it exercises the engine's behaviour, and an `undefined` stat
+produces perfectly valid-looking engine behaviour. The player starves on turn
+9 either way. The sim's value is catching crashes and corruption; it is not a
+correctness oracle for content.
+
+The one tool that *did* catch all of this was mechanical: enumerate the keys
+each generated JSON actually has, enumerate the `d.X` reads each loop makes, and
+diff them. That found bugs 20–25 in one pass. The lesson generalises — **when a
+port has a machine-readable boundary between authored data and code, check the
+two sides agree, rather than reviewing the code by eye.**
+
+**Bug 23 had a consequence well beyond its own row, and it is worth calling out
+separately.** With `maxAmmo` undefined, no living NPC could fire a ranged weapon
+at all, so the entire ranged half of NPC behaviour was silently dead. Fixing it
+changed the game's dynamics enough to invalidate the recorded sim baseline —
+see §1.2. *A data bug can disable a whole subsystem, and the symptom will look
+like a balance problem rather than a bug.*
+
+#### Two upstream data bugs found on the way
+
+- **`Skills.csv` cannot be loaded by the C# at all.** It labels its first rows
+  `_FIRST_LIVING` and `_FIRST_UNDEAD` where the `Skills.IDs` enum has `AGILE`
+  and `Z_AGILE`, and `FindLineForModel` (`Skills.cs:227`) matches on that
+  column — so the original throws `skill AGILE not found` during startup. The
+  port's `Skills.load()` therefore matches on **`NAME`**, the one column that is
+  intact. Side benefit: the lookup throws if `Skills.NAMES` and the CSV ever
+  drift apart. Fixing the CSV at source means editing `src/`, which this project
+  forbids — **open question, needs a decision.**
+- **`GameItems.cs:993` passes `rwp.FLAVOR` as the *plural* name** for every
+  ranged weapon, where `d.PLURAL` was clearly meant. An upstream typo. The port
+  keeps `d.PLURAL`; this is a deliberate divergence, not an oversight.
+
+#### Regression tests added alongside
+
+`tests/data-tables.test.ts` (45 cases) asserts the canonical column names for
+all 15 tables, that no key contains a space, and — the important one — that
+**every JSON value equals its CSV value positionally**, so a CSV edited without
+regenerating the JSON fails the build instead of quietly shipping stale balance.
+`tests/skills-data.test.ts` (53 cases) asserts all 43 `SKILL_*` constants equal
+their CSV value with the right `(int)` truncation, and that each of the 7
+corrected ones now *differs* from the C# default. Both were verified to fail
+when the corresponding bug is reintroduced. **273 tests pass across 16 files.**
+
 
 ### 1.2 The harness now runs real games
 
 Runs are reproducible (`--seed`, §1.4) and the map no longer corrupts itself
-(§1.1 bug 10). At 3×3 / 1 000 turns, 4 of 5 seeds play all 1 000 turns with the
-player alive and no exception:
+(§1.1 bug 10).
+
+> **This baseline was invalidated by §1.1c and has been re-measured.** The
+> figures previously recorded here were taken against a build with 18 live data
+> bugs, one of which (`maxAmmo: undefined`, bug 23) meant **no living NPC could
+> ever fire a ranged weapon**. Restoring it changed the dynamics completely, so
+> the old numbers are gone rather than kept: comparing against them is
+> meaningless.
+
+At 3×3 / 1 000 turns / `--undead`, current:
 
 ```
-seed 1    turns played : 1000  player : alive (52 hp)  actors : 870 (565 undead / 305 living)
-seed 2    turns played : 1000  player : alive (67 hp)  actors : 898 (582 undead / 316 living)
-seed 3    turns played :   48  player : dead (-20 hp)
-seed 7    turns played : 1000  player : alive (56 hp)  actors : 880 (565 undead / 315 living)
-seed 42   turns played : 1000  player : alive (57 hp)  actors : 858 (561 undead / 297 living)
+seed 1  turns played :  19  player : dead  (-8 hp)   actors : 903 (562 undead / 341 living)
+seed 2  turns played : 719  player : alive (60 hp)   actors : 882 (557 undead / 325 living)  ERROR
+seed 3  turns played :  10  player : dead  (-12 hp)  actors : 866 (520 undead / 346 living)
+seed 4  turns played :  46  player : dead  (-8 hp)   actors : 875 (543 undead / 332 living)
+seed 5  turns played : 191  player : dead  (-2 hp)   actors : 854 (519 undead / 335 living)
 ```
 
-`Map.assertActorIntegrity()` runs every turn, so this class of bug now fails on
-the turn it starts rather than as a strange death 40 turns later. It is not dead
-code — reintroducing bug 10 makes it report the duplicate on turn 1.
+**The undead bot now dies quickly, and that is the fix working.** An undead
+player is shot by survivors, and survivors previously could not shoot. Confirmed
+by instrumenting the player's `hitPoints`: every hit arrives via
+`DoRangedAttack → DoSingleRangedAttack → InflictDamage`, two shots a turn for
+~17 and ~14 damage. C# `ItemRangedWeapon`'s constructor does
+`m_Ammo = m.MaxAmmo` (`ItemRangedWeapon.cs:40`), so a fresh gun starts loaded;
+with `maxAmmo` undefined, the port's guns started with `undefined` rounds and
+the entire ranged half of NPC behaviour was dead. **So `--undead` is no longer
+the way to get a long run** — it used to be recommended precisely because the
+survivor bot starved, and that reason is gone (§1.2a).
 
-### 1.2a Two things that look like bugs but are not
+`Map.assertActorIntegrity()` still runs every turn, so the §1.1 bug 10 class
+fails on the turn it starts rather than as a strange death 40 turns later. It is
+not dead code — reintroducing bug 10 makes it report the duplicate on turn 1.
+
+### 1.2a Three things that look like bugs but are not
 
 Do not re-investigate these:
 
-- **Players still die at full HP (30) around turn ~100 when run as a survivor.**
-  The bot exhausts its 100 food points because it never eats. The engine is
-  behaving correctly. `--undead` sidesteps it cleanly (undead do not have to
-  eat) and is what the long runs above use.
+- **~~Players die at full HP around turn ~100 when run as a survivor.~~ No longer
+  true, and the old explanation was a symptom of §1.1c bug 16.** The bot used to
+  exhaust "its 100 food points" because the meter really was capped at 100. It
+  is 1 440 now, and a survivor bot reaches turn 400+ alive. The 1 000-turn
+  survivor runs still do not complete, but the cause is combat, not starvation —
+  which is what §1.2 now shows.
 - **`hitPoints` can go negative** (seed 3 ends at −20). C# `InflictDamage` also
   does `HitPoints -= dmg` with no clamp, so this is faithful.
+- **`SpawnActorOnMapBorder` can throw `another actor already at position`**
+  (seed 2 above, and any survivor run past turn 720). **Faithful**: C#
+  `Map.PlaceActorAt` throws `InvalidOperationException` with that exact string
+  (`Map.cs:488`), and the port's spawner calls it with the same unguarded
+  retry loop as `RogueGame.cs:4987`. The chosen border tile can already be
+  occupied because `isWalkableFor` does not exclude tiles holding an actor. This
+  is a genuine upstream bug that the port reproduces. It was unreachable while
+  every run died of starvation first; fixing it would be a deliberate divergence
+  from the original, so it needs a decision rather than a drive-by fix.
 
-One real but unrelated divergence is still open: `Actor.hitPoints` is a plain
-public field in TS, so the C# `HitPoints` setter's `m_IsInvincible` guard
-(`Actor.cs:245`) is never enforced. That only affects the alpha10 invincibility
-cheat, not normal play.
+
+One real but unrelated divergence is still open: `Actor`'s points are plain
+public fields in TS, so the C# setters' `m_IsInvincible` guards are never
+enforced. It is **four** properties, not one — `HitPoints`, `StaminaPoints`,
+`FoodPoints` and `SleepPoints` (`Actor.cs:245,262,279,296`) versus
+`Actor.ts:49-57`. Only affects the alpha10 invincibility cheat, not normal
+play. Tracked as §1.5 item 5.
 
 ### 1.3 How to run it
 
@@ -135,9 +249,15 @@ npm run type-check
 npm run build
 npm run sim                                    # default 3x3 world, 200 turns
 npm run sim -- --size 1 --turns 30             # fast smoke run
-npm run sim -- --size 3 --turns 1000 --seed 7 --undead   # long run, reproducible
+npm run sim -- --size 3 --turns 1000 --seed 2 --undead   # long run, reproducible
 npm run sim -- --size 1 --turns 30 --trace     # per-actor + bot decisions
 ```
+
+> **Caveat on "long run":** no seed currently reaches 1 000 turns. The undead bot
+> is shot down by survivors (§1.2), and long survivor runs hit the
+> `SpawnActorOnMapBorder` throw described in §1.2a. This is expected on a
+> correct build — the old 1 000-turn baseline was measured while every ranged
+> weapon was inert.
 
 Other flags: `--seed <n>`, `--undead`, `--bot <true|false>`, `--verbose`.
 
@@ -203,6 +323,22 @@ ground is explored rather than once per run.
 
 0. ~~**Fix the minimap reveal bug** (§1.4a).~~ **Done 2026-09-27** — see
    §1.1b bug 11. It turned out to be the whole in-game map, not just the minimap.
+0b. ~~**Audit the CSV → JSON data layer.**~~ **Done 2026-09-27** — see §1.1c,
+   18 bugs across five layers, and two new suites that pin the layer shut.
+   *Remaining from that audit, both needing a decision rather than work:*
+   - **`Skills.csv` cannot be loaded by the C#** (§1.1c). The port works around
+     it by matching on `NAME`. Repairing the file means editing `src/`, which
+     this project forbids — decide whether `src/` may be corrected for a
+     provable data bug, or leave the workaround and document it.
+   - **`Skills.maxSkillLevel` is a port invention.** The C# has no such
+     function; `AddOrIncreaseSkill` just increments. The port hardcodes
+     HAULER 3 / else 5, and that gates the level-up cap in three places
+     (`BaseMapGenerator.ts:382`, `RogueGame.ts:14380`) and prints as "5 max" in
+     two UI paths. Either find the intended cap or drop the fiction.
+   - **`SpawnActorOnMapBorder` throws on an occupied tile** (§1.2a). Faithful to
+     the C#, which throws the same string from `Map.cs:488`. Fixing it means
+     diverging from the original — decide whether a crash is the intended
+     behaviour or an upstream bug the port should outgrow.
 1. **Play the game, don't just sim it.** This is now the highest-value activity
    and it is the step that was skipped: all five bugs in §1.1b were found by
    opening a browser, and the sim found none of them because they were all
@@ -211,6 +347,9 @@ ground is explored rather than once per run.
    of the old lesson: *the sim is the definition of done for the engine; the
    browser is the definition of done for the renderer.* Neither substitutes for
    the other, and both were green while the game was unplayable.
+   **The §1.1c data bugs make the same point a third way:** the sim is blind to
+   *content* faults too, because an `undefined` stat still produces valid
+   engine behaviour. Only the browser shows a player standing at 100/100 food.
 2. **Keep running the sim to failure and fix what it finds.** Now that the map
    stops corrupting itself, 1 000-turn runs are reachable. Loop over seeds:
    `for s in 1 2 3 4 5; do npm run sim -- --size 3 --turns 1000 --seed $s --undead; done`
@@ -223,14 +362,25 @@ ground is explored rather than once per run.
    two: nothing currently checks that a generated town is fully reachable.
 4. **Audit the remaining AI files for bug 3.** The `filterActors` fix was central,
    but any other `percepted as Actor` cast followed by a dereference is still
-   suspect. Grep for the pattern.
-5. **Restore C#'s `isInvincible` guard** on `Actor.hitPoints` (§1.2a).
+   suspect. Grep for the pattern — **44 sites** across `gameplay/ai/*.ts`, of
+   which only `BaseAI.ts:821` currently carries the documented guard.
+   `BaseAI.ts:189`, `:1894`, `:1919` and `:1997` cast then dereference.
+5. **Restore C#'s `isInvincible` guard** (§1.2a). **Four properties, not one:**
+   the C# setter guards `HitPoints`, `StaminaPoints`, `FoodPoints` *and*
+   `SleepPoints` (`Actor.cs:245,262,279,296`) and all four are plain public
+   fields in the port (`Actor.ts:49-57`).
 6. **Serialise the world/map graph in `Session.save`** — the `TODO(phase 4)`
-   there blocks any true save/load roundtrip test.
+   at `Session.ts:324` blocks any true save/load roundtrip test.
 7. Then work down the rest of the Phase 8 task list in §4 (tasks 9–12).
 
 **Items 3–6 all require reading `src/`.** See the warning at the top of this
 file before considering its removal.
+
+**Watch the coverage margins.** Statements (52.68 vs 50) and functions (59.97 vs
+57) clear their thresholds by under three points, so the next sizeable chunk of
+untested code will trip `npm run verify` for a reason unrelated to whether the
+game works. Raise the thresholds deliberately when the baseline moves, or lower
+them — but do not let it fail silently.
 
 ### 1.6 Known non-bugs (do not re-investigate)
 
@@ -266,6 +416,8 @@ file before considering its removal.
   (it had described only the 2012 C# source) and trimmed `web/README.md`.
   146 tests pass; the reproducibility suite is the pre-existing Windows failure
   in §1.6.
+- `280430c` — the eighteen §1.1c data-layer bugs, the `convert-csv.js` `COLUMNS`
+  table, `Skills.load()`, and the two new data suites. 273 tests pass.
 
 ---
 
@@ -304,7 +456,7 @@ Full detail in `web/.porting/CONVENTIONS.md`. The ones that matter:
 |---|---|
 | `npm run verify` | type-check + coverage + build — what CI runs, in one command |
 | `npm run type-check` | `tsc --noEmit`; covers `src/`, `sim/` and `tests/` — necessary, **not sufficient** |
-| `npm run test` | Vitest, 146 tests |
+| `npm run test` | Vitest, 273 tests |
 | `npm run test:coverage` | Vitest with coverage thresholds enforced |
 | `npm run build` | Vite production build |
 | `npm run sim` | Headless engine run — the real test |
@@ -344,7 +496,7 @@ Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks,
 | 2 | Deterministic `--seed` for reproducible runs | **Done** (`Session.useSeed`, `--seed`) |
 | 3 | Drive the sim to a clean full-length run and fix what it finds | **In progress** — 1 000-turn runs clean on 4/5 seeds; keep sweeping |
 | 4 | Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`) | **Done and verified in a browser** — now 1366×768 widescreen, smooth filtering (the old `image-rendering: pixelated` made upscaled text unreadable) |
-| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 146 tests, 11 files, thresholds enforced (50/75/57/50) |
+| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 273 tests, 16 files, thresholds enforced (50/75/57/50) |
 | 6 | GitHub Actions CI | **Done** — `.github/workflows/ci.yml`, type-check + coverage + build + seeded sim, plus a docker smoke job |
 | 7 | PWA manifest + service worker (offline play) | **Done** — manifest, drawn icons, runtime-caching `sw.js` |
 | 8 | Docker image for the self-hosted server | **Done but unverified** — docker is not installed locally, so the image has never been built; CI will exercise it first |
@@ -369,6 +521,8 @@ once with `npm run verify`. `tests/` is in `tsconfig.json`'s include list, so
 | `persistence.test.ts` | `Session` / `GameOptions` / `Keybindings` / `HiScoreTable` / `GameHints` / `TextFile` roundtrips on the in-memory storage fallback |
 | `integration/headless-run.test.ts` | A real seeded playthrough. `metrics.error === undefined` is the assertion that would have caught all nine bugs in §1.1 |
 | `integration/reproducibility.test.ts` | Shells out to the real CLI twice per seed — `Session` is a process-wide singleton, and the CLI is what CI and users invoke |
+| `data-tables.test.ts` | Every generated JSON against its source CSV: canonical column names, no key containing a space, and values equal positionally. Catches the whole §1.1c class (45 cases) |
+| `skills-data.test.ts` | `Skills.csv` actually reaches the `Rules.SKILL_*` statics, with the right `(int)` truncation, and each of the 7 corrected values differs from the C# default (53 cases) |
 
 Two constraints worth preserving:
 
@@ -504,7 +658,7 @@ Items 1, 4 and 5 are implemented (see §4.1a). Items 2 and 3 are not.
 2. **AI behaviour tests** — ⬜ zombie pursuit, line-of-sight tracking, scent aggregation, civilian self-preservation, in isolated map scenarios.
 3. **Generator integrity tests** — ⬜ town/building/sewer generators must produce fully reachable nav-graphs with no deadlocks or out-of-bounds writes.
 4. **Save/load roundtrip** — ✅ `tests/persistence.test.ts`, for the six persistence modules. Note the gap: `Session` does not serialise the world/map object graph yet (see the `TODO(phase 4)` in `Session.save`), so a full "complex running game" roundtrip is not possible until that lands.
-5. **Coverage** — ✅ `@vitest/coverage-v8`, thresholds at 50/75/57/50, set ~1–1.5 points under the measured 51.1/76.4/58.9 baseline rather than at an aspirational number.
+5. **Coverage** — ✅ `@vitest/coverage-v8`, thresholds at 50/75/57/50, set ~1–1.5 points under the measured baseline rather than at an aspirational number. **The baseline moved to 52.68/77.14/59.97 with §1.1c** (the two new suites cover a lot of previously-untested data code). Statements and functions now clear their thresholds by under three points, so re-measure and re-set these together rather than letting `verify` fail on them.
 
 
 ---
@@ -520,7 +674,7 @@ Items 1, 4 and 5 are implemented (see §4.1a). Items 2 and 3 are not.
 | 5 | World generation + AI | Done |
 | 6 | Audio | Done |
 | 7 | Save / load | Done |
-| 8 | Headless sim, tests, CI, deployment | In progress — sim plays 1 000 turns; 146 tests, CI, PWA, Docker, asset pass and frame-cost pass all in. Only 12 (optional touch) remains |
+| 8 | Headless sim, tests, CI, deployment | In progress — sim plays 1 000 turns; 273 tests, CI, PWA, Docker, asset pass and frame-cost pass all in. Only 12 (optional touch) remains |
 
 ---
 
