@@ -12,7 +12,7 @@ Basically, I love the original game but it is quite dated in its infrastructure.
 
 I also hate C# :( and Typescript makes it run on more systems natively, and enables the game to be played on browser and (in the future, maybe) on mobile.
 
-For now, the game will be as close to a 1:1 port as possible; the only changes will be QOL ones, like adding zoom, larger and more readable text on the UI and menus, and so forth.
+For now, the game will be as close to a 1:1 port as possible; the only changes will be QOL ones, like adding zoom, larger and more readable text on the UI and menus, and so forth. I plan to add more content in the future but will always keep a legacy version available for the true original experience. with only these QOL fixes.
 
 Feel free to submit PRs/suggestions!
 
