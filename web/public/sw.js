@@ -26,7 +26,7 @@
  * runtime handler keeps serving the old bundle first and the update only lands
  * on the *next* load — which reads exactly like "the fix didn't work".
  */
-const CACHE_VERSION = "rsr-v2";
+const CACHE_VERSION = "rsr-v3";
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
@@ -34,6 +34,12 @@ const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 // The favicon is precached alongside the shell: it is what a browser shows
 // when the game is launched from the home screen with no connection, and a
 // missing one falls back to a default page icon.
+//
+// The two font faces are here for the same reason, and more strongly: every
+// glyph in the game is drawn with them, so an offline first run without them
+// renders the entire UI in a fallback face. Together they are 183 KB, which is
+// small next to the 55 MB of sprites and audio that are deliberately *not*
+// precached below.
 const SHELL_URLS = [
   "/",
   "/index.html",
@@ -41,6 +47,8 @@ const SHELL_URLS = [
   "/icon-reloaded.png",
   "/icon-192.png",
   "/icon-512.png",
+  "/fonts/JetBrainsMono-Regular.woff2",
+  "/fonts/JetBrainsMono-Bold.woff2",
 ];
 
 /**

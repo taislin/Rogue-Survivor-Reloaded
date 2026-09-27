@@ -4,6 +4,7 @@ import { Color } from "@engine/Color";
 import { Point } from "@engine/Point";
 import { Rect }  from "@engine/Rect";
 import { InputHandler } from "./InputHandler";
+import { FONT_HUD, FONT_HUD_BOLD, FONT_MENU, FONT_MENU_BOLD } from "./fonts";
 
 /** Size of the minimap in tiles (matches C# constants). */
 const MINIMAP_W = 100;
@@ -39,23 +40,25 @@ export interface CanvasLayout {
  * 10pt, not the C#'s "Lucida Console 8.25pt": this is a deliberate divergence
  * in the same spirit as the widescreen canvas, and for the same reason — the
  * browser is not running at C#'s 1024x768. Everything the HUD draws here is
- * `Lucida Console`-flavoured monospace at whatever the display scales to, and
- * 8.25pt lands at roughly 11 device px, which is unreadable on a HiDPI panel.
+ * monospace at whatever the display scales to, and 8.25pt lands at roughly
+ * 11 device px, which is unreadable on a HiDPI panel.
  *
  * The bump is paid for in geometry, not by clipping: the side panel was widened
  * (see `TILE_VIEW_WIDTH`) to fit the larger status rows, and the log gives up a
  * line for the extra leading. See `RogueGame.ts`.
+ *
+ * The family itself is JetBrains Mono, registered and awaited in `fonts.ts` —
+ * which is also where the fallback stack is defined, and why swapping the face
+ * does not move any of the coordinates computed from `MENU_CHAR_WIDTH`.
  */
-const FONT_NORMAL = '10pt "Lucida Console", "Courier New", monospace';
-const FONT_BOLD   = 'bold 10pt "Lucida Console", "Courier New", monospace';
+const FONT_NORMAL = FONT_HUD;
+const FONT_BOLD   = FONT_HUD_BOLD;
 
 /**
  * Menu/reading font. Same family as the HUD font for visual continuity, at
  * 12pt for legibility on upscaled displays. Used by popups and every
  * full-screen menu through `UI_DrawStringLarge` / `UI_DrawPopup*`.
  */
-const FONT_MENU        = '12pt "Lucida Console", "Courier New", monospace';
-const FONT_MENU_BOLD   = 'bold 12pt "Lucida Console", "Courier New", monospace';
 
 /**
  * Canvas 2D implementation of IRogueUI.

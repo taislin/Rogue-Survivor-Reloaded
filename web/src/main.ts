@@ -3,6 +3,7 @@ import { InputHandler }         from "@ui/InputHandler";
 import { Color }                from "@engine/Color";
 import { RogueGame }            from "@engine/RogueGame";
 import { WebAudioMusicManager } from "@engine/audio/WebAudioMusicManager";
+import { loadGameFonts }        from "@ui/fonts";
 
 async function main(): Promise<void> {
   // ── Bootstrap ──────────────────────────────────────────────────────────────
@@ -29,6 +30,21 @@ async function main(): Promise<void> {
 
   const canvas = document.getElementById("gameCanvas") as HTMLCanvasElement;
   if (!canvas) throw new Error("No #gameCanvas element found");
+
+  /*
+   * The typeface, before anything is drawn.
+   *
+   * A canvas draws text with whatever font is *loaded*, so a webfont that has not
+   * arrived yet means the first frames are rendered in the fallback and then
+   * silently re-rendered in the real face — a visible reflow of every menu and
+   * panel, and a set of metrics that differ from the ones the layout maths
+   * assumes. Awaiting here costs one font fetch during the loading overlay.
+   *
+   * It is awaited rather than fired-and-forgotten on purpose: `loadGameFonts`
+   * never rejects (a missing face is a warning, and the stack falls back), so
+   * this cannot hold up the boot.
+   */
+  await loadGameFonts();
 
   const input = new InputHandler();
   const ui    = new CanvasUI(canvas, input);
