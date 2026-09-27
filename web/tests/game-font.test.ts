@@ -1,7 +1,15 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { FONT_HUD, FONT_MENU, FONT_STACK, GAME_FONT_FAMILY } from "@ui/fonts";
+import {
+  DEFAULT_FONT_CHOICE,
+  FONT_CHOICES,
+  fontChoiceName,
+  fontHud,
+  fontMenu,
+  fontStackFor,
+  GAME_FONT_FAMILY,
+} from "@ui/fonts";
 
 /**
  * The bundled typeface.
@@ -54,12 +62,27 @@ describe("the bundled typeface", () => {
     // stack is what saves a browser that cannot load it. All four faces in the
     // stack are 0.6 em, which is what `MENU_CHAR_WIDTH` assumes — a fallback
     // therefore changes the glyphs without moving any coordinate.
-    expect(FONT_STACK.startsWith(`"${GAME_FONT_FAMILY}"`)).toBe(true);
-    expect(FONT_STACK).toContain("Lucida Console");
-    expect(FONT_STACK).toContain("monospace");
+    const stack = fontStackFor(DEFAULT_FONT_CHOICE);
+    expect(stack.startsWith(`"${GAME_FONT_FAMILY}"`)).toBe(true);
+    expect(stack).toContain("Lucida Console");
+    expect(stack).toContain("monospace");
 
-    expect(FONT_HUD).toBe(`10pt ${FONT_STACK}`);
-    expect(FONT_MENU).toBe(`12pt ${FONT_STACK}`);
+    expect(fontHud()).toBe(`10pt ${stack}`);
+    expect(fontMenu()).toBe(`12pt ${stack}`);
+  });
+
+  it("offers the classic stack as a second choice, and it is not the default", () => {
+    // The stack the port used before JetBrains Mono was vendored, kept because
+    // that *was* the game's look and the C# asked for Lucida Console by name.
+    expect(FONT_CHOICES.length).toBeGreaterThan(1);
+    expect(DEFAULT_FONT_CHOICE).toBe("bundled");
+
+    const classic = fontStackFor("classic");
+    expect(classic).not.toContain(GAME_FONT_FAMILY);
+    expect(classic).toContain("Lucida Console");
+    // Still 0.6 em, so choosing it moves no coordinates either.
+    expect(classic).toContain("monospace");
+    expect(fontChoiceName("classic")).toMatch(/classic/i);
   });
 
   it("is precached for offline play, where every glyph depends on it", () => {

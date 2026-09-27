@@ -10,7 +10,7 @@ import { Color } from "@engine/Color";
 import { Point } from "@engine/Point";
 import { Rect }  from "@engine/Rect";
 import { InputHandler } from "./InputHandler";
-import { FONT_HUD, FONT_HUD_BOLD, FONT_MENU, FONT_MENU_BOLD } from "./fonts";
+import { fontHud, fontHudBold, fontMenu, fontMenuBold } from "./fonts";
 
 /** Size of the minimap in tiles (matches C# constants). */
 const MINIMAP_W = 100;
@@ -57,9 +57,6 @@ export interface CanvasLayout {
  * which is also where the fallback stack is defined, and why swapping the face
  * does not move any of the coordinates computed from `MENU_CHAR_WIDTH`.
  */
-const FONT_NORMAL = FONT_HUD;
-const FONT_BOLD   = FONT_HUD_BOLD;
-
 /**
  * Menu/reading font. Same family as the HUD font for visual continuity, at
  * 12pt for legibility on upscaled displays. Used by popups and every
@@ -507,19 +504,19 @@ export class CanvasUI implements IRogueUI {
   // ── Text ──────────────────────────────────────────────────────────────────
 
   UI_DrawString(color: Color, text: string, gx: number, gy: number, shadowColor?: Color): void {
-    this.drawText(FONT_NORMAL, color, text, gx, gy, shadowColor);
+    this.drawText(fontHud(), color, text, gx, gy, shadowColor);
   }
 
   UI_DrawStringBold(color: Color, text: string, gx: number, gy: number, shadowColor?: Color): void {
-    this.drawText(FONT_BOLD, color, text, gx, gy, shadowColor);
+    this.drawText(fontHudBold(), color, text, gx, gy, shadowColor);
   }
 
   UI_DrawStringLarge(color: Color, text: string, gx: number, gy: number, shadowColor?: Color): void {
-    this.drawText(FONT_MENU, color, text, gx, gy, shadowColor);
+    this.drawText(fontMenu(), color, text, gx, gy, shadowColor);
   }
 
   UI_DrawStringBoldLarge(color: Color, text: string, gx: number, gy: number, shadowColor?: Color): void {
-    this.drawText(FONT_MENU_BOLD, color, text, gx, gy, shadowColor);
+    this.drawText(fontMenuBold(), color, text, gx, gy, shadowColor);
   }
 
   private drawText(font: string, color: Color, text: string, gx: number, gy: number, shadowColor?: Color): void {
@@ -571,7 +568,7 @@ export class CanvasUI implements IRogueUI {
   ): void {
     // Popups use the large menu font; the box is measured in that font so it
     // always fits its text.
-    this.ctx.font         = FONT_MENU;
+    this.ctx.font         = fontMenu();
     this.ctx.textBaseline = "top";
 
     // Measure widest string

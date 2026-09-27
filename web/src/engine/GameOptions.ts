@@ -11,6 +11,12 @@ import {
   setImageSet,
   type ImageSet,
 } from "@engine/AssetPaths";
+import {
+  DEFAULT_FONT_CHOICE,
+  fontChoiceName,
+  setFontChoice,
+  type FontChoice,
+} from "@ui/fonts";
 
 export enum OptionIDs {
   UI_MUSIC,
@@ -56,6 +62,7 @@ export enum OptionIDs {
   GAME_SHAMBLERS_UPGRADE,
   GAME_AUTOSAVE_PERIOD, // alpha10.1
   UI_SPRITE_STYLE, // browser port
+  UI_FONT_CHOICE, // browser port
 }
 
 export enum ZupDays {
@@ -119,6 +126,7 @@ export class GameOptions {
   static readonly DEFAULT_ZOMBIFIEDS_UPGRADE_DAYS: ZupDays = ZupDays.THREE;
   static readonly DEFAULT_AUTOSAVE_PERIOD = 24; // alpha10.1
   static readonly DEFAULT_SPRITE_STYLE: ImageSet = DEFAULT_IMAGE_SET;
+  static readonly DEFAULT_FONT_CHOICE: FontChoice = DEFAULT_FONT_CHOICE;
 
   // ── Fields ──────────────────────────────────────────────────────────────
   private m_DistrictSize = 0;
@@ -181,6 +189,9 @@ export class GameOptions {
    * option bounds in the options screen come from that array instead.
    */
   private m_SpriteStyle: ImageSet = DEFAULT_IMAGE_SET;
+
+  /** Which typeface the canvas draws with; see `ui/fonts.ts`. */
+  private m_FontChoice: FontChoice = DEFAULT_FONT_CHOICE;
 
   // dev only options (hidden)
   DEV_ShowActorsStats = false;
@@ -546,6 +557,31 @@ export class GameOptions {
     setImageSet(this.m_SpriteStyle);
   }
 
+  /**
+   * The typeface, applied as soon as it is set — for the same reason the sprite
+   * style is: the canvas font strings are read per draw, so a change takes effect
+   * on the next frame rather than the next reload.
+   */
+  get fontChoice(): FontChoice {
+    return this.m_FontChoice;
+  }
+  set fontChoice(value: FontChoice) {
+    this.m_FontChoice = value;
+    void this.applyFontChoice();
+  }
+
+  /**
+   * Pushes the stored typeface into the font module.
+   *
+   * Fire-and-forget on purpose: switching to the bundled face may need a font
+   * fetch, and an option change must not be able to reject into nowhere. The
+   * faces are already cached by then in every normal case, since the bundled face
+   * is the default and was awaited at boot.
+   */
+  applyFontChoice(): Promise<void> {
+    return setFontChoice(this.m_FontChoice);
+  }
+
   // ── Init ────────────────────────────────────────────────────────────────
   resetToDefaultValues(): void {
     this.m_DistrictSize = GameOptions.DEFAULT_DISTRICT_SIZE;
@@ -591,6 +627,8 @@ export class GameOptions {
     this.m_AutoSavePeriodInHours = GameOptions.DEFAULT_AUTOSAVE_PERIOD; // alpha10.1
     this.m_SpriteStyle = GameOptions.DEFAULT_SPRITE_STYLE;
     this.applySpriteStyle();
+    this.m_FontChoice = GameOptions.DEFAULT_FONT_CHOICE;
+    void this.applyFontChoice();
     this.DEV_ShowActorsStats = false;
   }
 
@@ -604,11 +642,13 @@ export class GameOptions {
       if (key.startsWith("m_")) dst[key] = from[key];
     }
     dst.DEV_ShowActorsStats = from.DEV_ShowActorsStats;
-    // The sprite set is the one option with an effect outside this object, so
-    // copying the field is not enough: `AssetPaths` has to be told too. Without
-    // this, "R" (restore previous) in the options screen would put the numbers
-    // back and leave the screen drawn in the style the player just rejected.
+    // The sprite set and the typeface are the two options with an effect
+    // outside this object, so copying the field is not enough: `AssetPaths` and
+    // the font module have to be told too. Without this, "R" (restore previous)
+    // in the options screen would put the numbers back and leave the screen drawn
+    // in the look the player just rejected.
     this.applySpriteStyle();
+    void this.applyFontChoice();
   }
 
   /** Returns a new instance holding a copy of this option set. */
@@ -705,6 +745,8 @@ export class GameOptions {
       return "  (Save) AutoSave Period"; // alpha10.1
     case OptionIDs.UI_SPRITE_STYLE:
       return "  (Gfx) Sprite Style";
+    case OptionIDs.UI_FONT_CHOICE:
+      return "  (Gfx) Font";
       default:
         throw new Error("unhandled option");
     }
@@ -1053,6 +1095,8 @@ export class GameOptions {
       return `${(this.autoSavePeriodInHours === 0 ? "OFF" : `${this.autoSavePeriodInHours}h`).padEnd(4)}  (default ${GameOptions.DEFAULT_AUTOSAVE_PERIOD}h)`;
     case OptionIDs.UI_SPRITE_STYLE:
       return GameOptions.spriteStyleName(this.spriteStyle);
+    case OptionIDs.UI_FONT_CHOICE:
+      return fontChoiceName(this.fontChoice);
       default:
         return "???";
     }
@@ -1088,6 +1132,8 @@ export class GameOptions {
     // Same reason: `load` writes the field, not through the setter, so the
     // sprite set `AssetPaths` is drawing with would stay at the default.
     options.applySpriteStyle();
+    // And the typeface, for the same reason and the same way.
+    void options.applyFontChoice();
     } catch {
       // failed to load options (no custom options?) -> return default values.
       return new GameOptions();

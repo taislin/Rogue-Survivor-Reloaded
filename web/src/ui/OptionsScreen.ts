@@ -9,6 +9,7 @@ import {
 } from "@engine/GameOptions";
 import type { IRogueUI } from "@engine/IRogueUI";
 import { IMAGE_SETS } from "@engine/AssetPaths";
+import { FONT_CHOICES } from "@ui/fonts";
 import { DifficultySide, Scoring } from "@engine/Scoring";
 import { Session } from "@engine/Session";
 
@@ -52,6 +53,7 @@ export class OptionsScreen {
 		OptionIDs.UI_SHOW_PLAYER_TAG_ON_MINIMAP,
 		// sprites
 		OptionIDs.UI_SPRITE_STYLE,
+		OptionIDs.UI_FONT_CHOICE,
 		// helpers
 		OptionIDs.UI_ADVISOR,
 		OptionIDs.UI_COMBAT_ASSISTANT,
@@ -519,6 +521,17 @@ export class OptionsScreen {
 				const next = index + dir;
 				if (next >= 0 && next < IMAGE_SETS.length) {
 					o.spriteStyle = IMAGE_SETS[next]!;
+				}
+				break;
+			}
+			case OptionIDs.UI_FONT_CHOICE: {
+				// Same bounded-index shape, over the typefaces `ui/fonts.ts` offers.
+				// The setter applies it, so the next frame is drawn in the new face
+				// rather than the next reload.
+				const index = FONT_CHOICES.indexOf(o.fontChoice);
+				const next = index + dir;
+				if (next >= 0 && next < FONT_CHOICES.length) {
+					o.fontChoice = FONT_CHOICES[next]!;
 				}
 				break;
 			}

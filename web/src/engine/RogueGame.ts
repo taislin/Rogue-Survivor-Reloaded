@@ -3017,8 +3017,10 @@ export class RogueGame {
 			conflict = s_KeyBindings.checkForConflict();
 
 			// draw
+			// Every key, not just the primary: a command can have several, and the
+			// point of the screen is to see what a command answers to.
 			const values: string[] = commands.map(
-				(cmd) => s_KeyBindings.get(cmd) ?? "",
+				(cmd) => s_KeyBindings.getAll(cmd).join(" / "),
 			);
 
 			const gx = 0;
@@ -3060,10 +3062,10 @@ export class RogueGame {
 				);
 				gy += BOLD_LINE_SPACING;
 			}
-			this.DrawFootnote(
-				Color.White,
-				"cursor to move, ENTER to rebind a key, ESC to save and leave",
-			);
+		this.DrawFootnote(
+			Color.White,
+			"cursor to move, ENTER to ADD a key, BACKSPACE to drop the last one, ESC to save and leave",
+		);
 			this.m_UI.UI_Repaint();
 
 			// handle
@@ -3084,12 +3086,23 @@ export class RogueGame {
 					}
 					break;
 
+				case "Backspace": {
+					//
+					// Drop the most recently added key of the selected command, so a
+					// command given several keys can be trimmed back without resetting
+					// everything. The C# cannot have more than one key per command, so there
+					// is no equivalent to port here.
+					//
+					s_KeyBindings.removeLastKey(commands[selected]);
+					break;
+				}
+
 				case "Enter": {
 					// rebind
 					// say.
 					this.m_UI.UI_DrawStringBoldLarge(
 						Color.Yellow,
-						`rebinding ${menuEntries[selected]}, press the new key.`,
+						`adding a key for ${menuEntries[selected]}, press it now.`,
 						gx,
 						gy,
 					);
@@ -3110,12 +3123,15 @@ export class RogueGame {
 							newKey.ctrl,
 							newKey.alt,
 							newKey.shift,
+							newKey.code,
 						);
 						loopNewKey = false;
 					} while (loopNewKey);
 
-					// bind it.
-					s_KeyBindings.set(commands[selected], newKeyData);
+					// Bind it, *in addition to* whatever the command already answers
+					// to. Replacing would make "more than one key per command" unreachable
+					// from this screen, which is the only place a player can set one.
+					s_KeyBindings.addKey(commands[selected], newKeyData);
 
 					break;
 				}
@@ -5781,6 +5797,7 @@ export class RogueGame {
 					inKey.ctrl,
 					inKey.alt,
 					inKey.shift,
+					inKey.code,
 				);
 				if (command === PlayerCommand.QUIT_GAME) {
 					// quit game.
@@ -8790,6 +8807,7 @@ export class RogueGame {
 				key.ctrl,
 				key.alt,
 				key.shift,
+				key.code,
 			);
 
 			if (key.key === "Escape") {
@@ -11912,6 +11930,7 @@ export class RogueGame {
 				inKey.ctrl,
 				inKey.alt,
 				inKey.shift,
+			inKey.code,
 			);
 			const dir = this.CommandToDirection(command);
 			if (dir != null) return dir;

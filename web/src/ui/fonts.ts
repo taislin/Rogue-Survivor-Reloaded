@@ -43,26 +43,83 @@ const FACES: ReadonlyArray<{ file: string; weight: string }> = [
 ];
 
 /**
+ * The typeface choices, in the order the option cycles them.
+ *
+ * `bundled` is JetBrains Mono: it is what the game is designed against, it is
+ * present on every platform and offline, and it is the first entry so it is what
+ * a player gets without touching the option.
+ *
+ * `classic` is the stack the port used before JetBrains Mono was vendored — the
+ * platform monospace faces. It is here because that *was* the game's look, and
+ * because the C# asked for "Lucida Console" specifically: a player who came from
+ * the original may prefer it, and on Windows it is what they had.
+ */
+export const FONT_CHOICES = ["bundled", "classic"] as const;
+export type FontChoice = (typeof FONT_CHOICES)[number];
+
+export const DEFAULT_FONT_CHOICE: FontChoice = "bundled";
+
+/** The stack each choice resolves to. Both are 0.6 em; see the file header. */
+export function fontStackFor(choice: FontChoice): string {
+  return choice === "classic"
+    ? `"Lucida Console", "Courier New", monospace`
+    : `"${GAME_FONT_FAMILY}", "Lucida Console", "Courier New", monospace`;
+}
+
+/**
  * The canvas font strings, in the order `CanvasUI` uses them.
  *
- * JetBrains Mono first, then the previous stack unchanged. The fallbacks are not
- * decoration: a browser that cannot load the woff2 (a stripped desktop webview,
- * say) still gets a monospace face, and — because all three are 0.6 em — the
- * layout stays correct even though the glyphs change.
+ * These are the *bundled* choice, which is the default and the fallback: the
+ * option rewrites the family stack through `setFontChoice` when the player picks
+ * another one, so a game that never loads its options still draws correctly.
  */
-export const FONT_STACK = `"${GAME_FONT_FAMILY}", "Lucida Console", "Courier New", monospace`;
+let currentStack = fontStackFor(DEFAULT_FONT_CHOICE);
+
+/** The stack the canvas font strings are currently built from. */
+export function currentFontStack(): string {
+  return currentStack;
+}
 
 /** 10pt HUD face: the side panel, the message log, the location panel. */
-export const FONT_HUD = `10pt ${FONT_STACK}`;
+export function fontHud(): string {
+  return `10pt ${currentStack}`;
+}
 
 /** Bold 10pt: status labels and the like. */
-export const FONT_HUD_BOLD = `bold 10pt ${FONT_STACK}`;
+export function fontHudBold(): string {
+  return `bold 10pt ${currentStack}`;
+}
 
 /** 12pt reading face: popups and every full-screen menu. */
-export const FONT_MENU = `12pt ${FONT_STACK}`;
+export function fontMenu(): string {
+  return `12pt ${currentStack}`;
+}
 
 /** Bold 12pt: menu selections and headings. */
-export const FONT_MENU_BOLD = `bold 12pt ${FONT_STACK}`;
+export function fontMenuBold(): string {
+  return `bold 12pt ${currentStack}`;
+}
+
+/**
+ * Points the canvas font strings at a choice, and loads its faces if needed.
+ *
+ * The strings are built from `currentStack` rather than being constants, because
+ * `CanvasUI` captured them at construction time and an option that cannot change
+ * them is not an option. `CanvasUI` re-reads them through the getters above on
+ * every draw, so a change takes effect on the next frame.
+ *
+ * Awaiting is the caller's business: `main.ts` awaits the initial load, and an
+ * option change made later has its faces already cached by the browser.
+ */
+export async function setFontChoice(choice: FontChoice): Promise<void> {
+  currentStack = fontStackFor(choice);
+  if (choice === DEFAULT_FONT_CHOICE) await loadGameFonts();
+}
+
+/** A readable name for the options screen. */
+export function fontChoiceName(choice: FontChoice): string {
+  return choice === "classic" ? "Classic (system)" : "JetBrains Mono";
+}
 
 let loading: Promise<void> | null = null;
 

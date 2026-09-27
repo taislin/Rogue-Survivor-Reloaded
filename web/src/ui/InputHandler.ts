@@ -118,6 +118,8 @@ export class InputHandler {
     const event: GameKeyEvent = {
       key:     e.key,
       keyCode: e.keyCode,
+      // The physical position, so a numpad key is not the digit above it.
+      code:    e.code,
       shift:   e.shiftKey,
       ctrl:    e.ctrlKey,
       alt:     e.altKey,

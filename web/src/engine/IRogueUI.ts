@@ -11,6 +11,18 @@ export interface GameKeyEvent {
   key: string;
   /** Numeric key code — matches old VK_ codes where feasible. */
   keyCode: number;
+  /**
+   * The physical key position, from `KeyboardEvent.code` -- "Numpad7" against
+   * "Digit7".
+   *
+   * Optional, because everything that synthesises a key rather than reading a
+   * real event (the headless UI, tests) has no position to report, and a missing
+   * `code` means "unknown position" -- never "the digit row". The keybinding layer
+   * needs it to keep the numpad and the number row apart: both arrive as
+   * `key: "7"`, so the character alone cannot tell them apart and binding one
+   * silently took the other.
+   */
+  code?: string;
   shift: boolean;
   ctrl: boolean;
   alt: boolean;

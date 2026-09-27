@@ -9,24 +9,92 @@ import { storage } from "@engine/storage";
 export class Keybindings {
   private static readonly STORAGE_KEY = 'rogue_survivor_keybindings';
 
-  private commandToKey = new Map<PlayerCommand, string>();
+  /**
+   * Command -> its keys, in the order they were bound.
+   *
+   * A list rather than a single key, which is the one place the port is
+   * deliberately *more* capable than the C#: `Keybindings.cs` keeps
+   * `Dictionary<PlayerCommand, Keys>`, so a command has exactly one key there and
+   * choosing a different movement scheme means giving up the arrow keys. Several
+   * keys per command is what makes the numpad usable alongside the arrows without
+   * a choice, and the first entry stays the one shown in help text.
+   */
+  private commandToKeys = new Map<PlayerCommand, string[]>();
+
+  /**
+   * Key -> the one command that owns it.
+   *
+   * Still one-to-one, deliberately: the C# enforces the same rule
+   * (`Keybindings.Set` steals a key from whatever held it, and
+   * `CheckForConflict` reports two commands sharing one), and a key that reached
+   * two commands would depend on map iteration order to resolve.
+   */
   private keyToCommand = new Map<string, PlayerCommand>();
 
   constructor() {
     this.resetToDefaults();
   }
 
-  static makeKey(key: string, ctrl = false, alt = false, shift = false): string {
+  /**
+   * Friendly names for the numpad, used as the binding identity.
+   *
+   * The identity has to be readable, because these strings are what the help
+   * screen and every "press <...>" hint in the game print. `Num 4` says what a
+   * player needs to know; `Numpad4` is a DOM `code` leaking into the UI.
+   */
+  private static readonly NUMPAD_NAMES: ReadonlyMap<string, string> = new Map([
+    ["NumpadDecimal", "Num ."],
+    ["NumpadAdd", "Num +"],
+    ["NumpadSubtract", "Num -"],
+    ["NumpadMultiply", "Num *"],
+    ["NumpadDivide", "Num /"],
+    ["NumpadEnter", "Num Enter"],
+  ]);
+
+  /**
+   * The key part of a binding description, made unambiguous.
+   *
+   * A numpad key and the digit above it both arrive from the browser as
+   * `key: "7"`, so the character alone cannot tell them apart: binding one
+   * silently took the other away, which is why this port could not simply take
+   * the C#'s numpad movement defaults — `Keys.NumPad7` and `Keys.D7` are distinct
+   * values in C# and the same string here.
+   *
+   * `event.code` is the *physical* position ("Numpad7" against "Digit7") and is
+   * the only thing that distinguishes them, so a numpad key is named by position
+   * and everything else keeps its character.
+   */
+  static canonicalKey(key: string, code?: string): string {
+    if (code != null && code.startsWith("Numpad")) {
+      const named = Keybindings.NUMPAD_NAMES.get(code);
+      if (named !== undefined) return named;
+      // Numpad0..Numpad9
+      return `Num ${code.slice("Numpad".length)}`;
+    }
+    return key.toUpperCase();
+  }
+
+  /** True when this event came from the numeric keypad rather than the digit row. */
+  static isNumpad(code?: string): boolean {
+    return code != null && code.startsWith("Numpad");
+  }
+
+  /**
+   * `code` is optional so that everything which synthesises a key rather than
+   * reading a real event — the headless UI, tests — keeps working unchanged. A
+   * missing `code` simply means "no position information", never "the digit row".
+   */
+  static makeKey(key: string, ctrl = false, alt = false, shift = false, code?: string): string {
     const parts: string[] = [];
     if (ctrl) parts.push('Ctrl');
     if (alt) parts.push('Alt');
     if (shift) parts.push('Shift');
-    parts.push(key.toUpperCase());
+    parts.push(Keybindings.canonicalKey(key, code));
     return parts.join('+');
   }
 
   resetToDefaults(): void {
-    this.commandToKey.clear();
+    this.commandToKeys.clear();
     this.keyToCommand.clear();
 
     this.set(PlayerCommand.BARRICADE_MODE, 'B');
@@ -60,11 +128,31 @@ export class Keybindings {
     this.set(PlayerCommand.MARK_ENEMIES_MODE, 'Ctrl+E');
     this.set(PlayerCommand.MESSAGE_LOG, 'Shift+M');
 
-    // Numpad + arrows + vi keys
+    // Arrows, then the numpad. `set` for the first and `addKey` for the rest, so
+    // each direction ends up with both and neither replaces the other.
     this.set(PlayerCommand.MOVE_E, 'ArrowRight');
     this.set(PlayerCommand.MOVE_N, 'ArrowUp');
     this.set(PlayerCommand.MOVE_S, 'ArrowDown');
     this.set(PlayerCommand.MOVE_W, 'ArrowLeft');
+
+    /*
+     * The C# binds the eight directions to the numpad as well
+     * (`MOVE_NW = Keys.NumPad7` and so on — Keybindings.cs), and this port had
+     * silently dropped all eight: the comment above used to claim "Numpad +
+     * arrows + vi keys" while binding only the arrows. They could not simply be
+     * added, because `NumPad7` and `D7` both arrive as the string "7" and binding
+     * one would have taken the other's binding with it — which is the bug
+     * `canonicalKey` fixes. Each direction therefore carries the arrow key *and*
+     * its numpad key.
+     */
+    this.addKey(PlayerCommand.MOVE_E, 'Num 6');
+    this.addKey(PlayerCommand.MOVE_S, 'Num 2');
+    this.addKey(PlayerCommand.MOVE_SW, 'Num 1');
+    this.addKey(PlayerCommand.MOVE_W, 'Num 4');
+    this.addKey(PlayerCommand.MOVE_NW, 'Num 7');
+    this.addKey(PlayerCommand.MOVE_N, 'Num 8');
+    this.addKey(PlayerCommand.MOVE_NE, 'Num 9');
+    this.addKey(PlayerCommand.MOVE_SE, 'Num 3');
 
     this.set(PlayerCommand.OPTIONS_MODE, 'Shift+O');
     this.set(PlayerCommand.ORDER_MODE, 'O');
@@ -95,32 +183,96 @@ export class Keybindings {
     this.set(PlayerCommand.ZOOM_OUT, '-');
   }
 
+  /**
+   * Binds a command to exactly one key, discarding any it already had.
+   *
+   * This is `Keybindings.Set` — the C# shape, and what the defaults and the
+   * storage loader use. To *add* a second key to a command, use `addKey`.
+   */
   set(cmd: PlayerCommand, keyDesc: string): void {
-    // remove previous bind (C#: `Keybindings.Set` — a key can only belong to one command).
-    const prevCommand = this.getCommand(keyDesc);
-    if (prevCommand !== PlayerCommand.NONE) {
-      this.commandToKey.delete(prevCommand);
-    }
-    const prevKey = this.commandToKey.get(cmd);
-    if (prevKey) {
-      this.keyToCommand.delete(prevKey);
-    }
-    this.commandToKey.set(cmd, keyDesc);
+    this.unbindAll(cmd);
+    this.bind(cmd, keyDesc);
+  }
+
+  /**
+   * Adds a key to a command that keeps the ones it already has.
+   *
+   * A key can only belong to one command (the C# rule), so this takes it away
+   * from whichever command held it. Re-adding a key the command already has is a
+   * no-op, so holding a key down on the rebind screen cannot grow the list.
+   */
+  addKey(cmd: PlayerCommand, keyDesc: string): void {
+    const owner = this.keyToCommand.get(keyDesc);
+    if (owner === cmd) return;
+    if (owner !== undefined) this.unbind(owner, keyDesc);
+    const keys = this.commandToKeys.get(cmd);
+    if (keys === undefined) this.commandToKeys.set(cmd, [keyDesc]);
+    else keys.push(keyDesc);
+    this.keyToCommand.set(keyDesc, cmd);
+  }
+
+  /**
+   * Drops the most recently added key of a command.
+   *
+   * The rebind screen binds this to Backspace, so a command can be given several
+   * keys and then trimmed back without resetting everything.
+   */
+  removeLastKey(cmd: PlayerCommand): void {
+    const keys = this.commandToKeys.get(cmd);
+    if (keys === undefined || keys.length === 0) return;
+    const dropped = keys.pop()!;
+    this.keyToCommand.delete(dropped);
+    if (keys.length === 0) this.commandToKeys.delete(cmd);
+  }
+
+  /** Forgets a command's keys, and gives them back to nobody. */
+  private unbindAll(cmd: PlayerCommand): void {
+    const keys = this.commandToKeys.get(cmd);
+    if (keys === undefined) return;
+    for (const key of keys) this.keyToCommand.delete(key);
+    this.commandToKeys.delete(cmd);
+  }
+
+  private unbind(cmd: PlayerCommand, keyDesc: string): void {
+    const keys = this.commandToKeys.get(cmd);
+    if (keys === undefined) return;
+    const at = keys.indexOf(keyDesc);
+    if (at !== -1) keys.splice(at, 1);
+    if (keys.length === 0) this.commandToKeys.delete(cmd);
+  }
+
+  private bind(cmd: PlayerCommand, keyDesc: string): void {
+    const owner = this.keyToCommand.get(keyDesc);
+    if (owner !== undefined && owner !== cmd) this.unbind(owner, keyDesc);
+    this.commandToKeys.set(cmd, [keyDesc]);
     this.keyToCommand.set(keyDesc, cmd);
   }
 
   /** C#: `Keybindings.CheckForConflict` — true when 2 commands share the same key. */
   checkForConflict(): boolean {
     const seen = new Set<string>();
-    for (const key of this.commandToKey.values()) {
-      if (seen.has(key)) return true;
-      seen.add(key);
+    for (const keys of this.commandToKeys.values()) {
+      for (const key of keys) {
+        if (seen.has(key)) return true;
+        seen.add(key);
+      }
     }
     return false;
   }
 
+  /**
+   * The command's primary key — the first one bound.
+   *
+   * Every "press <...>" hint in the game and the help screen read this, so they
+   * keep working unchanged and show the *first* key, not a list.
+   */
   get(cmd: PlayerCommand): string | undefined {
-    return this.commandToKey.get(cmd);
+    return this.commandToKeys.get(cmd)?.[0];
+  }
+
+  /** Every key bound to a command, in binding order. */
+  getAll(cmd: PlayerCommand): string[] {
+    return [...(this.commandToKeys.get(cmd) ?? [])];
   }
 
   getCommand(keyDesc: string): PlayerCommand {
@@ -128,9 +280,9 @@ export class Keybindings {
   }
 
   saveToStorage(): void {
-    const entries: [number, string][] = [];
-    for (const [cmd, key] of this.commandToKey) {
-      entries.push([cmd, key]);
+    const entries: [number, string[]][] = [];
+    for (const [cmd, keys] of this.commandToKeys) {
+      entries.push([cmd, keys]);
     }
     storage.setItem(Keybindings.STORAGE_KEY, JSON.stringify(entries));
   }
@@ -139,9 +291,18 @@ export class Keybindings {
     const json = storage.getItem(Keybindings.STORAGE_KEY);
     if (!json) return false;
     try {
-      const entries = JSON.parse(json) as [number, string][];
-      for (const [cmd, key] of entries) {
-        this.set(cmd, key);
+      /*
+       * Both shapes are accepted: `[[cmd, key]]` from a save written before a
+       * command could hold more than one key, and `[[cmd, [keys]]]` from after.
+       * Refusing the old one would throw away a player's keybindings because the
+       * game gained a feature, which is a bad trade for a list of strings.
+       */
+      const entries = JSON.parse(json) as [number, string | string[]][];
+      for (const [cmd, keyOrKeys] of entries) {
+        const keys = Array.isArray(keyOrKeys) ? keyOrKeys : [keyOrKeys];
+        if (keys.length === 0) continue;
+        this.set(cmd as PlayerCommand, keys[0]!);
+        for (const extra of keys.slice(1)) this.addKey(cmd as PlayerCommand, extra);
       }
       return true;
     } catch {
@@ -172,14 +333,21 @@ export class InputTranslator {
     key: string,
     ctrl = false,
     alt = false,
-    shift = false
+    shift = false,
+    code?: string
   ): PlayerCommand {
-    // 1. Direct match with modifiers
-    const keyDesc = Keybindings.makeKey(key, ctrl, alt, shift);
+    // 1. Direct match with modifiers. `code` is passed so a numpad key is looked
+    //    up by position ("Num 7"), which is what makes a numpad binding win over
+    //    a digit-row binding rather than the other way round.
+    const keyDesc = Keybindings.makeKey(key, ctrl, alt, shift, code);
     let cmd = keybindings.getCommand(keyDesc);
     if (cmd !== PlayerCommand.NONE) return cmd;
 
-    // 2. Unmodified match for numpad / arrows if no modifiers were active
+    // 2. Unmodified match on the character alone: arrows, and a numpad digit
+    //    falling back to a binding on the digit row. This is what keeps a player
+    //    who selects items with the numpad working after the defaults gained
+    //    numpad movement — the numpad 5 still reaches item slot 5 when nothing has
+    //    claimed "Num 5".
     if (!ctrl && !alt && !shift) {
       cmd = keybindings.getCommand(key);
       if (cmd !== PlayerCommand.NONE) return cmd;
@@ -203,9 +371,10 @@ export class InputTranslator {
       const rawKey = key.toUpperCase();
       for (let i = 0; i <= 9; i++) {
         const slotCmd = (PlayerCommand.ITEM_SLOT_0 + i) as PlayerCommand;
-        const boundKey = keybindings.get(slotCmd);
-        if (boundKey && boundKey.toUpperCase() === rawKey) {
-          return slotCmd;
+        for (const boundKey of keybindings.getAll(slotCmd)) {
+          if (boundKey.toUpperCase() === rawKey) {
+            return slotCmd;
+          }
         }
       }
     }
