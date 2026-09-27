@@ -357,11 +357,29 @@ ground is explored rather than once per run.
    `for s in 1 2 3 4 5; do npm run sim -- --size 3 --turns 1000 --seed $s --undead; done`
    Watch for hangs, not just crashes — a turn that never returns is usually a
    blocking `UI_Wait*`.
-3. **Write the AI behaviour and generator integrity tests** (Phase 8 §4.3 items
-   2 and 3, the only test work left). The harness is trustworthy enough to
-   assert on now, and the headless integration tests in `tests/integration/`
-   are the pattern to follow. Generator integrity is the higher-value of the
-   two: nothing currently checks that a generated town is fully reachable.
+3. ~~**Write the AI behaviour and generator integrity tests.**~~ Generator
+   integrity **done 2026-09-27** — `tests/generator-integrity.test.ts`, 7 cases.
+   AI behaviour tests **still open** (the remaining half of §4.3 item 2).
+   The generator suite asserts the invariants that hold unconditionally — no
+   actor on a wall or out of bounds, no map object out of bounds, every map has
+   a passable tile, the player starts passable and inside their map's largest
+   region — and one calibrated threshold: a surface district's largest
+   connected region must cover ≥60% of its passable tiles.
+
+   **The threshold is measured, not guessed, and the measurement is the
+   interesting part.** A six-seed sweep (1, 7, 42, 99, 4242, 12345; 54 surface
+   districts) found the real range is **75.6%–100%**, with a stable 300–415
+   orphan tiles per district. Those orphans are building interiors the
+   generator gives no doorway to. That is a characteristic of the ported
+   generator, consistent across every seed, so asserting 100% would be
+   asserting the original has no unreachable rooms — not established, and not
+   the point. 60% sits well under the observed floor, so it fires on a
+   regression that seals a district rather than on the status quo.
+
+   Seed 42 is pinned because it measured the *worst* district (75.6%), so the
+   test runs against a hard world rather than a lucky one. There is no
+   equivalent check anywhere in `src/` (grepped for reachability / flood /
+   integrity: nothing), so this is new coverage, not a port.
 4. ~~**Audit the remaining AI files for bug 3.**~~ **Done 2026-09-27** — 43
    `percepted as Actor` sites across the 11 AI controllers, all downstream of
    the filters in `BaseAI`, so securing the filters secures them. **The honest
@@ -447,10 +465,11 @@ them — but do not let it fail silently.
 - `280430c` — the eighteen §1.1c data-layer bugs, the `convert-csv.js` `COLUMNS`
   table, `Skills.load()`, and the two new data suites. 273 tests pass.
 - `423bfad` — the §1.1c documentation pass, including the corrected sim baseline.
-- *(uncommitted at time of writing)* — the `isInvincible` guard on all six
-  Actor point properties (§1.5 item 5) and the `percepted as Actor` audit
-  (§1.5 item 4), with `actor-invincible.test.ts` and
-  `ai-percept-filters.test.ts`. 303 tests pass.
+- `f629e83` — the `isInvincible` guard on all six Actor point properties
+  (§1.5 item 5) and the `percepted as Actor` audit (§1.5 item 4), with
+  `actor-invincible.test.ts` and `ai-percept-filters.test.ts`.
+- *(uncommitted at time of writing)* — `generator-integrity.test.ts`
+  (§4.3 item 3). 310 tests pass.
 
 ---
 
@@ -489,7 +508,7 @@ Full detail in `web/.porting/CONVENTIONS.md`. The ones that matter:
 |---|---|
 | `npm run verify` | type-check + coverage + build — what CI runs, in one command |
 | `npm run type-check` | `tsc --noEmit`; covers `src/`, `sim/` and `tests/` — necessary, **not sufficient** |
-| `npm run test` | Vitest, 303 tests |
+| `npm run test` | Vitest, 310 tests |
 | `npm run test:coverage` | Vitest with coverage thresholds enforced |
 | `npm run build` | Vite production build |
 | `npm run sim` | Headless engine run — the real test |
@@ -529,7 +548,7 @@ Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks,
 | 2 | Deterministic `--seed` for reproducible runs | **Done** (`Session.useSeed`, `--seed`) |
 | 3 | Drive the sim to a clean full-length run and fix what it finds | **In progress** — 1 000-turn runs clean on 4/5 seeds; keep sweeping |
 | 4 | Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`) | **Done and verified in a browser** — now 1366×768 widescreen, smooth filtering (the old `image-rendering: pixelated` made upscaled text unreadable) |
-| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 303 tests, 18 files, thresholds enforced (50/75/57/50) |
+| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 310 tests, 19 files, thresholds enforced (50/75/57/50) |
 | 6 | GitHub Actions CI | **Done** — `.github/workflows/ci.yml`, type-check + coverage + build + seeded sim, plus a docker smoke job |
 | 7 | PWA manifest + service worker (offline play) | **Done** — manifest, drawn icons, runtime-caching `sw.js` |
 | 8 | Docker image for the self-hosted server | **Done but unverified** — docker is not installed locally, so the image has never been built; CI will exercise it first |
@@ -558,6 +577,7 @@ once with `npm run verify`. `tests/` is in `tsconfig.json`'s include list, so
 | `skills-data.test.ts` | `Skills.csv` actually reaches the `Rules.SKILL_*` statics, with the right `(int)` truncation, and each of the 7 corrected values differs from the C# default (53 cases) |
 | `actor-invincible.test.ts` | C#'s `m_IsInvincible` guard on all six Actor point properties, including that `Infection`'s guard is inverted (21 cases) |
 | `ai-percept-filters.test.ts` | The AI percept filters reject non-Actor percepts, and `filterSameMap` still admits them (9 cases, characterisation — see §1.5 item 4) |
+| `generator-integrity.test.ts` | A generated world is sound: no actor on a wall, nothing out of bounds, the player starts passable in the largest region, no surface district sealed. One game per file, seed 42 = the worst world measured (7 cases) |
 
 Two constraints worth preserving:
 
@@ -709,7 +729,7 @@ Items 1, 4 and 5 are implemented (see §4.1a). Items 2 and 3 are not.
 | 5 | World generation + AI | Done |
 | 6 | Audio | Done |
 | 7 | Save / load | Done |
-| 8 | Headless sim, tests, CI, deployment | In progress — 303 tests, CI, PWA, Docker, asset pass and frame-cost pass all in. Only 12 (optional touch) remains; see §1.2 for why 1 000-turn runs no longer complete |
+| 8 | Headless sim, tests, CI, deployment | In progress — 310 tests, CI, PWA, Docker, asset pass and frame-cost pass all in. Only 12 (optional touch) remains; see §1.2 for why 1 000-turn runs no longer complete |
 
 ---
 
