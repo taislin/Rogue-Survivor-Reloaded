@@ -9,7 +9,7 @@ Porting a C# WinForms zombie-survival roguelike (195 files, ~2.5 MB, largest `Ro
 > **Do not delete `src/`.** Nothing compiles or ships it (the Dockerfile copies
 > only `web/`, and `.dockerignore` excludes it), so removing it saves no build
 > time and no bundle size. It is the only statement of intended behaviour, and
-> every one of the 60 bugs in §1.1, §1.1b, §1.1c, §1.1d and §1.1e was found by diffing the port
+> every one of the 50 bugs in §1.1, §1.1b, §1.1c, §1.1d and §1.1e was found by diffing the port
 > against it. Four of the six tasks still open in §1.5 are fidelity work that
 > *cannot be done* without it. Revisit only once those close.
 
@@ -174,7 +174,7 @@ when the corresponding bug is reintroduced. **273 tests passed at that point**;
 the suite is now larger, see §4.1a.
 
 
-### 1.1d Nineteen bugs in the per-actor abilities (2026-09-27)
+### 1.1d Eight bugs in the per-actor abilities (2026-09-27)
 
 Found from a player report: *"bumping doesn't open doors, it just says that I
 cannot break them."* The cause was much larger than doors, and it is the **same
