@@ -1,0 +1,34 @@
+{
+  "$schema": "https://raw.githubusercontent.com/neutralinojs/neutralinojs/main/schemas/neutralino.config.schema.json",
+  "applicationId": "com.roguesurvivor.reloaded",
+  "version": "1.0.0",
+  "defaultMode": "window",
+  "port": 0,
+  "documentRoot": "/dist/",
+  "url": "/index.html",
+  "modes": {
+    "window": {
+      "title": "Rogue Survivor Reloaded",
+      "width": 1366,
+      "height": 768,
+      "minWidth": 800,
+      "minHeight": 600,
+      "fullScreen": false,
+      "icon": "/icon-reloaded.png",
+      "enableInspector": true,
+      "maximize": false
+    }
+  },
+  "cli": {
+    "binaryVersion": "5.3.0",
+    "clientLibrary": "/js/neutralino.js",
+    "frontendLibrary": {
+      "buildCommand": "npm run build",
+      "runCommand": "npm run dev",
+      "srcDir": "dist"
+    },
+    "resDir": "dist/",
+    "extensions": [],
+    "clientLibrary": "js/neutralino.js"
+  }
+}

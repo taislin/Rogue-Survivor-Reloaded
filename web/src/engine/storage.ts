@@ -26,7 +26,7 @@ export interface StorageLike {
 
 /** An in-process stand-in for `localStorage`. */
 class MemoryStorage implements StorageLike {
-  private readonly m_Map = new Map<string, string>();
+  protected readonly m_Map = new Map<string, string>();
 
   getItem(key: string): string | null {
     const v = this.m_Map.get(key);
@@ -42,7 +42,82 @@ class MemoryStorage implements StorageLike {
   }
 }
 
+class NeutralinoStorage extends MemoryStorage {
+  private m_FilePath: string | null = null;
+
+  constructor() {
+    super();
+    this.initAsync();
+  }
+
+  private async initAsync(): Promise<void> {
+    try {
+      const win = window as any;
+      if (win.Neutralino && win.Neutralino.os && win.Neutralino.filesystem) {
+        const dataPath = await win.Neutralino.os.getPath("data");
+        const dirPath = `${dataPath}/rogue-survivor-reloaded`;
+        this.m_FilePath = `${dirPath}/storage.json`;
+        
+        try {
+          await win.Neutralino.filesystem.createDirectory(dirPath);
+        } catch {
+          // directory might already exist
+        }
+
+        try {
+          const content = await win.Neutralino.filesystem.readFileData(this.m_FilePath);
+          const parsed = JSON.parse(content);
+          if (parsed && typeof parsed === "object") {
+            for (const [k, v] of Object.entries(parsed)) {
+              if (typeof v === "string") {
+                this.m_Map.set(k, v);
+              }
+            }
+          }
+        } catch {
+          // file doesn't exist yet or invalid JSON
+        }
+      }
+    } catch (e) {
+      console.warn("[NeutralinoStorage] failed to initialize AppData persistence:", e);
+    }
+  }
+
+  private persist(): void {
+    if (!this.m_FilePath) return;
+    try {
+      const win = window as any;
+      if (win.Neutralino && win.Neutralino.filesystem) {
+        const obj: Record<string, string> = {};
+        for (const [k, v] of this.m_Map.entries()) {
+          obj[k] = v;
+        }
+        win.Neutralino.filesystem.writeFileData(this.m_FilePath, JSON.stringify(obj, null, 2)).catch((err: any) => {
+          console.warn("[NeutralinoStorage] failed to write storage.json:", err);
+        });
+      }
+    } catch (e) {
+      console.warn("[NeutralinoStorage] error writing storage:", e);
+    }
+  }
+
+  override setItem(key: string, value: string): void {
+    super.setItem(key, value);
+    this.persist();
+  }
+
+  override removeItem(key: string): void {
+    super.removeItem(key);
+    this.persist();
+  }
+}
+
 const memory = new MemoryStorage();
+
+/**
+ * `true` when running inside a NeutralinoJS desktop container.
+ */
+export const hasNeutralino: boolean = typeof window !== "undefined" && typeof (window as any).NL_OS !== "undefined";
 
 /**
  * `true` when a real `localStorage` is present, i.e. we are in a browser.
@@ -59,6 +134,9 @@ export const hasLocalStorage: boolean = typeof localStorage !== "undefined";
  * because `typeof` alone does not prove the global is usable.
  */
 export const storage: StorageLike = (() => {
+  if (hasNeutralino) {
+    return new NeutralinoStorage();
+  }
   try {
     if (typeof localStorage === "undefined") return memory;
     // Probe it: a browser with storage disabled throws on access, not on decl.

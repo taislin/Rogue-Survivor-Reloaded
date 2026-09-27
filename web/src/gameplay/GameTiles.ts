@@ -26,12 +26,22 @@ export enum TileID {
   _COUNT = 19,
 }
 
-const DRK_GRAY1 = Color.DarkGray;
+// Minimap palette. Every value here is compared against GameTiles.cs:47-53;
+// three of them had drifted (the port took the *second* of two adjacent greys,
+// used a saturated red where the C# used a tan, and a pure aqua where the C#
+// used a muted slate). These constants are read by nothing but the minimap, so
+// a wrong value is invisible until you compare.
+//
+// C# also declares DRK_GRAY2 = Color.DarkGray next to DRK_GRAY1, and never
+// uses it. It is not declared here: the port has no unused-locals escape
+// hatch, and carrying a dead constant through a mechanical port is how the
+// three live ones drifted in the first place.
+const DRK_GRAY1 = Color.DimGray; // C#: DimGray (105,105,105), not DarkGray
 const DRK_RED   = Color.fromArgb(128, 0, 0);
 const LIT_GRAY1 = Color.Gray;
 const LIT_GRAY2 = Color.LightGray;
 const LIT_GRAY3 = Color.fromArgb(230, 230, 230);
-const LIT_BROWN = Color.Brown;
+const LIT_BROWN = Color.BurlyWood; // C#: BurlyWood (222,184,135), not Brown
 
 export class GameTiles extends TileModelDB {
   private readonly models: TileModel[] = new Array(TileID._COUNT);
@@ -62,7 +72,10 @@ export class GameTiles extends TileModelDB {
     this.setModel(TileID.WALL_BRICK, new TileModel(GameImages.TILE_WALL_BRICK, DRK_GRAY1, false, false));
     this.setModel(TileID.WALL_CHAR_OFFICE, new TileModel(GameImages.TILE_WALL_CHAR_OFFICE, DRK_RED, false, false));
     this.setModel(TileID.WALL_HOSPITAL, new TileModel(GameImages.TILE_WALL_HOSPITAL, Color.White, false, false));
-    this.setModel(TileID.WALL_POLICE_STATION, new TileModel(GameImages.TILE_WALL_STONE, Color.Cyan, false, false));
+    // C#: Color.CadetBlue (95,158,160). Not Cyan -- WALL_POLICE_STATION,
+    // WALL_STONE and WALL_SUBWAY all share TILE_WALL_STONE, so the minimap
+    // distinguishes them by colour alone and a pure aqua read as a material.
+    this.setModel(TileID.WALL_POLICE_STATION, new TileModel(GameImages.TILE_WALL_STONE, Color.CadetBlue, false, false));
     this.setModel(TileID.WALL_SEWER, new TileModel(GameImages.TILE_WALL_SEWER, Color.DarkGreen, false, false));
     this.setModel(TileID.WALL_STONE, new TileModel(GameImages.TILE_WALL_STONE, DRK_GRAY1, false, false));
     this.setModel(TileID.WALL_SUBWAY, new TileModel(GameImages.TILE_WALL_STONE, Color.Blue, false, false));

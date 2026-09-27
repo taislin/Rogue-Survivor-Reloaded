@@ -1,5 +1,11 @@
 export enum DollPart {
   NONE = 0,
+  /**
+   * Alias for the first real part, as in C# `Doll.cs` where
+   * `RIGHT_HAND = _FIRST`. Present for parity so call sites can read as the
+   * original; it is the same value, not an extra slot.
+   */
+  _FIRST = 1,
   RIGHT_HAND = 1,
   LEFT_HAND = 2,
   HEAD = 3,

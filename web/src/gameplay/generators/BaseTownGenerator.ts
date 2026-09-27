@@ -5592,7 +5592,7 @@ export class BaseTownGenerator extends BaseMapGenerator {
     const newZombie = zombiefiedModel.createNamed(zombieFaction, zombiefiedName, deadVictim.isPluralName, turn);
 
     // dress as victim.
-    for (let p = DollPart.RIGHT_HAND; p < DollPart._COUNT; p++) {
+    for (let p = DollPart._FIRST; p < DollPart._COUNT; p++) {
       const partDecos = deadVictim.doll.getDecorations(p);
       if (partDecos != null) {
         for (const deco of partDecos) newZombie.doll.addDecoration(p, deco);

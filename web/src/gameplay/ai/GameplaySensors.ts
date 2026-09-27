@@ -39,8 +39,18 @@ export class LOSSensor extends Sensor {
 
   sense(game: Game, actor: Actor): Percept[] {
     // Compute FOV via game rules.
-    this._fov = game.rules.computeFOVFor(actor);
-    const maxRange: number = game.rules.actorFOV(actor);
+    //
+    // The weather is threaded through explicitly, as C# does
+    // (src/Gameplay/AI/Sensors/LOSSensor.cs:63-64 passes
+    // `game.Session.World.Weather`). Omitting it falls back to `Rules.weather`,
+    // a port-only field nothing ever assigns, so it is permanently CLEAR and
+    // `weatherFovPenalty` returns 0 -- meaning every AI actor saw 1-2 tiles
+    // further than the C# in rain. The player's own view was correct because
+    // RogueGame passes the weather, which made the fault invisible from the
+    // player's side and left the game internally asymmetric.
+    const weather = game.session?.world?.weather;
+    this._fov = game.rules.computeFOVFor(actor, undefined, weather);
+    const maxRange: number = game.rules.actorFOV(actor, undefined, weather);
     const map = actor.location.map;
     if (!map) return [];
 

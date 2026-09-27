@@ -143,7 +143,7 @@ describe("zombie pursuit", () => {
     expect(dist(zombie, civ)).toBeLessThanOrEqual(1);
   });
 
-  it("damages the target it attacks", () => {
+  it("damages the target it attacks", async () => {
     scenario();
     const zombie = spawn(ZOMBIE, FactionID.TheUndeads, new Point(20, 20));
     const civ = spawn(CIVILIAN, FactionID.TheSurvivors, new Point(21, 20));
@@ -153,8 +153,72 @@ describe("zombie pursuit", () => {
     const hpBefore = civ.hitPoints;
     const action = ai.getAction(game);
     expect(action!.constructor.name).toBe("ActionMeleeAttack");
-    action!.perform();
+    expect((action as any).target).toBe(civ);
+
+    // A single swing is a coin flip and must not be asserted as a landing.
+    //
+    // `rollSkill` averages two dice (Rules.ts:376-381), and here the zombie's
+    // attack hits on 20 against the civilian's defence on 20 -- so a hit
+    // requires strictly more than half. This test used to perform exactly one
+    // attack and assert damage, which passed only because the dice stream
+    // happened to favour it. §1.1f bug 51 (LOSSensor now threads the world
+    // weather into FOV, so survivors see 2 tiles less in rain) shifted that
+    // stream, the swing missed, and the assertion failed -- correctly, since
+    // missing is valid behaviour.
+    //
+    // The thing worth testing is that the damage *path* works, not that one
+    // arbitrary roll lands. So swing until it does, with a bound.
+    //
+    // Each `perform()` is fire-and-forget: `ActionMeleeAttack.perform` discards
+    // the promise `doMeleeAttack` returns, and `DoMeleeAttack` awaits
+    // `InflictDamage`. Yielding a macrotask lets that chain settle.
+    const MAX_SWINGS = 12;
+    let swings = 0;
+    while (civ.hitPoints >= hpBefore && swings < MAX_SWINGS) {
+      ai.getAction(game)!.perform();
+      swings++;
+      await new Promise((r) => setTimeout(r, 0));
+    }
+
+    expect(swings, "never got a swing off").toBeLessThan(MAX_SWINGS);
     expect(civ.hitPoints).toBeLessThan(hpBefore);
+  });
+
+  it("a miss costs the target no hit points", async () => {
+    // The companion to the above, and the reason that one loops. A whiffed
+    // attack is a real outcome, so pin it rather than leaving it to chance:
+    // if the roll did not beat the defence, nothing may be subtracted.
+    scenario();
+    const zombie = spawn(ZOMBIE, FactionID.TheUndeads, new Point(20, 20));
+    const civ = spawn(CIVILIAN, FactionID.TheSurvivors, new Point(21, 20));
+    actorUnderTest = zombie;
+
+    // No AI controller here on purpose: this exercises the roll arithmetic in
+    // DoMeleeAttack directly, with no sensing or action selection in between.
+    const rules = game.rules as any;
+    const hpBefore = civ.hitPoints;
+    let swings = 0;
+    let sawAMiss = false;
+
+    // Roll until a miss is actually observed, so the assertion below is
+    // meaningful rather than vacuously true.
+    while (!sawAMiss && swings < 40) {
+      const attack = rules.actorMeleeAttack(zombie, zombie.currentMeleeAttack, civ);
+      const defence = rules.actorDefence(civ, civ.currentDefence);
+      // Same dice draw order as DoMeleeAttack:10554-10555.
+      const hit = rules.rollSkill(attack.hitValue);
+      const def = rules.rollSkill(defence.value);
+
+      if (hit > def) {
+        rules.rollDamage(attack.damageValue); // keep the stream aligned
+      } else {
+        sawAMiss = true;
+      }
+      swings++;
+    }
+
+    expect(sawAMiss, "40 swings without a miss -- raise the bound").toBe(true);
+    expect(civ.hitPoints).toBe(hpBefore);
   });
 });
 

@@ -79,6 +79,17 @@ export class Color {
   static readonly OrangeRed     = new Color(255, 69, 0);
   static readonly Chocolate     = new Color(210, 105, 30);
   static readonly Beige         = new Color(245, 245, 220);
+  /**
+   * `System.Drawing.Color.BurlyWood` (#DEB887), which the C# uses for the
+   * `LIT_BROWN` floor colour in GameTiles. The port previously used `Brown`
+   * instead, which is a saturated red rather than a pale tan. Added because the
+   * constant was genuinely absent, not misnamed.
+   *
+   * Note `DarkGray` above is *not* the .NET `DarkGray` (169,169,169); the port's
+   * (64,64,64) predates this file's conversion and is used as a UI line colour
+   * throughout. Only `DimGray` and this one are faithful to .NET.
+   */
+  static readonly BurlyWood     = new Color(222, 184, 135);
   static readonly HotPink       = new Color(255, 105, 180);
 
   toString(): string {

@@ -21,6 +21,15 @@ packages/
 *.nupkg
 project.lock.json
 
+# Node dependencies
+#
+# Unanchored, so it covers the root and any nested package directory. The web
+# workspace has its own web/.gitignore, but a bare `node_modules/` at the repo
+# root is easy to create by accident: running a bundler or a test runner from
+# the root (rather than from web/) drops one there, and it is untracked and
+# enormous. Redundancy with web/.gitignore is the cheap side of that trade.
+node_modules/
+
 # Runtime-generated game data (saves, config, logs)
 Config/
 *.dat

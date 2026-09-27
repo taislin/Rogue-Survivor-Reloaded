@@ -6,6 +6,14 @@ import { WebAudioMusicManager } from "@engine/audio/WebAudioMusicManager";
 
 async function main(): Promise<void> {
   // ── Bootstrap ──────────────────────────────────────────────────────────────
+  if (typeof (window as any).Neutralino !== "undefined") {
+    try {
+      (window as any).Neutralino.init();
+    } catch (e) {
+      console.warn("[Neutralino] init failed:", e);
+    }
+  }
+
   registerServiceWorker();
 
   // `?debug=1` enables per-action `[render]` console logging (see
