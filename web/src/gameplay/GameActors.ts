@@ -100,9 +100,30 @@ export class GameActors implements ActorModelDB {
       [ActorID.JASON_MYERS]: null, // skinned
     };
 
-    const dataArr = actorsData as any[];
-    for (let i = 0; i < dataArr.length && i < ActorID._COUNT; i++) {
-      const d = dataArr[i];
+    // Rows must be bound to models by their ID, not by position. The C# does
+    // exactly that: 27 explicit `GetDataFromCSVTable(ui, table, IDs.X)` calls
+    // (GameActors.cs:1017-1056), each resolving a row through
+    // `FindLineForModel`, which matches the ID *string*.
+    //
+    // Binding positionally happened to work for rows 0-17 and then broke:
+    // `Actors.csv` lists FERAL_DOG last (row 26) while the enum has it at 18,
+    // so **9 of 27 actors were reading someone else's entire stat block** --
+    // the Sewers Thing spawned with 30 HP instead of 400, Jason Myers with the
+    // dog's 15, BlackOps soldiers with the boss's 400 HP and STA 99, and every
+    // name and score value from CHAR guard onward was off by one.
+    //
+    // Row 0 is labeled `_FIRST` rather than `UNDEAD_SKELETON`, so a strict
+    // by-ID lookup needs the alias -- and note the C# would throw
+    // "actor UNDEAD_SKELETON not found" on this file, the same upstream data
+    // defect as `Skills.csv`'s `_FIRST_LIVING`. See §1.1c.
+    const byId = new Map<string, any>();
+    for (const row of actorsData as any[]) {
+      byId.set(row.ID === "_FIRST" ? "UNDEAD_SKELETON" : row.ID, row);
+    }
+
+    for (let i = 0; i < ActorID._COUNT; i++) {
+      const d = byId.get(ActorID[i]);
+      if (!d) throw new Error(`Actors.csv has no row for ${ActorID[i]}`);
       const isUndead = i <= ActorID.UNDEAD_RAT_ZOMBIE || i === ActorID.SEWERS_THING;
       const isLiving = !isUndead;
 
@@ -124,7 +145,13 @@ export class GameActors implements ActorModelDB {
 
       const abilities = GameActors.abilitiesFor(i);
 
-      const verb = isUndead ? (i < ActorID.UNDEAD_ZOMBIE ? "claw" : "bite") : "punch";
+      // C# per-actor verb: every living uses the shared VERB_PUNCH except the
+      // feral dog, which bites (GameActors.cs:939). The ternary could not
+      // express that one exception, so the dog punched.
+      const verb =
+        i === ActorID.FERAL_DOG ? "bite"
+        : isUndead ? (i < ActorID.UNDEAD_ZOMBIE ? "claw" : "bite")
+        : "punch";
       const attack = Attack.meleeAttack(new Verb(verb), d.ATK, d.DMG);
       const defence = new Defence(d.DEF, d.PRO_HIT, d.PRO_SHOT);
 
@@ -156,7 +183,15 @@ export class GameActors implements ActorModelDB {
         invCapacity
       );
 
-      const isMale = i !== ActorID.FEMALE_CIVILIAN && i !== ActorID.UNDEAD_FEMALE_ZOMBIFIED && i !== ActorID.UNDEAD_FEMALE_NEOPHYTE && i !== ActorID.UNDEAD_FEMALE_DISCIPLE;
+      // C# passes `DollBody(false, …)` exactly once in the whole file, for
+      // FEMALE_CIVILIAN (GameActors.cs:695). The three female undead get
+      // `true`, because their dolls are either whole-body sprites or copied
+      // from the victim's decorations, so the flag only reaches the generated
+      // first names and the he/she pronouns (BaseMapGenerator.giveNameToActor,
+      // RogueGame's Conjugate). Inferring gender from the actor's name -- which
+      // is what excluding the female undead did -- gave those three female
+      // zombies he/him and male names.
+      const isMale = i !== ActorID.FEMALE_CIVILIAN;
       const body = new DollBody(isMale, d.SPD);
 
       // Null is meaningful and must survive: it means "no whole-body sprite,

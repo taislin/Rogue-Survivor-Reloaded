@@ -143,37 +143,37 @@ export class GameItems implements ItemModelDB {
     Models.items = this;
 
     // Medicine
-    const medImages = [
-      GameImages.ITEM_BANDAGES,
-      GameImages.ITEM_MEDIKIT,
-      GameImages.ITEM_PILLS_GREEN,
-      GameImages.ITEM_PILLS_BLUE,
-      GameImages.ITEM_PILLS_SAN,
-      GameImages.ITEM_PILLS_ANTIVIRAL,
-    ];
-    // CSV column order matches the ItemID enum here (unlike Items_Food.csv),
-    // so indexing is safe.
-    const medPlural = [
-      // C# sets IsPlural on everything except the medikit (GameItems.cs:703,
+    // Keyed by ID rather than by row position. The row order happens to match
+    // the ItemID enum today, but a positional loop over a CSV is exactly the
+    // bug that had 9 of 27 actors reading each other's stats (see GameActors
+    // and Actors.csv), and this table had no reason to be the exception.
+    const medMap: Record<string, { id: ItemID; img: string; plural: boolean }> = {
+      // IsPlural is set on everything except the medikit (GameItems.cs:703,
       // 718, 727, 735, 743).
-      true, false, true, true, true, true,
-    ];
-    for (let i = 0; i < medicineData.length; i++) {
-      const d: any = medicineData[i];
+      MEDICINE_BANDAGES: { id: ItemID.MEDICINE_BANDAGES, img: GameImages.ITEM_BANDAGES, plural: true },
+      MEDICINE_MEDIKIT: { id: ItemID.MEDICINE_MEDIKIT, img: GameImages.ITEM_MEDIKIT, plural: false },
+      MEDICINE_PILLS_STA: { id: ItemID.MEDICINE_PILLS_STA, img: GameImages.ITEM_PILLS_GREEN, plural: true },
+      MEDICINE_PILLS_SLP: { id: ItemID.MEDICINE_PILLS_SLP, img: GameImages.ITEM_PILLS_BLUE, plural: true },
+      MEDICINE_PILLS_SAN: { id: ItemID.MEDICINE_PILLS_SAN, img: GameImages.ITEM_PILLS_SAN, plural: true },
+      MEDICINE_PILLS_ANTIVIRAL: { id: ItemID.MEDICINE_PILLS_ANTIVIRAL, img: GameImages.ITEM_PILLS_ANTIVIRAL, plural: true },
+    };
+    for (const d of medicineData as any[]) {
+      const meta = medMap[d.ID];
+      if (!meta) continue;
       const model = new ItemMedicineModel(
         d.NAME,
         d.PLURAL,
-        medImages[i],
+        meta.img,
         d.HP,
         d.STA,
         d.SLP,
         d.INF,
         d.SAN
       );
-      model.isPlural = medPlural[i];
+      model.isPlural = meta.plural;
       model.stackingLimit = d.STACKING;
       model.flavorDescription = d.FLAVOR ?? "";
-      this.setModel(ItemID.MEDICINE_BANDAGES + i, model);
+      this.setModel(meta.id, model);
     }
 
     // Food
@@ -227,11 +227,11 @@ export class GameItems implements ItemModelDB {
     //
     // Image, id and verb in one table: the file previously carried two
     // identical 16-entry maps, which is two places to forget to update.
-    const meleeMap: Record<string, { id: ItemID; img: string; verb: [string, string?] }> = {
+    const meleeMap: Record<string, { id: ItemID; img: string; verb: [string, string?]; unique?: boolean }> = {
       MELEE_BASEBALLBAT: { id: ItemID.MELEE_BASEBALLBAT, img: GameImages.ITEM_BASEBALL_BAT, verb: ["smash", "smashes"] },
       MELEE_COMBAT_KNIFE: { id: ItemID.MELEE_COMBAT_KNIFE, img: GameImages.ITEM_COMBAT_KNIFE, verb: ["stab", "stabs"] },
       MELEE_CROWBAR: { id: ItemID.MELEE_CROWBAR, img: GameImages.ITEM_CROWBAR, verb: ["strike"] },
-      UNIQUE_JASON_MYERS_AXE: { id: ItemID.UNIQUE_JASON_MYERS_AXE, img: GameImages.ITEM_JASON_MYERS_AXE, verb: ["slash", "slashes"] },
+      UNIQUE_JASON_MYERS_AXE: { id: ItemID.UNIQUE_JASON_MYERS_AXE, img: GameImages.ITEM_JASON_MYERS_AXE, verb: ["slash", "slashes"], unique: true },
       MELEE_HUGE_HAMMER: { id: ItemID.MELEE_HUGE_HAMMER, img: GameImages.ITEM_HUGE_HAMMER, verb: ["smash", "smashes"] },
       MELEE_SMALL_HAMMER: { id: ItemID.MELEE_SMALL_HAMMER, img: GameImages.ITEM_SMALL_HAMMER, verb: ["smash"] },
       MELEE_GOLFCLUB: { id: ItemID.MELEE_GOLFCLUB, img: GameImages.ITEM_GOLF_CLUB, verb: ["strike"] },
@@ -241,9 +241,9 @@ export class GameItems implements ItemModelDB {
       MELEE_TRUNCHEON: { id: ItemID.MELEE_TRUNCHEON, img: GameImages.ITEM_TRUNCHEON, verb: ["strike"] },
       MELEE_IMPROVISED_CLUB: { id: ItemID.MELEE_IMPROVISED_CLUB, img: GameImages.ITEM_IMPROVISED_CLUB, verb: ["strike"] },
       MELEE_IMPROVISED_SPEAR: { id: ItemID.MELEE_IMPROVISED_SPEAR, img: GameImages.ITEM_IMPROVISED_SPEAR, verb: ["pierce"] },
-      UNIQUE_FAMU_FATARU_KATANA: { id: ItemID.UNIQUE_FAMU_FATARU_KATANA, img: GameImages.ITEM_FAMU_FATARU_KATANA, verb: ["slash", "slashes"] },
-      UNIQUE_BIGBEAR_BAT: { id: ItemID.UNIQUE_BIGBEAR_BAT, img: GameImages.ITEM_BIGBEAR_BAT, verb: ["smash", "smashes"] },
-      UNIQUE_ROGUEDJACK_KEYBOARD: { id: ItemID.UNIQUE_ROGUEDJACK_KEYBOARD, img: GameImages.ITEM_ROGUEDJACK_KEYBOARD, verb: ["bash", "bashes"] },
+      UNIQUE_FAMU_FATARU_KATANA: { id: ItemID.UNIQUE_FAMU_FATARU_KATANA, img: GameImages.ITEM_FAMU_FATARU_KATANA, verb: ["slash", "slashes"], unique: true },
+      UNIQUE_BIGBEAR_BAT: { id: ItemID.UNIQUE_BIGBEAR_BAT, img: GameImages.ITEM_BIGBEAR_BAT, verb: ["smash", "smashes"], unique: true },
+      UNIQUE_ROGUEDJACK_KEYBOARD: { id: ItemID.UNIQUE_ROGUEDJACK_KEYBOARD, img: GameImages.ITEM_ROGUEDJACK_KEYBOARD, verb: ["bash", "bashes"], unique: true },
     };
 
     for (const d of meleeData as any[]) {
@@ -267,6 +267,14 @@ export class GameItems implements ItemModelDB {
       );
       model.equipmentPart = DollPart.RIGHT_HAND;
       model.stackingLimit = d.STACKINGLIMIT;
+      // The six unique weapons are IsProper and IsUnbreakable (GameItems.cs:826-828,
+      // 956-957, 968-969, 980-981, 1072-1073, 1083-1084). Without this they
+      // roll MELEE_WEAPON_BREAK_CHANCE on every landed hit and are lost
+      // forever -- i.e. the reward for four unique NPCs evaporates.
+      if (meta.unique) {
+        model.isProper = true;
+        model.isUnbreakable = true;
+      }
       model.flavorDescription = d.FLAVOR ?? "";
       this.setModel(meta.id, model);
     }
@@ -278,7 +286,7 @@ export class GameItems implements ItemModelDB {
     // (GameItems.cs:987-1086). `kind` is derived from the ammo type, which
     // is equivalent to the C#'s explicit AttackKind per weapon since only the
     // crossbow takes bolts.
-    const rangedMap: Record<string, { id: ItemID; img: string; ammo: AmmoType; verb: [string, string?] }> = {
+    const rangedMap: Record<string, { id: ItemID; img: string; ammo: AmmoType; verb: [string, string?]; unique?: boolean }> = {
       RANGED_ARMY_PISTOL: { id: ItemID.RANGED_ARMY_PISTOL, img: GameImages.ITEM_ARMY_PISTOL, ammo: AmmoType.HEAVY_PISTOL, verb: ["shoot"] },
       RANGED_ARMY_RIFLE: { id: ItemID.RANGED_ARMY_RIFLE, img: GameImages.ITEM_ARMY_RIFLE, ammo: AmmoType.HEAVY_RIFLE, verb: ["fire a salvo at", "fires a salvo at"] },
       RANGED_HUNTING_CROSSBOW: { id: ItemID.RANGED_HUNTING_CROSSBOW, img: GameImages.ITEM_HUNTING_CROSSBOW, ammo: AmmoType.BOLT, verb: ["shoot"] },
@@ -287,8 +295,8 @@ export class GameItems implements ItemModelDB {
       RANGED_KOLT_REVOLVER: { id: ItemID.RANGED_KOLT_REVOLVER, img: GameImages.ITEM_KOLT_REVOLVER, ammo: AmmoType.HEAVY_PISTOL, verb: ["shoot"] },
       RANGED_PRECISION_RIFLE: { id: ItemID.RANGED_PRECISION_RIFLE, img: GameImages.ITEM_PRECISION_RIFLE, ammo: AmmoType.HEAVY_RIFLE, verb: ["shoot"] },
       RANGED_SHOTGUN: { id: ItemID.RANGED_SHOTGUN, img: GameImages.ITEM_SHOTGUN, ammo: AmmoType.SHOTGUN, verb: ["shoot"] },
-      UNIQUE_SANTAMAN_SHOTGUN: { id: ItemID.UNIQUE_SANTAMAN_SHOTGUN, img: GameImages.ITEM_SANTAMAN_SHOTGUN, ammo: AmmoType.SHOTGUN, verb: ["shoot"] },
-      UNIQUE_HANS_VON_HANZ_PISTOL: { id: ItemID.UNIQUE_HANS_VON_HANZ_PISTOL, img: GameImages.ITEM_HANS_VON_HANZ_PISTOL, ammo: AmmoType.HEAVY_PISTOL, verb: ["shoot"] },
+      UNIQUE_SANTAMAN_SHOTGUN: { id: ItemID.UNIQUE_SANTAMAN_SHOTGUN, img: GameImages.ITEM_SANTAMAN_SHOTGUN, ammo: AmmoType.SHOTGUN, verb: ["shoot"], unique: true },
+      UNIQUE_HANS_VON_HANZ_PISTOL: { id: ItemID.UNIQUE_HANS_VON_HANZ_PISTOL, img: GameImages.ITEM_HANS_VON_HANZ_PISTOL, ammo: AmmoType.HEAVY_PISTOL, verb: ["shoot"], unique: true },
     };
 
     for (const d of rangedData as any[]) {
@@ -316,6 +324,10 @@ export class GameItems implements ItemModelDB {
         d.MAXAMMO
       );
       model.equipmentPart = DollPart.RIGHT_HAND;
+      if (meta.unique) {
+        model.isProper = true;
+        model.isUnbreakable = true;
+      }
       model.flavorDescription = d.FLAVOR ?? "";
       this.setModel(meta.id, model);
     }
@@ -555,10 +567,15 @@ export class GameItems implements ItemModelDB {
       this.setModel(meta.id, model);
     }
 
-    // Uniques
-    const subwayBadge = new ItemModel("Subway badge", "Subway badges", GameImages.ITEM_SUBWAY_BADGE);
-    subwayBadge.isProper = true;
-    subwayBadge.flavorDescription = "A master pass for the city subway system.";
+    // C# GameItems.cs:1403-1408. The badge is a *holdable* left-hand item that
+    // simply is not auto-equipped -- it was left out here, which made it
+    // permanently unequippable (isEquipable is derived from equipmentPart).
+    // The C# does not set IsProper on it, and the port was inventing both a
+    // different name and a flavour text.
+    const subwayBadge = new ItemModel("Subway Worker Badge", "Subways Worker Badges", GameImages.ITEM_SUBWAY_BADGE);
+    subwayBadge.dontAutoEquip = true;
+    subwayBadge.equipmentPart = DollPart.LEFT_HAND;
+    subwayBadge.flavorDescription = "You got yourself a new job!";
     this.setModel(ItemID.UNIQUE_SUBWAY_BADGE, subwayBadge);
 
     this.postProcess();

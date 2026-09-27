@@ -18,6 +18,12 @@ export class ItemLightModel extends ItemModel {
     this.fovBonus = fovBonus;
     this.maxBatteries = maxBatteries;
     this.outOfBatteriesImageId = outOfBatteriesImageId;
+    // C# sets this in the constructor (ItemLightModel.cs:42), so it applies to
+    // every light regardless of what GameItems does. Without it, picking up a
+    // flashlight auto-equips it and silently swaps out whatever was in your
+    // left hand (RogueGame.DoTakeItem auto-equips any item whose part is free
+    // and `!dontAutoEquip`). Every other subclass that sets this was ported.
+    this.dontAutoEquip = true;
   }
 }
 

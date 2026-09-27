@@ -9,7 +9,7 @@ Porting a C# WinForms zombie-survival roguelike (195 files, ~2.5 MB, largest `Ro
 > **Do not delete `src/`.** Nothing compiles or ships it (the Dockerfile copies
 > only `web/`, and `.dockerignore` excludes it), so removing it saves no build
 > time and no bundle size. It is the only statement of intended behaviour, and
-> every one of the 52 bugs in §1.1, §1.1b, §1.1c and §1.1d was found by diffing the port
+> every one of the 60 bugs in §1.1, §1.1b, §1.1c, §1.1d and §1.1e was found by diffing the port
 > against it. Four of the six tasks still open in §1.5 are fidelity work that
 > *cannot be done* without it. Revisit only once those close.
 
@@ -211,10 +211,51 @@ into a per-actor `abilitiesFor()` table, replacing the loop. Note the C#'s
 Pinned by `tests/actor-abilities.test.ts` (31 cases), which asserts the exact
 granted set for every actor.
 
-**The lesson is §1.1c's lesson again, and that is twice now:** the port
-replaced a 700-line, per-actor, hand-written C# table with a loop, and the loop
-could not express the table. A blanket rule over heterogeneous data is a silent
-truncation of it. *When the original is a long literal table, port the table.*
+**The lesson is §1.1c's lesson, and by §1.1e it had happened three times:** the
+port replaced long, hand-written, per-entity C# tables with loops, and a loop
+cannot express a table. A blanket rule over heterogeneous data is a silent
+truncation of it — worse when the defaults are `false`, because absence of an
+error reads as absence of a bug. *When the original is a long literal table,
+port the table.*
+
+### 1.1e The actor data table was bound by position, not by ID (2026-09-27)
+
+Found by deliberately re-running the audit that produced §1.1d: *where else has
+a per-entity C# table been replaced by something that cannot express it?*
+
+`GameActors` read `dataArr[i]` and stored it at `ActorID[i]`, assuming row *n*
+is model *n*. That holds for `Actors.csv` rows 0–17 and then breaks, because the
+CSV lists **`FERAL_DOG` last (row 26)** while the enum has it at **18**.
+
+| # | Bug | C# reference | Impact |
+|---|-----|--------------|--------|
+| 42 | **9 of 27 actor models read the wrong CSV row.** Rows 18–25 are rotated by one against the enum. | `GameActors.cs:1017-1056` — 27 explicit `GetDataFromCSVTable(ui, table, IDs.X)` calls, each resolving its row through `FindLineForModel`, which matches the ID *string* | The **Sewers Thing**, a unique boss, spawned with **30 HP instead of 400** and STA 60 instead of 99 — it dies in one or two hits. **Jason Myers** had the feral dog's **15 HP**. **BlackOps soldiers** spawned with the boss's **400 HP**, STA 99 and speed 33. |
+| 43 | Every `name`/`plural`/`flavor` from CHAR guard onward was off by one | as above | Police-station guards are called "national guard", the national guard "biker", bikers "policeman", cops "gangsta", gangstas "blackOp", BlackOps "Sewers Thing", the sewers thing "Serial Killer", Jason Myers "feral dog", the feral dog "CHAR guard". Cops kept the `"Cop "` name prefix, so it read "Cop gangsta". |
+| 44 | Every `scoreValue` from CHAR guard onward was off by one | as above | Killing a cop scored **60**; a biker, the national guard and a CHAR guard scored **0**. |
+| 45 | The six unique weapons lost `IsProper` **and** `IsUnbreakable` | `GameItems.cs:826-828, 956-957, 968-969, 980-981, 1072-1073, 1083-1084` | The Big Bear bat, Famu Fataru katana, Roguedjack keyboard, Jason Myers axe, Santaman shotgun and Hans von Hanz pistol all roll `MELEE_WEAPON_BREAK_CHANCE` on every landed hit and are **lost forever** — the reward for four unique NPCs evaporates. |
+| 46 | `ItemLightModel` lost its constructor's `DontAutoEquip = true` | `ItemLightModel.cs:42` | Picking up a flashlight **auto-equips it** and silently swaps out whatever was in your left hand. |
+| 47 | The subway badge lost `DontAutoEquip` + `EquipmentPart = LEFT_HAND`, and gained a name and flavour text the C# does not have | `GameItems.cs:1403-1408` | It became permanently **unequippable** (`isEquipable` derives from `equipmentPart`). |
+| 48 | The feral dog's unarmed verb was `punch` | `GameActors.cs:939` — every living uses `VERB_PUNCH` *except* the dog, which bites | Text-only, and unreachable while dogs are disabled, but live the moment they are not. |
+| 49 | `DollBody.isMale` was `false` for the three female undead | `GameActors.cs:408, 456, 506` pass `true`; `DollBody(false, …)` appears **once** in the file, for `FEMALE_CIVILIAN` (`:695`) | Three female zombies got male first names and he/him pronouns. |
+| 50 | The last positional loop: medicine bound `medImages[i]`, `medPlural[i]`, `MEDICINE_BANDAGES + i` | `GameItems.cs:699-747` | Correct today, one CSV reorder from being bug 42 again. Now keyed by ID. |
+
+**Why 42 survived so long.** The per-model `Abilities()` and
+`defaultControllerCtor` tables *are* keyed by ID and were correct, so a
+BlackOps soldier with 400 HP was played by `SoldierAI` with the BlackOps ability
+set, drawn with the BlackOps sprite and doll. Everything *except* the numbers
+was right, which is exactly what a data-binding bug looks like.
+
+**Second instance of the same upstream data defect.** `Actors.csv` row 0 is
+labelled `_FIRST` where the enum has `UNDEAD_SKELETON`, so the C# would throw
+`actor UNDEAD_SKELETON not found` — the same fault as `Skills.csv`'s
+`_FIRST_LIVING` (§1.1c). The port's `byId` lookup aliases `_FIRST`, and
+`Skills.load()` matches on `NAME` instead. **Two of the sixteen data files carry
+this sentinel; the pattern is in whatever generates them, not in any one file.**
+
+Pinned by `tests/model-data-binding.test.ts` (43 cases), which asserts every
+actor against its own row and includes a test that *fails if `Actors.csv` is
+ever put into enum order* — the signal to simplify the lookup. It was confirmed
+to produce 11 failures when the positional binding is restored.
 
 ### 1.2 The harness now runs real games
 
@@ -511,8 +552,9 @@ them — but do not let it fail silently.
   (§1.5 item 5) and the `percepted as Actor` audit (§1.5 item 4), with
   `actor-invincible.test.ts` and `ai-percept-filters.test.ts`.
 - `25b914e` — `generator-integrity.test.ts` (§4.3 item 3).
-- *(uncommitted at time of writing)* — the per-actor abilities fix (§1.1d) and
-  `actor-abilities.test.ts`. 341 tests pass.
+- `18987a1` — the per-actor abilities fix (§1.1d) and `actor-abilities.test.ts`.
+- *(uncommitted at time of writing)* — the CSV→model binding fix (§1.1e) and
+  `model-data-binding.test.ts`. 384 tests pass.
 
 ---
 
@@ -551,7 +593,7 @@ Full detail in `web/.porting/CONVENTIONS.md`. The ones that matter:
 |---|---|
 | `npm run verify` | type-check + coverage + build — what CI runs, in one command |
 | `npm run type-check` | `tsc --noEmit`; covers `src/`, `sim/` and `tests/` — necessary, **not sufficient** |
-| `npm run test` | Vitest, 341 tests |
+| `npm run test` | Vitest, 384 tests |
 | `npm run test:coverage` | Vitest with coverage thresholds enforced |
 | `npm run build` | Vite production build |
 | `npm run sim` | Headless engine run — the real test |
@@ -591,7 +633,7 @@ Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks,
 | 2 | Deterministic `--seed` for reproducible runs | **Done** (`Session.useSeed`, `--seed`) |
 | 3 | Drive the sim to a clean full-length run and fix what it finds | **In progress** — 1 000-turn runs clean on 4/5 seeds; keep sweeping |
 | 4 | Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`) | **Done and verified in a browser** — now 1366×768 widescreen, smooth filtering (the old `image-rendering: pixelated` made upscaled text unreadable) |
-| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 341 tests, 20 files, thresholds enforced (50/75/57/50) |
+| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 384 tests, 21 files, thresholds enforced (50/75/57/50) |
 | 6 | GitHub Actions CI | **Done** — `.github/workflows/ci.yml`, type-check + coverage + build + seeded sim, plus a docker smoke job |
 | 7 | PWA manifest + service worker (offline play) | **Done** — manifest, drawn icons, runtime-caching `sw.js` |
 | 8 | Docker image for the self-hosted server | **Done but unverified** — docker is not installed locally, so the image has never been built; CI will exercise it first |
@@ -620,6 +662,7 @@ once with `npm run verify`. `tests/` is in `tsconfig.json`'s include list, so
 | `skills-data.test.ts` | `Skills.csv` actually reaches the `Rules.SKILL_*` statics, with the right `(int)` truncation, and each of the 7 corrected values differs from the C# default (53 cases) |
 | `actor-invincible.test.ts` | C#'s `m_IsInvincible` guard on all six Actor point properties, including that `Infection`'s guard is inverted (21 cases) |
 | `ai-percept-filters.test.ts` | The AI percept filters reject non-Actor percepts, and `filterSameMap` still admits them (9 cases, characterisation — see §1.5 item 4) |
+| `model-data-binding.test.ts` | Every actor model binds to its own CSV row, unique weapons stay unbreakable, lights do not auto-equip, the badge is holdable. Also fails if `Actors.csv` is ever reordered into enum order (43 cases, §1.1e) |
 | `actor-abilities.test.ts` | Every actor's granted ability set, transcribed from the C#; specifically that the player can open doors, and that skeletons/rat zombie do not rot (§1.1d, 31 cases) |
 | `generator-integrity.test.ts` | A generated world is sound: no actor on a wall, nothing out of bounds, the player starts passable in the largest region, no surface district sealed. One game per file, seed 42 = the worst world measured (7 cases) |
 
@@ -773,7 +816,7 @@ Items 1, 4 and 5 are implemented (see §4.1a). Items 2 and 3 are not.
 | 5 | World generation + AI | Done |
 | 6 | Audio | Done |
 | 7 | Save / load | Done |
-| 8 | Headless sim, tests, CI, deployment | In progress — 341 tests, CI, PWA, Docker, asset pass and frame-cost pass all in. Only 12 (optional touch) remains; see §1.2 for why 1 000-turn runs no longer complete |
+| 8 | Headless sim, tests, CI, deployment | In progress — 384 tests, CI, PWA, Docker, asset pass and frame-cost pass all in. Only 12 (optional touch) remains; see §1.2 for why 1 000-turn runs no longer complete |
 
 ---
 
