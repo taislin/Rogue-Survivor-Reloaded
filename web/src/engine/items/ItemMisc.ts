@@ -41,6 +41,28 @@ export class ItemEntertainment extends Item {
     if (!this.boringForList) return false;
     return this.boringForList.includes(a);
   }
+
+  /**
+   * C# `ItemEntertainment.OptimizeBeforeSaving`
+   * (`src/Engine/Items/ItemEntertainment.cs:49`).
+   *
+   * Drops dead actors from the boredom list so a save does not carry them. The
+   * C# calls the side effect out explicitly — *"revived actors will forget about
+   * boring items"* — and that is the whole point: without this, an actor that
+   * died bored of a TV and was revived still reads as bored of it, forever.
+   *
+   * Mutated in place rather than reassigned, because the base `Item` has no
+   * serialization hook of its own and the field is private; the C# uses
+   * `RemoveAt` on its own list for the same reason.
+   */
+  override optimizeBeforeSaving(): void {
+    super.optimizeBeforeSaving();
+    if (this.boringForList === null) return;
+    for (let i = 0; i < this.boringForList.length; ) {
+      if (this.boringForList[i]!.isDead) this.boringForList.splice(i, 1);
+      else i++;
+    }
+  }
 }
 
 // ── Barricade Material ──────────────────────────────────────────────────────

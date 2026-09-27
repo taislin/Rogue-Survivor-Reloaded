@@ -60,4 +60,26 @@ export class Item {
   get isEquipped(): boolean {
     return this.equippedPart !== DollPart.NONE;
   }
+
+  /**
+   * C# `Item.OptimizeBeforeSaving` (`src/Data/Item.cs:111`) — a no-op on the base
+   * class, overridden by `ItemEntertainment` and `ItemTrap`.
+   *
+   * The C# calls it from the whole object graph before serialising
+   * (`Session.Save` → `World` → `District` → `Map`/`Actor`/`Inventory` →
+   * `Item`), and its whole purpose is to drop references to dead actors so they
+   * are not written to disk. It is not cosmetic: without it a save captures
+   * corpses it does not need, and — the reachable consequence — a *revived*
+   * actor still counts as bored of an entertainment item, because the C# comment
+   * at `ItemEntertainment.cs:53` says so outright.
+   *
+   * Called by `Session.optimizeBeforeSaving`, which `Session.save` runs first,
+   * so anything added here has to be reached from an item that is actually in
+   * the world. The traversal deliberately follows the C#'s own shape rather than
+   * the save graph's: an item can be in a `MapObject` container, on a corpse, in
+   * an actor's inventory, or in a tile's item stack.
+   */
+  optimizeBeforeSaving(): void {
+    // C#: `public virtual void OptimizeBeforeSaving() { }`
+  }
 }

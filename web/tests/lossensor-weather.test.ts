@@ -101,12 +101,21 @@ describe("§1.1f bug 51: LOSSensor threads the world weather through", () => {
     expect(rules.nightFovPenalty(human, map.localTime)).toBe(0);
   });
 
-  it("sanity: rules.weather is CLEAR and nothing assigns it", () => {
-    // This is the trap that caused the bug. If someone ever starts assigning
-    // `Rules.weather`, these tests stop testing the sensor and start testing
-    // the fallback, and the real defect can silently return.
+  it("the fallback field is gone, so the trap cannot recur", () => {
+    // This test used to assert `rules.weather` was CLEAR and that nothing
+    // assigned it -- characterising the trap rather than closing it. The field
+    // and the optional parameters are now gone, and `Rules.actorFOV` /
+    // `Rules.computeFOVFor` require the time and weather the C# requires
+    // (Rules.cs:3794), so the omission that caused the bug is a compile error.
+    // If anyone re-adds a fallback here, this fails: the sensor would go back to
+    // testing the fallback instead of the threading.
     const rules = new Rules(new DiceRoller(1));
-    expect(rules.weather).toBe(Weather.CLEAR);
+    expect("weather" in rules).toBe(false);
+    expect(
+      Object.prototype.hasOwnProperty.call(Rules.prototype, "weather"),
+      "Rules.weather is back; the sensor's FOV is once again at the mercy of " +
+        "whatever last assigned it",
+    ).toBe(false);
   });
 
   it("a living actor sees less in rain than in clear weather", () => {

@@ -11,6 +11,7 @@ import { Odor } from '@data/Odor';
 import { Location } from '@data/Location';
 import { Point } from '@engine/Point';
 import { Percept, Sensor } from '@engine/ai/Sensors';
+import { Weather } from '@data/Weather';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Game = any;
@@ -40,20 +41,29 @@ export class LOSSensor extends Sensor {
   sense(game: Game, actor: Actor): Percept[] {
     // Compute FOV via game rules.
     //
-    // The weather is threaded through explicitly, as C# does
-    // (src/Gameplay/AI/Sensors/LOSSensor.cs:63-64 passes
-    // `game.Session.World.Weather`). Omitting it falls back to `Rules.weather`,
-    // a port-only field nothing ever assigns, so it is permanently CLEAR and
-    // `weatherFovPenalty` returns 0 -- meaning every AI actor saw 1-2 tiles
-    // further than the C# in rain. The player's own view was correct because
-    // RogueGame passes the weather, which made the fault invisible from the
-    // player's side and left the game internally asymmetric.
-    const weather = game.session?.world?.weather;
-    this._fov = game.rules.computeFOVFor(actor, undefined, weather);
-    const maxRange: number = game.rules.actorFOV(actor, undefined, weather);
+    // Both the time and the weather are threaded through explicitly, as C# does
+    // at LOSSensor.cs:64-65:
+    //
+    //   m_FOV = LOS.ComputeFOVFor(game.Rules, actor, actor.Location.Map.LocalTime,
+    //                             game.Session.World.Weather);
+    //   int maxRange = game.Rules.ActorFOV(actor, actor.Location.Map.LocalTime,
+    //                                      game.Session.World.Weather);
+    //
+    // The port used to pass neither and lean on defaults: `undefined` for the
+    // time, and a `Rules.weather` field for the weather which *nothing ever
+    // assigned*, so it was permanently CLEAR. `weatherFovPenalty` therefore never
+    // fired and every AI actor saw 1-2 tiles further than the C# in rain -- while
+    // the player's own view was correct, because RogueGame did pass the weather.
+    // That made the game look self-consistent from the player's side and
+    // asymmetric underneath, which is why it survived an audit. `Rules.actorFOV`
+    // and `Rules.computeFOVFor` now require both, so the omission that caused it
+    // is a compile error rather than a plausible default.
     const map = actor.location.map;
     if (!map) return [];
 
+    const weather = game.session?.world?.weather ?? Weather.CLEAR;
+    this._fov = game.rules.computeFOVFor(actor, map.localTime, weather);
+    const maxRange: number = game.rules.actorFOV(actor, map.localTime, weather);
     const list: Percept[] = [];
     const turn = map.localTime.turnCounter;
 

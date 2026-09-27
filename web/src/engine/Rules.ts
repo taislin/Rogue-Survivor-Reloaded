@@ -329,9 +329,6 @@ export class Rules {
   // ── Fields ────────────────────────────────────────────────────────────────
   readonly diceRoller: DiceRoller;
 
-  /** Weather used when callers do not supply one (set by Session each turn). */
-  weather: Weather = Weather.CLEAR;
-
   constructor(diceRoller: DiceRoller) {
     if (!diceRoller) throw new Error("diceRoller");
     this.diceRoller = diceRoller;
@@ -2362,9 +2359,23 @@ export class Rules {
     );
   }
 
-  actorFOV(actor: Actor, time?: WorldTime, weather?: Weather): number {
-    const t = time ?? actor.location.map!.localTime;
-    const w = weather ?? this.weather;
+  /**
+   * C# `ActorFOV(Actor actor, WorldTime time, Weather weather)` — all three
+   * required, as they are there.
+   *
+   * The port used to make `time` and `weather` optional and fall back to
+   * `actor.location.map.localTime` and to a `Rules.weather` field. That is what
+   * hid the rain-FOV bug (§1.1f 51) for so long: `weatherFovPenalty` only ever
+   * saw `CLEAR` because the field was never assigned, every AI actor saw 1–2
+   * tiles further than the C# in rain, and the player's own view was correct
+   * because `RogueGame` passed the weather explicitly — so the game looked
+   * self-consistent from the player's side. A required parameter turns that whole
+   * class from a silent wrong answer into a compile error, and the field is gone
+   * because C# has no such field.
+   */
+  actorFOV(actor: Actor, time: WorldTime, weather: Weather): number {
+    const t = time;
+    const w = weather;
 
     // Sleeping actors have no FOV.
     if (actor.isSleeping) return 0;
@@ -2424,8 +2435,12 @@ export class Rules {
   }
 
   /** C# ActorFOV with defaults + FOV point set (used by sensors). */
-  computeFOVFor(actor: Actor, time?: WorldTime, weather?: Weather): Set<string> {
-    return LOS.computeFOVFor(this, actor, time ?? actor.location.map!.localTime, weather ?? this.weather);
+  computeFOVFor(
+    actor: Actor,
+    time: WorldTime,
+    weather: Weather,
+  ): Set<string> {
+    return LOS.computeFOVFor(this, actor, time, weather);
   }
 
   actorSmell(actor: Actor): number {

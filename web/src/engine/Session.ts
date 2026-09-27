@@ -9,6 +9,7 @@
 import { Actor } from "@data/Actor";
 import { FireMode } from "@data/Attack";
 import { Item } from "@data/Item";
+import { Inventory } from "@data/Inventory";
 import { District } from "@data/District";
 import { Map as GameMap } from "@data/Map";
 import { World } from "@data/World";
@@ -323,6 +324,12 @@ export class Session {
    * a full world is legitimately bigger than the string store — see `adopt`.
    */
   static save(session: Session, _format: SaveFormat = SaveFormat.FORMAT_JSON): void {
+    // C# `Session.Save` opens with `session.World.OptimizeBeforeSaving()`
+    // (`src/Engine/Session.cs:589`) — a whole-graph pass that drops references to
+    // dead actors before anything is serialised. Run it here, before the graph is
+    // built, so the graph cannot capture what the pass is meant to remove.
+    Session.optimizeBeforeSaving(session);
+
     const data = {
       gameMode: session.m_GameMode,
       seed: session.seed,
@@ -343,6 +350,53 @@ export class Session {
     // Serialized before it is stored, so a failure above cannot leave a
     // half-written save behind: `adopt` is the only call that touches storage.
     Session.adopt(JSON.stringify(data));
+  }
+
+  /**
+   * C# `World.OptimizeBeforeSaving` and everything it reaches.
+   *
+   * The C# spreads this over seven `OptimizeBeforeSaving` methods — `World` →
+   * `District` → `Map` / `Actor` / `Inventory`, and `Map` → `Tile` → item stack
+   * plus each actor. It is transcribed here as one traversal rather than seven
+   * methods because the only overrides in the whole hierarchy are on `Item`, and
+   * a method per level that only forwards is seven chances to forget a
+   * container. What it visits is the C#'s, narrowed to the containers this port
+   * actually has: items live either in an actor's inventory or in one of
+   * `Map.GroundInventories` (which is also where a corpse's belongings are —
+   * `getCorpseAt` resolves a corpse to its position). The port's `Tile` holds no
+   * item stack and its `MapObject` has no inventory, so the C#'s tile and
+   * map-object legs have nothing to walk.
+   *
+   * What it is for: an item's override drops references to dead actors, so a
+   * save does not carry a corpse. The reachable behaviour change is that a
+   * *revived* actor stops being bored of an entertainment item it was bored of
+   * before it died — the C# says so in a comment at `ItemEntertainment.cs:53`
+   * rather than leaving it to be discovered.
+   */
+  static optimizeBeforeSaving(session: Session): void {
+    const world = session.world;
+    if (world == null) return;
+
+    for (let dx = 0; dx < world.size; dx++) {
+      for (let dy = 0; dy < world.size; dy++) {
+        const district = world.getDistrict(dx, dy);
+        if (district == null) continue;
+        for (const map of district.maps) {
+          // C# Map.OptimizeBeforeSaving: the ground inventories, then the actors.
+          for (const inventory of map.groundInventories) {
+            Session.optimizeInventory(inventory);
+          }
+          for (const actor of map.actors) {
+            Session.optimizeInventory(actor.inventory);
+          }
+        }
+      }
+    }
+  }
+
+  private static optimizeInventory(inventory: Inventory | null): void {
+    if (inventory == null) return;
+    for (const item of inventory.items) item.optimizeBeforeSaving();
   }
 
   /**

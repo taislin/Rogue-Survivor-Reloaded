@@ -6342,7 +6342,7 @@ export class RogueGame {
 		// when someone is trying to report them.
 		// eslint-disable-next-line no-console
 		console.log(
-			`[render] pos=${pos.x},${pos.y} fovRange=${this.m_Rules.actorFOV(player)} ` +
+			`[render] pos=${pos.x},${pos.y} fovRange=${this.m_Rules.actorFOV(player, this.m_Session.worldTime, this.m_Session.world!.weather)} ` +
 				`fovSet=${this.m_PlayerFOV.size} ownInView=${own?.isInView ?? "no-tile"} ` +
 				`ownVisited=${own?.isVisited ?? "no-tile"} ` +
 				`view=${this.m_MapViewRect.toString()} sameMap=${this.m_Session.currentMap === map} ` +

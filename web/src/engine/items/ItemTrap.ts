@@ -95,6 +95,22 @@ export class ItemTrap extends Item {
     return this._owner;
   }
 
+  /**
+   * C# `ItemTrap.OptimizeBeforeSaving` (`src/Engine/Items/ItemTrap.cs:87`).
+   *
+   * Nulls a dead owner so the save does not carry the corpse. This one is
+   * belt-and-braces: the `owner` getter above already self-cleans, which is why
+   * the omission went unnoticed — the *observable* behaviour was already right
+   * and only the serialised payload differed. Kept because the C# has it, and
+   * because "the getter cleans up" is a property of this accessor rather than
+   * of the item, so it should not be the only thing standing between a save and
+   * a dead actor's inventory.
+   */
+  override optimizeBeforeSaving(): void {
+    super.optimizeBeforeSaving();
+    if (this._owner !== null && this._owner.isDead) this._owner = null;
+  }
+
   activate(owner: Actor): void {
     this._owner = owner;
     this._isActivated = true;
