@@ -14,6 +14,22 @@ import { resolve } from "node:path";
 const webRoot = resolve(__dirname, "..", "..");
 const bundle = resolve(webRoot, "node_modules", ".cache", "sim-repro-test.mjs");
 
+/**
+ * esbuild's launcher, run through `process.execPath`.
+ *
+ * This used to shell out to a bare `npx`, which cannot work on Windows:
+ * `npx` resolves only to `npx.ps1` there, and `execFileSync` does not go through
+ * PowerShell, so every run failed with `spawnSync npx ENOENT` before a single
+ * assertion executed. That made the suite's only end-to-end CLI test
+ * permanently unrunnable on a developer's own machine.
+ *
+ * `node_modules/esbuild/bin/esbuild` is a plain Node script, so invoking it with
+ * the current executable needs no shell, no `.cmd` shim and no package runner on
+ * any platform. It comes in with Vite, so it is already a hard dependency of the
+ * toolchain this test bundles with.
+ */
+const esbuildBin = resolve(webRoot, "node_modules", "esbuild", "bin", "esbuild");
+
 /** Runs the bundled CLI and returns its parsed metric lines. */
 function runSim(args: string[]): Map<string, string> {
   const out = execFileSync(process.execPath, [bundle, "--size", "1", "--turns", "20", ...args], {
@@ -36,9 +52,9 @@ function runSim(args: string[]): Map<string, string> {
 beforeAll(() => {
   // Bundle once; the two runs below then differ only by their arguments.
   execFileSync(
-    "npx",
+    process.execPath,
     [
-      "esbuild",
+      esbuildBin,
       "sim/cli.ts",
       "--bundle",
       "--platform=node",

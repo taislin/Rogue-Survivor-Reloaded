@@ -33,9 +33,21 @@ export interface CanvasLayout {
   backingH: number;
 }
 
-/** Font used for normal and bold text, matching the C# "Lucida Console 8.25pt". */
-const FONT_NORMAL = '8.25pt "Lucida Console", "Courier New", monospace';
-const FONT_BOLD   = 'bold 8.25pt "Lucida Console", "Courier New", monospace';
+/**
+ * HUD font, used for the side panel, the bottom log and the location panel.
+ *
+ * 10pt, not the C#'s "Lucida Console 8.25pt": this is a deliberate divergence
+ * in the same spirit as the widescreen canvas, and for the same reason — the
+ * browser is not running at C#'s 1024x768. Everything the HUD draws here is
+ * `Lucida Console`-flavoured monospace at whatever the display scales to, and
+ * 8.25pt lands at roughly 11 device px, which is unreadable on a HiDPI panel.
+ *
+ * The bump is paid for in geometry, not by clipping: the side panel was widened
+ * (see `TILE_VIEW_WIDTH`) to fit the larger status rows, and the log gives up a
+ * line for the extra leading. See `RogueGame.ts`.
+ */
+const FONT_NORMAL = '10pt "Lucida Console", "Courier New", monospace';
+const FONT_BOLD   = 'bold 10pt "Lucida Console", "Courier New", monospace';
 
 /**
  * Menu/reading font. Same family as the HUD font for visual continuity, at
@@ -627,13 +639,33 @@ export class CanvasUI implements IRogueUI {
 
   // ── Screenshots ───────────────────────────────────────────────────────────
 
-  UI_SaveScreenshot(_filePath: string): string {
+  UI_SaveScreenshot(filePath: string): string {
     const data = this.canvas.toDataURL("image/png");
+    // Use the name the engine chose (`RogueGame.ScreenshotFilePath`, which
+    // carries the unique id from `GetUserNewScreenshotName`). Hardcoding
+    // "screenshot.png" here threw that away, so every screenshot overwrote the
+    // previous one and the filename the game reported in its message was never
+    // the file the player actually received.
+    const name = CanvasUI.downloadName(filePath);
     const a    = document.createElement("a");
     a.href     = data;
-    a.download = "screenshot.png";
+    a.download = name;
     a.click();
-    return "screenshot.png";
+    return name;
+  }
+
+  /**
+   * The last path segment of a save-style path, as a download filename.
+   *
+   * The engine builds Windows-shaped paths (`Config\Screenshot\screenshot_000.png`)
+   * for C# parity, so both separators have to be handled, and anything a
+   * browser would reject in a filename has to go: a `/` would be read as a
+   * directory and the download would land nowhere.
+   */
+  static downloadName(filePath: string): string {
+    const base = filePath.split(/[\\/]/).pop() ?? "";
+    const safe = base.replace(/[<>:"|?* -]/g, "_").trim();
+    return safe === "" || safe === "." || safe === ".." ? "screenshot.png" : safe;
   }
 
   UI_ScreenshotExtension(): string { return "png"; }

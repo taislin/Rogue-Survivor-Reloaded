@@ -145,21 +145,31 @@ export const ACTOR_SIZE: number = 32;
 export const ACTOR_OFFSET: number = (TILE_SIZE - ACTOR_SIZE) / 2;
 /**
  * 16:9 widescreen canvas (1366x768, the common HD panel size) instead of C#'s
- * 4:3 1024x768. Only the width changed, so the entire right-panel stack,
- * message area and minimap-Y are untouched; the extra 342 px go to the map.
+ * 4:3 1024x768. Display only: FOV, sensors and AI use `rules.actorFOV`, never
+ * the view rect, so nothing gameplay-related moves.
  *
- * TILE_VIEW_WIDTH 21 -> 31 and HALF_VIEW_WIDTH 10 -> 15 keep the camera
- * relationship (width = 2*half+1). This is display only: FOV, sensors and AI
- * use rules.actorFOV, never the view rect, so nothing gameplay-related moves.
+ * The width is a balance, not a maximum. C#'s 21x21 camera is narrower than
+ * this canvas, so the surplus has to go somewhere, and it is split:
+ *
+ *   - the map gets 27 columns (C# had 21), and
+ *   - the side panel gets 498 px, against C#'s 286.
+ *
+ * An earlier revision gave all 342 surplus pixels to the map (31 columns, a
+ * 370 px panel). That panel turned out too narrow to read at a 10 pt font --
+ * the widest status row needs ~320 px before its trailing status word -- so the
+ * panel takes 128 px of that back and the camera is 27x21, not 31x21. Dropping
+ * below 27 columns starts costing real situational awareness on a 100x100 map,
+ * so 27 is the floor; a wider font would need a wider canvas, not a narrower
+ * map.
  */
-export const TILE_VIEW_WIDTH: number = 31;
+export const TILE_VIEW_WIDTH: number = 27;
 export const TILE_VIEW_HEIGHT: number = 21;
 /**
- * C#'s camera, kept for reference: at zoom 1 the port derives the same 31x21
- * tile counts from `MAP_PANEL_* / TILE_SIZE` (see `ComputeViewRect`), which is
- * what lets a zoom level change the count from one place. Nothing reads these.
+ * C#'s camera, kept for reference: the port derives the tile counts from
+ * `MAP_PANEL_* / TILE_SIZE` (see `ComputeViewRect`), which is what lets a zoom
+ * level change the count from one place. Nothing reads these.
  */
-export const HALF_VIEW_WIDTH: number = 15;
+export const HALF_VIEW_WIDTH: number = 13;
 export const HALF_VIEW_HEIGHT: number = 10;
 /**
  * The map panel in pixels — the fixed viewport the map is drawn into, at any
@@ -178,18 +188,31 @@ export const RIGHTPANEL_TEXT_X: number = RIGHTPANEL_X + 4;
 export const RIGHTPANEL_TEXT_Y: number = RIGHTPANEL_Y + 4;
 export const INVENTORYPANEL_X: number = RIGHTPANEL_TEXT_X;
 export const INVENTORYPANEL_Y: number = RIGHTPANEL_TEXT_Y + 170;
-export const GROUNDINVENTORYPANEL_Y: number = INVENTORYPANEL_Y + 64;
-export const CORPSESPANEL_Y: number = GROUNDINVENTORYPANEL_Y + 64;
+/**
+ * Height reserved for each of the three stacked item panels (inventory, ground,
+ * corpses). C# used 64; at 10 pt the skill table below them needs the room, so
+ * this is 56. It is not arbitrary: one panel is a single row of `TILE_SIZE`
+ * item icons with the slot numbers drawn on the next text line, which needs
+ * 32 + 12 = 44, leaving 12 px of air.
+ */
+export const SIDEPANEL_SECTION_HEIGHT: number = 56;
+export const GROUNDINVENTORYPANEL_Y: number = INVENTORYPANEL_Y + SIDEPANEL_SECTION_HEIGHT;
+export const CORPSESPANEL_Y: number = GROUNDINVENTORYPANEL_Y + SIDEPANEL_SECTION_HEIGHT;
 export const INVENTORY_SLOTS_PER_LINE: number = 10;
-export const SKILLTABLE_Y: number = CORPSESPANEL_Y + 64;
+export const SKILLTABLE_Y: number = CORPSESPANEL_Y + SIDEPANEL_SECTION_HEIGHT;
 export const SKILLTABLE_LINES: number = 8;
 export const LOCATIONPANEL_X: number = RIGHTPANEL_X;
 export const LOCATIONPANEL_TEXT_X: number = LOCATIONPANEL_X + 4;
 export const MESSAGES_X: number = 4;
 export const MESSAGES_Y: number = TILE_VIEW_HEIGHT * TILE_SIZE + 4;
-export const MESSAGES_SPACING: number = 12;
+/**
+ * Log leading, raised from C#'s 12 to match the 10 pt HUD font. The log shares
+ * its strip with the location panel and has only `CANVAS_HEIGHT - MESSAGES_Y`
+ * = 92 px, so a bigger glyph forces fewer lines: `MAX_MESSAGES` is 6, not 7.
+ */
+export const MESSAGES_SPACING: number = 15;
 export const MESSAGES_FADEOUT: number = 25;
-export const MAX_MESSAGES: number = 7;
+export const MAX_MESSAGES: number = 6;
 export const MESSAGES_HISTORY: number = 59;
 export const MINITILE_SIZE: number = 2;
 export const MINIMAP_X: number = RIGHTPANEL_X + (CANVAS_WIDTH - RIGHTPANEL_X - MAP_MAX_WIDTH * MINITILE_SIZE) / 2;
@@ -198,8 +221,25 @@ export const MINI_TRACKER_OFFSET: number = 1;
 export const DELAY_SHORT: number = 250;
 export const DELAY_NORMAL: number = 500;
 export const DELAY_LONG: number = 1000;
-export const LINE_SPACING: number = 12;
-export const BOLD_LINE_SPACING: number = 14;
+/**
+ * Side-panel leading, raised from C#'s 12/14 to match the 10 pt HUD font.
+ *
+ * `DrawActorStatus` uses `BOLD_LINE_SPACING` as its horizontal unit as well as
+ * its row step (`gx + BOLD_LINE_SPACING * 5` is where the HP bar starts), so
+ * widening the panel and enlarging the text are the same edit: the bar and its
+ * trailing status word both scale with this number and stay in step with the
+ * glyphs.
+ */
+export const LINE_SPACING: number = 15;
+export const BOLD_LINE_SPACING: number = 17;
+/**
+ * Leading for the bottom-right location panel, which is deliberately *not*
+ * `LINE_SPACING`. It has seven fixed rows (map, zone, day, hour, turn, score,
+ * life, murders) in the same 92 px strip as the log, so at 10 pt it keeps C#'s
+ * 12 px leading and stays the one compact block in the HUD. Bumping it to 15
+ * would push the last row to y=783, past the 768 px canvas.
+ */
+export const LOCATIONPANEL_LINE_SPACING: number = 12;
 /**
  * Line steps for full-screen menus and reading screens, paired with the 12pt
  * menu font (`UI_DrawStringLarge`). The HUD keeps 12/14; menus have room, so
@@ -589,6 +629,12 @@ export class RogueGame {
   m_Player!: Actor;
   m_PlayerFOV: Set<Point> = new Set<Point>();
   m_MapViewRect!: Rect;
+  /**
+   * Sequence number for screenshot filenames, so two shots in one session get
+   * different names. See `GetUserNewScreenshotName` for why the C#'s
+   * free-filename loop cannot be ported literally.
+   */
+  private m_ScreenshotCounter = 0;
   /**
    * The last mouse button mask `WaitKeyOrMouse` saw, across waits.
    *
@@ -14789,14 +14835,17 @@ export class RogueGame {
     // y5 <life>/<lives>
     // y6 <murders>
     const X0 = LOCATIONPANEL_TEXT_X;
-    const X1 = LOCATIONPANEL_TEXT_X + 128;
+    // 128 at 8.25 pt, but the left column holds map names like "Subway
+    // Maintenance", which needs ~152 px at 10 pt and would otherwise run into
+    // the right column.
+    const X1 = LOCATIONPANEL_TEXT_X + 180;
     const Y0 = LOCATIONPANEL_TEXT_Y;
-    const Y1 = Y0 + LINE_SPACING;
-    const Y2 = Y1 + LINE_SPACING;
-    const Y3 = Y2 + LINE_SPACING;
-    const Y4 = Y3 + LINE_SPACING;
-    const Y5 = Y4 + LINE_SPACING;
-    const Y6 = Y5 + LINE_SPACING;
+    const Y1 = Y0 + LOCATIONPANEL_LINE_SPACING;
+    const Y2 = Y1 + LOCATIONPANEL_LINE_SPACING;
+    const Y3 = Y2 + LOCATIONPANEL_LINE_SPACING;
+    const Y4 = Y3 + LOCATIONPANEL_LINE_SPACING;
+    const Y5 = Y4 + LOCATIONPANEL_LINE_SPACING;
+    const Y6 = Y5 + LOCATIONPANEL_LINE_SPACING;
 
     this.m_UI.UI_DrawLine(Color.DarkGray, LOCATIONPANEL_X, LOCATIONPANEL_Y, LOCATIONPANEL_X, CANVAS_HEIGHT);
     this.m_UI.UI_DrawString(Color.White, this.m_Session.currentMap!.name, X0, Y0);
@@ -16973,17 +17022,15 @@ export class RogueGame {
   }
 
   // C# GetUserNewScreenshotName — RogueGame.cs:20061
+  // Browser divergence: C# loops until it finds a filename that is not already
+  // on disk. A browser cannot see the Downloads folder, so the loop could never
+  // terminate honestly — and the port's `isFreeID = true` made it return
+  // "screenshot_000" every single time, so with the renderer hardcoding the
+  // download name too, every screenshot in the game overwrote the one before it.
+  // A counter is the browser's equivalent of "pick a name that is not taken":
+  // it is monotonic, so two shots in one session never collide.
   GetUserNewScreenshotName(): string {
-    let name = "";
-    let i = 0;
-    let isFreeID = false;
-    do {
-      name = `screenshot_${String(i).padStart(3, "0")}`;
-      // browser: `UI_SaveScreenshot` downloads the file, nothing to check on disk.
-      isFreeID = true;
-      ++i;
-    } while (!isFreeID);
-
+    const name = `screenshot_${String(this.m_ScreenshotCounter++).padStart(3, "0")}`;
     return name;
   }
 

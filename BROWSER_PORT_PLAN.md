@@ -756,11 +756,15 @@ them — but do not let it fail silently.
 
 ### 1.6 Known non-bugs (do not re-investigate)
 
-- **`tests/integration/reproducibility.test.ts` fails on Windows** with
-  `spawnSync npx ENOENT`. `execFileSync` cannot spawn `npx.ps1`. Confirmed
-  failing on a clean tree; unrelated to the port. Consequence: `npm run verify`
-  halts before its build step, so run `type-check`, `test` and `build`
-  separately until it is fixed.
+- ~~**`tests/integration/reproducibility.test.ts` fails on Windows** with
+  `spawnSync npx ENOENT`.~~ **Fixed 2026-09-27.** It shelled out to a bare `npx`,
+  which resolves only to `npx.ps1` on Windows, and `execFileSync` does not go
+  through PowerShell — so the suite's only end-to-end CLI test could not run on a
+  developer's own machine, and `npm run verify` halted before its build step. It
+  now bundles through `node_modules/esbuild/bin/esbuild` invoked with
+  `process.execPath`: a plain Node script, so no shell, no `.cmd` shim and no
+  package runner on any platform. **`npm run verify` now completes end to end,
+  which it never has before.**
 - **The untracked `icon.png` in the repo root** is not referenced by anything
   (the app uses `web/public/icon-192.png` and friends) and was not produced by
   any code in the tree. Left uncommitted rather than guessing at it.
