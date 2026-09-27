@@ -635,6 +635,33 @@ export class RogueGame {
    * free-filename loop cannot be ported literally.
    */
   private m_ScreenshotCounter = 0;
+
+  /**
+   * How long the player must be idle before neighbouring districts are caught
+   * up, in milliseconds.
+   *
+   * A tunable field rather than a `GameOptions` entry, like `botDelayMs`: the C#
+   * had a thread with a 10 ms sleep rather than a setting, so there is no
+   * original to name an option after. 1 s is long enough that a pause between
+   * two actions does not start catching the world up.
+   */
+  idleSimDelayMs: number = 1000;
+
+  /** Monotonic clock, replaceable so tests can decide what "idle" means. */
+  nowMs: () => number = () => performance.now();
+
+  /**
+   * When the player last pressed a key or a mouse button, or null before they
+   * have been given control.
+   *
+   * Null rather than 0: a test clock legitimately starts at zero, and a 0
+   * sentinel would be indistinguishable from "the player acted at time zero",
+   * which silently disables the catch-up forever.
+   */
+  private m_LastGameInputAt: number | null = null;
+
+  /** True while a background district turn is running inside the input wait. */
+  private m_SimulatingInIdle = false;
   /**
    * The last mouse button mask `WaitKeyOrMouse` saw, across waits.
    *
@@ -981,6 +1008,27 @@ export class RogueGame {
   // C# AddMessagePressEnter — RogueGame.cs:1043
   // alpha10.1 caller handle bot : check for IsBotPlayer and dont call this
   async AddMessagePressEnter(): Promise<void> {
+    /*
+     * A background district turn must never take a keypress.
+     *
+     * This is reachable from one: `ShowNewAchievement` (RogueGame.ts) awards
+     * achievements for activity anywhere in the world and then blocks on ENTER,
+     * with no check that the player is even present. In the C# that could only
+     * happen on the sim thread, which was a separate thread nobody was typing
+     * into; here the catch-up runs *inside* the input wait, so an achievement
+     * earned two districts away would swallow the keypress the player was about
+     * to make and drop a "<press ENTER>" into their message log.
+     *
+     * Returning early leaves the informative message the caller already added in
+     * place, so the player reads it when they next act — which is what they
+     * would have got anyway, minus the lost keypress.
+     *
+     * The other input-blocking helpers need no such guard: they are all
+     * player-only flows (HandlePlayer*, trading, post-mortem), and `DoSay` /
+     * `DoShout` gate on `IsVisibleToPlayer`, which is false for every actor in
+     * a district being caught up.
+     */
+    if (this.m_SimulatingInIdle) return;
     this.AddMessage(new Message("<press ENTER>", this.m_Session.worldTime.turnCounter, Color.Yellow));
     this.RedrawPlayScreen();
     await this.WaitEnter();
@@ -4238,6 +4286,11 @@ export class RogueGame {
   // C# busy-loops on input peeks and calls UI_SetCursor(null); async here so
   // the browser can deliver input (WaitKeyOrMouse yields), no cursor API.
   async HandlePlayerActor(player: Actor): Promise<void> {
+    // The player has control from here, so the idle catch-up clock starts now.
+    // Starting it at construction would mean world generation counts as idling,
+    // and the first wait would fire an immediate catch-up burst.
+    this.m_LastGameInputAt = this.nowMs();
+
     // Upkeep.
     this.debugTrace?.("    HandlePlayerActor: UpdatePlayerFOV");
     this.UpdatePlayerFOV(player); // make sure LOS is up to date.
@@ -8574,14 +8627,25 @@ export class RogueGame {
   // C# busy-loops on sync peeks; the browser must yield to the event loop so
   // DOM input can arrive, so this is async here. C# out-params become the
   // returned object (key is null when the mouse moved/changed buttons).
+  //
+  // The poll also spends idle time catching up the neighbouring districts — see
+  // `simulateOneBehindDistrictTurn` for why that happens here rather than in a
+  // thread of its own.
   async WaitKeyOrMouse(): Promise<{ key: GameKeyEvent | null; mousePos: Point; mouseButtons: MouseButton | null }> {
     this.m_UI.UI_PeekKey(); // consume keys to avoid repeats
+    // Start the idle clock the first time the player is actually given control.
+    // Without this the sentinel would read as "idle since the epoch" and the
+    // first wait would fire an immediate catch-up burst.
+    if (this.m_LastGameInputAt === null) this.noteGameInput();
     const prevMousePos = this.m_UI.UI_GetMousePosition();
     let mousePos = new Point(-1, -1);
     let mouseButtons: MouseButton | null = null;
     for (;;) {
       const inKey = this.m_UI.UI_PeekKey();
-      if (inKey != null) return { key: inKey, mousePos, mouseButtons };
+      if (inKey != null) {
+        this.noteGameInput();
+        return { key: inKey, mousePos, mouseButtons };
+      }
 
       mousePos = this.m_UI.UI_GetMousePosition();
       mouseButtons = this.m_UI.UI_PeekMouseButtons();
@@ -8599,9 +8663,125 @@ export class RogueGame {
       const buttonChanged = mouseButtons !== null && mouseButtons !== this.m_LastSeenMouseButtons;
       this.m_LastSeenMouseButtons = mouseButtons;
 
-      if (buttonChanged || !mousePos.equals(prevMousePos)) return { key: null, mousePos, mouseButtons };
+      if (buttonChanged) {
+        this.noteGameInput();
+        return { key: null, mousePos, mouseButtons };
+      }
+      if (!mousePos.equals(prevMousePos)) {
+        // Movement is deliberately *not* activity. A player reading the map moves
+        // the cursor over it constantly, and counting that would starve the
+        // catch-up during exactly the thinking time it exists to fill.
+        return { key: null, mousePos, mouseButtons };
+      }
+
+      // Nothing to do but wait. If the player has been idle long enough, give one
+      // district turn to the world behind them before polling again.
+      await this.simulateOneDistrictTurnWhileIdle();
+
       await new Promise<void>((r) => setTimeout(r, 0));
     }
+  }
+
+  /** Records that the player did something, which defers the idle catch-up. */
+  private noteGameInput(): void {
+    this.m_LastGameInputAt = this.nowMs();
+  }
+
+  /**
+   * Advances one turn of the most-behind neighbouring district, if the player
+   * has been idle long enough and there is anything to catch up.
+   *
+   * ## Why this exists
+   *
+   * The C# ran `SimulateNearbyDistricts` on a real thread every 10 ms
+   * (`SimThreadProc`, RogueGame.cs:21550), with the mutex that would have
+   * serialised it against the player's turn commented out as obsolete. So the
+   * original kept neighbouring districts continuously current and entering one
+   * cost nothing. The browser port dropped the thread — `StartSimThread` and
+   * `SimThreadProc` are empty — and runs the same catch-up inline from
+   * `advancePlayDistrict`, but only while the player is *sleeping*. Neighbouring
+   * districts therefore fall behind by every turn the player does not sleep, and
+   * the whole deficit is paid in one blocking burst on entering: measured on a 1x1
+   * world, 60 turns of normal play left the neighbours 60 turns behind and
+   * `SimulateNearbyDistricts` took **274 ms**, rising with how long the game has
+   * been running.
+   *
+   * A thread is not available here, and a Worker is the wrong answer: the
+   * World/Session/Scoring graph is shared mutable state, which is precisely why
+   * the C# needed a lock and then abandoned it. So the equivalent is to spend
+   * the *player's* idle time instead of a second core. A turn-based game is at
+   * its most idle exactly when its player is thinking, and that slack is free.
+   *
+   * ## Why one turn, and why it can be a whole turn
+   *
+   * `SimulateNearbyDistricts` advances *every* behind neighbour in one call,
+   * which measured 274 ms — far too coarse to sit in front of an input wait. So
+   * the quantum here is a single turn of a single district, the most-behind one
+   * so the catch-up converges evenly instead of round-robining. That still costs
+   * ~22 ms, so preemption can only happen at turn boundaries: a keypress arriving
+   * mid-turn waits for that turn to finish. Measured worst case, that is about one
+   * frame, and only while the player is idle — which is the only time this runs
+   * at all.
+   *
+   * ## Why this cannot break reproducibility
+   *
+   * It is gated on the player being idle, and the headless simulator never is:
+   * `NullRogueUI.UI_PeekKey` always hands back a synthesised key, so the wait
+   * returns immediately and this is never reached. A seeded run stays
+   * byte-identical, which `tests/integration/reproducibility.test.ts` enforces.
+   */
+  private async simulateOneDistrictTurnWhileIdle(): Promise<void> {
+    if (this.m_LastGameInputAt === null) return;   // the player has not been given control yet
+    if (this.nowMs() - this.m_LastGameInputAt < this.idleSimDelayMs) return;
+    if (!s_Options.isSimON) return;
+    if (this.m_SimulatingInIdle) return;            // never nest
+    const district = this.m_Player?.location.map?.district ?? null;
+    if (district == null) return;
+
+    this.m_SimulatingInIdle = true;
+    try {
+      await this.simulateOneBehindDistrictTurn(district);
+    } finally {
+      this.m_SimulatingInIdle = false;
+    }
+  }
+
+  /**
+   * Advances one turn of the neighbouring district that has fallen furthest
+   * behind, if any has.
+   *
+   * @returns whether a district was actually advanced.
+   */
+  async simulateOneBehindDistrictTurn(d: District): Promise<boolean> {
+    const world = this.m_Session.world;
+    const own = d.entryMap;
+    if (world == null || own == null) return false;
+
+    // C# passes the bounds by `ref` and `World.trimToBounds` mutates them.
+    const pmin = { x: d.worldPosition.x - 1, y: d.worldPosition.y - 1 };
+    const pmax = { x: d.worldPosition.x + 1, y: d.worldPosition.y + 1 };
+    world.trimToBounds(pmin);
+    world.trimToBounds(pmax);
+
+    let target: District | null = null;
+    let worstLag = 0;
+    for (let dx = pmin.x; dx <= pmax.x; dx++) {
+      for (let dy = pmin.y; dy <= pmax.y; dy++) {
+        if (dx === d.worldPosition.x && dy === d.worldPosition.y) continue;
+        const other = world.getDistrict(dx, dy);
+        // C# indexes World[dx, dy] and trusts it to be generated.
+        if (other == null || other.entryMap == null) continue;
+        const lag = own.localTime.turnCounter - other.entryMap.localTime.turnCounter;
+        if (lag > worstLag) {
+          worstLag = lag;
+          target = other;
+        }
+      }
+    }
+
+    if (target == null) return false;   // nothing behind: already up to date
+    await this.SimulateDistrict(target);
+    return true;
   }
 
   // C# WaitDirectionOrCancel — RogueGame.cs:11270
