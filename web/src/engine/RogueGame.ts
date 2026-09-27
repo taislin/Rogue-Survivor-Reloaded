@@ -7131,6 +7131,28 @@ export class RogueGame {
 
 	// C# HandleMouseLook — RogueGame.cs:6622
 	HandleMouseLook(mousePos: Point): boolean {
+		// Browser port: claim the mouse only over the map panel's own pixels.
+		//
+		// C#'s next line is `if (!IsInViewRect(MouseToMap(mousePos))) return false;`
+		// and that was enough, because in C# the tile grid *was* the panel: 27
+		// tiles of 32 px is exactly MAP_PANEL_WIDTH, so the two edge tests agreed
+		// and nothing outside the map was ever claimed.
+		//
+		// The map zoom breaks that agreement. `ScreenToMap` divides by the
+		// *displayed* tile size while the panel is still MAP_PANEL_WIDTH wide, so
+		// at 2x the view is 14 tiles covering 0..896 against a panel that ends at
+		// 864. The look handler runs first in the play loop and `continue`s when
+		// it claims the mouse, so those 32 px were swallowed before the inventory
+		// was ever asked -- and the side panel starts at 872, which put 24 of the
+		// first item slot's 32 px out of reach. Only the left part of the first
+		// slot was dead, the rest was fine, and none of it happened at zoom 1.
+		//
+		// Testing the panel's pixels directly is exact at either zoom and does not
+		// depend on the two coordinate spaces happening to line up.
+		if (mousePos.x < 0 || mousePos.y < 0) return false;
+		if (mousePos.x >= MAP_PANEL_WIDTH || mousePos.y >= MAP_PANEL_HEIGHT)
+			return false;
+
 		const mouseMap = this.MouseToMap(mousePos);
 		if (!this.IsInViewRect(mouseMap)) return false;
 

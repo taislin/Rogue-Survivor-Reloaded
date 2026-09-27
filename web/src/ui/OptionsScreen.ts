@@ -98,6 +98,17 @@ export class OptionsScreen {
 
 	private readonly menuEntries: string[];
 
+	/**
+	 * A typeface change whose faces have not arrived yet.
+	 *
+	 * The game draws on demand rather than on a frame loop, and this screen draws
+	 * once per keypress, so a typeface whose faces are still being fetched would
+	 * stay invisible until the player pressed something else — the screen would
+	 * sit in the old face looking like the option had done nothing. Redrawing when
+	 * the load resolves is what makes the change appear at all.
+	 */
+	private pendingTypeface: Promise<void> | null = null;
+
 	constructor(
 		private readonly ui: IRogueUI,
 		private readonly music?: IMusicManager,
@@ -165,6 +176,18 @@ export class OptionsScreen {
 			if (Options.simThread) Options.simulateWhenSleeping = false;
 			// apply options.
 			this.applyOptions();
+
+			// A typeface whose faces were still being fetched draws in the old
+			// face until they land, and the loop's own redraw has already happened
+			// by then. Redraw once more on arrival, or the change is only visible
+			// after the next keypress.
+			if (this.pendingTypeface !== null) {
+				const pending = this.pendingTypeface;
+				this.pendingTypeface = null;
+				void pending.then(() => {
+					if (loop) this.draw(selected);
+				});
+			}
 		} while (loop);
 
 		// save.
@@ -524,17 +547,21 @@ export class OptionsScreen {
 				}
 				break;
 			}
-			case OptionIDs.UI_FONT_CHOICE: {
-				// Same bounded-index shape, over the typefaces `ui/fonts.ts` offers.
-				// The setter applies it, so the next frame is drawn in the new face
-				// rather than the next reload.
-				const index = FONT_CHOICES.indexOf(o.fontChoice);
-				const next = index + dir;
-				if (next >= 0 && next < FONT_CHOICES.length) {
-					o.fontChoice = FONT_CHOICES[next]!;
-				}
-				break;
+		case OptionIDs.UI_FONT_CHOICE: {
+			// Same bounded-index shape, over the typefaces `ui/fonts.ts` offers.
+			// The setter applies it, so the next frame is drawn in the new face
+			// rather than the next reload.
+			const index = FONT_CHOICES.indexOf(o.fontChoice);
+			const next = index + dir;
+			if (next >= 0 && next < FONT_CHOICES.length) {
+				o.fontChoice = FONT_CHOICES[next]!;
+				// The setter applies the choice fire-and-forget; ask for the same
+				// promise so the loop can redraw once the faces have landed. This
+				// is the cached one, not a second load.
+				this.pendingTypeface = Options.applyFontChoice();
 			}
+			break;
+		}
 			default:
 				break;
 		}

@@ -225,25 +225,29 @@ export function fontMenuBold(): string {
 }
 
 /**
- * Points the canvas font strings at a choice, and loads its faces if needed.
+ * Points the canvas font strings at a choice, and resolves when its faces are
+ * usable.
  *
  * The strings are built from `currentStack` rather than being constants, because
  * `CanvasUI` captured them at construction time and an option that cannot change
  * them is not an option. `CanvasUI` re-reads them through the getters above on
- * every draw, so a change takes effect on the next frame.
+ * every draw, so a change takes effect on the very next draw.
  *
- * The faces are loaded *before* the stack is pointed at them, which is the whole
- * reason `loadGameFonts` exists: switching first would draw one frame in the
- * fallback stack, which is the exact failure the loader prevents.
+ * So the stack is switched *synchronously*, before the load is awaited, and the
+ * returned promise is what says whether the faces have actually arrived. The two
+ * are not the same thing and the difference is visible: pointing the stack at a
+ * face that has not loaded yet draws the fallback stack, which looks like nothing
+ * happened at all.
  *
- * Awaiting is still the caller's business: `main.ts` awaits the initial load, and
- * by the time a player changes the option the browser has usually cached the face
- * they are switching away from — though not the one they are switching to, hence
- * the await.
+ * Callers that want the change to be *seen* rather than merely applied have to
+ * redraw when this resolves. The game draws on demand rather than on a frame
+ * loop, so a screen that only draws on input will otherwise sit in the old
+ * typeface until the player presses something else — which is exactly the bug
+ * this split exists to avoid. `OptionsScreen` does this.
  */
-export async function setFontChoice(choice: FontChoice): Promise<void> {
-  if (isBundledFont(choice)) await loadGameFonts(choice);
+export function setFontChoice(choice: FontChoice): Promise<void> {
   currentStack = fontStackFor(choice);
+  return isBundledFont(choice) ? loadGameFonts(choice) : Promise.resolve();
 }
 
 /** A readable name for the options screen. */

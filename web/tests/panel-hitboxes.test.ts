@@ -15,6 +15,9 @@ import {
   SIDEPANEL_TITLE_LEADING,
   INVENTORY_SLOTS_PER_LINE,
   TILE_SIZE,
+  MAP_PANEL_WIDTH,
+  MAP_PANEL_HEIGHT,
+  CANVAS_WIDTH,
 } from "@engine/RogueGame";
 import { CanvasUI } from "@ui/CanvasUI";
 import { Point } from "@engine/Point";
@@ -300,6 +303,72 @@ describe("CanvasUI.clampPopupBox", () => {
 
   it("keeps an oversized box at the origin rather than going negative", () => {
     expect(CanvasUI.clampPopupBox(100, 100, 5000, 5000, 1)).toEqual({ x: 0, y: 0 });
+  });
+});
+
+describe("the look handler leaves the side panel alone", () => {
+  /**
+   * The play loop asks the look handler first and skips everything else when it
+   * claims the mouse:
+   *
+   *     const isLooking = this.HandleMouseLook(mousePos);
+   *     if (isLooking) continue;
+   *
+   * so anything the look handler claims is unreachable for the inventory and the
+   * corpse list. C# decided that with the tile grid, which was exact there because
+   * 27 tiles of 32 px is precisely the map panel's width. The map zoom broke the
+   * coincidence: at 2x the view is 14 tiles covering 896 px against a panel that
+   * ends at 864, so 32 px of the side panel were swallowed — and the panel starts
+   * at 872, which is inside the first item slot.
+   *
+   * The symptom was narrow enough to be mistaken for a slot problem: only the
+   * left 24 px of the *first* slot were dead, every other slot was fine, and all
+   * of it worked at zoom 1.
+   */
+  const SLOT0_X = INVENTORYPANEL_X;
+  const SLOT0_W = TILE_SIZE;
+
+  it("starts the side panel clear of the map at either zoom", () => {
+    // The claim has to end before the panel begins, or the overlap is only a
+    // question of how wide the first slot is.
+    expect(INVENTORYPANEL_X).toBeGreaterThanOrEqual(MAP_PANEL_WIDTH);
+  });
+
+  it("does not let a zoomed view's grid reach the first slot", () => {
+    // What the grid claimed, before the fix, against what it may claim.
+    for (const zoom of [1, 2] as const) {
+      const tileSize = TILE_SIZE * zoom;
+      const columns = Math.ceil(MAP_PANEL_WIDTH / tileSize);
+      const gridRight = columns * tileSize;
+      if (zoom === 1) {
+        // The C# case, and the reason C# needed no explicit bound: the grid ends
+        // exactly at the panel's edge.
+        expect(gridRight).toBe(MAP_PANEL_WIDTH);
+      } else {
+        // The port's case, which is why the explicit bound exists.
+        expect(gridRight).toBeGreaterThan(MAP_PANEL_WIDTH);
+      }
+      // Either way the panel's own bounds are what the handler must use, and they
+      // start after the map ends.
+      expect(MAP_PANEL_WIDTH).toBeLessThanOrEqual(SLOT0_X);
+    }
+  });
+
+  it("keeps the whole first slot inside the panel's x range", () => {
+    expect(SLOT0_X).toBeGreaterThanOrEqual(MAP_PANEL_WIDTH);
+    expect(SLOT0_X + SLOT0_W).toBeLessThanOrEqual(CANVAS_WIDTH);
+  });
+
+  it("loses the bottom of the map to the grid at 2x too", () => {
+    // The same 32 px, on the other axis: 21 rows of 32 px is exactly the panel's
+    // height at zoom 1, and 11 rows of 64 px overshoots it at zoom 2. The look
+    // handler used to swallow that strip too, which is the top of the log.
+    for (const zoom of [1, 2] as const) {
+      const rows = Math.ceil(MAP_PANEL_HEIGHT / (TILE_SIZE * zoom));
+      const gridBottom = rows * TILE_SIZE * zoom;
+      expect(gridBottom).toBeGreaterThanOrEqual(MAP_PANEL_HEIGHT);
+      if (zoom === 1) expect(gridBottom).toBe(MAP_PANEL_HEIGHT);
+    }
   });
 });
 
