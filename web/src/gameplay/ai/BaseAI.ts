@@ -3634,8 +3634,18 @@ export abstract class BaseAI extends AIController {
         nScore < oScore ? TradeRating.REFUSE :
         TradeRating.MAYBE;
     }
-    // unhandled items! should not happen!
-    throw new Error('RateItemExhange: unhandled item type' + oIt.constructor.name);
+    // Unhandled type. The C# throws here (BaseAI.cs:5001-5002) and this is a
+    // faithful port of that -- but it is a genuine upstream crash, not an
+    // assertion: `RateItem` only rates a tracker JUNK when it is flat or the
+    // actor already owns a working one, so a civilian who does *not* own a
+    // tracker and is offered one walks straight into it. That kills the whole
+    // run mid-trade.
+    //
+    // Deliberate divergence, like the SpawnActorOnMapBorder fix: the JUNK
+    // gates above have already rejected the clearly-worse cases, so there is
+    // no comparison left to make and MAYBE -- "acceptable, let the human
+    // decide" -- is the honest answer. A crash is not.
+    return TradeRating.MAYBE;
   }
   // alpha10 previous attempt at junk detection, currently inside a C# `#if false`
   // block (BaseAI.cs:5005-5324, dead code) - kept because it is part of this slice.

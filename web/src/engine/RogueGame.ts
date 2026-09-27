@@ -3890,7 +3890,15 @@ export class RogueGame {
 
       if (mustBeOutside && map.getTileAt(pos.x, pos.y)!.isInside)
         continue;
-      if (!this.m_Rules.isWalkableFor(actorToSpawn, map, pos.x, pos.y))
+      // C# reads this as a bool via the `IsWalkableFor(actor, map, x, y)`
+      // overload (Rules.cs:1241). The port has no bool overload -- the single
+      // `isWalkableFor` returns a RuleResult object -- and `!someObject` is
+      // always false, so the check was dead and never rejected anything. That
+      // is what let the spawn land on an occupied tile and throw from
+      // `Map.placeActor` ("another actor already at position"), ending the run
+      // mid-invasion. `.ok` is the faithful test; every other call site in the
+      // port already used it.
+      if (!this.m_Rules.isWalkableFor(actorToSpawn, map, pos.x, pos.y).ok)
         continue;
       if (this.DistanceToPlayer(map, pos) < minDistToPlayer)
         continue;
@@ -3924,7 +3932,10 @@ export class RogueGame {
 
       if (map.getTileAt(pos.x, pos.y)!.isInside)
         continue;
-      if (!this.m_Rules.isWalkableFor(actorToSpawn, map, pos.x, pos.y))
+      // Same dead-check bug as SpawnActorOnMapBorder: the C# uses the bool
+      // overload (Rules.cs:1241, called at RogueGame.cs:5053) and the port was
+      // testing a RuleResult object for truthiness.
+      if (!this.m_Rules.isWalkableFor(actorToSpawn, map, pos.x, pos.y).ok)
         continue;
       if (this.DistanceToPlayer(map, pos) < minDistToPlayer)
         continue;
@@ -10046,9 +10057,24 @@ export class RogueGame {
     /////////////////////////////////////
 
     // 1. If spot not available, cancel.
+    //
+    // The AP spend here is a deliberate divergence from the C#, which returns
+    // bare (RogueGame.cs:13159-13179 -- and so did the port). For a human
+    // player that is harmless: they just press another key. For a **bot** it is
+    // a livelock. A player does not take the `!actor.isPlayer` AP spend above,
+    // so nothing is consumed, `canActorUseExit` still passes on the next turn,
+    // and the AI picks the same doomed exit forever. Confirmed as a hard hang:
+    // seed 8 of the headless sim spins on turn 94 emitting ActionUseExit until
+    // killed, taking `npm test` down with it.
+    //
+    // The fix is the idiom the C# already uses twenty lines above, where
+    // `TryActorLeaveTile` failing does `SpendActorActionPoints(...);
+    // return false;` under the comment "waste ap". The blocked-spot case simply
+    // forgot it.
     const other = exit.toMap!.getActorAtPoint(exit.toPosition);
     if (other !== null) {
       if (isPlayer) this.AddMessage(this.MakeErrorMessage(`${other.name} is blocking your way.`));
+      this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
       return true;
     }
     const blockingObj = exit.toMap!.getMapObjectAtPoint(exit.toPosition);
@@ -10057,6 +10083,7 @@ export class RogueGame {
       const ignoreIt = blockingObj.isCouch;
       if (!canJump && !ignoreIt) {
         if (isPlayer) this.AddMessage(this.MakeErrorMessage(`${blockingObj.aName} is blocking your way.`));
+        this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
         return true;
       }
     }
@@ -15307,7 +15334,7 @@ export class RogueGame {
     // run/tired icon.
     if (actor.isRunning) {
       this.m_UI.UI_DrawImageTinted(GameImages.ICON_RUNNING, gx, gy, tint);
-    } else if (actor.model.abilities.canRun && !this.m_Rules.canActorRun(actor)) {
+    } else if (actor.model.abilities.canRun && !this.m_Rules.canActorRun(actor).ok) {
       this.m_UI.UI_DrawImageTinted(GameImages.ICON_CANT_RUN, gx, gy, tint);
     }
 
@@ -15353,7 +15380,7 @@ export class RogueGame {
     if (this.m_Player != null) {
       if (actor != this.m_Player && !this.m_Player.model.abilities.isUndead && this.ActorHasVitalItemForPlayer(actor)) {
         this.m_UI.UI_DrawImageTinted(GameImages.ICON_HAS_VITAL_ITEM, gx, gy, tint);
-      } else if (this.m_Rules.canActorInitiateTradeWith(this.m_Player, actor)) {
+      } else if (this.m_Rules.canActorInitiateTradeWith(this.m_Player, actor).ok) {
         this.m_UI.UI_DrawImageTinted(GameImages.ICON_CAN_TRADE, gx, gy, tint);
       }
     }
@@ -15898,7 +15925,7 @@ export class RogueGame {
       this.m_UI.UI_DrawStringBold(Color.White, `${maxSTA}`, gx + BOLD_LINE_SPACING * 6 + 100, gy);
       if (actor.isRunning) {
         this.m_UI.UI_DrawStringBold(Color.LightGreen, "RUNNING!", gx + BOLD_LINE_SPACING * 9 + 100, gy);
-      } else if (this.m_Rules.canActorRun(actor)) {
+      } else if (this.m_Rules.canActorRun(actor).ok) {
         this.m_UI.UI_DrawStringBold(Color.Green, "can run", gx + BOLD_LINE_SPACING * 9 + 100, gy);
       } else if (this.m_Rules.isActorTired(actor)) {
         this.m_UI.UI_DrawStringBold(Color.Gray, "TIRED", gx + BOLD_LINE_SPACING * 9 + 100, gy);

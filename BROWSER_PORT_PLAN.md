@@ -17,7 +17,7 @@ Porting a C# WinForms zombie-survival roguelike (195 files, ~2.5 MB, largest `Ro
 > **Do not delete `src/`.** Nothing compiles or ships it (the Dockerfile copies
 > only `web/`, and `.dockerignore` excludes it), so removing it saves no build
 > time and no bundle size. It is the only statement of intended behaviour, and
-> every one of the 56 bugs in §1.1, §1.1b, §1.1c, §1.1d, §1.1e and §1.1f was
+> every one of the 62 bugs in §1.1, §1.1b, §1.1c, §1.1d, §1.1e and §1.1f was
 > found by diffing the port against it. Four of the six tasks still open in §1.5
 > are fidelity work that *cannot be done* without it. Revisit only once those
 > close.
@@ -358,6 +358,45 @@ that a pattern match is a hypothesis generator rather than a verdict.
 | **Factions** | `Faction` class exact. All **63 enemy relations** identical and in the same order, with the same symmetry-check pass. All 8 `LeadOnlyBySameFaction` flags and the `Rules` consumer match. |
 | **MapObjects** | `DoorWindow.BASE_HITPOINTS = 40`, all three `STATE_*`, and the derived fortification values match. |
 
+### 1.1h Six bugs: a `RuleResult` tested as a boolean, and two livelocks (2026-09-27)
+
+Found by re-running the sim sweep after §1.1e, which is the procedure that has
+now paid for itself four times. A different failure shape from §1.1c–e: not a
+table replaced by a loop, but a **C# overload that does not exist in the port**.
+
+| # | Bug | C# reference | Impact |
+|---|-----|--------------|--------|
+| 57 | `SpawnActorOnMapBorder` tested `isWalkableFor(...)` for truthiness | C# has a `bool IsWalkableFor(actor, map, x, y)` overload (`Rules.cs:1241`); the port has only the `RuleResult` form, and `!object` is always `false` | The walkability check was **dead**. Spawns landed on occupied tiles and threw from `Map.placeActor` — *"another actor already at position"*, the exact string `Map.cs:488` raises — **ending the run mid-invasion**. |
+| 58 | `SpawnActorNear` — identical dead check | as above | Same, for the near-a-point spawner. |
+| 59 | `canActorRun` tested as a boolean, twice | `RogueGame.cs:18630`, `:19232` | The "can't run" icon **never drew**, and the HUD showed "can run" in place of "TIRED" even when the actor was too tired to run. |
+| 60 | `canActorInitiateTradeWith` tested as a boolean | `RogueGame.cs` HUD trade icon | The "can trade" icon showed for **every** actor regardless of whether a trade was possible. |
+| 61 | `DoLeaveMap` returned early on a blocked exit **without spending action points** | `RogueGame.cs:13159-13179` returns bare, as the port did | **Livelock, and it hangs the test suite.** A player skips the `!actor.isPlayer` AP spend, so nothing was consumed, `canActorUseExit` passed again next turn, and a **bot** re-picked the same doomed exit forever. Seed 8 spun on turn 94 emitting `ActionUseExit` until killed. |
+| 62 | `rateItemExhange` threw on an unhandled item type | `BaseAI.cs:5001-5002` throws the identical string | **Crash.** `RateItem` only rates a tracker JUNK when it is flat or the actor already owns a working one, so a civilian who does *not* own a tracker and is offered one walks into it. The run dies mid-trade. |
+
+**The type-system escape.** Nothing warns about 57–60. `!ruleResultObject` is
+valid TypeScript, the method is named `isWalkableFor`, the guard reads like a
+perfectly ordinary check, and the C# it was translated from returns `bool` from
+a *different overload* of the same method. The compiler cannot see across that.
+Now pinned by `tests/rule-result-usage.test.ts`, which parses `Rules.ts` for the
+44 `RuleResult`-returning methods and fails on any call site not followed by
+`.ok`, naming file and line.
+
+**61 and 62 are deliberate divergences from the C#**, both of which the plan had
+recorded as "faithful, needs a decision" (§1.2a). A crash and a hang are not
+behaviour worth preserving. For 61 the fix is the idiom the C# already uses
+twenty lines earlier, where a failed `TryActorLeaveTile` does
+`SpendActorActionPoints(...); return false;` under the comment *"waste ap"* — the
+blocked-spot case simply forgot it. For 62 the JUNK gates have already rejected
+the clearly-worse cases, so there is no comparison left to make and `MAYBE`
+("acceptable, let the human decide") is the honest answer.
+
+**Two new guards, because a hang is invisible.** A crash throws and the suite
+goes red; a hang eats the CI timeout and locally just looks like a slow day.
+`tests/headless-no-hang.test.ts` runs the seeds that actually hung or died
+during the sweep under a wall-clock deadline, and reports which seed stalled.
+Confirmed it fails by name — `seed 8 did not finish within 60000ms` — when the
+AP spend is removed again.
+
 ### 1.2 The harness now runs real games
 
 Runs are reproducible (`--seed`, §1.4) and the map no longer corrupts itself
@@ -370,32 +409,33 @@ Runs are reproducible (`--seed`, §1.4) and the map no longer corrupts itself
 > the old numbers are gone rather than kept: comparing against them is
 > meaningless.
 
-At 3×3 / 1 000 turns / `--undead`, current:
+Re-measured 2026-09-27 at 1×1 / 900 turns / `--undead`, seeds 1–12, after the
+§1.1h fixes. **No crashes and no hangs across all twelve.**
 
 ```
-seed 1  turns played :  19  player : dead  (-8 hp)   actors : 903 (562 undead / 341 living)
-seed 2  turns played : 719  player : alive (60 hp)   actors : 882 (557 undead / 325 living)  ERROR
-seed 3  turns played :  10  player : dead  (-12 hp)  actors : 866 (520 undead / 346 living)
-seed 4  turns played :  46  player : dead  (-8 hp)   actors : 875 (543 undead / 332 living)
-seed 5  turns played : 191  player : dead  (-2 hp)   actors : 854 (519 undead / 335 living)
+seed  1  turns    6  dead (-11 hp)      seed  7  turns   11  dead (-11 hp)
+seed  2  turns  900  alive (43 hp)      seed  8  turns  900  alive (60 hp)
+seed  3  turns  111  dead ( -2 hp)      seed  9  turns   19  dead ( -1 hp)
+seed  4  turns   49  dead ( -5 hp)      seed 10  turns   11  dead ( -1 hp)
+seed  5  turns   60  dead (  0 hp)      seed 11  turns   69  dead ( -4 hp)
+seed  6  turns   14  dead ( -1 hp)      seed 12  turns   46  dead ( -4 hp)
 ```
 
-**The undead bot now dies quickly, and that is the fix working.** An undead
-player is shot by survivors, and survivors previously could not shoot. Confirmed
-by instrumenting the player's `hitPoints`: every hit arrives via
-`DoRangedAttack → DoSingleRangedAttack → InflictDamage`, two shots a turn for
-~17 and ~14 damage. C# `ItemRangedWeapon`'s constructor does
-`m_Ammo = m.MaxAmmo` (`ItemRangedWeapon.cs:40`), so a fresh gun starts loaded;
-with `maxAmmo` undefined, the port's guns started with `undefined` rounds and
-the entire ranged half of NPC behaviour was dead. **So `--undead` is no longer
-the way to get a long run** — it used to be recommended precisely because the
-survivor bot starved, and that reason is gone (§1.2a).
+**Ten of twelve undead bots now die, and that is the §1.1c fix working.** The
+undead player is shot by survivors, and survivors could not shoot until bug 23
+gave every ranged weapon a `maxAmmo`. The old baseline's "4 of 5 seeds play all
+1 000 turns" was measured while the entire ranged half of NPC behaviour was
+inert. A bot that walks into a crowd of armed survivors dying in single digits
+to two digits is the expected consequence, not a new fault — but it does mean
+**`--undead` is no longer a way to get a long run**, and neither is anything
+else. Long runs now need a survivor who avoids being shot, which the current bot
+does not try to do.
 
 `Map.assertActorIntegrity()` still runs every turn, so the §1.1 bug 10 class
 fails on the turn it starts rather than as a strange death 40 turns later. It is
 not dead code — reintroducing bug 10 makes it report the duplicate on turn 1.
 
-### 1.2a Three things that look like bugs but are not
+### 1.2a Four things that look like bugs but are not
 
 Do not re-investigate these:
 
@@ -705,7 +745,7 @@ Full detail in `web/.porting/CONVENTIONS.md`. The ones that matter:
 |---|---|
 | `npm run verify` | type-check + coverage + build — what CI runs, in one command |
 | `npm run type-check` | `tsc --noEmit`; covers `src/`, `sim/` and `tests/` — necessary, **not sufficient** |
-| `npm run test` | Vitest, 384 tests |
+| `npm run test` | Vitest, 395 tests |
 | `npm run test:coverage` | Vitest with coverage thresholds enforced |
 | `npm run build` | Vite production build |
 | `npm run sim` | Headless engine run — the real test |
@@ -745,7 +785,7 @@ Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks,
 | 2 | Deterministic `--seed` for reproducible runs | **Done** (`Session.useSeed`, `--seed`) |
 | 3 | Drive the sim to a clean full-length run and fix what it finds | **In progress** — 1 000-turn runs clean on 4/5 seeds; keep sweeping |
 | 4 | Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`) | **Done and verified in a browser** — now 1366×768 widescreen, smooth filtering (the old `image-rendering: pixelated` made upscaled text unreadable) |
-| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 384 tests, 21 files, thresholds enforced (50/75/57/50) |
+| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 395 tests, 23 files, thresholds enforced (50/75/57/50) |
 | 6 | GitHub Actions CI | **Done** — `.github/workflows/ci.yml`, type-check + coverage + build + seeded sim, plus a docker smoke job |
 | 7 | PWA manifest + service worker (offline play) | **Done** — manifest, drawn icons, runtime-caching `sw.js` |
 | 8 | Docker image for the self-hosted server | **Done but unverified** — docker is not installed locally, so the image has never been built; CI will exercise it first |
@@ -774,6 +814,8 @@ once with `npm run verify`. `tests/` is in `tsconfig.json`'s include list, so
 | `skills-data.test.ts` | `Skills.csv` actually reaches the `Rules.SKILL_*` statics, with the right `(int)` truncation, and each of the 7 corrected values differs from the C# default (53 cases) |
 | `actor-invincible.test.ts` | C#'s `m_IsInvincible` guard on all six Actor point properties, including that `Infection`'s guard is inverted (21 cases) |
 | `ai-percept-filters.test.ts` | The AI percept filters reject non-Actor percepts, and `filterSameMap` still admits them (9 cases, characterisation — see §1.5 item 4) |
+| `rule-result-usage.test.ts` | No `RuleResult` is ever tested for truthiness — the bug class behind §1.1h bugs 57-60. Parses `Rules.ts` for the 44 `RuleResult` methods and reports any call site missing `.ok`, by file and line (3 cases) |
+| `headless-no-hang.test.ts` | Seeds that hung or died in the sweep finish under a wall-clock deadline, so a livelock fails loudly instead of eating the CI timeout (8 cases) |
 | `model-data-binding.test.ts` | Every actor model binds to its own CSV row, unique weapons stay unbreakable, lights do not auto-equip, the badge is holdable. Also fails if `Actors.csv` is ever reordered into enum order (43 cases, §1.1e) |
 | `actor-abilities.test.ts` | Every actor's granted ability set, transcribed from the C#; specifically that the player can open doors, and that skeletons/rat zombie do not rot (§1.1d, 31 cases) |
 | `generator-integrity.test.ts` | A generated world is sound: no actor on a wall, nothing out of bounds, the player starts passable in the largest region, no surface district sealed. One game per file, seed 42 = the worst world measured (7 cases) |
@@ -934,7 +976,7 @@ Items 1, 4 and 5 are implemented (see §4.1a). Items 2 and 3 are not.
 | 5 | World generation + AI | Done |
 | 6 | Audio | Done |
 | 7 | Save / load | Done |
-| 8 | Headless sim, tests, CI, deployment | In progress — 384 tests, CI, PWA, Docker, asset pass and frame-cost pass all in. Only 12 (optional touch) remains; see §1.2 for why 1 000-turn runs no longer complete |
+| 8 | Headless sim, tests, CI, deployment | In progress — 395 tests, CI, PWA, Docker, asset pass and frame-cost pass all in. Only 12 (optional touch) remains; see §1.2 for why 1 000-turn runs no longer complete |
 
 ---
 
