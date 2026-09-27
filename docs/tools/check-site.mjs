@@ -123,7 +123,24 @@ for (const page of PAGES) {
 /* --- stylesheet coverage -------------------------------------------------- */
 
 const css = readFileSync(join(DOCS, 'assets/css/site.css'), 'utf8');
-const cssClasses = new Set([...css.matchAll(/\.([a-zA-Z][a-zA-Z0-9_-]*)/g)].map((m) => m[1]));
+
+// Scan a copy of the stylesheet with comments and url() bodies removed, so
+// neither can contribute a phantom "class". Both of these were real false
+// positives found the hard way:
+//
+//   - `@font-face` reported a class named `woff2`, from
+//     `url("../fonts/JetBrainsMono-Regular.woff2")`.
+//   - a comment mentioning `check-site.mjs` reported a class named `mjs`.
+//
+// The old detector only ever saw `assets/img/...` paths, which contain no dot,
+// so neither could happen until the self-hosted web fonts arrived. Blanking
+// comments and url() bodies is the blunt fix, and deliberately so: a false
+// "class defined but never used" fails the gate, and a gate that cries wolf
+// gets ignored.
+const cssScannable = css
+  .replace(/\/\*[\s\S]*?\*\//g, '')                                  // comments
+  .replace(/url\(\s*['"]?[^)]*['"]?\s*\)/g, 'url()');                 // url() bodies
+const cssClasses = new Set([...cssScannable.matchAll(/\.([a-zA-Z][a-zA-Z0-9_-]*)/g)].map((m) => m[1]));
 const used = new Set();
 
 for (const page of PAGES) {
@@ -139,6 +156,24 @@ for (const c of used) {
 
 const dead = [...cssClasses].filter((c) => !used.has(c) && !RUNTIME_ONLY.has(c));
 if (dead.length) fail('site.css', `classes defined but never used: ${dead.map((c) => '.' + c).join(', ')}`);
+
+/* --- stylesheet asset references ------------------------------------------ */
+
+// The per-page check above resolves href/src against DOCS, which is wrong for
+// the stylesheet: a `url()` in CSS is relative to the *stylesheet*, not the
+// page, so the self-hosted fonts are at "../fonts/..." from assets/css/. Left
+// unchecked, a typo in a font path fails silently -- the browser just falls back
+// to the next family in the stack and nothing looks broken.
+const CSS_DIR = join(DOCS, 'assets/css');
+for (const [, ref] of css.matchAll(/url\(\s*['"]?([^)'"]*)['"]?\s*\)/g)) {
+  if (/^(https?:|data:|\/\/)/.test(ref)) continue;
+  const target = join(CSS_DIR, ref.split(/[?#]/)[0]);
+  if (ref.split(/[?#]/)[0].startsWith('..') && !target.startsWith(DOCS)) {
+    fail('site.css', `url() escapes docs/ (will 404 on Pages): ${ref}`);
+    continue;
+  }
+  if (!existsSync(target)) fail('site.css', `url() target missing: ${ref}`);
+}
 
 /* --- report --------------------------------------------------------------- */
 
