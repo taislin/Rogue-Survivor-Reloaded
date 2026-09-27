@@ -20,6 +20,7 @@ export class InputHandler {
   attach(): void {
     document.addEventListener("keydown",   this.onKeyDown);
     document.addEventListener("mousemove", this.onMouseMove);
+    document.addEventListener("mouseleave", this.onMouseLeave);
     document.addEventListener("mousedown", this.onMouseDown);
     document.addEventListener("mouseup",   this.onMouseUp);
   }
@@ -28,6 +29,7 @@ export class InputHandler {
   detach(): void {
     document.removeEventListener("keydown",   this.onKeyDown);
     document.removeEventListener("mousemove", this.onMouseMove);
+    document.removeEventListener("mouseleave", this.onMouseLeave);
     document.removeEventListener("mousedown", this.onMouseDown);
     document.removeEventListener("mouseup",   this.onMouseUp);
   }
@@ -72,15 +74,33 @@ export class InputHandler {
     // the canvas is no longer 1:1 with the logical surface: the result would be
     // canvas coords divided by the scale a second time, so the mouse would be
     // wrong by that factor at every window size except 1366 CSS px.
+    //
+    // Rounded: `RogueGame.WaitKeyOrMouse` compares successive positions to
+    // decide whether the mouse *moved*, and with a fractional device pixel
+    // ratio (Windows 125%) both `clientX` and `rect.left` can carry a fraction,
+    // so an unmoved cursor can read as a subpixel jitter and wake the wait.
     const rect = canvas.getBoundingClientRect();
     return new Point(
-      this.mouseState.x - rect.left,
-      this.mouseState.y - rect.top,
+      Math.round(this.mouseState.x - rect.left),
+      Math.round(this.mouseState.y - rect.top),
     );
   }
 
+  /**
+   * Returns the buttons held since the last call, then clears them.
+   *
+   * Despite the name this consumes, and it has to: C#'s `UI_PeekMouseButtons`
+   * clears `m_HasMouseButtons` before returning, because `RogueGame` uses a
+   * non-null answer as an *event* — it wakes the play loop's input wait. A pure
+   * peek reports the same held button on every poll, so the wait returns
+   * immediately and forever, and the loop redraws the screen as fast as the CPU
+   * allows. `RogueGame.WaitKeyOrMouse` also compares against the last mask it
+   * saw, so even a UI that forgets cannot wedge the loop.
+   */
   peekMouseButtons(): MouseButton | null {
-    return this.mouseState.buttons;
+    const buttons = this.mouseState.buttons;
+    this.mouseState.buttons = null;
+    return buttons;
   }
 
   postMouseButtons(buttons: MouseButton): void {
@@ -112,6 +132,22 @@ export class InputHandler {
 
   private readonly onMouseDown = (e: MouseEvent): void => {
     this.mouseState.buttons = this.mapButtons(e.buttons);
+  };
+
+  /**
+   * Records the release, and recovers a release the document never saw.
+   *
+   * A button can be left set with no `mouseup` ever arriving: press, drag out of
+   * the window, release outside it, move back. The document sees the mousedown
+   * and nothing else, so the state would stay set for the rest of the session.
+   * `mouseleave` is the browser's way of saying the pointer is no longer over
+   * the page, which is exactly when a held button has been lost.
+   *
+   * It is not done on `mousemove` instead: that would cancel a click the player
+   * is holding down, which is legitimate (drag-and-drop, feeling out a target).
+   */
+  private readonly onMouseLeave = (): void => {
+    this.mouseState.buttons = null;
   };
 
   private readonly onMouseUp = (e: MouseEvent): void => {

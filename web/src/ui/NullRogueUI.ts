@@ -82,8 +82,18 @@ export class NullRogueUI implements IRogueUI {
     return this.mousePos;
   }
 
+  /**
+   * Returns the posted buttons and clears them, as C# does.
+   *
+   * C#'s `UI_PeekMouseButtons` sets `m_HasMouseButtons = false` before
+   * returning, and `RogueGame.WaitKeyOrMouse` relies on that: a non-null answer
+   * is an *event* that wakes the input wait. Leaving the state set here would
+   * make the wait return on every poll, and the play loop would redraw forever.
+   */
   UI_PeekMouseButtons(): MouseButton | null {
-    return this.mouseButtons;
+    const buttons = this.mouseButtons;
+    this.mouseButtons = null;
+    return buttons;
   }
 
   UI_PostMouseButtons(buttons: MouseButton): void {

@@ -589,6 +589,14 @@ export class RogueGame {
   m_Player!: Actor;
   m_PlayerFOV: Set<Point> = new Set<Point>();
   m_MapViewRect!: Rect;
+  /**
+   * The last mouse button mask `WaitKeyOrMouse` saw, across waits.
+   *
+   * Not a cache: it is what tells a fresh press from a button that is merely
+   * still held, so a UI which does not consume `UI_PeekMouseButtons` cannot wake
+   * the input wait forever. See the comment in `WaitKeyOrMouse`.
+   */
+  private m_LastSeenMouseButtons: MouseButton | null = null;
 
   /**
    * Minimap raster cache.
@@ -5810,7 +5818,7 @@ export class RogueGame {
 
       if (isTrustedLeader) {
         lines.push(" "); colors.push(Color.White);
-        lines.push(`You are ${this.HimOrHer(npc)} trusted leader, will accept all trades.`);
+        lines.push(`You are ${this.HisOrHer(npc)} trusted leader, will accept all trades.`);
         colors.push(Color.LightGreen);
       }
 
@@ -8511,9 +8519,24 @@ export class RogueGame {
     for (;;) {
       const inKey = this.m_UI.UI_PeekKey();
       if (inKey != null) return { key: inKey, mousePos, mouseButtons };
+
       mousePos = this.m_UI.UI_GetMousePosition();
       mouseButtons = this.m_UI.UI_PeekMouseButtons();
-      if (!mousePos.equals(prevMousePos) || mouseButtons != null) return { key: null, mousePos, mouseButtons };
+
+      // A press counts when it is *new*, not when it is merely present. C# gets
+      // this from `UI_PeekMouseButtons` consuming the flag, and so do the browser
+      // and headless UIs — but a UI that forgets would have its button re-delivered
+      // on every poll, and the play loop re-enters this wait on every pass while
+      // the cursor is over the map, so the game would redraw in a tight loop with
+      // the keyboard never getting a turn. Comparing against the last *observed*
+      // mask, kept across waits, catches that: the first sighting is delivered as
+      // the press it is, and a still-held button is not delivered again. A release
+      // is observed but not delivered, so the next press of the same button still
+      // registers.
+      const buttonChanged = mouseButtons !== null && mouseButtons !== this.m_LastSeenMouseButtons;
+      this.m_LastSeenMouseButtons = mouseButtons;
+
+      if (buttonChanged || !mousePos.equals(prevMousePos)) return { key: null, mousePos, mouseButtons };
       await new Promise<void>((r) => setTimeout(r, 0));
     }
   }

@@ -42,10 +42,20 @@ export interface IRogueUI {
   /** Inject a synthetic key event into the queue. */
   UI_PostKey(e: GameKeyEvent): void;
 
-  /** Current mouse position in canvas coordinates. */
+  /** Current mouse position, in CSS pixels relative to the canvas. */
   UI_GetMousePosition(): Point;
 
-  /** Current mouse buttons held, or null if none. */
+  /**
+   * Mouse buttons pressed since the previous call, or null if none.
+   *
+   * Despite the name this *consumes*, and an implementation must: C# clears
+   * `m_HasMouseButtons` before returning, and `RogueGame.WaitKeyOrMouse` uses a
+   * non-null answer as an event that wakes the play loop's input wait. A pure
+   * peek reports the same held button on every poll, so the wait returns
+   * immediately and forever — while the cursor rests on the map, the loop
+   * re-enters the wait through `HandleMouseLook`, and the game redraws in a
+   * tight loop with no key ever getting a turn.
+   */
   UI_PeekMouseButtons(): MouseButton | null;
 
   /** Inject mouse button state. */
