@@ -38,7 +38,7 @@ const VOID = new Set([
 const RUNTIME_ONLY = new Set(['is-active', 'is-hidden']);
 
 const PAGES = readdirSync(DOCS).filter((f) => f.endsWith('.html'));
-const LOCAL_NAV = ['index.html', 'manual.html', 'controls.html', 'info.html'];
+const LOCAL_NAV = ['index.html', 'manual.html', 'controls.html', 'guide.html', 'info.html'];
 
 const fails = [];
 const fail = (page, msg) => fails.push(`${page}: ${msg}`);
@@ -107,8 +107,15 @@ for (const page of PAGES) {
   if ((html.match(/<h1[ >]/g) || []).length !== 1) fail(page, 'not exactly one <h1>');
 
   const current = (html.match(/aria-current="page"/g) || []).length;
-  if (is404 ? current !== 0 : current !== 1) {
-    fail(page, `expected ${is404 ? 0 : 1} aria-current="page", found ${current}`);
+  // Only a page that appears in the nav can mark itself current. This used to
+  // be a hardcoded "404 is exempt", which quietly encoded a second assumption:
+  // that every other page has a nav entry. manual.html no longer does -- its
+  // top-nav link was removed so the guide could own that call -- so the rule is
+  // now derived instead of assumed. Deriving it also means a future page
+  // dropped from the nav needs no change here to stay valid.
+  const inNav = new RegExp(`<a href="${page}"`).test(html.split('</nav>')[0] ?? '');
+  if (inNav ? current !== 1 : current !== 0) {
+    fail(page, `expected ${inNav ? 1 : 0} aria-current="page", found ${current}`);
   }
 
   for (const [, tag] of html.matchAll(/<img(?![^>]*\balt=)[^>]*>/g)) fail(page, `<img> without alt`);

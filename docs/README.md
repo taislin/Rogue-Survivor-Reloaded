@@ -6,9 +6,10 @@ Static site for **Rogue Survivor Reloaded**, published with GitHub Pages.
 
 | File           | What it is                                                        |
 |----------------|-------------------------------------------------------------------|
-| `index.html`   | Landing page: the pitch, how to play, game modes, bestiary, how to run it |
+| `index.html`   | Landing page: the pitch, how to play, game modes, how to run it    |
 | `manual.html`  | The complete game manual (original text by the game's author)     |
 | `controls.html`| Every default keybinding, grouped and annotated                   |
+| `guide.html`   | Field guide: every undead type, and every place worth looting      |
 | `info.html`    | How the port works, project status, credits, licensing            |
 | `404.html`     | Not-found page                                                     |
 
@@ -89,8 +90,11 @@ rule and a matching usage in the same change, or drop the rule.
   only. Every page is fully readable with JavaScript disabled.
 - All URLs are **relative**, so the site works at a domain root and under a
   `/<repo>/` project subpath.
-- The header and footer markup is duplicated across the four hand-written pages
-  on purpose: there is no templating, and keeping it literal means the pages
-  work with no tooling at all. If you change one, change all four.
+- The header and footer markup is duplicated across the hand-written pages on
+  purpose: there is no templating, and keeping it literal means the pages work
+  with no tooling at all. If you change one, change all of them — a nav change
+  is a five-file change (`index`, `manual`, `controls`, `guide`, `info`, plus the
+  nav in `404`), and `check-site.mjs` requires every page to link to every other
+  real page, so a missed one fails the gate.
 - Colours, spacing and breakpoints are CSS custom properties at the top of
   `site.css`. Change them there, not inline.

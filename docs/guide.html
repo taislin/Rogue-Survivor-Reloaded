@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Guide &middot; the dead, the living and the city &middot; Rogue Survivor Reloaded</title>
+  <meta name="description"
+    content="A field guide to Rogue Survivor Reloaded: every undead type with its real stats, the people still alive, what the weather does to you, every building worth looting, and what to pick up when you get there. All sprites are the game's own artwork.">
+  <link rel="icon" href="assets/img/icon-192.png">
+  <link rel="stylesheet" href="assets/css/site.css">
+  <meta property="og:title" content="Rogue Survivor Reloaded — Guide">
+  <meta property="og:description"
+    content="Every undead type with its real stats, the people still alive, and every place worth looting.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="assets/img/icon-512.png">
+</head>
+
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <div class="wrap site-header__inner">
+      <a class="brand" href="index.html">
+        <img src="assets/img/icon-192.png" alt="" width="28" height="28">
+        <span>Rogue Survivor <em>Reloaded</em></span>
+      </a>
+      <nav class="site-nav" aria-label="Main">
+        <a href="index.html">Home</a>
+        <a href="controls.html">Controls</a>
+        <a href="guide.html" aria-current="page">Guide</a>
+        <a href="info.html">About</a>
+        <a href="https://github.com/taislin/Rogue-Survivor-Reloaded">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main" class="wrap">
+    <div class="page-head">
+      <p class="eyebrow">Reference</p>
+      <h1>Guide</h1>
+      <p>What is out there, and what to do about it. The numbers come from the game's own
+        data tables rather than from guesswork, so they are the values the game actually
+        rolls against &mdash; <code>Spd</code> is a percentage of a normal walking pace, and
+        <code>Scent</code> is how well it tracks you, not how far it can smell.
+      </p>
+    </div>
+
+    <!-- ================= The dead ================= -->
+    <h2 id="bestiary">The dead</h2>
+    <p class="lede">They want to eat brains, and they fumble around chasing anything alive.
+      Most are slower than a living human, but none of them tire and they are quite
+      resistant to damage &mdash; you know, they are already dead. Some are dumb. Some follow
+      tracks or remember where they last saw that tasty meatbag. Some break doors, windows
+      and furniture to get to you. Some call the others over. Some can turn your dead friends
+      into company.</p>
+
+    <div class="sprite-strip" style="margin-top:1.5rem">
+      <div class="sprite-cell"><img src="assets/img/actors/skeleton.webp" alt=""><b>Skeleton</b><span>fragile,
+          fast</span></div>
+      <div class="sprite-cell"><img src="assets/img/actors/red_eyed_skeleton.webp" alt=""><b>Red-eyed
+          skeleton</b><span>tougher</span></div>
+      <div class="sprite-cell"><img src="assets/img/actors/red_skeleton.webp" alt=""><b>Red skeleton</b><span>"Kill
+          it with fire!"</span></div>
+      <div class="sprite-cell"><img src="assets/img/actors/zombie.webp" alt=""><b>Shambler</b><span>slow, but smells
+          you</span></div>
+      <div class="sprite-cell"><img src="assets/img/actors/dark_eyed_zombie.webp" alt=""><b>Dark-eyed
+          shambler</b><span>meaner</span></div>
+      <div class="sprite-cell"><img src="assets/img/actors/dark_zombie.webp" alt=""><b>Dark shambler</b><span>the
+          usual horror</span></div>
+      <div class="sprite-cell"><img src="assets/img/actors/rat_zombie.webp" alt=""><b>Zombie rat</b><span>sewers,
+          very quick</span></div>
+      <div class="sprite-cell"><img src="assets/img/actors/zombie_master.webp" alt=""><b>Zombie
+          master</b><span>"Nice glasses."</span></div>
+      <div class="sprite-cell"><img src="assets/img/actors/zombie_lord.webp" alt=""><b>Zombie lord</b><span>"Lord of
+          Death."</span></div>
+      <div class="sprite-cell"><img src="assets/img/actors/zombie_prince.webp" alt=""><b>Zombie
+          prince</b><span>"Prince of Death."</span></div>
+      <div class="sprite-cell"><img src="assets/img/actors/sewers_thing.webp" alt=""><b>The Sewers
+          Thing</b><span>400 HP. Do not disturb.</span></div>
+    </div>
+
+    <div class="table-wrap" style="margin-top:1.75rem">
+      <table>
+        <thead>
+          <tr>
+            <th>Undead</th>
+            <th>Spd</th>
+            <th>HP</th>
+            <th>Atk</th>
+            <th>Dmg</th>
+            <th>Def</th>
+            <th>Scent</th>
+            <th>Says</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Skeleton</td>
+            <td>100</td>
+            <td>10</td>
+            <td>16</td>
+            <td>4</td>
+            <td>6</td>
+            <td>0</td>
+            <td>Quite annoying. Like a fly.</td>
+          </tr>
+          <tr>
+            <td>Red-eyed skeleton</td>
+            <td>150</td>
+            <td>12</td>
+            <td>18</td>
+            <td>6</td>
+            <td>8</td>
+            <td>0</td>
+            <td>Really annoying. Like a big fly.</td>
+          </tr>
+          <tr>
+            <td>Red skeleton</td>
+            <td>200</td>
+            <td>14</td>
+            <td>20</td>
+            <td>8</td>
+            <td>10</td>
+            <td>0</td>
+            <td>REALLY annoying! Kill it with fire!</td>
+          </tr>
+          <tr>
+            <td>Shambler</td>
+            <td>50</td>
+            <td>80</td>
+            <td>20</td>
+            <td>10</td>
+            <td>10</td>
+            <td>40</td>
+            <td>BRAINS!</td>
+          </tr>
+          <tr>
+            <td>Dark-eyed shambler</td>
+            <td>50</td>
+            <td>120</td>
+            <td>24</td>
+            <td>12</td>
+            <td>14</td>
+            <td>60</td>
+            <td>MORE BRAINS!</td>
+          </tr>
+          <tr>
+            <td>Dark shambler</td>
+            <td>50</td>
+            <td>160</td>
+            <td>28</td>
+            <td>14</td>
+            <td>16</td>
+            <td>80</td>
+            <td>MORE NUTRITIVE CEREBRAL MATTER!</td>
+          </tr>
+          <tr>
+            <td>Zombie rat</td>
+            <td>200</td>
+            <td>6</td>
+            <td>12</td>
+            <td>2</td>
+            <td>6</td>
+            <td>100</td>
+            <td>Large undead sewers rodent.</td>
+          </tr>
+          <tr>
+            <td>Zombie master</td>
+            <td>50</td>
+            <td>120</td>
+            <td>20</td>
+            <td>10</td>
+            <td>16</td>
+            <td>100</td>
+            <td>Nice glasses.</td>
+          </tr>
+          <tr>
+            <td>Zombie lord</td>
+            <td>50</td>
+            <td>180</td>
+            <td>24</td>
+            <td>10</td>
+            <td>16</td>
+            <td>100</td>
+            <td>Lord Of Death.</td>
+          </tr>
+          <tr>
+            <td>Zombie prince</td>
+            <td>50</td>
+            <td>240</td>
+            <td>28</td>
+            <td>16</td>
+            <td>16</td>
+            <td>100</td>
+            <td>Prince Of Death.</td>
+          </tr>
+          <tr>
+            <td>The Sewers Thing</td>
+            <td>33</td>
+            <td>400</td>
+            <td>28</td>
+            <td>12</td>
+            <td>8</td>
+            <td>5</td>
+            <td>A relative of The Swamp Thing?</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p class="small muted" style="margin-top:0.75rem">Every undead has 99 stamina, which is
+      the game's maximum: they never tire. Read the three shambler lines as one ladder
+      &mdash; the same 50 speed, climbing steadily in health, attack and damage. Rain does
+      not shorten an undead's field of view, but it does make the scents they follow decay
+      faster, which is the one weather effect that touches them at all.</p>
+
+    <!-- ================= The living ================= -->
+    <h2 id="living">The living</h2>
+    <p class="lede">Civilians want one thing: survive. They mind their own business and see
+      you as just another regular joe, so do not expect them to treat you differently than
+      that other dude over there. They are quite independent, easily scared unless led by
+      someone they trust, and useful to watch in a headless-chicken kind of way &mdash; or a
+      reliable way to frustrate your escape, barricading or fight plan.</p>
+
+    <div class="table-wrap" style="margin:1.5rem 0">
+      <table>
+        <thead>
+          <tr>
+            <th>Living</th>
+            <th>Spd</th>
+            <th>HP</th>
+            <th>Atk</th>
+            <th>Dmg</th>
+            <th>Def</th>
+            <th>FoV</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Man</td>
+            <td>100</td>
+            <td>30</td>
+            <td>20</td>
+            <td>10</td>
+            <td>20</td>
+            <td>8</td>
+          </tr>
+          <tr>
+            <td>Woman</td>
+            <td>100</td>
+            <td>28</td>
+            <td>20</td>
+            <td>8</td>
+            <td>22</td>
+            <td>8</td>
+          </tr>
+          <tr>
+            <td>Policeman, national guard, CHAR guard, black op, biker, gangster</td>
+            <td>100</td>
+            <td>30</td>
+            <td>20</td>
+            <td>10</td>
+            <td>20</td>
+            <td>8</td>
+          </tr>
+          <tr>
+            <td>Feral dog</td>
+            <td>100</td>
+            <td>15</td>
+            <td>30</td>
+            <td>10</td>
+            <td>15</td>
+            <td>8</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout callout--warn">
+      <span class="callout__label">The ones with badges</span>
+      <p>They have different names, different looks, and a gun, and they appear to be very
+        aggressive indeed: they do not hesitate to shoot anyone near their offices. You
+        should not get near one unless you are prepared. They are also doing their duty
+        cleaning up this mess, and they do not have time for your requests.</p>
+    </div>
+
+    <!-- ================= Weather ================= -->
+    <h2 id="weather">Day, night and weather</h2>
+    <p class="lede">Weather can change daily, improving or worsening, and some of it lands on
+      you. At night your field of view &mdash; the distance at which you can see &mdash;
+      shrinks and you tire faster. Undeads are not affected by day or night at all.</p>
+
+    <div class="sprite-strip" style="margin-top:1.5rem">
+      <div class="sprite-cell"><img src="assets/img/weather/weather_rain1.webp" alt=""><b>Rain</b><span>FoV
+          &minus;1</span></div>
+
+      <div class="sprite-cell"><img src="assets/img/weather/weather_heavy_rain1.webp" alt=""><b>Heavy rain</b><span>FoV
+          &minus;2</span></div>
+      <div class="sprite-cell"><img src="assets/img/weather/weather_heavy_rain2.webp" alt=""><b>Heavy
+          rain</b><span>same, animated</span></div>
+    </div>
+
+    <div class="table-wrap" style="margin:1.5rem 0">
+      <table>
+        <thead>
+          <tr>
+            <th>Weather</th>
+            <th>What it does</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Sunny, cloudy</td>
+            <td>No effect.</td>
+          </tr>
+          <tr>
+            <td>Rain</td>
+            <td>Livings lose 1 tile of field of view. Scents decay faster, so anything
+              tracking by smell loses its trail sooner. Firearms jam 3% of the time instead
+              of 1%.</td>
+          </tr>
+          <tr>
+            <td>Heavy rain</td>
+            <td>Livings lose 2 tiles of field of view. Scents decay even faster.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>Rain also has a chance to put out fires, burning cars included. Going outside at
+      night under heavy rain with no flashlight and zombies around does not sound very safe.
+      It also has one small mercy: undeads are not affected by field-of-view loss, so the
+      dark does not blind them the way it blinds you.</p>
+
+    <!-- ================= Places ================= -->
+    <h2 id="places">The places</h2>
+    <p class="lede">Shops are the early game. Business and deliveries do not work well during
+      an apocalypse, so it is first arrived, first served &mdash; sooner or later there will
+      be nothing left.</p>
+
+    <div class="signs" style="margin-top:1.5rem">
+      <img src="assets/img/scenery/char_office.webp" alt="CHAR office">
+      <img src="assets/img/scenery/police_station.webp" alt="Police station">
+      <img src="assets/img/scenery/hospital.webp" alt="Hospital">
+      <img src="assets/img/scenery/shop_gunshop.webp" alt="Gunshop">
+      <img src="assets/img/scenery/shop_pharmacy.webp" alt="Pharmacy">
+      <img src="assets/img/scenery/shop_grocery.webp" alt="Grocery">
+      <img src="assets/img/scenery/shop_general_store.webp" alt="General store">
+      <img src="assets/img/scenery/shop_construction.webp" alt="Construction shop">
+      <img src="assets/img/scenery/shop_sportswear.webp" alt="Sportswear shop">
+      <img src="assets/img/scenery/shop_hunting.webp" alt="Hunting shop">
+      <img src="assets/img/scenery/sewers_building.webp" alt="Sewers maintenance">
+      <img src="assets/img/scenery/subway_building.webp" alt="Subway station">
+    </div>
+
+    <div class="grid grid--2" style="margin-top:1.75rem">
+      <div class="card">
+        <h3>Districts</h3>
+        <p>The city is divided into districts, numbered by their coordinates on the city map
+          starting at 0-0 for the north-west one. Each is a different map, and you move
+          between them by exiting through a border. The districts you are not standing in
+          keep going without you.</p>
+        <p class="small muted" style="margin-bottom:0">Press <kbd>I</kbd> for city info to see
+          what you have pieced together about the map.</p>
+      </div>
+      <div class="card">
+        <h3>Sewers</h3>
+        <p>A sewer network runs under every district, linked to the surface and to the
+          neighbouring networks. Find a ladder and climb down. It is dark down there and you
+          should bring light.</p>
+        <p class="small muted" style="margin-bottom:0">You have heard an urban legend about
+          something large living down there.</p>
+      </div>
+      <div class="card">
+        <h3>Subway</h3>
+        <p>A subway line runs east to west through the middle of the city, and only the
+          districts it stops at are linked by it &mdash; a fast way across town if you dare
+          turn the lights off.</p>
+        <p class="small muted" style="margin-bottom:0">Reach it from a station on the surface,
+          and go down the stairs. Like the sewers, it is dark.</p>
+      </div>
+      <div class="card">
+        <h3>Off limits</h3>
+        <p>The CHAR agency is open 24/7. CHAR offices are private property and you are not
+          supposed to go there, which has never stopped anyone.</p>
+        <p class="small muted" style="margin-bottom:0">Your home town is the headquarters of
+          the C.H.A.R. Corporation, and there are persistent rumours about them.</p>
+      </div>
+    </div>
+
+    <!-- ================= Looting ================= -->
+    <h2 id="looting">What to loot</h2>
+    <p class="lede">The first two runs are decided by what you can carry and what you can
+      hit things with. Priorities, roughly in order: something to eat, something to heal
+      with, a way to fight at range, and then a door you can shut.</p>
+
+    <div class="grid grid--2" style="margin-top:1.75rem">
+      <div>
+        <h3>Food</h3>
+        <div class="sprite-strip">
+          <div class="sprite-cell"><img src="assets/img/items/item_canned_food.webp" alt=""><b>Canned
+              food</b></div>
+          <div class="sprite-cell"><img src="assets/img/items/item_army_ration.webp" alt=""><b>Army
+              ration</b></div>
+          <div class="sprite-cell"><img src="assets/img/items/item_groceries.webp" alt=""><b>Groceries</b></div>
+        </div>
+      </div>
+      <div>
+        <h3>Medicine</h3>
+        <div class="sprite-strip">
+          <div class="sprite-cell"><img src="assets/img/items/item_bandages.webp" alt=""><b>Bandages</b></div>
+          <div class="sprite-cell"><img src="assets/img/items/item_medikit.webp" alt=""><b>Medikit</b></div>
+        </div>
+      </div>
+      <div>
+        <h3>Ranged</h3>
+        <div class="sprite-strip">
+          <div class="sprite-cell"><img src="assets/img/items/item_pistol.webp" alt=""><b>Pistol</b></div>
+          <div class="sprite-cell"><img src="assets/img/items/item_shotgun.webp" alt=""><b>Shotgun</b></div>
+          <div class="sprite-cell"><img src="assets/img/items/item_hunting_rifle.webp" alt=""><b>Hunting
+              rifle</b></div>
+          <div class="sprite-cell"><img src="assets/img/items/item_ammo_light_pistol.webp" alt=""><b>Pistol
+              ammo</b></div>
+          <div class="sprite-cell"><img src="assets/img/items/item_ammo_shotgun.webp" alt=""><b>Shotgun
+              ammo</b></div>
+        </div>
+      </div>
+      <div>
+        <h3>Melee</h3>
+        <div class="sprite-strip">
+          <div class="sprite-cell"><img src="assets/img/items/item_baseballbat.webp" alt=""><b>Baseball
+              bat</b></div>
+          <div class="sprite-cell"><img src="assets/img/items/item_combat_knife.webp" alt=""><b>Combat
+              knife</b></div>
+          <div class="sprite-cell"><img src="assets/img/items/item_crowbar.webp" alt=""><b>Crowbar</b></div>
+        </div>
+      </div>
+      <div>
+        <h3>Barricades and traps</h3>
+        <div class="sprite-strip">
+          <div class="sprite-cell"><img src="assets/img/items/item_wooden_plank.webp" alt=""><b>Wooden
+              plank</b></div>
+          <div class="sprite-cell"><img src="assets/img/items/item_bear_trap.webp" alt=""><b>Bear
+              trap</b></div>
+          <div class="sprite-cell"><img src="assets/img/items/item_barbed_wire.webp" alt=""><b>Barbed
+              wire</b></div>
+        </div>
+      </div>
+      <div>
+        <h3>Armour and light</h3>
+        <div class="sprite-strip">
+          <div class="sprite-cell"><img src="assets/img/items/item_army_bodyarmor.webp" alt=""><b>Army body
+              armor</b></div>
+          <div class="sprite-cell"><img src="assets/img/items/item_CHAR_light_bodyarmor.webp" alt=""><b>CHAR body
+              armor</b></div>
+          <div class="sprite-cell"><img src="assets/img/items/item_flashlight.webp" alt=""><b>Flashlight</b></div>
+          <div class="sprite-cell"><img src="assets/img/items/item_big_flashlight.webp" alt=""><b>Big
+              flashlight</b></div>
+          <div class="sprite-cell"><img src="assets/img/items/item_stench_killer.webp" alt=""><b>Stench
+              killer</b></div>
+        </div>
+      </div>
+    </div>
+
+    <p class="small muted" style="margin-top:1.5rem">A stench killer spray erases the scent
+      trail the dead follow, which buys you minutes rather than safety. Barricading a door
+      does the same against anything slower than a rat.</p>
+
+    <div class="callout callout--note" style="margin-top:2rem">
+      <span class="callout__label">Everything in detail</span>
+      <p>This guide is the quick version. Every action, command, skill, item category,
+        follower and directive is documented in
+        <a href="manual.html">the full manual</a> &mdash; the original text by the game's
+        author, reformatted for the web and unaltered.
+      </p>
+    </div>
+
+    <p class="btn-row" style="margin-top:1.5rem">
+      <a class="btn btn--primary" href="manual.html">Read the original manual</a>
+      <a class="btn" href="controls.html">Controls</a>
+    </p>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <div class="site-footer__grid">
+        <div>
+          <h4>Pages</h4>
+          <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="manual.html">Manual</a></li>
+            <li><a href="controls.html">Controls</a></li>
+            <li><a href="guide.html">Guide</a></li>
+            <li><a href="info.html">About the port</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Project</h4>
+          <ul>
+            <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded">Source on GitHub</a></li>
+            <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded/issues">Report an issue</a></li>
+            <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/BROWSER_PORT_PLAN.md">Porting
+                plan</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Original game</h4>
+          <ul>
+            <li><a href="http://roguesurvivor.blogspot.com/">roguedjack's blog</a></li>
+            <li><a href="http://roguesurvivor.proboards.com/">Original forum</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="site-footer__legal">
+        <p><em>Rogue Survivor</em> was created by Jacques Ruiz (roguedjack) in 2012.
+          This site and the browser port are reimplementations of that work and are
+          distributed under the GNU General Public License v3.0 &mdash; see
+          <a href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/LICENSE.txt">LICENSE.txt</a>.
+        </p>
+        <p>Game text, manual and artwork &copy; Jacques Ruiz. Rogue Survivor Reloaded
+          is not affiliated with or endorsed by the original author.</p>
+      </div>
+    </div>
+  </footer>
+
+</body>
+
+</html>

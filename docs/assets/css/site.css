@@ -400,30 +400,9 @@ hr {
   margin-bottom: 0.7rem;
 }
 
-/* Numbered step list */
-.steps { counter-reset: step; list-style: none; padding: 0; margin: 0; }
-.steps > li {
-  counter-increment: step;
-  position: relative;
-  padding-left: 2.6rem;
-  margin: 0 0 1.1rem;
-}
-.steps > li::before {
-  content: counter(step);
-  position: absolute;
-  left: 0;
-  top: 0.05rem;
-  width: 1.8rem;
-  height: 1.8rem;
-  display: grid;
-  place-items: center;
-  background: var(--bg-sunken);
-  border: 1px solid var(--border-lit);
-  border-radius: 50%;
-  font: 700 0.85rem/1 var(--font-mono);
-  color: var(--ember);
-}
-.steps strong { color: var(--text); }
+/* The numbered .steps list went with the how-to-play section. Its rules went
+   with it, because check-site.mjs fails on a class that is defined but never
+   used. Reinstating the section means reinstating these too. */
 
 /* --- Key / command display ---------------------------------------------- */
 
