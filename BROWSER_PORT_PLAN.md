@@ -1,17 +1,26 @@
 # Rogue Survivor Reloaded — TypeScript / Browser Port
 
 > **Status (2026-09-27):** Phases 1–7 ported and playable. Phase 8 tasks 1–11 done; only 12 (optional touch support) remains.
-> **The game now runs end to end in a browser.** 5 runtime bugs were found and fixed on 2026-09-27 by playing it — see §1.1b. A later audit of the CSV → JSON data layer found 18 more — see §1.1c, the newest section.
-> **Read [Current State & Handover](#1-current-state--handover) first — it contains the bugs found and the exact next steps.**
+> **The game now runs end to end in a browser.** 5 runtime bugs were found and fixed on 2026-09-27 by playing it — see §1.1b. A later audit of the CSV → JSON data layer found 18 more — see §1.1c. A fidelity sweep of the four previously-unaudited tables found 6 more — see §1.1f, the newest section.
+> **56 bugs are recorded below, all fixed except 51–56.** Read [Current State & Handover](#1-current-state--handover) first.
+>
+> **The bug sections are the history of this port, and they are deliberately kept
+> in order rather than merged:** §1.1 (engine), §1.1b (found by playing it),
+> §1.1c (data layer), §1.1d (per-actor abilities), §1.1e (data binding), §1.1f
+> (table fidelity sweep), §1.1g (what is now proven clean). Each is a different
+> *class* of mistake, and the point of keeping them separate is that the class is
+> the lesson — §1.1c and §1.1d have the same root cause four sections apart.
+> §1.1g exists so the next audit starts from what is already proven.
 
 Porting a C# WinForms zombie-survival roguelike (195 files, ~2.5 MB, largest `RogueGame.cs` at 955 KB / 23 233 lines) to a browser-playable TypeScript version. `src/` is the original C# and is **never modified** — it is the reference for every port.
 
 > **Do not delete `src/`.** Nothing compiles or ships it (the Dockerfile copies
 > only `web/`, and `.dockerignore` excludes it), so removing it saves no build
 > time and no bundle size. It is the only statement of intended behaviour, and
-> every one of the 50 bugs in §1.1, §1.1b, §1.1c, §1.1d and §1.1e was found by diffing the port
-> against it. Four of the six tasks still open in §1.5 are fidelity work that
-> *cannot be done* without it. Revisit only once those close.
+> every one of the 56 bugs in §1.1, §1.1b, §1.1c, §1.1d, §1.1e and §1.1f was
+> found by diffing the port against it. Four of the six tasks still open in §1.5
+> are fidelity work that *cannot be done* without it. Revisit only once those
+> close.
 
 ---
 
@@ -48,6 +57,35 @@ The Phase 8 headless simulator was the first thing ever to actually *run* the po
 | 10 | `Map.placeActor` always appended, dropping C#'s add-or-move branch | `data/Map.ts` | **Silent corruption.** Every step the player took added a permanent duplicate to the actor list, so the per-turn gauge loop ran 2, 4, 6, 8… times per turn: the player starved on turn 9 and the actor count only ever grew. See §1.2. |
 
 **Takeaway for the next agent: "0 stubs + green type-check" is not a definition of done for this project. The headless sim is.**
+
+#### The four bug classes below, and the one lesson that covers them
+
+Each subsection that follows is a different *class* of mistake, found by a
+different method. Read them as four arguments for the same conclusion.
+
+| § | Class | Found by | Why no tool caught it |
+|---|---|---|---|
+| §1.1 | Runtime faults — wrong container, wrong cast, dropped call | Running the engine headless | Nothing executed the code at all |
+| §1.1b | Presentation faults | **Opening a browser and looking** | `NullRogueUI` drops every painting call, so the sim is structurally blind |
+| §1.1c, §1.1e | Data faults — a loop or a positional index standing in for a table | Diffing the generated data against its source | Rows are read as `any`: a missing key is `undefined`, and `undefined` propagates without complaint |
+| §1.1d, §1.1f | Silently substituted defaults — a blanket rule, a wrong colour, an unassigned fallback | Reading the port against the C#, table by table | The substituted value is *plausible*, so absence of an error reads as absence of a bug |
+
+**The lesson, stated once.** Four times, the port replaced something specific in
+the original with something general — a per-entity table with a loop, an ID lookup
+with a row index, a threaded parameter with a default field, a named colour with
+whatever was to hand. Every one of those substitutions compiled, type-checked, and
+produced no error, because a plausible default and a correct value are
+indistinguishable until you look at both. *A blanket rule over heterogeneous data
+is a silent truncation of it.* Absence of an error is not evidence of correctness.
+
+Two corollaries that have each cost real time:
+
+- **The sim is the definition of done for the engine; the browser is the
+  definition of done for the renderer.** Neither substitutes for the other, and
+  both were green while the game was unplayable (§1.1b).
+- **A grep is a hypothesis generator, not a verdict** (§1.5 item 4): the
+  `percepted as Actor` pattern matched 43 sites and produced no live bug; the
+  §1.1f sweep matched nothing mechanically and still found six.
 
 ### 1.1b Five more bugs, found by playing the thing (2026-09-27)
 
@@ -211,12 +249,10 @@ into a per-actor `abilitiesFor()` table, replacing the loop. Note the C#'s
 Pinned by `tests/actor-abilities.test.ts` (31 cases), which asserts the exact
 granted set for every actor.
 
-**The lesson is §1.1c's lesson, and by §1.1e it had happened three times:** the
-port replaced long, hand-written, per-entity C# tables with loops, and a loop
-cannot express a table. A blanket rule over heterogeneous data is a silent
-truncation of it — worse when the defaults are `false`, because absence of an
-error reads as absence of a bug. *When the original is a long literal table,
-port the table.*
+**The lesson is the §1.1f one, third occurrence:** a loop cannot express a
+table. Here the defaults are `false`, which is the worst case — an ability that
+was never granted is indistinguishable from one that was deliberately withheld.
+*When the original is a long literal table, port the table.*
 
 ### 1.1e The actor data table was bound by position, not by ID (2026-09-27)
 
@@ -256,6 +292,71 @@ Pinned by `tests/model-data-binding.test.ts` (43 cases), which asserts every
 actor against its own row and includes a test that *fails if `Actors.csv` is
 ever put into enum order* — the signal to simplify the lookup. It was confirmed
 to produce 11 failures when the positional binding is restored.
+
+### 1.1f Six more fidelity bugs, from a sweep of the four unaudited tables (2026-09-27)
+
+§1.5 items 3–5 kept closing individual tables. This sweeps the ones no audit had
+touched: **the tile model table, the doll system, the `Rules` constants, and the
+item model class hierarchy**. Four subsystems, ~3 000 lines of C# read line by
+line against the port. **One consequential finding (51), four smaller ones
+(52–55), one cosmetic naming gap (56)** — and, more usefully, a short list of what
+is now proven clean (§1.1g), so it is not re-audited.
+
+| # | Bug | C# reference | Impact |
+|---|-----|--------------|--------|
+| 51 | `Rules.weather` is a port-only fallback field, **never assigned**, and `GameplaySensors.sense` calls `computeFOVFor(actor)` / `actorFOV(actor)` without the weather argument the C# threads through. The field's own comment claims "set by Session each turn"; nothing sets it. | `LOSSensor.cs:64-65` passes `game.Session.World.Weather` explicitly. C# has no such field at all. | **The most consequential of the six.** `weatherFovPenalty` returns `FOV_PENALTY_RAIN` (1) / `FOV_PENALTY_HEAVY_RAIN` (2) only for rain, and `this.weather` is permanently `CLEAR`, so **every AI actor sees 1–2 tiles further than the C# in rain**. The *player's* view is correct (`RogueGame` passes the weather explicitly), so the game is internally asymmetric and the fault is invisible from the player's side. |
+| 52 | The trade screen calls `HimOrHer(npc)` where the C# calls `HisOrHer(npc)` | `RogueGame.cs:7459` ↔ `RogueGame.ts:5813` | `HisOrHer` returns "his"/"her", `HimOrHer` returns "him"/"her". Both helpers exist in the port and are individually correct — the wrong one is called. A **male** trusted-leader NPC reads *"You are him trusted leader, will accept all trades."* Female NPCs are unaffected, which is what made it survive. All 13 other gender-helper call sites match. |
+| 53 | `DRK_GRAY1 = Color.DarkGray`; the C# is `Color.DimGray` (105,105,105) vs `DarkGray` (64,64,64) | `GameTiles.cs:47` | Minimap only. `WALL_BRICK` (12) and `WALL_STONE` (17) render ~40% too dark. The C# declares `DRK_GRAY1 = DimGray` and `DRK_GRAY2 = DarkGray` back to back, and the port took the *second* name's value. `Color.DimGray` exists in `Color.ts:53` and is used correctly elsewhere in the port, so this is provably a slip. |
+| 54 | `WALL_POLICE_STATION` minimap colour is `Color.Cyan`; the C# is `Color.CadetBlue` (95,158,160) | `GameTiles.cs:123` | Minimap only, and worse than it looks: `WALL_POLICE_STATION`, `WALL_STONE` and `WALL_SUBWAY` all render `TILE_WALL_STONE` and are distinguished on the minimap **purely by colour** (§6.4 notes the shared sprite). The C# chose a muted slate; pure aqua makes police-station walls read as a different material. `Color.CadetBlue` exists at `Color.ts:72`. |
+| 55 | `LIT_BROWN = Color.Brown`; the C# is `Color.BurlyWood` (222,184,135) | `GameTiles.cs:53` | Minimap only. `FLOOR_PLANKS` (5) renders saturated red instead of pale tan, and collides visually with `WALL_CHAR_OFFICE`'s `DRK_RED (128,0,0)`. This is the one finding with a structural excuse — **`BurlyWood` does not exist in `Color.ts` at all** — but unlike the other two it is not merely a wrong existing name, so it needs the constant *added*. Undocumented in the port and in this file. |
+
+Plus one cosmetic naming gap, recorded for completeness rather than as a defect:
+
+| # | Gap | C# reference | Impact |
+|---|-----|--------------|--------|
+| 56 | `DollPart._FIRST` is absent from the TS enum; `BaseTownGenerator` loops from `RIGHT_HAND` instead | `Doll.cs:14-16`, `BaseTownGenerator.cs:5605` | **None.** `_FIRST` and `RIGHT_HAND` are both 1, so the loop bound and the 8 copied slots are identical. The only difference is the missing name. |
+
+**Two more from the item-model sweep, both latent rather than active.** The
+hierarchy came back with **0 HIGH and 0 MED** — in particular the critical ammo
+initialisation is correct (`ItemRangedWeapon` sets `ammo = model.maxAmmo`, so a
+fresh gun starts loaded, §1.1c bug 23) and all three `DontAutoEquip` flags are
+ported. Two worth writing down:
+
+- **`IsTool` uses `> 0` where the C# uses `!= 0`** (`ItemMeleeWeaponModel.cs:18`
+  ↔ `ItemWeapon.ts:46`). The two differ only for a *negative* tool bonus, and
+  every shipped value is non-negative, so `IsTool` agrees on all 16 melee weapons
+  today. Latent.
+- **`OptimizeBeforeSaving` was never ported** — the C# `Item.OptimizeBeforeSaving`
+  virtual (`Item.cs:111`) is overridden by `ItemEntertainment` to prune dead actors
+  from `m_BoringFor` and by `ItemTrap` to null a dead owner. The TS base `Item` has
+  no such method and `grep` finds zero occurrences. Mostly inert, because the TS
+  save path is `JSON.stringify` rather than the C# binary serialiser, and
+  `ItemTrap`'s self-cleaning `owner` getter was ported. The one reachable
+  consequence: in C# a revived actor *forgets* a boring item (the C# comment says so
+  explicitly), where the TS keeps them in `boringForList` and `isBoringFor` keeps
+  returning `true`.
+
+**The pattern, fourth occurrence.** Bugs 53–55 are three wrong colour constants
+in a table of nineteen, and 51 is a default value silently standing in for a
+parameter the C# threads explicitly. Both are §1.1c's shape: *the port substitutes
+a plausible-looking default for something the original computes or supplies, and
+a default produces no error.* The tile table is small, entirely declarative, and
+was assumed safe because nothing crashes when it is wrong — which is exactly the
+assumption that let three of nineteen entries drift.
+
+### 1.1g What that sweep proved clean — do not re-audit
+
+Recorded because a clean result is a result, and because §1.5 item 4's lesson was
+that a pattern match is a hypothesis generator rather than a verdict.
+
+| Subsystem | Verified |
+|---|---|
+| **Tile models** (`GameTiles`, 19 entries) | All 19 ids present in both, **numeric values identical**. All **38 `isWalkable`/`isTransparent` booleans exact** — the highest-consequence check here, and clean. All 17 image ids map to the same constant. `isRoadModel`, the `Models.tiles` binding, and the `TileFlags` bit values all match. |
+| **`Rules` constants** (166 active) | **166 in C#, 166 in TS, identical names, values and declaration order.** Name-set diff empty both directions. The only value diffs are trailing-zero float formatting. The three int-division expressions (`SLEEP_COUCH_SLEEPING_REGEN`, `TRUST_MISC_GIFT_INCREASE`, `INFECTION_EFFECT_TRIGGER_CHANCE_1000`) all evaluate identically. No port-invented constants. |
+| **Item model hierarchy** (37 classes) | 0 HIGH, 0 MED. `ItemModel`'s 13 fields all present; every subclass ctor sets what the C# sets; all `EquipmentPart` assignments (47 in C#) reproduced. |
+| **Doll system** | `isMale` correct for all 27 actors, including the three female undead that the C# passes `true` for (the single `DollBody(false, …)` is `FEMALE_CIVILIAN` only). All 9 dressing helpers match layer for layer, including the deliberate gaps (bikers and CHAR guards have no torso; BlackOps is skin+eyes+suit only) and the two-decoration `HEAD` ordering in police/gangsta. All 54 per-actor decoration call sites 1:1. Doll render order matches, **including the doubled `TORSO` draw the C# has** (`RogueGame.cs:18525`) and the same doubling in `DrawCorpse`. |
+| **Factions** | `Faction` class exact. All **63 enemy relations** identical and in the same order, with the same symmetry-check pass. All 8 `LeadOnlyBySameFaction` flags and the `Rules` consumer match. |
+| **MapObjects** | `DoorWindow.BASE_HITPOINTS = 40`, all three `STATE_*`, and the derived fortification values match. |
 
 ### 1.2 The harness now runs real games
 
@@ -498,11 +599,18 @@ ground is explored rather than once per run.
    moved. Pinned by `tests/actor-invincible.test.ts` (21 cases), including a
    check that no own instance field shadows the prototype accessor — with
    `useDefineForClassFields: true` that would silently reintroduce the bug.
-6. **Serialise the world/map graph in `Session.save`** — the `TODO(phase 4)`
-   at `Session.ts:324` blocks any true save/load roundtrip test.
-7. Then work down the rest of the Phase 8 task list in §4 (tasks 9–12).
+ 6. **Fix the six §1.1f bugs.** They are small and mostly one-liners, but bug 51
+    is not cosmetic: the rain FOV penalty never reaches any AI actor, and because
+    the player's own view is correct the game looks self-consistent while every
+    NPC sees 1–2 tiles too far. Bugs 53–55 are three wrong colour constants and
+    need `Color.BurlyWood` **added** to `Color.ts` (it does not exist).
+    §1.1g lists what is now proven clean, so this is the whole remaining
+    fidelity surface in those four tables.
+ 7. **Serialise the world/map graph in `Session.save`** — the `TODO(phase 4)`
+    at `Session.ts:324` blocks any true save/load roundtrip test.
+ 8. Then work down the rest of the Phase 8 task list in §4 (tasks 9–12).
 
-**Items 3–6 all require reading `src/`.** See the warning at the top of this
+**Items 3–7 all require reading `src/`.** See the warning at the top of this
 file before considering its removal.
 
 **Watch the coverage margins.** Statements (52.68 vs 50) and functions (59.97 vs
@@ -553,8 +661,12 @@ them — but do not let it fail silently.
   `actor-invincible.test.ts` and `ai-percept-filters.test.ts`.
 - `25b914e` — `generator-integrity.test.ts` (§4.3 item 3).
 - `18987a1` — the per-actor abilities fix (§1.1d) and `actor-abilities.test.ts`.
-- *(uncommitted at time of writing)* — the CSV→model binding fix (§1.1e) and
-  `model-data-binding.test.ts`. 384 tests pass.
+- `5864c4b` — the CSV→model binding fix (§1.1e) and `model-data-binding.test.ts`.
+  384 tests pass, 21 files.
+- `2a8ee93` — corrected two miscounts in the bug log.
+- *(this commit)* — the §1.1f fidelity sweep (bugs 51–56) and the §1.1g clean-bill.
+  **Documentation only — no code was changed**, so the bug count is unchanged by
+  it; the sweep found 6 more, which are recorded and unfixed.
 
 ---
 
@@ -615,7 +727,7 @@ Phases 1–7 are ported and building. Historical per-slice detail has been remov
 | 5 — World gen & AI | `BaseAI` (184/184), all 11 AI controllers, 4 generator files (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator` 5 814 lines, `StdTownGenerator`) | Done |
 | 6 — Audio | Web Audio SFX + music | Done |
 | 7 — Save / load | localStorage / IndexedDB, `Session` serialisation | Done |
-| 8 — Polish, sim, CI | Headless harness built; rest not started | **In progress** |
+| 8 — Polish, sim, CI | Headless harness, 384 tests, CI, PWA, Docker, asset pass, frame-cost pass | **In progress** — 11 of 12 tasks done; only 12 (optional touch) remains. See §4.1 |
 
 Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks, 3 SFX), extracted from the C# embedded resources. **Total 24.9 MB**, down from 51.6 MB before the Phase 8 asset pass — see §4.1c.
 
@@ -665,6 +777,12 @@ once with `npm run verify`. `tests/` is in `tsconfig.json`'s include list, so
 | `model-data-binding.test.ts` | Every actor model binds to its own CSV row, unique weapons stay unbreakable, lights do not auto-equip, the badge is holdable. Also fails if `Actors.csv` is ever reordered into enum order (43 cases, §1.1e) |
 | `actor-abilities.test.ts` | Every actor's granted ability set, transcribed from the C#; specifically that the player can open doors, and that skeletons/rat zombie do not rot (§1.1d, 31 cases) |
 | `generator-integrity.test.ts` | A generated world is sound: no actor on a wall, nothing out of bounds, the player starts passable in the largest region, no surface district sealed. One game per file, seed 42 = the worst world measured (7 cases) |
+| `actor-sprites.test.ts` | The whole-body sprite / doll-driven partition for all 27 actors, including that the two lists partition the enum (§1.1b bug 13) |
+| `input-handler.test.ts` | `UI_PeekKey` **consumes** the key it returns, matching C# `RogueForm.cs:135` (§1.1b bug 12) |
+| `minimap-cache.test.ts` | The `minimapRevision` invalidation contract: no bump without a change, no bump on re-marking, bumps on `markVisited` / `setAllAsUnvisited` / `setTileModelAt`, and a rebuild exactly when `(map, revision)` changes (§4.1d) |
+| `map-zoom.test.ts` | Map zoom state, persisted through the `storage` wrapper |
+| `headless-zoom.test.ts` | Zoom behaviour under a headless run |
+| `canvas-layout.test.ts` | Canvas sizing, scaling and the 1366×768 widescreen layout |
 
 Two constraints worth preserving:
 
