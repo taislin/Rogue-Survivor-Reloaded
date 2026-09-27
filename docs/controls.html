@@ -1,206 +1,377 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Controls &middot; Rogue Survivor Reloaded</title>
-<meta name="description" content="Every default keybinding in Rogue Survivor Reloaded: movement, actions, inventory slots, screens and system commands. All of them are rebindable in game with Shift+K.">
-<link rel="icon" href="assets/img/icon-192.png">
-<link rel="stylesheet" href="assets/css/site.css">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Controls &middot; Rogue Survivor Reloaded</title>
+  <meta name="description"
+    content="Every default keybinding in Rogue Survivor Reloaded: movement, actions, inventory slots, screens and system commands. All of them are rebindable in game with Shift+K.">
+  <link rel="icon" href="assets/img/icon-192.png">
+  <link rel="stylesheet" href="assets/css/site.css">
 </head>
+
 <body>
-<a class="skip-link" href="#main">Skip to content</a>
+  <a class="skip-link" href="#main">Skip to content</a>
 
-<header class="site-header">
-  <div class="wrap site-header__inner">
-    <a class="brand" href="index.html">
-      <img src="assets/img/icon-192.png" alt="" width="28" height="28">
-      <span>Rogue Survivor <em>Reloaded</em></span>
-    </a>
-    <nav class="site-nav" aria-label="Main">
-      <a href="index.html">Home</a>
-      <a href="manual.html">Manual</a>
-      <a href="controls.html" aria-current="page">Controls</a>
-      <a href="info.html">About</a>
-      <a href="https://github.com/taislin/Rogue-Survivor-Reloaded">GitHub</a>
-    </nav>
-  </div>
-</header>
+  <header class="site-header">
+    <div class="wrap site-header__inner">
+      <a class="brand" href="index.html">
+        <img src="assets/img/icon-192.png" alt="" width="28" height="28">
+        <span>Rogue Survivor <em>Reloaded</em></span>
+      </a>
+      <nav class="site-nav" aria-label="Main">
+        <a href="index.html">Home</a>
+        <a href="manual.html">Manual</a>
+        <a href="controls.html" aria-current="page">Controls</a>
+        <a href="info.html">About</a>
+        <a href="https://github.com/taislin/Rogue-Survivor-Reloaded">GitHub</a>
+      </nav>
+    </div>
+  </header>
 
-<main id="main" class="wrap">
-  <div class="page-head">
-    <p class="eyebrow">Reference</p>
-    <h1>Controls</h1>
-    <p>Every binding below is a <em>default</em>. Press
-    <kbd>Shift</kbd><span class="h-plus">+</span><kbd>K</kbd> in game to rebind any of
-    them; your choices are saved between sessions. Arrow keys, <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
-    style movement and the numpad are also read where they do not conflict with a
-    binding.</p>
-  </div>
+  <main id="main" class="wrap">
+    <div class="page-head">
+      <p class="eyebrow">Reference</p>
+      <h1>Controls</h1>
+      <p>Every binding below is a <em>default</em>. Press
+        <kbd>Shift</kbd><span class="h-plus">+</span><kbd>K</kbd> in game to rebind any of
+        them; your choices are saved between sessions. Arrow keys, <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>
+        style movement and the numpad are also read where they do not conflict with a
+        binding.
+      </p>
+    </div>
 
-  <div class="callout callout--tip">
-    <span class="callout__label">Two that catch everyone out</span>
-    <p><kbd>Ctrl</kbd><span class="h-plus">+</span><kbd>S</kbd> is
-    <b>switch place with a follower</b>; <kbd>Shift</kbd><span class="h-plus">+</span><kbd>S</kbd>
-    is <b>save</b>. Likewise <kbd>N</kbd> builds a small fortification while
-    <kbd>Ctrl</kbd><span class="h-plus">+</span><kbd>N</kbd> builds a large one.</p>
-  </div>
+    <div class="callout callout--tip">
+      <span class="callout__label">Two that catch everyone out</span>
+      <p><kbd>Ctrl</kbd><span class="h-plus">+</span><kbd>S</kbd> is
+        <b>switch place with a follower</b>; <kbd>Shift</kbd><span class="h-plus">+</span><kbd>S</kbd>
+        is <b>save</b>. Likewise <kbd>N</kbd> builds a small fortification while
+        <kbd>Ctrl</kbd><span class="h-plus">+</span><kbd>N</kbd> builds a large one.
+      </p>
+    </div>
 
-  <!-- ================= Movement ================= -->
-  <h2 id="movement">Movement and time</h2>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Key</th><th>Action</th><th>Notes</th></tr></thead>
-      <tbody>
-        <tr><td><kbd>&larr;</kbd><kbd>&darr;</kbd><kbd>&uarr;</kbd><kbd>&rarr;</kbd></td><td>Move</td><td>Moving into something occupied <em>bumps</em> it, which is how most interactions are triggered.</td></tr>
-        <tr><td><kbd>R</kbd></td><td>Run</td><td>Toggle. Twice as fast, and it costs stamina &mdash; you cannot start running while tired, and you stop automatically if you become tired.</td></tr>
-        <tr><td><kbd>.</kbd></td><td>Wait / rest</td><td>Do nothing. Recovers stamina faster than any other action.</td></tr>
-        <tr><td><kbd>W</kbd></td><td>Wait one hour</td><td>Interrupted if you see an enemy, get hungry or sleepy, or witness something important.</td></tr>
-        <tr><td><kbd>Z</kbd></td><td>Sleep</td><td>Recovers sleep and heals slowly &mdash; faster on a couch, anywhere at all with the <b>Hardy</b> skill. You cannot sleep while hungry, and you are blind and helpless until something wakes you.</td></tr>
-        <tr><td><kbd>S</kbd></td><td>Shout</td><td>Makes noise. Good for waking sleepers nearby; bad for anything else.</td></tr>
-        <tr><td><kbd>X</kbd></td><td>Use exit</td><td>Stand on a ladder, hole or stairway to change maps.</td></tr>
-        <tr><td><kbd>P</kbd> / <kbd>Ctrl</kbd><span class="h-plus">+</span><kbd>P</kbd></td><td>Push / pull</td><td>Shove a person or shift a movable object. Pushing costs stamina equal to the object's weight, and you move with what you push.</td></tr>
-      </tbody>
-    </table>
-  </div>
+    <!-- ================= Movement ================= -->
+    <h2 id="movement">Movement and time</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Key</th>
+            <th>Action</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><kbd>&larr;</kbd><kbd>&darr;</kbd><kbd>&uarr;</kbd><kbd>&rarr;</kbd></td>
+            <td>Move</td>
+            <td>Moving into something occupied <em>bumps</em> it, which is how most interactions are triggered.</td>
+          </tr>
+          <tr>
+            <td><kbd>R</kbd></td>
+            <td>Run</td>
+            <td>Toggle. Twice as fast, and it costs stamina &mdash; you cannot start running while tired, and you stop
+              automatically if you become tired.</td>
+          </tr>
+          <tr>
+            <td><kbd>.</kbd></td>
+            <td>Wait / rest</td>
+            <td>Do nothing. Recovers stamina faster than any other action.</td>
+          </tr>
+          <tr>
+            <td><kbd>W</kbd></td>
+            <td>Wait one hour</td>
+            <td>Interrupted if you see an enemy, get hungry or sleepy, or witness something important.</td>
+          </tr>
+          <tr>
+            <td><kbd>Z</kbd></td>
+            <td>Sleep</td>
+            <td>Recovers sleep and heals slowly &mdash; faster on a couch, anywhere at all with the <b>Hardy</b> skill.
+              You cannot sleep while hungry, and you are blind and helpless until something wakes you.</td>
+          </tr>
+          <tr>
+            <td><kbd>S</kbd></td>
+            <td>Shout</td>
+            <td>Makes noise. Good for waking sleepers nearby; bad for anything else.</td>
+          </tr>
+          <tr>
+            <td><kbd>X</kbd></td>
+            <td>Use exit</td>
+            <td>Stand on a ladder, hole or stairway to change maps.</td>
+          </tr>
+          <tr>
+            <td><kbd>P</kbd> / <kbd>Ctrl</kbd><span class="h-plus">+</span><kbd>P</kbd></td>
+            <td>Push / pull</td>
+            <td>Shove a person or shift a movable object. Pushing costs stamina equal to the object's weight, and you
+              move with what you push.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
-  <!-- ================= Combat ================= -->
-  <h2 id="combat">Fighting and fire</h2>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Key</th><th>Action</th><th>Notes</th></tr></thead>
-      <tbody>
-        <tr><td><b>Bump</b> an actor</td><td>Melee attack</td><td>A tiring action. Your <b>Melee</b> skill, any equipped melee weapon and your stamina all matter.</td></tr>
-        <tr><td><b>Bump</b> a barricade</td><td>Attack the barricade</td><td>A sure-to-hit, full-damage hit that destroys the material you used.</td></tr>
-        <tr><td><b>Bump</b> a door / window / shelf</td><td>Open, take, talk</td><td>Bumping is the game's universal interaction verb.</td></tr>
-        <tr><td><kbd>F</kbd></td><td>Fire</td><td>Enter fire mode, then pick a target. Press again for <b>rapid</b> fire: two shots for one action, each less likely to hit. The line of fire is drawn red (no shot), yellow (beyond efficient range) or green.</td></tr>
-        <tr><td><kbd>F</kbd> with a grenade</td><td>Throw</td><td>Throw distance comes from the grenade and your <b>Strong</b> skill. It explodes a few turns later. You can throw past your own field of view, and over people.</td></tr>
-        <tr><td><kbd>C</kbd></td><td>Close door / window</td><td>Closes an adjacent one.</td></tr>
-        <tr><td><kbd>Shift</kbd><span class="h-plus">+</span><kbd>E</kbd></td><td>Eat corpse</td><td>Only in modes with corpses. Desperate, and it counts against you socially.</td></tr>
-        <tr><td><kbd>Shift</kbd><span class="h-plus">+</span><kbd>R</kbd></td><td>Revive corpse</td><td>Requires the <b>Medic</b> skill and a medikit.</td></tr>
-      </tbody>
-    </table>
-  </div>
+    <!-- ================= Combat ================= -->
+    <h2 id="combat">Fighting and fire</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Key</th>
+            <th>Action</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>Bump</b> an actor</td>
+            <td>Melee attack</td>
+            <td>A tiring action. Your <b>Melee</b> skill, any equipped melee weapon and your stamina all matter.</td>
+          </tr>
+          <tr>
+            <td><b>Bump</b> a barricade</td>
+            <td>Attack the barricade</td>
+            <td>A sure-to-hit, full-damage hit that destroys the material you used.</td>
+          </tr>
+          <tr>
+            <td><b>Bump</b> a door / window / shelf</td>
+            <td>Open, take, talk</td>
+            <td>Bumping is the game's universal interaction verb.</td>
+          </tr>
+          <tr>
+            <td><kbd>F</kbd></td>
+            <td>Fire</td>
+            <td>Enter fire mode, then pick a target. Press again for <b>rapid</b> fire: two shots for one action, each
+              less likely to hit. The line of fire is drawn red (no shot), yellow (beyond efficient range) or green.
+            </td>
+          </tr>
+          <tr>
+            <td><kbd>F</kbd> with a grenade</td>
+            <td>Throw</td>
+            <td>Throw distance comes from the grenade and your <b>Strong</b> skill. It explodes a few turns later. You
+              can throw past your own field of view, and over people.</td>
+          </tr>
+          <tr>
+            <td><kbd>C</kbd></td>
+            <td>Close door / window</td>
+            <td>Closes an adjacent one.</td>
+          </tr>
+          <tr>
+            <td><kbd>Shift</kbd><span class="h-plus">+</span><kbd>E</kbd></td>
+            <td>Eat corpse</td>
+            <td>Only in modes with corpses. Desperate, and it counts against you socially.</td>
+          </tr>
+          <tr>
+            <td><kbd>Shift</kbd><span class="h-plus">+</span><kbd>R</kbd></td>
+            <td>Revive corpse</td>
+            <td>Requires the <b>Medic</b> skill and a medikit.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
-  <!-- ================= Items ================= -->
-  <h2 id="items">Items and inventory</h2>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Key</th><th>Action</th><th>Notes</th></tr></thead>
-      <tbody>
-        <tr><td><kbd>1</kbd>&hellip;<kbd>0</kbd></td><td>Item slot 1&ndash;10</td><td>Use, equip or unequip the item in that slot. Hold <kbd>Ctrl</kbd>/<kbd>Shift</kbd>/<kbd>Alt</kbd> for the modified slot bindings.</td></tr>
-        <tr><td><b>Left-click</b></td><td>Use / equip / take / talk</td><td>On your inventory, on the ground inventory, or on an actor. Equipping does not end your turn; <em>using</em> an item does.</td></tr>
-        <tr><td><b>Right-click</b></td><td>Drop</td><td>On one of your items. Dropping a useless item discards it.</td></tr>
-        <tr><td><b>Hover</b></td><td>Look</td><td>Over any tile, actor or item for a description &mdash; the main way to work out what something actually is.</td></tr>
-        <tr><td><kbd>G</kbd></td><td>Give item</td><td>Pick the item with the mouse, press <kbd>G</kbd>, then choose an adjacent actor. Ends both your turn and theirs.</td></tr>
-        <tr><td><kbd>B</kbd></td><td>Barricade</td><td>Barricade a door, window or fortification. Consumes one barricading material per use, up to a cap.</td></tr>
-        <tr><td><kbd>K</kbd></td><td>Break / dismantle</td><td>Yields material from some objects. Needs an equipped melee weapon.</td></tr>
-        <tr><td><kbd>N</kbd> / <kbd>Ctrl</kbd><span class="h-plus">+</span><kbd>N</kbd></td><td>Build fortification</td><td>Small (transparent, jumpable, pushable, 2 material) or large (opaque, blocks movement, 4 material). Needs <b>Carpentry</b>; level 3 uses one less.</td></tr>
-        <tr><td><kbd>A</kbd></td><td>Use spray</td><td>Spray paint tags a tile &mdash; and marks your minimap if the option is on. Stench spray erases the scent trail the undead follow.</td></tr>
-        <tr><td><kbd>Ctrl</kbd><span class="h-plus">+</span><kbd>E</kbd></td><td>Mark as enemies</td><td>Declare nearby actors as personal enemies. Free action, instant, and <b>permanent</b>. There is no undo.</td></tr>
-      </tbody>
-    </table>
-  </div>
+    <!-- ================= Items ================= -->
+    <h2 id="items">Items and inventory</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Key</th>
+            <th>Action</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><kbd>1</kbd>&hellip;<kbd>0</kbd></td>
+            <td>Item slot 1&ndash;10</td>
+            <td>Use, equip or unequip the item in that slot. Hold <kbd>Ctrl</kbd>/<kbd>Shift</kbd>/<kbd>Alt</kbd> for
+              the modified slot bindings.</td>
+          </tr>
+          <tr>
+            <td><b>Left-click</b></td>
+            <td>Use / equip / take / talk</td>
+            <td>On your inventory, on the ground inventory, or on an actor. Equipping does not end your turn;
+              <em>using</em> an item does.</td>
+          </tr>
+          <tr>
+            <td><b>Right-click</b></td>
+            <td>Drop</td>
+            <td>On one of your items. Dropping a useless item discards it.</td>
+          </tr>
+          <tr>
+            <td><b>Hover</b></td>
+            <td>Look</td>
+            <td>Over any tile, actor or item for a description &mdash; the main way to work out what something actually
+              is.</td>
+          </tr>
+          <tr>
+            <td><kbd>G</kbd></td>
+            <td>Give item</td>
+            <td>Pick the item with the mouse, press <kbd>G</kbd>, then choose an adjacent actor. Ends both your turn and
+              theirs.</td>
+          </tr>
+          <tr>
+            <td><kbd>B</kbd></td>
+            <td>Barricade</td>
+            <td>Barricade a door, window or fortification. Consumes one barricading material per use, up to a cap.</td>
+          </tr>
+          <tr>
+            <td><kbd>K</kbd></td>
+            <td>Break / dismantle</td>
+            <td>Yields material from some objects. Needs an equipped melee weapon.</td>
+          </tr>
+          <tr>
+            <td><kbd>N</kbd> / <kbd>Ctrl</kbd><span class="h-plus">+</span><kbd>N</kbd></td>
+            <td>Build fortification</td>
+            <td>Small (transparent, jumpable, pushable, 2 material) or large (opaque, blocks movement, 4 material).
+              Needs <b>Carpentry</b>; level 3 uses one less.</td>
+          </tr>
+          <tr>
+            <td><kbd>A</kbd></td>
+            <td>Use spray</td>
+            <td>Spray paint tags a tile &mdash; and marks your minimap if the option is on. Stench spray erases the
+              scent trail the undead follow.</td>
+          </tr>
+          <tr>
+            <td><kbd>Ctrl</kbd><span class="h-plus">+</span><kbd>E</kbd></td>
+            <td>Mark as enemies</td>
+            <td>Declare nearby actors as personal enemies. Free action, instant, and <b>permanent</b>. There is no undo.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
-  <!-- ================= People ================= -->
-  <h2 id="people">Other people</h2>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>Key</th><th>Action</th><th>Notes</th></tr></thead>
-      <tbody>
-        <tr><td><b>Bump</b> an actor</td><td>Trade</td><td>A quick, semi-random exchange. Look for the <q>can trade</q> icon on the map.</td></tr>
-        <tr><td><kbd>E</kbd></td><td>Negotiate trade</td><td>Choose the exchange yourself. <b>Charismatic</b> unlocks items they would not otherwise part with; a follower who trusts you accepts anything.</td></tr>
-        <tr><td><kbd>T</kbd></td><td>Lead / leave</td><td>Ask someone to follow you. You need the <b>Leadership</b> skill, and the cap is your skill level.</td></tr>
-        <tr><td><kbd>O</kbd></td><td>Order / directive</td><td>Set standing directives and one-off tasks. Both of you must see each other, or both have a tracker equipped.</td></tr>
-        <tr><td><kbd>Ctrl</kbd><span class="h-plus">+</span><kbd>S</kbd></td><td>Switch place</td><td>Swap positions with a follower.</td></tr>
-      </tbody>
-    </table>
-  </div>
+    <!-- ================= People ================= -->
+    <h2 id="people">Other people</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Key</th>
+            <th>Action</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>Bump</b> an actor</td>
+            <td>Trade</td>
+            <td>A quick, semi-random exchange. Look for the <q>can trade</q> icon on the map.</td>
+          </tr>
+          <tr>
+            <td><kbd>E</kbd></td>
+            <td>Negotiate trade</td>
+            <td>Choose the exchange yourself. <b>Charismatic</b> unlocks items they would not otherwise part with; a
+              follower who trusts you accepts anything.</td>
+          </tr>
+          <tr>
+            <td><kbd>T</kbd></td>
+            <td>Lead / leave</td>
+            <td>Ask someone to follow you. You need the <b>Leadership</b> skill, and the cap is your skill level.</td>
+          </tr>
+          <tr>
+            <td><kbd>O</kbd></td>
+            <td>Order / directive</td>
+            <td>Set standing directives and one-off tasks. Both of you must see each other, or both have a tracker
+              equipped.</td>
+          </tr>
+          <tr>
+            <td><kbd>Ctrl</kbd><span class="h-plus">+</span><kbd>S</kbd></td>
+            <td>Switch place</td>
+            <td>Swap positions with a follower.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
-  <!-- ================= Screens ================= -->
-  <h2 id="screens">Screens and reference</h2>
-  <div class="keylist">
-    <div><kbd>H</kbd><span>Game manual</span></div>
-    <div><kbd>Shift</kbd><span class="h-plus">+</span><kbd>H</kbd><span>Advisor hint</span></div>
-    <div><kbd>Ctrl</kbd><span class="h-plus">+</span><kbd>H</kbd><span>All hints</span></div>
-    <div><kbd>I</kbd><span>City info</span></div>
-    <div><kbd>Shift</kbd><span class="h-plus">+</span><kbd>M</kbd><span>Message log</span></div>
-    <div><kbd>Shift</kbd><span class="h-plus">+</span><kbd>O</kbd><span>Options</span></div>
-    <div><kbd>Shift</kbd><span class="h-plus">+</span><kbd>K</kbd><span>Redefine keys</span></div>
-  </div>
+    <!-- ================= Screens ================= -->
+    <h2 id="screens">Screens and reference</h2>
+    <div class="keylist">
+      <div><kbd>H</kbd><span>Game manual</span></div>
+      <div><kbd>Shift</kbd><span class="h-plus">+</span><kbd>H</kbd><span>Advisor hint</span></div>
+      <div><kbd>Ctrl</kbd><span class="h-plus">+</span><kbd>H</kbd><span>All hints</span></div>
+      <div><kbd>I</kbd><span>City info</span></div>
+      <div><kbd>Shift</kbd><span class="h-plus">+</span><kbd>M</kbd><span>Message log</span></div>
+      <div><kbd>Shift</kbd><span class="h-plus">+</span><kbd>O</kbd><span>Options</span></div>
+      <div><kbd>Shift</kbd><span class="h-plus">+</span><kbd>K</kbd><span>Redefine keys</span></div>
+    </div>
 
-  <h2 id="system">System</h2>
-  <div class="keylist">
-    <div><kbd>Shift</kbd><span class="h-plus">+</span><kbd>S</kbd><span>Save game</span></div>
-    <div><kbd>Shift</kbd><span class="h-plus">+</span><kbd>L</kbd><span>Load game</span></div>
-    <div><kbd>Shift</kbd><span class="h-plus">+</span><kbd>N</kbd><span>Screenshot</span></div>
-    <div><kbd>Shift</kbd><span class="h-plus">+</span><kbd>A</kbd><span>Abandon run</span></div>
-    <div><kbd>Shift</kbd><span class="h-plus">+</span><kbd>Q</kbd><span>Quit</span></div>
-  </div>
-  <p class="small muted" style="margin-top:0.75rem">There is one save slot. Loading does not
-  erase the run you abandoned &mdash; but a true rogue survivor never reloads, only his
-  weapons.</p>
+    <h2 id="system">System</h2>
+    <div class="keylist">
+      <div><kbd>Shift</kbd><span class="h-plus">+</span><kbd>S</kbd><span>Save game</span></div>
+      <div><kbd>Shift</kbd><span class="h-plus">+</span><kbd>L</kbd><span>Load game</span></div>
+      <div><kbd>Shift</kbd><span class="h-plus">+</span><kbd>N</kbd><span>Screenshot</span></div>
+      <div><kbd>Shift</kbd><span class="h-plus">+</span><kbd>A</kbd><span>Abandon run</span></div>
+      <div><kbd>Shift</kbd><span class="h-plus">+</span><kbd>Q</kbd><span>Quit</span></div>
+    </div>
+    <p class="small muted" style="margin-top:0.75rem">There is one save slot. Loading does not
+      erase the run you abandoned &mdash; but a true rogue survivor never reloads, only his
+      weapons.</p>
 
-  <!-- ================= Menus ================= -->
-  <h2 id="menus">Inside menus</h2>
-  <p>Menu screens &mdash; main menu, character creation, options, keybindings, hiscores,
-  trade, orders &mdash; read the keyboard directly and do not use the bindings above.</p>
-  <div class="keylist">
-    <div><kbd>Enter</kbd><span>Confirm</span></div>
-    <div><kbd>Esc</kbd><span>Cancel / go back</span></div>
-    <div><kbd>&larr;</kbd><kbd>&darr;</kbd><kbd>&uarr;</kbd><kbd>&rarr;</kbd><span>Move the selection</span></div>
-  </div>
+    <!-- ================= Menus ================= -->
+    <h2 id="menus">Inside menus</h2>
+    <p>Menu screens &mdash; main menu, character creation, options, keybindings, hiscores,
+      trade, orders &mdash; read the keyboard directly and do not use the bindings above.</p>
+    <div class="keylist">
+      <div><kbd>Enter</kbd><span>Confirm</span></div>
+      <div><kbd>Esc</kbd><span>Cancel / go back</span></div>
+      <div><kbd>&larr;</kbd><kbd>&darr;</kbd><kbd>&uarr;</kbd><kbd>&rarr;</kbd><span>Move the selection</span></div>
+    </div>
 
-  <div class="callout callout--note" style="margin-top:1.5rem">
-    <span class="callout__label">Browser notes</span>
-    <p>Screenshots are downloaded by the browser rather than written silently to a
-    folder, so death screenshots are off by default &mdash; turn them on in the options
-    if you want them. The game is keyboard and mouse only; there is no touch support.
-    Append <code>?debug=1</code> to the URL for per-action <code>[render]</code> and
-    per-frame <code>[draw]</code> logging in the console.</p>
-  </div>
+    <div class="callout callout--note" style="margin-top:1.5rem">
+      <span class="callout__label">Browser notes</span>
+      <p>Screenshots are downloaded by the browser rather than written silently to a
+        folder, so death screenshots are off by default &mdash; turn them on in the options
+        if you want them. The game is keyboard and mouse only; there is no touch support.
+        Append <code>?debug=1</code> to the URL for per-action <code>[render]</code> and
+        per-frame <code>[draw]</code> logging in the console.</p>
+    </div>
 
-  <p style="margin-top:2rem"><a href="manual.html">Read the full manual &rarr;</a></p>
-</main>
+    <p style="margin-top:2rem"><a href="manual.html">Read the full manual &rarr;</a></p>
+  </main>
 
-<footer class="site-footer">
-  <div class="wrap">
-    <div class="site-footer__grid">
-      <div>
-        <h4>Pages</h4>
-        <ul>
-          <li><a href="index.html">Home</a></li>
-          <li><a href="manual.html">Manual</a></li>
-          <li><a href="controls.html">Controls</a></li>
-          <li><a href="info.html">About the port</a></li>
-        </ul>
+  <footer class="site-footer">
+    <div class="wrap">
+      <div class="site-footer__grid">
+        <div>
+          <h4>Pages</h4>
+          <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="manual.html">Manual</a></li>
+            <li><a href="controls.html">Controls</a></li>
+            <li><a href="info.html">About the port</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Project</h4>
+          <ul>
+            <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded">Source on GitHub</a></li>
+            <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded/issues">Report an issue</a></li>
+            <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/BROWSER_PORT_PLAN.md">Porting
+                plan</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Original game</h4>
+          <ul>
+            <li><a href="http://roguesurvivor.blogspot.com/">roguedjack's blog</a></li>
+            <li><a href="http://roguesurvivor.proboards.com/">Original forum</a></li>
+          </ul>
+        </div>
       </div>
-      <div>
-        <h4>Project</h4>
-        <ul>
-          <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded">Source on GitHub</a></li>
-          <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded/issues">Report an issue</a></li>
-          <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/BROWSER_PORT_PLAN.md">Porting plan</a></li>
-        </ul>
-      </div>
-      <div>
-        <h4>Original game</h4>
-        <ul>
-          <li><a href="http://roguesurvivor.blogspot.com/">roguedjack's blog</a></li>
-          <li><a href="http://roguesurvivor.proboards.com/">Original forum</a></li>
-        </ul>
+      <div class="site-footer__legal">
+        <p><em>Rogue Survivor</em> was created by Jacques Ruiz (roguedjack) in 2012.
+          This site and the browser port are reimplementations of that work and are
+          distributed under the GNU General Public License v3.0 &mdash; see
+          <a href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/LICENSE.txt">LICENSE.txt</a>.
+        </p>
+        <p>Game text, manual and artwork &copy; Jacques Ruiz. Rogue Survivor Reloaded
+          is not affiliated with or endorsed by the original author.</p>
       </div>
     </div>
-    <div class="site-footer__legal">
-      <p><em>Rogue Survivor</em> was created by Jacques Ruiz (roguedjack) in 2012.
-      This site and the browser port are reimplementations of that work and are
-      distributed under the GNU General Public License v3.0 &mdash; see
-      <a href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/LICENSE.txt">LICENSE.txt</a>.</p>
-      <p>Game text, manual and artwork &copy; Jacques Ruiz. Rogue Survivor Reloaded
-      is not affiliated with or endorsed by the original author.</p>
-    </div>
-  </div>
-</footer>
+  </footer>
 
 </body>
+
 </html>
