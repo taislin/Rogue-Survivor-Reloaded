@@ -3908,6 +3908,19 @@ export class RogueGame {
       // port already used it.
       if (!this.m_Rules.isWalkableFor(actorToSpawn, map, pos.x, pos.y).ok)
         continue;
+      // A tile can be walkable and still occupied — `isWalkableFor` tests the
+      // tile model, not who is standing on it. C# has no check here, so
+      // `Map.PlaceActorAt` throws "another actor already at position"
+      // (Map.cs:488) and the run dies mid-invasion; §1.2a records it happening
+      // on any survivor run past turn 720.
+      //
+      // Corrected here rather than in `src/`, which stays the untouched
+      // reference: a spawner that can crash the game is an upstream bug, and the
+      // port is allowed to outgrow it. The retry loop below is what the C#
+      // already relies on for every other rejection, so an occupied tile is
+      // simply another reason to try again.
+      if (map.getActorAtPoint(pos) != null)
+        continue;
       if (this.DistanceToPlayer(map, pos) < minDistToPlayer)
         continue;
       if (this.IsAdjacentToEnemy(map, pos, actorToSpawn))
@@ -3944,6 +3957,10 @@ export class RogueGame {
       // overload (Rules.cs:1241, called at RogueGame.cs:5053) and the port was
       // testing a RuleResult object for truthiness.
       if (!this.m_Rules.isWalkableFor(actorToSpawn, map, pos.x, pos.y).ok)
+        continue;
+      // Occupied is not walkable for spawning — see SpawnActorOnMapBorder, where
+      // this is explained. Same upstream crash, same correction.
+      if (map.getActorAtPoint(pos) != null)
         continue;
       if (this.DistanceToPlayer(map, pos) < minDistToPlayer)
         continue;

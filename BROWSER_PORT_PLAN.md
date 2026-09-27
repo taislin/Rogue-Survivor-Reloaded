@@ -1,8 +1,11 @@
 # Rogue Survivor Reloaded — TypeScript / Browser Port
 
 > **Status (2026-09-27):** Phases 1–7 ported and playable. Phase 8 tasks 1–11 done; only 12 (optional touch support) remains.
-> **The game now runs end to end in a browser.** 5 runtime bugs were found and fixed on 2026-09-27 by playing it — see §1.1b. A later audit of the CSV → JSON data layer found 18 more — see §1.1c. A fidelity sweep of the four previously-unaudited tables found 6 more — see §1.1f, the newest section.
-> **56 bugs are recorded below, all fixed except 51–56.** Read [Current State & Handover](#1-current-state--handover) first.
+> **The game now runs end to end in a browser.** 5 runtime bugs were found and fixed on 2026-09-27 by playing it — see §1.1b. A later audit of the CSV → JSON data layer found 18 more — see §1.1c. A fidelity sweep of the four previously-unaudited tables found 6 more — see §1.1f. A sim sweep found 6 more — see §1.1h. Two more came from playing the build that shipped those fixes — see §1.1i.
+> **All 64 recorded bugs are now fixed.** The one remaining *feature* gap is
+> world/map serialisation (§1.5 item 6), which is under way; load currently
+> refuses a save rather than half-restoring one. Read
+> [Current State & Handover](#1-current-state--handover) first.
 >
 > **The bug sections are the history of this port, and they are deliberately kept
 > in order rather than merged:** §1.1 (engine), §1.1b (found by playing it),
@@ -13,6 +16,13 @@
 > §1.1g exists so the next audit starts from what is already proven.
 
 Porting a C# WinForms zombie-survival roguelike (195 files, ~2.5 MB, largest `RogueGame.cs` at 955 KB / 23 233 lines) to a browser-playable TypeScript version. `src/` is the original C# and is **never modified** — it is the reference for every port.
+
+> **Rule: a bug found in the C# is fixed in the TypeScript, never in `src/`.**
+> `src/` stays byte-for-byte as the statement of intent, and the port is allowed
+> to outgrow it where the original is provably wrong — a crash, a hang, a dead
+> code path. Each such divergence is marked in the code at the fix, with the C#
+> line reference and the reason. This settles the three "open decisions" that
+> §1.5 item 7 used to carry; see that item.
 
 > **Do not delete `src/`.** Nothing compiles or ships it (the Dockerfile copies
 > only `web/`, and `.dockerignore` excludes it), so removing it saves no build
@@ -413,6 +423,46 @@ during the sweep under a wall-clock deadline, and reports which seed stalled.
 Confirmed it fails by name — `seed 8 did not finish within 60000ms` — when the
 AP spend is removed again.
 
+### 1.1i Two bugs from playing the build that ships the fixes above (2026-09-27)
+
+Both found by playing the browser build, and both are the §1.1b shape: a
+C#-fidelity divergence that no test could see, because one needs a mouse and the
+other needs a save file.
+
+| # | Bug | C# reference | Impact |
+|---|-----|--------------|--------|
+| 63 | `UI_PeekMouseButtons` was a pure peek; the C# **consumes** it (`m_HasMouseButtons = false` before returning), and `WaitKeyOrMouse` uses a non-null answer as an *event* | `RogueForm.cs:281` | **Freeze.** The play loop re-enters the input wait on every pass while the cursor is over the map (`HandleMouseLook` answers "still looking"), so a held button made the wait return immediately and forever: the game redrew as fast as the CPU allowed, with the keyboard never getting a turn. The button need not be genuinely held — press, drag out of the window, release there, move back, and the document sees the mousedown and never the mouseup. Measured: 1200+ redraws in half a second, never stopping. Same class as bug 12, four commits apart, on the sibling method. |
+| 64 | A save with no world reported a **successful** load, and `LoadGame` then dereferenced `session.currentMap` — null, because `Session.save` writes scalars only (`TODO(phase 4)`) | `Session.SaveBin` serialises the whole graph, so the C# cannot reach this state | **Load kills the game.** The TypeError was thrown inside `void this.LoadGame(...).then(...)` with no `.catch`: no "LOADING FAILED" message, an unhandled rejection, `StopSimThread` already called and `StartSimThread` never reached. Reachable with Shift+L. Worse, `Session.load` called `reset()` *before* validating, so even a refused load wiped the world the player was standing in. |
+
+Both fixes are three-layered, because each had a single obvious fix that was not
+the whole story:
+
+- **63** — both UIs consume the button as C# does; `mouseleave` clears a release
+  the document never saw (not `mousemove`, which would cancel a legitimate
+  held click); and `WaitKeyOrMouse` delivers a press only when the mask differs
+  from the last one it saw, tracked on the *game* rather than per call. The
+  per-call version was tried first and still spun, because the loop re-enters the
+  wait and the click was therefore re-delivered on every entry.
+- **64** — `Session.load` refuses a save with no world, and decides that *before*
+  `reset()`; the `catch` no longer nulls the session singleton (safe at startup
+  in C#, a split-brain risk mid-game in a browser); `RefreshPlayer` treats a null
+  map as "no player to find"; `DoLoadGame` reports the failure and restarts the
+  sim thread in `finally`. Load is now **honest rather than working**: it says it
+  cannot restore the save and the player keeps playing. The guard tests for the
+  *data*, not a version string, so it lifts by itself when the graph lands.
+
+**Item 6 is therefore partly closed, and the lesson is §1.1g's:** a missing call
+is not cosmetic. `Session.save` looked complete — it wrote a save file, and the
+roundtrip test in `tests/persistence.test.ts` was green — while every save it
+produced was unrestorable. What the tests around it actually pinned was that the
+scalars round-tripped, not that a game could be restored.
+
+**Also closed here:** the two latent items §1.1f recorded rather than fixed. The
+save graph's machinery and its coverage ledger are in
+`engine/serialization/SessionGraph.ts`; `IsTool` now uses `!== 0` where C# does
+(`ItemMeleeWeaponModel.cs:18`) rather than `> 0`, which differed only for a
+negative tool bonus and would have stayed latent until a penalised item existed.
+
 ### 1.2 The harness now runs real games
 
 Runs are reproducible (`--seed`, §1.4) and the map no longer corrupts itself
@@ -664,21 +714,23 @@ expensive to re-derive.
 6. **Serialise the world/map graph in `Session.save`** — the `TODO(phase 4)`
    at `Session.ts:324` blocks any true save/load roundtrip test, and is why
    §4.3 item 4 is only a partial pass.
-7. **The three open decisions**, carried from item 0b below. None is work you can
-   just do; each needs a ruling on whether the port may diverge from the C#:
+7. ~~**The three open decisions.**~~ **All three resolved 2026-09-27**, and none
+   of them needed a ruling — see the `src/` rule at the top of this file.
    - **`Skills.csv` cannot be loaded by the C# at all** (§1.1c). The port
-     works around it by matching on `NAME`. Repairing the file means editing
-     `src/`, which this project forbids — decide whether `src/` may be corrected
-     for a provable data bug, or leave the workaround and document it.
-   - **`Skills.maxSkillLevel` is a port invention.** The C# has no such
-     function; `AddOrIncreaseSkill` just increments. The port hardcodes
-     HAULER 3 / else 5, and that gates the level-up cap in three places
-     (`BaseMapGenerator.ts:382`, `RogueGame.ts:14380`) and prints as "5 max" in
-     two UI paths. Either find the intended cap or drop the fiction.
-   - **`SpawnActorOnMapBorder` throws on an occupied tile** (§1.2a). Faithful to
-     the C#, which throws the same string from `Map.cs:488`. Fixing it means
-     diverging from the original — decide whether a crash is the intended
-     behaviour or an upstream bug the port should outgrow.
+     works around it by matching on `NAME`. The workaround **stays** and `src/`
+     is not corrected: the file is the reference, and the defect is upstream.
+   - **`Skills.maxSkillLevel` is a port invention** — **this was wrong.** The C#
+     has `Skills.MaxSkillLevel(IDs)` at `src/Gameplay/Skills.cs:170`, with
+     *identical* logic (HAULER → 3, everything else → 5). The port is faithful;
+     the three consumers and the two "5 max" UI strings are all correct. No
+     change needed, and the plan was wrong about it.
+   - **`SpawnActorOnMapBorder` throws on an occupied tile** (§1.2a). **Fixed in
+     the port** (2026-09-27): both spawners now reject an occupied tile and try
+     the next candidate, instead of letting `Map.placeActor` throw
+     "another actor already at position" and end the run. `isWalkableFor` tests
+     the tile *model*, not occupancy — that is the whole gap. Pinned by
+     `tests/spawn-occupancy.test.ts`, which fills a map completely so every
+     candidate is rejected, plus a control that a free tile still spawns.
 8. Then work down the rest of the Phase 8 task list in §4. **Of tasks 9–12 only
    12 remains** — 9 (sprites), 10 (audio) and 11 (frame cost) are done, so this
    item is now just "task 12, if it is ever wanted", scoped in §6.1.

@@ -16,6 +16,7 @@ import { Weather } from "@data/Weather";
 import { GameOptions, Options } from "@engine/GameOptions";
 import { Scoring } from "@engine/Scoring";
 import { storage } from "@engine/storage";
+import { GRAPH_VERSION } from "@engine/serialization/SessionGraph";
 
 export enum GameMode {
   GM_STANDARD,
@@ -304,8 +305,13 @@ export class Session {
   /**
    * Serializes the session's scalar state.
    *
-   * The `world`/`currentMap` object graph is not serialized yet — that needs
-   * `toJSON()` support across the data layer (Phase 4).
+   * The `world`/`currentMap` object graph is not serialized yet — see
+   * `engine/serialization/SessionGraph.ts` for the machinery and the list of
+   * classes still to do. Until every one of them is implemented, `graph` is
+   * written as `null` and `load` refuses the save, which is deliberate: a load
+   * that restores the scalars and silently drops the world is a half-loaded
+   * game, and half-loaded is worse than not loaded. `graphVersion` is written
+   * even now, so the save format is declared rather than implied.
    */
   static save(session: Session, _format: SaveFormat = SaveFormat.FORMAT_JSON): void {
     const data = {
@@ -321,8 +327,8 @@ export class Session {
       player_CurrentFireMode: session.player_CurrentFireMode,
       player_TurnCharismaRoll: session.player_TurnCharismaRoll,
       worldTime: session.m_WorldTime ? session.m_WorldTime.turnCounter : 0,
-      // TODO(phase 4): serialize m_World / m_CurrentMap once the data layer
-      // implements toJSON().
+      graphVersion: GRAPH_VERSION,
+      graph: null as unknown, // the world graph, once SessionGraph can write it
     };
     storage.setItem(Session.STORAGE_KEY, JSON.stringify(data));
   }
@@ -336,20 +342,26 @@ export class Session {
       const data = JSON.parse(raw) as Record<string, unknown>;
 
       /*
-       * A save with no world in it cannot be restored, so it must not be
-       * allowed to half-restore: `reset()` below clears the world, the current
-       * map and the scoring, and the C#-parity scalar fields would come back
-       * pointing at a session with no actors in it. Checking *before* reset is
-       * what keeps a failed load from also destroying the game in progress.
+       * A save is only restorable if it carries a world graph written at the
+       * version this build understands. Two things are refused, and both are
+       * refused *before* `reset()` so that a save we cannot restore never also
+       * destroys the game in progress — `reset()` clears the world, the current
+       * map and the scoring, so validating afterwards would refuse the load
+       * *and* wipe what the player was standing in.
        *
-       * The C# cannot reach this state — `SaveBin` hands the whole object graph
-       * to a BinaryFormatter, so a save always has a world. The port writes
-       * scalars only (see the `TODO(phase 4)` in `save`), so until the world
-       * graph is serialised every load legitimately fails, and failing loudly
-       * is the only honest outcome: `RogueGame.LoadGame` reports it and the
-       * player keeps playing. See tests/integration/save-load.test.ts.
+       *  - No graph: the port writes scalars only while
+       *    `SessionGraph.PENDING_GRAPH_CLASSES` is non-empty. Restoring the
+       *    scalars into a session with no actors would be a half-loaded game,
+       *    and half-loaded is worse than not loaded.
+       *  - Wrong `graphVersion`: a format this build cannot read, which is what
+       *    the C# does for an unknown `SaveFormat` and what "VERSION NOT
+       *    COMPATIBLE" in `DoLoadGame` means.
+       *
+       * Both are checked on the *data*, not on a save-file version string, so
+       * the day the graph lands the guard lifts by itself.
        */
-      if (data.world == null) return false;
+      if (data.graph == null) return false;
+      if ((data.graphVersion as number) !== GRAPH_VERSION) return false;
 
       const session = Session.get();
       session.reset();

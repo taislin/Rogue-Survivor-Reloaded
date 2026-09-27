@@ -43,7 +43,12 @@ export class ItemMeleeWeaponModel extends ItemWeaponModel {
     this.isFragile = isFragile;
     this.toolBashDamageBonus = toolBashDamageBonus;
     this.toolBuildBonus = toolBuildBonus;
-    this.isTool = toolBashDamageBonus > 0 || toolBuildBonus > 0;
+    // C#: `ToolBashDamageBonus != 0 || ToolBuildBonus != 0` (ItemMeleeWeaponModel.cs:18).
+    // The port had `> 0`, which differs only for a *negative* tool bonus. Every
+    // shipped value is non-negative so the two agree on all 16 melee weapons
+    // today, and it would have stayed a latent difference indefinitely: a later
+    // item with a penalty would silently not count as a tool.
+    this.isTool = toolBashDamageBonus !== 0 || toolBuildBonus !== 0;
   }
 }
 
