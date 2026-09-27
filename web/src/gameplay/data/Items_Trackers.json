@@ -3,7 +3,7 @@
     "ID": "TRACKER_CELL_PHONE",
     "NAME": "cell phone",
     "PLURAL": "cell phones",
-    "BATTERIES in hours": 72,
+    "BATTERIES": 72,
     "HASCLOCK": 1,
     "FLAVOR": "Hello? Still alive?"
   },
@@ -11,7 +11,7 @@
     "ID": "TRACKER_ZTRACKER",
     "NAME": "Z-tracker",
     "PLURAL": "Z-trackers",
-    "BATTERIES in hours": 8,
+    "BATTERIES": 8,
     "HASCLOCK": 0,
     "FLAVOR": "Aliens?"
   },
@@ -19,7 +19,7 @@
     "ID": "TRACKER_BLACKOPS",
     "NAME": "blackOps GPS",
     "PLURAL": "blackOps GPS",
-    "BATTERIES in hours": 2,
+    "BATTERIES": 2,
     "HASCLOCK": 0,
     "FLAVOR": "Good instadeath-Prediction System."
   },
@@ -27,7 +27,7 @@
     "ID": "TRACKER_POLICE_RADIO",
     "NAME": "police radio",
     "PLURAL": "police radios",
-    "BATTERIES in hours": 8,
+    "BATTERIES": 8,
     "HASCLOCK": 1,
     "FLAVOR": "Call 911 for zombies."
   }

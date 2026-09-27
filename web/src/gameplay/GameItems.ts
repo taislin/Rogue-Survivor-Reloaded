@@ -26,6 +26,13 @@ import { ItemTrackerModel, TrackingFlags } from "@engine/items/ItemTracker";
 import { ItemLightModel } from "@engine/items/ItemLight";
 import { ItemTrapModel } from "@engine/items/ItemTrap";
 import { Odor } from "@data/Odor";
+import { WorldTime } from "@engine/WorldTime";
+// `Rules` imports `ItemID` from this file, so this edge closes a cycle. It is
+// safe because neither side touches the other at module scope: `Rules` only
+// reads `ItemID` inside a method, and the only thing read from `Rules` here is
+// `FOOD_BASE_POINTS`, inside the GameItems constructor. Preferred over
+// hardcoding the 1440, which is the class of bug this file just had.
+import { Rules } from "@engine/Rules";
 
 import armorsData from "./data/Items_Armors.json";
 import barricadingData from "./data/Items_Barricading.json";
@@ -37,6 +44,7 @@ import medicineData from "./data/Items_Medicine.json";
 import meleeData from "./data/Items_MeleeWeapons.json";
 import rangedData from "./data/Items_RangedWeapons.json";
 import spraypaintsData from "./data/Items_Spraypaints.json";
+import scentspraysData from "./data/Items_Scentsprays.json";
 import trackersData from "./data/Items_Trackers.json";
 import trapsData from "./data/Items_Traps.json";
 
@@ -143,6 +151,13 @@ export class GameItems implements ItemModelDB {
       GameImages.ITEM_PILLS_SAN,
       GameImages.ITEM_PILLS_ANTIVIRAL,
     ];
+    // CSV column order matches the ItemID enum here (unlike Items_Food.csv),
+    // so indexing is safe.
+    const medPlural = [
+      // C# sets IsPlural on everything except the medikit (GameItems.cs:703,
+      // 718, 727, 735, 743).
+      true, false, true, true, true, true,
+    ];
     for (let i = 0; i < medicineData.length; i++) {
       const d: any = medicineData[i];
       const model = new ItemMedicineModel(
@@ -155,112 +170,125 @@ export class GameItems implements ItemModelDB {
         d.INF,
         d.SAN
       );
-      if (d.STACKING > 0) {
-        model.isStackable = true;
-        model.stackingLimit = d.STACKING;
-      }
+      model.isPlural = medPlural[i];
+      model.stackingLimit = d.STACKING;
       model.flavorDescription = d.FLAVOR ?? "";
       this.setModel(ItemID.MEDICINE_BANDAGES + i, model);
     }
 
     // Food
-    const foodImages = [
-      GameImages.ITEM_ARMY_RATION,
-      GameImages.ITEM_GROCERIES,
-      GameImages.ITEM_CANNED_FOOD,
-    ];
-    for (let i = 0; i < foodData.length; i++) {
-      const d: any = foodData[i];
+    //
+    // Keyed by ID, like every other item table below, because the CSV row
+    // order is not the ItemID order: Items_Food.csv lists ARMY_RATION,
+    // CANNED_FOOD, GROCERIES while the enum is ARMY_RATION, GROCERIES,
+    // CANNED_FOOD. A positional loop therefore handed each row the wrong
+    // ItemID, and each id the wrong image. It was invisible while
+    // nutrition/bestBefore were undefined, but it put bestBeforeDays = -1
+    // (the "never expires" sentinel) on the groceries model, so
+    // `makeItemGroceries` computed max = TURNS_PER_DAY * -1 and built a
+    // freshUntil of -360, which `new WorldTime` rejects.
+    const foodMap: Record<string, { id: ItemID; img: string }> = {
+      FOOD_ARMY_RATION: { id: ItemID.FOOD_ARMY_RATION, img: GameImages.ITEM_ARMY_RATION },
+      FOOD_GROCERIES: { id: ItemID.FOOD_GROCERIES, img: GameImages.ITEM_GROCERIES },
+      FOOD_CANNED_FOOD: { id: ItemID.FOOD_CANNED_FOOD, img: GameImages.ITEM_CANNED_FOOD },
+    };
+    for (const d of foodData as any[]) {
+      const meta = foodMap[d.ID];
+      if (!meta) continue;
       const model = new ItemFoodModel(
         d.NAME,
         d.PLURAL,
-        foodImages[i],
-        d.NUTRITION,
+        meta.img,
+        // The CSV stores nutrition as a ratio, but `ItemFoodModel.nutrition`
+        // is in food points, so the ratio has to be scaled. The C# does this
+        // at load time (GameItems.cs:192, `NUTRITION = (int)(Rules.FOOD_BASE_
+        // POINTS * line[3].ParseFloat())`); without it a 0.25 army ration
+        // restores a quarter of one point against a 1440-point meter.
+        Math.trunc(Rules.FOOD_BASE_POINTS * d.NUTRITION),
         d.BESTBEFORE
       );
-      if (d.STACKING > 0) {
-        model.isStackable = true;
-        model.stackingLimit = d.STACKING;
-      }
+      model.stackingLimit = d.STACKINGLIMIT;
+      // "canned food"/"canned food" and "groceries"/"groceries" are the same
+      // word, so C# `CheckPlural` marks them plural; "army ration" is not.
+      model.isPlural = GameItems.checkPlural(d.NAME, d.PLURAL);
       model.flavorDescription = d.FLAVOR ?? "";
-      this.setModel(ItemID.FOOD_ARMY_RATION + i, model);
+      this.setModel(meta.id, model);
     }
 
     // Melee weapons
-    const meleeImages: Record<string, string> = {
-      MELEE_BASEBALLBAT: GameImages.ITEM_BASEBALL_BAT,
-      MELEE_COMBAT_KNIFE: GameImages.ITEM_COMBAT_KNIFE,
-      MELEE_CROWBAR: GameImages.ITEM_CROWBAR,
-      UNIQUE_JASON_MYERS_AXE: GameImages.ITEM_JASON_MYERS_AXE,
-      MELEE_HUGE_HAMMER: GameImages.ITEM_HUGE_HAMMER,
-      MELEE_SMALL_HAMMER: GameImages.ITEM_SMALL_HAMMER,
-      MELEE_GOLFCLUB: GameImages.ITEM_GOLF_CLUB,
-      MELEE_IRON_GOLFCLUB: GameImages.ITEM_IRON_GOLF_CLUB,
-      MELEE_SHOVEL: GameImages.ITEM_SHOVEL,
-      MELEE_SHORT_SHOVEL: GameImages.ITEM_SHORT_SHOVEL,
-      MELEE_TRUNCHEON: GameImages.ITEM_TRUNCHEON,
-      MELEE_IMPROVISED_CLUB: GameImages.ITEM_IMPROVISED_CLUB,
-      MELEE_IMPROVISED_SPEAR: GameImages.ITEM_IMPROVISED_SPEAR,
-      UNIQUE_FAMU_FATARU_KATANA: GameImages.ITEM_FAMU_FATARU_KATANA,
-      UNIQUE_BIGBEAR_BAT: GameImages.ITEM_BIGBEAR_BAT,
-      UNIQUE_ROGUEDJACK_KEYBOARD: GameImages.ITEM_ROGUEDJACK_KEYBOARD,
-    };
-
-    const meleeIds: Record<string, ItemID> = {
-      MELEE_BASEBALLBAT: ItemID.MELEE_BASEBALLBAT,
-      MELEE_COMBAT_KNIFE: ItemID.MELEE_COMBAT_KNIFE,
-      MELEE_CROWBAR: ItemID.MELEE_CROWBAR,
-      UNIQUE_JASON_MYERS_AXE: ItemID.UNIQUE_JASON_MYERS_AXE,
-      MELEE_HUGE_HAMMER: ItemID.MELEE_HUGE_HAMMER,
-      MELEE_SMALL_HAMMER: ItemID.MELEE_SMALL_HAMMER,
-      MELEE_GOLFCLUB: ItemID.MELEE_GOLFCLUB,
-      MELEE_IRON_GOLFCLUB: ItemID.MELEE_IRON_GOLFCLUB,
-      MELEE_SHOVEL: ItemID.MELEE_SHOVEL,
-      MELEE_SHORT_SHOVEL: ItemID.MELEE_SHORT_SHOVEL,
-      MELEE_TRUNCHEON: ItemID.MELEE_TRUNCHEON,
-      MELEE_IMPROVISED_CLUB: ItemID.MELEE_IMPROVISED_CLUB,
-      MELEE_IMPROVISED_SPEAR: ItemID.MELEE_IMPROVISED_SPEAR,
-      UNIQUE_FAMU_FATARU_KATANA: ItemID.UNIQUE_FAMU_FATARU_KATANA,
-      UNIQUE_BIGBEAR_BAT: ItemID.UNIQUE_BIGBEAR_BAT,
-      UNIQUE_ROGUEDJACK_KEYBOARD: ItemID.UNIQUE_ROGUEDJACK_KEYBOARD,
+    //
+    // The verb is per weapon and is NOT in the CSV: the C# spells it out at
+    // each construction site (GameItems.cs:778-985, e.g. `new Verb("smash",
+    // "smashes")` for the baseball bat, `new Verb("stab", "stabs")` for the
+    // combat knife). `Verb`'s second argument defaults to youForm + "s"
+    // (Verb.cs:19), so it is only listed where the C# passes one. Reading
+    // `d.VERB` from the data gave every weapon an undefined verb, so the UI
+    // said things like "undefined the zombie".
+    //
+    // Image, id and verb in one table: the file previously carried two
+    // identical 16-entry maps, which is two places to forget to update.
+    const meleeMap: Record<string, { id: ItemID; img: string; verb: [string, string?] }> = {
+      MELEE_BASEBALLBAT: { id: ItemID.MELEE_BASEBALLBAT, img: GameImages.ITEM_BASEBALL_BAT, verb: ["smash", "smashes"] },
+      MELEE_COMBAT_KNIFE: { id: ItemID.MELEE_COMBAT_KNIFE, img: GameImages.ITEM_COMBAT_KNIFE, verb: ["stab", "stabs"] },
+      MELEE_CROWBAR: { id: ItemID.MELEE_CROWBAR, img: GameImages.ITEM_CROWBAR, verb: ["strike"] },
+      UNIQUE_JASON_MYERS_AXE: { id: ItemID.UNIQUE_JASON_MYERS_AXE, img: GameImages.ITEM_JASON_MYERS_AXE, verb: ["slash", "slashes"] },
+      MELEE_HUGE_HAMMER: { id: ItemID.MELEE_HUGE_HAMMER, img: GameImages.ITEM_HUGE_HAMMER, verb: ["smash", "smashes"] },
+      MELEE_SMALL_HAMMER: { id: ItemID.MELEE_SMALL_HAMMER, img: GameImages.ITEM_SMALL_HAMMER, verb: ["smash"] },
+      MELEE_GOLFCLUB: { id: ItemID.MELEE_GOLFCLUB, img: GameImages.ITEM_GOLF_CLUB, verb: ["strike"] },
+      MELEE_IRON_GOLFCLUB: { id: ItemID.MELEE_IRON_GOLFCLUB, img: GameImages.ITEM_IRON_GOLF_CLUB, verb: ["strike"] },
+      MELEE_SHOVEL: { id: ItemID.MELEE_SHOVEL, img: GameImages.ITEM_SHOVEL, verb: ["strike"] },
+      MELEE_SHORT_SHOVEL: { id: ItemID.MELEE_SHORT_SHOVEL, img: GameImages.ITEM_SHORT_SHOVEL, verb: ["strike"] },
+      MELEE_TRUNCHEON: { id: ItemID.MELEE_TRUNCHEON, img: GameImages.ITEM_TRUNCHEON, verb: ["strike"] },
+      MELEE_IMPROVISED_CLUB: { id: ItemID.MELEE_IMPROVISED_CLUB, img: GameImages.ITEM_IMPROVISED_CLUB, verb: ["strike"] },
+      MELEE_IMPROVISED_SPEAR: { id: ItemID.MELEE_IMPROVISED_SPEAR, img: GameImages.ITEM_IMPROVISED_SPEAR, verb: ["pierce"] },
+      UNIQUE_FAMU_FATARU_KATANA: { id: ItemID.UNIQUE_FAMU_FATARU_KATANA, img: GameImages.ITEM_FAMU_FATARU_KATANA, verb: ["slash", "slashes"] },
+      UNIQUE_BIGBEAR_BAT: { id: ItemID.UNIQUE_BIGBEAR_BAT, img: GameImages.ITEM_BIGBEAR_BAT, verb: ["smash", "smashes"] },
+      UNIQUE_ROGUEDJACK_KEYBOARD: { id: ItemID.UNIQUE_ROGUEDJACK_KEYBOARD, img: GameImages.ITEM_ROGUEDJACK_KEYBOARD, verb: ["bash", "bashes"] },
     };
 
     for (const d of meleeData as any[]) {
-      const id = meleeIds[d.ID];
-      if (id === undefined) continue;
+      const meta = meleeMap[d.ID];
+      if (!meta) continue;
       const atk = Attack.meleeAttack(
-        new Verb(d.VERB),
+        new Verb(meta.verb[0], meta.verb[1]),
         d.ATK,
         d.DMG,
-        d.STA_PENALTY ?? 0,
+        d.STA ?? 0,
         d.DISARM ?? 0
       );
       const model = new ItemMeleeWeaponModel(
         d.NAME,
         d.PLURAL,
-        meleeImages[d.ID],
+        meta.img,
         atk,
-        d.FRAGILE === 1,
-        d.TOOL_BASH ?? 0,
-        d.TOOL_BUILD ?? 0
+        d.ISFRAGILE === 1,
+        d.TOOLBASHDMGBONUS ?? 0,
+        d.TOOLBUILDBONUS ?? 0
       );
       model.equipmentPart = DollPart.RIGHT_HAND;
+      model.stackingLimit = d.STACKINGLIMIT;
       model.flavorDescription = d.FLAVOR ?? "";
-      this.setModel(id, model);
+      this.setModel(meta.id, model);
     }
 
     // Ranged weapons
-    const rangedMap: Record<string, { id: ItemID; img: string; ammo: AmmoType }> = {
-      RANGED_ARMY_PISTOL: { id: ItemID.RANGED_ARMY_PISTOL, img: GameImages.ITEM_ARMY_PISTOL, ammo: AmmoType.HEAVY_PISTOL },
-      RANGED_ARMY_RIFLE: { id: ItemID.RANGED_ARMY_RIFLE, img: GameImages.ITEM_ARMY_RIFLE, ammo: AmmoType.HEAVY_RIFLE },
-      RANGED_HUNTING_CROSSBOW: { id: ItemID.RANGED_HUNTING_CROSSBOW, img: GameImages.ITEM_HUNTING_CROSSBOW, ammo: AmmoType.BOLT },
-      RANGED_HUNTING_RIFLE: { id: ItemID.RANGED_HUNTING_RIFLE, img: GameImages.ITEM_HUNTING_RIFLE, ammo: AmmoType.LIGHT_RIFLE },
-      RANGED_PISTOL: { id: ItemID.RANGED_PISTOL, img: GameImages.ITEM_PISTOL, ammo: AmmoType.LIGHT_PISTOL },
-      RANGED_KOLT_REVOLVER: { id: ItemID.RANGED_KOLT_REVOLVER, img: GameImages.ITEM_KOLT_REVOLVER, ammo: AmmoType.HEAVY_PISTOL },
-      RANGED_PRECISION_RIFLE: { id: ItemID.RANGED_PRECISION_RIFLE, img: GameImages.ITEM_PRECISION_RIFLE, ammo: AmmoType.HEAVY_RIFLE },
-      RANGED_SHOTGUN: { id: ItemID.RANGED_SHOTGUN, img: GameImages.ITEM_SHOTGUN, ammo: AmmoType.SHOTGUN },
-      UNIQUE_SANTAMAN_SHOTGUN: { id: ItemID.UNIQUE_SANTAMAN_SHOTGUN, img: GameImages.ITEM_SANTAMAN_SHOTGUN, ammo: AmmoType.SHOTGUN },
-      UNIQUE_HANS_VON_HANZ_PISTOL: { id: ItemID.UNIQUE_HANS_VON_HANZ_PISTOL, img: GameImages.ITEM_HANS_VON_HANZ_PISTOL, ammo: AmmoType.HEAVY_PISTOL },
+    //
+    // Verb is per weapon and not in the CSV, as with melee: the C# passes
+    // `new Verb("shoot")` everywhere except the army rifle's salvo
+    // (GameItems.cs:987-1086). `kind` is derived from the ammo type, which
+    // is equivalent to the C#'s explicit AttackKind per weapon since only the
+    // crossbow takes bolts.
+    const rangedMap: Record<string, { id: ItemID; img: string; ammo: AmmoType; verb: [string, string?] }> = {
+      RANGED_ARMY_PISTOL: { id: ItemID.RANGED_ARMY_PISTOL, img: GameImages.ITEM_ARMY_PISTOL, ammo: AmmoType.HEAVY_PISTOL, verb: ["shoot"] },
+      RANGED_ARMY_RIFLE: { id: ItemID.RANGED_ARMY_RIFLE, img: GameImages.ITEM_ARMY_RIFLE, ammo: AmmoType.HEAVY_RIFLE, verb: ["fire a salvo at", "fires a salvo at"] },
+      RANGED_HUNTING_CROSSBOW: { id: ItemID.RANGED_HUNTING_CROSSBOW, img: GameImages.ITEM_HUNTING_CROSSBOW, ammo: AmmoType.BOLT, verb: ["shoot"] },
+      RANGED_HUNTING_RIFLE: { id: ItemID.RANGED_HUNTING_RIFLE, img: GameImages.ITEM_HUNTING_RIFLE, ammo: AmmoType.LIGHT_RIFLE, verb: ["shoot"] },
+      RANGED_PISTOL: { id: ItemID.RANGED_PISTOL, img: GameImages.ITEM_PISTOL, ammo: AmmoType.LIGHT_PISTOL, verb: ["shoot"] },
+      RANGED_KOLT_REVOLVER: { id: ItemID.RANGED_KOLT_REVOLVER, img: GameImages.ITEM_KOLT_REVOLVER, ammo: AmmoType.HEAVY_PISTOL, verb: ["shoot"] },
+      RANGED_PRECISION_RIFLE: { id: ItemID.RANGED_PRECISION_RIFLE, img: GameImages.ITEM_PRECISION_RIFLE, ammo: AmmoType.HEAVY_RIFLE, verb: ["shoot"] },
+      RANGED_SHOTGUN: { id: ItemID.RANGED_SHOTGUN, img: GameImages.ITEM_SHOTGUN, ammo: AmmoType.SHOTGUN, verb: ["shoot"] },
+      UNIQUE_SANTAMAN_SHOTGUN: { id: ItemID.UNIQUE_SANTAMAN_SHOTGUN, img: GameImages.ITEM_SANTAMAN_SHOTGUN, ammo: AmmoType.SHOTGUN, verb: ["shoot"] },
+      UNIQUE_HANS_VON_HANZ_PISTOL: { id: ItemID.UNIQUE_HANS_VON_HANZ_PISTOL, img: GameImages.ITEM_HANS_VON_HANZ_PISTOL, ammo: AmmoType.HEAVY_PISTOL, verb: ["shoot"] },
     };
 
     for (const d of rangedData as any[]) {
@@ -269,7 +297,7 @@ export class GameItems implements ItemModelDB {
       const kind = meta.ammo === AmmoType.BOLT ? AttackKind.BOW : AttackKind.FIREARM;
       const atk = Attack.rangedAttack(
         kind,
-        new Verb(d.VERB),
+        new Verb(meta.verb[0], meta.verb[1]),
         d.ATK,
         d.RAPID1 ?? d.ATK,
         d.RAPID2 ?? d.ATK,
@@ -282,7 +310,10 @@ export class GameItems implements ItemModelDB {
         meta.img,
         atk,
         meta.ammo,
-        d.MAX_AMMO
+        // Column is MAXAMMO (Items_RangedWeapons.csv). Reading `MAX_AMMO`
+        // gave every ranged weapon maxAmmo = undefined, so guns could never
+        // hold a magazine.
+        d.MAXAMMO
       );
       model.equipmentPart = DollPart.RIGHT_HAND;
       model.flavorDescription = d.FLAVOR ?? "";
@@ -304,7 +335,6 @@ export class GameItems implements ItemModelDB {
         d.MAXTHROW
       );
       grenade.equipmentPart = DollPart.RIGHT_HAND;
-      grenade.isStackable = true;
       grenade.stackingLimit = d.STACKINGLIMIT;
       grenade.flavorDescription = d.FLAVOR ?? "";
       this.setModel(ItemID.EXPLOSIVE_GRENADE, grenade);
@@ -327,10 +357,10 @@ export class GameItems implements ItemModelDB {
         GameImages.ITEM_WOODEN_PLANK,
         d.VALUE
       );
-      if (d.STACKING > 0) {
-        model.isStackable = true;
-        model.stackingLimit = d.STACKING;
-      }
+      // Column is STACKINGLIMIT (Items_Barricading.csv), not STACKING as the
+      // other tables spell it. Reading `STACKING` left it undefined, so the
+      // `> 0` test failed and planks were never stackable.
+      model.stackingLimit = d.STACKINGLIMIT;
       model.flavorDescription = d.FLAVOR ?? "";
       this.setModel(ItemID.BAR_WOODEN_PLANK, model);
     }
@@ -355,7 +385,9 @@ export class GameItems implements ItemModelDB {
         meta.img,
         d.PRO_HIT,
         d.PRO_SHOT,
-        d.ENCUMBRANCE,
+        // Column is ENC (Items_Armors.csv). Reading `ENCUMBRANCE` gave every
+        // piece of body armor encumbrance 0, so armor weighed nothing.
+        d.ENC,
         d.WEIGHT
       );
       model.equipmentPart = meta.slot;
@@ -364,11 +396,15 @@ export class GameItems implements ItemModelDB {
     }
 
     // Trackers
-    const trackerMap: Record<string, { id: ItemID; img: string; flags: TrackingFlags; clock: boolean }> = {
-      TRACKER_BLACKOPS: { id: ItemID.TRACKER_BLACKOPS, img: GameImages.ITEM_BLACKOPS_GPS, flags: TrackingFlags.BLACKOPS_FACTION, clock: false },
-      TRACKER_CELL_PHONE: { id: ItemID.TRACKER_CELL_PHONE, img: GameImages.ITEM_CELL_PHONE, flags: TrackingFlags.FOLLOWER_AND_LEADER, clock: true },
-      TRACKER_ZTRACKER: { id: ItemID.TRACKER_ZTRACKER, img: GameImages.ITEM_ZTRACKER, flags: TrackingFlags.UNDEADS, clock: false },
-      TRACKER_POLICE_RADIO: { id: ItemID.TRACKER_POLICE_RADIO, img: GameImages.ITEM_POLICE_RADIO, flags: TrackingFlags.POLICE_FACTION, clock: true },
+    //
+    // `HASCLOCK` is a data column, not a per-model constant, and the C# reads
+    // it from the row (GameItems.cs:1239, 1249, ...). It happened to agree
+    // with the hardcoded values, but only by luck.
+    const trackerMap: Record<string, { id: ItemID; img: string; flags: TrackingFlags }> = {
+      TRACKER_BLACKOPS: { id: ItemID.TRACKER_BLACKOPS, img: GameImages.ITEM_BLACKOPS_GPS, flags: TrackingFlags.BLACKOPS_FACTION },
+      TRACKER_CELL_PHONE: { id: ItemID.TRACKER_CELL_PHONE, img: GameImages.ITEM_CELL_PHONE, flags: TrackingFlags.FOLLOWER_AND_LEADER },
+      TRACKER_ZTRACKER: { id: ItemID.TRACKER_ZTRACKER, img: GameImages.ITEM_ZTRACKER, flags: TrackingFlags.UNDEADS },
+      TRACKER_POLICE_RADIO: { id: ItemID.TRACKER_POLICE_RADIO, img: GameImages.ITEM_POLICE_RADIO, flags: TrackingFlags.POLICE_FACTION },
     };
 
     for (const d of trackersData as any[]) {
@@ -379,9 +415,14 @@ export class GameItems implements ItemModelDB {
         d.PLURAL,
         meta.img,
         meta.flags,
-        d.BATTERIES,
-        meta.clock
+        // The column is in hours; batteries are counted in turns. The C#
+        // scales it at every tracker (GameItems.cs:1237, 1247, 1257, 1267:
+        // `traData.BATTERIES * WorldTime.TURNS_PER_HOUR`). Un-scaled, a cell
+        // phone's 72 hours became 72 turns, i.e. 2.4 hours of battery.
+        d.BATTERIES * WorldTime.TURNS_PER_HOUR,
+        d.HASCLOCK === 1
       );
+      model.equipmentPart = DollPart.LEFT_HAND;
       model.flavorDescription = d.FLAVOR ?? "";
       this.setModel(meta.id, model);
     }
@@ -397,20 +438,31 @@ export class GameItems implements ItemModelDB {
       const meta = paintMap[d.ID];
       if (!meta) continue;
       const model = new ItemSprayPaintModel(d.NAME, d.PLURAL, meta.img, d.QUANTITY, meta.tagImg);
+      model.equipmentPart = DollPart.LEFT_HAND;
       model.flavorDescription = d.FLAVOR ?? "";
       this.setModel(meta.id, model);
     }
 
     // Scent Sprays
-    const stenchKiller = new ItemSprayScentModel(
-      "stench killer",
-      "stench killers",
-      GameImages.ITEM_STENCH_KILLER,
-      10,
-      Odor.SUPPRESSOR,
-      60
-    );
-    this.setModel(ItemID.SCENT_SPRAY_STENCH_KILLER, stenchKiller);
+    //
+    // This table used to be dead: Items_Scentsprays.json was never imported
+    // and the lone model was written out by hand, with a quantity of 10
+    // instead of the CSV's 40 and a strength of 60 instead of
+    // STRENGTH * TURNS_PER_HOUR (3 * 30 = 90, GameItems.cs:1332).
+    for (const d of scentspraysData as any[]) {
+      if (d.ID !== "SCENT_SPRAY_STENCH_KILLER") continue;
+      const model = new ItemSprayScentModel(
+        d.NAME,
+        d.PLURAL,
+        GameImages.ITEM_STENCH_KILLER,
+        d.QUANTITY,
+        Odor.SUPPRESSOR,
+        d.STRENGTH * WorldTime.TURNS_PER_HOUR
+      );
+      model.equipmentPart = DollPart.LEFT_HAND;
+      model.flavorDescription = d.FLAVOR ?? "";
+      this.setModel(ItemID.SCENT_SPRAY_STENCH_KILLER, model);
+    }
 
     // Lights
     const lightMap: Record<string, { id: ItemID; img: string; outImg: string }> = {
@@ -420,19 +472,43 @@ export class GameItems implements ItemModelDB {
     for (const d of lightsData as any[]) {
       const meta = lightMap[d.ID];
       if (!meta) continue;
-      const model = new ItemLightModel(d.NAME, d.PLURAL, meta.img, d.FOV, d.BATTERIES, meta.outImg);
+      // Batteries are in hours in the CSV and in turns on the model; the C#
+      // scales both lights (GameItems.cs:1311, 1318). Un-scaled, the
+      // flashlight's 24 hours became 24 turns -- under a minute of light.
+      const model = new ItemLightModel(
+        d.NAME,
+        d.PLURAL,
+        meta.img,
+        d.FOV,
+        d.BATTERIES * WorldTime.TURNS_PER_HOUR,
+        meta.outImg
+      );
       model.equipmentPart = DollPart.LEFT_HAND;
       model.flavorDescription = d.FLAVOR ?? "";
       this.setModel(meta.id, model);
     }
 
     // Ammo
-    this.setModel(ItemID.AMMO_LIGHT_PISTOL, new ItemAmmoModel("light pistol ammo", "light pistol ammo", GameImages.ITEM_AMMO_LIGHT_PISTOL, AmmoType.LIGHT_PISTOL, 30));
-    this.setModel(ItemID.AMMO_HEAVY_PISTOL, new ItemAmmoModel("heavy pistol ammo", "heavy pistol ammo", GameImages.ITEM_AMMO_HEAVY_PISTOL, AmmoType.HEAVY_PISTOL, 24));
-    this.setModel(ItemID.AMMO_LIGHT_RIFLE, new ItemAmmoModel("light rifle ammo", "light rifle ammo", GameImages.ITEM_AMMO_LIGHT_RIFLE, AmmoType.LIGHT_RIFLE, 30));
-    this.setModel(ItemID.AMMO_HEAVY_RIFLE, new ItemAmmoModel("heavy rifle ammo", "heavy rifle ammo", GameImages.ITEM_AMMO_HEAVY_RIFLE, AmmoType.HEAVY_RIFLE, 20));
-    this.setModel(ItemID.AMMO_SHOTGUN, new ItemAmmoModel("shotgun ammo", "shotgun ammo", GameImages.ITEM_AMMO_SHOTGUN, AmmoType.SHOTGUN, 16));
-    this.setModel(ItemID.AMMO_BOLTS, new ItemAmmoModel("crossbow bolts", "crossbow bolts", GameImages.ITEM_AMMO_BOLTS, AmmoType.BOLT, 12));
+    //
+    // Names, stack quantities and IsPlural from GameItems.cs:1088-1130. The
+    // port had invented its own: "light pistol ammo" instead of "light pistol
+    // bullets", quantities 30/30/30/20/16/12 instead of 20/12/14/20/10/30,
+    // and no IsPlural -- so a single round read as "a light pistol ammo"
+    // (Item.ts:29 falls back to singular when IsPlural is false).
+    const ammo: [ItemID, string, string, AmmoType, number][] = [
+      [ItemID.AMMO_LIGHT_PISTOL, "light pistol bullets", GameImages.ITEM_AMMO_LIGHT_PISTOL, AmmoType.LIGHT_PISTOL, 20],
+      [ItemID.AMMO_HEAVY_PISTOL, "heavy pistol bullets", GameImages.ITEM_AMMO_HEAVY_PISTOL, AmmoType.HEAVY_PISTOL, 12],
+      [ItemID.AMMO_LIGHT_RIFLE, "light rifle bullets", GameImages.ITEM_AMMO_LIGHT_RIFLE, AmmoType.LIGHT_RIFLE, 14],
+      [ItemID.AMMO_HEAVY_RIFLE, "heavy rifle bullets", GameImages.ITEM_AMMO_HEAVY_RIFLE, AmmoType.HEAVY_RIFLE, 20],
+      [ItemID.AMMO_SHOTGUN, "shotgun shells", GameImages.ITEM_AMMO_SHOTGUN, AmmoType.SHOTGUN, 10],
+      [ItemID.AMMO_BOLTS, "crossbow bolts", GameImages.ITEM_AMMO_BOLTS, AmmoType.BOLT, 30],
+    ];
+    for (const [id, name, img, type, quantity] of ammo) {
+      const model = new ItemAmmoModel(name, name, img, type, quantity);
+      model.isPlural = true;
+      model.flavorDescription = "";
+      this.setModel(id, model);
+    }
 
     // Traps
     const trapMap: Record<string, { id: ItemID; img: string }> = {
@@ -474,6 +550,7 @@ export class GameItems implements ItemModelDB {
       const meta = entMap[d.ID];
       if (!meta) continue;
       const model = new ItemEntertainmentModel(d.NAME, d.PLURAL, meta.img, d.VALUE, d.BORE_CHANCE);
+      model.stackingLimit = d.STACKING;
       model.flavorDescription = d.FLAVOR ?? "";
       this.setModel(meta.id, model);
     }
@@ -483,6 +560,41 @@ export class GameItems implements ItemModelDB {
     subwayBadge.isProper = true;
     subwayBadge.flavorDescription = "A master pass for the city subway system.";
     this.setModel(ItemID.UNIQUE_SUBWAY_BADGE, subwayBadge);
+
+    this.postProcess();
+  }
+
+  /**
+   * The C# runs one pass over every model after construction
+   * (GameItems.cs:1410-1421) which is the *only* place `IsStackable` is
+   * finally decided -- the per-model `IsStackable = ...` assignments in the
+   * constructors are all overwritten by it:
+   *
+   *     model.IsAn = StartsWithVowel(model.SingleName);
+   *     model.IsStackable = model.StackingLimit > 1;
+   *
+   * So the rule is `StackingLimit > 1` globally, not `> 0` per table. With
+   * `> 0`, a stack limit of 1 (every food but canned food, the plank, both
+   * uniques) marked the item stackable, so the inventory offered to merge
+   * two army rations into one slot and then capped the pile at one.
+   */
+  private postProcess(): void {
+    for (let i = 0; i < ItemID._COUNT; i++) {
+      const model = this.models[i];
+      if (!model) continue;
+      model.isAn = GameItems.startsWithVowel(model.singleName);
+      model.isStackable = model.stackingLimit > 1;
+    }
+  }
+
+  /** C# `StartsWithVowel` (GameItems.cs:681). Note it counts `y`. */
+  private static startsWithVowel(name: string): boolean {
+    return "aeiouyAEIOUY".includes(name.charAt(0));
+  }
+
+  /** C# `CheckPlural` (GameItems.cs:688): the name is already plural. */
+  private static checkPlural(name: string, plural: string): boolean {
+    return name === plural;
   }
 
   private setModel(id: ItemID, model: ItemModel): void {

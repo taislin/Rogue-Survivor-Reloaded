@@ -766,6 +766,13 @@ export class RogueGame {
     s_Hints = new GameHintsStatus();
     s_Hints.resetAllHints();
 
+    logInit("loading skill data");
+    // C# `LoadData()` runs LoadDataSkills() before LoadDataItems() and
+    // LoadDataActors() (RogueGame.cs:23104-23109). It has to come first: the
+    // skill table writes 43 `Rules.SKILL_*` statics, and anything that reads
+    // them before this point would see the pre-load defaults.
+    Skills.load();
+
     logInit("creating dbs");
     this.m_GameFactions = new GameFactions();
     this.m_GameActors = new GameActors();

@@ -18,6 +18,7 @@ import { Attack } from "@data/Attack";
 import { Defence } from "@data/Defence";
 import { Verb } from "@data/Verb";
 import { GameImages } from "./GameImages";
+import { Rules } from "@engine/Rules";
 
 import actorsData from "./data/Actors.json";
 
@@ -105,6 +106,22 @@ export class GameActors implements ActorModelDB {
       const isUndead = i <= ActorID.UNDEAD_RAT_ZOMBIE || i === ActorID.SEWERS_THING;
       const isLiving = !isUndead;
 
+      // The C# fills each sheet from named constants (GameActors.cs 66-69,
+      // 175, 204-212) rather than literals, and the split is not simply
+      // living/undead:
+      //   - only the rotting branch of the undead decays on ROT_BASE_POINTS;
+      //     the three skeletons, the rat zombie and the sewers thing get
+      //     NO_FOOD and never rot,
+      //   - the feral dog and Jason Myers get food and sleep but NO_SANITY.
+      // Flattening all of that to `isLiving ? 100 : 0` capped every meter at
+      // 100 while the thresholds stayed at 720/900/1440, so actors spawned
+      // already "Hungry", "Sleepy" and "Disturbed" and every
+      // HoursUntil* helper returned 0.
+      const rots =
+        i >= ActorID.UNDEAD_ZOMBIE && i <= ActorID.UNDEAD_FEMALE_DISCIPLE;
+      const hasSanity =
+        isLiving && i !== ActorID.FERAL_DOG && i !== ActorID.JASON_MYERS;
+
       const abilities = new Abilities();
       abilities.isUndead = isUndead;
       abilities.hasInventory = isLiving;
@@ -114,7 +131,7 @@ export class GameActors implements ActorModelDB {
       abilities.canRun = isLiving || i >= ActorID.UNDEAD_MALE_NEOPHYTE;
       abilities.hasToEat = isLiving;
       abilities.hasToSleep = isLiving;
-      abilities.hasSanity = isLiving;
+      abilities.hasSanity = hasSanity;
       abilities.canTire = isLiving;
 
       if (isUndead) {
@@ -130,10 +147,19 @@ export class GameActors implements ActorModelDB {
       const attack = Attack.meleeAttack(new Verb(verb), d.ATK, d.DMG);
       const defence = new Defence(d.DEF, d.PRO_HIT, d.PRO_SHOT);
 
-      const food = isLiving ? 100 : 0;
-      const sleep = isLiving ? 100 : 0;
-      const sanity = isLiving ? 100 : 0;
-      const invCapacity = isLiving ? 6 : 0;
+      const food = rots
+        ? Rules.ROT_BASE_POINTS
+        : isLiving
+          ? Rules.FOOD_BASE_POINTS
+          : 0;
+      const sleep = isLiving ? Rules.SLEEP_BASE_POINTS : 0;
+      const sanity = hasSanity ? Rules.SANITY_BASE_POINTS : 0;
+      // C# sizes these per actor too: HUMAN_INVENTORY = 7 for every living
+      // actor, DOG_INVENTORY = 1 for the feral dog, NO_INVENTORY = 0 for the
+      // undead (GameActors.cs 66, 207, 212). A flat 6 for the living is one
+      // slot short of the original, which the status panel draws as
+      // "Inventory 1-7".
+      const invCapacity = i === ActorID.FERAL_DOG ? 1 : isLiving ? 7 : 0;
 
       const sheet = new ActorSheet(
         d.HP,

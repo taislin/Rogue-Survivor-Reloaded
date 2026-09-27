@@ -5,7 +5,7 @@
     "PLURAL": "books",
     "STACKING": 1,
     "VALUE": 120,
-    "BORE CHANCE per use": 10,
+    "BORE_CHANCE": 10,
     "FLAVOR": "Read while you still can."
   },
   {
@@ -14,7 +14,7 @@
     "PLURAL": "magazines",
     "STACKING": 10,
     "VALUE": 60,
-    "BORE CHANCE per use": 100,
+    "BORE_CHANCE": 100,
     "FLAVOR": "Emergency toilet paper."
   }
 ]
