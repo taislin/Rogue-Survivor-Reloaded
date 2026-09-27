@@ -124,7 +124,8 @@
           <li>Vite 5 for the dev server and the bundle</li>
           <li>Canvas 2D &mdash; no game framework, no UI framework</li>
           <li>Web Audio API for music and sound</li>
-          <li>Vitest for the test suite</li>
+          <li>Vitest for the test suite &mdash; 501 tests across 34 files</li>
+          <li>Neutralino for the optional desktop build</li>
           <li>Express for the optional production server</li>
           <li>Node 20 or newer</li>
         </ul>
@@ -133,8 +134,12 @@
         <h3>Display</h3>
         <ul class="small" style="margin-bottom:0">
           <li>1366&times;768 (16:9), the original was 1024&times;768 (4:3)</li>
-          <li>31 tiles across instead of 21 &mdash; the extra width went to the map</li>
-          <li>Two text sizes: the dense in-game HUD, and full-screen menus</li>
+          <li>27 tiles across instead of 21, and a 498&nbsp;px sidebar instead of 286
+            &mdash; the surplus width is split between them, not all spent on the map</li>
+          <li>Two text sizes: a 10&nbsp;pt HUD and 12&nbsp;pt menus, both up from the
+            original's 8.25&nbsp;pt, which lands near 11 device px on a HiDPI panel</li>
+          <li>2&times; map zoom on <kbd>=</kbd> and <kbd>-</kbd>, for when 27 tiles is
+            not close enough</li>
           <li>Offscreen districts keep simulating without you</li>
           <li>Installable as a PWA, and playable offline</li>
         </ul>
@@ -143,7 +148,17 @@
 
     <h2 id="status">Status</h2>
     <p>The port is at <b>alpha 10.1</b>, matching the original's version number. The game
-      content is complete: there are no unported stubs left.</p>
+      content is complete: there are no unported stubs left, and all but one optional
+      polish task is done.</p>
+
+    <p>What changed most recently is fidelity rather than features. A line-by-line audit of
+      the port against the preserved C# found and fixed <b>56 behavioural bugs</b> that no
+      test, build or simulator run had caught &mdash; including one where every AI actor saw
+      1&ndash;2 tiles further than the original in rain, which was invisible from the
+      player's side because the player's own view was correct. Each fix is pinned by a test,
+      and the
+      <a href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/BROWSER_PORT_PLAN.md">porting
+        plan</a> records the reasoning, including the audits that came back clean.</p>
 
     <div class="table-wrap" style="margin:1.25rem 0">
       <table>
@@ -156,12 +171,14 @@
         <tbody>
           <tr>
             <td>No touch support</td>
-            <td>Keyboard and mouse only. This is the last item outstanding on the porting plan.</td>
+            <td>Keyboard and mouse only, as in the original. This is the last item
+              outstanding on the porting plan, and it is marked optional.</td>
           </tr>
           <tr>
-            <td>Minimap does not record explored ground</td>
-            <td>Ground you have seen is not marked as explored, so the minimap under-reports
-              what you know. Known bug, tracked in the porting plan.</td>
+            <td>Saving is not yet a true roundtrip</td>
+            <td>The world and map graph are not serialised yet, so a save cannot be
+              reloaded into an identical world. The <code>TODO</code> is in
+              <code>Session.save</code>.</td>
           </tr>
           <tr>
             <td>Death screenshots off by default</td>

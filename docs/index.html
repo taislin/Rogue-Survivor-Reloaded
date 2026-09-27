@@ -58,6 +58,7 @@
 
           <ul class="hero__meta">
             <li>Browser &middot; Canvas 2D</li>
+            <li>Desktop &middot; Neutralino</li>
             <li>TypeScript</li>
             <li>Alpha 10.1</li>
             <li>GPLv3</li>
@@ -102,6 +103,35 @@
             <img src="assets/img/scenery/sewer_hole.webp" alt="">
           </div>
           <p class="mosaic__caption">Every sprite on this site is the game's own art</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= Screenshots ================= -->
+    <section class="section section--tight">
+      <div class="wrap">
+        <p class="eyebrow">In game</p>
+        <h2>It runs on a canvas, and it looks like this</h2>
+        <p class="lede">Both shots are the real thing at 1366&times;768: the city grid on
+          the left, your vitals and inventory on the right, and the message log along the
+          bottom. The sidebar is 498&nbsp;px of it, because the map only needs 27 tiles
+          across.</p>
+
+        <div class="shots" style="margin-top:1.5rem">
+          <figure class="shot">
+            <img class="shot__img" src="assets/img/screens/screen1.webp" width="1562" height="867"
+              alt="Gameplay at night on a city street: burning cars, a zombie and several survivors on the road outside a CHAR office. On the right, the character panel shows health, stamina, food, sleep and sanity bars above empty inventory, ground and corpse lists, with a minimap below. The message log runs along the bottom.">
+            <figcaption class="shot__cap">Night on the street. The five bars are health,
+              stamina, food, sleep and sanity; the small grid on the right is the minimap,
+              which only draws ground you have actually walked.</figcaption>
+          </figure>
+          <figure class="shot">
+            <img class="shot__img" src="assets/img/screens/screen2.webp" width="1562" height="867"
+              alt="Gameplay in a park at night, with undead closing in on the player. A large blue hover panel is open over one of them, listing its name, that it is chasing the player, and its health, attack, damage, defence and armour.">
+            <figcaption class="shot__cap">Point at an undead and the game reads its sheet
+              &mdash; HP, attack, damage, defence &mdash; without pausing. The world keeps
+              running underneath it.</figcaption>
+          </figure>
         </div>
       </div>
     </section>
@@ -325,6 +355,20 @@
             <p class="small muted" style="margin-bottom:0">Serves the bundle on port 8080.
               There is a <code>Dockerfile</code> at the repo root, and the build is plain
               static files, so any static host will do.</p>
+          </div>
+          <div class="card">
+            <h3>Desktop build</h3>
+            <p><code>npm run build:desktop</code></p>
+            <p class="small muted" style="margin-bottom:0">Packages the same static bundle
+              as a native app through Neutralino, so it runs without a browser or a local
+              server. <code>npm run neu:dev</code> does the same for development.</p>
+          </div>
+          <div class="card">
+            <h3>Tests and the simulator</h3>
+            <p><code>npm test</code> &middot; <code>npm run sim</code></p>
+            <p class="small muted" style="margin-bottom:0">501 tests, plus a headless
+              simulator that plays whole games in Node &mdash; same generators, same AI, same
+              turn loop &mdash; so long runs can be swept for crashes.</p>
           </div>
         </div>
 

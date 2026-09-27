@@ -51,8 +51,36 @@ lossless WebP, 32×32. The site uses a curated subset in `assets/img/` — copy 
 files in rather than symlinking or referencing `../web/`, because Pages only
 serves what is inside `docs/`.
 
-The site's own assets are about 240 KB in total. Sprites are displayed with
-`image-rendering: pixelated` so they stay crisp when scaled up.
+Sprites are displayed with `image-rendering: pixelated` so they stay crisp when
+scaled up. The gameplay screenshots in `assets/img/screens/` are the exception:
+they are already 1:1 canvas output, so they are *not* pixelated, and they are
+1562×867 rather than 32×32.
+
+The site's own served assets are about **220 KB** across 54 files — roughly 16 KB
+of sprites, 152 KB of screenshots, 28 KB of icons and 22 KB of CSS/JS.
+
+`assets/img/screens/screens.psd` is the layered source for those screenshots.
+Only the flattened WebP is published. The PSD is a 5.3 MB working file that
+nothing references, so it is untracked and listed in the root `.gitignore` —
+Pages never sees it, and no visitor downloads it. Keep it locally if you want to
+keep editing the artwork.
+
+## Checking the site
+
+```bash
+node docs/tools/check-site.mjs
+```
+
+Exits non-zero on anything broken, so it works as a gate. It verifies that every
+local `href`/`src` resolves, every in-page `#fragment` has a target, tags balance,
+the `<head>` essentials are present, each page has exactly one `<h1>` and one
+`aria-current`, every `<img>` has `alt`, and the GPL attribution is in the
+footer.
+
+It also enforces both directions of stylesheet coverage: a class used in the HTML
+but missing from `site.css` fails, **and** a class defined in `site.css` that no
+page uses fails. The second rule is the one to watch when editing the CSS — add a
+rule and a matching usage in the same change, or drop the rule.
 
 ## Conventions
 

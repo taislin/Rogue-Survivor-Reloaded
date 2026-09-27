@@ -60,4 +60,9 @@ Desktop.ini
 # silently-stale source of truth for the same artwork.
 /icon.png
 /icon_reloaded.png
-docs/assets/img/screens/screens.psd
+
+# Layered source for the website's gameplay screenshots (1562x867 WebP pairs).
+# Only the flattened WebP is published; the PSD is a 5.3 MB working file that
+# nothing references, and committing it would add it to the Pages deploy for
+# every visitor to download nothing from.
+/docs/assets/img/screens/screens.psd

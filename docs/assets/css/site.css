@@ -181,7 +181,12 @@ hr {
   image-rendering: pixelated;
   border-radius: 4px;
 }
+/* The site title is two colours: "Rogue Survivor" in the dark red, "Reloaded" in
+   the ember orange. Both are set on the span rather than inherited, so the
+   hover rule below needs its own span selector to keep working. */
+.brand span { color: var(--rust); }
 .brand span em { font-style: normal; color: var(--ember); }
+.brand:hover span { color: var(--ember); }
 
 .site-nav {
   margin-left: auto;
@@ -300,6 +305,40 @@ hr {
   color: var(--text-faint);
   text-align: center;
   letter-spacing: 0.05em;
+}
+
+/* --- Screenshots -------------------------------------------------------- */
+/* Real gameplay captures, so `image-rendering: pixelated` is deliberately NOT
+   set here: these are 1:1 canvas output, not scaled-up 32x32 sprites. */
+
+.shots {
+  display: grid;
+  gap: 1.25rem;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+}
+
+.shot {
+  margin: 0;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px;
+  box-shadow: 0 18px 50px -20px rgba(0, 0, 0, 0.9);
+}
+
+.shot__img {
+  display: block;
+  width: 100%;
+  height: auto;
+  background: #000;
+  border-radius: 2px;
+}
+
+.shot__cap {
+  margin: 0.7rem 0.4rem 0.3rem;
+  font: 500 0.72rem/1.5 var(--font-mono);
+  color: var(--text-faint);
+  letter-spacing: 0.04em;
 }
 
 /* --- Cards -------------------------------------------------------------- */
