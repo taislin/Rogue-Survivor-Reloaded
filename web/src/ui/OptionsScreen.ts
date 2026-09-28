@@ -7,12 +7,30 @@ import {
 	SimRatio,
 	ZupDays,
 } from "@engine/GameOptions";
-import type { IRogueUI } from "@engine/IRogueUI";
+import type { IRogueUI, GameKeyEvent, MouseButton } from "@engine/IRogueUI";
 import { IMAGE_SETS } from "@engine/AssetPaths";
 import { DEFAULT_VIEW_MODE, VIEW_MODES } from "@engine/firstperson/Types";
 import { FONT_CHOICES } from "@ui/fonts";
 import { DifficultySide, Scoring } from "@engine/Scoring";
 import { Session } from "@engine/Session";
+import { menuValueColumnX } from "@engine/RogueGame";
+import { Point } from "@engine/Point";
+
+/**
+ * One drawn list row, in logical canvas pixels.
+ *
+ * `index` is the entry's own index in the list, not its position in the visible
+ * window — so a scrolled list hit-tests against what the row *is*, which is what
+ * the keyboard selection uses too, and the two cannot disagree about which option
+ * is selected.
+ */
+interface MenuRow {
+	index: number;
+	left: number;
+	right: number;
+	top: number;
+	bottom: number;
+}
 
 // RogueGame.cs layout constants
 const CANVAS_HEIGHT = 768;
@@ -146,33 +164,61 @@ export class OptionsScreen {
 		const prevOptions = Options.clone(); // C# `GameOptions prevOptions = s_Options` (struct copy)
 		let selected = 0;
 		let loop = true;
+		// The cursor as of the last input, so a wait can tell "the mouse moved" from
+		// "the mouse is sitting there". See `waitForInput`.
+		let prevMouse = this.ui.UI_GetMousePosition();
 
 		do {
 			this.draw(selected);
 
-			const key = await this.ui.UI_WaitKey();
-			switch (key.key) {
-				case "ArrowUp": // move up
-					selected = selected > 0 ? selected - 1 : this.list.length - 1;
-					break;
-				case "ArrowDown": // move down
-					selected = (selected + 1) % this.list.length;
-					break;
-				case "r":
-				case "R": // restore previous.
-					Options.copyFrom(prevOptions);
-					break;
-				case "Escape": // validate and leave
-					loop = false;
-					break;
-				case "ArrowLeft":
-					this.adjust(this.list[selected], -1);
-					break;
-				case "ArrowRight":
-					this.adjust(this.list[selected], 1);
-					break;
-				default:
-					break;
+			const { key, mousePos, mouseButtons } = await this.waitForInput(prevMouse);
+			prevMouse = mousePos;
+
+			if (key !== null) {
+				switch (key.key) {
+					case "ArrowUp": // move up
+						selected = selected > 0 ? selected - 1 : this.list.length - 1;
+						break;
+					case "ArrowDown": // move down
+						selected = (selected + 1) % this.list.length;
+						break;
+					case "r":
+					case "R": // restore previous.
+						Options.copyFrom(prevOptions);
+						break;
+					case "Escape": // validate and leave
+						loop = false;
+						break;
+					case "ArrowLeft":
+						this.adjust(this.list[selected], -1);
+						break;
+					case "ArrowRight":
+						this.adjust(this.list[selected], 1);
+						break;
+					default:
+						break;
+				}
+			} else {
+				// A click outside every row changes nothing. An options screen is
+				// where a stray click is most expensive — it silently changes a
+				// setting the player then has to notice and undo — so the only
+				// thing a click does is what it plainly means.
+				const row = this.rowAt(
+					mousePos.x / this.ui.UI_GetCanvasScaleX(),
+					mousePos.y / this.ui.UI_GetCanvasScaleY(),
+				);
+				if (row !== null) {
+					// A click on the row that is *already* selected steps its value.
+					// A first click on any other row only moves the selection. This is
+					// what every native options dialog does, and it means moving
+					// around with the mouse — which is most of what a player does
+					// here — can never change a setting by accident.
+					if (row.index === selected && mouseButtons !== null) {
+						this.adjust(this.list[selected], 1);
+					} else {
+						selected = row.index;
+					}
+				}
 			}
 
 			// force some options combinations.
@@ -195,6 +241,48 @@ export class OptionsScreen {
 
 		// save.
 		GameOptions.save(Options);
+	}
+
+	/**
+	 * Waits for a key, a click, or the cursor moving onto a row.
+	 *
+	 * The same shape as `RogueGame.WaitKeyOrMouse`, and for the same reason: the
+	 * screen has to redraw when the cursor moves, because the selection follows it.
+	 * `UI_WaitKey` alone cannot do that — it only wakes on a key, so hover would
+	 * mean polling, and a blocking wait cannot poll.
+	 *
+	 * Built from the existing `IRogueUI` primitives rather than a new one, so
+	 * nothing else in the port has to grow a method. `UI_PeekMouseButtons`
+	 * *consumes*, so a press is delivered exactly once and a held button is not
+	 * re-reported — the same property the play loop depends on, and the reason it
+	 * is spelled out in `IRogueUI` rather than being an implementation detail.
+	 *
+	 * Only real input ends the wait. The `setTimeout(0)` is the poll interval, not
+	 * a redraw: nothing is drawn until this returns.
+	 */
+	private async waitForInput(prevMouse: Point): Promise<{
+		key: GameKeyEvent | null;
+		mousePos: Point;
+		mouseButtons: MouseButton | null;
+	}> {
+		for (;;) {
+			const key = this.ui.UI_PeekKey();
+			if (key !== null) {
+				return { key, mousePos: this.ui.UI_GetMousePosition(), mouseButtons: null };
+			}
+			const mousePos = this.ui.UI_GetMousePosition();
+			const mouseButtons = this.ui.UI_PeekMouseButtons();
+			if (mouseButtons !== null) {
+				return { key: null, mousePos, mouseButtons };
+			}
+			if (!mousePos.equals(prevMouse)) {
+				// Movement, not a click. Returning here is what makes the selection
+				// follow the cursor; the caller treats it as "no button", so a
+				// brush across the list moves the highlight and changes nothing.
+				return { key: null, mousePos, mouseButtons: null };
+			}
+			await new Promise<void>((r) => setTimeout(r, 0));
+		}
 	}
 
 	/** `RogueGame.DrawHeader()` — RogueGame.cs ≈ line 19975. */
@@ -226,6 +314,22 @@ export class OptionsScreen {
 	 * Shows a scrolling window when the 36 options exceed the space above the
 	 * description block, mirroring the main helper's windowing.
 	 */
+	/**
+	 * Draws the list, and returns where each row landed.
+	 *
+	 * The row rects are not decoration. They are the only way a caller can turn a
+	 * mouse position back into a row index, and without them hit-testing would have
+	 * to re-derive the layout — the same arithmetic, a second time, which is how the
+	 * two copies of this function came to disagree in the first place. Returning the
+	 * geometry from the one place that computes it is what keeps a click and a
+	 * highlight pointing at the same row.
+	 *
+	 * The returned rects are in **logical canvas pixels**, the space the engine
+	 * draws in, and they cover the value column as well as the label — a click
+	 * anywhere on the line selects the row, which is what a list row feels like.
+	 * The caller is responsible for converting a CSS-pixel mouse position into this
+	 * space (`UI_GetCanvasScale*`), exactly as the play screen does.
+	 */
 	private drawMenuOrOptions(
 		currentChoice: number,
 		entriesColor: Color,
@@ -238,7 +342,12 @@ export class OptionsScreen {
 		rightPadding = 256,
 		maxRows?: number,
 	): number {
-		const right = gx + rightPadding;
+		// The shared helper, not `gx + rightPadding`. This function used to compute
+		// its own value column and disagreed with `RogueGame.DrawMenuOrOptions` by
+		// ~44px, because the shared one widens the column when a label is longer
+		// than the padding allows — and `(Undead) Undeads Skills Upgrade Days` is.
+		// Two layouts for one screen is a bug waiting for a mouse.
+		const right = menuValueColumnX(gx, entries, rightPadding);
 
 		if (entries.length !== values.length)
 			throw new Error("values length!= choices length");
@@ -254,6 +363,7 @@ export class OptionsScreen {
 		const entriesShadowColor = shadowOf(entriesColor);
 		for (let r = 0; r < count; r++) {
 			const i = first + r;
+			const rowTop = gy;
 			const choiceStr =
 				i === currentChoice ? `---> ${entries[i]}` : `     ${entries[i]}`;
 			this.ui.UI_DrawStringBoldLarge(
@@ -276,6 +386,18 @@ export class OptionsScreen {
 			}
 
 			gy += MENU_BOLD_LINE_SPACING;
+			// The row's own band: the line *above* this baseline, from the previous
+			// row's baseline to this one. Tiling it this way is what stops adjacent
+			// rows overlapping — an earlier version spanned `baseline ± line`, so
+			// every row covered a strip of its neighbour's and a click landed one
+			// row low, consistently.
+			this.rowRects.push({
+				index: i,
+				left: gx,
+				right,
+				top: rowTop - MENU_BOLD_LINE_SPACING,
+				bottom: rowTop,
+			});
 		}
 		if (count < entries.length) {
 			this.ui.UI_DrawStringLarge(
@@ -290,9 +412,34 @@ export class OptionsScreen {
 		return gy;
 	}
 
+	/**
+	 * The rows drawn by the last `draw`, in logical canvas pixels.
+	 *
+	 * Cleared and refilled by every `draw`, so it is always in step with what is on
+	 * screen — a stale list would let a click select a row that is not there, which
+	 * is a worse failure than a click doing nothing.
+	 */
+	private rowRects: MenuRow[] = [];
+
+	/** The row under a logical-pixel point, or null. Later rows win on overlap. */
+	private rowAt(x: number, y: number): MenuRow | null {
+		let hit: MenuRow | null = null;
+		for (const row of this.rowRects) {
+			if (x >= row.left && x <= row.right && y >= row.top && y <= row.bottom) {
+				hit = row;
+			}
+		}
+		return hit;
+	}
+
 	private draw(selected: number): void {
 		const mode = Session.get().gameMode;
 		const values = this.list.map((id) => Options.describeValue(mode, id));
+
+		// Refilled by every `draw`, so a click can never select a row that is not on
+		// screen. Cleared here rather than at the end of the draw so an exception
+		// mid-draw cannot leave last frame's rows behind.
+		this.rowRects = [];
 
 		let gy = 0;
 		this.ui.UI_Clear(Color.Black);
@@ -392,9 +539,13 @@ export class OptionsScreen {
 		gy += 2 * MENU_BOLD_LINE_SPACING;
 
 		// footnote.
+		// The mouse is mentioned because it works, and because the arrow keys are
+		// still the fastest way to *change* a value — hover moves the selection,
+		// and a click only steps the row that is already selected. Saying so keeps
+		// the hint honest rather than longer.
 		this.drawFootnote(
 			Color.White,
-			"cursor to move and change values, R to restore previous values, ESC to save and leave",
+			"cursor to move and change values, click a selected row to step it, R to restore previous values, ESC to save and leave",
 		);
 		this.ui.UI_Repaint();
 	}
