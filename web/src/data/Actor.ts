@@ -261,7 +261,13 @@ export class Actor {
   }
 
   get hasLeader(): boolean {
-    return this.leader !== null;
+    // C# is `m_Leader != null && !m_Leader.IsDead` (src/Data/Actor.cs:397-400).
+    // The port dropped the liveness test, so a follower whose leader had just
+    // died still reported a leader until `removeAllFollowers` ran. That flag
+    // gates `checkOurLeader` in CivilianAI / GangAI / SoldierAI / CHARGuardAI
+    // and six BaseAI branches, so it decides whether a follower will keep
+    // following, hanging around or charging for a corpse.
+    return this.leader !== null && !this.leader.isDead;
   }
 
   get maxHitPoints(): number {

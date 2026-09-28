@@ -12,6 +12,7 @@ import type { Actor } from '@data/Actor';
 import type { Map as GameMap } from '@data/Map';
 import { Point } from '@engine/Point';
 import { Direction } from '@engine/Direction';
+import { DoorWindow } from '@engine/mapobjects/MapObjects';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Game = any;
@@ -33,12 +34,6 @@ export const enum SpecialActions {
 // Internal node
 // ────────────────────────────────────────────────────────────────────────────
 
-interface Node {
-  pos: Point;
-  distToGoal: number;
-  visited: boolean;
-}
-
 // ────────────────────────────────────────────────────────────────────────────
 // RouteFinder
 // ────────────────────────────────────────────────────────────────────────────
@@ -49,7 +44,12 @@ export class RouteFinder {
   /** Which special actions are allowed when checking route. */
   allowedActions: number = SpecialActions.NONE;
 
-  private readonly nodes: Node[] = [];
+  /**
+   * Tiles already enqueued this call, so a tile reachable from several
+   * parents is expanded once. Reused across calls to keep the search
+   * allocation-free in the steady state.
+   */
+  private readonly enqueued = new Set<number>();
 
   /**
    * Check if the actor can likely reach `dest` using simple bump-toward
@@ -79,47 +79,109 @@ export class RouteFinder {
       return this.canMoveIn(game, a, map, dest);
     }
 
-    // A*-like search.
-    this.nodes.length = 0;
-    this.insertSorted({ pos: start, distToGoal: distanceFn(start, dest), visited: false });
+    /*
+     * A best-first search, deliberately faithful to the C# in *what* it explores:
+     * a node may only be expanded into neighbours strictly closer to the goal, so
+     * this is not a plain flood fill and the two are not interchangeable.
+     *
+     * The frontier is a binary min-heap rather than the C#'s distance-sorted
+     * `LinkedList`, and the node list is a `Set` of integer tile keys rather
+     * than a `foreach` scan per neighbour. That drops the search from O(V^2) to
+     * O(V log V): the C# rescans the whole list for the first unvisited node
+     * (`RouteFinder.cs:143-162`) *and* `GetNode` linear-scans it for every
+     * neighbour of every expansion, which on a 50x50 district with a 25-tile
+     * target is thousands of comparisons per call - and this runs once per
+     * percept, per actor, per turn.
+     *
+     * Popping the global minimum is what makes this a behaviour-preserving
+     * swap rather than a faster variant, and it has to be the *global* minimum:
+     * the C# resumes scanning from the head of the list after each expansion, so
+     * it does eventually come back around to a higher `distToGoal` node once the
+     * lower ones are spent. A single ascending pass over distance buckets would
+     * be simpler, and wrong - it would expand strictly more tiles than the
+     * original, because nodes discovered by a late parent would be dropped on
+     * the floor. Ordering is load-bearing here; that is the whole reason the
+     * C# discards nodes it has already visited rather than revisiting them.
+     */
+    const heap: Point[] = [];
+    const heapDists: number[] = [];
+    const enqueued = this.enqueued;
+    enqueued.clear();
 
-    for (;;) {
-      // Find first unvisited node (nodes are sorted by distToGoal).
-      let current: Node | undefined;
-      for (const n of this.nodes) {
-        if (n.pos.equals(dest)) return true;
-        if (adjToDestIsGoal && distanceFn(n.pos, dest) === 1) return true;
-        if (!n.visited) { current = n; break; }
+    const destKey = RouteFinder.tileKey(dest, map);
+
+    const push = (pos: Point, dist: number): void => {
+      let i = heap.length;
+      heap.push(pos);
+      heapDists.push(dist);
+      while (i > 0) {
+        const parent = (i - 1) >> 1;
+        if (heapDists[parent] <= heapDists[i]) break;
+        const tp = heap[parent]; heap[parent] = heap[i]; heap[i] = tp;
+        const td = heapDists[parent]; heapDists[parent] = heapDists[i]; heapDists[i] = td;
+        i = parent;
       }
-      if (!current) return false; // exhausted
+    };
 
-      current.visited = true;
-      const curDist = distanceFn(current.pos, dest);
+    const pop = (): Point => {
+      const top = heap[0];
+      const lastPos = heap.pop()!;
+      const lastDist = heapDists.pop()!;
+      if (heap.length > 0) {
+        heap[0] = lastPos;
+        heapDists[0] = lastDist;
+        let i = 0;
+        for (;;) {
+          const l = 2 * i + 1;
+          const r = l + 1;
+          let smallest = i;
+          if (l < heap.length && heapDists[l] < heapDists[smallest]) smallest = l;
+          if (r < heap.length && heapDists[r] < heapDists[smallest]) smallest = r;
+          if (smallest === i) break;
+          const tp = heap[smallest]; heap[smallest] = heap[i]; heap[i] = tp;
+          const td = heapDists[smallest]; heapDists[smallest] = heapDists[i]; heapDists[i] = td;
+          i = smallest;
+        }
+      }
+      return top;
+    };
 
+    enqueued.add(RouteFinder.tileKey(start, map));
+    push(start, distanceFn(start, dest));
+
+    while (heap.length > 0) {
+      const current = pop();
+
+      if (RouteFinder.tileKey(current, map) === destKey) return true;
+      if (adjToDestIsGoal && distanceFn(current, dest) === 1) return true;
+
+      const curDist = distanceFn(current, dest);
       for (const dir of Direction.COMPASS) {
-        const adj = dir.applyTo(current.pos);
+        const adj = dir.applyTo(current);
         if (!map.isInBoundsPoint(adj)) continue;
         const adjDist = distanceFn(adj, dest);
         if (adjDist >= curDist || adjDist > maxDist) continue;
-        if (!this.canMoveIn(game, a, map, adj)) continue;
 
-        const existing = this.nodes.find(n => n.pos.equals(adj));
-        if (!existing) {
-          this.insertSorted({ pos: adj, distToGoal: adjDist, visited: false });
-        }
-        // If existing and not visited, it's already in the list – just leave it.
+        const adjKey = RouteFinder.tileKey(adj, map);
+        if (enqueued.has(adjKey)) continue;
+        if (!this.canMoveIn(game, a, map, adj)) continue;
+        enqueued.add(adjKey);
+
+        push(adj, adjDist);
       }
     }
+    return false;
   }
 
-  /** Insert a node keeping the list sorted by distToGoal ascending. */
-  private insertSorted(node: Node): void {
-    const idx = this.nodes.findIndex(n => n.distToGoal > node.distToGoal);
-    if (idx === -1) {
-      this.nodes.push(node);
-    } else {
-      this.nodes.splice(idx, 0, node);
-    }
+  /**
+   * Dense integer key for a tile, local to one map.
+   *
+   * The search uses it purely for dedup, so it only has to be injective over
+   * the tiles this search can reach. `x + y * width` is injective across the
+   * whole grid, which is a superset of what an A*-restricted search touches.
+   */
+  private static tileKey(pos: Point, map: GameMap): number {
+    return pos.y * map.width + pos.x;
   }
 
   /**
@@ -133,8 +195,16 @@ export class RouteFinder {
     if (!mobj) return false; // blocked by wall tile
 
     // ── Door? ────────────────────────────────────────────────────────────
+    // C# is `DoorWindow door = mobj as DoorWindow; if (door != null)`
+    // (src/Gameplay/AI/Tools/RouteFinder.cs:263). The port probed a
+    // `isDoor` property that MapObject never had, so this block was
+    // unreachable and a closed door counted as impassable. Every living AI
+    // passes SpecialActions.DOORS, so the effect was that no NPC could route
+    // through a closed door - and `behaviorGoGetInterestingItems` discards
+    // stacks it cannot reach, which meant loot inside a closed building was
+    // invisible to the whole town.
     if (this.allowedActions & SpecialActions.DOORS) {
-      if ((mobj as any).isDoor !== undefined) {
+      if (mobj instanceof DoorWindow) {
         if (game.rules.isOpenableFor(a, mobj).ok) return true;
         if ((this.allowedActions & SpecialActions.BREAK) && game.rules.isBreakableFor(a, mobj).ok) return true;
         return false;

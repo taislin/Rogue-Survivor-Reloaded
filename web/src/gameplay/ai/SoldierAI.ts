@@ -20,6 +20,10 @@ import { SpecialActions } from './RouteFinder';
 type Game = any;
 
 export class SoldierAI extends OrderableAI {
+  // Opt into the base's `is <SoldierAI>` discriminant. See BaseAI.isSoldierAI
+  // for why this is a flag rather than an `instanceof` against a subclass.
+  override readonly isSoldierAI: boolean = true;
+
   // Constants
   private static readonly LOS_MEMORY = 10;
   private static readonly FOLLOW_LEADER_MIN_DIST = 1;

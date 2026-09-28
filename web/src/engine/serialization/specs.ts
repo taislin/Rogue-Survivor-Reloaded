@@ -361,7 +361,10 @@ const tilesGrid: FieldCodec = {
 /** An `Exit`, keyed by the position it leaves from. */
 const exitsMap: FieldCodec = {
   kind: "inline",
-  encode: (exits: globalThis.Map<string, Exit>, w: GraphWriter) =>
+  // The keys are `Map`'s positional encoding, carried through verbatim -- this
+  // codec deliberately does not know the format, it only preserves it. See
+  // `Map.key`.
+  encode: (exits: globalThis.Map<number, Exit>, w: GraphWriter) =>
     [...exits.entries()].map(([key, exit]) => [
       key,
       w.ref(exit.toMap),
@@ -370,8 +373,8 @@ const exitsMap: FieldCodec = {
       exit.isAnAIExit,
     ]),
   decode: (v, ctx: ReadCtx) => {
-    const out = new globalThis.Map<string, Exit>();
-    for (const [key, toMap, x, y, isAI] of v as [string, RefMark | null, number, number, boolean][]) {
+    const out = new globalThis.Map<number, Exit>();
+    for (const [key, toMap, x, y, isAI] of v as [number, RefMark | null, number, number, boolean][]) {
       const exit = new Exit(toMap === null ? null : ctx.resolve(toMap), new Point(x, y));
       exit.isAnAIExit = isAI;
       // The key *is* the source position, and `Exit` does not store it, so it is
@@ -386,11 +389,13 @@ const exitsMap: FieldCodec = {
 /** A `globalThis.Map<string, Inventory>` of ground items, keyed by position. */
 const groundItems: FieldCodec = {
   kind: "inline",
-  encode: (inv: globalThis.Map<string, Inventory>, w: GraphWriter) =>
+  // Keys are `Map`'s positional encoding, carried through verbatim. See
+  // `Map.key` and the note on `exitsMap`.
+  encode: (inv: globalThis.Map<number, Inventory>, w: GraphWriter) =>
     [...inv.entries()].map(([key, inventory]) => [key, w.ref(inventory)]),
   decode: (v, ctx: ReadCtx) => {
-    const out = new globalThis.Map<string, Inventory>();
-    for (const [key, mark] of v as [string, RefMark][]) out.set(key, ctx.resolve(mark));
+    const out = new globalThis.Map<number, Inventory>();
+    for (const [key, mark] of v as [number, RefMark][]) out.set(key, ctx.resolve(mark));
     return out;
   },
 };
@@ -523,15 +528,14 @@ const mapSpec: ClassSpec = {
     for (const corpse of corpses) m.addCorpse(corpse);
 
     // Scents index by position too, but `addScent` would append to a list that
-    // is already correct, so the index is filled from the list directly.
+    // is already correct, so the index is filled from the list directly --
+    // through `indexScent`, which owns the key format. This used to rebuild the
+    // key by hand (`` `${x},${y}` ``), which meant a second definition of
+    // `Map`'s key encoding living in the serialiser. It did not break anything
+    // while the two agreed; the first change to the encoding left every restored
+    // scent unfindable at its own position, with nothing pointing at the cause.
     for (const scent of self.scentsList as OdorScent[]) {
-      const key = `${scent.position.x},${scent.position.y}`;
-      let list = self.scentsByPos.get(key) as OdorScent[] | undefined;
-      if (list === undefined) {
-        list = [];
-        self.scentsByPos.set(key, list);
-      }
-      list.push(scent);
+      m.indexScent(scent);
     }
   },
 };

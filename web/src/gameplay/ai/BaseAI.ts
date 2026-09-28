@@ -37,7 +37,6 @@ import { ItemGrenade, ItemGrenadeModel, ItemPrimedExplosive, ItemExplosive, Item
 import { ItemFood } from '@engine/items/ItemFood';
 import { ItemBodyArmor } from '@engine/items/ItemBodyArmor';
 import { ItemModel } from '@data/ItemModel';
-import { FactionID } from '@gameplay/GameFactions';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Game = any;
@@ -119,6 +118,24 @@ export abstract class BaseAI extends AIController {
   protected m_TabooTrades: Actor[] | null = null;
   protected m_RouteFinder: RouteFinder | null = null;
   protected m_ReservedEquipmentSlots: number = 0;
+
+  /**
+   * True when this controller is a `SoldierAI`.
+   *
+   * The C# writes this as `actor.Controller is SoldierAI` (BaseAI.cs:5808).
+   * TS cannot express that here: `SoldierAI extends OrderableAI extends
+   * BaseAI`, so importing it into this module closes a cycle that is walked
+   * during class *definition* (`class OrderableAI extends BaseAI`), not at
+   * call time - and it would hit the BaseAI temporal dead zone. A
+   * discriminant declared on the base and opted into by the subclass is the
+   * cycle-free equivalent of the C# type test.
+   *
+   * Note the C# test is about the *controller*, not the faction. That is not a
+   * stylistic difference: `GameActors` maps both ARMY_NATIONAL_GUARD and
+   * BLACKOPS_MAN to `SoldierAI`, but the BlackOps are faction `TheBlackOps`,
+   * so a faction test misses every one of them.
+   */
+  readonly isSoldierAI: boolean = false;
 
   get order(): ActorOrder | null {
     return this.m_Order;
@@ -423,7 +440,11 @@ export abstract class BaseAI extends AIController {
           score += locAge === 0 ? UNEXPLORED_LOC : locAge;
         }
 
-        if (mobj && (mobj as any).isDoor !== undefined) score += DOORWINDOWS;
+        // C# is `next.Map.GetMapObjectAt(next.Position) as DoorWindow`
+        // (BaseAI.cs:610). The port probed an `isDoor` property that
+        // MapObject never had, so DOORWINDOWS never applied and wandering
+        // actors had no bias toward doorways at all.
+        if (mobj instanceof DoorWindow) score += DOORWINDOWS;
         if (next.map?.getExitAt(next.position)) score += EXITS;
 
         if (game.rules.isAlmostSleepy(this.controlledActor) && next.map?.getTileAt(next.position.x, next.position.y)?.isInside) {
@@ -471,9 +492,21 @@ export abstract class BaseAI extends AIController {
           if (canCheckPush) {
             const obj = this.controlledActor.location.map?.getMapObjectAtPoint(next.position);
             if (obj && game.rules.canActorPush(this.controlledActor, obj).ok) {
-              const pushDir = game.rules.rollDirection();
-              if (game.rules.canPushObjectTo(obj, pushDir.applyTo(obj.location.position)).ok) {
-                return new ActionPush(this.controlledActor, game, obj, pushDir);
+              // push in a valid direction at random
+              // C# BaseAI.cs:692-699 collects every legal direction and rolls
+              // among them. The port rolled once and gave up on failure, so an
+              // object with one free side was unpushable 7 times out of 8.
+              const validPushes: Direction[] = [];
+              for (const pushDir of Direction.COMPASS) {
+                if (game.rules.canPushObjectTo(obj, pushDir.applyTo(obj.location.position)).ok) {
+                  validPushes.push(pushDir);
+                }
+              }
+              if (validPushes.length > 0) {
+                return new ActionPush(
+                  this.controlledActor, game, obj,
+                  validPushes[game.rules.roll(0, validPushes.length)]
+                );
               }
             }
           }
@@ -534,10 +567,31 @@ export abstract class BaseAI extends AIController {
     canCheckPush: boolean
   ): ActorAction | null {
     const currentDistance = game.rules.stdDistance(this.controlledActor.location.position, goal);
+    // C# BaseAI.cs:797. A starving or courageous actor weighs its need or its
+    // nerve against the damage, and takes the hit; everyone else walks around.
+    const imStarvingOrCourageous =
+      game.rules.isActorStarving(this.controlledActor) || this.m_Directive.courage === ActorCourage.COURAGEOUS;
+    const map = this.controlledActor.location.map;
     return this.behaviorBumpToward(game, goal, canCheckBreak, canCheckPush, (ptA, ptB) => {
       if (ptA.equals(ptB)) return 0;
-      const distance = game.rules.stdDistance(ptA, ptB);
-      if (distance >= currentDistance) return Number.NaN;
+      let distance = game.rules.stdDistance(ptA, ptB);
+      //if (distance < 2f) return distance;
+
+      // consider only moves that make takes us closer.
+      if (distance >= currentDistance)
+        return Number.NaN;
+
+      // avoid stepping on damaging traps, unless starving or courageous.
+      if (map && !imStarvingOrCourageous) {
+        const trapsDamage = this.computeTrapsMaxDamageForMe(game, map, ptA);
+        if (trapsDamage > 0) {
+          // if instant death, don't do it.
+          if (trapsDamage >= this.controlledActor.hitPoints) return Number.NaN;
+          // avoid.
+          distance += BaseAI.MOVE_INTO_TRAPS_PENALTY;
+        }
+      }
+
       return distance;
     });
   }
@@ -3202,6 +3256,31 @@ export abstract class BaseAI extends AIController {
     }
     return ammo;
   }
+
+  /**
+   * Loose ammo in the inventory, totalled per `ammoType`, in one pass.
+   *
+   * The inventory half of `countTotalAmmoInInventoryFor` depends only on the
+   * ammo *type*, so it is the same number for every weapon taking that ammo.
+   * The ranged-weapon branch of `rateItem` used to call the full scan once per
+   * owned weapon from inside a loop over the inventory, making that branch
+   * O(inv^2) — and `rateItem` runs for every item of every visible ground stack,
+   * for every living AI, every turn.
+   *
+   * Deliberately not cached between calls: the inventory changes whenever the AI
+   * picks something up, and a stale total here would quietly misrate a gun. This
+   * exists only for the one call site that would otherwise be quadratic;
+   * `countTotalAmmoInInventoryFor` stays the allocation-free single-weapon path.
+   */
+  private looseAmmoByType(): Map<number, number> {
+    const byType = new Map<number, number>();
+    const inv = this.controlledActor.inventory;
+    if (!inv) return byType;
+    for (const it of inv.items) {
+      if (it instanceof ItemAmmo) byType.set(it.ammoType, (byType.get(it.ammoType) ?? 0) + it.quantity);
+    }
+    return byType;
+  }
   protected countItemsFullStacksOfSameType(
     typeCtor: new (...args: any[]) => Item,
     excludingThisOne: Item | null = null
@@ -3348,10 +3427,14 @@ export abstract class BaseAI extends AIController {
       // has already at least better scoring rw with ammo
       const scoreIt = this.scoreRangedWeapon(it);
       const invItems = this.controlledActor.inventory?.items ?? [];
+      // One pass over the inventory for the loose-ammo totals, so the
+      // `countTotalAmmo*` calls below are O(1) each rather than O(inv).
+      const looseAmmo = this.looseAmmoByType();
       for (const invIt of invItems) {
         if (invIt !== it) {
           if (invIt instanceof ItemRangedWeapon) {
-            if (invIt.model === it.model && this.countTotalAmmoInInventoryFor(invIt) >= it.ammo)
+            const invItTotal = invIt.ammo + (looseAmmo.get(invIt.ammoType) ?? 0);
+            if (invIt.model === it.model && invItTotal >= it.ammo)
               return ItemRating.JUNK;
             if (invIt.ammo > 0 && this.scoreRangedWeapon(invIt) >= scoreIt)
               return ItemRating.JUNK;
@@ -4092,7 +4175,12 @@ export abstract class BaseAI extends AIController {
     return !inv.hasItemOfType(ItemFood);
   }
   protected isSoldier(actor: Actor | null): boolean {
-    return actor != null && actor.controller instanceof AIController && actor.faction.id === FactionID.TheArmy;
+    // C# is `actor != null && actor.Controller is SoldierAI` (BaseAI.cs:5806-5809).
+    // The port tested `actor.faction.id === FactionID.TheArmy` instead, which
+    // is a different set: the BlackOps run SoldierAI but are faction
+    // TheBlackOps, so they were invisible to the civilian "tell a friend about
+    // a soldier" rule. See the isSoldierAI discriminant above.
+    return actor != null && actor.controller instanceof BaseAI && actor.controller.isSoldierAI;
   }
   protected wouldLikeToSleep(game: Game, actor: Actor): boolean {
     return game.rules.isAlmostSleepy(actor) || game.rules.isActorSleepy(actor);

@@ -66,47 +66,59 @@ export class MemorizedSensor extends Sensor {
   sense(game: Game, actor: Actor): Percept[] {
     const currentTurn = actor.location.map?.localTime?.turnCounter ?? 0;
 
-    // 1. Forget aged percepts.
-    for (let i = 0; i < this.percepts.length; ) {
-      if (this.percepts[i].getAge(currentTurn) > this.persistance) {
-        this.percepts.splice(i, 1);
-      } else {
-        i++;
-      }
-    }
-
-    // 2. Forget dead actors or actors no longer on the same map.
-    for (let i = 0; i < this.percepts.length; ) {
-      const p = this.percepts[i];
+    // 1 + 2. Forget aged percepts, and dead actors / actors on another map.
+    //
+    // Both prunes are done in one rebuild-and-copy pass. They used to be two
+    // `splice(i, 1)`-in-a-loop passes, which is O(removed x length) memmove
+    // work; this runs once per actor per turn, and a survivor walking past a
+    // corpse each turn expires several percepts at once.
+    const kept: Percept[] = [];
+    for (const p of this.percepts) {
+      if (p.getAge(currentTurn) > this.persistance) continue;
       const a = p.percepted as Actor | null;
       if (a && typeof (a as any).isDead !== 'undefined') {
-        if ((a as Actor).isDead || (a as Actor).location?.map !== actor.location.map) {
-          this.percepts.splice(i, 1);
-          continue;
-        }
+        if ((a as Actor).isDead || (a as Actor).location?.map !== actor.location.map) continue;
       }
-      i++;
+      kept.push(p);
     }
+    this.percepts.length = 0;
+    for (const p of kept) this.percepts.push(p);
 
     // 3. Get fresh percepts from the wrapped sensor.
     const fresh = this.sensor.sense(game, actor);
 
     // 4. Update existing or add new.
+    //
+    // The lookup is a Map keyed on the perceived object rather than a linear
+    // identity scan, which made this O(fresh x remembered) -- a few hundred
+    // comparisons per actor per turn. The result is the same: one remembered
+    // Percept per perceived object, updated in place, anything unseen appended.
+    // (Sensors emit at most one percept per perceived object, so there are no
+    // duplicate keys to collapse -- the old code would have appended a second
+    // copy in that case.)
+    const byPercepted = new Map<unknown, Percept>();
+    for (const p of this.percepts) byPercepted.set(p.percepted, p);
+
     const toAdd: Percept[] = [];
     for (const fp of fresh) {
-      let updated = false;
-      for (const old of this.percepts) {
-        if (old.percepted === fp.percepted) {
-          old.location = fp.location;
-          old.turn = fp.turn;
-          updated = true;
-          break;
-        }
+      const old = byPercepted.get(fp.percepted);
+      if (old) {
+        old.location = fp.location;
+        old.turn = fp.turn;
+      } else {
+        byPercepted.set(fp.percepted, fp);
+        toAdd.push(fp);
       }
-      if (!updated) toAdd.push(fp);
     }
     for (const p of toAdd) this.percepts.push(p);
 
-    return this.percepts;
+    // Hand back a copy, never `this.percepts` itself. `BaseAI` mutates the
+    // lists it is given -- `filterOutUnreachablePercepts` splices in place --
+    // and three controllers (GangAI, CHARGuardAI, SoldierAI) return this array
+    // straight out of `updateSensors`, so leaking it would let one AI's
+    // reachability pruning silently delete 20 turns of another AI's memory.
+    // That has not happened yet only because every current caller happens to
+    // pass a `.filter()` copy.
+    return this.percepts.slice();
   }
 }

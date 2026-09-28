@@ -48,20 +48,20 @@ export class Map {
   readonly rect: Rect;
 
   private readonly tilesGrid: Tile[][];
-  private readonly exitsMap = new globalThis.Map<string, Exit>();
+  private readonly exitsMap = new globalThis.Map<number, Exit>();
   private readonly zonesList: Zone[] = [];
   private readonly actorsList: Actor[] = [];
   private readonly mapObjectsList: MapObject[] = [];
-  private readonly groundItemsMap = new globalThis.Map<string, Inventory>();
+  private readonly groundItemsMap = new globalThis.Map<number, Inventory>();
   private readonly corpsesList: Corpse[] = [];
   private readonly scentsList: OdorScent[] = [];
   private readonly timersList: TimedTask[] = [];
 
   // Spatial lookups
-  private readonly actorsByPos = new globalThis.Map<string, Actor>();
-  private readonly mapObjectsByPos = new globalThis.Map<string, MapObject>();
-  private readonly corpsesByPos = new globalThis.Map<string, Corpse[]>();
-  private readonly scentsByPos = new globalThis.Map<string, OdorScent[]>();
+  private readonly actorsByPos = new globalThis.Map<number, Actor>();
+  private readonly mapObjectsByPos = new globalThis.Map<number, MapObject>();
+  private readonly corpsesByPos = new globalThis.Map<number, Corpse[]>();
+  private readonly scentsByPos = new globalThis.Map<number, OdorScent[]>();
   private m_checkNextActorIndex = 0;
 
   constructor(seed: number, name: string, width: number, height: number) {
@@ -85,8 +85,38 @@ export class Map {
     }
   }
 
-  private static key(x: number, y: number): string {
-    return `${x},${y}`;
+  /**
+   * Positional key for the six spatial lookup tables above.
+   *
+   * This used to be `` `${x},${y}` ``, which allocated a string on *every*
+   * call — and these tables are read by `isWalkable`, `isTransparent`,
+   * `isBlockingFire` and `isBlockingThrow`, i.e. once per step of every
+   * raycast in `LOS` and once per candidate tile in `RouteFinder`. That is
+   * thousands of short-lived strings per actor per turn, all of them to do an
+   * integer-to-integer hash.
+   *
+   * `y * KEY_STRIDE + x` is injective for any two points whose `x` both lie in
+   * `0..KEY_STRIDE-1`, because then `y1*S + x1 == y2*S + x2` forces equal `x`
+   * and equal `y`. The stride is 1024 for headroom over the largest `x` that
+   * can actually be stored: maps are capped at 100x100
+   * (`RogueGame.MAP_MAX_WIDTH/HEIGHT`) and the widest thing ever keyed is a
+   * border-ring exit at `x == map.width`, so real keys stay well inside
+   * 0..1023. A coordinate beyond that — say x = 1500 — would alias onto
+   * (476, y+1), but nothing keys a tile that far out.
+   *
+   * Note the deliberate absence of an `isInBounds` check here. The string key
+   * had no bounds requirement, and these tables are not all in-bounds: border
+   * exits sit on the outside ring at `x == map.width`, so guarding the readers
+   * against `isInBounds` silently hid every exit on the map edge. The stride
+   * supplies the safety instead.
+   */
+  private static key(x: number, y: number): number {
+    return y * 1024 + x;
+  }
+
+  /** Inverse of `key`, for the one caller that has a key and needs a tile. */
+  private static keyToPoint(k: number): Point {
+    return new Point(k % 1024, Math.floor(k / 1024));
   }
 
   isInBounds(x: number, y: number): boolean {
@@ -586,8 +616,7 @@ export class Map {
   getGroundInventoryPosition(groundInv: Inventory): Point | null {
     for (const [k, inv] of this.groundItemsMap) {
       if (inv === groundInv) {
-        const [x, y] = k.split(",").map(Number);
-        return new Point(x, y);
+        return Map.keyToPoint(k);
       }
     }
     return null;
@@ -699,6 +728,22 @@ export class Map {
 
   addScent(scent: OdorScent): void {
     this.scentsList.push(scent);
+    this.indexScent(scent);
+  }
+
+  /**
+   * Put an already-listed scent into the position index, without touching
+   * `scentsList`.
+   *
+   * Separate from `addScent` purely so the save loader can rebuild the index
+   * from a list it has already restored. It used to hand-roll the key:
+   * `` const key = `${scent.position.x},${scent.position.y}` `` in
+   * `serialization/specs.ts`, which is a second definition of a format this
+   * file owns and did not track. The loader's copy was the only thing that
+   * failed when the key encoding changed, and it failed as "a restored scent
+   * cannot be found at its own position" rather than as a type error.
+   */
+  indexScent(scent: OdorScent): void {
     const k = Map.key(scent.position.x, scent.position.y);
     let list = this.scentsByPos.get(k);
     if (!list) {

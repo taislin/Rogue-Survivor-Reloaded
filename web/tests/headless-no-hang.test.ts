@@ -56,6 +56,23 @@ describe("headless runs terminate", () => {
 
   it("the 900-turn run that used to hang now completes", async () => {
     // Seed 8 specifically: this is the exact configuration that livelocked.
+    //
+    // **Why this no longer asserts 900 turns.** It used to, and it was the
+    // wrong assertion. The run loop breaks on `player.isDead`
+    // (`HeadlessRunner.ts:172`), so `turnsPlayed` is capped by *when the bot
+    // dies*, not by the turn limit — and the undead bot dies to survivor
+    // gunfire, which §1.2 of the plan already records as expected ("the undead
+    // bot dies to ranged fire"). `toBe(900)` was therefore asserting a balance
+    // outcome, not a liveness property, and it went red the moment any change
+    // made the AI fight back: the FOV-weather fix (`182c763`) and the AI
+    // fidelity fixes both end this run at ~150 turns. Those runs are *more*
+    // correct, not less.
+    //
+    // The consequence, stated plainly: with the bot dying at ~150 it never
+    // reaches turn 94, so no turn-count assertion here can catch a regression in
+    // the `DoLeaveMap` AP spend. **The deadline is the guard.** A livelock spins
+    // until the deadline rejects, and that is what notices — not an assertion
+    // on the turn total.
     const runner = new HeadlessRunner(8);
     const metrics = await withDeadline(
       runner.run({ worldSize: 1, maxTurns: 900, isUndead: true, bot: true }),
@@ -63,6 +80,6 @@ describe("headless runs terminate", () => {
       "seed 8 @900"
     );
     expect(metrics.error).toBeUndefined();
-    expect(metrics.turnsPlayed).toBe(900);
+    expect(metrics.turnsPlayed).toBeGreaterThan(0);
   }, 130_000);
 });
