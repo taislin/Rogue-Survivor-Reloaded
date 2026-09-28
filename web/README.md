@@ -186,6 +186,82 @@ shipping stale balance numbers, and `skills-data.test.ts` checks that
 
 ---
 
+## Changes from the C# original
+
+Everything here is a deliberate divergence, not a port that drifted. Each one is
+either something the original platform could not do, or a QOL decision where the
+original's answer is defensible but annoying. Nothing below changes game rules,
+balance, or the data tables — the C# in `src/` remains the reference for those,
+and the sim (`npm run sim`) is what proves a change here did not alter outcomes.
+
+### New options on the options screen
+
+Three of them, all marked `// browser port` in `engine/GameOptions.ts` against
+the C# `GameOptions.IDs` list, which has no equivalent:
+
+| Option | Choices | Notes |
+|---|---|---|
+| **Sprite style** | Classic, Deonapocalypse v9 r1, Genesis Classic 1.4 | Swaps the whole art set from `assets/images/`. Classic is the original. |
+| **Font** | JetBrains Mono (default), Iosevka Term Slab, Hack, IBM Plex Mono, Classic (system) | Four families vendored and subset to the glyphs the game can draw. See `src/ui/fonts.ts` for why they are bundled and subset. |
+| **View mode** | Top-down, First-person | A raycast renderer over the same map and rules. |
+
+The font option is the one most likely to surprise: every family is 0.6 em
+monospace, chosen so the fixed-advance layout maths (`MENU_CHAR_WIDTH`) stays
+correct whichever is selected. Only the glyph shapes change.
+
+### Mouse
+
+The original had a mouse, but it mostly only looked at things with it. The port
+keeps every existing mouse behaviour and adds:
+
+- **Break mode** — hover outlines the targeted tile green when the object can be
+  broken and red when it holds something you may not; a left click breaks it.
+  Empty floor gets no outline. The eight-direction keyboard path is unchanged.
+- **Barricade mode** — the same, for doors and fortifications.
+- **Double click** on an item picks it up; on a container, takes its top item.
+  Goes through the same `ActionTakeItem` / `ActionGetFromContainer` that bumping
+  uses, so it cannot reach further than a bump could.
+- **The right-click menu is suppressed.** It opened over the canvas on every
+  press, with "Save image as…" on it — the page is one canvas, so anything
+  painted in one is a saveable image to the browser. An RMB drag was also leaving
+  a text selection across the game.
+- **The options screen** takes the mouse: click a row to select, click again to
+  change, wheel to move the selection.
+
+### Gameplay feel
+
+- **Bumping never destroys anything.** The original stops on every bump into a
+  breakable and asks *"Really break <thing>? — Y/N"*, because a bump is also the
+  move key: walking into a wall to edge up to a window was one keystroke from
+  destroying it. Now bumping only moves, or reports the blocked move and names
+  the break key. `BREAK_MODE` (K) is unchanged and still a direction-pick, so
+  the deliberate act still needs a mode and a direction.
+- **Melee attacks lunge.** The attacker's sprite moves a quarter of a tile toward
+  the target and back, over four whole-pixel frames. Render-only: the map
+  position is never touched, so no rule, LOS check or save can observe it.
+  Disabled with the existing "animation delays" option.
+- **Menu text has no drop shadow.** The original drew every string twice, once in
+  a half-intensity colour at +1/+1. Faithful, and on a canvas that scales
+  fractionally the grey fringe compounds with the resample of an already
+  antialiased glyph edge. The shadow argument is still supported, so this is
+  reversible per call site.
+- **Map zoom** (`=` / `-`) and **look left/right** exist only in the port; the C#
+  `PlayerCommand` has no such members. Both are appended to the enum rather than
+  inserted, so stored keybindings keep their meaning.
+
+### Platform
+
+- **1366×768 (16:9)** instead of the C# 1024×768 (4:3). The extra width goes to
+  the map: 31 tiles across instead of 21. See [Display](#display).
+- **Desktop build.** `npm run build:release` produces zipped per-platform
+  archives — Windows, Linux, macOS — via Neutralino. See `scripts/build-release.mjs`.
+- **Offline play** in the browser, via a service worker. Deliberately *not*
+  shipped in the desktop archives; the reasoning is in that script's header.
+- **Death screenshots default to off**, because a silent file write in C# is a
+  download prompt on every death in a browser. The option is still there.
+
+---
+
 ## Known issues
 
 - **`tests/integration/reproducibility.test.ts` fails on Windows** with

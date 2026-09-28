@@ -975,6 +975,21 @@ export class RogueGame {
 	private m_LastSeenMouseButtons: MouseButton | null = null;
 
 	/**
+	 * Screen-pixel offsets for actors part-way through an attack animation, keyed
+	 * by actor. Read only by `DrawActorSprite`; see `AnimateAttackLunge`.
+	 *
+	 * Empty except during an animation, which is the point: the offsets are
+	 * cleared before `AnimateAttackLunge` returns, so a redraw for any other
+	 * reason cannot find a stale one and leave a sprite a few pixels off its tile.
+	 *
+	 * `globalThis.Map` because this file imports the *game's* `Map` from
+	 * `@data/Map`, which shadows the built-in of the same name - the same trap
+	 * `LOS.ts` aliases around. There is no way to import the built-in under a
+	 * different name, so it is reached through `globalThis`.
+	 */
+	private readonly m_AnimOffsets = new globalThis.Map<Actor, Point>();
+
+	/**
 	 * Minimap raster cache.
 	 *
 	 * The minimap image is a pure function of the visited set, tile minimap
@@ -14913,6 +14928,95 @@ export class RogueGame {
 		void groupB;
 	}
 
+	/**
+	 * Lifts an actor's sprite out of its tile toward a target and back.
+	 *
+	 * BROWSER PORT, and not a port. The C# is a top-down grid game drawn in GDI+
+	 * and has no frame between the roll and the hit: `DoMeleeAttack` shows two
+	 * coloured rects, a `//` icon, and the damage number, all at once. On canvas
+	 * that reads as a state change rather than a swing, because there is no
+	 * motion to carry the eye from the attacker to the defender. This supplies
+	 * that, and nothing else - no tweening library, no extra draw call, no state
+	 * in the save.
+	 *
+	 * The offset is a render-only value in `m_AnimOffsets`, consumed by
+	 * `DrawActorSprite` and cleared before returning. That is what keeps it
+	 * honest: the actor's `location.position` is never touched, so no rule, LOS
+	 * check, path or serialised session can observe the sprite being somewhere it
+	 * is not, and a redraw that happens for any other reason mid-animation sees
+	 * the real position on the next frame. The `finally` clears it even if the
+	 * delay is interrupted.
+	 *
+	 * Four frames rather than a smooth interpolation, and that is a deliberate
+	 * choice against looking smoother. The art is 32px tile sprites scaled by an
+	 * integer, so sub-pixel offsets are resampled by the canvas and produce a
+	 * shimmer that a still sprite does not have; whole-pixel steps keep every
+	 * sprite on the same pixel grid it is drawn on everywhere else. The attack
+	 * icon is already the "something happened" cue - this only gives it a
+	 * direction.
+	 *
+	 * The target offset is `TILE_SIZE / 4` - a quarter of a tile. Bigger than
+	 * that and a diagonal attacker visibly leaves its own tile, which reads as
+	 * the sprite being in the wrong place; smaller and the motion is lost against
+	 * a 32px sprite.
+	 */
+	private async AnimateAttackLunge(
+		attacker: Actor,
+		defender: Actor,
+	): Promise<void> {
+		// Off when animation delays are off: the whole point of that option is
+		// that the game resolves instantly, and a 4-frame delay in the middle of
+		// an attack is exactly what it is meant to remove.
+		if (!s_Options.isAnimDelayOn) return;
+
+		// Only where the player can see it. An unseen attacker swinging at an
+		// unseen defender is resolved from the message log alone, and a delay
+		// there is dead time on every fight in a district the player is not in.
+		if (
+			!this.IsVisibleToPlayer(attacker) &&
+			!this.IsVisibleToPlayer(defender)
+		) {
+			return;
+		}
+
+		// Same tile: there is no direction to lunge in, and a zero vector here
+		// would divide by nothing.
+		const dx = defender.location.position.x - attacker.location.position.x;
+		const dy = defender.location.position.y - attacker.location.position.y;
+		if (dx === 0 && dy === 0) return;
+
+		// Normalise per-axis rather than by vector length: a diagonal attacker
+		// moves the same 8px on each axis as a straight one, which is what reads
+		// as a lunge. Normalising the whole vector would make diagonals
+		// noticeably shorter than they are wide.
+		const reach = TILE_SIZE / 4;
+		const stepX = Math.sign(dx) * (reach / 2);
+		const stepY = Math.sign(dy) * (reach / 2);
+		// Out, out, back, back. Two frames each way at DELAY_SHORT/2 lands the
+		// whole thing at DELAY_SHORT, which is what an attack already costs in
+		// this game - so the animation costs no extra perceived time.
+		const frames: readonly Point[] = [
+			new Point(stepX, stepY),
+			new Point(stepX * 2, stepY * 2),
+			new Point(stepX, stepY),
+			new Point(0, 0),
+		];
+
+		try {
+			for (const offset of frames) {
+				this.m_AnimOffsets.set(attacker, offset);
+				this.RedrawPlayScreen();
+				await this.AnimDelay(DELAY_SHORT / 2);
+			}
+		} finally {
+			// Always, including on an interrupted wait. A leftover offset would
+			// leave the sprite permanently displaced with nothing to clear it,
+			// because `m_AnimOffsets` is otherwise only written here.
+			this.m_AnimOffsets.delete(attacker);
+			this.RedrawPlayScreen();
+		}
+	}
+
 	// C# DoMeleeAttack — RogueGame.cs:13669
 	// async: C# blocks on AddMessagePressEnter/AnimDelay/KillActor/DoMakeAggression.
 	async DoMeleeAttack(attacker: Actor, defender: Actor): Promise<void> {
@@ -15000,6 +15104,16 @@ export class RogueGame {
 				this.AddOverlay(new OverlayImage(attPos, GameImages.ICON_MELEE_ATTACK));
 			} catch (e) { reportSwallowed("DoMeleeAttack", e); }
 		}
+
+		// The swing, before the outcome is applied. Deliberately *before* the
+		// damage rather than at the moment of contact: the rolls are already
+		// decided by this point, so a "contact" frame would have to either
+		// resolve damage inside the animation (which puts an await in the middle
+		// of the rules and makes a save taken mid-swing capture half an attack)
+		// or spoil the surprise of a miss. Leading with the swing means the
+		// damage number always appears on the frame the sprite comes to rest,
+		// which is the readable order.
+		await this.AnimateAttackLunge(attacker, defender);
 
 		// Hit vs Missed
 		if (hitRoll > defRoll) {
@@ -21129,6 +21243,20 @@ export class RogueGame {
 
 	// C# DrawActorSprite — RogueGame.cs:18496
 	DrawActorSprite(actor: Actor, screen: Point, tint: Color): void {
+		// Attack lunge, applied here because this is the one place every part of
+		// the actor is positioned from: the model, the decorations and the
+		// equipment all derive their coordinates from `screen`, so one offset
+		// moves the whole figure together. Offsetting each of them separately
+		// would slide the clothes off the body.
+		//
+		// Purely a render offset. The actor's map position is untouched, so
+		// nothing in the rules can observe it and no save file records it - see
+		// `AnimateAttackLunge`.
+		const offset = this.m_AnimOffsets.get(actor);
+		if (offset !== undefined) {
+			screen = screen.add(offset);
+		}
+
 		let gx = screen.x;
 		let gy = screen.y;
 
