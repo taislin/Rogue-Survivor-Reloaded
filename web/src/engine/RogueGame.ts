@@ -70,6 +70,7 @@ import {
 	ZupDays,
 } from "@engine/GameOptions";
 import { GameSaveManager } from "@engine/GameSave";
+import { remapForView, resolveMoveDirection, turnFacing } from "@engine/firstperson/Controls";
 import { HiScore, HiScoreTable } from "@engine/HiScoreTable";
 import {
 	type GameKeyEvent,
@@ -2788,6 +2789,16 @@ export class RogueGame {
 	// C# StartNewGame — RogueGame.cs:2178
 	async StartNewGame(): Promise<void> {
 		const isUndead = this.m_CharGen.isUndead;
+
+		// Browser port: the first-person facing is per-game state, so it starts
+		// north every time.
+		//
+		// It is an instance field rather than a module global precisely so this is
+		// the only place it needs resetting — but a seeded sim run twice in one
+		// process would otherwise inherit the heading of the previous run, and two
+		// runs that differ only in a remembered heading are the hardest kind of
+		// non-determinism to notice. Pinned by a test.
+		this.m_FirstPersonFacing = Direction.N;
 
 		// generate world.
 		this.GenerateWorld(true, s_Options.citySize);
@@ -5934,13 +5945,20 @@ export class RogueGame {
 				//////////////
 				// Handle key
 				//////////////
-				const command = InputTranslator.keyToCommand(
-					RogueGame.KeyBindings(),
-					inKey.key,
-					inKey.ctrl,
-					inKey.alt,
-					inKey.shift,
-					inKey.code,
+				// Browser port: the first-person view re-aims the movement keys. Done
+				// here, on the translated command, so the binding table keeps one
+				// meaning per key and no key is bound to two commands. The top-down
+				// view makes this the identity, which is asserted in the tests.
+				const command = remapForView(
+					InputTranslator.keyToCommand(
+						RogueGame.KeyBindings(),
+						inKey.key,
+						inKey.ctrl,
+						inKey.alt,
+						inKey.shift,
+						inKey.code,
+					),
+					s_Options.viewMode,
 				);
 				if (command === PlayerCommand.QUIT_GAME) {
 					// quit game.
@@ -6018,6 +6036,27 @@ export class RogueGame {
 							this.StepMapZoom(-1);
 							break;
 
+						// Browser port: first-person turning. Like the zoom keys, this
+						// redraws and leaves `loop` alone, so it costs no turn and no
+						// action point — turning is for looking, not for acting. The
+						// arrow keys reach these through `remapForView` below rather
+						// than through the binding table, so no key is bound twice.
+						case PlayerCommand.LOOK_LEFT:
+							this.TurnFirstPerson(-1);
+							break;
+
+						case PlayerCommand.LOOK_RIGHT:
+							this.TurnFirstPerson(1);
+							break;
+
+						// Browser port: switch view. Writes the option and then runs the
+						// *same* `ApplyOptions` the options screen runs, so there is one
+						// place a view change takes effect. Also free, like the zoom and
+						// look keys: it redraws and leaves `loop` alone.
+						case PlayerCommand.VIEW_MODE_TOGGLE:
+							this.ToggleViewMode();
+							break;
+
 						case PlayerCommand.CITY_INFO:
 							await this.HandleCityInfo();
 							break;
@@ -6041,61 +6080,29 @@ export class RogueGame {
 							this.StartPlayerWaitLong(player);
 							break;
 
+						// Browser port: the eight compass moves collapse into one case,
+						// because in first person two of them turn instead and the
+						// other two walk *relative* to the camera. The direction is
+						// resolved by `resolveMoveDirection` rather than named here, so
+						// the top-down behaviour is the identity and the first-person
+						// behaviour is a function of the facing — both in one place,
+						// and both unit-testable without a browser.
 						case PlayerCommand.MOVE_N:
-							if (await this.TryPlayerInsanity()) {
-								loop = false;
-								break;
-							}
-							loop = !(await this.DoPlayerBump(player, Direction.N));
-							break;
 						case PlayerCommand.MOVE_NE:
-							if (await this.TryPlayerInsanity()) {
-								loop = false;
-								break;
-							}
-							loop = !(await this.DoPlayerBump(player, Direction.NE));
-							break;
 						case PlayerCommand.MOVE_E:
-							if (await this.TryPlayerInsanity()) {
-								loop = false;
-								break;
-							}
-							loop = !(await this.DoPlayerBump(player, Direction.E));
-							break;
 						case PlayerCommand.MOVE_SE:
-							if (await this.TryPlayerInsanity()) {
-								loop = false;
-								break;
-							}
-							loop = !(await this.DoPlayerBump(player, Direction.SE));
-							break;
 						case PlayerCommand.MOVE_S:
-							if (await this.TryPlayerInsanity()) {
-								loop = false;
-								break;
-							}
-							loop = !(await this.DoPlayerBump(player, Direction.S));
-							break;
 						case PlayerCommand.MOVE_SW:
-							if (await this.TryPlayerInsanity()) {
-								loop = false;
-								break;
-							}
-							loop = !(await this.DoPlayerBump(player, Direction.SW));
-							break;
 						case PlayerCommand.MOVE_W:
-							if (await this.TryPlayerInsanity()) {
-								loop = false;
-								break;
-							}
-							loop = !(await this.DoPlayerBump(player, Direction.W));
-							break;
 						case PlayerCommand.MOVE_NW:
 							if (await this.TryPlayerInsanity()) {
 								loop = false;
 								break;
 							}
-							loop = !(await this.DoPlayerBump(player, Direction.NW));
+							loop = !(await this.DoPlayerBump(
+								player,
+								this.resolveMoveDirection(command),
+							));
 							break;
 						case PlayerCommand.USE_EXIT:
 							if (await this.TryPlayerInsanity()) {
@@ -19826,6 +19833,106 @@ export class RogueGame {
 	}
 
 	/**
+	 * Which way the player is facing in the first-person view.
+	 *
+	 * A `Direction`, not an angle, and that is load-bearing rather than tidy: the
+	 * view rotates in eighths of a turn, which is exactly one step of
+	 * `Direction.left`/`right`, so the facing is *always* one of the eight compass
+	 * directions and the direction a player walks forward is that value exactly.
+	 * No rounding, so the view and the controls can never disagree.
+	 *
+	 * An instance field, not a module-level `let` like `s_MapZoom` above. A module
+	 * global would survive a new game, and a first-person run that started facing
+	 * wherever the *previous* game left off is a deterministic-run hazard: two
+	 * seeded sims would diverge on nothing but a remembered heading.
+	 *
+	 * **There is no `actor.direction`.** Neither the C# `Actor` (1083 lines, no
+	 * match for the word) nor the port has any facing field, and nothing in `Rules`
+	 * or the AI reads one — the engine's direction is a *command argument* threaded
+	 * from the keypress, never state read back off an actor. So this is purely
+	 * presentational and cannot perturb the simulation, which is why it needs no
+	 * save field and no `actorSpec` entry.
+	 */
+	private m_FirstPersonFacing: Direction = Direction.N;
+
+	/**
+	 * The first-person camera's heading, one of the eight compass directions.
+	 *
+	 * Exposed rather than kept private because `DrawMap` builds the camera from it
+	 * and the test suite asserts on it; neither is a reason to duplicate the state.
+	 */
+	get FirstPersonFacing(): Direction {
+		return this.m_FirstPersonFacing;
+	}
+
+	/**
+	 * Turns by `steps` eighths of a turn, and repaints.
+	 *
+	 * Free: no action point, no turn, no stamina. It is dispatched beside the map
+	 * zoom keys, which redraw and leave the play loop's `loop` flag alone, and that
+	 * is exactly the property that makes turning a look rather than an action. The
+	 * rotation is exact — `Direction.COMPASS` indexed, no interpolation — so eight
+	 * presses return to the same heading and a save/reload cannot drift.
+	 */
+	TurnFirstPerson(steps: number): void {
+		const turned = turnFacing(this.m_FirstPersonFacing, steps);
+		if (turned === this.m_FirstPersonFacing) return;
+		this.m_FirstPersonFacing = turned;
+		// No-op before a game exists, the same guard `SetMapZoom` uses: there is no
+		// player to centre on and nothing to repaint yet.
+		if (this.m_Player == null) return;
+		this.RedrawPlayScreen();
+	}
+
+	/**
+	 * Switches between the two views, through the option.
+	 *
+	 * A convenience over the options screen, not a second mechanism: it writes
+	 * `s_Options.viewMode` and then calls the same `ApplyOptions` the options
+	 * screen calls, so there is exactly one place a view change takes effect. A
+	 * hotkey that had its own copy of the logic is how the two would drift.
+	 *
+	 * It also says what changed, because the *controls* change with it — left and
+	 * right stop meaning west and east — and a player who switched views without
+	 * reading the options description would reasonably conclude the arrow keys had
+	 * broken.
+	 */
+	ToggleViewMode(): void {
+		s_Options.viewMode = GameOptions.isFirstPersonView(s_Options.viewMode)
+			? "top-down"
+			: "first-person";
+		this.ApplyOptions(true);
+		this.m_MessageManager.add(
+			new Message(
+				GameOptions.isFirstPersonView(s_Options.viewMode)
+					? "First person view. Left and Right turn you; Up and Down walk you forward and back."
+					: "Top-down view. The arrow keys walk you again.",
+				this.m_Session.worldTime.turnCounter,
+				Color.LightGray,
+			),
+		);
+	}
+
+	/**
+	 * The direction a movement command actually walks in.
+	 *
+	 * Top-down this is the command's own compass direction, so the eight cases in
+	 * the play loop no longer name one each. First person it is the camera's facing
+	 * or its opposite.
+	 */
+	private resolveMoveDirection(command: PlayerCommand): Direction {
+		const direction = resolveMoveDirection(
+			command,
+			this.m_FirstPersonFacing,
+			s_Options.viewMode,
+		);
+		// A null here means a command that is not a movement at all, which cannot
+		// reach this method — the cases are only the eight `MOVE_*`. Falling back to
+		// north rather than throwing keeps a future ninth case from ending the game.
+		return direction ?? Direction.N;
+	}
+
+	/**
 	 * The current map zoom, 1 or 2.
 	 *
 	 * Display-only, like the widescreen canvas this file already diverges on
@@ -22826,6 +22933,22 @@ export class RogueGame {
 		}
 
 		if (!s_Options.playMusic) this.m_MusicManager.stop();
+
+		// Browser port: the view mode. The option screen and the F key both land
+		// here, so this is the one place a view change takes effect.
+		//
+		// The facing resets rather than carrying over. There is nothing to carry it
+		// *from*: the top-down view has no heading — the engine has no facing at
+		// all, and the view is simply centred on the player — so any value here
+		// would be invented, and an invented default that differs between two
+		// sessions is a determinism hazard for the seeded sim.
+		//
+		// Only when a game exists: before one, there is no player, no view rect to
+		// recompute and nothing drawn. The same guard `SetMapZoom` uses.
+		if (this.m_Player != null) {
+			this.m_FirstPersonFacing = Direction.N;
+			this.ComputeViewRect(this.m_Player.location.position);
+		}
 	}
 
 	// C# LoadKeybindings — RogueGame.cs:19873

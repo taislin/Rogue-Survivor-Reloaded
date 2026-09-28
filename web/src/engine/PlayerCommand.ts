@@ -74,4 +74,7 @@ export enum PlayerCommand {
    */
   ZOOM_IN,
   ZOOM_OUT,
+  LOOK_LEFT,
+  LOOK_RIGHT,
+  VIEW_MODE_TOGGLE,
 }

@@ -181,6 +181,35 @@ export class Keybindings {
      */
     this.set(PlayerCommand.ZOOM_IN, '=');
     this.set(PlayerCommand.ZOOM_OUT, '-');
+
+    /*
+     * Turning, for the first-person view.
+     *
+     * `V` rather than the arrow keys, on purpose. The *design* is that Left and
+     * Right turn and Up and Down walk — but that remap happens where the command
+     * is dispatched, not in the binding table, so a binding for LOOK_LEFT on an
+     * arrow key would fight MOVE_W for the same key and one of them would win
+     * depending on the view mode. Keeping `V` here means the arrow keys keep their
+     * one meaning in the binding table, the remap is a single pure function over
+     * the command, and it is testable over all eight movement commands at once.
+     *
+     * Two keys, because a free action wants a comfortable pair and either hand
+     * reaches both.
+     */
+    this.set(PlayerCommand.LOOK_LEFT, 'V');
+    this.addKey(PlayerCommand.LOOK_LEFT, '[');
+    this.set(PlayerCommand.LOOK_RIGHT, 'C');
+    this.addKey(PlayerCommand.LOOK_RIGHT, ']');
+
+    /*
+     * Switching between the two views. The options screen is the real home for
+     * the choice — it persists through the `m_` prefix, is readable before the
+     * first frame, and has a description explaining that the arrow keys change
+     * meaning — so this is a shortcut rather than the only way there. It writes
+     * the *option* and then runs the same `ApplyOptions` the options screen does,
+     * so there is one place the change takes effect rather than two.
+     */
+    this.set(PlayerCommand.VIEW_MODE_TOGGLE, 'F');
   }
 
   /**
