@@ -18,6 +18,7 @@ import { OrderableAI } from './OrderableAI';
 import { ExplorationData } from './ExplorationData';
 import { LOSSensor, SensingFilter } from './GameplaySensors';
 import { SpecialActions } from './RouteFinder';
+import { LOS } from "@engine/LOS";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Game = any;
@@ -116,7 +117,7 @@ export class GangAI extends OrderableAI {
     const hasCurrentEnemies = currentEnemies !== null;
     const hasAnyEnemies = allEnemies !== null;
     const checkOurLeader = actor.hasLeader && !this.dontFollowLeader;
-    const seeLeader = checkOurLeader && fov.has(`${actor.leader!.location.position.x},${actor.leader!.location.position.y}`);
+    const seeLeader = checkOurLeader && LOS.fovHas(fov, actor.leader!.location.position);
     const isLeaderFighting = checkOurLeader && this.isAdjacentToEnemy(game, actor.leader);
 
     // exploration.
@@ -304,7 +305,7 @@ export class GangAI extends OrderableAI {
     if (checkOurLeader) {
       const leader = actor.leader!;
       const lastKnownLeaderPosition = leader.location.position;
-      const isLeaderVisible = fov.has(`${lastKnownLeaderPosition.x},${lastKnownLeaderPosition.y}`);
+      const isLeaderVisible = LOS.fovHas(fov, lastKnownLeaderPosition);
       const maxDist = leader.isPlayer
         ? GangAI.FOLLOW_PLAYERLEADER_MAXDIST
         : GangAI.FOLLOW_NPCLEADER_MAXDIST;
@@ -343,7 +344,7 @@ export class GangAI extends OrderableAI {
         if (game.rules.rollChance(GangAI.DONT_LEAVE_BEHIND_EMOTE_CHANCE)) {
           if (target.isSleeping) {
             game.DoEmote(actor, `patiently waits for ${target.name} to wake up.`);
-          } else if (fov.has(`${target.location.position.x},${target.location.position.y}`)) {
+          } else if (LOS.fovHas(fov, target.location.position)) {
             game.DoEmote(actor, `Hey ${target.name}! Fucking move!`);
           } else {
             game.DoEmote(actor, `Where is that ${target.name} retard?`);

@@ -8,12 +8,68 @@ import type { Map as GameMap } from '@data/Map';
 import type { Weather } from '@data/Weather';
 import { Direction } from '@engine/Direction';
 import { Point } from '@engine/Point';
+import { coordKey, coordKeyToPoint } from '@engine/CoordKey';
 import type { WorldTime } from '@engine/WorldTime';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Rules = any;
 
+/**
+ * A Field Of View: the set of tile coordinates an actor can see.
+ *
+ * Keyed by {@link LOS.fovKey}, which is the shared {@link coordKey} — the same
+ * key `Map`'s spatial tables use. It was a `"x,y"` string until recently, which
+ * cost ~5 000 short-lived string allocations and `Set` hash operations per actor
+ * per turn; see {@link CoordKey} for the measurement and the formula.
+ */
+export type FOV = ReadonlySet<number>;
+
 export class LOS {
+  /**
+   * The key a FOV set stores a tile under.
+   *
+   * Read the two mistakes this exists to prevent, both of which were live:
+   *
+   * 1. **`Point.toString()` is not this.** `Point.toString()` renders `(x, y)` —
+   *    parentheses, and a space after the comma — while this is `x,y`. Asking
+   *    `fov.has(somePoint.toString())` therefore compiles, type-checks, and is
+   *    **always false**. Four call sites in `RogueGame` did exactly that, which
+   *    is what silently disabled the whole of ORDER_MODE: the player could not
+   *    click a tile to order a follower to barricade, guard, patrol or build.
+   * 2. **`Point` is a class here and a struct in the C#.** So `Set<Point>.has(p)`
+   *    and `a === b` are *reference* identity in the port where the C# had value
+   *    equality, and never true for two separately-constructed points. The C# at
+   *    `RogueGame.cs:9340` is `fovs[iFo].Contains(player.Location.Position)` on
+   *    a `HashSet<Point>` of a struct, which compares by value. A third site
+   *    (`RogueGame.DrawPlayerActorTargets`) compared two `Point`s with `==` for
+   *    the same reason and never ran.
+   *
+   * So: never hand-write the key, never put a `Point` in a FOV, and never
+   * compare two `Point`s with `==` — use `fovHas`, `fovPoints`, and
+   * `Point.equals`. `tests/point-identity.test.ts` fails if any of those creep
+   * back in.
+   */
+  static fovKey(x: number, y: number): number {
+    return coordKey(x, y);
+  }
+
+  /** Whether `fov` contains the tile at `p`. The only safe FOV membership test. */
+  static fovHas(fov: FOV, p: Point): boolean {
+    return fov.has(coordKey(p.x, p.y));
+  }
+
+  /**
+   * The FOV's tiles as `Point`s, for the callers that need to iterate.
+   *
+   * Callers that walk the whole FOV to find one thing should prefer
+   * {@link LOS.fovHas} against a candidate position, which allocates nothing.
+   */
+  static fovPoints(fov: FOV): Point[] {
+    const out: Point[] = [];
+    for (const key of fov) out.push(coordKeyToPoint(key));
+    return out;
+  }
+
   /**
    * Asymmetric Bresenham line trace.
    *
@@ -181,7 +237,7 @@ export class LOS {
     from: Point,
     to: Point,
     maxRange: number,
-    visibleSet: Set<string>
+    visibleSet: Set<number>
   ): boolean {
     return LOS.asymmetricBresenhamTrace(
       maxRange,
@@ -194,7 +250,7 @@ export class LOS {
       (x, y) => {
         const viewThrough = (x === to.x && y === to.y) || map.isTransparent(x, y);
         if (viewThrough) {
-          visibleSet.add(`${x},${y}`);
+          visibleSet.add(coordKey(x, y));
         }
         return viewThrough;
       }
@@ -210,9 +266,9 @@ export class LOS {
     actor: Actor,
     time: WorldTime,
     weather: Weather
-  ): Set<string> {
+  ): Set<number> {
     const map = actor.location.map;
-    const visibleSet = new Set<string>();
+    const visibleSet = new Set<number>();
     if (!map) return visibleSet;
 
     const from = actor.location.position;
@@ -230,7 +286,7 @@ export class LOS {
       for (let y = ymin; y <= ymax; y++) {
         const to = new Point(x, y);
         if (rules.losDistance(from, to) > maxRange) continue;
-        const key = `${x},${y}`;
+        const key = coordKey(x, y);
         if (visibleSet.has(key)) continue;
 
         if (!LOS.fovSub(map, from, to, maxRange, visibleSet)) {
@@ -252,7 +308,7 @@ export class LOS {
       let count = 0;
       for (const d of Direction.COMPASS) {
         const next = d.applyTo(wall);
-        if (visibleSet.has(`${next.x},${next.y}`)) {
+        if (visibleSet.has(coordKey(next.x, next.y))) {
           const tile = map.getTileAt(next.x, next.y);
           if (tile && tile.model.isTransparent && tile.model.isWalkable) {
             count++;
@@ -260,7 +316,7 @@ export class LOS {
         }
       }
       if (count >= 3) {
-        visibleSet.add(`${wall.x},${wall.y}`);
+        visibleSet.add(coordKey(wall.x, wall.y));
       }
     }
 

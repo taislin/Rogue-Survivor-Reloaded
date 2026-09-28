@@ -12,6 +12,7 @@ import { Location } from '@data/Location';
 import { Point } from '@engine/Point';
 import { Percept, Sensor } from '@engine/ai/Sensors';
 import { Weather } from '@data/Weather';
+import { LOS, type FOV } from "@engine/LOS";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Game = any;
@@ -27,7 +28,7 @@ export const enum SensingFilter {
 }
 
 export class LOSSensor extends Sensor {
-  private _fov: Set<string> = new Set();
+  private _fov: Set<number> = new Set();
   filters: number;
 
   constructor(filters: number) {
@@ -36,7 +37,7 @@ export class LOSSensor extends Sensor {
   }
 
   /** The FOV point-set from the last call to `sense()`. */
-  get fov(): ReadonlySet<string> { return this._fov; }
+  get fov(): FOV { return this._fov; }
 
   sense(game: Game, actor: Actor): Percept[] {
     // Compute FOV via game rules.
@@ -74,8 +75,8 @@ export class LOSSensor extends Sensor {
 
       if (fovSize < actorCount) {
         // FOV iteration (cheaper when many actors on map).
-        for (const key of this._fov) {
-          const [x, y] = key.split(',').map(Number);
+        for (const p of LOS.fovPoints(this._fov)) {
+          const { x, y } = p;
           const other = map.getActorAt(x, y);
           if (other && other !== actor) {
             list.push(new Percept(other, turn, other.location));
@@ -87,8 +88,7 @@ export class LOSSensor extends Sensor {
           if (other === actor) continue;
           const dist = game.rules.losDistance(actor.location.position, other.location.position);
           if (dist > maxRange) continue;
-          const key = `${other.location.position.x},${other.location.position.y}`;
-          if (this._fov.has(key)) {
+          if (LOS.fovHas(this._fov, other.location.position)) {
             list.push(new Percept(other, turn, other.location));
           }
         }
@@ -97,8 +97,8 @@ export class LOSSensor extends Sensor {
 
     // ── Items ─────────────────────────────────────────────────────────────
     if (this.filters & SensingFilter.ITEMS) {
-      for (const key of this._fov) {
-        const [x, y] = key.split(',').map(Number);
+      for (const p of LOS.fovPoints(this._fov)) {
+        const { x, y } = p;
         const inv = map.getItemsAt(new Point(x, y));
         if (inv && !inv.isEmpty) {
           list.push(new Percept(inv, turn, new Location(map, new Point(x, y))));
@@ -108,8 +108,8 @@ export class LOSSensor extends Sensor {
 
     // ── Corpses ───────────────────────────────────────────────────────────
     if (this.filters & SensingFilter.CORPSES) {
-      for (const key of this._fov) {
-        const [x, y] = key.split(',').map(Number);
+      for (const p of LOS.fovPoints(this._fov)) {
+        const { x, y } = p;
         const corpses = map.getCorpsesAt(new Point(x, y));
         if (corpses && corpses.length > 0) {
           list.push(new Percept(corpses, turn, new Location(map, new Point(x, y))));

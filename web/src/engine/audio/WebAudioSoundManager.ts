@@ -1,6 +1,7 @@
 import { ISoundManager } from './ISoundManager';
 import { soundPath } from '@engine/AssetPaths';
 import { sfxGain } from '@gameplay/AudioLevels';
+import { reportSwallowed } from "@engine/Diagnostics";
 
 export class WebAudioSoundManager implements ISoundManager {
   private ctx: AudioContext | null = null;
@@ -39,7 +40,9 @@ export class WebAudioSoundManager implements ISoundManager {
         buffer = await this.ctx.decodeAudioData(arrayBuffer);
         this.buffers.set(soundId, buffer);
       } catch (e) {
-        // Fallback or ignore missing sound asset
+        // A sound id with no file behind it is a packaging bug, not a condition
+        // to absorb: the player hears nothing and the log stays empty.
+        reportSwallowed(`WebAudioSoundManager.play("${soundId}")`, e);
         return;
       }
     }
@@ -86,7 +89,9 @@ export class WebAudioSoundManager implements ISoundManager {
           this.buffers.set(id, buffer);
         }
       } catch (e) {
-        // ignore individual preload failures
+        // Preloading is best-effort per id, so one missing file must not abandon
+        // the rest — but it still gets said, for the same reason as above.
+        reportSwallowed(`WebAudioSoundManager.preload("${id}")`, e);
       }
     }
   }

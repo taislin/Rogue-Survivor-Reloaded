@@ -150,14 +150,34 @@ function setup(): void {
  * the form "sleep 150 ms and it should have happened" is a coin flip on how
  * loaded the machine is. Polling to a deadline is not: it waits exactly as long
  * as the work takes and no longer.
+ *
+ * The default has to cover the *slow* case, not the typical one, because this
+ * file is the suite's only wall-clock-sensitive one. It was 20 s while the
+ * per-test budgets were 30 s, and a single background turn under load
+ * outlasts both — so the deadline fired first and reported a real pass as a
+ * failure. 120 s leaves room for the ~1 min turn the comment above measures,
+ * plus the second turn some of these tests wait for.
  */
-async function waitUntil(what: string, condition: () => boolean, deadlineMs = 20_000): Promise<void> {
+async function waitUntil(what: string, condition: () => boolean, deadlineMs = 120_000): Promise<void> {
   const until = Date.now() + deadlineMs;
   while (!condition()) {
     if (Date.now() > until) throw new Error(`timed out waiting for: ${what}`);
     await new Promise<void>((r) => setTimeout(r, 25));
   }
 }
+
+/**
+ * Per-test budget for the tests that wait on real background simulation.
+ *
+ * The reasoning at the `await waiting` sites below is that a deadline there
+ * "would turn a loaded machine into a spurious failure" — but the `30_000` that
+ * was passed anyway *is* a deadline, and a tighter one than the work needs. The
+ * two statements contradicted each other, and the test lost: it passed alone in
+ * 2 s and timed out in the full run, which is CI on `ubuntu-latest`. These tests
+ * are bounded by this budget rather than by a `Promise.race`, so it has to
+ * exceed a loaded background turn.
+ */
+const SIM_BUDGET_MS = 180_000;
 
 /** The player's district and the neighbours behind it, by turn deficit. */
 function lagBehind(district: District): number[] {
@@ -249,7 +269,7 @@ describe("idle catch-up inside the input wait", () => {
 
     ui.postKey(".");       // let the wait return
     await Promise.race([waiting, new Promise<void>((r) => setTimeout(r, 5_000))]);
-  }, 30_000);
+  }, SIM_BUDGET_MS);
 
   it("does not run before the delay has passed", async () => {
     await createLag(4);
@@ -274,7 +294,7 @@ describe("idle catch-up inside the input wait", () => {
 
     ui.postKey(".");
     await Promise.race([waiting, new Promise<void>((r) => setTimeout(r, 5_000))]);
-  }, 30_000);
+  }, SIM_BUDGET_MS);
 
   it("treats mouse movement as NOT activity, so reading the map still catches up", async () => {
     // The reason movement is excluded: a player studying the map moves the cursor
@@ -303,7 +323,7 @@ describe("idle catch-up inside the input wait", () => {
 
     ui.postKey(".");
     await Promise.race([last, new Promise<void>((r) => setTimeout(r, 5_000))]);
-  }, 30_000);
+  }, SIM_BUDGET_MS);
 
   it("a keypress stops the catch-up", async () => {
     await createLag(4);
@@ -314,15 +334,23 @@ describe("idle catch-up inside the input wait", () => {
     const waiting = game.WaitKeyOrMouse();
     clock.advance(1500);
     ui.postKey("a");                        // the player acts
-    // No timeout: the poll may be part-way through a background turn, and a
-    // deadline here would turn a loaded machine into a spurious failure.
+    // The poll may be part-way through a background turn, so this cannot be
+    // bounded by a short `Promise.race` — a deadline here really would turn a
+    // loaded machine into a spurious failure. What bounds it instead is
+    // `SIM_BUDGET_MS`, which is sized against a loaded background turn rather
+    // than against this one. (The previous `30_000` was the deadline in
+    // disguise, and it was shorter than the work, so the test failed in the
+    // full suite while passing alone.)
     const ev = await waiting;
     expect(ev.key!.key).toBe("a");
 
-    // And no catch-up happens after they have acted.
-    await new Promise<void>((r) => setTimeout(r, 150));
+    // And no catch-up happens after they have acted. This window is the only
+    // thing that makes the assertion mean anything, so it is deliberately longer
+    // than a background turn would take to *start*: a catch-up that leaked past
+    // the keypress would fire on the very next poll.
+    await new Promise<void>((r) => setTimeout(r, 500));
     expect(Math.max(...lagBehind(district))).toBe(before);
-  }, 30_000);
+  }, SIM_BUDGET_MS);
 });
 
 describe("a background turn must not take a keypress", () => {

@@ -54,9 +54,10 @@ import {
 	ActionWait,
 	SayFlags,
 } from "@engine/actions/Actions";
-import type { IMusicManager } from "@engine/audio/IMusicManager";
+import { MusicPriority, type IMusicManager } from "@engine/audio/IMusicManager";
 import { NullMusicManager } from "@engine/audio/NullMusicManager";
 import { Color } from "@engine/Color";
+import { fireAndForget, reportSwallowed } from "@engine/Diagnostics";
 import { DiceRoller } from "@engine/DiceRoller";
 import { Direction } from "@engine/Direction";
 import { AdvisorHint, GameHintsStatus } from "@engine/GameHints";
@@ -110,7 +111,7 @@ import {
 	ItemWeaponModel,
 } from "@engine/items/ItemWeapon";
 import { InputTranslator, Keybindings } from "@engine/Keybindings";
-import { LOS } from "@engine/LOS";
+import { LOS, type FOV } from "@engine/LOS";
 import { MessageManager } from "@engine/MessageManager";
 import {
 	Board,
@@ -926,7 +927,13 @@ export class RogueGame {
 	m_HasLoadedGame: boolean = false;
 	m_Overlays: Overlay[] = [];
 	m_Player!: Actor;
-	m_PlayerFOV: Set<Point> = new Set<Point>();
+	/**
+	 * The tiles the player can currently see, as an `LOS` FOV key set.
+	 *
+	 * Same representation as every other FOV, so `LOS.fovHas` applies. See
+	 * `UpdatePlayerFOV` for why this is not a `Set<Point>`.
+	 */
+	m_PlayerFOV: FOV = new Set<number>();
 	m_MapViewRect!: Rect;
 	/**
 	 * Sequence number for screenshot filenames, so two shots in one session get
@@ -991,6 +998,51 @@ export class RogueGame {
 	 */
 	private m_MinimapRasterMap: Map | null = null;
 	private m_MinimapRasterRevision: number = -1;
+
+	/**
+	 * Cached player-tag tiles for the minimap, and the revision they were found at.
+	 *
+	 * Separate from the raster cache because the two are rebuilt for different
+	 * reasons and are cached separately: the raster is expensive per *tile*,
+	 * these are few per *map*. See the `DrawMiniMap` comment for why the scan was
+	 * the expensive part and the blits are not.
+	 */
+	private m_MinimapTagRevision: number = -1;
+	private m_MinimapTagMap: Map | null = null;
+	private m_MinimapTagTiles: Array<{ x: number; y: number; minitag: string }> = [];
+
+	/**
+	 * Every visited tile carrying one of the four player tags, with its minimap
+	 * sprite. Split out of `DrawMiniMap` so the scan can be cached and so it is
+	 * testable without a frame.
+	 */
+	private static collectPlayerTagTiles(
+		map: Map,
+	): Array<{ x: number; y: number; minitag: string }> {
+		const out: Array<{ x: number; y: number; minitag: string }> = [];
+		for (let x = 0; x < map.width; x++) {
+			for (let y = 0; y < map.height; y++) {
+				const tile = map.getTileAt(x, y);
+				// hasDecorations is a single boolean; the four hasDecoration calls
+				// each walk the tile's decoration array. Almost no tile has any
+				// decoration at all, so the guard turns up to 40 000 array scans
+				// into 10 000 boolean reads.
+				if (tile == null || !tile.isVisited || !tile.hasDecorations) continue;
+
+				let minitag: string | null = null;
+				if (tile.hasDecoration(GameImages.DECO_PLAYER_TAG1))
+					minitag = GameImages.MINI_PLAYER_TAG1;
+				else if (tile.hasDecoration(GameImages.DECO_PLAYER_TAG2))
+					minitag = GameImages.MINI_PLAYER_TAG2;
+				else if (tile.hasDecoration(GameImages.DECO_PLAYER_TAG3))
+					minitag = GameImages.MINI_PLAYER_TAG3;
+				else if (tile.hasDecoration(GameImages.DECO_PLAYER_TAG4))
+					minitag = GameImages.MINI_PLAYER_TAG4;
+				if (minitag !== null) out.push({ x, y, minitag });
+			}
+		}
+		return out;
+	}
 
 	m_HintAvailableOverlay!: OverlayPopup;
 	m_TownGenerator!: BaseTownGenerator;
@@ -1604,7 +1656,7 @@ export class RogueGame {
 			// music.
 			if (!this.m_PlayedIntro) {
 				this.m_MusicManager.stop();
-				this.m_MusicManager.play(GameMusics.INTRO);
+				this.m_MusicManager.play(GameMusics.INTRO, MusicPriority.EVENT);
 				this.m_PlayedIntro = true;
 			}
 
@@ -2866,7 +2918,7 @@ export class RogueGame {
 
 		// music.
 		this.m_MusicManager.stop();
-		this.m_MusicManager.play(GameMusics.SLEEP);
+		this.m_MusicManager.playLooping(GameMusics.SLEEP, MusicPriority.BGM);
 
 		// draw.
 		this.m_UI.UI_Clear(Color.Black);
@@ -3581,9 +3633,14 @@ export class RogueGame {
 											Color.Red,
 										),
 									);
-									// FIXME --
-									// alpha10 this will be a sfx not music (PRIORITY_EVENT dropped: IMusicManager has no priorities)
-									this.m_MusicManager.play(GameSounds.UNDEAD_RISE);
+									// The C#'s `// FIXME` / "this will be a sfx not music" is
+									// still open upstream, and deliberately left open here: the C# plays
+									// this through the *music* manager at PRIORITY_EVENT
+									// (RogueGame.cs:3280), and so does the port. What mattered was
+									// that the id resolved at all — it did not, because only
+									// `musicPath` was consulted and `undead rise` lives in the sound
+									// table. `audioPath` now checks both. See `AssetPaths.audioPath`.
+									this.m_MusicManager.play(GameSounds.UNDEAD_RISE, MusicPriority.EVENT);
 								}
 							}
 						}
@@ -3888,10 +3945,13 @@ export class RogueGame {
 							}
 							// if player, sfx.
 							if (actor.isPlayer) {
-								// FIXME replace with sfx
-								// alpha10
+								// C# RogueGame.cs:3611 does exactly this, `stop()` included.
+								// What was broken was the id: `nightmare` is a sound effect, and
+								// `musicPath` resolves only the music table, so this 404'd and —
+								// because `play()` assigns `src` before the request resolves —
+								// silenced the current track as well. `audioPath` fixes both.
 								this.m_MusicManager.stop();
-								this.m_MusicManager.play(GameSounds.NIGHTMARE);
+								this.m_MusicManager.play(GameSounds.NIGHTMARE, MusicPriority.EVENT);
 							}
 						}
 					} else {
@@ -3935,7 +3995,7 @@ export class RogueGame {
 								// check music.
 								// C# compared m_MusicManager.Music != GameMusics.SLEEP before PlayLooping(SLEEP);
 								// IMusicManager.play() already ignores the track it is already playing.
-								this.m_MusicManager.play(GameMusics.SLEEP);
+								this.m_MusicManager.playLooping(GameMusics.SLEEP, MusicPriority.EVENT);
 								// message.
 								this.AddMessage(
 									new Message(
@@ -4629,7 +4689,7 @@ export class RogueGame {
 
 			if (unique.eventThemeMusic != null) {
 				this.m_MusicManager.stop();
-				this.m_MusicManager.play(unique.eventThemeMusic);
+				this.m_MusicManager.play(unique.eventThemeMusic, MusicPriority.EVENT);
 			}
 
 			this.ClearMessages();
@@ -4718,7 +4778,7 @@ export class RogueGame {
 			!this.m_Player.model.abilities.isUndead
 		) {
 			this.m_MusicManager.stop();
-			this.m_MusicManager.play(GameMusics.ARMY);
+			this.m_MusicManager.play(GameMusics.ARMY, MusicPriority.EVENT);
 
 			this.ClearMessages();
 			this.AddMessage(
@@ -4808,7 +4868,7 @@ export class RogueGame {
 			!this.m_Player.model.abilities.isUndead
 		) {
 			this.m_MusicManager.stop();
-			this.m_MusicManager.play(GameMusics.ARMY);
+			this.m_MusicManager.play(GameMusics.ARMY, MusicPriority.EVENT);
 
 			this.ClearMessages();
 			this.AddMessage(
@@ -4934,7 +4994,7 @@ export class RogueGame {
 			!this.m_Player.model.abilities.isUndead
 		) {
 			this.m_MusicManager.stop();
-			this.m_MusicManager.play(GameMusics.BIKER);
+			this.m_MusicManager.play(GameMusics.BIKER, MusicPriority.EVENT);
 
 			this.ClearMessages();
 			this.AddMessage(
@@ -5020,7 +5080,7 @@ export class RogueGame {
 			!this.m_Player.model.abilities.isUndead
 		) {
 			this.m_MusicManager.stop();
-			this.m_MusicManager.play(GameMusics.GANGSTA);
+			this.m_MusicManager.play(GameMusics.GANGSTA, MusicPriority.EVENT);
 
 			this.ClearMessages();
 			this.AddMessage(
@@ -5101,7 +5161,7 @@ export class RogueGame {
 			!this.m_Player.model.abilities.isUndead
 		) {
 			this.m_MusicManager.stop();
-			this.m_MusicManager.play(GameMusics.ARMY);
+			this.m_MusicManager.play(GameMusics.ARMY, MusicPriority.EVENT);
 
 			this.ClearMessages();
 			this.AddMessage(
@@ -5177,7 +5237,7 @@ export class RogueGame {
 			!this.m_Player.model.abilities.isUndead
 		) {
 			this.m_MusicManager.stop();
-			this.m_MusicManager.play(GameMusics.SURVIVORS);
+			this.m_MusicManager.play(GameMusics.SURVIVORS, MusicPriority.EVENT);
 
 			this.ClearMessages();
 			this.AddMessage(
@@ -5262,10 +5322,17 @@ export class RogueGame {
 			if (this.IsAdjacentToEnemy(map, pos, actorToSpawn)) continue;
 
 			map.placeActor(actorToSpawn, pos);
-			// OnActorEnterTile is async (it rolls traps), but this spawner is sync and has
-			// 11 call sites across the event code; a trap under a freshly spawned actor at
-			// the map border is a rare enough edge case to fire-and-forget.
-			void this.OnActorEnterTile(actorToSpawn);
+			// `OnActorEnterTile` awaits `TryTriggerTrap` and `KillActor`, so not
+			// awaiting it means a trap under a freshly spawned border actor resolves a
+			// tick late — out of order with the raid announcement the caller prints.
+			// The correct fix is to make this spawner `async` and await it at all 11 call
+			// sites; that is a broader change than this belongs in, so the ordering is
+			// recorded here instead.
+			//
+			// What is *not* acceptable is a bare `void`: the promise is `async` and can
+			// reject, which is silent in a browser and **fatal under Node's default**
+			// `--unhandled-rejections=throw` — that is, in the simulator and in Vitest.
+			fireAndForget("OnActorEnterTile (spawned on map border)", this.OnActorEnterTile(actorToSpawn));
 			return true;
 		} while (i <= maxTries);
 
@@ -5676,7 +5743,8 @@ export class RogueGame {
 			this.ClearMessages();
 			this.AddMessage(this.MakeErrorMessage("error while creating bot ai:"));
 			this.AddMessage(this.MakeErrorMessage((e as Error).message));
-			void this.AddMessagePressEnter();
+			// Already in a `catch`; an escaping rejection here would be lost entirely.
+			fireAndForget("AddMessagePressEnter (bot ai error)", this.AddMessagePressEnter());
 		}
 	}
 
@@ -7667,7 +7735,7 @@ export class RogueGame {
 				),
 			);
 			this.m_MusicManager.stop();
-			this.m_MusicManager.play(GameSounds.UNDEAD_EAT);
+			this.m_MusicManager.play(GameSounds.UNDEAD_EAT, MusicPriority.EVENT);
 		}
 
 		this.InflictDamageToCorpse(c, dmg);
@@ -7769,11 +7837,14 @@ export class RogueGame {
 				// SayFlags.NONE never hits DoSay's press-ENTER path (that needs IS_IMPORTANT
 				// on a player target), and DoReviveCorpse is reached from the synchronous
 				// ActorAction.perform(), so this is intentionally not awaited.
-				void this.DoSay(
-					corpse.deadGuy,
-					actor,
-					"Thank you, you saved my life!",
-					SayFlags.NONE,
+				fireAndForget(
+					"DoSay (corpse revived)",
+					this.DoSay(
+						corpse.deadGuy,
+						actor,
+						"Thank you, you saved my life!",
+						SayFlags.NONE,
+					),
 				);
 		} else {
 			if (visible)
@@ -8780,7 +8851,7 @@ export class RogueGame {
 
 		const map = player.location.map!;
 		const visibleActors: Actor[] = [];
-		for (const p of this.m_PlayerFOV) {
+		for (const p of LOS.fovPoints(this.m_PlayerFOV)) {
 			const a = map.getActorAtPoint(p);
 			if (a == null || a.isPlayer) continue;
 			visibleActors.push(a);
@@ -9006,7 +9077,7 @@ export class RogueGame {
 		this.DoStartSleeping(player);
 		this.RedrawPlayScreen();
 		this.m_MusicManager.stop();
-		this.m_MusicManager.play(GameMusics.SLEEP);
+		this.m_MusicManager.playLooping(GameMusics.SLEEP, MusicPriority.EVENT);
 		return true;
 	}
 
@@ -9771,7 +9842,7 @@ export class RogueGame {
 		)
 			return false;
 
-		for (const p of this.m_PlayerFOV) {
+		for (const p of LOS.fovPoints(this.m_PlayerFOV)) {
 			const other = player.location.map!.getActorAtPoint(p);
 			if (other != null && this.m_Rules.areEnemies(player, other)) return false;
 		}
@@ -9781,6 +9852,30 @@ export class RogueGame {
 		return true;
 	}
 	// C# HandlePlayerOrderMode — RogueGame.cs:9322
+	/**
+	 * Whether `fo` and `player` can see each other right now.
+	 *
+	 * C# `RogueGame.cs:9340`:
+	 *   `fovs[iFo].Contains(player.Location.Position) && m_PlayerFOV.Contains(fo.Location.Position)`
+	 * — value equality on `HashSet<Point>` of a *struct*, in both directions.
+	 *
+	 * This is the ORDER_MODE gate: it decides which followers are selectable at
+	 * all, and the same test gates the click-to-tile commands in
+	 * `HandlePlayerOrderFollowerTo*`. It was written inline with
+	 * `fov.has(p.toString())` on one side and a `Set<Point>` on the other, and
+	 * `Point.toString()` is `(x, y)` while an FOV is keyed `x,y` while
+	 * `Set<Point>.has` is reference identity — so it was false in both
+	 * directions, always, and every follower was greyed out except a phone-linked
+	 * one. It lives in its own method so `tests/point-identity.test.ts` can pin
+	 * the predicate itself rather than a restatement of it.
+	 */
+	isActorLinkedToPlayer(foFov: FOV, fo: Actor, player: Actor): boolean {
+		return (
+			LOS.fovHas(foFov, player.location.position) &&
+			LOS.fovHas(this.m_PlayerFOV, fo.location.position)
+		);
+	}
+
 	async HandlePlayerOrderMode(player: Actor): Promise<boolean> {
 		if (player.countFollowers === 0) {
 			this.AddMessage(this.MakeErrorMessage("No followers to give orders to."));
@@ -9788,7 +9883,7 @@ export class RogueGame {
 		}
 
 		const followers: Actor[] = [];
-		const fovs: Set<string>[] = [];
+		const fovs: FOV[] = [];
 		const hasLinkWith: boolean[] = [];
 		for (const fo of player.followers ?? []) {
 			followers.push(fo);
@@ -9799,11 +9894,7 @@ export class RogueGame {
 				this.m_Session.world!.weather,
 			);
 			fovs.push(foFov);
-			const inView =
-				foFov.has(player.location.position.toString()) &&
-				this.m_PlayerFOV.has(fo.location.position);
-			const linkedByPhone = this.AreLinkedByPhone(player, fo);
-			hasLinkWith.push(inView || linkedByPhone);
+			hasLinkWith.push(this.isActorLinkedToPlayer(foFov, fo, player) || this.AreLinkedByPhone(player, fo));
 		}
 
 		if (player.countFollowers === 1 && hasLinkWith[0]) {
@@ -10283,7 +10374,7 @@ export class RogueGame {
 	async HandlePlayerOrderFollowerToBuildFortification(
 		player: Actor,
 		follower: Actor,
-		followerFOV: Set<string>,
+		followerFOV: FOV,
 		isLarge: boolean,
 	): Promise<boolean> {
 		let loop = true;
@@ -10344,7 +10435,7 @@ export class RogueGame {
 				if (map.isInBoundsPoint(mapPos) && this.IsInViewRect(mapPos)) {
 					if (
 						this.IsVisibleToPlayer(map, mapPos) &&
-						followerFOV.has(mapPos.toString())
+						LOS.fovHas(followerFOV, mapPos)
 					) {
 						const res = this.m_Rules.canActorBuildFortification(
 							follower,
@@ -10395,7 +10486,7 @@ export class RogueGame {
 	async HandlePlayerOrderFollowerToBarricade(
 		player: Actor,
 		follower: Actor,
-		followerFOV: Set<string>,
+		followerFOV: FOV,
 		toTheMax: boolean,
 	): Promise<boolean> {
 		let loop = true;
@@ -10456,7 +10547,7 @@ export class RogueGame {
 				if (map.isInBoundsPoint(mapPos) && this.IsInViewRect(mapPos)) {
 					if (
 						this.IsVisibleToPlayer(map, mapPos) &&
-						followerFOV.has(mapPos.toString())
+						LOS.fovHas(followerFOV, mapPos)
 					) {
 						const door =
 							map.getMapObjectAt(mapPos.x, mapPos.y) instanceof DoorWindow
@@ -10509,7 +10600,7 @@ export class RogueGame {
 	async HandlePlayerOrderFollowerToGuard(
 		player: Actor,
 		follower: Actor,
-		followerFOV: Set<string>,
+		followerFOV: FOV,
 	): Promise<boolean> {
 		let loop = true;
 		let actionDone = false;
@@ -10569,7 +10660,7 @@ export class RogueGame {
 				if (map.isInBoundsPoint(mapPos) && this.IsInViewRect(mapPos)) {
 					if (
 						this.IsVisibleToPlayer(map, mapPos) &&
-						followerFOV.has(mapPos.toString())
+						LOS.fovHas(followerFOV, mapPos)
 					) {
 						const res = this.m_Rules.isWalkableFor(
 							follower,
@@ -10614,7 +10705,7 @@ export class RogueGame {
 	async HandlePlayerOrderFollowerToPatrol(
 		player: Actor,
 		follower: Actor,
-		followerFOV: Set<string>,
+		followerFOV: FOV,
 	): Promise<boolean> {
 		let loop = true;
 		let actionDone = false;
@@ -10692,7 +10783,7 @@ export class RogueGame {
 				if (map.isInBoundsPoint(mapPos) && this.IsInViewRect(mapPos)) {
 					if (
 						this.IsVisibleToPlayer(map, mapPos) &&
-						followerFOV.has(mapPos.toString())
+						LOS.fovHas(followerFOV, mapPos)
 					) {
 						let validPatrol = true;
 						let reason = "";
@@ -13739,7 +13830,7 @@ export class RogueGame {
 							GameImages.ICON_MELEE_DAMAGE,
 						),
 					);
-				} catch (e) {}
+				} catch (e) { reportSwallowed("DoTriggerTrap", e); }
 				try {
 					this.AddOverlay(
 						new OverlayText(
@@ -13751,12 +13842,12 @@ export class RogueGame {
 							Color.Black,
 						),
 					);
-				} catch (e) {}
+				} catch (e) { reportSwallowed("DoTriggerTrap", e); }
 				this.RedrawPlayScreen();
 				await this.AnimDelay(victim.isPlayer ? DELAY_NORMAL : DELAY_SHORT);
 				try {
 					this.ClearOverlays();
-				} catch (e) {}
+				} catch (e) { reportSwallowed("DoTriggerTrap", e); }
 				this.RedrawPlayScreen();
 			}
 		}
@@ -14585,7 +14676,7 @@ export class RogueGame {
 					),
 				);
 				this.AddOverlay(new OverlayImage(attPos, GameImages.ICON_MELEE_ATTACK));
-			} catch (e) {}
+			} catch (e) { reportSwallowed("DoMeleeAttack", e); }
 		}
 
 		// Hit vs Missed
@@ -14691,7 +14782,7 @@ export class RogueGame {
 									GameImages.ICON_KILLED,
 								),
 							);
-						} catch (e) {}
+						} catch (e) { reportSwallowed("DoMeleeAttack", e); }
 						this.RedrawPlayScreen();
 						await this.AnimDelay(DELAY_LONG);
 					}
@@ -14787,7 +14878,7 @@ export class RogueGame {
 									Color.Black,
 								),
 							);
-						} catch (e) {}
+						} catch (e) { reportSwallowed("DoMeleeAttack", e); }
 						this.RedrawPlayScreen();
 						await this.AnimDelay(isPlayer ? DELAY_NORMAL : DELAY_SHORT);
 					}
@@ -14809,7 +14900,7 @@ export class RogueGame {
 								GameImages.ICON_MELEE_MISS,
 							),
 						);
-					} catch (e) {}
+					} catch (e) { reportSwallowed("DoMeleeAttack", e); }
 					this.RedrawPlayScreen();
 					await this.AnimDelay(isPlayer ? DELAY_NORMAL : DELAY_SHORT);
 				}
@@ -14832,7 +14923,7 @@ export class RogueGame {
 							GameImages.ICON_MELEE_MISS,
 						),
 					);
-				} catch (e) {}
+				} catch (e) { reportSwallowed("DoMeleeAttack", e); }
 				this.RedrawPlayScreen();
 				await this.AnimDelay(isPlayer ? DELAY_NORMAL : DELAY_SHORT);
 			}
@@ -15052,7 +15143,7 @@ export class RogueGame {
 				this.AddOverlay(
 					new OverlayImage(attPos, GameImages.ICON_RANGED_ATTACK),
 				);
-			} catch (e) {}
+			} catch (e) { reportSwallowed("DoSingleRangedAttack", e); }
 		}
 
 		// Hit vs Missed
@@ -15093,7 +15184,7 @@ export class RogueGame {
 									GameImages.ICON_KILLED,
 								),
 							);
-						} catch (e) {}
+						} catch (e) { reportSwallowed("DoSingleRangedAttack", e); }
 						this.RedrawPlayScreen();
 						await this.AnimDelay(DELAY_LONG);
 					}
@@ -15124,7 +15215,7 @@ export class RogueGame {
 									Color.Black,
 								),
 							);
-						} catch (e) {}
+						} catch (e) { reportSwallowed("DoSingleRangedAttack", e); }
 						this.RedrawPlayScreen();
 						await this.AnimDelay(isPlayer ? DELAY_NORMAL : DELAY_SHORT);
 					}
@@ -15146,7 +15237,7 @@ export class RogueGame {
 								GameImages.ICON_RANGED_MISS,
 							),
 						);
-					} catch (e) {}
+					} catch (e) { reportSwallowed("DoSingleRangedAttack", e); }
 					this.RedrawPlayScreen();
 					await this.AnimDelay(isPlayer ? DELAY_NORMAL : DELAY_SHORT);
 				}
@@ -15169,7 +15260,7 @@ export class RogueGame {
 							GameImages.ICON_RANGED_MISS,
 						),
 					);
-				} catch (e) {}
+				} catch (e) { reportSwallowed("DoSingleRangedAttack", e); }
 				this.RedrawPlayScreen();
 				await this.AnimDelay(isPlayer ? DELAY_NORMAL : DELAY_SHORT);
 			}
@@ -15217,7 +15308,7 @@ export class RogueGame {
 								),
 							);
 						}
-					} catch (e) {}
+					} catch (e) { reportSwallowed("DoCheckFireThrough", e); }
 					await this.AnimDelay(attacker.isPlayer ? DELAY_NORMAL : DELAY_SHORT);
 				}
 
@@ -15275,7 +15366,7 @@ export class RogueGame {
 						new Rect(tgtPos.x, tgtPos.y, TILE_SIZE, TILE_SIZE),
 					),
 				);
-			} catch (e) {}
+			} catch (e) { reportSwallowed("DoThrowGrenadeUnprimed", e); }
 			this.AddMessage(
 				this.MakeMessage(
 					actor,
@@ -15328,7 +15419,7 @@ export class RogueGame {
 						new Rect(tgtPos.x, tgtPos.y, TILE_SIZE, TILE_SIZE),
 					),
 				);
-			} catch (e) {}
+			} catch (e) { reportSwallowed("DoThrowGrenadePrimed", e); }
 			this.AddMessage(
 				this.MakeMessage(
 					actor,
@@ -15371,7 +15462,7 @@ export class RogueGame {
 					blastAttack,
 					blastAttack.damage[0],
 				);
-			} catch (e) {}
+			} catch (e) { reportSwallowed("DoBlast", e); }
 			this.RedrawPlayScreen();
 			await this.AnimDelay(DELAY_LONG);
 			this.RedrawPlayScreen();
@@ -15519,7 +15610,7 @@ export class RogueGame {
 				// now redundant (kept for Phase 8 cleanup).
 				try {
 					this.ShowBlastImage(this.MapToScreen(pt), blast, damage);
-				} catch (e) {}
+				} catch (e) { reportSwallowed("ApplyExplosionWaveSub", e); }
 				return true;
 			} else return false;
 		}
@@ -16052,7 +16143,7 @@ export class RogueGame {
 							new Rect(sp.x, sp.y, TILE_SIZE, TILE_SIZE),
 						),
 					);
-				} catch (e) {}
+				} catch (e) { reportSwallowed("DoSay", e); }
 				await this.AddMessagePressEnter();
 				this.ClearOverlays();
 				this.RemoveLastMessage();
@@ -16093,7 +16184,7 @@ export class RogueGame {
 							new Rect(sp.x, sp.y, TILE_SIZE, TILE_SIZE),
 						),
 					);
-				} catch (e) {}
+				} catch (e) { reportSwallowed("DoShout", e); }
 				this.AddMessage(
 					this.MakeMessage(
 						speaker,
@@ -17087,7 +17178,7 @@ export class RogueGame {
 								Color.Black,
 							),
 						); // alpha10
-					} catch (e) {}
+					} catch (e) { reportSwallowed("DoBreak", e); }
 					this.AddMessage(
 						this.MakeMessage(
 							actor,
@@ -17169,7 +17260,7 @@ export class RogueGame {
 							),
 						);
 					}
-				} catch (e) {}
+				} catch (e) { reportSwallowed("DoBreak", e); }
 
 				if (isBroken) {
 					this.AddMessage(
@@ -17194,7 +17285,7 @@ export class RogueGame {
 									GameImages.ICON_KILLED,
 								),
 							);
-					} catch (e2) {}
+					} catch (e2) { reportSwallowed("DoBreak", e2); }
 					this.RedrawPlayScreen();
 					await this.AnimDelay(DELAY_LONG);
 				} else {
@@ -17218,7 +17309,7 @@ export class RogueGame {
 									Color.Black,
 								),
 							); // alpha10
-						} catch (e2) {}
+						} catch (e2) { reportSwallowed("DoBreak", e2); }
 					} else if (isActorVisible) {
 						this.AddMessage(
 							this.MakeMessage(
@@ -17236,7 +17327,7 @@ export class RogueGame {
 									GameImages.ICON_MELEE_ATTACK,
 								),
 							);
-						} catch (e2) {}
+						} catch (e2) { reportSwallowed("DoBreak", e2); }
 					}
 
 					this.RedrawPlayScreen();
@@ -17997,7 +18088,7 @@ export class RogueGame {
 									new Rect(sp.x, sp.y, TILE_SIZE, TILE_SIZE),
 								),
 							);
-						} catch (e) {}
+						} catch (e) { reportSwallowed("KillActor", e); }
 						this.AddMessage(
 							this.MakeMessage(
 								killer,
@@ -18006,7 +18097,7 @@ export class RogueGame {
 						);
 						try {
 							this.RedrawPlayScreen();
-						} catch (e) {}
+						} catch (e) { reportSwallowed("KillActor", e); }
 						await this.AnimDelay(DELAY_LONG);
 						this.ClearOverlays();
 					}
@@ -18382,7 +18473,7 @@ export class RogueGame {
 
 		// music.
 		this.m_MusicManager.stop();
-		this.m_MusicManager.play(GameMusics.PLAYER_DEATH);
+		this.m_MusicManager.play(GameMusics.PLAYER_DEATH, MusicPriority.EVENT);
 
 		///////////
 		// Scoring
@@ -18936,7 +19027,7 @@ export class RogueGame {
 
 			// music.
 			this.m_MusicManager.stop();
-			this.m_MusicManager.play(GameMusics.INTERLUDE);
+			this.m_MusicManager.play(GameMusics.INTERLUDE, MusicPriority.EVENT);
 
 			// Message.
 			this.ClearMessages();
@@ -18998,7 +19089,7 @@ export class RogueGame {
 
 			// music.
 			this.m_MusicManager.stop();
-			this.m_MusicManager.play(GameMusics.INTERLUDE);
+			this.m_MusicManager.play(GameMusics.INTERLUDE, MusicPriority.EVENT);
 
 			// Message.
 			this.ClearMessages();
@@ -20216,10 +20307,19 @@ export class RogueGame {
 				}
 
 				// 3. (TargetStatus), Map objects
+				//
+				// `equals`, never `==`. `position` is the `new Point(x, y)` built
+				// for this loop iteration, so `==` — which is *reference* identity,
+				// because `Point` is a class here and a struct in the C# — was
+				// always false and `DrawPlayerActorTargets` below never ran at all.
+				// C# `RogueGame.cs:18278` compares the two by value. The player
+				// silently lost both target markers, including the "is being
+				// targeted" threat indicator, with `showPlayerTargets` on by
+				// default. See `tests/point-identity.test.ts`.
 				if (
 					s_Options.showPlayerTargets &&
 					!this.m_Player.isSleeping &&
-					this.m_Player.location.position == position
+					this.m_Player.location.position.equals(position)
 				) {
 					this.DrawPlayerActorTargets(this.m_Player);
 				}
@@ -21300,37 +21400,42 @@ export class RogueGame {
 		);
 
 		// show player tags.
+		//
+		// The *scan* is cached; the *blits* are not, because the minimap blit just
+		// above overwrites the buffer and has to be layered on top every frame.
+		//
+		// This loop was outside the revision guard while the raster inside it was
+		// not, so it was 10 000 iterations of `getTileAt` + `isVisited` +
+		// `hasDecorations` on *every redraw* — and a redraw is forced by any mouse
+		// movement (`WaitKeyOrMouse` returns on a cursor delta), so moving the
+		// cursor across the map cost ~1.2M tile iterations per second at 60-120 Hz.
+		// Same bug class as the raster above; the fix just was not applied to the
+		// second loop.
+		//
+		// Note what the scan finds: `DECO_PLAYER_TAG1..4` are only ever *read*, in
+		// the C# too (`RogueGame.cs:19059-19065`) — nothing adds them, so this
+		// walked the whole map per frame to discover there are none. Hence caching
+		// the (currently empty) list rather than removing the feature.
+		//
+		// If a feature ever adds a player tag at runtime it must go through
+		// something that bumps `Map.minimapRevision` — `Tile.addDecoration` does
+		// not, and cannot, since a `Tile` holds no reference to its `Map`. Same
+		// caveat as `setTileModelAt`.
 		if (s_Options.showPlayerTagsOnMinimap) {
-			for (let x = 0; x < map.width; x++) {
-				for (let y = 0; y < map.height; y++) {
-					const tile = map.getTileAt(x, y);
-					// hasDecorations is a single boolean; the four hasDecoration calls
-					// below each walk the tile's decoration array. Almost no tile has any
-					// decoration at all, so the guard turns up to 40 000 array scans per
-					// frame into 10 000 boolean reads.
-					if (tile != null && tile.isVisited && tile.hasDecorations) {
-						let minitag: string | null = null;
-						if (tile.hasDecoration(GameImages.DECO_PLAYER_TAG1))
-							minitag = GameImages.MINI_PLAYER_TAG1;
-						else if (tile.hasDecoration(GameImages.DECO_PLAYER_TAG2))
-							minitag = GameImages.MINI_PLAYER_TAG2;
-						else if (tile.hasDecoration(GameImages.DECO_PLAYER_TAG3))
-							minitag = GameImages.MINI_PLAYER_TAG3;
-						else if (tile.hasDecoration(GameImages.DECO_PLAYER_TAG4))
-							minitag = GameImages.MINI_PLAYER_TAG4;
-						if (minitag != null) {
-							const pos = new Point(
-								MINIMAP_X + x * MINITILE_SIZE,
-								MINIMAP_Y + y * MINITILE_SIZE,
-							);
-							this.m_UI.UI_DrawImage(
-								minitag,
-								pos.x - MINI_TRACKER_OFFSET,
-								pos.y - MINI_TRACKER_OFFSET,
-							);
-						}
-					}
-				}
+			if (
+				this.m_MinimapTagMap !== map ||
+				this.m_MinimapTagRevision !== map.minimapRevision
+			) {
+				this.m_MinimapTagMap = map;
+				this.m_MinimapTagRevision = map.minimapRevision;
+				this.m_MinimapTagTiles = RogueGame.collectPlayerTagTiles(map);
+			}
+			for (const { x, y, minitag } of this.m_MinimapTagTiles) {
+				this.m_UI.UI_DrawImage(
+					minitag,
+					MINIMAP_X + x * MINITILE_SIZE - MINI_TRACKER_OFFSET,
+					MINIMAP_Y + y * MINITILE_SIZE - MINI_TRACKER_OFFSET,
+				);
 			}
 		}
 
@@ -22508,7 +22613,7 @@ export class RogueGame {
 				if (!loaded) {
 					this.AddMessage(
 						new Message(
-							"LOADING FAILED, NO GAME SAVED OR VERSION NOT COMPATIBLE.",
+							this.loadFailureMessage(),
 							this.m_Session.worldTime.turnCounter,
 							Color.Red,
 						),
@@ -22520,7 +22625,7 @@ export class RogueGame {
 				console.error("[RogueSurvivor] load failed", e);
 				this.AddMessage(
 					new Message(
-						"LOADING FAILED, NO GAME SAVED OR VERSION NOT COMPATIBLE.",
+						this.loadFailureMessage(),
 						this.m_Session.worldTime.turnCounter,
 						Color.Red,
 					),
@@ -22529,6 +22634,24 @@ export class RogueGame {
 			.finally(() => {
 				this.StartSimThread(); // alpha10.1
 			});
+	}
+
+	/**
+	 * The message shown when a load fails.
+	 *
+	 * The fixed text — "NO GAME SAVED OR VERSION NOT COMPATIBLE" — is the honest
+	 * answer for a *missing* save, and a misleading one for everything else,
+	 * because `Session.load` returns `false` for every cause. So when the
+	 * session recorded *why*, say that instead: a deserialiser bug being reported
+	 * to the player as an incompatible save file is how a silent data bug stays
+	 * hidden, and this port's own bug history is mostly exactly that.
+	 */
+	private loadFailureMessage(): string {
+		const reason = this.m_Session.lastLoadError;
+		if (reason == null || reason.length === 0) {
+			return "LOADING FAILED, NO GAME SAVED OR VERSION NOT COMPATIBLE.";
+		}
+		return `LOADING FAILED (${reason.toUpperCase()}). NO GAME SAVED OR VERSION NOT COMPATIBLE.`;
 	}
 
 	// C# DeleteSavedGame — RogueGame.cs:19809
@@ -24206,7 +24329,7 @@ export class RogueGame {
 			if (turnsToCatchup > 0) {
 				// music.
 				this.m_MusicManager.stop();
-				this.m_MusicManager.play(GameMusics.INTERLUDE);
+				this.m_MusicManager.playLooping(GameMusics.INTERLUDE, MusicPriority.EVENT);
 
 				// force player view to darkness (so he gets no messages).
 				if (this.m_Player != null) {
@@ -24468,7 +24591,7 @@ export class RogueGame {
 
 		// music.
 		this.m_MusicManager.stop();
-		this.m_MusicManager.play(musicToPlay);
+		this.m_MusicManager.play(musicToPlay, MusicPriority.EVENT);
 
 		// prepare banner.
 		const longestLine = this.FindLongestLine(text);
@@ -24497,9 +24620,8 @@ export class RogueGame {
 	// async: C# blocks on AddMessagePressEnter.
 	async ShowSpecialDialogue(speaker: Actor, text: string[]): Promise<void> {
 		// music.
-		// alpha10 this will be a sfx not music (PRIORITY_EVENT dropped: IMusicManager has no priorities)
 		this.m_MusicManager.stop();
-		this.m_MusicManager.play(GameMusics.INTERLUDE);
+		this.m_MusicManager.play(GameMusics.INTERLUDE, MusicPriority.EVENT);
 
 		// overlays.
 		this.AddOverlay(
@@ -24520,7 +24642,7 @@ export class RogueGame {
 					new Rect(screenPos.x, screenPos.y, TILE_SIZE, TILE_SIZE),
 				),
 			);
-		} catch (e) {}
+		} catch (e) { reportSwallowed("ShowSpecialDialogue", e); }
 
 		// message & wait enter.
 		this.ClearMessages();
@@ -24620,7 +24742,7 @@ export class RogueGame {
 
 						// message + music, so the player notices it.
 						this.m_MusicManager.stop();
-						this.m_MusicManager.play(GameMusics.FIGHT);
+						this.m_MusicManager.play(GameMusics.FIGHT, MusicPriority.EVENT);
 						this.ClearMessages();
 						this.AddMessage(
 							new Message(
@@ -24750,7 +24872,7 @@ export class RogueGame {
 							);
 
 							// fight music!
-							this.m_MusicManager.play(GameMusics.FIGHT);
+							this.m_MusicManager.play(GameMusics.FIGHT, MusicPriority.EVENT);
 
 							// Next stage.
 							this.m_Session.scriptStage_PoliceStationPrisoner =
@@ -24781,7 +24903,7 @@ export class RogueGame {
 						// music.
 						if (this.m_MusicManager.getCurrentMusicId() !== GameMusics.INSANE) {
 							this.m_MusicManager.stop();
-							this.m_MusicManager.play(GameMusics.INSANE);
+							this.m_MusicManager.play(GameMusics.INSANE, MusicPriority.EVENT);
 						}
 
 						// message if 1st time.
@@ -24855,7 +24977,7 @@ export class RogueGame {
 		}
 
 		// 2. Sighting an actor : actor model, unique NPCs.
-		for (const p of this.m_PlayerFOV) {
+		for (const p of LOS.fovPoints(this.m_PlayerFOV)) {
 			const other = map.getActorAtPoint(p);
 			if (other === null || other === player) continue;
 			this.m_Session.scoring.addSighting(
@@ -24892,7 +25014,7 @@ export class RogueGame {
 		// play music.
 		// alpha10 PlayLooping dropped: the WebAudio backend always loops.
 		this.m_MusicManager.stop();
-		this.m_MusicManager.play(GameMusics.LIMBO);
+		this.m_MusicManager.playLooping(GameMusics.LIMBO, MusicPriority.EVENT);
 
 		// Waiting screen...
 		this.m_UI.UI_Clear(Color.Black);
@@ -25119,7 +25241,7 @@ export class RogueGame {
 			music = GameMusics.INSANE;
 		// apha10 replace with sfx
 		this.m_MusicManager.stop();
-		this.m_MusicManager.play(music);
+		this.m_MusicManager.play(music, MusicPriority.EVENT);
 
 		// restart sim thread.
 		this.StopSimThread(false); // alpha10 stop-start
@@ -25407,7 +25529,7 @@ export class RogueGame {
 						// ENTER), but the aggressor/self-defence links and the emote above
 						// are all applied before its first await, and C# calls this from a
 						// sync action factory - so it is intentionally not awaited here.
-						void this.DoMakeAggression(actor, a);
+						fireAndForget("DoMakeAggression (self-defence)", this.DoMakeAggression(actor, a));
 						return new ActionSay(
 							actor,
 							this,
@@ -25746,7 +25868,7 @@ export class RogueGame {
 			let screenPos: Point | null = null;
 			try {
 				screenPos = this.MapToScreen(crushedActor.location.position);
-			} catch (e) {}
+			} catch (e) { reportSwallowed("CheckForGateClosingCrush", e); }
 			if (screenPos !== null) {
 				this.AddOverlay(
 					new OverlayImage(screenPos, GameImages.ICON_MELEE_DAMAGE),
@@ -25762,12 +25884,12 @@ export class RogueGame {
 			}
 			try {
 				this.RedrawPlayScreen();
-			} catch (e) {}
+			} catch (e) { reportSwallowed("CheckForGateClosingCrush", e); }
 			await this.AnimDelay(crushedActor.isPlayer ? DELAY_NORMAL : DELAY_SHORT);
 			this.ClearOverlays();
 			try {
 				this.RedrawPlayScreen();
-			} catch (e) {}
+			} catch (e) { reportSwallowed("CheckForGateClosingCrush", e); }
 		}
 
 		if (crushedActor.hitPoints <= 0) {
@@ -26136,8 +26258,20 @@ export class RogueGame {
 		if (!s_Options.playMusic) return;
 		if (this.m_Player === null) return;
 
-		// alpha10 the "don't interrupt music that has higher priority than bg" guard is
-		// dropped: IMusicManager has no priorities (PRIORITY_BGM/PRIORITY_EVENT).
+		// alpha10 Don't interrupt music that has higher priority than bg. C#:23155.
+		//
+		// This is the guard whose absence the dropped `MusicPriority` cost, and it
+		// is the only reason priorities exist: `UpdateBgMusic` runs on a fixed
+		// turn cadence, so without it a raid theme, a fight cue or an ending was
+		// cut off mid-event at an arbitrary point and replaced by the map's loop.
+		// An event track is short by design, so it finishes and the background
+		// music resumes on the next tick — which is the intended behaviour, not a
+		// gap.
+		if (
+			this.m_MusicManager.isPlaying() &&
+			this.m_MusicManager.getPriority() > MusicPriority.BGM
+		)
+			return;
 
 		// get current map music and play it if not already playing it
 		const mapMusic = this.m_Session.currentMap?.bgMusic ?? "";
@@ -26149,7 +26283,7 @@ export class RogueGame {
 			return;
 
 		this.m_MusicManager.stop();
-		this.m_MusicManager.play(mapMusic);
+		this.m_MusicManager.play(mapMusic, MusicPriority.BGM);
 	}
 
 	// C# AddDevCheatItems — RogueGame.cs:23170
@@ -26394,26 +26528,24 @@ export class RogueGame {
 
 	UpdatePlayerFOV(player: Actor): void {
 		if (player == null) return;
-		const rawFov = LOS.computeFOVFor(
+		// One FOV representation everywhere: the key set `computeFOVFor` returns.
+		//
+		// This used to re-parse every key back into a `Set<Point>`, which made
+		// `m_PlayerFOV` a *different* type from every other FOV in the codebase —
+		// and `Set<Point>` membership is reference identity, because `Point` is a
+		// class here and a struct in the C#. So the one place that tested
+		// membership on it (`HandlePlayerOrderMode`) was always false. The
+		// re-parse bought nothing and cost the correctness. See `LOS.fovHas`.
+		this.m_PlayerFOV = LOS.computeFOVFor(
 			this.m_Rules,
 			player,
 			this.m_Session.worldTime,
 			this.m_Session.world!.weather,
 		);
-		this.m_PlayerFOV = new Set<Point>();
-		for (const key of rawFov) {
-			// parse "x,y" to Point
-			const parts = key.split(",");
-			if (parts.length === 2) {
-				this.m_PlayerFOV.add(
-					new Point(parseInt(parts[0], 10), parseInt(parts[1], 10)),
-				);
-			}
-		}
 		// Push the FOV onto the map's tiles. Without this nothing is ever marked
 		// in-view, so IsVisibleToPlayer is false everywhere and no actor, item or
 		// corpse is ever drawn — including the player.
-		player.location.map!.setViewAndMarkVisited(this.m_PlayerFOV);
+		player.location.map!.setViewAndMarkVisited(LOS.fovPoints(this.m_PlayerFOV));
 	}
 
 	IsAdjacentToEnemy(map: Map, pos: Point, actor: Actor): boolean {

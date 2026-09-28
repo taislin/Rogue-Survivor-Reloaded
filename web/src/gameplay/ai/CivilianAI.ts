@@ -22,6 +22,7 @@ import { OrderableAI } from './OrderableAI';
 import { ExplorationData } from './ExplorationData';
 import { LOSSensor, SensingFilter } from './GameplaySensors';
 import { SpecialActions } from './RouteFinder';
+import { LOS } from "@engine/LOS";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Game = any;
@@ -211,7 +212,7 @@ export class CivilianAI extends OrderableAI {
     const enemies = this.filterEnemies(game, mapPercepts);
     const hasEnemies = enemies !== null && enemies.length > 0;
     const checkOurLeader = actor.hasLeader && !this.dontFollowLeader;
-    const seeLeader = checkOurLeader && fov.has(`${actor.leader!.location.position.x},${actor.leader!.location.position.y}`);
+    const seeLeader = checkOurLeader && LOS.fovHas(fov, actor.leader!.location.position);
     const isLeaderFighting = checkOurLeader && this.isAdjacentToEnemy(game, actor.leader);
     // "courageous" (rule 7 is obsolete in alpha10, kept here for reference)
     // const isCourageous = checkOurLeader && seeLeader && isLeaderFighting && !game.rules.isActorTired(actor);
@@ -608,7 +609,7 @@ export class CivilianAI extends OrderableAI {
     if (checkOurLeader) {
       const leader = actor.leader!;
       const lastKnownLeaderPosition = leader.location.position;
-      const isLeaderVisible = fov.has(`${lastKnownLeaderPosition.x},${lastKnownLeaderPosition.y}`);
+      const isLeaderVisible = LOS.fovHas(fov, lastKnownLeaderPosition);
       const maxDist = leader.isPlayer
         ? CivilianAI.FOLLOW_PLAYERLEADER_MAXDIST
         : CivilianAI.FOLLOW_NPCLEADER_MAXDIST;
@@ -771,7 +772,7 @@ export class CivilianAI extends OrderableAI {
           if (target.isSleeping) {
             game.DoEmote(actor, `patiently waits for ${target.name} to wake up.`);
           } else {
-            if (fov.has(`${target.location.position.x},${target.location.position.y}`)) {
+            if (LOS.fovHas(fov, target.location.position)) {
               game.DoEmote(actor, `Come on ${target.name}! Hurry up!`);
             } else {
               game.DoEmote(actor, `Where the hell is ${target.name}?`);

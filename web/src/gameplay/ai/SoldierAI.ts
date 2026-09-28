@@ -15,6 +15,7 @@ import { OrderableAI } from './OrderableAI';
 import { ExplorationData } from './ExplorationData';
 import { LOSSensor, SensingFilter } from './GameplaySensors';
 import { SpecialActions } from './RouteFinder';
+import { LOS } from "@engine/LOS";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Game = any;
@@ -267,7 +268,7 @@ export class SoldierAI extends OrderableAI {
         if (game.rules.rollChance(SoldierAI.DONT_LEAVE_BEHIND_EMOTE_CHANCE)) {
           if (target.isSleeping) {
             game.DoEmote(actor, `patiently waits for ${target.name} to wake up.`);
-          } else if (this.m_LOSSensor.fov.has(`${target.location.position.x},${target.location.position.y}`)) {
+          } else if (LOS.fovHas(this.m_LOSSensor.fov, target.location.position)) {
             game.DoEmote(actor, `${target.name}! Don't lag behind!`);
           } else {
             game.DoEmote(actor, `Where the hell is ${target.name}?`);

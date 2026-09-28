@@ -4,6 +4,8 @@ import { Color }                from "@engine/Color";
 import { RogueGame }            from "@engine/RogueGame";
 import { WebAudioMusicManager } from "@engine/audio/WebAudioMusicManager";
 import { loadGameFonts }        from "@ui/fonts";
+import { InputTranslator }      from "@engine/Keybindings";
+import { PlayerCommand }        from "@engine/PlayerCommand";
 
 async function main(): Promise<void> {
   // ── Bootstrap ──────────────────────────────────────────────────────────────
@@ -47,6 +49,17 @@ async function main(): Promise<void> {
   await loadGameFonts();
 
   const input = new InputHandler();
+
+  // Let the game claim keystrokes so the browser's own shortcuts do not fire
+  // alongside them. Injected rather than imported into `ui/InputHandler`, because
+  // the live bindings live behind a static on `RogueGame` and importing that into
+  // the UI layer would close a cycle (RogueGame -> IRogueUI -> CanvasUI ->
+  // InputHandler). See `InputHandler.setCommandPredicate`.
+  input.setCommandPredicate((key, ctrl, alt, shift, code) => {
+    const cmd = InputTranslator.keyToCommand(RogueGame.KeyBindings(), key, ctrl, alt, shift, code);
+    return cmd !== PlayerCommand.NONE;
+  });
+
   const ui    = new CanvasUI(canvas, input);
   input.attach();
 

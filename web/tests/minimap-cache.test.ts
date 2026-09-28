@@ -5,6 +5,9 @@ import { Faction } from "@data/Faction";
 import { Point } from "@engine/Point";
 import { GameActors, ActorID } from "@gameplay/GameActors";
 import { GameTiles, TileID } from "@gameplay/GameTiles";
+import { GameImages } from "@gameplay/GameImages";
+import { RogueGame } from "@engine/RogueGame";
+import { grepAll } from "./helpers/grepAll";
 
 /**
  * The minimap raster cache in `RogueGame.DrawMiniMap` is only correct if the
@@ -146,6 +149,60 @@ describe("Tile.hasDecorations guard", () => {
     bare.addDecoration("some_tag");
     expect(bare.hasDecorations).toBe(true);
     expect(bare.hasDecoration("some_tag")).toBe(true);
+  });
+});
+
+describe("the player-tag scan is cached, not repeated per frame", () => {
+  it("collects only visited tiles carrying a player tag, with the right sprite", () => {
+    // The scan that used to run 10 000 iterations on every redraw — and every
+    // redraw is forced by any mouse movement. Extracted as
+    // `RogueGame.collectPlayerTagTiles` so it is testable without a frame.
+    const map = newMap(10);
+    const collect = (m: GameMap) =>
+      (RogueGame as unknown as {
+        collectPlayerTagTiles: (m: GameMap) => Array<{ x: number; y: number; minitag: string }>;
+      }).collectPlayerTagTiles(m);
+
+    expect(collect(map), "an unvisited map has no tags").toEqual([]);
+
+    // Unvisited tile with a tag: must NOT appear, matching the original guard.
+    const unvisited = map.getTileAt(1, 1)!;
+    unvisited.addDecoration(GameImages.DECO_PLAYER_TAG1);
+    expect(collect(map), "an unvisited tag must not be drawn").toEqual([]);
+
+    map.markVisited(1, 1);
+    expect(collect(map)).toEqual([{ x: 1, y: 1, minitag: GameImages.MINI_PLAYER_TAG1 }]);
+
+    // All four tags map to distinct minimap sprites, and the first match wins.
+    map.getTileAt(2, 2)!.addDecoration(GameImages.DECO_PLAYER_TAG2);
+    map.getTileAt(3, 3)!.addDecoration(GameImages.DECO_PLAYER_TAG3);
+    map.getTileAt(4, 4)!.addDecoration(GameImages.DECO_PLAYER_TAG4);
+    map.markVisited(2, 2);
+    map.markVisited(3, 3);
+    map.markVisited(4, 4);
+    const found = collect(map);
+    expect(found).toHaveLength(4);
+    expect(found.map((t) => t.minitag)).toEqual([
+      GameImages.MINI_PLAYER_TAG1,
+      GameImages.MINI_PLAYER_TAG2,
+      GameImages.MINI_PLAYER_TAG3,
+      GameImages.MINI_PLAYER_TAG4,
+    ]);
+
+    // An unrelated decoration is not a player tag.
+    const map2 = newMap(6);
+    map2.getTileAt(0, 0)!.addDecoration(GameImages.DECO_BLOODIED_FLOOR);
+    map2.markVisited(0, 0);
+    expect(collect(map2)).toEqual([]);
+  });
+
+  it("nothing in the game ever adds a player tag, so the scan is dormant in the C# too", () => {
+    // Worth recording: the C# only ever *reads* DECO_PLAYER_TAG1..4
+    // (RogueGame.cs:19059-19065). The loop is faithful, not a port omission, and
+    // it is why caching the list was the right call rather than deleting it.
+    const readers = grepAll("src", /addDecoration\(GameImages\.DECO_PLAYER_TAG/);
+    expect(readers, "a player tag is now added at runtime; the revision contract must be revisited")
+      .toEqual([]);
   });
 });
 

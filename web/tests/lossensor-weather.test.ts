@@ -10,6 +10,7 @@ import { GameActors, ActorID } from "@gameplay/GameActors";
 import { GameTiles, TileID } from "@gameplay/GameTiles";
 import { Weather } from "@data/Weather";
 import { WorldTime } from "@engine/WorldTime";
+import { LOS } from "@engine/LOS";
 
 /**
  * Regression test for §1.1f bug 51 -- the one consequential finding in that
@@ -70,7 +71,7 @@ function makeGame(weather: Weather): any {
   };
 }
 
-function senseWith(game: any, actor: Actor): { size: number; keys: string[] } {
+function senseWith(game: any, actor: Actor): { size: number; keys: number[] } {
   const sensor = new LOSSensor(SensingFilter.ACTORS);
   sensor.sense(game, actor);
   return { size: sensor.fov.size, keys: [...sensor.fov] };
@@ -163,8 +164,11 @@ describe("§1.1f bug 51: LOSSensor threads the world weather through", () => {
 
   it("the FOV still contains the actor's own tile", () => {
     // Guards against a fix that "works" by truncating the FOV to nothing.
+    // The FOV is keyed by the shared numeric `coordKey` (see `engine/CoordKey`),
+    // not by a "x,y" string — asserted through `fovHas` rather than by comparing
+    // a raw key, so this test does not encode the representation.
     const { keys } = senseWith(makeGame(Weather.HEAVY_RAIN), human);
-    expect(keys).toContain("20,20");
+    expect(keys).toContain(LOS.fovKey(20, 20));
   });
 
   it("does not crash when the session has no world yet", () => {

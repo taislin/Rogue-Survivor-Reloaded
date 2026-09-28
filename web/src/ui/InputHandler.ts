@@ -14,6 +14,61 @@ export class InputHandler {
   // Resolvers waiting for the next key
   private waiters: Array<(e: GameKeyEvent) => void> = [];
 
+  /**
+   * Whether the browser's own action for this keystroke must be suppressed.
+   *
+   * Public and side-effect-free so the rule can be tested directly rather than
+   * by reading the handler — the original bug was a missing branch, and a missing
+   * branch reads perfectly well. Takes the pieces of a `KeyboardEvent` rather
+   * than the event so no DOM is needed.
+   */
+  shouldPreventDefault(
+    key: string,
+    ctrl = false,
+    alt = false,
+    shift = false,
+    code?: string,
+  ): boolean {
+    if (InputHandler.ALWAYS_PREVENTED.has(key)) return true;
+    return this.isBoundCommandKey(key, ctrl, alt, shift, code);
+  }
+
+  /**
+   * Whether a keystroke is claimed by a game binding.
+   *
+   * Injected rather than imported, because answering it needs the live
+   * `Keybindings` and the engine's `InputTranslator`, and the game's keybindings
+   * live behind a static on `RogueGame` — which imports `IRogueUI`, which
+   * `CanvasUI` imports, which imports this class. `main.ts` wires it up where
+   * both sides are already in scope. Optional so the headless and unit-test
+   * callers do not have to.
+   */
+  private isBoundCommandKey: (
+    key: string,
+    ctrl: boolean,
+    alt: boolean,
+    shift: boolean,
+    code?: string,
+  ) => boolean = () => false;
+
+  /** @see isBoundCommandKey */
+  setCommandPredicate(
+    fn: (key: string, ctrl: boolean, alt: boolean, shift: boolean, code?: string) => boolean,
+  ): void {
+    this.isBoundCommandKey = fn;
+  }
+
+  /**
+   * Keys whose browser default must be suppressed regardless of any binding.
+   *
+   * These are the ones that scroll the page, move focus, or activate a widget —
+   * and all six are bound to movement or a menu in the defaults, so the game's
+   * action and the browser's both fire.
+   */
+  private static readonly ALWAYS_PREVENTED: ReadonlySet<string> = new Set([
+    "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Tab",
+  ]);
+
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   /** Attach event listeners to the document. Call once on startup. */
@@ -110,8 +165,21 @@ export class InputHandler {
   // ── Internal event handlers ───────────────────────────────────────────────
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {
-    // Prevent browser shortcuts (arrow scroll, space, etc.)
-    if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," ","Tab"].includes(e.key)) {
+    // Suppress the browser's own action for any key the game has claimed.
+    //
+    // The six navigation keys are the long-standing list. What was missing is the
+    // modifier combinations: the defaults bind `Ctrl+S` to save-place, `Ctrl+N`
+    // to build a large fortification, `Ctrl+P` to pull mode, `Ctrl+H` to the
+    // hints screen and `Ctrl+E` to mark-enemies, and **none of them were
+    // preventDefaulted**. So the game ran the command *and* the browser ran its
+    // own — `Ctrl+S` opened Save Page, `Ctrl+H` the History side panel, `Ctrl+E`
+    // Find, and the two destructive ones were `Ctrl+N`, which opens a new window
+    // and takes focus away mid-game, and `Ctrl+P`, whose print dialog can stall
+    // the loop.
+    //
+    // Derived from the bindings rather than from another hard-coded list, so a
+    // binding added tomorrow is covered without editing this file.
+    if (this.shouldPreventDefault(e.key, e.ctrlKey, e.altKey, e.shiftKey, e.code)) {
       e.preventDefault();
     }
 

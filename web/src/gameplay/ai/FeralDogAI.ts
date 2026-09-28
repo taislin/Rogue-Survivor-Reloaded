@@ -14,6 +14,7 @@ import { ActionSleep, ActionWait, SayFlags } from '@engine/actions/Actions';
 import { BaseAI } from './BaseAI';
 import { LOSSensor, SensingFilter, SmellSensor } from './GameplaySensors';
 import { SpecialActions } from './RouteFinder';
+import { LOS } from "@engine/LOS";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Game = any;
@@ -79,7 +80,7 @@ export class FeralDogAI extends BaseAI {
 
     const enemies = this.filterEnemies(game, mapPercepts);
     const isLeaderVisible =
-      !!leader && this.m_LOSSensor.fov.has(`${leader.location.position.x},${leader.location.position.y}`);
+      !!leader && LOS.fovHas(this.m_LOSSensor.fov, leader.location.position);
     const isLeaderFighting = !!leader && this.isAdjacentToEnemy(game, leader);
 
     // 2 attack or flee enemies.

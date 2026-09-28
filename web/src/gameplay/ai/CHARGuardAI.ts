@@ -15,6 +15,7 @@ import { FactionID } from '@gameplay/GameFactions';
 import { OrderableAI } from './OrderableAI';
 import { LOSSensor, SensingFilter } from './GameplaySensors';
 import { SpecialActions } from './RouteFinder';
+import { LOS } from "@engine/LOS";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Game = any;
@@ -211,9 +212,7 @@ export class CHARGuardAI extends OrderableAI {
     if (checkOurLeader) {
       const leader = actor.leader!;
       const lastKnownLeaderPosition = leader.location.position;
-      const isLeaderVisible = this.m_LOSSensor.fov.has(
-        `${lastKnownLeaderPosition.x},${lastKnownLeaderPosition.y}`
-      );
+      const isLeaderVisible = LOS.fovHas(this.m_LOSSensor.fov, lastKnownLeaderPosition);
       const followAction = this.behaviorFollowActor(game, leader, lastKnownLeaderPosition, isLeaderVisible, 1);
       if (followAction) {
         actor.activity = Activity.FOLLOWING;

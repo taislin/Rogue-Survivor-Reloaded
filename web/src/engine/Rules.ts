@@ -34,7 +34,7 @@ import {
 } from "@engine/actions/Actions";
 import { DiceRoller } from "@engine/DiceRoller";
 import { Direction } from "@engine/Direction";
-import { LOS } from "@engine/LOS";
+import { LOS, type FOV } from "@engine/LOS";
 import { Point } from "@engine/Point";
 import { GameMode } from "@engine/Session";
 import { DayPhase, WorldTime } from "@engine/WorldTime";
@@ -1367,15 +1367,15 @@ export class Rules {
   // ── Rules checking: Targeting, Firing and Throwing ───────────────────────
 
   /** List enemies in fov, sorted by distance (closest first). */
-  getEnemiesInFov(actor: Actor, fov: ReadonlySet<string>): Actor[] {
+  getEnemiesInFov(actor: Actor, fov: FOV): Actor[] {
     if (!actor) throw new Error("actor");
     if (!fov) throw new Error("fov");
 
     const list: Actor[] = [];
     const map = actor.location.map!;
 
-    for (const key of fov) {
-      const [x, y] = key.split(",").map(Number);
+    for (const p of LOS.fovPoints(fov)) {
+      const { x, y } = p;
       const other = map.getActorAt(x, y);
       if (!other) continue;
       if (other === actor) continue;
@@ -2439,7 +2439,7 @@ export class Rules {
     actor: Actor,
     time: WorldTime,
     weather: Weather,
-  ): Set<string> {
+  ): FOV {
     return LOS.computeFOVFor(this, actor, time, weather);
   }
 

@@ -745,10 +745,18 @@ export class CanvasUI implements IRogueUI {
    * for C# parity, so both separators have to be handled, and anything a
    * browser would reject in a filename has to go: a `/` would be read as a
    * directory and the download would land nowhere.
+   *
+   * The control-character range is written as the escapes `\x00-\x1F`, never as
+   * literal bytes. It was literal once, which put a NUL and a 0x1F into this
+   * source file — and a source file containing a NUL is classified as *binary*
+   * by `grep` and ripgrep, so every `grep -rn` over `src/` silently answered
+   * "binary file matches" and reported **no findings at all** for this file. That
+   * hides one of the two most important UI files from any audit that greps rather
+   * than `git grep`s. The semantics are identical; only the bytes on disk differ.
    */
   static downloadName(filePath: string): string {
     const base = filePath.split(/[\\/]/).pop() ?? "";
-    const safe = base.replace(/[<>:"|?* -]/g, "_").trim();
+    const safe = base.replace(/[<>:"|?*\x00-\x1F]/g, "_").trim();
     return safe === "" || safe === "." || safe === ".." ? "screenshot.png" : safe;
   }
 
@@ -825,6 +833,18 @@ export class CanvasUI implements IRogueUI {
     // The fallbacks are per-set, so they are stale too: a sprite that was
     // missing from the old style may well be present in the new one.
     this.imageFallbacks.clear();
+    // And so is the grayscale cache, which was the one omission here.
+    //
+    // `grayVariant` is a cache *of the rasterised sprite*, keyed only by image
+    // id, so an entry from the old style is indistinguishable from a fresh one
+    // and is returned without consulting `imageCache`. That made the sprite-style
+    // option half-work: unexplored tiles redrew in the new style immediately,
+    // while every tile the player had already visited — which is most of the map,
+    // since memorised tiles outnumber visible ones — kept the *previous* style's
+    // grayscale sprite until the page was reloaded. A stale cache that silently
+    // serves the previous answer, which is the one failure mode the generation
+    // counter above exists to prevent.
+    this.grayCache.clear();
   }
 
   /** Which set each sprite was actually found in, when it was not the current one. */

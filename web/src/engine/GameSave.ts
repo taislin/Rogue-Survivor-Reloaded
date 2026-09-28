@@ -1,4 +1,5 @@
 import { storage } from "@engine/storage";
+import { reportSwallowed } from "@engine/Diagnostics";
 
 export interface SaveFile {
   version: string;
@@ -83,7 +84,13 @@ export class GameSaveManager {
     storage.removeItem(key);
     try {
       await this.deleteFromIndexedDB(key);
-    } catch (e) {}
+    } catch (e) {
+      // The localStorage copy is already gone, which is what the player asked
+      // for. IndexedDB is the fallback store, so failing to reach it means the
+      // slot is deleted in one place and not the other — worth saying, and worth
+      // not failing the load screen over.
+      reportSwallowed("GameSave.deleteSave (IndexedDB)", e);
+    }
   }
 
   // IndexedDB helpers for large saves

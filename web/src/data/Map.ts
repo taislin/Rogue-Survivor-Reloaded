@@ -1,4 +1,5 @@
 import { Point } from "@engine/Point";
+import { coordKey, coordKeyToPoint } from "@engine/CoordKey";
 import { Rect } from "@engine/Rect";
 import { Direction } from "@engine/Direction";
 import { WorldTime } from "@engine/WorldTime";
@@ -88,35 +89,18 @@ export class Map {
   /**
    * Positional key for the six spatial lookup tables above.
    *
-   * This used to be `` `${x},${y}` ``, which allocated a string on *every*
-   * call — and these tables are read by `isWalkable`, `isTransparent`,
-   * `isBlockingFire` and `isBlockingThrow`, i.e. once per step of every
-   * raycast in `LOS` and once per candidate tile in `RouteFinder`. That is
-   * thousands of short-lived strings per actor per turn, all of them to do an
-   * integer-to-integer hash.
-   *
-   * `y * KEY_STRIDE + x` is injective for any two points whose `x` both lie in
-   * `0..KEY_STRIDE-1`, because then `y1*S + x1 == y2*S + x2` forces equal `x`
-   * and equal `y`. The stride is 1024 for headroom over the largest `x` that
-   * can actually be stored: maps are capped at 100x100
-   * (`RogueGame.MAP_MAX_WIDTH/HEIGHT`) and the widest thing ever keyed is a
-   * border-ring exit at `x == map.width`, so real keys stay well inside
-   * 0..1023. A coordinate beyond that — say x = 1500 — would alias onto
-   * (476, y+1), but nothing keys a tile that far out.
-   *
-   * Note the deliberate absence of an `isInBounds` check here. The string key
-   * had no bounds requirement, and these tables are not all in-bounds: border
-   * exits sit on the outside ring at `x == map.width`, so guarding the readers
-   * against `isInBounds` silently hid every exit on the map edge. The stride
-   * supplies the safety instead.
+   * Delegates to {@link coordKey} rather than carrying its own copy of the
+   * formula. The reasoning — why a number, why this stride, and why there is
+   * deliberately no `isInBounds` guard — lives there, because the Field Of View
+   * uses the identical key and two copies of one formula is how they drift.
    */
   private static key(x: number, y: number): number {
-    return y * 1024 + x;
+    return coordKey(x, y);
   }
 
   /** Inverse of `key`, for the one caller that has a key and needs a tile. */
   private static keyToPoint(k: number): Point {
-    return new Point(k % 1024, Math.floor(k / 1024));
+    return coordKeyToPoint(k);
   }
 
   isInBounds(x: number, y: number): boolean {

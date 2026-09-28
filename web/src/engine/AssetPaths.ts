@@ -99,6 +99,41 @@ export function soundPath(soundId: string): string {
   return `${SFX_ROOT}/${soundId}.ogg`;
 }
 
+/**
+ * Resolve an id the music manager was handed, whether it is music **or** a
+ * sound effect.
+ *
+ * This exists because the C# plays the three sound effects through the *music*
+ * manager — `m_MusicManager.Play(GameSounds.UNDEAD_RISE, MusicPriority.PRIORITY_EVENT)`
+ * at `src/Engine/RogueGame.cs:3280, 3611, 7052` — and loads them into it in the
+ * same list as the tracks (`RogueGame.cs:1180-1182`). So one id namespace reaches
+ * one player, and it is not a music-only namespace.
+ *
+ * The port kept a single `musicPath()` for that, which consults `MUSIC_FILES` and
+ * on a miss falls through to `` `${MUSIC_ROOT}/${musicId}.ogg` ``. `undead rise`
+ * is in `SOUND_FILES` and not `MUSIC_FILES`, so it resolved to
+ * `/assets/music/undead rise.ogg` — a 404, verified against the shipped files
+ * (`assets/sfx/sfx - undead rise.ogg` exists; `assets/music/` has no such file).
+ * Because `play()` assigns `audioElement.src` *before* the request fails, the
+ * effect did not merely fail to play: it replaced and so silenced whatever was
+ * playing. A zombie's arrival — the moment the whole sound design is built
+ * around — was mute, and it took the soundtrack with it.
+ *
+ * So: check both tables, and only guess a directory once neither knows the id.
+ */
+export function audioPath(id: string): string {
+  if (MUSIC_FILES[id] != null) return musicPath(id);
+  if (SOUND_FILES[id] != null) return soundPath(id);
+  // Unknown to both: already-resolved paths pass through, anything else is
+  // treated as a bare music name, which is the pre-existing behaviour.
+  return musicPath(id);
+}
+
+/** Whether `id` names a shipped asset, in either table. */
+export function isKnownAudioId(id: string): boolean {
+  return MUSIC_FILES[id] != null || SOUND_FILES[id] != null;
+}
+
 function withOgg(path: string): string {
   return path.replace(/\.(mp3|ogg|wav)$/i, ".ogg");
 }

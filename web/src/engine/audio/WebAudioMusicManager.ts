@@ -1,5 +1,5 @@
-import { IMusicManager } from './IMusicManager';
-import { musicPath } from '@engine/AssetPaths';
+import { IMusicManager, MusicPriority, type MusicPriorityValue } from './IMusicManager';
+import { audioPath } from '@engine/AssetPaths';
 import { musicGain } from '@gameplay/AudioLevels';
 
 /**
@@ -24,6 +24,8 @@ export class WebAudioMusicManager implements IMusicManager {
   private currentMusicId: string | null = null;
   private volume: number = 0.5;
   private isPlayingState: boolean = false;
+  /** C# `IMusicManager.Priority` — what the current track was started at. */
+  private currentPriority: MusicPriorityValue = MusicPriority.NULL;
 
   /** Per-track correction for the track currently loaded. */
   private trackGain: number = 1.0;
@@ -35,7 +37,14 @@ export class WebAudioMusicManager implements IMusicManager {
 
   constructor() {
     this.audioElement = new Audio();
-    this.audioElement.loop = true;
+    this.audioElement.addEventListener('ended', () => {
+      this.isPlayingState = false;
+    });
+    // NOT `loop = true`. Looping is a property of the individual call in the C# —
+    // `PlayLooping` sets it, `Play` does not (`SFMLSoundManager.cs:129-145`) — so
+    // it is set per play below rather than once, here. Hard-coding it made every
+    // one-shot loop forever, including three ~1s sound effects.
+    this.audioElement.loop = false;
     this.applyVolume();
   }
 
@@ -85,7 +94,15 @@ export class WebAudioMusicManager implements IMusicManager {
     }
   }
 
-  public play(musicId: string): void {
+  public play(musicId: string, priority: MusicPriorityValue): void {
+    this.start(musicId, priority, false);
+  }
+
+  public playLooping(musicId: string, priority: MusicPriorityValue): void {
+    this.start(musicId, priority, true);
+  }
+
+  private start(musicId: string, priority: MusicPriorityValue, loop: boolean): void {
     if (!this.audioElement) return;
     if (this.currentMusicId === musicId && this.isPlayingState) return;
 
@@ -96,7 +113,12 @@ export class WebAudioMusicManager implements IMusicManager {
     }
 
     this.trackGain = musicGain(musicId);
-    this.audioElement.src = musicPath(musicId);
+    this.audioElement.loop = loop;
+    // `audioPath`, not `musicPath`: the C# hands this manager three *sound
+    // effects* as well as the tracks, and `musicPath` resolves only the music
+    // table — so those three 404'd and, because `src` is assigned before the
+    // request resolves, silenced the current track on the way. See `audioPath`.
+    this.audioElement.src = audioPath(musicId);
     this.applyVolume();
 
     this.audioElement
@@ -104,10 +126,14 @@ export class WebAudioMusicManager implements IMusicManager {
       .then(() => {
         this.isPlayingState = true;
         this.currentMusicId = musicId;
+        this.currentPriority = priority;
       })
-      .catch(() => {
-        // Autoplay blocked or asset not found
+      .catch((err) => {
+        // Two causes, and the second used to be invisible: autoplay being blocked
+        // (harmless, retried on the next gesture) and a 404 (a real bug, silent
+        // until now because the rejection was swallowed). Say which.
         this.isPlayingState = false;
+        console.warn(`[audio] could not play "${musicId}" from ${this.audioElement?.src}:`, err);
       });
   }
 
@@ -117,6 +143,7 @@ export class WebAudioMusicManager implements IMusicManager {
       this.audioElement.currentTime = 0;
       this.isPlayingState = false;
       this.currentMusicId = null;
+      this.currentPriority = MusicPriority.NULL;
     }
   }
 
@@ -145,6 +172,11 @@ export class WebAudioMusicManager implements IMusicManager {
   /** C# `IMusicManager.Music`. */
   public getCurrentMusicId(): string | null {
     return this.currentMusicId;
+  }
+
+  /** C# `IMusicManager.Priority`. */
+  public getPriority(): MusicPriorityValue {
+    return this.currentPriority;
   }
 
   /** The master volume, before the per-track correction. */

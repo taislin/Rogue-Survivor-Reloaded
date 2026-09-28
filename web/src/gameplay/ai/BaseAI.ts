@@ -37,6 +37,7 @@ import { ItemGrenade, ItemGrenadeModel, ItemPrimedExplosive, ItemExplosive, Item
 import { ItemFood } from '@engine/items/ItemFood';
 import { ItemBodyArmor } from '@engine/items/ItemBodyArmor';
 import { ItemModel } from '@data/ItemModel';
+import type { FOV } from "@engine/LOS";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Game = any;
@@ -780,7 +781,7 @@ export abstract class BaseAI extends AIController {
   protected filterStrongestVisibleScent(
     _game: Game,
     percepts: Percept[] | null,
-    fov: ReadonlySet<string>
+    fov: FOV
   ): Percept | null {
     if (!percepts || percepts.length === 0) return null;
     let best: Percept | null = null;
@@ -789,7 +790,7 @@ export abstract class BaseAI extends AIController {
       const aiScent = p.percepted;
       if (!(aiScent instanceof AIScent)) continue;
       const pos = p.location.position;
-      if (aiScent.strength > strongest && fov.has(`${pos.x},${pos.y}`)) {
+      if (aiScent.strength > strongest && LOS.fovHas(fov, pos)) {
         best = p;
         strongest = aiScent.strength;
       }
@@ -1550,7 +1551,7 @@ export abstract class BaseAI extends AIController {
     // eat it!
     return new ActionUseItem(this.controlledActor, game, it);
   }
-  protected behaviorSleep(game: Game, fov: ReadonlySet<string>): ActorAction | null {
+  protected behaviorSleep(game: Game, fov: FOV): ActorAction | null {
     // can?
     if (!game.rules.canActorSleep(this.controlledActor).ok) return null;
     // if next to a door/window, try moving away from it.
@@ -1575,9 +1576,7 @@ export abstract class BaseAI extends AIController {
     // find nearest couch.
     let couchPos: Point | null = null;
     let nearestDist = Number.MAX_VALUE;
-    for (const key of fov) {
-      const [x, y] = key.split(',').map(Number);
-      const p = new Point(x, y);
+    for (const p of LOS.fovPoints(fov)) {
       const mapObj = map.getMapObjectAtPoint(p);
       if (mapObj && mapObj.isCouch && map.getActorAtPoint(p) === null) {
         const dist = game.rules.stdDistance(this.controlledActor.location.position, p);
@@ -1800,13 +1799,13 @@ export abstract class BaseAI extends AIController {
     // nope :(
     return null;
   }
-  protected behaviorAssaultBreakables(game: Game, fov: ReadonlySet<string>): ActorAction | null {
+  protected behaviorAssaultBreakables(game: Game, fov: FOV): ActorAction | null {
     const map = this.controlledActor.location.map;
     if (!map) return null;
     // find all barricades & breakables in fov.
     let breakables: Percept[] | null = null;
-    for (const key of fov) {
-      const [x, y] = key.split(',').map(Number);
+    for (const p of LOS.fovPoints(fov)) {
+      const { x, y } = p;
       const mapObj = map.getMapObjectAt(x, y);
       if (!mapObj) continue;
       if (!mapObj.isBreakable) continue;
@@ -2454,7 +2453,7 @@ export abstract class BaseAI extends AIController {
     // nope.
     return null;
   }
-  protected behaviorSecurePerimeter(game: Game, fov: ReadonlySet<string>): ActorAction | null {
+  protected behaviorSecurePerimeter(game: Game, fov: FOV): ActorAction | null {
     /////////////////////////////////////
     // Secure room procedure:
     // 1. Close doors/windows.
@@ -2462,8 +2461,8 @@ export abstract class BaseAI extends AIController {
     /////////////////////////////////////
     const map = this.controlledActor.location.map;
     if (!map) return null;
-    for (const key of fov) {
-      const [x, y] = key.split(',').map(Number);
+    for (const p of LOS.fovPoints(fov)) {
+      const { x, y } = p;
       const mapObj = map.getMapObjectAt(x, y);
       if (!mapObj) continue;
       if (!(mapObj instanceof DoorWindow)) continue;
@@ -2509,7 +2508,7 @@ export abstract class BaseAI extends AIController {
     this.runIfPossible(game.rules);
     return runAway;
   }
-  protected behaviorThrowGrenade(game: Game, fov: ReadonlySet<string>, enemies: Percept[] | null): ActorAction | null {
+  protected behaviorThrowGrenade(game: Game, fov: FOV, enemies: Percept[] | null): ActorAction | null {
     // don't bother if no enemies.
     if (!enemies || enemies.length === 0) return null;
     // only throw if enough enemies.
@@ -2527,9 +2526,7 @@ export abstract class BaseAI extends AIController {
     const maxThrowRange = game.rules.actorMaxThrowRange(this.controlledActor, model.maxThrowDistance);
     let bestSpot: Point | null = null;
     let bestSpotScore = 0;
-    for (const key of fov) {
-      const [ptX, ptY] = key.split(',').map(Number);
-      const pt = new Point(ptX, ptY);
+    for (const pt of LOS.fovPoints(fov)) {
       const distToMe = game.rules.gridDistance(myPos, pt);
       // never throw within blast radius - don't suicide ^^
       if (distToMe <= model.blastAttack.radius) continue;

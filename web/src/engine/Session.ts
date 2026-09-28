@@ -20,6 +20,7 @@ import { Scoring } from "@engine/Scoring";
 import { storage } from "@engine/storage";
 import { GRAPH_VERSION, type GraphData } from "@engine/serialization/SessionGraph";
 import { readSessionGraph, writeSessionGraph, findPlayerActor } from "@engine/serialization/sessionGraphRoot";
+import { reportSwallowed } from "@engine/Diagnostics";
 
 export enum GameMode {
   GM_STANDARD,
@@ -250,7 +251,9 @@ export class Session {
   }
 
   reset(): void {
-    this.seed =
+
+
+    this.lastLoadError = null;    this.seed =
       this.m_ForcedSeed !== 0 ? this.m_ForcedSeed : Math.floor(Date.now() % 0x7fffffff);
     this.m_CurrentMap = null;
     this.m_Scoring = new Scoring();
@@ -545,9 +548,10 @@ export class Session {
       // the graph — so the actor that was the player is recorded here and
       // `RogueGame.LoadGame` reattaches one.
       session.m_LoadedPlayer = loaded.player;
+      session.lastLoadError = null;
 
       return true;
-    } catch {
+    } catch (e) {
       /*
        * Failed to load the session. The C# nulls `s_TheSession` here
        * (`Session.cs:659`) because a load happens at startup, when the only
@@ -556,7 +560,27 @@ export class Session {
        * `RogueGame` holds its own reference and would keep going, while the next
        * `Session.get()` handed out a *different* object. Leaving it alone is
        * both safer and closer to what the player expects from a failed load.
+       *
+       * Returning `false` is the right *behaviour* and was a silent *report*.
+       * Every cause collapsed into it — corrupt JSON, a truncated save, an
+       * unresolvable reference, an out-of-memory, and a genuine deserialiser bug
+       * — and `RogueGame.DoLoadGame` turns `false` into the player-facing
+       * "NO GAME SAVED OR VERSION NOT COMPATIBLE", so the message actively
+       * misdirects: a bug in `specs.ts` is reported to the player as an
+       * incompatible save file, and nothing is written anywhere. The class of
+       * "silently truncated data" bugs this port has already fixed dozens of
+       * times is undiagnosable if the failure leaves no trace.
+       *
+       * So the outcome stays `false` — the live session is untouched either way —
+       * and the reason is reported.
        */
+      console.warn(
+        "[RogueSurvivor] session load failed; the live session has been left untouched:",
+        e,
+      );
+      // `session` is bound inside the `try`, so reach the singleton directly.
+      // It is the same object — `get()` returns the one live instance.
+      Session.get().lastLoadError = e instanceof Error ? e.message : String(e);
       return false;
     }
   }
@@ -574,12 +598,25 @@ export class Session {
     return this.m_LoadedPlayer;
   }
 
+  /**
+   * Why the last `load` failed, or null if it succeeded / has not been tried.
+   *
+   * `load` answers `false` for every cause — corrupt JSON, a truncated save, an
+   * unresolvable reference, an OOM, or a deserialiser bug — and the caller turns
+   * that into one fixed message. This is what lets the message say which, and
+   * what makes the "silently truncated data" class diagnosable after the fact.
+   */
+  lastLoadError: string | null = null;
+
   static delete(_filepath: string | null = null): boolean {
     try {
       storage.removeItem(Session.STORAGE_KEY);
       return true;
-    } catch {
-      // failing silently.
+    } catch (e) {
+      // Was commented "failing silently", which is a description rather than a
+      // decision: a save the player asked to delete and did not is exactly the
+      // kind of thing that must not vanish without a trace.
+      reportSwallowed("Session.delete", e);
       return false;
     }
   }

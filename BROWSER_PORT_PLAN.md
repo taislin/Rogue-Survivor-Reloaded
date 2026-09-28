@@ -1,9 +1,18 @@
 # Rogue Survivor Reloaded — TypeScript / Browser Port
 
-> **Status (2026-09-27):** Phases 1–7 ported and playable. Phase 8 tasks 1–11
-> done; only 12 (optional touch support) remains. **No known open bugs.** The game
-> runs end to end in a browser, a save carries the whole world graph, and
-> `npm run verify` is green. Read [Current State & Handover](#1-current-state--handover).
+> **Status (2026-09-28):** Phases 1–7 ported and playable. Phase 8 tasks 1–11
+> done; only 12 (optional touch support) remains. `npm run verify` is green end to
+> end — type-check, 719 tests in 48 files with coverage enforced, and the Vite
+> build. Read [Current State & Handover](#1-current-state--handover).
+>
+> **Ten presentation and correctness defects were found and fixed 2026-09-28**,
+> all of them invisible to `tsc`, to the build, and to the headless simulator —
+> including two entire features (ORDER_MODE and the target markers) that were
+> dead code, and three sound effects that 404'd. They are recorded in
+> [§1.1a](#11a-fixed-2026-09-28-eight-defects-nothing-could-see) rather than in a
+> bug log, because the *pattern* is the durable part: **three of the ten were a
+> single wrong assumption about a C# value type**, and the class that produced them
+> is now a test rather than a memory.
 >
 > **This file records what is left, not what has been done.** The bug log that used
 > to be here — 70 entries across nine sections — has been removed, along with the
@@ -21,9 +30,10 @@
 > substitutes for the other** (§1.4a). **A blanket rule over heterogeneous data is
 > a silent truncation of it, and absence of an error is not evidence of
 > correctness** — a plausible default and a correct value are indistinguishable
-> until you read both. **Keep one coordinate space**: three of the last six bugs
+> until you read both. **Keep one coordinate space**: four of the last nine bugs
 > were arithmetic that assumed two spaces agreed, and in C# each was a single
-> number. **A grep is a hypothesis generator, not a verdict.**
+> number. **A grep is a hypothesis generator, not a verdict** — and a grep that
+> cannot see a file reports *no findings*, which is not the same as a clean one.
 
 Porting a C# WinForms zombie-survival roguelike (195 files, ~2.5 MB, largest `RogueGame.cs` at 955 KB / 23 233 lines) to a browser-playable TypeScript version. `src/` is the original C# and is **never modified** — it is the reference for every port.
 
@@ -46,6 +56,7 @@ Porting a C# WinForms zombie-survival roguelike (195 files, ~2.5 MB, largest `Ro
 ## Table of Contents
 
 1. [Current State & Handover](#1-current-state--handover)
+   - [1.1a](#11a-fixed-2026-09-28-eight-defects-nothing-could-see) **fixed 2026-09-28 — the `Point` class/struct bug and seven others**
    - [1.1](#11-what-is-proven-clean--do-not-re-audit) **proven clean — do not re-audit**
    - [1.2](#12-the-harness-now-runs-real-games) sim baseline · [1.2a](#12a-three-things-that-look-like-bugs-but-are-not) **not bugs**
    - [1.3](#13-how-to-run-it) commands · [1.4](#14-runs-are-now-reproducible) seeding · [1.4a](#14a-lesson-the-sim-and-the-browser-check-different-things) **the two definitions of done** · [1.4b](#14b-lesson-no-worker-the-world-is-shared-mutable-state) **why there is no sim thread**
@@ -60,6 +71,131 @@ Porting a C# WinForms zombie-survival roguelike (195 files, ~2.5 MB, largest `Ro
 ---
 
 ## 1. Current State & Handover
+
+### 1.1a Fixed 2026-09-28: eight defects nothing could see
+
+Kept as a short record because **the pattern is the durable part, not the
+listings.** Every one of these passed `tsc`, passed the Vite build, and passed the
+headless simulator, and two of them are whole features that were dead code in a
+game reported as feature-complete.
+
+#### The one that produced five of them: `Point` is a class, and the C#'s was a struct
+
+This is the single highest-value thing found in this pass, because it was one
+wrong assumption rather than five separate mistakes. C# `System.Drawing.Point` is a
+**struct**, so every construct leaning on value equality kept working when
+translated; `Point` in the port is a **class**, so each of those silently changed
+meaning — and none of them is a type error.
+
+| Translated construct | C# | Port | Consequence |
+|---|---|---|---|
+| `a == b` on positions | value | **reference** | never true |
+| `HashSet<Point>.Contains` | value | **reference** | never true |
+| `fov.has(p.toString())` | — | `"x, y"` vs a `"x,y"` key | never true |
+
+Cost, all with `showPlayerTargets` and `showPlayerTagsOnMinimap` on by default:
+
+- **All of ORDER_MODE was dead.** `HandlePlayerOrderMode`'s follower-selection
+  test (`RogueGame.cs:9340` is a value comparison on a `HashSet<Point>`) could
+  never be true, so every follower was **greyed out and unselectable** unless
+  phone-linked — with no explanation. The same broken test gated the click-to-tile
+  command in all four `HandlePlayerOrderFollowerTo{BuildFortification,Barricade,Guard,Patrol}`
+  handlers, so clicking a tile to give an order never worked either.
+- **The target markers never drew.** `DrawMap` tested
+  `m_Player.location.position == position` against a `Point` it had just
+  allocated, so `DrawPlayerActorTargets` was unreachable. The player lost *both*
+  the "you are targeting" icon and `ICON_IS_TARGETTED` — the indicator that
+  something is chasing you.
+
+**The fix is a rule, not six edits.** `LOS.fovKey`/`fovHas`/`fovPoints` are now the
+only way to ask about an FOV, `m_PlayerFOV` is the same `FOV` type as every other
+(one representation, not two), and `tests/point-identity.test.ts` **fails the
+build** on a `==` between positions, a `Set<Point>`, a `fov.has(x.toString())`, or
+a hand-rolled `` `${x},${y}` `` key outside `LOS`. Both behaviours are confirmed
+against the broken code: the tests were re-run with the bugs reintroduced and 3 of
+them failed.
+
+The reason it stayed hidden is worth keeping: this is §1.4a exactly, except worse.
+A missing *feature* is visible on screen. A feature that is present, correct in
+every other respect, and gated by one always-false condition looks identical to a
+feature that works.
+
+#### The other three
+
+- **Three sound effects 404'd, and silenced the music doing it.** The C# plays
+  `UNDEAD_RISE`, `NIGHTMARE` and `UNDEAD_EAT` through the **music** manager
+  (`RogueGame.cs:3280,3611,7052`) and loads them in the same list as the tracks.
+  The port had one `musicPath()` consulting only the music table, so `undead rise`
+  resolved to `/assets/music/undead rise.ogg` — which does not exist; the shipped
+  file is `assets/sfx/sfx - undead rise.ogg`. Since `play()` assigns
+  `audioElement.src` *before* the request resolves, each one did not merely fail
+  to play: it **replaced and so silenced** the current track. A zombie's arrival
+  was mute and took the soundtrack with it. `AssetPaths.audioPath` now checks both
+  tables, and `tests/music-priority.test.ts` asserts every managed id resolves to a
+  file that exists on disk.
+- **Music had no priority and every track looped.** C# `MusicPriority` was dropped
+  wholesale, so `UpdateBgMusic` — which fires on a fixed turn cadence — stopped
+  whatever was playing and restarted the map theme, cutting off raid themes and
+  fight cues mid-event. And `loop = true` was set once in the constructor and never
+  reset, so `PLAYER_DEATH`, `FIGHT`, `INTRO` and the three ~1s effects looped for
+  the rest of the session. `play`/`playLooping`/`getPriority` now exist, and each of
+  the 26 call sites carries the priority and loop flag transcribed from the C#.
+- **Two caches answered from a stale copy.** `CanvasUI`'s `grayCache` was the only
+  image cache `invalidateImagesIfSetChanged` did not clear, and it is keyed by
+  image id alone — so switching the sprite-style option left every *already-visited*
+  tile drawing the previous style's grayscale sprite until a reload. And
+  `InputHandler` preventDefaulted a fixed list of six keys, none of which is a
+  modifier combination, so `Ctrl+S/N/P/H/E` each ran the game command **and** the
+  browser's — `Ctrl+N` opened a new window mid-game and `Ctrl+P` a print dialog.
+  The key case is now derived from the live bindings rather than a second list.
+
+#### Two things this pass made structural
+
+- **Nothing is swallowed silently any more.** 28 empty `catch (e) {}` blocks in
+  `RogueGame` (plus three `catch (e2)` and three elsewhere) wrapped the combat and
+  trap *visualisation* path, so a failed blit left a stale screen and printed
+  nothing. Keeping the guard is right; keeping it silent is not.
+  `engine/Diagnostics.ts` gives the project one `reportSwallowed` and one
+  `fireAndForget` — the latter because `void somePromise()` silences the lint rule
+  but not the rejection, and a rejection is **process-fatal under Node's default**
+  `--unhandled-rejections=throw`, i.e. in the simulator and in Vitest.
+  `Session.load` returned `false` for *every* cause and the caller rendered that as
+  "NO GAME SAVED OR VERSION NOT COMPATIBLE", so a deserialiser bug was reported to
+  the player as an incompatible save with nothing logged; it now records why.
+  `tests/silent-failures.test.ts` permits an empty catch only where the source says
+  why silence is correct.
+- **A cold desktop start destroyed the player's settings.** `NeutralinoStorage`
+  called `initAsync()` from its constructor while `setItem` wrote immediately, so
+  every launch read the options as empty, wrote the defaults over the real
+  `storage.json`, and *then* merged the file in. Writes are now withheld until the
+  read lands, serialised, and coalesced — which also stopped a 4.6 MB save from
+  pretty-printing the whole storage on the keypress. Pinned by
+  `tests/neutralino-storage.test.ts`, which runs the real class against a fake
+  `window.Neutralino` with controllable latency, because the bug *is* the race and
+  a synchronous mock would hide it. All six cases were re-run against the original
+  class and all six failed.
+
+#### One performance result worth recording
+
+The Field Of View was a `Set<string>` keyed `` `${x},${y}` ``. `computeFOVFor` builds
+a `(2r+1)²` box — 361 tiles for a living actor — allocating a string per tile, and
+`fovSub` allocates a further one per ray step: **~1 800 set entries and as many
+short-lived strings per actor per turn**, and the sensors `split(",")`-parsed the
+whole set back three times per `sense()`. `Map` had *already* been converted to a
+numeric key for exactly this reason; the FOV simply never was, which is the "keep
+one coordinate space" lesson arriving as a performance bug. Both now delegate to
+one function, `engine/CoordKey.ts`, measured **4.5× faster** on the FOV build in
+isolation. `npm run profile` reads 956 draw calls/frame and 0.84 ms/frame
+engine-side (the recorded 658/1.11 is not comparable — it was taken at the old
+21×21 view, and the view is now 27×21).
+
+Also: the minimap's **player-tag** scan was outside the `minimapRevision` guard
+while the raster inside it was not, so it re-walked all 10 000 tiles on every
+redraw — and a redraw is forced by any mouse movement, ~1.2M tile iterations per
+second at 60–120 Hz. It is now cached under the same guard. Worth recording *what*
+it finds: `DECO_PLAYER_TAG1..4` are only ever read, in the C# too
+(`RogueGame.cs:19059-19065`), so the loop was walking the whole map per frame to
+discover there are none.
 
 ### 1.1 What is proven clean — do not re-audit
 
@@ -249,12 +385,22 @@ not a defect waiting to be fixed.
    remaining subsystems are whatever §1.1 has not listed. This is the one item
    that genuinely needs `src/`.
 4. **Touch support, if it is ever wanted** — the last Phase 8 task, scoped in §5.1.
-5. **Watch the coverage margins.** Thresholds are 50/75/57/50; the measured
-   baseline is 61.7/81.1/74.9/61.7. Note the direction: statements and lines have
-   *fallen* from a peak of 65.15, because the renderer, HUD, options, font and
-   serialisation work added reachable UI code the suites cover less thoroughly
-   than the engine does. Re-measure and re-set all four together; do not lower
-   them to hide a drop.
+5. **Watch the coverage margins.** Thresholds are 50/75/57/50; re-measured
+   2026-09-28 at **60.17/80.71/72.66/60.17** (statements/branches/functions/lines).
+   Note the direction: statements and lines have *fallen* from a peak of 65.15,
+   because the renderer, HUD, options, font and serialisation work added reachable
+   UI code the suites cover less thoroughly than the engine does. Margins are still
+   wide. Re-measure and re-set all four together; do not lower them to hide a drop.
+
+   One caution from the 2026-09-28 pass, which is a coverage trap rather than a
+   margin problem: **a test that reads the source is a shape test, and it is
+   blind to behaviour.** Several of the new tests assert that a rule appears in
+   one place (`LOS.fovKey` is the only FOV key; no empty `catch` without a stated
+   reason). Those are worth having and they do fail on the regressions they were
+   written for — but each was checked by re-introducing the bug and watching the
+   test fail, and each behavioural test was written to drive the shipped code
+   rather than a restatement of it. A source-grep test that never was broken on
+   purpose is a comment with a build step.
 
 **If a new bug turns up**, the pattern that has worked every time: find the class,
 not the instance. Every one of the ~70 fixed bugs was a specific thing replaced by
@@ -266,14 +412,32 @@ loudly.
 ### 1.6 Known non-bugs (do not re-investigate)
 
 - ~~**`tests/integration/reproducibility.test.ts` fails on Windows** with
-  `spawnSync npx ENOENT`.~~ **Fixed 2026-09-27.** It shelled out to a bare `npx`,
-  which resolves only to `npx.ps1` on Windows, and `execFileSync` does not go
-  through PowerShell — so the suite's only end-to-end CLI test could not run on a
-  developer's own machine, and `npm run verify` halted before its build step. It
-  now bundles through `node_modules/esbuild/bin/esbuild` invoked with
-  `process.execPath`: a plain Node script, so no shell, no `.cmd` shim and no
-  package runner on any platform. **`npm run verify` now completes end to end,
-  which it never has before.**
+  `spawnSync npx ENOENT`.~~ **Fixed 2026-09-27, then re-broken and fixed again
+  2026-09-28 — read all three states, because the middle one is the lesson.**
+  It shelled out to a bare `npx`, which resolves only to `npx.ps1` on Windows,
+  and `execFileSync` does not go through PowerShell. The first fix replaced that
+  with `node_modules/esbuild/bin/esbuild` invoked through `process.execPath`,
+  justified in a code comment as *"`.../bin/esbuild` is a plain Node script, so
+  invoking it with the current executable needs no shell … on any platform."*
+
+  **That was false, and the comment is what kept it false.** On Linux and macOS
+  `esbuild/bin/esbuild` is the *native binary* — a statically-linked Go ELF
+  executable — so `node` parsed its ELF header and threw `SyntaxError: Invalid or
+  unexpected token` from `beforeAll`. All three tests in the file were **skipped**,
+  `npm run verify` failed, and CI was red on `ubuntu-latest`. The Windows fix had
+  broken Linux, and the failure was invisible in the file because the bug was in
+  a *comment* asserting something untrue rather than in the code it described.
+
+  The real fix is to stop reaching for an esbuild CLI: there is no path to one
+  that is correct on every platform, since it is an ELF, a Mach-O, a `.cmd` or a
+  `.ps1` depending on both the OS and the install. The suite now bundles through
+  esbuild's **JavaScript API** (`import { build } from "esbuild"`), which is the
+  same interface everywhere and needs no subprocess. **`npm run verify` completes
+  end to end, and this time on Linux as well as Windows.**
+
+  The transferable part: *a comment asserting a fact about a tool is not a
+  verification of it.* Two of the three bugs fixed in this pass were found by
+  reading a comment and checking it, and in both cases the comment was the bug.
 - **The untracked `icon.png` in the repo root** is not referenced by anything
   (the app uses `web/public/icon-192.png` and friends) and was not produced by
   any code in the tree. Left uncommitted rather than guessing at it.
@@ -281,6 +445,18 @@ loudly.
   correct — C# preloads too — and the service worker caches them so later loads
   are instant. Bump `CACHE_VERSION` in `web/public/sw.js` when releasing, or
   clients keep the old bundle and the update only lands on the *next* load.
+- ~~**A raw NUL byte in `web/src/ui/CanvasUI.ts` made the file invisible to
+  `grep`.**~~ **Fixed 2026-09-28.** `CanvasUI.downloadName` built a
+  filename-sanitising regex with *literal* `0x00` and `0x1F` bytes instead of the
+  escapes `\x00`–`\x1F`. The code was correct, and a source file containing a NUL
+  is classified as **binary** by `grep` and ripgrep — so every `grep -rn` over
+  `src/` answered `binary file matches` and reported **no findings at all** for
+  one of the two most important UI files. A tool reporting zero findings is
+  indistinguishable from a clean audit, which is worse than a loud failure.
+  `git grep` was unaffected (git's heuristic only inspects the first 8 KB), so the
+  file was visible to `tsc`, to `git grep`, and to nothing else.
+  `tests/silent-failures.test.ts` now walks `src/` itself and fails if any file
+  would read as binary.
 
 ### 1.7 Git state
 
@@ -304,8 +480,10 @@ loudly.
   `5b2dc59`; the side panel, hitbox, popup and minimap fixes `4a6e845` and
   `2ebdddf`; the four typeface families `47c5b64`; and the look-handler and
   typeface-repaint fixes `6977b63`.
-- **Current state: 650 tests across 41 files, `npm run verify` green end to end
-  (type-check, coverage, build), working tree clean.**
+- **Current state (2026-09-28): 719 tests across 48 files, `npm run verify` green
+  end to end — type-check, coverage, and the Vite build.** Note that this was *not*
+  true on arrival: the suite was red on Linux, for the reason in §1.6, and this
+  line claimed otherwise. Verify it rather than reading it.
 - Bump `CACHE_VERSION` in `web/public/sw.js` when releasing, or clients keep the
   old bundle and the update only lands on the *next* load (§1.6).
 
@@ -346,7 +524,7 @@ Full detail in `web/.porting/CONVENTIONS.md`. The ones that matter:
 |---|---|
 | `npm run verify` | type-check + coverage + build — what CI runs, in one command |
 | `npm run type-check` | `tsc --noEmit`; covers `src/`, `sim/` and `tests/` — necessary, **not sufficient** |
-| `npm run test` | Vitest, 650 tests in 41 files |
+| `npm run test` | Vitest, 719 tests in 48 files |
 | `npm run test:coverage` | Vitest with coverage thresholds enforced |
 | `npm run build` | Vite production build |
 | `npm run sim` | Headless engine run — the real test |
@@ -368,7 +546,7 @@ Phases 1–7 are ported and building. Historical per-slice detail has been remov
 | 5 — World gen & AI | `BaseAI` (184/184), all 11 AI controllers, 4 generator files (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator` 5 814 lines, `StdTownGenerator`) | Done |
 | 6 — Audio | Web Audio SFX + music | Done |
 | 7 — Save / load | localStorage / IndexedDB, `Session` serialisation | Done |
-| 8 — Polish, sim, CI | Headless harness, 650 tests, CI, PWA, Docker, asset pass, frame-cost pass, desktop wrapper | **In progress** — 11 of 12 tasks done; only 12 (optional touch) remains. See §4.1 |
+| 8 — Polish, sim, CI | Headless harness, 719 tests, CI, PWA, Docker, asset pass, frame-cost pass, desktop wrapper | **In progress** — 11 of 12 tasks done; only 12 (optional touch) remains. See §4.1 |
 
 Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks, 3 SFX), extracted from the C# embedded resources. **Total 24.9 MB**, down from 51.6 MB before the Phase 8 asset pass — see §4.1c.
 
@@ -386,7 +564,7 @@ Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks,
 | 2 | Deterministic `--seed` for reproducible runs | **Done** (`Session.useSeed`, `--seed`) |
 | 3 | Drive the sim to a clean full-length run and fix what it finds | **In progress, and the goal changed** — no seed now reaches 1 000 turns, because that is *correct* behaviour (§1.2: the undead bot is shot by survivors). Keep sweeping seeds for crashes, not for turn count |
 | 4 | Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`) | **Done and verified in a browser** — now 1366×768 widescreen, smooth filtering (the old `image-rendering: pixelated` made upscaled text unreadable) |
-| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 650 tests, 41 files, thresholds enforced (50/75/57/50) |
+| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 719 tests, 48 files, thresholds enforced (50/75/57/50) |
 | 6 | GitHub Actions CI | **Done** — `.github/workflows/ci.yml`, type-check + coverage + build + seeded sim, plus a docker smoke job |
 | 7 | PWA manifest + service worker (offline play) | **Done** — manifest, drawn icons, runtime-caching `sw.js` |
 | 8 | Docker image for the self-hosted server | **Done but unverified** — docker is not installed locally, so the image has never been built; CI will exercise it first |
@@ -444,6 +622,11 @@ once with `npm run verify`. `tests/` is in `tsconfig.json`'s include list, so
 | `save-graph-roundtrip.test.ts` | A real played world through save/load, compared field by field — the check §1.1i bug 64 shows is not "it did not throw" |
 | `integration/save-load.test.ts` | The same at the `Session` level, including a save that cannot be restored failing loudly instead of killing the game |
 | `integration/mouse-paths.test.ts` | Inventory and corpse hit-testing through real mouse positions, at 1× and 2× display scale |
+| `point-identity.test.ts` | **`Point` is a class here and a struct in the C#, so value equality silently became reference identity.** Scans for `==` between positions, a `Set<Point>`, a `fov.has(x.toString())`, and a hand-rolled key outside `LOS`; and drives the two features that died — ORDER_MODE's link predicate (both the pass and the control) and `DrawMap`'s target marker. This is the suite for §1.1a |
+| `music-priority.test.ts` | Every `GameSounds`/`GameMusics` id the music manager is handed resolves to a file that exists, sound effects route to `sfx/` and tracks to `music/`, the C# `MusicPriority` values, and that the manager resolves through `audioPath` rather than `musicPath` |
+| `silent-failures.test.ts` | No `catch` swallows without either reporting or a stated reason; `fireAndForget` cannot produce an unhandled rejection; `Session.load` records *why* it failed; and no source file would read as **binary** to grep (§1.6) |
+| `stale-cache-and-keys.test.ts` | The sprite-style change invalidates the grayscale cache, and a Ctrl-bound key suppresses the browser's own action — both through the real code, not by reading it |
+| `neutralino-storage.test.ts` | The desktop store never writes before its initial read lands, and its writes are serialised and coalesced. Runs the real class against a fake `window.Neutralino` with controllable latency, because the bug *is* a race |
 
 Two constraints worth preserving:
 
@@ -707,12 +890,14 @@ All three cost a wrong conclusion first:
    `Session.save` that blocked this is gone.
 5. **Coverage** — ✅ `@vitest/coverage-v8`, thresholds at 50/75/57/50, set under the
    measured baseline rather than at an aspirational number. **The baseline is now
-   61.7/81.1/74.9/61.7** (statements/branches/functions/lines), against 52.68/77.14/59.97
-   when the data-layer audit landed. Note statements and lines have *fallen* from a peak of
-   65.15/65.15: the renderer, HUD, options, font and serialisation work added
-   reachable UI code that the suites cover less thoroughly than the engine does.
-   Margins are still wide; re-measure and re-set all four together rather than
-   letting `verify` fail on them or lowering them to hide a drop.
+   60.17/80.71/72.66/60.17** (statements/branches/functions/lines), re-measured
+   2026-09-28; it was 61.7/81.1/74.9/61.7 on 2026-09-27, against
+   52.68/77.14/59.97 when the data-layer audit landed. Statements and lines have
+   *fallen* from a peak of 65.15/65.15: the renderer, HUD, options, font and
+   serialisation work added reachable UI code the suites cover less thoroughly than
+   the engine does. Margins are still wide; re-measure and re-set all four
+   together rather than letting `verify` fail on them or lowering them to hide a
+   drop.
 
 
 ---
