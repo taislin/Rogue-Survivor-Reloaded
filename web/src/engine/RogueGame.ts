@@ -374,6 +374,16 @@ export const MENU_LABEL_PREFIX: number = 6;
 export const MENU_WHEEL_ROWS: number = 1;
 
 /**
+ * Top edge of the advisor's "hint available" banner, in logical pixels.
+ *
+ * Below the in-game header (which is drawn at y 0) and below the first line of
+ * the HUD, so it reads as chrome rather than as something that happened on the
+ * map. Kept here rather than inline because it is a layout decision the manual
+ * and the advisor screen would otherwise each have to guess at.
+ */
+export const ADVISOR_BANNER_Y: number = 2 * LINE_SPACING;
+
+/**
  * X at which `DrawMenuOrOptions` should start the value column, given the menu
  * labels it has to clear.
  *
@@ -653,6 +663,18 @@ export class OverlayRect extends Overlay {
 }
 
 export class OverlayPopup extends PopupOverlay {
+	/**
+	 * Centre the box on the logical surface instead of anchoring it at
+	 * `screenPosition`.
+	 *
+	 * `screenPosition` then only supplies `y` — the top edge. For a banner that
+	 * belongs to the screen rather than to a tile: the advisor's "hint available"
+	 * prompt was anchored at `player.x - 3, player.y - 1`, so a two-line box
+	 * landed over the middle of the map, covering the tile the hint was telling
+	 * the player to look at.
+	 */
+	centered: boolean = false;
+
 	constructor(
 		public lines: string[] | null,
 		public textColor: Color,
@@ -665,6 +687,19 @@ export class OverlayPopup extends PopupOverlay {
 	}
 	drawAt(ui: IRogueUI, scale: number): void {
 		if (this.lines === null) return;
+		if (this.centered) {
+			// Not scaled: a centred banner is positioned against the screen, so
+			// the map zoom has no business moving it. `screenPosition.y` is the
+			// top edge in logical pixels either way.
+			ui.UI_DrawPopupCentered(
+				this.lines,
+				this.textColor,
+				this.boxBorderColor,
+				this.boxFillColor,
+				this.screenPosition.y,
+			);
+			return;
+		}
 		ui.UI_DrawPopup(
 			this.lines,
 			this.textColor,
@@ -6035,10 +6070,19 @@ export class RogueGame {
 					s_Options.isAdvisorEnabled &&
 					(availableHint = this.GetAdvisorFirstAvailableHint()) !== -1
 				) {
-					const overlayPos = this.MapToScreen(
-						this.m_Player.location.position.x - 3,
-						this.m_Player.location.position.y - 1,
-					);
+					// Top centre, not beside the player. The C# anchors this at
+					// `player.x - 3, player.y - 1` — three tiles left and one up —
+					// which is the middle of the view, so a two-line box sat over
+					// the map and often over the very tile the hint was telling
+					// the player to go and look at. It is a persistent prompt, not
+					// a tooltip for the thing under the cursor, so it belongs at
+					// the top of the screen where it cannot cover anything.
+					//
+					// Fixed rather than recomputed each frame: it is a constant
+					// banner, and `MapToScreen` would make it track the player,
+					// which is the behaviour being removed. `zoomsWithMap` is false
+					// for the same reason — the map zoom must not move it either.
+					const overlayPos = new Point(0, ADVISOR_BANNER_Y);
 					if (this.m_HintAvailableOverlay == null) {
 						this.m_HintAvailableOverlay = new OverlayPopup(
 							null,
@@ -6046,7 +6090,9 @@ export class RogueGame {
 							Color.White,
 							Color.Black,
 							overlayPos,
+							false,
 						);
+						this.m_HintAvailableOverlay.centered = true;
 						this.AddOverlay(this.m_HintAvailableOverlay);
 					} else {
 						this.m_HintAvailableOverlay.screenPosition = overlayPos;
@@ -11864,7 +11910,7 @@ export class RogueGame {
 				body = [
 					"You can barricade an adjacent door or window.",
 					"Barricading uses material such as planks.",
-					`To BARRICADE : ${key(PlayerCommand.BARRICADE_MODE)}.`,
+					`To BARRICADE : ${key(PlayerCommand.BARRICADE_MODE)}, or point at the door and Left-Click.`,
 				];
 				break;
 
@@ -12002,6 +12048,7 @@ export class RogueGame {
 					"You are standing on a stack of items.",
 					"The items are listed on the right panel in the ground inventory.",
 					"To TAKE an item, move your mouse on the item on the ground inventory and <LMB>.",
+					"Or just Double-Click it on the map. That works on a crate or shelf too.",
 					"Shortcut : <Ctrl-item slot number>.",
 				];
 				break;
@@ -12202,9 +12249,10 @@ export class RogueGame {
 			case AdvisorHint.OBJECT_BREAK:
 				title = "BREAKING OBJECTS";
 				body = [
-					"You can try to BREAK an object around you.",
+					"You can BREAK an object around you.",
 					"Typical breakable objects are furnitures, doors and windows.",
-					`To BREAK : ${key(PlayerCommand.BREAK_MODE)}.`,
+					`To BREAK : ${key(PlayerCommand.BREAK_MODE)}, or point at the object and Left-Click.`,
+					"Bumping into something no longer breaks it, so this is the only way to do it.",
 				];
 				break;
 

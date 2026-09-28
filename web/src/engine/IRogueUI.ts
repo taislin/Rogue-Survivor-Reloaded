@@ -214,6 +214,24 @@ export interface IRogueUI {
   UI_DrawStringBoldLarge(color: Color, text: string, gx: number, gy: number, shadowColor?: Color): void;
 
   UI_DrawPopup(lines: string[], textColor: Color, borderColor: Color, fillColor: Color, gx: number, gy: number): void;
+  /**
+   * A popup box centred horizontally on the logical surface, with `gy` as its
+   * top edge.
+   *
+   * A browser-port addition, and it exists because the box's width is not
+   * knowable by the caller: the UI measures the text in the menu font to size the
+   * box, so centring has to happen where the measurement happens. The engine
+   * cannot compute an x to centre a box whose width it has never seen, and
+   * guessing one from `MENU_CHAR_WIDTH` would be a second, driftable copy of the
+   * layout maths.
+   *
+   * For a banner that sits in the middle of the screen — the advisor's
+   * "hint available" prompt used to be anchored beside the player, where a
+   * two-line box covered the tile they were trying to look at.
+   */
+  UI_DrawPopupCentered(
+    lines: string[], textColor: Color, borderColor: Color, fillColor: Color, gy: number
+  ): void;
   UI_DrawPopupTitle(
     title: string, titleColor: Color,
     lines: string[], textColor: Color,

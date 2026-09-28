@@ -573,6 +573,26 @@ export class CanvasUI implements IRogueUI {
     this.drawPopupBox(lines, lines.map(() => textColor), null, null, borderColor, fillColor, gx, gy);
   }
 
+  /**
+   * Centres the box on the logical surface. `gx` is computed here rather than by
+   * the caller because the box's width comes from measuring the text in the menu
+   * font, which only this layer has done — see `IRogueUI.UI_DrawPopupCentered`.
+   *
+   * Centres on `LOGICAL_W`, not on the canvas' CSS width: the caller works in
+   * logical pixels and the context is already scaled to match, so using the
+   * backing-store width would place the box off the right edge at any scale
+   * other than 1.
+   */
+  UI_DrawPopupCentered(
+    lines: string[], textColor: Color, borderColor: Color, fillColor: Color, gy: number,
+  ): void {
+    this.ctx.font = fontMenu();
+    this.ctx.textBaseline = "top";
+    const maxWidth = lines.reduce((w, l) => Math.max(w, this.ctx.measureText(l).width), 0);
+    const gx = Math.max(0, (LOGICAL_W - (maxWidth + 6 * 2)) / 2);
+    this.drawPopupBox(lines, lines.map(() => textColor), null, null, borderColor, fillColor, gx, gy);
+  }
+
   UI_DrawPopupTitle(
     title: string, titleColor: Color,
     lines: string[], textColor: Color,

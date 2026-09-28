@@ -214,6 +214,11 @@ export class NullRogueUI implements IRogueUI {
     _lines: string[], _textColor: Color, _borderColor: Color, _fillColor: Color, _gx: number, _gy: number
   ): void { this.count("UI_DrawPopup"); }
 
+  /** Counted under `UI_DrawPopup`, which is the call it stands in for. */
+  UI_DrawPopupCentered(
+    _lines: string[], _textColor: Color, _borderColor: Color, _fillColor: Color, _gy: number
+  ): void { this.count("UI_DrawPopup"); }
+
   UI_DrawPopupTitle(
     _title: string, _titleColor: Color,
     _lines: string[], _textColor: Color,
