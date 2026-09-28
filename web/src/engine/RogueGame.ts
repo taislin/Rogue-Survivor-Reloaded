@@ -1089,6 +1089,19 @@ export class RogueGame {
 	private m_MenuRowBands: MenuRowBand[] = [];
 
 	/**
+	 * The advisor hint currently on screen and not yet dismissed, or -1.
+	 *
+	 * Distinct from `m_HintAvailableOverlay`, which is the *box*: that one
+	 * persists between frames and is only torn down once its `lines` are nulled.
+	 * This is the question "is the player looking at a hint right now", which ESC
+	 * needs answered before it consumes the key — and it is also what stops the
+	 * redraw pass from taking the banner down on the frame the hint is first
+	 * displayed, since the hint is marked as given as soon as it is shown and
+	 * would therefore look "no longer available" one line later.
+	 */
+	private m_AdvisorHintPending: number = -1;
+
+	/**
 	 * Minimap raster cache.
 	 *
 	 * The minimap image is a pure function of the visited set, tile minimap
@@ -6064,25 +6077,59 @@ export class RogueGame {
 				!this.m_Player.isDead &&
 				!this.m_Player.model.abilities.isUndead
 			) {
-				// alpha10 fix properly handle hint overlay
+				// The hint is *shown*, not advertised.
+				//
+				// The C# put "HINT AVAILABLE PRESS <Shift+H>" on the map and left
+				// it there until the player found the key, went to a separate
+				// screen, read the hint, and pressed ENTER to come back — four
+				// steps, and the banner covered the map the whole time. A hint is
+				// a few lines of text; there is nothing to defer. So it appears
+				// expanded and sits there, and ESC closes it.
+				//
+				// That also makes the Advisor key almost redundant: it still works
+				// and still re-opens the hint on demand, and the hints screen
+				// (Shift+A) is unchanged. Only the *delivery* changed, so nothing
+				// about which hints are given or when is different.
+				//
+				// Marked as given the moment it is displayed, matching
+				// `AdvisorGiveHint` below — which also marks before showing. The C#
+				// does the same, and the alternative (mark on dismissal) would keep
+				// the same hint on screen forever for a player who never presses
+				// ESC, which is worse than a repeat.
+				//
+				// The `pending < 0` guard is load-bearing because of that. Marking
+				// on display means `GetAdvisorFirstAvailableHint` stops returning
+				// this hint — so without the guard the *next* hint that happens to
+				// be applicable would be picked up on the very next frame and
+				// overwrite the one on screen before it had been read. The player
+				// would watch hints flash past, each marked as given, and never
+				// read one. One hint at a time, and only when the last was closed.
 				let availableHint = -1;
 				if (
+					this.m_AdvisorHintPending < 0 &&
 					s_Options.isAdvisorEnabled &&
 					(availableHint = this.GetAdvisorFirstAvailableHint()) !== -1
 				) {
 					// Top centre, not beside the player. The C# anchors this at
 					// `player.x - 3, player.y - 1` — three tiles left and one up —
-					// which is the middle of the view, so a two-line box sat over
-					// the map and often over the very tile the hint was telling
-					// the player to go and look at. It is a persistent prompt, not
-					// a tooltip for the thing under the cursor, so it belongs at
-					// the top of the screen where it cannot cover anything.
+					// which is the middle of the view. The hint is no longer a
+					// two-line nag but a full paragraph, so anchored to the player it
+					// would blanket the map; at the top of the screen it covers the
+					// header and nothing else.
 					//
-					// Fixed rather than recomputed each frame: it is a constant
-					// banner, and `MapToScreen` would make it track the player,
-					// which is the behaviour being removed. `zoomsWithMap` is false
-					// for the same reason — the map zoom must not move it either.
+					// Fixed rather than recomputed each frame, and `zoomsWithMap`
+					// false, for the same reason: a banner belongs to the screen, so
+					// neither the player's tile nor the map zoom may move it.
 					const overlayPos = new Point(0, ADVISOR_BANNER_Y);
+					const { title, body } = this.GetAdvisorHintText(
+						availableHint as AdvisorHint,
+					);
+					const lines = [
+						`HINT : ${title}`,
+						...body,
+						"",
+						`<ESC to close>   (${s_Hints.countAdvisorHintsGiven() + 1}/${AdvisorHint._COUNT})`,
+					];
 					if (this.m_HintAvailableOverlay == null) {
 						this.m_HintAvailableOverlay = new OverlayPopup(
 							null,
@@ -6099,19 +6146,39 @@ export class RogueGame {
 						if (!this.HasOverlay(this.m_HintAvailableOverlay))
 							this.AddOverlay(this.m_HintAvailableOverlay);
 					}
+					this.m_HintAvailableOverlay.lines = lines;
+					// Marked here rather than on ESC; see the comment above.
+					this.m_AdvisorHintPending = availableHint as AdvisorHint;
+					s_Hints.setAdvisorHintAsGiven(availableHint as AdvisorHint);
+					this.SaveHints();
 
-					const { title: hintTitle } = this.GetAdvisorHintText(
-						availableHint as AdvisorHint,
-					);
-					this.m_HintAvailableOverlay.lines = [
-						`HINT AVAILABLE PRESS <${s_KeyBindings.get(PlayerCommand.ADVISOR) ?? ""}>`,
-						hintTitle,
-					];
-				} else if (
-					this.m_HintAvailableOverlay != null &&
-					this.HasOverlay(this.m_HintAvailableOverlay)
-				) {
-					this.RemoveOverlay(this.m_HintAvailableOverlay);
+				} else if (this.m_HintAvailableOverlay != null) {
+					// Two ways to get here, and they need different handling.
+					//
+					// Advisor switched off: take it down now and clear `pending`.
+					// The player has just said they do not want hints, and a banner
+					// that outlives the option that produced it is worse than one
+					// that never appeared. Clearing `pending` with it matters — ESC
+					// consults that field to decide whether to consume itself, and
+					// a stale value would swallow the next ESC with nothing on
+					// screen to explain it.
+					//
+					// No `return` here: this is inside the play loop, and returning
+					// would leave `HandlePlayerActor` and end the player's turn
+					// entirely. Falling through is the whole point — the turn
+					// continues, the banner is just gone.
+					if (!s_Options.isAdvisorEnabled) {
+						this.m_AdvisorHintPending = -1;
+						this.m_HintAvailableOverlay.lines = null;
+						if (this.HasOverlay(this.m_HintAvailableOverlay))
+							this.RemoveOverlay(this.m_HintAvailableOverlay);
+					}
+					// Otherwise there is simply nothing new, because the hint on
+					// screen is still pending. Leave the box alone: it is already
+					// marked as given, so it no longer looks "available", and this
+					// is the branch every frame takes while the player reads it.
+					// Tearing it down here is what would make the hint flash and
+					// vanish unread.
 				}
 			}
 			this.debugTrace?.("    loop: RedrawPlayScreen...");
@@ -6138,6 +6205,17 @@ export class RogueGame {
 				//////////////
 				// Handle key
 				//////////////
+				// ESC closes the advisor hint. Checked before the command
+				// translation because ESC is bound to nothing in the play loop, so
+				// there is nothing to shadow - and because the hint is a
+				// dismissible thing on screen, not a mode. Consuming it and
+				// `continue`ing rather than falling through means ESC never
+				// doubles as a "cancel" for whatever the player does next.
+				if (inKey.key === "Escape" && this.m_AdvisorHintPending >= 0) {
+					this.m_AdvisorHintPending = -1;
+					continue;
+				}
+
 				// Browser port: the first-person view re-aims the movement keys. Done
 				// here, on the translated command, so the binding table keeps one
 				// meaning per key and no key is bound to two commands. The top-down
