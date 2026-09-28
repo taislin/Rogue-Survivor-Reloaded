@@ -124,3 +124,118 @@ describe("InputHandler.getMousePosition", () => {
     expect(atDpr2).toEqual(atDpr1);
   });
 });
+
+/**
+ * The wheel.
+ *
+ * Two things have to be true and neither is obvious. It has to *consume*, because
+ * a menu that redraws on a notch polls it in a loop and a non-consuming version
+ * returns from the wait immediately and on every pass after — the screen
+ * repaints as fast as the CPU allows and no keystroke ever gets a turn. That is
+ * the `UI_PeekKey` bug already documented at the top of this file, and the wheel
+ * is the third instance of it. And it has to be in *pixels*, because the browser
+ * does not report it that way.
+ */
+describe("InputHandler.peekWheel", () => {
+  /** Dispatches a wheel event without a DOM; see `mouseAt` above. */
+  function wheel(input: InputHandler, deltaY: number, deltaMode = 0): { prevented: boolean } {
+    const state = { prevented: false };
+    (input as unknown as {
+      onWheel: (e: { deltaY: number; deltaMode: number; preventDefault: () => void }) => void;
+    }).onWheel({ deltaY, deltaMode, preventDefault: () => { state.prevented = true; } });
+    return state;
+  }
+
+  it("returns 0 when the wheel has not moved", () => {
+    expect(new InputHandler().peekWheel()).toBe(0);
+  });
+
+  it("consumes the delta it returns", () => {
+    const input = new InputHandler();
+    wheel(input, 100);
+    expect(input.peekWheel()).toBe(100);
+    // The dangerous one: a second read must be empty, or a polling caller spins.
+    expect(input.peekWheel()).toBe(0);
+  });
+
+  it("accumulates a gesture's events instead of keeping only the last", () => {
+    // A mouse wheel and a trackpad are not the same device. Chrome sends one
+    // deltaY of ~100 per notch; a trackpad sends a stream of small deltas that
+    // together make one gesture. Keeping only the last event drops most of a
+    // flick — the list jumps one row and stops.
+    const input = new InputHandler();
+    for (const delta of [7, 11, 9, 13, 6]) wheel(input, delta);
+    expect(input.peekWheel()).toBe(46);
+  });
+
+  it("sums across separate polls, so nothing is lost between them", () => {
+    const input = new InputHandler();
+    wheel(input, 30);
+    expect(input.peekWheel()).toBe(30);
+    wheel(input, 30);
+    expect(input.peekWheel()).toBe(30);
+  });
+
+  it("claims the event, so the page cannot scroll under the menu", () => {
+    // The page is one full-screen canvas with `overflow: hidden`, so there is
+    // nothing to scroll — but a gesture that reaches a menu must not scroll-chain
+    // or rubber-band anyway. Also why the listener is registered non-passive: a
+    // passive handler cannot call preventDefault, and the failure would be silent.
+    expect(wheel(new InputHandler(), 100).prevented).toBe(true);
+  });
+
+  it("keeps a reverse gesture negative rather than folding it", () => {
+    const input = new InputHandler();
+    wheel(input, -100);
+    expect(input.peekWheel()).toBe(-100);
+  });
+
+  it("has an injectable path, so a headless run can wheel", () => {
+    const input = new InputHandler();
+    input.postWheel(100);
+    expect(input.peekWheel()).toBe(100);
+    expect(input.peekWheel()).toBe(0);
+  });
+});
+
+/**
+ * `deltaY` is not a distance, and using it as one is a cross-browser bug that
+ * looks like a broken wheel rather than a units difference: Firefox reports
+ * *lines* and Chrome reports *pixels* for the same physical gesture, so the same
+ * notch moves a list several rows in Chrome and one in Firefox.
+ */
+describe("InputHandler.wheelPixels", () => {
+  it("passes pixel deltas through unchanged", () => {
+    expect(InputHandler.wheelPixels(100, 0)).toBe(100);
+  });
+
+  it("scales Firefox's line deltas up to pixels", () => {
+    // Firefox: 3 lines for one notch. Untreated, 3 "pixels" is a third of a row
+    // and most notches would not move the selection at all.
+    const lines = 3;
+    expect(InputHandler.wheelPixels(lines, 1)).toBeGreaterThan(lines * 10);
+  });
+
+  it("scales page deltas up to pixels", () => {
+    expect(InputHandler.wheelPixels(1, 2)).toBeGreaterThan(InputHandler.wheelPixels(1, 1));
+  });
+
+  it("orders the three modes the way a real gesture does", () => {
+    // One notch, as each engine reports it, must land in the same ballpark — that
+    // is the entire point of normalising.
+    const chrome = InputHandler.wheelPixels(100, 0);
+    const firefox = InputHandler.wheelPixels(3, 1);
+    expect(Math.abs(chrome - firefox) / chrome).toBeLessThan(0.75);
+  });
+
+  it("ignores an unrecognised mode rather than dropping the delta", () => {
+    // Unknown must mean "pixels", not "zero": losing the gesture entirely is a
+    // worse failure than a wrong distance.
+    expect(InputHandler.wheelPixels(100, 99)).toBe(100);
+  });
+
+  it("keeps the sign", () => {
+    expect(InputHandler.wheelPixels(-100, 0)).toBe(-100);
+    expect(InputHandler.wheelPixels(-3, 1)).toBeLessThan(0);
+  });
+});

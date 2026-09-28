@@ -10,6 +10,8 @@ import { Point } from "@engine/Point";
 export class InputHandler {
   private readonly keyQueue: GameKeyEvent[]     = [];
   private readonly mouseState = { x: 0, y: 0, buttons: null as MouseButton | null };
+  /** Wheel movement in pixels since the last `peekWheel`. See `wheelPixels`. */
+  private wheelDelta = 0;
 
   // Resolvers waiting for the next key
   private waiters: Array<(e: GameKeyEvent) => void> = [];
@@ -78,6 +80,7 @@ export class InputHandler {
     document.addEventListener("mouseleave", this.onMouseLeave);
     document.addEventListener("mousedown", this.onMouseDown);
     document.addEventListener("mouseup",   this.onMouseUp);
+    document.addEventListener("wheel",     this.onWheel, { passive: false });
   }
 
   /** Remove event listeners. Call on teardown. */
@@ -87,6 +90,7 @@ export class InputHandler {
     document.removeEventListener("mouseleave", this.onMouseLeave);
     document.removeEventListener("mousedown", this.onMouseDown);
     document.removeEventListener("mouseup",   this.onMouseUp);
+    document.removeEventListener("wheel",     this.onWheel);
   }
 
   // ── Input API (consumed by CanvasUI) ──────────────────────────────────────
@@ -162,6 +166,66 @@ export class InputHandler {
     this.mouseState.buttons = buttons === MouseButton.None ? null : buttons;
   }
 
+  /**
+   * The wheel's movement since the last call, in pixels, then cleared.
+   *
+   * Consumes, for the same reason `peekKey` and `peekMouseButtons` do: a menu
+   * that has to redraw on a wheel notch polls this in a loop, and a non-consuming
+   * version would hand the same delta back on every pass — the wait returns
+   * immediately and forever, the screen redraws as fast as the CPU allows, and no
+   * keystroke ever gets a turn. That is the `UI_PeekKey` bug this file already
+   * documents, and the contract is deliberately identical.
+   *
+   * Accumulating rather than reporting the last event is deliberate: a mouse
+   * wheel and a trackpad are not the same device and do not emit one event per
+   * notch. Chrome sends a single `deltaY` of ~100 for a notch; a trackpad sends a
+   * long stream of small deltas that together make one gesture. Keeping only the
+   * last event would drop most of a trackpad flick.
+   */
+  peekWheel(): number {
+    const delta = this.wheelDelta;
+    this.wheelDelta = 0;
+    return delta;
+  }
+
+  /** Inject a wheel delta, in pixels. For the headless UI and tests. */
+  postWheel(deltaPixels: number): void {
+    this.wheelDelta += deltaPixels;
+  }
+
+  /**
+   * Normalises a wheel event's `deltaY` to pixels.
+   *
+   * The raw value is not a distance and cannot be used as one. `deltaMode` says
+   * which unit the number is in, and the three cases disagree by two orders of
+   * magnitude:
+   *
+   *  - `0` **pixel** — Chrome and Edge, ~100 for one notch.
+   *  - `1` **line** — Firefox, ~3 for one notch.
+   *  - `2` **page** — older engines, ~1 for a whole page.
+   *
+   * So the same physical gesture on the same mouse moves the list about three
+   * rows in Chrome and one row in Firefox, which reads as the wheel being broken
+   * on one of them rather than as a units difference. Normalising here means the
+   * menu sees pixels everywhere.
+   *
+   * The line and page factors are the CSS reference values, and are not worth
+   * being clever about: they only have to be the right *order of magnitude* for a
+   * notch to feel like a notch, and the menu applies its own pixels-per-row on
+   * top.
+   *
+   * Static, pure and public so it can be tested directly rather than by reading
+   * the handler — the same reasoning as `shouldPreventDefault`, and for the same
+   * kind of bug: a missing branch here reads perfectly well.
+   */
+  static wheelPixels(deltaY: number, deltaMode: number): number {
+    switch (deltaMode) {
+      case 1:  return deltaY * 16;  // lines
+      case 2:  return deltaY * 400; // pages
+      default: return deltaY;       // pixels
+    }
+  }
+
   // ── Internal event handlers ───────────────────────────────────────────────
 
   private readonly onKeyDown = (e: KeyboardEvent): void => {
@@ -222,6 +286,25 @@ export class InputHandler {
 
   private readonly onMouseUp = (e: MouseEvent): void => {
     this.mouseState.buttons = e.buttons === 0 ? null : this.mapButtons(e.buttons);
+  };
+
+  /**
+   * Records wheel movement, and claims the event.
+   *
+   * `preventDefault` because there is nothing else for the wheel to do: the page
+   * is one full-screen canvas with `overflow: hidden` (see `index.html`), so it
+   * cannot scroll, and a gesture that reaches a menu must not also bounce the
+   * document or trigger the browser's own scroll chaining. Registered
+   * non-passive, because a passive listener cannot call it — a passive `wheel`
+   * handler would be silently ignored here, and the symptom would be a page that
+   * rubber-bands on a menu.
+   *
+   * `deltaMode` is normalised at the boundary so nothing downstream has to know
+   * that Firefox counts lines and Chrome counts pixels; see `wheelPixels`.
+   */
+  private readonly onWheel = (e: WheelEvent): void => {
+    e.preventDefault();
+    this.wheelDelta += InputHandler.wheelPixels(e.deltaY, e.deltaMode);
   };
 
   private mapButtons(buttons: number): MouseButton {

@@ -7,7 +7,8 @@ import {
 	SimRatio,
 	ZupDays,
 } from "@engine/GameOptions";
-import type { IRogueUI, GameKeyEvent, MouseButton } from "@engine/IRogueUI";
+import { MouseButton } from "@engine/IRogueUI";
+import type { IRogueUI, GameKeyEvent } from "@engine/IRogueUI";
 import { IMAGE_SETS } from "@engine/AssetPaths";
 import { DEFAULT_VIEW_MODE, VIEW_MODES } from "@engine/firstperson/Types";
 import { FONT_CHOICES } from "@ui/fonts";
@@ -61,6 +62,24 @@ function shadowOf(c: Color): Color {
  * Phase 4 game loop.
  */
 export class OptionsScreen {
+	/**
+	 * Wheel pixels that move the selection by one row.
+	 *
+	 * A mouse notch reports ~100px in Chrome and ~48px in Firefox (3 lines at the
+	 * normalisation factor), so this is not a value every device agrees on — which
+	 * is the point of picking it here rather than in the input layer. It is set so
+	 * a notch moves a few rows: enough that the list travels, few enough that the
+	 * player can still land on a single option and see where they are. The
+	 * fraction is deliberate, so a fast scroll does not skip past everything.
+	 *
+	 * Chrome, which reports the largest deltas, moves furthest per notch — the
+	 * opposite of what feels right, but the alternative (normalising to a fixed
+	 * row count per *event*) breaks on a trackpad, where one flick is a stream of
+	 * events. Accumulating and dividing handles both, which is why
+	 * `UI_PeekWheel` sums rather than reporting the last delta.
+	 */
+	private static readonly WHEEL_PIXELS_PER_ROW = 40;
+
 	/** C# `list` array — order is exactly the on-screen order. */
 	private readonly list: OptionIDs[] = [
 		OptionIDs.GAME_AUTOSAVE_PERIOD, // alpha10.1
@@ -171,7 +190,7 @@ export class OptionsScreen {
 		do {
 			this.draw(selected);
 
-			const { key, mousePos, mouseButtons } = await this.waitForInput(prevMouse);
+			const { key, mousePos, mouseButtons, wheel } = await this.waitForInput(prevMouse);
 			prevMouse = mousePos;
 
 			if (key !== null) {
@@ -198,6 +217,22 @@ export class OptionsScreen {
 					default:
 						break;
 				}
+			} else if (wheel !== 0) {
+				// The wheel moves the selection and nothing else, for the same reason
+				// the cursor does: it is a way of pointing at a row, not a way of
+				// operating one. A wheel that changed values would make it the most
+				// dangerous input on the screen, because it is the easiest to move by
+				// accident — a flick while reaching for the mouse, on a screen where
+				// nothing looks editable until you read it.
+				//
+				// Clamped rather than wrapped, unlike the arrow keys. A wheel is a
+				// continuous gesture with a position, so the ends should stop it; a
+				// wheel that wrapped from the last option to the first would also be
+				// startling, because the list scrolls the other way.
+				selected = Math.min(
+					this.list.length - 1,
+					Math.max(0, selected + Math.trunc(wheel / OptionsScreen.WHEEL_PIXELS_PER_ROW)),
+				);
 			} else {
 				// A click outside every row changes nothing. An options screen is
 				// where a stray click is most expensive — it silently changes a
@@ -213,7 +248,14 @@ export class OptionsScreen {
 					// what every native options dialog does, and it means moving
 					// around with the mouse — which is most of what a player does
 					// here — can never change a setting by accident.
-					if (row.index === selected && mouseButtons !== null) {
+					//
+					// Left button only. Any button would include the right one, and in a
+					// browser the right button is not a free action: it is how a player
+					// opens a context menu, and on a canvas it arrives here having
+					// already been preventDefaulted away. Treating it as "step the
+					// value" means the gesture a player makes when they are *looking for*
+					// a right-click menu silently edits a setting instead.
+					if (row.index === selected && mouseButtons === MouseButton.Left) {
 						this.adjust(this.list[selected], 1);
 					} else {
 						selected = row.index;
@@ -244,7 +286,7 @@ export class OptionsScreen {
 	}
 
 	/**
-	 * Waits for a key, a click, or the cursor moving onto a row.
+	 * Waits for a key, a click, a wheel notch, or the cursor moving onto a row.
 	 *
 	 * The same shape as `RogueGame.WaitKeyOrMouse`, and for the same reason: the
 	 * screen has to redraw when the cursor moves, because the selection follows it.
@@ -252,10 +294,13 @@ export class OptionsScreen {
 	 * mean polling, and a blocking wait cannot poll.
 	 *
 	 * Built from the existing `IRogueUI` primitives rather than a new one, so
-	 * nothing else in the port has to grow a method. `UI_PeekMouseButtons`
-	 * *consumes*, so a press is delivered exactly once and a held button is not
-	 * re-reported — the same property the play loop depends on, and the reason it
-	 * is spelled out in `IRogueUI` rather than being an implementation detail.
+	 * nothing else in the port has to grow a method. `UI_PeekMouseButtons` and
+	 * `UI_PeekWheel` *consume*, so a press and a notch are each delivered exactly
+	 * once and a held button is not re-reported — the same property the play loop
+	 * depends on, and the reason it is spelled out in `IRogueUI` rather than being
+	 * an implementation detail. A non-consuming wheel would be fatal here: this
+	 * loop polls, so it would return immediately and forever and repaint the
+	 * screen in a tight loop with the keyboard never getting a turn.
 	 *
 	 * Only real input ends the wait. The `setTimeout(0)` is the poll interval, not
 	 * a redraw: nothing is drawn until this returns.
@@ -264,22 +309,27 @@ export class OptionsScreen {
 		key: GameKeyEvent | null;
 		mousePos: Point;
 		mouseButtons: MouseButton | null;
+		wheel: number;
 	}> {
 		for (;;) {
 			const key = this.ui.UI_PeekKey();
 			if (key !== null) {
-				return { key, mousePos: this.ui.UI_GetMousePosition(), mouseButtons: null };
+				return { key, mousePos: this.ui.UI_GetMousePosition(), mouseButtons: null, wheel: 0 };
+			}
+			const wheel = this.ui.UI_PeekWheel();
+			if (wheel !== 0) {
+				return { key: null, mousePos: this.ui.UI_GetMousePosition(), mouseButtons: null, wheel };
 			}
 			const mousePos = this.ui.UI_GetMousePosition();
 			const mouseButtons = this.ui.UI_PeekMouseButtons();
 			if (mouseButtons !== null) {
-				return { key: null, mousePos, mouseButtons };
+				return { key: null, mousePos, mouseButtons, wheel: 0 };
 			}
 			if (!mousePos.equals(prevMouse)) {
 				// Movement, not a click. Returning here is what makes the selection
 				// follow the cursor; the caller treats it as "no button", so a
 				// brush across the list moves the highlight and changes nothing.
-				return { key: null, mousePos, mouseButtons: null };
+				return { key: null, mousePos, mouseButtons: null, wheel: 0 };
 			}
 			await new Promise<void>((r) => setTimeout(r, 0));
 		}

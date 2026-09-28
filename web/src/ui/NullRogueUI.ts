@@ -37,6 +37,8 @@ export class NullRogueUI implements IRogueUI {
   private readonly keyQueue: GameKeyEvent[] = [];
   private mousePos: Point = new Point(0, 0);
   private pendingButtons: MouseButton | null = null;
+  /** Wheel movement in pixels, consumed by `UI_PeekWheel`. */
+  private pendingWheel = 0;
 
   /** Set to false by `UI_DoQuit()` so a runner can stop its loop. */
   quitRequested = false;
@@ -100,6 +102,24 @@ export class NullRogueUI implements IRogueUI {
 
   UI_PostMouseButtons(buttons: MouseButton): void {
     this.pendingButtons = buttons;
+  }
+
+  /**
+   * Wheel deltas, scriptable.
+   *
+   * Consumes like the two peeks above it — a headless run polls this in the same
+   * loops the browser does, and leaving the delta set would spin them forever.
+   * Injectable because a headless test or a recorded session is the only way to
+   * exercise a menu's wheel handling at all, since the sim has no mouse.
+   */
+  UI_PeekWheel(): number {
+    const delta = this.pendingWheel;
+    this.pendingWheel = 0;
+    return delta;
+  }
+
+  UI_PostWheel(deltaPixels: number): void {
+    this.pendingWheel += deltaPixels;
   }
 
   // ── Delay ──────────────────────────────────────────────────────────────────

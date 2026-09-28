@@ -104,6 +104,22 @@ export interface IRogueUI {
   /** Inject mouse button state. */
   UI_PostMouseButtons(buttons: MouseButton): void;
 
+  /**
+   * Wheel movement since the previous call, in pixels. 0 when there was none.
+   *
+   * **This consumes, like `UI_PeekKey` and `UI_PeekMouseButtons` above, and an
+   * implementation must.** A menu that redraws on a wheel notch polls this in a
+   * loop; a version that left the delta in place would return from the wait
+   * immediately and on every pass after, so the screen would repaint in a tight
+   * loop and no keystroke would ever get a turn. That is the same failure the
+   * other two peeks already had.
+   *
+   * The unit is always pixels. `WheelEvent.deltaY` is not — Firefox reports
+   * lines and Chrome pixels, for the same gesture — so implementations must
+   * normalise, and a caller must not divide by a "line".
+   */
+  UI_PeekWheel(): number;
+
   // ── Delay ─────────────────────────────────────────────────────────────────
 
   /** Pause for `msecs` milliseconds (yielding to the browser event loop). */

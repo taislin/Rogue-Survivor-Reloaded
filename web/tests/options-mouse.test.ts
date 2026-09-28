@@ -32,7 +32,8 @@ import { MusicPriority, type IMusicManager, type MusicPriorityValue } from "@eng
 type Step =
   | { kind: "key"; key: string }
   | { kind: "move"; x: number; y: number }
-  | { kind: "click"; x: number; y: number; button?: MouseButton };
+  | { kind: "click"; x: number; y: number; button?: MouseButton }
+  | { kind: "wheel"; delta: number };
 
 /**
  * A UI that records what it drew and replays scripted input.
@@ -51,10 +52,37 @@ class OptionsProbeUI extends NullRogueUI {
   displayScale = 1;
   private steps: Step[] = [];
   private pressed: GameKeyEvent | null = null;
+  /**
+   * The step the loop is currently looking at, if it is not a key.
+   *
+   * The screen polls key, then wheel, then position, then buttons, and a
+   * `UI_PeekKey` that swallowed a non-key step would drop it before the poll that
+   * could use it saw it. So a non-key step is *held* here until the poll that
+   * understands it consumes it, and `UI_PeekKey` walks past it.
+   */
+  private current: Step | null = null;
 
   setScript(steps: Step[]): void { this.steps = [...steps]; }
 
-  private next(): Step | undefined { return this.steps.shift(); }
+  /**
+   * The step to hand to the poll that is asking, pulling a new one if none is
+   * pending. **Only `UI_PeekKey` may do this**, because the screen polls the key
+   * first on every pass, so by the time the wheel and mouse polls run there is
+   * always a step pending for them if one is coming.
+   *
+   * The restriction matters: `run()` reads the mouse position once *before* its
+   * loop, to seed the "has the cursor moved" comparison. Reading a position is
+   * not an event, so that read must not consume a scripted one — and when this
+   * pulled, the first scripted move was swallowed by it and the screen never saw
+   * it, which looked exactly like the selection not following the cursor.
+   */
+  private next(): Step | null {
+    if (this.current === null) this.current = this.steps.shift() ?? null;
+    return this.current;
+  }
+
+  /** The pending step, if any. Reads state; never advances the script. */
+  private pending(): Step | null { return this.current; }
 
   /**
    * The option rows as drawn: their label text, and where each was drawn.
@@ -76,22 +104,43 @@ class OptionsProbeUI extends NullRogueUI {
     return marked === undefined ? null : marked.text.slice(5).trim();
   }
 
-  // ── input: one scripted step per poll ──
+  // ── input: one scripted step per pass of the screen's poll loop ──
   UI_PeekKey(): GameKeyEvent | null {
     if (this.pressed !== null) { const k = this.pressed; this.pressed = null; return k; }
     const step = this.next();
-    if (step === undefined) return null;
+    if (step === null) return null;
     if (step.kind === "key") {
+      this.current = null;
       this.pressed = { key: step.key, keyCode: step.key.charCodeAt(0), shift: false, ctrl: false, alt: false };
       return this.UI_PeekKey();
     }
-    this.mousePosition = new Point(step.x * this.displayScale, step.y * this.displayScale);
-    if (step.kind === "click") this.mouseButtons = step.button ?? MouseButton.Left;
+    // Not a key: leave it for the poll that understands it.
     return null;
   }
   UI_PostKey(e: GameKeyEvent): void { this.pressed = e; }
-  UI_GetMousePosition(): Point { return this.mousePosition; }
+
+  UI_PeekWheel(): number {
+    const step = this.pending();
+    if (step === null || step.kind !== "wheel") return 0;
+    this.current = null;
+    return step.delta;
+  }
+
+  UI_GetMousePosition(): Point {
+    const step = this.pending();
+    if (step !== null && (step.kind === "move" || step.kind === "click")) {
+      this.mousePosition = new Point(step.x * this.displayScale, step.y * this.displayScale);
+      // A move is finished once the position has moved; a click still has its
+      // button to deliver, so it stays until `UI_PeekMouseButtons` takes it.
+      if (step.kind === "move") this.current = null;
+    }
+    return this.mousePosition;
+  }
   UI_PeekMouseButtons(): MouseButton | null {
+    const step = this.pending();
+    if (step === null || step.kind !== "click") return null;
+    this.current = null;
+    this.mouseButtons = step.button ?? MouseButton.Left;
     const b = this.mouseButtons; this.mouseButtons = null; return b;
   }
   UI_PostMouseButtons(b: MouseButton): void { this.mouseButtons = b === MouseButton.None ? null : b; }
@@ -272,5 +321,122 @@ describe("the options screen and the mouse", () => {
     await run(ui, [{ kind: "click", x: target.x + 5, y: target.y - 9 }]);
     expect(ui.highlighted, "a click missed its row at a fractional display scale")
       .toBe(target.label);
+  });
+});
+
+/**
+ * The wheel moves the selection and nothing else.
+ *
+ * The "nothing else" is the whole point and is asserted separately from the
+ * movement, because a wheel that both moved and edited would still pass a test
+ * that only checked it moved. The wheel is the easiest input on this screen to
+ * move by accident — a flick while reaching for the mouse — and it lands on a
+ * screen where nothing looks editable until you read the row.
+ */
+describe("the options screen under the wheel", () => {
+  it("moves the selection down, and the window follows it", async () => {
+    const probe = new OptionsProbeUI();
+    const rows = await learnRows(probe);
+
+    const ui = new OptionsProbeUI();
+    // One Chrome notch: ~100px, and the screen divides by its own pixels-per-row,
+    // so a notch travels a few rows rather than exactly one.
+    await run(ui, [{ kind: "wheel", delta: 100 }]);
+    const moved = rows.findIndex((r) => r.label === ui.highlighted);
+    expect(moved, "the wheel did not move the selection off the first row").toBeGreaterThan(0);
+  });
+
+  it("changes no setting, however far it is wheeled", async () => {
+    // The safety property. A wheel is a pointer gesture, not an edit.
+    const ui = new OptionsProbeUI();
+    const before = JSON.stringify(Options);
+    await run(ui, [
+      { kind: "wheel", delta: 100 },
+      { kind: "wheel", delta: 400 },
+      { kind: "wheel", delta: -250 },
+    ]);
+    expect(JSON.stringify(Options), "the wheel changed a setting").toBe(before);
+  });
+
+  it("stops at the ends instead of wrapping", async () => {
+    // Deliberately unlike the arrow keys, which wrap. A wheel is a continuous
+    // gesture with a position, so the end of the list should stop it — and
+    // wrapping would also be startling, because the window scrolls the other way.
+    //
+    // 1e9px is 25,000,000 rows. Over a 41-entry list that is 4 mod 41, so a
+    // wrapping implementation would land near the *top* and a clamping one on the
+    // last row: the two cannot be confused.
+    const down = new OptionsProbeUI();
+    await run(down, [{ kind: "wheel", delta: 1e9 }]);
+    // Compared against the rows of the frame just drawn, not against a list read
+    // up front — the screen only draws a window of the 41 entries, so the visible
+    // window is the only thing a player can actually see the cursor on.
+    const drawn = down.rows;
+    expect(down.highlighted, "a huge wheel did not stop at the last row")
+      .toBe(drawn[drawn.length - 1]!.label);
+
+    const up = new OptionsProbeUI();
+    await run(up, [{ kind: "wheel", delta: -1e9 }]);
+    expect(up.highlighted, "a huge reverse wheel did not stop at the first row")
+      .toBe(up.rows[0]!.label);
+  });
+
+  it("never ends the screen", async () => {
+    // The screen is modal and saves on ESC only. If a wheel could dismiss it, a
+    // gesture made while reaching for the mouse would silently commit.
+    const ui = new OptionsProbeUI();
+    let saves = 0;
+    const originalSave = GameOptions.save.bind(GameOptions);
+    GameOptions.save = ((o: GameOptions) => { saves++; originalSave(o); }) as typeof GameOptions.save;
+    try {
+      await run(ui, [
+        { kind: "wheel", delta: 100 },
+        { kind: "wheel", delta: 100 },
+        { kind: "wheel", delta: 100 },
+      ]);
+      expect(saves, "the screen saved more than once").toBe(1);
+    } finally {
+      GameOptions.save = originalSave;
+    }
+  });
+
+  it("is inert when the wheel reports a movement of zero", async () => {
+    // A trackpad emits a stream of deltas, and a polled loop sees the zero-summed
+    // ticks between them. A zero must not move anything — otherwise a resting
+    // finger drifts the list.
+    const probe = new OptionsProbeUI();
+    const rows = await learnRows(probe);
+    const ui = new OptionsProbeUI();
+    await run(ui, [{ kind: "wheel", delta: 0 }]);
+    expect(ui.highlighted, "a zero wheel delta moved the selection").toBe(rows[0]!.label);
+  });
+});
+
+/**
+ * Only the left button operates a row.
+ *
+ * A right button on a canvas is not a free action: it is how a player asks for a
+ * context menu, and in a browser it has already been `preventDefault`ed away by
+ * the time the game sees it. Treating it as "step this setting" means the
+ * gesture a player makes *while looking for* a right-click menu edits a setting
+ * instead.
+ */
+describe("the options screen under the right button", () => {
+  it("selects a row but does not step it", async () => {
+    const probe = new OptionsProbeUI();
+    const rows = await learnRows(probe);
+    const target = rows[3]!;
+
+    const ui = new OptionsProbeUI();
+    const before = JSON.stringify(Options);
+    await run(ui, [
+      { kind: "click", x: target.x + 5, y: target.y - 9, button: MouseButton.Right },
+      // Twice, because a single right click on an *unselected* row would pass
+      // either way: the first click only selects. The second one is the case that
+      // used to edit.
+      { kind: "click", x: target.x + 5, y: target.y - 9, button: MouseButton.Right },
+    ]);
+    expect(ui.highlighted, "a right click did not select the row").toBe(target.label);
+    expect(JSON.stringify(Options), "a right click changed a setting").toBe(before);
   });
 });
