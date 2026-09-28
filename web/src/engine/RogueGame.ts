@@ -171,16 +171,6 @@ type TimeSpan = number;
 /** C# `SetupConfig.GAME_VERSION` (also duplicated in `ui/OptionsScreen.ts`). */
 const GAME_VERSION = "0.2.0";
 
-/** C# `Color.FromArgb(c.A, c.R / 2, c.G / 2, c.B / 2)` — used for text shadows. */
-function shadowColorOf(c: Color): Color {
-	return Color.fromArgb(
-		Math.floor(c.r / 2),
-		Math.floor(c.g / 2),
-		Math.floor(c.b / 2),
-		c.a,
-	);
-}
-
 /** C# numeric/string format alignment: `{0,3}`, `{0,6}` (right aligned). */
 export function padLeft(s: string | number, width: number): string {
 	return String(s).padStart(width, " ");
@@ -23201,18 +23191,11 @@ export class RogueGame {
 		}
 
 		// display.
-		const entriesShadowColor = shadowColorOf(entriesColor);
 		for (let r = 0; r < count; r++) {
 			const i = first + r;
 			const choiceStr =
 				i === currentChoice ? `---> ${entries[i]}` : `     ${entries[i]}`;
-			this.m_UI.UI_DrawStringBoldLarge(
-				entriesColor,
-				choiceStr,
-				gx,
-				gy.value,
-				entriesShadowColor,
-			);
+			this.m_UI.UI_DrawStringBoldLarge(entriesColor, choiceStr, gx, gy.value);
 
 			if (values != null) {
 				const valueStr =
@@ -23248,7 +23231,6 @@ export class RogueGame {
 				`(${currentChoice + 1}/${entries.length} - list scrolls)`,
 				gx,
 				gy.value,
-				shadowColorOf(Color.Gray),
 			);
 			gy.value += MENU_LINE_SPACING;
 		}
@@ -23261,7 +23243,6 @@ export class RogueGame {
 			`ROGUE SURVIVOR - ${GAME_VERSION}`,
 			0,
 			0,
-			Color.DarkRed,
 		);
 	}
 
@@ -23272,7 +23253,6 @@ export class RogueGame {
 			`<${text}>`,
 			0,
 			CANVAS_HEIGHT - MENU_BOLD_LINE_SPACING,
-			shadowColorOf(color),
 		);
 	}
 

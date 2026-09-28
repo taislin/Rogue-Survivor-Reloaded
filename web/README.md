@@ -52,6 +52,8 @@ All run from `web/`.
 | `npm run build`     | Type-check then bundle to `dist/`                           |
 | `npm run build:server` | Compile the Express server to `dist-server/`            |
 | `npm run build:all` | Both of the above                                           |
+| `npm run build:desktop` | Bundle + Neutralino clients for every platform -> `dist/RogueSurvivorReloaded/` |
+| `npm run build:release` | `build:desktop`, then regroup into `dist-release/RogueSurvivorReloaded-{windows,linux,macos}/` |
 | `npm run serve`     | Run the built server                                        |
 | `npm run type-check`| `tsc --noEmit`                                              |
 | `npm test`          | Vitest suite                                                |

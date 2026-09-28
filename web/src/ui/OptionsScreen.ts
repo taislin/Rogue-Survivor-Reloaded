@@ -42,16 +42,6 @@ const RIGHT_PADDING = 400;
 // SetupConfig.GAME_VERSION
 const GAME_VERSION = "0.2.0";
 
-/** Half-intensity shadow colors (C#: Color.FromArgb(c.A, c.R / 2, c.G / 2, c.B / 2)). */
-function shadowOf(c: Color): Color {
-	return Color.fromArgb(
-		Math.floor(c.r / 2),
-		Math.floor(c.g / 2),
-		Math.floor(c.b / 2),
-		c.a,
-	);
-}
-
 /**
  * Browser port of `RogueGame.HandleOptions(bool ingame)` (RogueGame.cs ≈ line 2294).
  *
@@ -342,7 +332,6 @@ export class OptionsScreen {
 			`ROGUE SURVIVOR - ${GAME_VERSION}`,
 			0,
 			0,
-			Color.DarkRed,
 		);
 	}
 
@@ -353,7 +342,6 @@ export class OptionsScreen {
 			`<${text}>`,
 			0,
 			CANVAS_HEIGHT - MENU_BOLD_LINE_SPACING,
-			shadowOf(color),
 		);
 	}
 
@@ -410,19 +398,12 @@ export class OptionsScreen {
 			count = maxRows;
 		}
 
-		const entriesShadowColor = shadowOf(entriesColor);
 		for (let r = 0; r < count; r++) {
 			const i = first + r;
 			const rowTop = gy;
 			const choiceStr =
 				i === currentChoice ? `---> ${entries[i]}` : `     ${entries[i]}`;
-			this.ui.UI_DrawStringBoldLarge(
-				entriesColor,
-				choiceStr,
-				gx,
-				gy,
-				entriesShadowColor,
-			);
+			this.ui.UI_DrawStringBoldLarge(entriesColor, choiceStr, gx, gy);
 
 			const valueStr =
 				i === currentChoice && !valuesOnNewLine
@@ -455,7 +436,6 @@ export class OptionsScreen {
 				`(${currentChoice + 1}/${entries.length} - list scrolls)`,
 				gx,
 				gy,
-				shadowOf(Color.Gray),
 			);
 			gy += MENU_LINE_SPACING;
 		}

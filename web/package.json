@@ -1,6 +1,6 @@
 {
   "name": "rogue-survivor-reloaded-web",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Rogue Survivor Reloaded - Browser port (TypeScript)",
   "private": true,
   "scripts": {
@@ -19,7 +19,8 @@
     "profile": "esbuild sim/profile.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --outfile=node_modules/.cache/profile.mjs --log-level=warning && node node_modules/.cache/profile.mjs",
     "neu:dev": "npx @neutralinojs/neu run",
     "neu:build": "npm run build && npx @neutralinojs/neu build",
-    "build:desktop": "npm run build && npx @neutralinojs/neu build"
+    "build:desktop": "npm run build && npx @neutralinojs/neu build",
+    "build:release": "node scripts/build-release.mjs"
   },
   "dependencies": {
     "express": "^4.18.2"
