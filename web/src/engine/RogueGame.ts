@@ -13857,43 +13857,47 @@ export class RogueGame {
 			return false;
 		}
 
-		// spend AP **IF AI**
-		if (!actor.isPlayer)
-			this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+		// Spend AP here, for the player as well as the AI. The C# guards this with
+		// `if (!actor.IsPlayer)` (RogueGame.cs:13140-13142) and that guard is a
+		// bug, not a design: AP is granted by *increment* each turn
+		// (`actor.ActionPoints += m_Rules.ActorSpeed(actor)`, RogueGame.cs:3495)
+		// and every action costs `BASE_ACTION_COST`, so the invariant that keeps
+		// an actor at exactly one action per turn is "every action spends its
+		// cost". Taking a stair was the one action that did not, so the player
+		// ended the turn holding 100, was granted 100 more, and was picked
+		// again by `GetNextActorToAct` -- measured as two player actions in one
+		// world turn, every turn a stair was used. It is the same defect the
+		// blocked branch below was fixed for, one branch over.
+		//
+		// It was also a livelock for a bot player, which the old comment here
+		// described correctly for the blocked case: no AP consumed means
+		// `canActorUseExit` passes again next turn and the bot re-picks the same
+		// exit forever. The claim that this was "harmless for a human player" is
+		// what kept it: harmless for a *bot*, a free action for a person.
+		this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
 
-		// if player is leaving and changing district, prepare district.
-		let playerChangedDistrict = false;
-		if (
-			isPlayer &&
-			!actor.isBotPlayer &&
-			exit.toMap!.district !== fromMap.district
-		) {
-			playerChangedDistrict = true;
-			await this.BeforePlayerEnterDistrict(exit.toMap!.district!);
-		}
-
-		/////////////////////////////////////
-		// 1. If spot not available, cancel.
-		// 2. Remove from previous map (+ corpse)
-		// 3. Enter map (+corpse).
-		// 4. Handle followers.
-		/////////////////////////////////////
+		// spend AP. Not "if AI" as the C# has it (RogueGame.cs:13140-13142) --
+		// see below.
+		this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
 
 		// 1. If spot not available, cancel.
 		//
-		// The AP spend here is a deliberate divergence from the C#, which returns
-		// bare (RogueGame.cs:13159-13179 -- and so did the port). For a human
-		// player that is harmless: they just press another key. For a **bot** it is
-		// a livelock. A player does not take the `!actor.isPlayer` AP spend above,
-		// so nothing is consumed, `canActorUseExit` still passes on the next turn,
-		// and the AI picks the same doomed exit forever. Confirmed as a hard hang:
-		// seed 8 of the headless sim spins on turn 94 emitting ActionUseExit until
-		// killed, taking `npm test` down with it.
+		// Moved ahead of `BeforePlayerEnterDistrict`, which is where the C# has
+		// it (RogueGame.cs:13160, after the prepare at :13147) and which is
+		// backwards: the prepare is the expensive one. It stops the sim thread,
+		// plays the interlude and runs the whole district catch-up -- potentially
+		// hundreds of turns of simulation, seconds of blocked main thread -- and
+		// only then discovers the destination tile is occupied and refuses the
+		// move. Standing on a district border stair with a zombie on the far side
+		// therefore cost a full interlude and a stall for a move that never
+		// happened. In the C# it was worse than wasted work: the early return also
+		// skipped `AfterPlayerEnterDistrict`, and with it the `StartSimThread`
+		// inside it, leaving background district simulation dead for the rest of
+		// the run. The port stubs the thread, so only the stall applied here.
 		//
-		// The fix is the idiom the C# already uses twenty lines above, where
-		// `TryActorLeaveTile` failing does `SpendActorActionPoints(...);
-		// return false;` under the comment "waste ap". The blocked-spot case simply
-		// forgot it.
+		// The AP spend in these two branches is a divergence from the C#, which
+		// returns bare. The fix is the idiom the C# itself uses a few lines above
+		// for a failed `TryActorLeaveTile`: spend, then return.
 		const other = exit.toMap!.getActorAtPoint(exit.toPosition);
 		if (other !== null) {
 			if (isPlayer)
@@ -13917,6 +13921,26 @@ export class RogueGame {
 				return true;
 			}
 		}
+
+		// if player is leaving and changing district, prepare district.
+		let playerChangedDistrict = false;
+		if (
+			isPlayer &&
+			!actor.isBotPlayer &&
+			exit.toMap!.district !== fromMap.district
+		) {
+			playerChangedDistrict = true;
+			await this.BeforePlayerEnterDistrict(exit.toMap!.district!);
+		}
+
+		/////////////////////////////////////
+		// 2. Remove from previous map (+ corpse)
+		// 3. Enter map (+corpse).
+		// 4. Handle followers.
+		/////////////////////////////////////
+
+		// The "is the destination free?" checks are above, before the district
+		// prepare, for the reason given there.
 
 		// 2. Remove from previous map (+corpse)
 		if (this.IsVisibleToPlayer(actor))
@@ -19272,6 +19296,14 @@ export class RogueGame {
 				if (newSk === null) return list;
 			} while (list.includes(newSk) && attempt < maxTries);
 
+			// The loop can also leave here on `attempt >= maxTries` with `newSk`
+			// still a duplicate of one already chosen, and the C# pushes it
+			// regardless (RogueGame.cs:17578). The choice list is what the player
+			// picks from, so a repeat means the same skill offered twice and
+			// upgradable twice from one decision. Bail instead: a short list is
+			// the C#'s own behaviour when it runs out of legal skills.
+			if (list.includes(newSk)) break;
+
 			list.push(newSk);
 		}
 
@@ -19433,24 +19465,30 @@ export class RogueGame {
 	}
 
 	// C# RollRandomSkillToUpgrade — RogueGame.cs:17757
+	//
+	// The C# returns `null` when the *attempt counter* reaches `maxTries`
+	// (`:17770`), not when the skill it rolled is maxed. Those differ by one:
+	// the loop increments before rolling, so the roll made on the final
+	// permitted attempt is discarded even when it was a perfectly legal,
+	// upgradeable skill — an NPC can be denied its nightly upgrade by luck alone.
+	// Testing the rolled skill instead honours that last roll, and returns null
+	// in exactly the case the C# meant: every one of `maxTries` rolls was maxed.
 	RollRandomSkillToUpgrade(actor: Actor, maxTries: number): SkillID | null {
 		let attempt = 0;
 		let skID: SkillID;
 		const isUndead = actor.model.abilities.isUndead;
+		const isMaxed = (id: SkillID): boolean =>
+			actor.sheet.skillTable.getSkillLevel(id) >=
+			Skills.maxSkillLevel(id);
 
 		do {
 			++attempt;
 			skID = isUndead
 				? Skills.rollUndead(this.m_Rules.diceRoller)
 				: Skills.rollLiving(this.m_Rules.diceRoller);
-		} while (
-			actor.sheet.skillTable.getSkillLevel(skID) >=
-				Skills.maxSkillLevel(skID) &&
-			attempt < maxTries
-		);
+		} while (isMaxed(skID) && attempt < maxTries);
 
-		if (attempt >= maxTries) return null;
-		else return skID;
+		return isMaxed(skID) ? null : skID;
 	}
 
 	// C# DoLooseRandomSkill — RogueGame.cs:17776
@@ -24059,18 +24097,41 @@ export class RogueGame {
 					!this.IsInCHAROffice(new Location(map, pt)),
 			);
 
-			if (!spawnedInside) {
-				// could not spawn inside, do it outside...
-				while (
-					!townGen.actorPlace(
-						roller,
-						2147483647,
-						map,
-						player,
-						(pt) => !this.IsInCHAROffice(new Location(map, pt)),
-					)
+		if (!spawnedInside) {
+			// Could not spawn inside, do it outside. The C# retries with
+			// `int.MaxValue` attempts and an empty loop body
+			// (RogueGame.cs:21167-21172), which has no failure path at all: it can
+			// only exit on success, so a map with no walkable tile outside a CHAR
+			// office would spin at 100% CPU with no message and no way out.
+			//
+			// No trigger is known — `IsInCHAROffice` covers one room and ordinary
+			// floors are always walkable — which is exactly why the bound is worth
+			// adding rather than relying on the assumption holding. One attempt of
+			// 10 000 rolls is the same order as every other spawner in the file
+			// (`spawnActorOnMapBorder` and the sewers spawn use 10 000), so this
+			// costs nothing when the assumption holds, and a map that violates it
+			// now places the player somewhere legal or reports that it could not,
+			// rather than hanging the game.
+			let placedOutside = false;
+			for (let attempt = 0; attempt < 5 && !placedOutside; attempt++) {
+				placedOutside = townGen.actorPlace(
+					roller,
+					10_000,
+					map,
+					player,
+					(pt) => !this.IsInCHAROffice(new Location(map, pt)),
 				);
 			}
+			if (!placedOutside) {
+				// A hard throw would take the game down on a world-generation edge
+				// case, so say so and carry on with the player where they are --
+				// visible and diagnosable, rather than a hang.
+				console.warn(
+					"[RogueSurvivor] could not place the player outside a CHAR office; " +
+						"leaving them at their spawn point.",
+				);
+			}
+		}
 		}
 	}
 

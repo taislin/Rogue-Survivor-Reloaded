@@ -166,9 +166,27 @@ export class Scoring {
     }
     return bonus;
   }
-  /** Difficulty as a float (0..1+), divided by current reincarnation number. */
+  /**
+   * Difficulty as a float (0..1+), already divided by the reincarnation number.
+   *
+   * Not divided again here. The C# divides twice -- once in this getter
+   * (`Scoring.cs:245-249`) and once in `ComputeDifficultyRating`
+   * (`Scoring.cs:611-614`, "// Divide by reincarnation"), and every writer stores
+   * the value that method returned, so the reported rating was `raw / (1+R)^2`
+   * rather than `raw / (1+R)`. `R` is 0 on the first life so it is invisible
+   * there, and halves the score on the first reincarnation, dividing by 8 by the
+   * seventh.
+   *
+   * The division is kept where C# has the comment for it, in
+   * `computeDifficultyRating`, because the HUD calls that method *directly*
+   * (`RogueGame.ts` draws `Score ... @ (int)(100 * Scoring.ComputeDifficultyRating(...))`)
+   * and was therefore showing the correct number while the post-mortem, the
+   * graveyard text file and the hi-score table showed a halved one -- the same
+   * run reporting two different scores. Removing the getter's division is what
+   * makes the two agree.
+   */
   get difficultyRating(): number {
-    return this.m_DifficultyRating / (1 + this.m_ReincarnationNumber);
+    return this.m_DifficultyRating;
   }
   set difficultyRating(value: number) {
     this.m_DifficultyRating = value;
