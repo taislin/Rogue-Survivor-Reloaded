@@ -1,18 +1,21 @@
 # Rogue Survivor Reloaded — TypeScript / Browser Port
 
 > **Status (2026-09-28):** Phases 1–7 ported and playable. Phase 8 tasks 1–11
-> done; only 12 (optional touch support) remains. `npm run verify` is green end to
-> end — type-check, 845 tests in 56 files with coverage enforced, and the Vite
-> build. Read [Current State & Handover](#1-current-state--handover).
+> done; only 12 (optional touch support) remains. `npm run type-check` and
+> `npm test` are green end to end — 852 tests in 56 files, plus the Vite build.
+> **`npm run verify` is red**: its coverage gate fails on branches (49.88% against
+> a 75% floor), and it did so on `master` before the first-person work began
+> (49.09% at `93be901`). That gate is the outstanding item, not the port. Read
+> [Current State & Handover](#1-current-state--handover).
 >
-> **A first-person view mode now exists** (branch `feature/first-person-view`),
-> behind `(Gfx) View Mode` in the options and `F` in game. Top-down remains the
-> default, so the C# behaviour is what a first run shows. It is **not verified in
-> a browser** — there was none in the environment it was built in — so the one
-> outstanding action is to open the game with `?debug=1`, press `F`, and look at
-> it. See [§5.4](#54-firstperson--pseudo-3d-view-mode), which leads with that
-> caveat and then records what was decided, what turned out to be wrong twice, and
-> what is still open.
+> **A first-person view mode now exists**, behind `(Gfx) View Mode` in the options
+> and `F` in game, merged to `master` as `f01ea5d` and labelled `(experimental)`.
+> Top-down remains the default, so the C# behaviour is what a first run shows. It
+> has now been run in a browser and **found wrong six times** — the floor alone
+> accounted for four compounding defects, each hidden by the one before it and by
+> an underlay that guaranteed the coverage metric stayed at 100%. See
+> [§5.4](#54-firstperson--pseudo-3d-view-mode) for what they were and what the
+> durable lesson is.
 >
 > **Ten presentation and correctness defects were found and fixed 2026-09-28**,
 > all of them invisible to `tsc`, to the build, and to the headless simulator —
@@ -489,10 +492,11 @@ loudly.
   `5b2dc59`; the side panel, hitbox, popup and minimap fixes `4a6e845` and
   `2ebdddf`; the four typeface families `47c5b64`; and the look-handler and
   typeface-repaint fixes `6977b63`.
-- **Current state (2026-09-28): 845 tests across 56 files, `npm run verify` green
-  end to end — type-check, coverage, and the Vite build.** Note that this was *not*
-  true on arrival: the suite was red on Linux, for the reason in §1.6, and this
-  line claimed otherwise. Verify it rather than reading it.
+- **Current state (2026-09-28): 852 tests across 56 files. `npm run type-check` and
+  `npm test` are green; `npm run verify` is red on its coverage gate** - branches sit at
+  49.88% against a 75% floor. That is pre-existing, not new: 49.09% at the fork point
+  `93be901`, so the first-person work neither caused nor fixed it. This line previously
+  claimed `verify` was green and was wrong; verify it rather than reading it.
 - Bump `CACHE_VERSION` in `web/public/sw.js` when releasing, or clients keep the
   old bundle and the update only lands on the *next* load (§1.6).
 
@@ -533,7 +537,7 @@ Full detail in `web/.porting/CONVENTIONS.md`. The ones that matter:
 |---|---|
 | `npm run verify` | type-check + coverage + build — what CI runs, in one command |
 | `npm run type-check` | `tsc --noEmit`; covers `src/`, `sim/` and `tests/` — necessary, **not sufficient** |
-| `npm run test` | Vitest, 845 tests in 56 files |
+| `npm run test` | Vitest, 852 tests in 56 files |
 | `npm run test:coverage` | Vitest with coverage thresholds enforced |
 | `npm run build` | Vite production build |
 | `npm run sim` | Headless engine run — the real test |
@@ -555,7 +559,7 @@ Phases 1–7 are ported and building. Historical per-slice detail has been remov
 | 5 — World gen & AI | `BaseAI` (184/184), all 11 AI controllers, 4 generator files (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator` 5 814 lines, `StdTownGenerator`) | Done |
 | 6 — Audio | Web Audio SFX + music | Done |
 | 7 — Save / load | localStorage / IndexedDB, `Session` serialisation | Done |
-| 8 — Polish, sim, CI | Headless harness, 845 tests, CI, PWA, Docker, asset pass, frame-cost pass, desktop wrapper | **In progress** — 11 of 12 tasks done; only 12 (optional touch) remains. See §4.1 |
+| 8 — Polish, sim, CI | Headless harness, 852 tests, CI, PWA, Docker, asset pass, frame-cost pass, desktop wrapper | **In progress** — 11 of 12 tasks done; only 12 (optional touch) remains. See §4.1 |
 
 Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks, 3 SFX), extracted from the C# embedded resources. **Total 24.9 MB**, down from 51.6 MB before the Phase 8 asset pass — see §4.1c.
 
@@ -573,7 +577,7 @@ Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks,
 | 2 | Deterministic `--seed` for reproducible runs | **Done** (`Session.useSeed`, `--seed`) |
 | 3 | Drive the sim to a clean full-length run and fix what it finds | **In progress, and the goal changed** — no seed now reaches 1 000 turns, because that is *correct* behaviour (§1.2: the undead bot is shot by survivors). Keep sweeping seeds for crashes, not for turn count |
 | 4 | Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`) | **Done and verified in a browser** — now 1366×768 widescreen, smooth filtering (the old `image-rendering: pixelated` made upscaled text unreadable) |
-| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 845 tests, 56 files, thresholds enforced (50/75/57/50) |
+| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Harness done, gate failing** — 852 tests, 56 files, thresholds set (50/75/57/50), but branches sit at 49.88% against the 75% floor so `npm run verify` exits non-zero. Pre-existing: 49.09% at the fork point `93be901`. Whether to lower the threshold or write the tests is a decision that has not been made |
 | 6 | GitHub Actions CI | **Done** — `.github/workflows/ci.yml`, type-check + coverage + build + seeded sim, plus a docker smoke job |
 | 7 | PWA manifest + service worker (offline play) | **Done** — manifest, drawn icons, runtime-caching `sw.js` |
 | 8 | Docker image for the self-hosted server | **Done but unverified** — docker is not installed locally, so the image has never been built; CI will exercise it first |
@@ -1007,19 +1011,28 @@ port's side alone.
 
 ### 5.4 First-person / pseudo-3D view mode
 
-**Built** (branch `feature/first-person-view`, 12 commits). It is a **second
+**Built** (14 commits, merged to `master` as `f01ea5d`). It is a **second
 renderer behind an option** — `(Gfx) View Mode`, defaulting to top-down, so the
 C# behaviour is what a first run still shows and a player who has never heard of
 this sees the game that was ported. `F` toggles it in game; the options screen is
 its real home, and the hotkey writes the *option* and then calls the same
 `ApplyOptions` the options screen does, so there is one place a view change takes
-effect.
+effect. The options list labels it `(experimental)`, which is a claim about the
+renderer and not about the option: the stored value is still `"first-person"`,
+because `isFirstPersonView` compares it exactly and an annotated value would read
+as top-down and silently hand the player the other view.
 
-`npm run verify` is green: **845 tests, 56 files, 60.93/81.18/73.31/60.93** against
-50/75/57/50. What follows is what was decided, what turned out to be wrong, and
-what is still open.
+`npm run type-check` and `npm test` are green: **852 tests, 56 files**.
+**`npm run verify` is red, and was red before this work**: branch coverage is
+49.88% against a 75% floor. Measured 49.09% at `93be901`, the commit this branch
+forked from, so it is a pre-existing failure on `master` and not something the
+first-person work caused — the previous figure in this section, 81.18%, was
+never reproducible. The coverage gate is the thing to fix; see §4.3.
 
-#### It has now been looked at, and it was wrong twice
+What follows is what was decided, what turned out to be wrong, and what is still
+open.
+
+#### It has now been looked at, and it was wrong six times
 
 The browser has now run this, from screenshots, and **the software rasteriser and
 the goldens agreed with each other while both were wrong about the browser.** Every
@@ -1037,14 +1050,77 @@ full suite first:
 3. **The view reached a third further than the rules allow**, because the per-column
    wall height was clamped to a minimum the ray distance was not, and FOV was
    leaking into the floor.
+4. **Half the floor tiles were never drawn.** `ringOffsets` was parameterised by a
+   `side` variable, but `side` cannot address a ring: there are `2d+1` values of it
+   and `8d` cells, and `|side|` — used as "how far along the ring this is" — takes
+   only `d` distinct values, so it is many-to-one by construction. It drew the
+   shell's *interior* and never drew the two side edges: 119 of 168 tiles at
+   `distance = 6`, with 50 missing. **This is the one worth remembering: the
+   parameterisation was structurally incapable of enumerating what it claimed to,
+   and no amount of testing the arithmetic would have found it.**
+5. **Sub-quad corners were interpolated rather than projected** — the affine map
+   over a projective shape, wrong by **99.5 px** on a near tile. Subdivision
+   cannot rescue it: subdividing a bilinear map gives a finer bilinear map,
+   converging on the *wrong* shape. So it survived every "add more subdivision"
+   attempt, which is exactly what a real bug does.
+6. **Each tile's base fill sat at its _nearest_ corner depth**, so it won the depth
+   test against its own texture and painted over it. A checkerboard, because which
+   of the two won depended on where in the tile you were looking.
 
 The lesson generalises, and it is the reason this section exists: **a shared `Quad`
 type constrains shape, not behaviour.** Two implementations of one primitive can
 disagree about what that primitive *means* while agreeing perfectly about its
-fields, and a software renderer plus golden images will happily certify both. The
-tests that now guard this assert the *structure* of the drawing code — one place
-builds the clip, one place applies the transform, the flat/textured choice is only a
-choice of what to paint — rather than counting calls, which a mutation can satisfy.
+fields, and a software renderer plus golden images will happily certify both.
+
+Three further things about *how* these were found, which cost more than the bugs:
+
+- **The underlay hid all of them.** It exists to cover sub-pixel seams between
+  floor tiles, and it is drawn over everything below the horizon — so "the floor
+  has no holes" was 100% on a floor that was half missing and 100 px out of place.
+  A metric that counts a pixel as covered if *anything* drew it cannot see a
+  missing layer. The test that finally caught these asks how much of the floor is
+  *textured* floor, with the flat fills removed from the draw list.
+- **The goldens had encoded the broken floor as though it were the design.** That
+  is the failure mode a golden-image harness has when nobody looks at the pictures.
+  Every one of the five was regenerated, having been reviewed rather than accepted.
+- **`minimapColor` is not a colour.** The underlay was painted in it — a *minimap*
+  swatch, `Color.LightGray` for a floor that renders dark grey — and ignored
+  `daylight`, so the seams showed as bright wedges and brighter still at midnight.
+  The data model has no "average colour of this texture", and the engine cannot
+  read pixels; the answer was to use the same expression the per-tile base fills
+  already use, so the backstop always matches the layer it backs up.
+
+The tests that now guard this assert *properties*, not call counts — which a
+mutation can satisfy. One place builds the clip, one place applies the transform,
+the flat/textured choice is only a choice of what to paint, each sub-quad lands
+where the perspective divide puts it to within a pixel, and each base fill is
+provably behind its own texture.
+
+#### A `Quad` cannot be a floor tile, and the error falls as area
+
+Worth recording separately, because it is a limit of the primitive rather than a
+bug in the code. A `Quad` is a **parallelogram**: it stores two edge vectors and
+the fourth corner is *implied*. A floor tile under perspective is projective, so
+that implied corner is never right — **196 px** out at 1×1 subdivision, which is
+the dark wedge the floor still showed around furniture after the four fixes above.
+
+It cannot be corrected. Re-anchoring the quad at its nearest corner is the obvious
+idea and it is **measurably identical to the pixel** — a parallelogram's diagonal
+mismatch is the same from every corner. The only lever is subdivision, and the
+error falls as the square of the cell size:
+
+| split | 1×1 | 2×2 | 4×4 | 8×8 | 16×16 |
+|-------|-----|-----|-----|-----|-------|
+| worst error | 743 px | 372 px | 149 px | 50 px | 15 px |
+
+So `subdivisionsFor` is now 8/4/2/1, where it was 4/2/1 and left ~50 px on the
+nearest tile. That is a real cost — 8×8 is 64 quads for the tile the player is
+standing on — and it is the reason the frame cost is the open item below rather
+than a footnote.
+
+The deeper fix is a primitive that is not a parallelogram (a projective quad, or
+a per-column affine map), which is a change to `Quad` and to both rasterisers
+rather than a tweak. Not done, and named here so the choice is visible.
 
 #### Map objects are billboards, and always were
 
@@ -1109,13 +1185,15 @@ depend on the view mode, leaving the binding table unable to say what a key does
 The controls were therefore fully tested *before* any pixels existed, with
 rendering still top-down, so the headless simulator could verify them.
 
-**Do not trust this section's arithmetic — it was wrong twice.** The original plan
-quoted a 992×672 viewport; it is **864×672**, the map panel's size, so the
-below-horizon area is 864×336. And it asked for the floor to be settled "with a
-measured draw-call profile" while also warning that the profile cannot see this
-renderer. Both were true and they contradicted each other; §4.1d's profile counts
-calls on `NullRogueUI`, which drops every painting call. Resolved by adding the
-`[fp]` browser tally rather than by picking a number.
+**Do not trust this section's arithmetic — it has been wrong five times, and each
+time in a way that looked right.** The original plan quoted a 992×672 viewport; it
+is **864×672**, the map panel's size, so the below-horizon area is 864×336. It asked
+for the floor to be settled "with a measured draw-call profile" while also warning
+that the profile cannot see this renderer. Both were true and they contradicted
+each other; §4.1d's profile counts calls on `NullRogueUI`, which drops every
+painting call. Resolved by adding the `[fp]` browser tally rather than by picking a
+number. The fifth was the `verify` claim in the status header, which said green and
+was not — see the top of this file and §1.1a.
 
 **`Color.fromArgb` takes `(r, g, b, a)` here — the reverse of C#'s
 `FromArgb(alpha, r, g, b)`.** Passing the alpha first compiles, type-checks, and
@@ -1138,6 +1216,13 @@ Worth the whole exercise, and worth recording in the shape they took:
    underlay that cannot have a seam**, so whatever the tiles miss shows
    floor-coloured rather than sky-coloured. 0 of 32 256 floor pixels undrawn,
    asserted for all eight facings.
+
+   **This fix is also what hid the next four.** The underlay covers everything
+   below the horizon, so "0 undrawn" stayed true through a floor that was half
+   missing and 100 px out of place — and the metric asserting it was counting the
+   underlay as floor. The underlay is the right answer to a sub-pixel seam and the
+   wrong answer to a missing tile, and the test could not tell the two apart. The
+   "textured floor only" metric added later is what distinguishes them.
 2. **The underlay had `depth: Infinity`,** so the depth test rejected it as
    already occluded. A depth buffer starts at "nothing here" *as* `Infinity`, so
    the one quad that must never be occluded is the one that cannot use it. It
@@ -1156,10 +1241,24 @@ view and could not tell the two apart. It now checks 60, 75, 100 and 120.
 
 #### Still open
 
-- **Look at it.** Everything above.
-- **The `[fp]` numbers have never been read**, so the frame cost is designed-for
-  rather than measured: ~730 quads at 864×672, of which 288 are wall columns and
-  ~440 floor. Whether that holds 60 fps is unknown.
+- **The `[fp]` numbers have never been read**, and that is now the most important
+  open item in this section. The frame cost was designed-for rather than measured
+  and the design has since changed underneath it: `subdivisionsFor` went 4/2/1 →
+  8/4/2/1, which is **64 quads for the tile the player is standing on** where it
+  was 16. The budget test only counts quads (under 2000) — it does not time
+  anything, and nothing else in the suite can. Whether a frame fits in 16.7 ms is
+  unknown, and it is the one claim in this section that a player would feel
+  immediately. Read the `[fp]` line in a browser under `?debug=1` before anything
+  else here.
+- **The browser still resolves overlap by list order alone.** The test rasteriser
+  keeps the nearest quad by depth; the browser has no depth buffer at all. The
+  base-fill depth was chosen so the two agree — a fill that only *usually* loses to
+  its own texture renders differently in each — but that is a mitigation, not a
+  proof, and a future change to the draw order can reintroduce the disagreement.
+  A shared depth-sorted list, or a real depth buffer, is the structural fix.
+- **A `Quad` cannot represent a floor tile** — 15 px of error even at 16×16
+  subdivision, and the cost of getting under a pixel is unaffordable. See the
+  section above; the fix is a different primitive, not a smaller number.
 - **`MapToScreen` still returns `Point`,** falling back to the pre-move arithmetic
   when a renderer cannot place a position. Turning it into `Point | null` wants
   doing in one pass *with* the renderer in hand — ~90 call sites, each needing a
@@ -1184,6 +1283,9 @@ view and could not tell the two apart. It now checks 60, 75, 100 and 120.
   it does not list the new keys. The option description and the toggle message do
   say that the arrow keys change meaning, which covers the surprise; the manual is
   a content follow-up.
+- **The option is labelled `(experimental)` and nothing enforces that.** It is a
+  label, not a gate. Decide whether the first-person view ships as the default or
+  stays opt-in, which is a content decision this section should not make silently.
 
 #### Verified along the way, so it need not be re-derived
 
