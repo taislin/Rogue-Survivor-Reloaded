@@ -25334,125 +25334,158 @@ export class RogueGame {
 					entryMap.clearView();
 				}
 
-				// simulate loop.
-				const timerStart = Date.now();
-				let lastRedraw = 0;
-				let aborted = false;
-				while (entryMap.localTime.turnCounter < catchupTo) {
-					// alpha10 changed from <= to <
-					const timerNow = Date.now();
+				// Claim the flag the idle catch-up claims, for the same reason.
+				// `AddMessagePressEnter` returns early while it is set, because a
+				// district turn simulated with the player absent must never take a
+				// keypress. The idle path set it; this one did not, and this is the
+				// one that actually runs at a border stair.
+				//
+				// What went wrong without it: the loop below simulates up to
+				// `catchupTo` turns of a district the player is not in, with the
+				// view deliberately cleared. If any of those turns awarded an
+				// achievement, `ShowNewAchievement` called `AddMessagePressEnter`,
+				// which blocked on ENTER -- mid-simulation, on a screen showing a
+				// progress counter, with the player standing on a stair. The
+				// keypress it swallowed was the one they were about to make, which
+				// is the exact failure `AddMessagePressEnter` documents at length.
+				//
+				// Nothing is lost by returning early: the guard deliberately
+				// leaves the caller's own message in the log, so the achievement
+				// is still announced, just read later rather than blocking here.
+				// The ESC-to-abort peek below is unaffected -- it is a peek, not
+				// an `AddMessagePressEnter` -- so a long catch-up can still be
+				// abandoned. Released in a `finally` so a throw mid-catch-up
+				// cannot leave the player permanently un-notifiable.
+				//
+				// The name is wrong for this site -- it is not idle. Left as is
+				// rather than renamed because the declaration sits inside an
+				// uncommitted change of someone else's in this file, and
+				// renaming it across both sites would turn a one-line fix into a
+				// merge conflict over a private field.
+				this.m_SimulatingInIdle = true;
+				try {
+					// simulate loop.
+					const timerStart = Date.now();
+					let lastRedraw = 0;
+					let aborted = false;
+					while (entryMap.localTime.turnCounter < catchupTo) {
+						// alpha10 changed from <= to <
+						const timerNow = Date.now();
 
-					// time to redraw?
-					const doRedraw =
-						entryMap.localTime.turnCounter ===
-							this.m_Session.worldTime.turnCounter || // show last turn
-						entryMap.localTime.turnCounter === lastTime || // show 1st turn
-						timerNow >= lastRedraw + 1000; // show every seconds
+						// time to redraw?
+						const doRedraw =
+							entryMap.localTime.turnCounter ===
+								this.m_Session.worldTime.turnCounter || // show last turn
+							entryMap.localTime.turnCounter === lastTime || // show 1st turn
+							timerNow >= lastRedraw + 1000; // show every seconds
 
-					// redraw?
-					if (doRedraw) {
-						// remember we redrawed.
-						lastRedraw = timerNow;
+						// redraw?
+						if (doRedraw) {
+							// remember we redrawed.
+							lastRedraw = timerNow;
 
-						// show.
-						this.ClearMessages();
-						this.AddMessage(
-							new Message(
-								`Simulating district, please wait ${entryMap.localTime.turnCounter}/${this.m_Session.worldTime.turnCounter}...`,
-								this.m_Session.worldTime.turnCounter,
-								Color.White,
-							),
-						);
-						this.AddMessage(
-							new Message(
-								"(this is an option you can tune)",
-								this.m_Session.worldTime.turnCounter,
-								Color.White,
-							),
-						);
-
-						// estimate turns per seconds and time left.
-						const turnsDone = entryMap.localTime.turnCounter - lastTime;
-						if (turnsDone > 1) {
-							const turnsLeft =
-								this.m_Session.worldTime.turnCounter -
-								entryMap.localTime.turnCounter;
-							const turnsPerSecs =
-								(1000 * turnsDone) / (1 + timerNow - timerStart);
+							// show.
+							this.ClearMessages();
 							this.AddMessage(
 								new Message(
-									`Turns per second    : ${turnsPerSecs.toFixed(2)}.`,
+									`Simulating district, please wait ${entryMap.localTime.turnCounter}/${this.m_Session.worldTime.turnCounter}...`,
+									this.m_Session.worldTime.turnCounter,
+									Color.White,
+								),
+							);
+							this.AddMessage(
+								new Message(
+									"(this is an option you can tune)",
 									this.m_Session.worldTime.turnCounter,
 									Color.White,
 								),
 							);
 
-							const secsLeft = Math.floor(turnsLeft / turnsPerSecs);
-							const mins = Math.floor(secsLeft / 60);
-							const secs = secsLeft % 60;
-							const etaFormat =
-								mins > 0
-									? `${mins} min ${String(secs).padStart(2, "0")} secs`
-									: `${secs} secs`;
-							this.AddMessage(
-								new Message(
-									`Estimated time left : ${etaFormat}.`,
-									this.m_Session.worldTime.turnCounter,
-									Color.White,
-								),
-							);
+							// estimate turns per seconds and time left.
+							const turnsDone = entryMap.localTime.turnCounter - lastTime;
+							if (turnsDone > 1) {
+								const turnsLeft =
+									this.m_Session.worldTime.turnCounter -
+									entryMap.localTime.turnCounter;
+								const turnsPerSecs =
+									(1000 * turnsDone) / (1 + timerNow - timerStart);
+								this.AddMessage(
+									new Message(
+										`Turns per second    : ${turnsPerSecs.toFixed(2)}.`,
+										this.m_Session.worldTime.turnCounter,
+										Color.White,
+									),
+								);
+
+								const secsLeft = Math.floor(turnsLeft / turnsPerSecs);
+								const mins = Math.floor(secsLeft / 60);
+								const secs = secsLeft % 60;
+								const etaFormat =
+									mins > 0
+										? `${mins} min ${String(secs).padStart(2, "0")} secs`
+										: `${secs} secs`;
+								this.AddMessage(
+									new Message(
+										`Estimated time left : ${etaFormat}.`,
+										this.m_Session.worldTime.turnCounter,
+										Color.White,
+									),
+								);
+							}
+							if (aborted)
+								this.AddMessage(
+									new Message(
+										"Simulation aborted!",
+										this.m_Session.worldTime.turnCounter,
+										Color.Red,
+									),
+								);
+							else
+								this.AddMessage(
+									new Message(
+										"<keep ESC pressed to abort the simulation>",
+										this.m_Session.worldTime.turnCounter,
+										Color.Yellow,
+									),
+								);
+							this.RedrawPlayScreen();
 						}
-						if (aborted)
-							this.AddMessage(
-								new Message(
-									"Simulation aborted!",
-									this.m_Session.worldTime.turnCounter,
-									Color.Red,
-								),
-							);
-						else
-							this.AddMessage(
-								new Message(
-									"<keep ESC pressed to abort the simulation>",
-									this.m_Session.worldTime.turnCounter,
-									Color.Yellow,
-								),
-							);
-						this.RedrawPlayScreen();
+
+						// aborted?
+						if (aborted) break;
+
+						// check for abort.
+						const key = this.m_UI.UI_PeekKey();
+						if (key != null && key.key === "Escape") {
+							// jump in time for each map.
+							for (const map of district.maps)
+								map.localTime.turnCounter = this.m_Session.worldTime.turnCounter;
+							// abort!
+							aborted = true;
+						}
+
+						// if not aborted, simulate the district.
+						if (!aborted) {
+							// sim the district.
+							await this.SimulateDistrict(district);
+						}
 					}
 
-					// aborted?
-					if (aborted) break;
+					// Sim ends - either aborted or normal end.
 
-					// check for abort.
-					const key = this.m_UI.UI_PeekKey();
-					if (key != null && key.key === "Escape") {
-						// jump in time for each map.
-						for (const map of district.maps)
-							map.localTime.turnCounter = this.m_Session.worldTime.turnCounter;
-						// abort!
-						aborted = true;
-					}
+					// remove "ESC" message.
+					this.RemoveLastMessage();
 
-					// if not aborted, simulate the district.
-					if (!aborted) {
-						// sim the district.
-						await this.SimulateDistrict(district);
-					}
+					// since sim arbitrary messes with actor APs, we're not quite sure were they are now.
+					// so force them back to zero to have a clean start.
+					for (const map of district.maps)
+						for (const a of map.actors) if (!a.isSleeping) a.actionPoints = 0;
+
+					// stop music.
+					this.m_MusicManager.stop();
+				} finally {
+					this.m_SimulatingInIdle = false;
 				}
-
-				// Sim ends - either aborted or normal end.
-
-				// remove "ESC" message.
-				this.RemoveLastMessage();
-
-				// since sim arbitrary messes with actor APs, we're not quite sure were they are now.
-				// so force them back to zero to have a clean start.
-				for (const map of district.maps)
-					for (const a of map.actors) if (!a.isSleeping) a.actionPoints = 0;
-
-				// stop music.
-				this.m_MusicManager.stop();
 			} // sim has catchup to do
 		} // sim on
 		else {

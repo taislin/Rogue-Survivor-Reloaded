@@ -381,3 +381,87 @@ describe("a background turn must not take a keypress", () => {
     }
   });
 });
+
+/** A neighbouring district that the player's own district has out-run. */
+function laggingNeighbour(): District | null {
+  const world = game.session.world!;
+  const own = game.session.currentMap!.district!;
+  const ownTurn = own.entryMap!.localTime.turnCounter;
+  for (let x = 0; x < world.size; x++) {
+    for (let y = 0; y < world.size; y++) {
+      const other = world.getDistrict(x, y);
+      if (other == null || other === own || other.entryMap == null) continue;
+      if (other.entryMap.localTime.turnCounter < ownTurn) return other;
+    }
+  }
+  return null;
+}
+
+/**
+ * The other site of the same guard: crossing a district border.
+ *
+ * The idle catch-up above already sets `m_SimulatingInIdle`, and the block
+ * above it sets the flag by hand. Neither proves the flag is set by the code that
+ * runs at a border stair — and that is the one that was missing, so the honest
+ * test drives `BeforePlayerEnterDistrict` itself and watches the flag from
+ * inside the loop.
+ *
+ * The symptom it reproduces: the catch-up simulates up to `catchupTo` turns of a
+ * district the player is not in, with the view deliberately cleared. A turn that
+ * awards an achievement calls `ShowNewAchievement` → `AddMessagePressEnter`,
+ * which blocks on ENTER. So the game stopped mid-simulation, on a screen showing
+ * a progress counter, and ate the keypress the player was about to make.
+ */
+describe("a border-stair catch-up must not take a keypress", () => {
+  it("holds the simulating-away flag for every turn it simulates", async () => {
+    await createLag(1);
+    setup();
+    const target = laggingNeighbour();
+    if (target === null) throw new Error("no lagging neighbour to test with");
+
+    const internals = game as unknown as {
+      m_SimulatingInIdle: boolean;
+      m_MessageManager: { count: number };
+      SimulateDistrict: (d: District) => Promise<void>;
+    };
+    const real = internals.SimulateDistrict.bind(game);
+    const observed: boolean[] = [];
+    let pressEnter: "returned" | "blocked" = "returned";
+
+    internals.SimulateDistrict = async (d: District) => {
+      observed.push(internals.m_SimulatingInIdle);
+
+      // Stand in for `ShowNewAchievement`, which is the documented route from a
+      // background district turn to `AddMessagePressEnter`. `IdleProbeUI`'s
+      // `UI_WaitKey` never resolves on its own, so an unguarded prompt adds a
+      // "<press ENTER>" and parks: exactly the bug, without needing to earn an
+      // achievement to get there.
+      const before = internals.m_MessageManager.count;
+      await Promise.race([
+        game.AddMessagePressEnter(),
+        new Promise<void>((r) => setTimeout(() => r(), 150)),
+      ]);
+      if (internals.m_MessageManager.count !== before) pressEnter = "blocked";
+
+      await real(d);
+    };
+
+    try {
+      await game.BeforePlayerEnterDistrict(target);
+    } finally {
+      internals.SimulateDistrict = real;
+    }
+
+    // Without the flag this is the assertion that fails: the catch-up ran, and
+    // every turn of it ran with the flag down.
+    expect(observed.length, "the catch-up simulated no turns at all").toBeGreaterThan(0);
+    expect(
+      observed.every(Boolean),
+      "a turn of the border catch-up ran without the simulating-away flag",
+    ).toBe(true);
+    expect(pressEnter, "a prompt took a keypress mid-catch-up").toBe("returned");
+    // And it must be handed back, or the player is un-notifiable for the rest of
+    // the session — a bug that would be far harder to notice than this one.
+    expect(internals.m_SimulatingInIdle, "the flag was left set after the catch-up").toBe(false);
+  }, SIM_BUDGET_MS);
+});
