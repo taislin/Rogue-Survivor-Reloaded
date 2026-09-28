@@ -74,6 +74,7 @@ import { HiScore, HiScoreTable } from "@engine/HiScoreTable";
 import {
 	type GameKeyEvent,
 	type IRogueUI,
+	type MapView,
 	MouseButton,
 } from "@engine/IRogueUI";
 import { ItemBodyArmor, ItemBodyArmorModel } from "@engine/items/ItemBodyArmor";
@@ -22325,34 +22326,106 @@ export class RogueGame {
 	}
 
 	// C# MapToScreen — RogueGame.cs:19611
+	// Browser port: the arithmetic moved to `IRogueUI.UI_MapToScreen`, because a
+	// second renderer cannot be told how to convert a map position to a screen
+	// position from inside a method that only knows about the tile grid. Nothing
+	// about the answer changed: the top-down renderer returns what this used to.
+	//
+	// The `Point | null` is not handled here yet, on purpose. It is null only when
+	// a renderer cannot see the position, which no top-down position is, so
+	// resolving it to a point costs the top-down view nothing — and changing
+	// ~90 call sites now, for a renderer that does not exist yet, would be
+	// ninety decisions made without a single pixel to check them against.
 	MapToScreen(mapPosition: Point): Point;
 	MapToScreen(x: number, y: number): Point;
 	MapToScreen(mapPosition: Point | number, y?: number): Point {
 		if (typeof mapPosition === "number") {
-			return new Point(
-				(mapPosition - this.m_MapViewRect.left) * TILE_SIZE,
-				((y as number) - this.m_MapViewRect.top) * TILE_SIZE,
+			return (
+				this.uiMapToScreen(mapPosition, y as number) ??
+				this.gridMapToScreen(mapPosition, y as number)
 			);
 		}
 		return this.MapToScreen(mapPosition.x, mapPosition.y);
 	}
 
+	/**
+	 * A map position as the UI places it, or null when it cannot be shown.
+	 *
+	 * The null-returning form, for the callers that have to cope with a position
+	 * off the map. `MapToScreen` above is the form that cannot.
+	 */
+	uiMapToScreen(gx: number, gy: number): Point | null {
+		return this.m_UI.UI_MapToScreen(gx, gy, this.mapView());
+	}
+
+	/**
+	 * The tile-grid conversion `MapToScreen` used to do inline, kept as the
+	 * fallback for a position no renderer can place.
+	 *
+	 * A fallback rather than a magic off-screen point, and the reason is specific:
+	 * `CanvasUI.clampPopupBox` pulls a popup anchor back into the panel, so a
+	 * sentinel would not hide an unplaceable popup — it would stack every one of
+	 * them in a corner, which is a wrong answer rather than a missing one.
+	 *
+	 * Unreachable in the top-down view, which places every map position. It is
+	 * here for the first-person renderer, where "behind the camera" is a real
+	 * answer, and it is a placeholder: `MapToScreen` returns `Point` because
+	 * ninety-odd call sites depend on it, and turning that into `Point | null`
+	 * wants doing in one pass with the renderer in hand, not ninety decisions
+	 * made now against a view that does not exist yet.
+	 */
+	private gridMapToScreen(gx: number, gy: number): Point {
+		return new Point(
+			(gx - this.m_MapViewRect.left) * TILE_SIZE,
+			(gy - this.m_MapViewRect.top) * TILE_SIZE,
+		);
+	}
+
+	/**
+	 * The map window for this frame, in the two tile sizes the conversion needs.
+	 *
+	 * Built on demand from the single copy of the truth (`m_MapViewRect` and the
+	 * zoom) rather than cached, because a cached view is a second copy of the
+	 * frame's geometry, and this project has shipped enough of those.
+	 */
+	private mapView(): MapView {
+		return {
+			rect: this.m_MapViewRect,
+			tileSize: TILE_SIZE,
+			displayTileSize: TILE_SIZE * s_MapZoom,
+		};
+	}
+
 	// C# ScreenToMap — RogueGame.cs:19621
-	// Browser port: the inverse of the zoomed map. `MapToScreen` still returns
-	// positions for 32px tiles (the scale is applied by `withMapZoom`), so the
-	// divisor has to be the tile size as *displayed*, for the mouse to land on
-	// the tile under the cursor. At zoom 1 this is C#'s `TILE_SIZE` again.
+	// Browser port: the inverse of the zoomed map, delegated like `MapToScreen`.
+	// The zoom still matters on this side and not the other — the mouse arrives in
+	// *displayed* pixels, so dividing by the undisplayed tile size would put it on
+	// the wrong tile at zoom 2. That asymmetry is why the `MapView` carries both.
 	ScreenToMap(screenPosition: Point): Point;
 	ScreenToMap(gx: number, gy: number): Point;
 	ScreenToMap(gx: Point | number, gy?: number): Point {
 		if (typeof gx === "number") {
-			const tileSize = TILE_SIZE * s_MapZoom;
-			return new Point(
-				this.m_MapViewRect.left + Math.trunc(gx / tileSize),
-				this.m_MapViewRect.top + Math.trunc((gy as number) / tileSize),
+			return (
+				this.m_UI.UI_ScreenToMap(gx, gy as number, this.mapView()) ??
+				// Same placeholder as `MapToScreen`, and for the same reason: the
+				// top-down view misses nothing, and the two are removed together.
+				this.gridScreenToMap(gx, gy as number)
 			);
 		}
 		return this.ScreenToMap(gx.x, gx.y);
+	}
+
+	/**
+	 * The grid inverse `ScreenToMap` used to do inline, kept as the fallback for
+	 * a screen position that hits nothing. See `gridMapToScreen` — the two are the
+	 * same shim on opposite sides of the conversion, and go away together.
+	 */
+	private gridScreenToMap(gx: number, gy: number): Point {
+		const tileSize = TILE_SIZE * s_MapZoom;
+		return new Point(
+			this.m_MapViewRect.left + Math.trunc(gx / tileSize),
+			this.m_MapViewRect.top + Math.trunc(gy / tileSize),
+		);
 	}
 
 	// C# MouseToMap — RogueGame.cs:19631

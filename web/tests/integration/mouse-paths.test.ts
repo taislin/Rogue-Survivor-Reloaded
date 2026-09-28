@@ -20,8 +20,15 @@ import { Rect } from "@engine/Rect";
 /**
  * A browser-shaped `IRogueUI`: the cursor is whatever the test says it is, keys
  * arrive only when posted, and redraws are counted.
+ *
+ * Extends `NullRogueUI` rather than re-implementing the interface, so the parts
+ * that are not the point of this file — including the map ⇄ screen conversion,
+ * which this test exercises through the mouse — come from the one implementation
+ * that has them. A hand-written `implements IRogueUI` breaks on every interface
+ * addition and invites a second copy of the conversion arithmetic, which is the
+ * exact hazard the move to `IRogueUI` was for.
  */
-class MouseProbeUI implements IRogueUI {
+class MouseProbeUI extends NullRogueUI {
   redraws = 0;
   mousePosition: Point = new Point(0, 0);
   mouseButtons: MouseButton | null = null;

@@ -1,7 +1,7 @@
 import { Color } from "@engine/Color";
 import { Point } from "@engine/Point";
 import { Rect } from "@engine/Rect";
-import { GameKeyEvent, IRogueUI, MouseButton } from "@engine/IRogueUI";
+import { GameKeyEvent, IRogueUI, MouseButton, type MapView } from "@engine/IRogueUI";
 
 /**
  * A no-op `IRogueUI` for running the engine outside a browser.
@@ -34,7 +34,7 @@ export class NullRogueUI implements IRogueUI {
   private idleIndex = 0;
   private readonly keyQueue: GameKeyEvent[] = [];
   private mousePos: Point = new Point(0, 0);
-  private mouseButtons: MouseButton | null = null;
+  private pendingButtons: MouseButton | null = null;
 
   /** Set to false by `UI_DoQuit()` so a runner can stop its loop. */
   quitRequested = false;
@@ -91,13 +91,13 @@ export class NullRogueUI implements IRogueUI {
    * make the wait return on every poll, and the play loop would redraw forever.
    */
   UI_PeekMouseButtons(): MouseButton | null {
-    const buttons = this.mouseButtons;
-    this.mouseButtons = null;
+    const buttons = this.pendingButtons;
+    this.pendingButtons = null;
     return buttons;
   }
 
   UI_PostMouseButtons(buttons: MouseButton): void {
-    this.mouseButtons = buttons;
+    this.pendingButtons = buttons;
   }
 
   // ── Delay ──────────────────────────────────────────────────────────────────
@@ -203,6 +203,33 @@ export class NullRogueUI implements IRogueUI {
 
   UI_GetCanvasScaleY(): number {
     return 1;
+  }
+
+  // ── Map ⇄ screen ───────────────────────────────────────────────────────────
+
+  /**
+   * The real arithmetic, not a null.
+   *
+   * Every other method here drops its work, because the work is a canvas
+   * operation. This one is not: it is four multiplies and two divides on the
+   * values in the `MapView`, with no DOM involved. No-opping it would make the
+   * headless simulator answer a *different* question from the browser on a pure
+   * function, which is the one way a simulation harness stops being evidence —
+   * a green sim would say nothing about whether the conversion is right, because
+   * the sim was never doing it.
+   */
+  UI_MapToScreen(gx: number, gy: number, view: MapView): Point | null {
+    return new Point(
+      (gx - view.rect.left) * view.tileSize,
+      (gy - view.rect.top) * view.tileSize,
+    );
+  }
+
+  UI_ScreenToMap(gx: number, gy: number, view: MapView): Point | null {
+    return new Point(
+      view.rect.left + Math.trunc(gx / view.displayTileSize),
+      view.rect.top + Math.trunc(gy / view.displayTileSize),
+    );
   }
 
   // ── Screenshots ────────────────────────────────────────────────────────────

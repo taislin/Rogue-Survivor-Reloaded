@@ -37,6 +37,35 @@ export const enum MouseButton {
 }
 
 /**
+ * The map window currently on screen: which tiles, and how big a tile is drawn.
+ *
+ * A value rather than renderer state, because the engine owns the layout — the
+ * same rule as `UI_DrawMinimap`, whose `width`/`height` are the minimap's size
+ * *on screen*. A renderer that cached a view rect would be a second copy of the
+ * frame's geometry, and this project has already shipped stale-cache defects
+ * where a cached value kept answering for something the world had moved on from.
+ * A `MapView` is built once per frame and passed by the caller, so it cannot
+ * drift from the frame it was built for.
+ *
+ * It carries two tile sizes because the two directions genuinely need different
+ * ones, and that asymmetry already exists in the C# arithmetic this replaces:
+ *
+ *  - `UI_MapToScreen` multiplies by `tileSize`, and answers *before* the map zoom
+ *    is applied — `withMapZoom` scales the result afterwards, so answering in
+ *    screen pixels would be scaled twice.
+ *  - `UI_ScreenToMap` divides by `displayTileSize`, and answers *after* it, or
+ *    the mouse would land on the wrong tile at zoom 2.
+ */
+export interface MapView {
+  /** Top-left tile of the window, and its size in tiles. */
+  readonly rect: Rect;
+  /** Pixels per tile, the unit `UI_MapToScreen` answers in. Always 32. */
+  readonly tileSize: number;
+  /** Pixels per tile as displayed: `tileSize` times the map zoom. */
+  readonly displayTileSize: number;
+}
+
+/**
  * IRogueUI — the complete rendering + input contract that the game engine
  * depends on. Mirrors IRogueUI.cs, adapted for browser APIs.
  *
@@ -176,9 +205,36 @@ export interface IRogueUI {
    * Omitting them drew the map at 1:1 while everything positioned on it used
    * the scaled-up coordinates.
    */
-  UI_DrawMinimap(gx: number, gy: number, width: number, height: number): void;
+    UI_DrawMinimap(gx: number, gy: number, width: number, height: number): void;
 
-  // ── Scale ─────────────────────────────────────────────────────────────────
+    // ── Map ⇄ screen ─────────────────────────────────────────────────────────
+
+    /**
+     * The screen position of a map position, or `null` when there is none — the
+     * tile is outside the world, or the renderer cannot see it.
+     *
+     * Not in `IRogueUI.cs` for the reason `UI_BeginScaledDraw` is not: C# blits
+     * to a `Graphics` and computes the offset itself, so the conversion never
+     * leaves the game code. It has to leave here the moment there is a second
+     * renderer, because a first-person view has no tile grid to convert from — it
+     * projects. Left in `RogueGame`, the projection would have to be guessed at by
+     * code that cannot know the camera, and a wrong answer here is a tooltip and
+     * a click on the wrong tile, silently.
+     */
+    UI_MapToScreen(gx: number, gy: number, view: MapView): Point | null;
+
+    /**
+     * The map position under a screen position, or `null` when it hits nothing —
+     * the pointer is off the map, or the ray misses.
+     *
+     * `gx`/`gy` are logical canvas pixels, the space `UI_DrawImage` takes. The
+     * mouse arrives in CSS pixels and `RogueGame.MouseToMap` divides by
+     * `UI_GetCanvasScale*` first; that conversion is the engine's and stays here.
+     */
+    UI_ScreenToMap(gx: number, gy: number, view: MapView): Point | null;
+
+    // ── Scale ─────────────────────────────────────────────────────────────────
+
 
   UI_GetCanvasScaleX(): number;
   UI_GetCanvasScaleY(): number;

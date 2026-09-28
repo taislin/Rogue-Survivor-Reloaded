@@ -1,4 +1,4 @@
-import { IRogueUI, GameKeyEvent, MouseButton } from "@engine/IRogueUI";
+import { IRogueUI, GameKeyEvent, MouseButton, type MapView } from "@engine/IRogueUI";
 import {
   DEFAULT_IMAGE_SET,
   getImageSet,
@@ -719,6 +719,47 @@ export class CanvasUI implements IRogueUI {
   }
   UI_GetCanvasScaleY(): number {
     return this.canvas.getBoundingClientRect().height / LOGICAL_H;
+  }
+
+  // ── Map ⇄ screen ──────────────────────────────────────────────────────────
+
+  /**
+   * `RogueGame.MapToScreen`'s arithmetic, moved here verbatim.
+   *
+   * `tileSize` comes from the `MapView` rather than from a local constant, and
+   * that is the point of the move: the engine has exactly one copy of the tile
+   * size, so this cannot drift from it. The obvious alternative — importing
+   * `TILE_SIZE` — is the thing the file header already rules out, since
+   * `CanvasUI` must not depend on `RogueGame`; that is also why `LOGICAL_W` and
+   * `LOGICAL_H` are repeated here and agree only by convention.
+   *
+   * Answers in 32px-tile units rather than screen pixels on purpose: the map zoom
+   * is applied *after* this by the caller's draw scope, so a screen-pixel answer
+   * would be scaled twice.
+   *
+   * The declared return is the interface's `Point | null` and not the narrower
+   * `Point` this always produces. That is deliberate: a renderer that *does* have
+   * positions it cannot show has to be able to say so, and declaring the narrow
+   * type here would make that a compile error in any subclass — the null path
+   * would be unreachable by construction.
+   */
+  UI_MapToScreen(gx: number, gy: number, view: MapView): Point | null {
+    return new Point(
+      (gx - view.rect.left) * view.tileSize,
+      (gy - view.rect.top) * view.tileSize,
+    );
+  }
+
+  /**
+   * The inverse, and the one place the map zoom has to be known: the mouse
+   * arrives in *displayed* pixels, so dividing by the undisplayed tile size
+   * would put it on the wrong tile at zoom 2.
+   */
+  UI_ScreenToMap(gx: number, gy: number, view: MapView): Point | null {
+    return new Point(
+      view.rect.left + Math.trunc(gx / view.displayTileSize),
+      view.rect.top + Math.trunc(gy / view.displayTileSize),
+    );
   }
 
   // ── Screenshots ───────────────────────────────────────────────────────────

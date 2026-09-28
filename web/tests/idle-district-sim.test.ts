@@ -41,8 +41,14 @@ let game: RogueGame;
 /**
  * A UI that never answers on its own, so the input wait parks and the idle path
  * is reached. Keys and mouse state are driven by the test.
+ *
+ * Extends `NullRogueUI` rather than re-implementing `IRogueUI`, so the parts that
+ * are not the point of this file — including the map ⇄ screen conversion — come
+ * from the one implementation that has them. A hand-written `implements
+ * IRogueUI` breaks on every interface addition and invites a second copy of the
+ * conversion arithmetic, which is the exact hazard the move to `IRogueUI` was for.
  */
-class IdleProbeUI implements IRogueUI {
+class IdleProbeUI extends NullRogueUI {
   mousePosition: Point = new Point(0, 0);
   mouseButtons: MouseButton | null = null;
   private pendingKey: GameKeyEvent | null = null;
