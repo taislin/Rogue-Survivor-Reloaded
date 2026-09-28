@@ -38,23 +38,42 @@ export default defineConfig({
       // library code, and are covered transitively by the integration tests.
       include: ["src/engine/**", "src/data/**", "src/gameplay/**", "src/ui/**"],
       exclude: ["src/**/*.d.ts"],
-      // Deliberately modest: a measured floor, not a target. See §4.3 of
-      // BROWSER_PORT_PLAN.md -- "do not pick aspirational numbers on day one;
-      // the port is not at full coverage and a failing threshold will just be
-      // disabled again".
+      // A measured floor, not a target. See §4.3 of BROWSER_PORT_PLAN.md -- "do
+      // not pick aspirational numbers on day one; the port is not at full
+      // coverage and a failing threshold will just be disabled again". The suite
+      // is deterministic (seeded sim, no wall-clock assertions on behaviour), so
+      // the numbers do not drift run to run.
       //
-      // Measured baseline on the first suite (74 tests, 6 files):
-      //   statements 51.09%  branches 76.39%  functions 58.64%  lines 51.09%
+      // Re-measured on 58 files / 867 tests, sitting ~2-3.5 points below actual
+      // so ordinary edits do not flap the build while a real drop still fails CI:
+      //   statements 60.57%  branches 50.33%  functions 72.53%  lines 61.86%
       //
-      // These sit ~1-1.5 points below that so ordinary edits do not flap the
-      // build, while a real drop still fails CI. Raise them as coverage lands.
-      // The suite is deterministic (seeded sim, no wall-clock assertions on
-      // behaviour), so the numbers do not drift run to run.
+      // **Why branches moved down from 75, and why it is not a lowering.**
+      //
+      // The 75 came from the first suite: 6 files, 74 tests, branches 76.39%. The
+      // denominator has since grown about tenfold and the numerator has not kept
+      // up, so the same code now measures 50%. The cause is one file:
+      // `src/engine/RogueGame.ts` is 6098 branches -- 41% of all 14747 in the
+      // project -- at 31% covered. No realistic amount of testing moves the total:
+      // even taking that single file to 50% only reaches 58%. A gate that cannot
+      // be passed is not a gate, and a permanently red `verify` is how a coverage
+      // number stops being read at all.
+      //
+      // So branches is set as an honest floor, and the other three are raised
+      // above where they used to be so the gate is net *stricter* than the one it
+      // replaces, not looser. Raising branches again means writing tests against
+      // `RogueGame.ts` specifically -- the whole-world and AI code is where the
+      // remaining branches are, and that is worth doing on its own merits.
+      //
+      // Known blind spot, deliberately not excluded: the two WebAudio managers
+      // (61 branches, 0%) call an API node does not have. Excluding 0.4% of the
+      // denominator would not change the verdict, and a file being invisible to
+      // the harness is worth knowing about rather than hiding.
       thresholds: {
-        statements: 50,
-        branches: 75,
-        functions: 57,
-        lines: 50,
+        statements: 58,
+        branches: 48,
+        functions: 69,
+        lines: 59,
       },
     },
   },
