@@ -362,6 +362,18 @@ export const MENU_COLUMN_GAP: number = 24;
 export const MENU_LABEL_PREFIX: number = 6;
 
 /**
+ * Rows a single wheel notch moves the selection in a `DrawMenuOrOptions` menu.
+ *
+ * One. The wheel delivers *pixels*, not notches — `InputHandler.wheelPixels`
+ * normalises Firefox's lines and Chrome's pixels into the same unit — and the
+ * point of this constant is that a gesture moves the list by a readable step
+ * rather than by whatever the platform reported. `OptionsScreen` does the same
+ * thing with `WHEEL_PIXELS_PER_ROW`; it converts to rows because its rows are a
+ * fixed height it knows, which is the same arithmetic.
+ */
+export const MENU_WHEEL_ROWS: number = 1;
+
+/**
  * X at which `DrawMenuOrOptions` should start the value column, given the menu
  * labels it has to clear.
  *
@@ -382,6 +394,40 @@ export function menuValueColumnX(
 		gx + Math.max(rightPadding, labelGlyphs * MENU_CHAR_WIDTH + MENU_COLUMN_GAP)
 	);
 }
+
+/**
+ * Width of the widest menu label, in pixels, including the `---> ` prefix.
+ *
+ * The right edge of a label-only row's clickable band. Shares its measurement
+ * with `menuValueColumnX` on purpose: both derive the label width from
+ * `MENU_LABEL_PREFIX + e.length` over the same `MENU_CHAR_WIDTH`, so a row's
+ * clickable width and the text that was drawn cannot drift apart when the font
+ * constant or the prefix changes.
+ */
+export function menuEntryWidth(entries: readonly string[]): number {
+	let labelGlyphs = 0;
+	for (const e of entries)
+		labelGlyphs = Math.max(labelGlyphs, MENU_LABEL_PREFIX + e.length);
+	return labelGlyphs * MENU_CHAR_WIDTH;
+}
+
+/**
+ * Where one menu row was drawn, in logical canvas pixels.
+ *
+ * `top`/`bottom` are the *band* the row occupies, not the glyph box: the
+ * baseline-to-baseline span. A row's text sits at `top`, so the band starts
+ * where the previous row's descender ends — which is what stops rows
+ * overlapping and a click landing one row low. See `m_MenuRowBands`.
+ */
+export interface MenuRowBand {
+	/** Index into the caller's `entries` array, not the visible row number. */
+	index: number;
+	top: number;
+	bottom: number;
+	left: number;
+	right: number;
+}
+
 export const CREDIT_CHAR_SPACING: number = 8;
 export const CREDIT_LINE_SPACING: number = LINE_SPACING;
 export const TEXTFILE_CHARS_PER_LINE: number = 120;
@@ -988,6 +1034,24 @@ export class RogueGame {
 	 * different name, so it is reached through `globalThis`.
 	 */
 	private readonly m_AnimOffsets = new globalThis.Map<Actor, Point>();
+
+	/**
+	 * Where each menu row was drawn last frame, for mouse hit-testing.
+	 *
+	 * Written by `DrawMenuOrOptions` as it draws, so a click is resolved against
+	 * the same numbers that placed the text rather than a second set of layout
+	 * maths that can disagree with the first. That is the bug `OptionsScreen`
+	 * already documents for its own rows — an earlier version spanned
+	 * `baseline ± line`, so every row covered a strip of its neighbour's and a
+	 * click landed one row low, consistently.
+	 *
+	 * Replaced (not appended to) at the top of every `DrawMenuOrOptions` call,
+	 * because a menu draws its list once per frame after a `UI_Clear` and the
+	 * bands must describe *this* frame. Anything drawn outside that helper is not
+	 * here, which is the reason a menu that is not built on it has no mouse
+	 * support rather than a broken one.
+	 */
+	private m_MenuRowBands: MenuRowBand[] = [];
 
 	/**
 	 * Minimap raster cache.
@@ -1664,6 +1728,10 @@ export class RogueGame {
 			"Quit Game", // 8
 		];
 		let selected = 0;
+		// Last cursor position, so the wait can tell "the cursor moved" from
+		// "nothing happened". Seeded off-screen so the first move always reads as
+		// a move.
+		let prevMouse = new Point(-1, -1);
 		do {
 			// music.
 			if (!this.m_PlayedIntro) {
@@ -1718,18 +1786,76 @@ export class RogueGame {
 			this.m_UI.UI_Repaint();
 
 			// get menu action.
-			const key = await this.m_UI.UI_WaitKey();
-			switch (key.key) {
-				case "ArrowUp": // move up
-					if (selected > 0) --selected;
-					else selected = menuEntries.length - 1;
-					break;
-				case "ArrowDown": // move down
-					selected = (selected + 1) % menuEntries.length;
-					break;
+			//
+			// The mouse works here, unlike the C#: hover moves the selection, a
+			// left click selects the row under the cursor, and the wheel moves the
+			// selection a row at a time. `WaitMenuInput` rather than `UI_WaitKey`
+			// because the selection follows the cursor and the screen therefore
+			// has to redraw on a *move*, which a key-only wait can never report.
+			const ev = await this.WaitMenuInput(prevMouse);
+			prevMouse = ev.mousePos;
 
-				case "Enter": // validate
-					switch (selected) {
+			// A click activates the row it landed on, without the hover pass first
+			// being needed. Read the row from the click position rather than from
+			// `selected`, so a click is what it looks like it is even if the cursor
+			// jumped there in the same frame as the press.
+			let activate = false;
+			if (ev.mouseButtons === MouseButton.Left) {
+				const row = this.MenuRowAtMouse(ev.mousePos);
+				// A click on empty space is not a selection of whatever happened to
+				// be highlighted — an options screen is where that is most
+				// expensive, and here it would make "Quit Game" one stray click
+				// away from anywhere on the screen.
+				if (row !== null) {
+					selected = row;
+					activate = true;
+				}
+			} else if (ev.wheel !== 0) {
+				// Clamped, not wrapped, unlike the arrow keys: a wheel that wrapped
+				// from the last entry to the first would make one gesture jump
+				// across the whole list.
+				selected = Math.max(
+					0,
+					Math.min(
+						menuEntries.length - 1,
+						selected + Math.sign(ev.wheel) * MENU_WHEEL_ROWS,
+					),
+				);
+			} else if (ev.moved) {
+				const row = this.MenuRowAtMouse(ev.mousePos);
+				// Hover only *moves* the selection. A brush across the list while
+				// reading it must never open anything.
+				if (row !== null) selected = row;
+			}
+
+			if (!activate && ev.key != null) {
+				switch (ev.key.key) {
+					case "ArrowUp": // move up
+						if (selected > 0) --selected;
+						else selected = menuEntries.length - 1;
+						break;
+					case "ArrowDown": // move down
+						selected = (selected + 1) % menuEntries.length;
+						break;
+
+					case "Enter": // validate
+						activate = true;
+						break;
+
+					case "Escape":
+						// Nothing to go back to from the main menu; C# ignores it
+						// here too. Swallowed rather than treated as Quit, which is
+						// what a player pressing Escape to back out of a menu
+						// expects.
+						break;
+
+					default:
+						break;
+				}
+			}
+
+			if (activate)
+				switch (selected) {
 						case 0:
 							if (await this.HandleNewCharacter()) {
 								await this.StartNewGame();
@@ -1784,11 +1910,9 @@ export class RogueGame {
 							loop = false;
 							break;
 
-						default:
-							break;
-					} // switch selected
-					break;
-			}
+					default:
+						break;
+				} // switch selected
 		} while (loop);
 	}
 
@@ -23615,6 +23739,9 @@ export class RogueGame {
 		// See `menuValueColumnX` for why a flat offset stopped working at 12pt.
 		const right = menuValueColumnX(gx, entries, rightPadding);
 
+		// Fresh for this call — see the comment on `m_MenuRowBands` below.
+		this.m_MenuRowBands = [];
+
 		if (values != null && entries.length !== values.length)
 			throw new RangeError("values length!= choices length");
 
@@ -23632,6 +23759,20 @@ export class RogueGame {
 			const i = first + r;
 			const choiceStr =
 				i === currentChoice ? `---> ${entries[i]}` : `     ${entries[i]}`;
+			// Record the row's clickable band as it is drawn, so a menu that wants
+			// mouse input can hit-test against the same numbers that put the text
+			// on screen rather than recomputing them here. Reset per call, not
+			// accumulated: every menu draws its list once per frame after a
+			// `UI_Clear`, so one call is the whole frame's list, and a stale entry
+			// surviving into a differently-shaped menu is a click landing on a row
+			// that is not there.
+			this.m_MenuRowBands.push({
+				index: i,
+				top: gy.value,
+				bottom: gy.value + MENU_BOLD_LINE_SPACING,
+				left: gx,
+				right: values == null ? gx + menuEntryWidth(entries) : right,
+			});
 			this.m_UI.UI_DrawStringBoldLarge(entriesColor, choiceStr, gx, gy.value);
 
 			if (values != null) {
@@ -23670,6 +23811,106 @@ export class RogueGame {
 				gy.value,
 			);
 			gy.value += MENU_LINE_SPACING;
+		}
+	}
+
+	/**
+	 * The menu row under a screen point, or null. Takes **logical canvas
+	 * coordinates** — the space the menus are drawn in.
+	 *
+	 * `UI_GetMousePosition` reports CSS pixels, so a caller must convert first.
+	 * `ScreenToLogicalMouse` does that, and every menu uses it rather than
+	 * dividing by the scale itself: the scale is a *display* property of the
+	 * canvas, and a menu's layout is in logical pixels regardless of how big the
+	 * window is. Getting this wrong is invisible at 1366 CSS px — where scale is
+	 * 1 — and wrong by that factor everywhere else.
+	 *
+	 * Reads the bands `DrawMenuOrOptions` recorded, so this is a lookup rather
+	 * than a second piece of layout maths. Last match wins, so a row drawn lower
+	 * on screen wins over one that shares its band. The bands do not overlap, so
+	 * this only matters if a caller drew two lists into the same frame's bands,
+	 * which `DrawMenuOrOptions` cannot do.
+	 */
+	MenuRowAt(x: number, y: number): number | null {
+		let hit: number | null = null;
+		for (const band of this.m_MenuRowBands) {
+			if (x >= band.left && x <= band.right && y >= band.top && y < band.bottom)
+				hit = band.index;
+		}
+		return hit;
+	}
+
+	/**
+	 * The menu row under the mouse, or null, converting CSS pixels to logical
+	 * first. This is what a menu should call; `MenuRowAt` is the raw lookup.
+	 */
+	MenuRowAtMouse(mousePos: Point): number | null {
+		return this.MenuRowAt(
+			Math.trunc(mousePos.x / this.m_UI.UI_GetCanvasScaleX()),
+			Math.trunc(mousePos.y / this.m_UI.UI_GetCanvasScaleY()),
+		);
+	}
+
+	/**
+	 * Waits for a key, a mouse button, a wheel notch, or the cursor moving.
+	 *
+	 * The menu equivalent of `WaitKeyOrMouse`, and it exists for the same reason
+	 * `OptionsScreen.waitForInput` does: a menu whose selection follows the cursor
+	 * has to redraw when the cursor moves, and `UI_WaitKey` only wakes on a key —
+	 * so hover would mean polling, and a blocking wait cannot poll.
+	 *
+	 * Returns the cursor movement as a *result* rather than as activity, so a
+	 * caller can move its selection without also treating the brush as a click.
+	 * That distinction is the whole reason this is not just `WaitKeyOrMouse`:
+	 * in the play loop, a cursor that moves is a look request; in a menu, it is a
+	 * hover.
+	 *
+	 * `UI_PeekMouseButtons` and `UI_PeekWheel` consume, so a press and a notch
+	 * are each delivered once and a held button is not re-reported. That is
+	 * load-bearing and not a detail: this polls, so a non-consuming version would
+	 * return immediately and forever and repaint the menu in a tight loop with
+	 * the keyboard never getting a turn. The same is already true of
+	 * `UI_PeekKey`, which is why the properties are spelled out in `IRogueUI`.
+	 */
+	async WaitMenuInput(
+		prevMouse: Point,
+	): Promise<{
+		key: GameKeyEvent | null;
+		mousePos: Point;
+		mouseButtons: MouseButton | null;
+		wheel: number;
+		moved: boolean;
+	}> {
+		for (;;) {
+			const key = this.m_UI.UI_PeekKey();
+			if (key !== null) {
+				return {
+					key,
+					mousePos: this.m_UI.UI_GetMousePosition(),
+					mouseButtons: null,
+					wheel: 0,
+					moved: false,
+				};
+			}
+			const wheel = this.m_UI.UI_PeekWheel();
+			if (wheel !== 0) {
+				return {
+					key: null,
+					mousePos: this.m_UI.UI_GetMousePosition(),
+					mouseButtons: null,
+					wheel,
+					moved: false,
+				};
+			}
+			const mousePos = this.m_UI.UI_GetMousePosition();
+			const mouseButtons = this.m_UI.UI_PeekMouseButtons();
+			if (mouseButtons !== null) {
+				return { key: null, mousePos, mouseButtons, wheel: 0, moved: false };
+			}
+			if (!mousePos.equals(prevMouse)) {
+				return { key: null, mousePos, mouseButtons: null, wheel: 0, moved: true };
+			}
+			await new Promise<void>((r) => setTimeout(r, 0));
 		}
 	}
 

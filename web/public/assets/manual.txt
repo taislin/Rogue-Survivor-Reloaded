@@ -400,6 +400,20 @@ This section describes the actions you can perform in the game and the interacti
 You can redefine the keys in game (default Shift-K).
 
 
+> MENUS  (mouse or keyboard)
+The main menu can be driven entirely with the mouse.
+Move the mouse over a line to select it, Left-Click to choose it, and use the wheel to move the
+selection up and down. Clicking on empty space selects nothing, so a stray click can never start a
+new game or quit by accident. The arrow keys and ENTER do the same thing, and the keys are not going
+anywhere: every line the mouse can reach is on a key too.
+Not every menu is wired up yet. The options screen has had mouse control for a while - click a line
+to select it, click again to change the value, wheel to move - and the other lists are still
+keyboard-only. The ones that take a direction, like BREAK MODE and BARRICADE MODE, are the exception
+and do take the mouse; see those entries below.
+The right mouse button is yours, and the browser's own right-click menu is switched off, so it will
+not cover the screen while you are using it.
+
+
 > HELP  (default H)
 Read this manual ingame.
 
@@ -424,6 +438,12 @@ Taking items from shelves and containers.
 Chatting or trading with an actor.
 Attacking an actor.
 Attacking a barricade.
+
+Bumping never breaks or tears anything down. In the original game, walking into
+a breakable stopped and asked "Really break <thing>?" every single time, because
+a bump is also the move key and one stray keypress could cost you a piece of
+furniture. Now bumping into something breakable just refuses the move and tells
+you which key does the job. See BREAKING OBJECTS below.
 
 
 > USING AN EXIT  (default X)
@@ -520,6 +540,9 @@ The explosion always hit people or objects that stands in the blast zone. It doe
 > TAKING AND DROPING ITEMS  (mouse)
 To take items from a shelf or container bump into it.
 To take items from the ground : move the mouse on the item in the ground inventory, Left-Click.
+To take something quickly : Double-Click it on the map, whether it is loose on the floor or inside a
+container. This reaches no further than bumping would, so you can still loot the crate at your feet
+without stepping onto the tile.
 To drop items on a tile : move the mouse on the item in your inventory, Right-Click.
 Dropping an useless item will discard it.
 
@@ -537,15 +560,28 @@ Giving item ends both your turn and the other actor turn.
 The other actor must be awake and not an enemy.
 
 
-> BARRICADING OBJECTS  (default B)
+> BARRICADING OBJECTS  (default B, or mouse)
 Use the barricade mode. You can barricade doors, windows and repair fortifications.
 You need to have barricading material such as wooden planks and barricading consumes one quantity of such an item. 
 You can barricade up to a maximum limit.
+With the mouse : move it over the door to outline it, green if you can barricade it and red if you cannot,
+then Left-Click. Empty floor is not outlined at all, so a red box always means there is something there
+you are not allowed to touch.
 
 
-> BREAKING OBJECTS  (default K)
+> BREAKING OBJECTS  (default K, or mouse)
 You can break or dismantle some map objects. You can get barricading material from some of them.
 You need to have a melee weapon equiped, you're not insane enough yet to break stuff barehanded.
+This is the only way to break something now that bumping will not ask you to confirm it first.
+With the mouse : move it over the object to outline it, green if you can break it and red if you cannot,
+then Left-Click. The keys and the mouse do exactly the same thing, and the keyboard still takes a
+direction.
+
+
+> ATTACKING  (default direction key)
+Attack the actor next to you in the chosen direction. Attacking a barricaded door tears it down instead.
+Your character lunges toward the target as it strikes. The animation lasts as long as one turn, and is
+skipped entirely if you turn animation delays off.
 
 
 > PUSHING OBJECTS/SHOVING PEOPLE  (default P)
