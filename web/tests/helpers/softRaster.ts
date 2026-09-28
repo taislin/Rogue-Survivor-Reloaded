@@ -122,17 +122,35 @@ export function drawQuad(surface: Surface, quad: Quad, texture: Texture): QuadSt
         continue;
       }
 
-      let tx = Math.min(texture.width - 1, Math.max(0, Math.floor(quad.sx + u * quad.sw)));
-      let ty = Math.min(texture.height - 1, Math.max(0, Math.floor(quad.sy + v * quad.sh)));
-      const t = (ty * texture.width + tx) * 4;
-      // Straight source-alpha blend, so a sprite's transparent border does not
-      // paint a box of its own colour.
-      const a = texture.data[t + 3]! / 255;
+      // A quad with no image is a flat colour — the fog, or a floor tile's base
+      // fill. Same convention as `SceneRenderer.drawQuad`, and it has to be: the
+      // first version of the scene skipped all 67 base fills here as "missing
+      // texture" while the browser drew them, so the golden showed a striped floor
+      // that the game does not have. Two implementations of one primitive, and they
+      // disagreed — which is the hazard the shared `Quad` type exists to prevent and
+      // which it cannot prevent on its own.
+      let r: number, g: number, bl: number, a: number;
+      if (quad.imageId === "") {
+        r = Math.round(tr * 255);
+        g = Math.round(tg * 255);
+        bl = Math.round(tb * 255);
+        a = 1;
+      } else {
+        const tx = Math.min(texture.width - 1, Math.max(0, Math.floor(quad.sx + u * quad.sw)));
+        const ty = Math.min(texture.height - 1, Math.max(0, Math.floor(quad.sy + v * quad.sh)));
+        const t = (ty * texture.width + tx) * 4;
+        r = texture.data[t]!;
+        g = texture.data[t + 1]!;
+        bl = texture.data[t + 2]!;
+        // Straight source-alpha blend, so a sprite's transparent border does not
+        // paint a box of its own colour.
+        a = texture.data[t + 3]! / 255;
+      }
       if (a <= 0) continue;
 
-      data[index * 4] = Math.round(texture.data[t]! * tr * a + data[index * 4]! * (1 - a));
-      data[index * 4 + 1] = Math.round(texture.data[t + 1]! * tg * a + data[index * 4 + 1]! * (1 - a));
-      data[index * 4 + 2] = Math.round(texture.data[t + 2]! * tb * a + data[index * 4 + 2]! * (1 - a));
+      data[index * 4] = Math.round(r * tr * a + data[index * 4]! * (1 - a));
+      data[index * 4 + 1] = Math.round(g * tg * a + data[index * 4 + 1]! * (1 - a));
+      data[index * 4 + 2] = Math.round(bl * tb * a + data[index * 4 + 2]! * (1 - a));
       data[index * 4 + 3] = 255;
       z[index] = quad.depth;
       stats.drawn++;
@@ -151,7 +169,8 @@ export function drawList(
   let occluded = 0;
   let skippedForMissingTexture = 0;
   for (const quad of quads) {
-    const texture = textures.get(quad.imageId);
+    // The flat-colour convention: no image, no lookup, and not a missing texture.
+    const texture = quad.imageId === "" ? FLAT : textures.get(quad.imageId);
     if (texture === undefined) {
       // Counted rather than thrown: a missing texture is exactly the class of
       // defect a golden image is supposed to surface, and a throw would replace
@@ -173,6 +192,9 @@ export function drawList(
  * Named by what it is rather than by what it looks like, so a failing golden
  * reads as "the wall texture was wrong" and not as a colour number.
  */
+/** Stand-in for "no image": 1x1 white, with the quad's own tint deciding. */
+const FLAT: Texture = { name: "flat", width: 1, height: 1, data: new Uint8Array([255, 255, 255, 255]) };
+
 export function solidTexture(name: string, r: number, g: number, b: number): Texture {
   return { name, width: 1, height: 1, data: new Uint8Array([r, g, b, 255]) };
 }

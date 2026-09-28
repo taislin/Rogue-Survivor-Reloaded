@@ -2,6 +2,8 @@ import { Color } from "@engine/Color";
 import { Point } from "@engine/Point";
 import { Rect } from "@engine/Rect";
 import { GameKeyEvent, IRogueUI, MouseButton, type MapView } from "@engine/IRogueUI";
+import type { Scene } from "@engine/firstperson/SceneBuilder";
+import type { SceneRendererStats } from "@engine/firstperson/Types";
 
 /**
  * A no-op `IRogueUI` for running the engine outside a browser.
@@ -193,6 +195,33 @@ export class NullRogueUI implements IRogueUI {
   UI_ClearMinimap(_color: Color): void { this.count("UI_ClearMinimap"); }
   UI_SetMinimapColor(_x: number, _y: number, _color: Color): void { this.count("UI_SetMinimapColor"); }
   UI_DrawMinimap(_gx: number, _gy: number, _w: number, _h: number): void { this.count("UI_DrawMinimap"); }
+
+  // ── First-person scene ───────────────────────────────────────────────────
+
+  /**
+   * Dropped, like every other painting call.
+   *
+   * The headless simulator is the engine's test harness, and it must stay a test
+   * harness: if it started rendering scenes it would become a second renderer to
+   * keep correct, and the whole reason the geometry lives in `engine/firstperson`
+   * with no DOM is that a test can rasterise the same quads this throws away.
+   * `headless-no-hang.test.ts` and the seeded runs are what protect the code path
+   * that *builds* a scene; this is what protects the code that draws one.
+   */
+  UI_DrawScene(_scene: Scene): void {
+    this.count("UI_DrawScene");
+  }
+
+  /**
+   * Null: the null UI has no frame, so it has no cost to report.
+   *
+   * Returning null rather than zeros is the honest answer and the one a caller can
+   * act on — a zero here would read as "this frame was free", which is exactly the
+   * wrong thing to conclude about a renderer nobody is measuring.
+   */
+  UI_GetSceneStats(): SceneRendererStats | null {
+    return null;
+  }
 
   // ── Scale ──────────────────────────────────────────────────────────────────
 

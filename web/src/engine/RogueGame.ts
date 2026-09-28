@@ -71,6 +71,7 @@ import {
 } from "@engine/GameOptions";
 import { GameSaveManager } from "@engine/GameSave";
 import { remapForView, resolveMoveDirection, turnFacing } from "@engine/firstperson/Controls";
+import { buildScene } from "@engine/firstperson/SceneBuilder";
 import { HiScore, HiScoreTable } from "@engine/HiScoreTable";
 import {
 	type GameKeyEvent,
@@ -19989,6 +19990,16 @@ export class RogueGame {
 	 * — a mode prompt at the top-left corner is text that must not be cut in half.
 	 */
 	private withMapZoom(draw: () => void, clip: boolean = true): void {
+		// First person has no tile grid and no zoom: the scene is already projected
+		// into viewport pixels by the camera. Applying the top-down scale on top
+		// would double it, which looks like a picture drawn at the wrong size rather
+		// than like a scale that should not have been applied — so it is skipped
+		// here, at the one place the zoom is installed, rather than at every call
+		// site.
+		if (GameOptions.isFirstPersonView(s_Options.viewMode)) {
+			draw();
+			return;
+		}
 		if (s_MapZoom === 1) {
 			draw();
 			return;
@@ -20040,7 +20051,6 @@ export class RogueGame {
 			MESSAGES_Y,
 		);
 		this.withMapZoom(() => this.DrawMap(this.m_Session.currentMap!, mapTint));
-
 		this.m_UI.UI_DrawLine(
 			Color.DarkGray,
 			RIGHTPANEL_X,
@@ -20321,6 +20331,41 @@ export class RogueGame {
 		return sb;
 	}
 
+	/**
+	 * Builds and hands over a first-person frame.
+	 *
+	 * All of the geometry is `firstperson`'s and none of it is here: this collects
+	 * the handful of facts the scene needs from the game and asks the UI to draw
+	 * the result. That split is what makes the renderer testable — a test can build
+	 * the same scene and rasterise it without this method or a canvas.
+	 *
+	 * The viewport is the map panel, not the canvas: the 3D view fills the same
+	 * rectangle the tile map did, and the side panel, minimap and message log are
+	 * drawn over it unchanged. That is why `hud-layout`'s expectations still hold
+	 * and why switching views needs no layout work.
+	 */
+	private DrawFirstPersonScene(map: Map): void {
+		const position = this.m_Player.location.position;
+		const tile = map.getTileAt(position.x, position.y);
+		const scene = buildScene({
+			map,
+			// The middle of the tile, not its corner: a camera at (4, 4) is standing
+			// half a tile outside the geometry it is looking at, and every distance
+			// in the frame is then measured from the wrong place.
+			posX: position.x + 0.5,
+			posY: position.y + 0.5,
+			facing: this.m_FirstPersonFacing,
+			width: MAP_PANEL_WIDTH,
+			height: MAP_PANEL_HEIGHT,
+			// Per *map*, not per tile — there is no per-tile lighting in the data
+			// model, so this is "are we indoors" and it is the tile under the player
+			// because that is the only one the engine tracks a view of.
+			isInside: tile?.isInside ?? false,
+			actionPoints: this.m_Player.actionPoints,
+		});
+		this.m_UI.UI_DrawScene(scene);
+	}
+
 	// C# TintForDayPhase — RogueGame.cs:18176
 	/// OBSOLETE
 	TintForDayPhase(phase: DayPhase): Color {
@@ -20346,6 +20391,20 @@ export class RogueGame {
 
 	// C# DrawMap — RogueGame.cs:18205
 	DrawMap(map: Map, tint: Color): void {
+		// Browser port: the second renderer. A branch at the top of the one map
+		// drawing method rather than a second method, so every caller — the play
+		// screen, the minimap's map markers, the loading preview — gets the view the
+		// player chose without any of them knowing a view exists.
+		//
+		// Everything below this line is the C# top-down loop and is untouched by the
+		// first-person work, which is the point: the divergence is one branch, and
+		// `NULL_ROGUE_UI` drops `UI_DrawScene` so the headless simulator exercises
+		// the same branch without drawing anything.
+		if (GameOptions.isFirstPersonView(s_Options.viewMode)) {
+			this.DrawFirstPersonScene(map);
+			return;
+		}
+
 		// trim to outer map bounds.
 		const left = Math.max(-1, this.m_MapViewRect.left);
 		const right = Math.min(map.width + 1, this.m_MapViewRect.right);

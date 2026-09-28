@@ -281,3 +281,34 @@ export interface Quad {
   /** Multiplied into the sampled colour; omitted for untinted. */
   tint?: readonly [number, number, number];
 }
+
+/**
+ * What one frame cost, in the only place a real frame exists.
+ *
+ * `npm run profile` counts painting calls on `NullRogueUI`, which drops every one
+ * of them, so it cannot see a renderer that goes through `UI_DrawScene` at all.
+ * The port plan asks for this renderer's cost to be measured rather than guessed at
+ * — a mode 7 floor is a per-texel operation and the two candidate answers differed
+ * by an order of magnitude — so the measurement is taken here, in the browser,
+ * behind `?debug=1`.
+ */
+export interface SceneRendererStats {
+  /** Wall-clock milliseconds for the three phases, summed over `frames`. */
+  readonly frameMs: number;
+  readonly raycastMs: number;
+  readonly buildMs: number;
+  readonly drawMs: number;
+  readonly frames: number;
+  /** `ctx` calls issued per frame, averaged — the proxy for rasterisation cost. */
+  readonly drawCallsPerFrame: number;
+  /** The scene's own counts, from the last frame built. */
+  readonly columns: number;
+  readonly wallQuads: number;
+  readonly floorQuads: number;
+  readonly billboardQuads: number;
+  readonly fogColumns: number;
+  /** Sprites dropped by the z-buffer, per frame. */
+  readonly culledBillboards: number;
+  /** Sprites whose image was not loaded yet, per frame. */
+  readonly missingImages: number;
+}

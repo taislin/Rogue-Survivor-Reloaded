@@ -10,6 +10,9 @@ import { Color } from "@engine/Color";
 import { Point } from "@engine/Point";
 import { Rect }  from "@engine/Rect";
 import { InputHandler } from "./InputHandler";
+import { SceneRenderer } from "./firstperson/SceneRenderer";
+import type { Scene } from "@engine/firstperson/SceneBuilder";
+import type { SceneRendererStats } from "@engine/firstperson/Types";
 import { fontHud, fontHudBold, fontMenu, fontMenuBold } from "./fonts";
 
 /**
@@ -83,6 +86,8 @@ export interface CanvasLayout {
  */
 export class CanvasUI implements IRogueUI {
   private readonly ctx:    CanvasRenderingContext2D;
+  private readonly sceneRenderer = new SceneRenderer();
+  private lastSceneLogAt = 0;
   private readonly input:  InputHandler;
   private readonly canvas: HTMLCanvasElement;
 
@@ -719,6 +724,74 @@ export class CanvasUI implements IRogueUI {
   }
   UI_GetCanvasScaleY(): number {
     return this.canvas.getBoundingClientRect().height / LOGICAL_H;
+  }
+
+  // ── First-person scene ───────────────────────────────────────────────────
+
+  /**
+   * Hands a first-person frame to `SceneRenderer`, which owns the blitting.
+   *
+   * A delegating method rather than a second `IRogueUI` implementation. A
+   * `FirstPersonUI` class would have to re-implement all 33 members to delegate 31
+   * of them, and `main.ts` would have to choose between two objects at boot — for a
+   * renderer that differs from this one in exactly one method. What the renderer
+   * needs from here it asks for: this class's image cache, and the canvas.
+   */
+  UI_DrawScene(scene: Scene): void {
+    this.sceneRenderer.draw(this.ctx, scene, (imageId) => this.cachedImage(imageId));
+    this.logSceneStats();
+  }
+
+  /**
+   * The `[fp]` line, once a second, under `?debug=1`.
+   *
+   * Here rather than in `npm run profile` because `profile` counts painting calls
+   * on `NullRogueUI`, which drops every one of them — so it cannot see a renderer
+   * that goes through `UI_DrawScene` at all, and the port plan's own instruction to
+   * measure this renderer's cost "rather than a guess" has nowhere else to go. This
+   * is the only place a real frame exists.
+   *
+   * Throttled to a second because per-frame millisecond figures read once are noise:
+   * the question is whether a frame fits in 16.7 ms, and the answer needs a mean.
+   */
+  private logSceneStats(): void {
+    if (!CanvasUI.debugDraw) return;
+    const stats = this.sceneRenderer.stats();
+    if (stats === null) return;
+    const now = Date.now();
+    if (now - this.lastSceneLogAt < 1000) return;
+    this.lastSceneLogAt = now;
+    const budget = (16.7 / 100).toFixed(1);
+    console.log(
+      `[fp] ${(stats.frameMs).toFixed(2)}ms/frame (${budget}ms budget) ` +
+        `ray=${stats.raycastMs.toFixed(2)} build=${stats.buildMs.toFixed(2)} draw=${stats.drawMs.toFixed(2)} ` +
+        `draws=${stats.drawCallsPerFrame.toFixed(0)} cols=${stats.columns} walls=${stats.wallQuads} ` +
+        `floor=${stats.floorQuads} billboards=${stats.billboardQuads} fog=${stats.fogColumns} ` +
+        `culled=${stats.culledBillboards} missing=${stats.missingImages}`,
+    );
+  }
+
+  UI_GetSceneStats(): SceneRendererStats | null {
+    return this.sceneRenderer.stats();
+  }
+
+  /**
+   * The already-loaded image for an id, or null.
+   *
+   * The same cache `UI_DrawImage` uses, deliberately: two caches would mean two
+   * copies of every sprite, and a renderer holding a stale image after the sprite
+   * style changed is a bug this project has already had in another form.
+   */
+  private cachedImage(imageId: string): CanvasImageSource | null {
+    this.invalidateImagesIfSetChanged();
+    const image = this.imageCache.get(imageId);
+    if (image === undefined) {
+      // Same contract as `UI_DrawImage` on a miss: skip and start the load, so the
+      // sprite appears on a later frame rather than as a hole.
+      void this.loadImage(imageId);
+      return null;
+    }
+    return image;
   }
 
   // ── Map ⇄ screen ──────────────────────────────────────────────────────────

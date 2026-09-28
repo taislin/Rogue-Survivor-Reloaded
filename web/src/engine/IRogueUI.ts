@@ -1,6 +1,8 @@
 import { Color } from "./Color";
 import { Point } from "./Point";
 import { Rect } from "./Rect";
+import type { Scene } from "./firstperson/SceneBuilder";
+import type { SceneRendererStats as SceneStats } from "./firstperson/Types";
 
 /**
  * Browser-side key event — replaces System.Windows.Forms.KeyEventArgs.
@@ -207,8 +209,36 @@ export interface IRogueUI {
    */
     UI_DrawMinimap(gx: number, gy: number, width: number, height: number): void;
 
-    // ── Map ⇄ screen ─────────────────────────────────────────────────────────
+    // ── First-person scene ───────────────────────────────────────────────────
 
+    /**
+     * Draws a whole first-person frame: the backdrop, then the quads in order.
+     *
+     * Not in `IRogueUI.cs` for the same reason `UI_BeginScaledDraw` is not — C#
+     * has one renderer, so there was never a second drawing path to name. What it
+     * is for is different from that precedent's reason, though: this exists so the
+     * engine can hand over a *frame* instead of a stream of blits, and so the
+     * headless simulator can drop it in one call. Everything about *what* to draw
+     * is decided in `firstperson/SceneBuilder`, which is DOM-free, so a test can
+     * rasterise the same quads this method blits.
+     *
+     * The implementation must clip to the map panel. The scene's coordinates are
+     * viewport-relative, and the panel is smaller than the canvas.
+     */
+    UI_DrawScene(scene: Scene): void;
+
+    /**
+     * Per-frame renderer counters, or null when they are not being collected.
+     *
+     * Exists because `npm run profile` counts calls on `NullRogueUI`, which drops
+     * every painting call — so it cannot see this renderer at all, and the port plan
+     * asks for the floor's cost to be *measured* rather than guessed. This is the
+     * measurement, and it is browser-side because that is the only place a real
+     * frame exists.
+     */
+    UI_GetSceneStats(): SceneStats | null;
+
+    // ── Map ⇄ screen ─────────────────────────────────────────────────────────
     /**
      * The screen position of a map position, or `null` when there is none — the
      * tile is outside the world, or the renderer cannot see it.
