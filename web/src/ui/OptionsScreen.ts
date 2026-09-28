@@ -9,6 +9,7 @@ import {
 } from "@engine/GameOptions";
 import type { IRogueUI } from "@engine/IRogueUI";
 import { IMAGE_SETS } from "@engine/AssetPaths";
+import { DEFAULT_VIEW_MODE, VIEW_MODES } from "@engine/firstperson/Types";
 import { FONT_CHOICES } from "@ui/fonts";
 import { DifficultySide, Scoring } from "@engine/Scoring";
 import { Session } from "@engine/Session";
@@ -54,6 +55,8 @@ export class OptionsScreen {
 		// sprites
 		OptionIDs.UI_SPRITE_STYLE,
 		OptionIDs.UI_FONT_CHOICE,
+		// view
+		OptionIDs.UI_VIEW_MODE,
 		// helpers
 		OptionIDs.UI_ADVISOR,
 		OptionIDs.UI_COMBAT_ASSISTANT,
@@ -559,6 +562,27 @@ export class OptionsScreen {
 				// promise so the loop can redraw once the faces have landed. This
 				// is the cached one, not a second load.
 				this.pendingTypeface = Options.applyFontChoice();
+			}
+			break;
+		}
+		case OptionIDs.UI_VIEW_MODE: {
+			// Same bounded-index shape, over the views `firstperson/Types` offers.
+			// Unlike the two above there is nothing to apply afterwards: the view
+			// mode has no second copy to push into, and `RogueGame.ApplyOptions`
+			// picks the change up when this screen exits. See `m_ViewMode`.
+			//
+			// An unrecognised stored value — a hand-edited or truncated options
+			// blob — is not on the list, so `indexOf` is -1 and `index + dir`
+			// would land on an arbitrary neighbour. Repair it to the default and
+			// stop, rather than showing a row whose value is about to jump.
+			if (!VIEW_MODES.includes(o.viewMode)) {
+				o.viewMode = DEFAULT_VIEW_MODE;
+				break;
+			}
+			const index = VIEW_MODES.indexOf(o.viewMode);
+			const next = index + dir;
+			if (next >= 0 && next < VIEW_MODES.length) {
+				o.viewMode = VIEW_MODES[next]!;
 			}
 			break;
 		}

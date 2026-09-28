@@ -17,6 +17,7 @@ import {
   setFontChoice,
   type FontChoice,
 } from "@ui/fonts";
+import { DEFAULT_VIEW_MODE, type ViewMode } from "@engine/firstperson/Types";
 
 export enum OptionIDs {
   UI_MUSIC,
@@ -63,6 +64,7 @@ export enum OptionIDs {
   GAME_AUTOSAVE_PERIOD, // alpha10.1
   UI_SPRITE_STYLE, // browser port
   UI_FONT_CHOICE, // browser port
+  UI_VIEW_MODE, // browser port
 }
 
 export enum ZupDays {
@@ -127,6 +129,7 @@ export class GameOptions {
   static readonly DEFAULT_AUTOSAVE_PERIOD = 24; // alpha10.1
   static readonly DEFAULT_SPRITE_STYLE: ImageSet = DEFAULT_IMAGE_SET;
   static readonly DEFAULT_FONT_CHOICE: FontChoice = DEFAULT_FONT_CHOICE;
+  static readonly DEFAULT_VIEW_MODE: ViewMode = DEFAULT_VIEW_MODE;
 
   // ── Fields ──────────────────────────────────────────────────────────────
   private m_DistrictSize = 0;
@@ -192,6 +195,27 @@ export class GameOptions {
 
   /** Which typeface the canvas draws with; see `ui/fonts.ts`. */
   private m_FontChoice: FontChoice = DEFAULT_FONT_CHOICE;
+
+  /**
+   * Whether the play screen is drawn top-down or in first person.
+   *
+   * A string out of `firstperson/Types.VIEW_MODES` rather than an enum of its
+   * own, for the same reason `m_SpriteStyle` is a string: the values are a list
+   * that the options screen has to bound against, and the renderer has to read,
+   * and one list beats two. The values are also the mode names, so the saved
+   * options JSON says `"first-person"` rather than `true`.
+   *
+   * **Deliberately has no `applyViewMode()`**, unlike the sprite style and the
+   * typeface above. Those push their value into another module — `AssetPaths`,
+   * the font stack — which a direct field write (what `load()` and `copyFrom()`
+   * do) would silently skip, which is why each needs re-applying in three places.
+   * The view mode has no such second copy to push into: `RogueGame` reads
+   * `s_Options.viewMode` directly wherever it branches, and the renderer is handed
+   * the camera in the scene rather than asking for the mode. So there is nothing
+   * to re-apply, and adding an `applyX()` here out of habit would be a no-op that
+   * reads as load-bearing.
+   */
+  private m_ViewMode: ViewMode = DEFAULT_VIEW_MODE;
 
   // dev only options (hidden)
   DEV_ShowActorsStats = false;
@@ -582,6 +606,33 @@ export class GameOptions {
     return setFontChoice(this.m_FontChoice);
   }
 
+  /**
+   * The view the play screen is drawn in. Plain accessor, no side effect — see
+   * `m_ViewMode` for why this option has no `applyX()`.
+   */
+  get viewMode(): ViewMode {
+    return this.m_ViewMode;
+  }
+  set viewMode(value: ViewMode) {
+    this.m_ViewMode = value;
+  }
+
+  /**
+   * Whether `mode` is the first-person view.
+   *
+   * Every branch that decides how to draw goes through this rather than testing
+   * `viewMode === "first-person"` inline, and the reason is the failure direction.
+   * The value is unvalidated JSON in a storage blob a player can hand-edit or a
+   * truncated write can damage, and `mode !== "first-person"` is then *true* for
+   * a typo — so an inline `!==` test would quietly drop the player into a
+   * renderer they never asked for, against a map drawn for a different
+   * coordinate space. This predicate is false for anything it does not
+   * recognise, so an unknown value falls back to the C# behaviour.
+   */
+  static isFirstPersonView(mode: string): boolean {
+    return mode === "first-person";
+  }
+
   // ── Init ────────────────────────────────────────────────────────────────
   resetToDefaultValues(): void {
     this.m_DistrictSize = GameOptions.DEFAULT_DISTRICT_SIZE;
@@ -629,6 +680,7 @@ export class GameOptions {
     this.applySpriteStyle();
     this.m_FontChoice = GameOptions.DEFAULT_FONT_CHOICE;
     void this.applyFontChoice();
+    this.m_ViewMode = GameOptions.DEFAULT_VIEW_MODE;
     this.DEV_ShowActorsStats = false;
   }
 
@@ -647,6 +699,9 @@ export class GameOptions {
     // the font module have to be told too. Without this, "R" (restore previous)
     // in the options screen would put the numbers back and leave the screen drawn
     // in the look the player just rejected.
+    //
+    // The view mode is deliberately not in that list. The `m_` loop above already
+    // copied it, and it has no second copy to push into — see `m_ViewMode`.
     this.applySpriteStyle();
     void this.applyFontChoice();
   }
@@ -747,6 +802,8 @@ export class GameOptions {
       return "  (Gfx) Sprite Style";
     case OptionIDs.UI_FONT_CHOICE:
       return "  (Gfx) Font";
+    case OptionIDs.UI_VIEW_MODE:
+      return "  (Gfx) View Mode";
       default:
         throw new Error("unhandled option");
     }
@@ -867,6 +924,14 @@ export class GameOptions {
       return "Which sprite set to draw the game with.\nThe other sets are variations of the classic one and do not contain every sprite: anything they are missing is drawn from classic, so a missing entry falls back rather than leaving a hole.";
     case OptionIDs.UI_FONT_CHOICE:
         return "Which typeface to draw the text with.\nFour are bundled, so they look the same everywhere and work offline: JetBrains Mono (the default), Iosevka Term Slab, Hack and IBM Plex Mono. Classic uses the system's own monospace font, which is what this game was drawn with before.";
+    case OptionIDs.UI_VIEW_MODE:
+      return (
+        "Draws the play screen from your own eyes rather than from above.\n" +
+        "The map, the rules and one-action-per-turn are all unchanged.\n" +
+        "In first person the arrow keys change meaning:\n" +
+        "Left and Right turn you an eighth of a circle, costing no turn;\n" +
+        "Up and Down walk you forward and back the way you are facing."
+      );
       default:
         throw new Error("unhandled option");
     }
@@ -1099,9 +1164,23 @@ export class GameOptions {
       return GameOptions.spriteStyleName(this.spriteStyle);
     case OptionIDs.UI_FONT_CHOICE:
       return fontChoiceName(this.fontChoice);
+    case OptionIDs.UI_VIEW_MODE:
+      return GameOptions.viewModeName(this.viewMode);
       default:
         return "???";
     }
+  }
+
+  /**
+   * The display name of a view mode.
+   *
+   * Unlike `spriteStyleName` this has nothing to tidy up — the stored values were
+   * chosen to read as words already, because they are also the option's saved
+   * form and there is no reason for the two to differ. The annotation marks the
+   * one a first run gets, the same way the sprite style marks the complete set.
+   */
+  static viewModeName(mode: ViewMode): string {
+    return mode === DEFAULT_VIEW_MODE ? `${mode}  (default)` : mode;
   }
 
   // ── Saving & Loading (localStorage JSON instead of binary) ──────────────
@@ -1136,6 +1215,9 @@ export class GameOptions {
     options.applySpriteStyle();
     // And the typeface, for the same reason and the same way.
     void options.applyFontChoice();
+    // The view mode needs nothing here, unlike the two above: it has no second
+    // copy to push into, so `RogueGame` reading `s_Options.viewMode` is already
+    // in step with the field `load` just wrote. See `m_ViewMode`.
     } catch {
       // failed to load options (no custom options?) -> return default values.
       return new GameOptions();
