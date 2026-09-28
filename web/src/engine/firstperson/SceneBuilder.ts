@@ -6,11 +6,14 @@ import { Lighting } from "@data/Map";
 import {
   makeCamera,
   VIEW_FOV_DEGREES,
+  WALL_HEIGHT,
   type Camera,
   type Quad,
 } from "./Types";
 import { castColumns, columnDistances, MAX_RAY_DISTANCE } from "./Raycaster";
-import { columnQuad, projectColumns, sortFarToNear } from "./Projector";
+import { billboardRect, columnQuad, projectColumns, sortFarToNear, type BillboardRect } from "./Projector";
+import { isUnoccluded } from "./Billboards";
+import type { MapObject } from "@data/MapObject";
 import { Point } from "@engine/Point";
 import type { WallColumn } from "./Types";
 import { collectBillboards, ACTOR_SPRITE_HEIGHT } from "./Billboards";
@@ -138,6 +141,9 @@ export interface Scene {
     fogColumns: number;
     /** Sprites the z-buffer dropped, which is a measurement, not a count of work. */
     culledBillboards: number;
+    /** Map objects drawn as billboards, and the columns that gave way to them. */
+    mapObjectQuads: number;
+    objectColumns: number;
   };
 }
 
@@ -177,6 +183,10 @@ export function buildScene(inputs: SceneInputs): Scene {
   const quads: Quad[] = [];
   let wallQuads = 0;
   let fogColumns = 0;
+  // Columns whose surface is a map object rather than a tile. They contribute no
+  // wall quad, because the ray stopped at the object and there is nothing behind it
+  // to draw; the object becomes a billboard in its place.
+  let objectColumns = 0;
 
   // ── Walls ────────────────────────────────────────────────────────────────
   //
@@ -197,11 +207,12 @@ export function buildScene(inputs: SceneInputs): Scene {
       continue;
     }
     if (column.hit.surface === "object") {
-      // A transparent map object — an open door, a table. It is walkable, so the
-      // ray stops on it only because the raycaster reports it; drawn as a column it
-      // would be a full-height slab across the doorway.
-      quads.push(columnQuad(column, 32));
-      wallQuads++;
+      // An opaque map object: a closed door, a gate, a car. It stops the ray, so
+      // this column has *no wall behind it* — and the object is drawn as a
+      // billboard instead (see `objectBillboards`). Emitting a column here would be
+      // a full-height slab of a top-down icon, which is the wrong shape twice over:
+      // the icon has no sides, and it is not as tall as a wall.
+      objectColumns++;
       continue;
     }
     quads.push(columnQuad(column, 32));
@@ -217,6 +228,18 @@ export function buildScene(inputs: SceneInputs): Scene {
   // guessing. The flat colour is the tile's own minimap colour, which is the only
   // per-tile colour the data model has.
   const floorQuads = buildFloor(inputs.map, camera, viewDistance, inputs.daylight);
+
+  // ── Map objects ──────────────────────────────────────────────────────────
+  //
+  // Every map object is a billboard, never a wall column. The top-down view draws
+  // one as a single unscaled 32x32 sprite, so there is no side or back of a car or
+  // a chair to render — there never was, because the game has never needed one.
+  // Stretching a top-down icon up a full-height column is inventing geometry that
+  // does not exist, and it is why the furniture looked wrong in the browser.
+  //
+  // Two sources, because there are two ways a map object relates to a ray:
+  const objectBillboards = objectBillboardsFor(camera, columns);
+  const scannedObjects = scanTransparentObjects(inputs.map, camera, zBuffer, viewDistance);
 
   // ── Decorations, decals ──────────────────────────────────────────────────
   // A sprite behind a wall is neither drawn nor counted as drawn, so `culled` is a
@@ -246,6 +269,8 @@ export function buildScene(inputs: SceneInputs): Scene {
     ...quads,
     ...decorations,
     ...billboards.map((b) => b.quad),
+    ...objectBillboards,
+    ...scannedObjects,
     ...decals,
   ];
 
@@ -279,6 +304,12 @@ export function buildScene(inputs: SceneInputs): Scene {
       decorationQuads: decorations.length,
       fogColumns,
       culledBillboards,
+      // Map objects drawn as billboards: the ones the ray stopped on, plus the
+      // transparent ones the ray walked past.
+      mapObjectQuads: objectBillboards.length + scannedObjects.length,
+      // Columns with no wall behind them, so a reader can tell "the ray stopped on
+      // a door" from "the ray found nothing", which both cost no wall quad.
+      objectColumns,
     },
   };
 }
@@ -356,6 +387,175 @@ function backdropColor(inputs: SceneInputs): Color {
     inputs.map.lighting === Lighting.LIT ? Color.LightGray : Color.fromArgb(40, 44, 58),
     inputs.daylight,
   );
+}
+
+/**
+ * How tall a map object stands, in tiles.
+ *
+ * One value for everything, and it is a compromise rather than a measurement: the
+ * data model has no height for a map object, only a 32x32 image. Furniture at about
+ * a tile reads as furniture and a car as a car at this size, which is better than
+ * the alternative — stretching the icon to a full 1.5-tile wall made a bed the size
+ * of a door.
+ *
+ * A *door* is the exception, and it has to be: a doorway the player can see over
+ * does not read as a doorway. It is the one case where the height comes from what
+ * the object does rather than from what it is, and it is the one case that cannot be
+ * guessed.
+ */
+export const MAP_OBJECT_HEIGHT = 1.0;
+
+/** Doors and windows are full height, because a doorway is a hole in a wall. */
+const DOOR_HEIGHT = WALL_HEIGHT;
+
+/**
+ * The opaque map objects a ray stopped on, as billboards — **one per object**, not
+ * one per column.
+ *
+ * A single shelf at one tile is hit by fifty or more columns, and a quad per column
+ * would draw the same 32x32 sprite fifty times, all on top of each other. Visually
+ * that is only overdraw, but it is fifty draw calls and fifty chances for a
+ * rasteriser to shade the same pixels five times.
+ *
+ * The union is taken over the columns' screen extents, which is the object's
+ * apparent width, and its *nearest* column is the depth: a ray can clip a corner of
+ * a distant object before a nearer ray hits its face, and taking the union's
+ * farthest depth would push the sprite behind the very wall it is standing against.
+ *
+ * Deduplication is by **object identity**, not by `imageId`. Every shop shelf in a
+ * district shares one image id, so a key on it would merge a shelf you are standing
+ * next to with one at the far end of the street and draw a single sprite in the
+ * middle. That is why `RayHit` carries the object itself.
+ *
+ * No depth test: the ray *ended* on these objects, so they are the frontmost thing
+ * in those columns by construction. Testing against the z-buffer — which holds
+ * these same distances — would reject them as not in front of themselves.
+ */
+function objectBillboardsFor(camera: Camera, columns: readonly WallColumn[]): Quad[] {
+  /** One entry per object: the columns' screen extent, and the nearest hit. */
+  // `globalThis.Map` because this file's `Map` is the game's data model, imported
+  // from `@data/Map`. Shadowing the data model with the built-in is the kind of
+  // collision TypeScript cannot flag here, because the import wins silently.
+  const spans = new globalThis.Map<MapObject, { left: number; right: number; near: number; rect: BillboardRect }>();
+
+  for (const column of columns) {
+    const object = column.hit.object;
+    if (column.hit.surface !== "object" || object == null || !column.hit.inView) continue;
+
+    // Projected at the object's own face crossing for *this* column, because the
+    // height is a property of the object but the width is a property of where the
+    // camera sees it.
+    const rect = billboardRect(camera, column.hit.hitX, column.hit.hitY, objectHeight(object.imageId));
+    if (rect === null) continue;
+
+    const existing = spans.get(object);
+    if (existing === undefined) {
+      spans.set(object, { left: rect.left, right: rect.right, near: rect.depth, rect });
+      continue;
+    }
+    existing.left = Math.min(existing.left, rect.left);
+    existing.right = Math.max(existing.right, rect.right);
+    // The nearest sighting wins the depth, and its own rect for the vertical
+    // extent: a sprite drawn at a nearer height is the one that will not be
+    // hidden by the object in front of it.
+    if (rect.depth < existing.near) {
+      existing.near = rect.depth;
+      existing.rect = rect;
+    }
+  }
+
+  const out: Quad[] = [];
+  for (const [object, span] of spans) {
+    const { rect } = span;
+    out.push({
+      imageId: object.imageId,
+      x: span.left,
+      y: rect.top,
+      ux: span.right - span.left,
+      uy: 0,
+      vx: 0,
+      vy: rect.bottom - rect.top,
+      sx: 0, sy: 0, sw: 32, sh: 32,
+      depth: span.near,
+    });
+  }
+  sortFarToNear(out);
+  return out;
+}
+
+/**
+ * Transparent map objects — a table, a chair, an open door — that the ray walked
+ * past, found by scanning tiles.
+ *
+ * These are the reason the ray has to be able to *not* stop: a table in front of a
+ * wall must not hide the wall. So the wall is in the z-buffer, the table is not,
+ * and the table is drawn behind it.
+ */
+function scanTransparentObjects(
+  map: Map,
+  camera: Camera,
+  zBuffer: Float32Array,
+  viewDistance: number,
+): Quad[] {
+  const out: Quad[] = [];
+  // Whole tiles: the bound is the engine's fractional FOV, and a half-tile scan
+  // indexes `tilesGrid` with a fraction.
+  const reach = Math.ceil(viewDistance);
+  const originX = Math.floor(camera.posX);
+  const originY = Math.floor(camera.posY);
+
+  for (let dy = -reach; dy <= reach; dy++) {
+    for (let dx = -reach; dx <= reach; dx++) {
+      const x = originX + dx;
+      const y = originY + dy;
+      if (!map.isInBounds(x, y)) continue;
+      const obj = map.getMapObjectAt(x, y);
+      // Only the ones the ray went through. An opaque one already became a
+      // billboard from its column, and drawing it twice would be a ghost.
+      if (obj == null || !obj.isTransparent) continue;
+      if (!(map.getTileAt(x, y)?.isInView ?? false)) continue;
+      if (obj.imageId == null || obj.imageId === "") continue;
+
+      const rect = billboardRect(camera, x + 0.5, y + 0.5, objectHeight(obj.imageId));
+      if (rect === null) continue;
+      if (rect.depth > viewDistance) continue;
+      // Behind a wall? The ray never stopped here, so the z-buffer holds whatever
+      // *is* behind this tile, and this object is nearer than that by
+      // construction — but not if something else is between.
+      if (!isUnoccluded(rect.left, rect.right, rect.depth, zBuffer)) continue;
+
+      out.push({
+        imageId: obj.imageId,
+        x: rect.left, y: rect.top,
+        ux: rect.right - rect.left, uy: 0, vx: 0, vy: rect.bottom - rect.top,
+        sx: 0, sy: 0, sw: 32, sh: 32,
+        depth: rect.depth,
+      });
+    }
+  }
+  sortFarToNear(out);
+  return out;
+}
+
+/**
+ * Whether an image is a door or a window, by its id.
+ *
+ * String matching on an id is the wrong tool and is used anyway, with the reason
+ * recorded: the class hierarchy distinguishes these at *runtime* — the C# casts to
+ * `DoorWindow` and checks for it — and there is no flag on the data model that says
+ * "this is a door". So either an id convention or a new field, and the id is
+ * already there. A `MapObject` carrying its own height would remove the need.
+ */
+function objectHeight(imageId: string): number {
+  return isDoorLike(imageId) ? DOOR_HEIGHT : MAP_OBJECT_HEIGHT;
+}
+
+function isDoorLike(imageId: string): boolean {
+  // Case-folded: the ids are paths, and `"MapObjects/Wood_Door"` is as plausible as
+  // `"MapObjects/dark_door_closed"`. Guessing an id's case is exactly the kind of
+  // thing that works until it does not.
+  const id = imageId.toLowerCase();
+  return id.includes("door") || id.includes("window");
 }
 
 /**

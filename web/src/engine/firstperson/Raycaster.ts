@@ -1,4 +1,5 @@
 import { Map } from "@data/Map";
+import type { MapObject } from "@data/MapObject";
 import { Camera, RayHit } from "./Types";
 
 /**
@@ -139,6 +140,9 @@ export function castRay(
         wallU: side === 0 ? hitY - mapY : hitX - mapX,
         surface: hit.surface,
         imageId: hit.imageId,
+        // The object travels with the hit so the scene builder can tell one shop
+        // shelf from another. `imageId` cannot: a district's shelves all share it.
+        object: hit.object,
         // The engine's FOV, not the renderer's cone. A wall the ray reaches but
         // the player cannot *see* must be drawn as fog rather than as its
         // texture, or first person shows the player things the top-down view
@@ -154,6 +158,7 @@ export function castRay(
 interface Surface {
   surface: RayHit["surface"];
   imageId: string;
+  object: MapObject | null;
 }
 
 /**
@@ -167,23 +172,33 @@ interface Surface {
  * open.
  */
 function surfaceAt(map: Map, x: number, y: number): Surface | null {
-  if (!map.isInBounds(x, y)) return { surface: "edge", imageId: "" };
+  if (!map.isInBounds(x, y)) return { surface: "edge", imageId: "", object: null };
 
   const obj = map.getMapObjectAt(x, y);
-  if (obj != null) {
-    if (!obj.isWalkable) {
-      // Blocking and opaque: a wall, a closed door, a gate. Drawn as a column.
-      return { surface: "wall", imageId: obj.imageId };
-    }
-    if (obj.isTransparent) {
-      // Walkable but see-through: an open door, a table. Drawn as a billboard.
-      return { surface: "object", imageId: obj.imageId };
-    }
+  if (obj != null && !obj.isTransparent) {
+    // Opaque: a closed door, a gate, a burning car. It stops the ray because you
+    // cannot see through it — and note that the test is **transparency, not
+    // walkability**: whether you can walk through a thing and whether you can see
+    // through it are different questions, and conflating them either let you see
+    // through a closed door or hid everything behind a table.
+    //
+    // Drawn as a *billboard*, not a column. The top-down view draws a map object as
+    // one unscaled 32x32 sprite, so there is no side or back of a car or a chair to
+    // render — there never was, because the game never needed one. Stretching a
+    // top-down icon into a full-height column is inventing geometry that does not
+    // exist, and it is what made the furniture look wrong.
+    return { surface: "object", imageId: obj.imageId, object: obj };
   }
+  // A transparent object — a table, a chair, an open door — does not stop the ray
+  // at all. It is found by the scene builder's tile scan and drawn as a billboard
+  // behind whatever the ray *did* stop at, which is the only way "you can see the
+  // wall past the table" is true.
 
   const tile = map.getTileAt(x, y);
-  if (tile == null) return { surface: "edge", imageId: "" };
-  if (!tile.model.isWalkable) return { surface: "wall", imageId: tile.model.imageId };
+  if (tile == null) return { surface: "edge", imageId: "", object: null };
+  if (!tile.model.isWalkable) {
+    return { surface: "wall", imageId: tile.model.imageId, object: null };
+  }
   return null;
 }
 

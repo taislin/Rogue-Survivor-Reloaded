@@ -2,6 +2,9 @@ import { describe, it, expect } from "vitest";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { Map as GameMap, Lighting } from "@data/Map";
+import { MapObject } from "@data/MapObject";
+import { Location } from "@data/Location";
+import { Point } from "@engine/Point";
 import { Models } from "@data/Models";
 import { GameTiles, TileID } from "@gameplay/GameTiles";
 import type { TileModel } from "@data/TileModel";
@@ -443,6 +446,76 @@ describe("the two implementations of a quad agree", () => {
     expect(scene.quads.length).toBeGreaterThan(50);
   });
 
+  it("paints every quad through one path, so the flat and textured shapes cannot differ", () => {
+    // The second browser-only bug, and the same cause as the first. `fillRect(x, y,
+    // w, h)` has no shear parameters, so it drew an upright *rectangle* for every
+    // sheared flat quad — which is every floor tile's base fill. The difference
+    // between a rectangle and the true parallelogram is exactly two triangles, and
+    // the browser's floor was two triangles of base colour against two of texture,
+    // converging on the vanishing point.
+    //
+    // The previous version of this test counted `fillRect` calls and **passed
+    // against the bug**, because a mutation that replaced the branch with a single
+    // unconditional `fillRect` left the count unchanged. Counting occurrences is
+    // the wrong instrument. What is actually asserted now is the *structure*: one
+    // place builds the clip, one place applies the transform, and the flat/textured
+    // choice is only ever a choice of what to paint into the region those two have
+    // already established. A branch that picks a primitive can pick the wrong
+    // shape; a branch that picks a paint call cannot.
+    const source = readFileSync(join(__dirname, "../src/ui/firstperson/SceneRenderer.ts"), "utf-8");
+
+    // The parallelogram is built exactly once, and the affine exactly once. Two
+    // copies is how they came to disagree with the rasteriser in the first place.
+    expect(
+      (source.match(/moveTo\(quad\.x, quad\.y\)/g) ?? []).length,
+      "the parallelogram is built more than once, so the shapes can drift apart",
+    ).toBe(1);
+    expect(
+      (source.match(/ctx\.transform\(/g) ?? []).length,
+      "the affine is applied in more than one place",
+    ).toBe(1);
+
+    // And exactly three fills in the whole file, all of them accounted for: the
+    // backdrop, the axis-aligned flat fast path, and the sheared flat fill. A fourth
+    // would be a new place that can pick the wrong shape. Naming all three is the
+    // point — a count alone cannot say *which* three.
+    const fills = source.match(/\.(fillRect|fill)\(/g) ?? [];
+    expect(fills, "an unaccounted-for fill, so a new path can pick a shape").toHaveLength(3);
+    expect(source, "the backdrop is missing its fill").toContain("ctx.fillRect(panel.left, panel.top, panel.width, panel.height)");
+    // Exactly one `fillRect(quad.` — the fast path — and it is behind the no-shear
+    // test, so a sheared quad cannot reach it.
+    expect((source.match(/ctx\.fillRect\(quad\./g) ?? []).length).toBe(1);
+    // The sheared flat fill is in the quad's *own* space, where the affine has
+    // already been applied. In destination coordinates it would be an upright
+    // rectangle, which is the bug.
+    expect(source, "a sheared flat quad is filled in destination coordinates").toContain(
+      "ctx.fillRect(0, 0, quad.sw, quad.sh)",
+    );
+    // And there is no `ctx.fill()` left: a path fill would be correct for a
+    // parallelogram but it silently ignores the transform, which is the same class
+    // of mistake in a different method.
+    expect((source.match(/ctx\.fill\(\)/g) ?? []).length, "a bare ctx.fill() cannot honour a transform").toBe(0);
+
+    // And the geometry, so the mistake has a size attached: the two shapes differ
+    // by a lot, and the difference is precisely the shear term. Which one is
+    // *bigger* depends on the shear's sign, so the assertion is on the difference.
+    for (const quad of [
+      { imageId: "", x: 300, y: 400, ux: 60, uy: -14, vx: 40, vy: 22, sx: 0, sy: 0, sw: 1, sh: 1, depth: 2 },
+      { imageId: "", x: 300, y: 400, ux: 60, uy: 14, vx: 40, vy: 22, sx: 0, sy: 0, sw: 1, sh: 1, depth: 2 },
+    ] as Quad[]) {
+      const parallelogramArea = Math.abs(quad.ux * quad.vy - quad.vx * quad.uy);
+      const rectangleArea = Math.abs(quad.ux * quad.vy);
+      expect(
+        Math.abs(parallelogramArea - rectangleArea) / rectangleArea,
+        "a sheared quad and its bounding rectangle are nearly the same",
+      ).toBeGreaterThan(0.2);
+      expect(Math.abs(parallelogramArea - rectangleArea)).toBeCloseTo(
+        Math.abs(quad.vx * quad.uy),
+        9,
+      );
+    }
+  });
+
   it("is what the browser renderer actually uses, rather than a copy of the maths", () => {
     // The four tests above pin `quadAffine`, which is not the same as pinning the
     // renderer: it could hand-roll its own matrix and every one of them would still
@@ -499,6 +572,104 @@ describe("decals, decorations and weather", () => {
     map.getTileAt(2, 6)!.addDecoration("Tiles/Decoration/char_poster1");
     return map;
   }
+
+  it("draws a map object as a billboard, never as a wall column", () => {
+    // Furniture, cars, doors and gates are all top-down icons: the game draws each
+    // one as a single unscaled 32x32 sprite, so there is no side or back of a car
+    // to render. A wall column stretches the icon to 1.5 tiles tall and the width of
+    // a view column, which is inventing geometry the art does not have.
+    const map = corridor();
+    // A real `MapObject`, so the flags are the ones the engine actually reads —
+    // `isTransparent` is derived from `IS_MATERIAL_TRANSPARENT`, and a hand-rolled
+    // object literal would not be exercising that at all.
+    const car = new MapObject("car", "MapObjects/car1");
+    car.imageId = "MapObjects/car1";
+    car.isWalkable = false;
+    car.isMaterialTransparent = false;
+    // In front of the camera, not behind: the camera stands at y = 9.5 facing south,
+    // which is +y. A test object behind the camera is the one thing this cannot see,
+    // and it fails as "not drawn" rather than as "wrong", which is a slow way to
+    // learn a direction convention.
+    car.location = new Location(map, new Point(4, 14));
+    map.getMapObjectAt = ((x: number, y: number) => (x === 4 && y === 14 ? car : null)) as typeof map.getMapObjectAt;
+
+    const scene = buildScene(sceneInputs(map, Direction.S, { posY: 9.5 }));
+    // The car stops a ray, so its column carries no wall — and it is drawn.
+    expect(scene.counts.objectColumns).toBeGreaterThan(0);
+    expect(scene.counts.mapObjectQuads).toBeGreaterThan(0);
+    const billboard = scene.quads.find((q) => q.imageId === "MapObjects/car1");
+    expect(billboard, "the car was not drawn at all").toBeDefined();
+    // A billboard is a full 32x32 sprite, not a 1px slice of a texture.
+    expect(billboard!.sw).toBe(32);
+    expect(billboard!.sh).toBe(32);
+    // And the wall behind it is still drawn, because the object was opaque and the
+    // ray stopped — so the object's billboard is what covers that column.
+    expect(scene.counts.wallQuads).toBeGreaterThan(0);
+  });
+
+  it("draws one quad per object, however many columns hit it", () => {
+    // A shelf at one tile is hit by fifty-odd columns. A quad per column draws the
+    // same 32x32 sprite fifty times on top of itself: visually only overdraw, but
+    // fifty draw calls for one object.
+    //
+    // And the dedupe is on **object identity, not `imageId`**: every shop shelf in a
+    // district shares one image id, so keying on it merges the shelf you are standing
+    // next to with the one at the end of the street and draws a single sprite in the
+    // middle of nowhere. That is the bug this shape is defending against.
+    const map = corridor();
+    const shelfAt = (x: number) => {
+      const shelf = new MapObject("shelf", "MapObjects/shop_shelf");
+      shelf.imageId = "MapObjects/shop_shelf";
+      shelf.isWalkable = false;
+      shelf.isMaterialTransparent = false;
+      shelf.location = new Location(map, new Point(x, 14));
+      return shelf;
+    };
+    const shelves = [shelfAt(2), shelfAt(3), shelfAt(4), shelfAt(5), shelfAt(6)];
+    map.getMapObjectAt = ((x: number, y: number) =>
+      y === 14 ? (shelves.find((o) => o.location.position.x === x) ?? null) : null) as typeof map.getMapObjectAt;
+
+    const scene = buildScene(sceneInputs(map, Direction.S, { posY: 9.5 }));
+    // Five distinct objects sharing one image id, so an imageId-keyed dedupe would
+    // produce one quad and an identity-keyed one produces five.
+    const shelfQuads = scene.quads.filter((q) => q.imageId === "MapObjects/shop_shelf");
+    expect(shelfQuads, "the shelves were merged into one sprite").toHaveLength(5);
+    // And they are *distinct* sprites, not one drawn five times in the same place.
+    const centres = new Set(shelfQuads.map((q) => Math.round((q.x + q.ux / 2) * 4)));
+    expect(centres.size, "two shelves landed in the same place").toBe(5);
+    // Many columns, few quads: this is the overdraw the dedupe exists to remove.
+    expect(scene.counts.objectColumns).toBeGreaterThan(shelfQuads.length);
+  });
+
+  it("stands furniture at furniture height, not wall height", () => {
+    // `MapObject` has no height in the data model, only an image, so this is one
+    // value for everything. A bed drawn 1.5 tiles tall reads as a door; at one tile
+    // it reads as a bed. A door is the exception and the reason: a doorway the
+    // player can see over does not read as a doorway.
+    const map = corridor();
+    const bed = new MapObject("bed", "MapObjects/bed");
+    bed.imageId = "MapObjects/bed";
+    bed.isWalkable = false;
+    bed.isMaterialTransparent = false;
+    bed.location = new Location(map, new Point(4, 14));
+    map.getMapObjectAt = ((x: number, y: number) => (x === 4 && y === 14 ? bed : null)) as typeof map.getMapObjectAt;
+
+    const bedScene = buildScene(sceneInputs(map, Direction.S, { posY: 9.5 }));
+    const bedQuad = bedScene.quads.find((q) => q.imageId === "MapObjects/bed");
+    expect(bedQuad).toBeDefined();
+    const bedHeight = bedQuad!.vy;
+
+    const door = new MapObject("door", "MapObjects/dark_door_closed");
+    door.imageId = "MapObjects/dark_door_closed";
+    door.isWalkable = false;
+    door.isMaterialTransparent = false;
+    door.location = new Location(map, new Point(4, 14));
+    map.getMapObjectAt = ((x: number, y: number) => (x === 4 && y === 14 ? door : null)) as typeof map.getMapObjectAt;
+    const doorScene = buildScene(sceneInputs(map, Direction.S, { posY: 9.5 }));
+    const doorQuad = doorScene.quads.find((q) => q.imageId === "MapObjects/dark_door_closed");
+    expect(doorQuad).toBeDefined();
+    expect(doorQuad!.vy).toBeGreaterThan(bedHeight);
+  });
 
   it("draws a decoration over the wall it sits on, not behind it", () => {
     // A decoration at exactly the wall's distance is rejected by the depth test and

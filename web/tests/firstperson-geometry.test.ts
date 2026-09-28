@@ -242,25 +242,55 @@ describe("castRay", () => {
     expect(checked).toBeGreaterThan(1000);
   });
 
-  it("stops at a closed door and walks through an open one", () => {
-    // Doors need no special case while closed: a closed door is not walkable, so
-    // the DDA stops on it and it is just a wall with a different texture. The
-    // case that *does* need one is the open door, which is walkable — a raycaster
-    // terminating on walkability alone walks through it and never draws it. That
-    // is the third surface kind, reported as `object`.
+  it("stops at an opaque map object and walks through a transparent one", () => {
+    // The test is **transparency, not walkability**, and conflating the two is
+    // wrong in both directions: a test on walkability lets you see through a closed
+    // door, and a test on "is there an object at all" hides the world behind every
+    // table. Whether you can walk through a thing and whether you can see through it
+    // are different questions, and `Map.isTransparent` is already the engine's
+    // answer to the second.
     const map = room();
-    const door = { imageId: "MapObjects/dark_door_closed", isWalkable: false, isTransparent: false };
-    map.getMapObjectAt = ((x: number, y: number) => (x === 4 && y === 1 ? door : null)) as typeof map.getMapObjectAt;
+    const opaque = { imageId: "MapObjects/dark_door_closed", isWalkable: false, isTransparent: false };
+    map.getMapObjectAt = ((x: number, y: number) => (x === 4 && y === 1 ? opaque : null)) as typeof map.getMapObjectAt;
 
     const closed = castRay(map, CENTRE, CENTRE, 0, -1)!;
-    expect(closed.surface).toBe("wall");
+    // `object`, not `wall`: a map object is never drawn as a wall column. The
+    // top-down view draws it as one unscaled 32x32 sprite, so there is no side or
+    // back of a door to render — the game has never had any.
+    expect(closed.surface).toBe("object");
     expect(closed.imageId).toBe("MapObjects/dark_door_closed");
 
-    const open = { imageId: "MapObjects/dark_door_open", isWalkable: true, isTransparent: true };
-    map.getMapObjectAt = ((x: number, y: number) => (x === 4 && y === 1 ? open : null)) as typeof map.getMapObjectAt;
-    const opened = castRay(map, CENTRE, CENTRE, 0, -1)!;
-    expect(opened.surface).toBe("object");
-    expect(opened.imageId).toBe("MapObjects/dark_door_open");
+    // Transparent: the ray goes *through* it and finds the wall behind. A table in
+    // front of a wall must not hide the wall.
+    const seeThrough = { imageId: "MapObjects/char_chair", isWalkable: true, isTransparent: true };
+    map.getMapObjectAt = ((x: number, y: number) => (x === 4 && y === 1 ? seeThrough : null)) as typeof map.getMapObjectAt;
+    const through = castRay(map, CENTRE, CENTRE, 0, -1)!;
+    expect(through.surface).toBe("wall");
+    expect(through.imageId).toBe("Tiles/wall_brick");
+
+    // Opaque but *walkable* — a rug, a floor mat — still blocks sight, which is the
+    // case that would break if the test were walkability.
+    const opaqueButWalkable = { imageId: "MapObjects/rug", isWalkable: true, isTransparent: false };
+    map.getMapObjectAt = ((x: number, y: number) => (x === 4 && y === 1 ? opaqueButWalkable : null)) as typeof map.getMapObjectAt;
+    expect(castRay(map, CENTRE, CENTRE, 0, -1)!.surface).toBe("object");
+  });
+
+  it("only ever calls a tile a wall", () => {
+    // The distinction the raycaster now draws: `wall` means a *tile*, and a
+    // map object is always a billboard. This is the property the whole
+    // "furniture is a billboard" change rests on, and it is worth one assertion
+    // rather than a convention nobody re-checks.
+    const map = room();
+    const blocking = [
+      { imageId: "MapObjects/gate_closed", isWalkable: false, isTransparent: false },
+      { imageId: "MapObjects/car1", isWalkable: false, isTransparent: false },
+      { imageId: "MapObjects/barrels", isWalkable: false, isTransparent: false },
+    ];
+    for (const obj of blocking) {
+      map.getMapObjectAt = ((x: number, y: number) => (x === 4 && y === 1 ? obj : null)) as typeof map.getMapObjectAt;
+      const hit = castRay(map, CENTRE, CENTRE, 0, -1)!;
+      expect(hit.surface, `${obj.imageId} became a wall column`).toBe("object");
+    }
   });
 
   it("reports the map edge as its own surface, not as a wall", () => {

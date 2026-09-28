@@ -2,7 +2,7 @@
 
 > **Status (2026-09-28):** Phases 1–7 ported and playable. Phase 8 tasks 1–11
 > done; only 12 (optional touch support) remains. `npm run verify` is green end to
-> end — type-check, 832 tests in 56 files with coverage enforced, and the Vite
+> end — type-check, 845 tests in 56 files with coverage enforced, and the Vite
 > build. Read [Current State & Handover](#1-current-state--handover).
 >
 > **A first-person view mode now exists** (branch `feature/first-person-view`),
@@ -489,7 +489,7 @@ loudly.
   `5b2dc59`; the side panel, hitbox, popup and minimap fixes `4a6e845` and
   `2ebdddf`; the four typeface families `47c5b64`; and the look-handler and
   typeface-repaint fixes `6977b63`.
-- **Current state (2026-09-28): 832 tests across 56 files, `npm run verify` green
+- **Current state (2026-09-28): 845 tests across 56 files, `npm run verify` green
   end to end — type-check, coverage, and the Vite build.** Note that this was *not*
   true on arrival: the suite was red on Linux, for the reason in §1.6, and this
   line claimed otherwise. Verify it rather than reading it.
@@ -533,7 +533,7 @@ Full detail in `web/.porting/CONVENTIONS.md`. The ones that matter:
 |---|---|
 | `npm run verify` | type-check + coverage + build — what CI runs, in one command |
 | `npm run type-check` | `tsc --noEmit`; covers `src/`, `sim/` and `tests/` — necessary, **not sufficient** |
-| `npm run test` | Vitest, 832 tests in 56 files |
+| `npm run test` | Vitest, 845 tests in 56 files |
 | `npm run test:coverage` | Vitest with coverage thresholds enforced |
 | `npm run build` | Vite production build |
 | `npm run sim` | Headless engine run — the real test |
@@ -555,7 +555,7 @@ Phases 1–7 are ported and building. Historical per-slice detail has been remov
 | 5 — World gen & AI | `BaseAI` (184/184), all 11 AI controllers, 4 generator files (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator` 5 814 lines, `StdTownGenerator`) | Done |
 | 6 — Audio | Web Audio SFX + music | Done |
 | 7 — Save / load | localStorage / IndexedDB, `Session` serialisation | Done |
-| 8 — Polish, sim, CI | Headless harness, 832 tests, CI, PWA, Docker, asset pass, frame-cost pass, desktop wrapper | **In progress** — 11 of 12 tasks done; only 12 (optional touch) remains. See §4.1 |
+| 8 — Polish, sim, CI | Headless harness, 845 tests, CI, PWA, Docker, asset pass, frame-cost pass, desktop wrapper | **In progress** — 11 of 12 tasks done; only 12 (optional touch) remains. See §4.1 |
 
 Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks, 3 SFX), extracted from the C# embedded resources. **Total 24.9 MB**, down from 51.6 MB before the Phase 8 asset pass — see §4.1c.
 
@@ -573,7 +573,7 @@ Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks,
 | 2 | Deterministic `--seed` for reproducible runs | **Done** (`Session.useSeed`, `--seed`) |
 | 3 | Drive the sim to a clean full-length run and fix what it finds | **In progress, and the goal changed** — no seed now reaches 1 000 turns, because that is *correct* behaviour (§1.2: the undead bot is shot by survivors). Keep sweeping seeds for crashes, not for turn count |
 | 4 | Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`) | **Done and verified in a browser** — now 1366×768 widescreen, smooth filtering (the old `image-rendering: pixelated` made upscaled text unreadable) |
-| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 832 tests, 56 files, thresholds enforced (50/75/57/50) |
+| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 845 tests, 56 files, thresholds enforced (50/75/57/50) |
 | 6 | GitHub Actions CI | **Done** — `.github/workflows/ci.yml`, type-check + coverage + build + seeded sim, plus a docker smoke job |
 | 7 | PWA manifest + service worker (offline play) | **Done** — manifest, drawn icons, runtime-caching `sw.js` |
 | 8 | Docker image for the self-hosted server | **Done but unverified** — docker is not installed locally, so the image has never been built; CI will exercise it first |
@@ -1007,7 +1007,7 @@ port's side alone.
 
 ### 5.4 First-person / pseudo-3D view mode
 
-**Built** (branch `feature/first-person-view`, 9 commits). It is a **second
+**Built** (branch `feature/first-person-view`, 12 commits). It is a **second
 renderer behind an option** — `(Gfx) View Mode`, defaulting to top-down, so the
 C# behaviour is what a first run still shows and a player who has never heard of
 this sees the game that was ported. `F` toggles it in game; the options screen is
@@ -1015,32 +1015,70 @@ its real home, and the hotkey writes the *option* and then calls the same
 `ApplyOptions` the options screen does, so there is one place a view change takes
 effect.
 
-`npm run verify` is green: **832 tests, 56 files, 60.78/81.11/73.22/60.78** against
+`npm run verify` is green: **845 tests, 56 files, 60.93/81.18/73.31/60.93** against
 50/75/57/50. What follows is what was decided, what turned out to be wrong, and
 what is still open.
 
-#### The one thing that has not been done
+#### It has now been looked at, and it was wrong twice
 
-**The pixels have never been looked at.** There is no browser in the environment
-this was built in, so the Canvas2D blit — the `drawImage` calls, the affine
-transform for the sheared floor quads, the clip to the panel — is unverified. The
-geometry is verified three ways (unit tests, a source-level test suite, and golden
-images rasterised by a software renderer in `tests/`), and the *wiring* is verified
-by `tests/firstperson-wiring.test.ts` driving a real generated world. But the
-rendering path that actually runs in a browser has not run in a browser.
+The browser has now run this, from screenshots, and **the software rasteriser and
+the goldens agreed with each other while both were wrong about the browser.** Every
+one of these is a real defect that only a browser can show, and every one passed the
+full suite first:
 
-This is not a hypothetical gap, and it is why the caveat sits at the top rather
-than in a footnote. Earlier in this work the test rasteriser and the browser
-**disagreed about flat-coloured quads**: the golden showed 67 floor base fills as
-"missing texture", a defect the game does not have. A shared `Quad` type did not
-prevent it — two implementations of one primitive, and a shared type constrains
-their *shape*, not their *behaviour*. The obvious response to that golden would
-have been to "fix" the renderer.
+1. **The floor was two triangles of colour against two of texture**, converging on
+   the vanishing point. A flat quad was being filled with `fillRect(x, y, w, h)`,
+   which has no shear parameters, so it drew an upright *rectangle* where a
+   sheared *parallelogram* was wanted. The two shapes differ by precisely the shear
+   term, which is exactly the two triangles the screenshot showed. The floor
+   coverage metric was 100% and the golden images were green.
+2. **The affine transform was missing its translation**, so every sheared quad was
+   drawn a third of a tile to the left of where the rasteriser put it.
+3. **The view reached a third further than the rules allow**, because the per-column
+   wall height was clamped to a minimum the ray distance was not, and FOV was
+   leaking into the floor.
 
-**So: run `?debug=1`, press `F`, and look at it.** The `[fp]` line prints frame ms
-against the 16.7 ms budget plus the raycast/build/draw phases separately, because
-"the floor is too slow" and "the raycast is too slow" have different fixes and one
-number cannot tell them apart.
+The lesson generalises, and it is the reason this section exists: **a shared `Quad`
+type constrains shape, not behaviour.** Two implementations of one primitive can
+disagree about what that primitive *means* while agreeing perfectly about its
+fields, and a software renderer plus golden images will happily certify both. The
+tests that now guard this assert the *structure* of the drawing code — one place
+builds the clip, one place applies the transform, the flat/textured choice is only a
+choice of what to paint — rather than counting calls, which a mutation can satisfy.
+
+#### Map objects are billboards, and always were
+
+Furniture, cars, doors and gates are **never drawn as wall columns**, in any
+direction. They are a single 32x32 billboard, and the reason is not a preference:
+the top-down view draws each one as one *unscaled* 32x32 sprite, so there is no side
+or back of a car to render. The game has never had that art. Stretching the icon to
+a full 1.5-tile wall column invents geometry that does not exist.
+
+That splits map objects two ways, and the split is **transparency, never
+walkability**:
+
+- **Opaque** (a closed door, a gate, a car, a fridge) stops the ray, so its columns
+  get *no wall* and the object becomes the billboard. Testing walkability instead
+  would let you see through a closed door, since a closed door is walkable-by-flag
+  only when open.
+- **Transparent** (a table, a chair, an open door) does not stop the ray at all. It
+  is found by scanning tiles and drawn *behind* whatever the ray did stop at, which
+  is the only way "you can see the wall past the table" is true.
+
+A DDA terminating on walkability alone walks through closed doors; one terminating
+on "is there an object here" hides the world behind every table.
+
+The sprite is emitted **once per object, not once per column** — a shelf is hit by
+fifty-odd columns. The dedupe is keyed on **object identity**, not `imageId`,
+because every shop shelf in a district shares one image id and keying on it would
+merge the shelf you are standing next to with the one at the end of the street.
+
+**Still open:** map objects have no height in the data model, only an image, so
+`MAP_OBJECT_HEIGHT = 1.0` is a compromise chosen to make furniture read as
+furniture. Doors are the exception and are matched on an image-id substring, which
+is the wrong tool and is used because the C# distinguishes them by a runtime
+`DoorWindow` cast and the data model has no flag for it. A `height` on
+`MapObject` would delete both the guess and the string match.
 
 #### What was decided
 

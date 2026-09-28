@@ -180,13 +180,25 @@ const MAX_WALL_SCREEN_HEIGHTS = 64;
  * Returns null only for something behind the camera, which then cannot be drawn
  * and must not be mirrored onto the far side of the screen.
  */
+/** A billboard's screen rectangle, in logical canvas pixels. */
+export interface BillboardRect {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+  /** Distance from the camera to the billboard's anchor, in tiles. */
+  depth: number;
+  /** Signed sideways distance, negative left of centre. */
+  perpDist: number;
+}
+
 export function billboardRect(
   camera: Camera,
   worldX: number,
   worldY: number,
   spriteHeight: number,
   scale = 1,
-): { left: number; right: number; top: number; bottom: number; depth: number; perpDist: number } | null {
+): BillboardRect | null {
   const dx = worldX - camera.posX;
   const dy = worldY - camera.posY;
   const forward = dx * camera.dirX + dy * camera.dirY;

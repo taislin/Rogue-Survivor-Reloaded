@@ -1,3 +1,4 @@
+import type { MapObject } from "@data/MapObject";
 import { Direction } from "@engine/Direction";
 
 /**
@@ -200,18 +201,31 @@ export interface RayHit {
   /**
    * What stopped the ray.
    *
-   *  - `wall`: a tile that is not walkable, or a map object that is not walkable
-   *    and not transparent. Drawn as a textured column.
-   *  - `object`: a map object that is transparent — an open door, a table. Drawn
-   *    as a billboard, not a column. This case is the reason a DDA that
-   *    terminates on `isWalkable` alone is wrong: an open door *is* walkable, so
-   *    the ray walks through it and the door is never drawn at all.
+   *  - `wall`: a *tile* that is not walkable. Drawn as a textured column, and only
+   *    tiles are ever drawn as columns.
+   *  - `object`: an opaque map object — a closed door, a gate, a car. It blocks
+   *    sight and is drawn as a *billboard*, because a map object is a single 32x32
+   *    top-down icon with no sides to render.
    *  - `edge`: the ray left the map. Drawn as fog, which is also what a wall the
    *    engine's FOV does not cover must look like.
+   *
+   * The test for a map object is transparency, never walkability: a closed door is
+   * not walkable and an open one is, but both stop a ray, while a table is walkable
+   * and does not. A transparent object is not in this list at all, because it does
+   * not stop anything — it is found by the scene builder scanning tiles.
    */
   readonly surface: "wall" | "object" | "edge";
   /** Image for the face: the map object's if it has one, else the tile's. */
   readonly imageId: string;
+  /**
+   * The map object that stopped the ray, or null for a tile.
+   *
+   * The object itself and not just its image, because `imageId` is not an identity:
+   * one image is shared by every shop shelf in a district, so a dedupe keyed on it
+   * merges a shelf at one tile with a shelf at another and draws one sprite at the
+   * wrong place. Reference identity is what is needed here.
+   */
+  readonly object: MapObject | null;
   /** True when the engine has this tile in view — the gate on drawing anything. */
   readonly inView: boolean;
 }

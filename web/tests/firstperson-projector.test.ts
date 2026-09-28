@@ -114,6 +114,9 @@ function syntheticHit(cam: ReturnType<typeof makeCamera>, distance: number) {
     wallU: 0.5,
     surface: "wall" as const,
     imageId: "Tiles/wall_brick",
+    // A tile, so no object — `RayHit` carries the map object for the billboard
+    // dedupe, and these are all wall-geometry fixtures.
+    object: null,
     inView: true,
   };
 }

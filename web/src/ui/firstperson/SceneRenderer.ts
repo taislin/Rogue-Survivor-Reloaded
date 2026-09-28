@@ -114,7 +114,7 @@ export class SceneRenderer {
     this.drawCalls++;
 
     for (const quad of scene.quads) {
-      this.drawQuad(ctx, quad, resolveImage);
+      this.paintQuad(ctx, quad, resolveImage);
     }
 
     // The weather last, over everything including the walls: rain is in front of
@@ -135,24 +135,39 @@ export class SceneRenderer {
     ctx.restore();
   }
 
-  private drawQuad(
+  /**
+   * Paints one quad — flat or textured, sheared or not — through **one** path.
+   *
+   * The structure here is the fix, not a detail of it. There are two independent
+   * ways this renderer was wrong in a browser and invisible to every golden image,
+   * and both were the same mistake: *two code paths for one primitive, one of them
+   * only taken in the browser.*
+   *
+   *  1. A sheared textured quad used a hand-built affine matrix with the wrong
+   *     translation, while the test rasteriser inverse-mapped from the corners.
+   *  2. A flat quad used `ctx.fillRect`, which has no shear parameters and so drew
+   *     an upright *rectangle* for every floor tile's base fill. The difference
+   *     between a rectangle and the true parallelogram is exactly two triangles,
+   *     which is what the floor looked like: wedges of base colour against wedges
+   *     of texture, converging on the vanishing point.
+   *
+   * In both cases the harness's two paths agreed with each other by construction,
+   * because it has one path and this had two. So the geometry — the clip and the
+   * transform — is now established **once**, for every quad, and the only choice
+   * left afterwards is what to paint into it. A branch that selects a *primitive*
+   * is a branch that can pick the wrong shape; a branch that selects a *paint call*
+   * into an already-correct region cannot.
+   */
+  private paintQuad(
     ctx: CanvasRenderingContext2D,
     quad: Quad,
     resolveImage: (id: string) => CanvasImageSource | null,
   ): void {
-    // A quad with no image is a flat colour — the fog. A `fillRect` rather than a
-    // tinted `drawImage` of a 1x1 white pixel: same pixels, one fewer indirection,
-    // and nothing that can fail to load.
-    if (quad.imageId === "") {
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = quad.tint ? rgbCss(quad.tint) : "#000000";
-      ctx.fillRect(quad.x, quad.y, quad.ux, quad.vy);
-      this.drawCalls++;
-      return;
-    }
-
-    const image = resolveImage(quad.imageId);
-    if (image === null) {
+    // A quad with no image is a flat colour: the fog, the floor's underlay, and
+    // every floor tile's base fill.
+    const isFlat = quad.imageId === "";
+    const image = isFlat ? null : resolveImage(quad.imageId);
+    if (!isFlat && image === null) {
       // Skipped rather than drawn as a hole, exactly as `UI_DrawImage` does. The
       // engine preloads every sprite at boot so this should never fire, but a
       // renderer that painted a black box would turn a load race into a visual bug.
@@ -160,36 +175,35 @@ export class SceneRenderer {
       return;
     }
 
-    // Axis-aligned quads — every wall column, every billboard, every fogged column
-    // — take the identity path and never touch the transform. Only the sheared
-    // floor quads pay for `setTransform`, which is a pipeline barrier in a browser
-    // and therefore worth keeping off the common path.
-    if (quad.uy === 0 && quad.vx === 0) {
-      ctx.drawImage(image, quad.sx, quad.sy, quad.sw, quad.sh, quad.x, quad.y, quad.ux, quad.vy);
+    // Axis-aligned quads — every wall column, every billboard, every fogged column —
+    // take the identity path and never touch the transform. Only the sheared floor
+    // quads pay for `transform`, which is a pipeline barrier in a browser and
+    // therefore worth keeping off the common path.
+    const sheared = quad.uy !== 0 || quad.vx !== 0;
+    if (!sheared) {
+      if (isFlat) {
+        ctx.fillStyle = quad.tint ? rgbCss(quad.tint) : "#000000";
+        ctx.fillRect(quad.x, quad.y, quad.ux, quad.vy);
+      } else {
+        ctx.drawImage(image!, quad.sx, quad.sy, quad.sw, quad.sh, quad.x, quad.y, quad.ux, quad.vy);
+      }
       this.drawCalls++;
       return;
     }
 
-    this.drawShearedQuad(ctx, quad, image);
-  }
-
-  /**
-   * A sheared quad: affine-transform the destination, clip to the parallelogram,
-   * draw the source rect at the origin.
-   *
-   * The clip is the part that is easy to leave out and impossible to miss once
-   * missing: without it a floor sub-quad's untransformed neighbours paint over the
-   * floor in a bowtie, and the seams between sub-quads show as bright wedges.
-   */
-  private drawShearedQuad(ctx: CanvasRenderingContext2D, quad: Quad, image: CanvasImageSource): void {
+    // The geometry, once. Clip to the parallelogram, then transform so the source
+    // rect lands on it.
     ctx.save();
     ctx.beginPath();
     ctx.moveTo(quad.x, quad.y);
     ctx.lineTo(quad.x + quad.ux, quad.y + quad.uy);
-    ctx.lineTo(quad.x + quad.vx, quad.y + quad.vy);
     ctx.lineTo(quad.x + quad.ux + quad.vx, quad.y + quad.uy + quad.vy);
+    ctx.lineTo(quad.x + quad.vx, quad.y + quad.vy);
     ctx.closePath();
+    // The clip is what stops the untransformed neighbours' pixels leaking in —
+    // without it a floor sub-quad paints a bowtie.
     ctx.clip();
+
     // From `quadAffine`, not from a derivation here. The first version of this was
     // written inline and got the translation wrong: it supplied `x - a·sx` and
     // `y - d·sy` where the matrix needs `x - a·sx - c·sy` and `y - b·sx - d·sy`, so
@@ -198,7 +212,19 @@ export class SceneRenderer {
     // go through a rasteriser that maps texels from the quad's corners instead.
     const [a, b, c, d, e, f] = quadAffine(quad);
     ctx.transform(a, b, c, d, e, f);
-    ctx.drawImage(image, 0, 0);
+
+    if (isFlat) {
+      // **In the quad's own space**, so it inherits the shear. `fillRect` on the
+      // destination would be an upright rectangle: it takes `ux` as a width and
+      // `vy` as a height and discards `uy` and `vx` entirely, and the difference
+      // between that and the true parallelogram is two triangles.
+      ctx.fillStyle = quad.tint ? rgbCss(quad.tint) : "#000000";
+      ctx.fillRect(0, 0, quad.sw, quad.sh);
+    } else {
+      // The whole image: the transform places the source *rect* on the quad, and
+      // the clip discards the rest.
+      ctx.drawImage(image!, 0, 0);
+    }
     ctx.restore();
     this.drawCalls++;
   }
