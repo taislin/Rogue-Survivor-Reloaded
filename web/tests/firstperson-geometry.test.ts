@@ -377,10 +377,27 @@ describe("castColumns", () => {
     // testing anything.
     expect(length, "the edge ray is no longer non-unit, so this test is vacuous").toBeGreaterThan(1.2);
 
-    // The face crossed is the y = 1 boundary, 3.5 tiles north of the camera. `ry`
-    // is negative — north is -y in this grid — so the distance is the magnitude.
-    const expected = (CENTRE - 1) / Math.abs(ry / length);
-    expect(hit.distance).toBeCloseTo(expected, 9);
+    // The distance is the Euclidean distance to where the ray actually crossed.
+    //
+    // An earlier version of this test worked the crossing out by hand and got it
+    // wrong: the edge ray from the centre of a 9x9 room drifts west far enough to
+    // reach the *west* wall's near boundary at x = 1 before the north wall's at
+    // y = 1, so it is the west wall that stops it. A hand-computed number nobody
+    // checked is a plausible default, and a plausible default is
+    // indistinguishable from a correct one until both are compared against the
+    // code. So this asserts the *relationship* — distance to the crossing point —
+    // which holds whichever surface answers.
+    const toHit = Math.hypot(hit.hitX - CENTRE, hit.hitY - CENTRE);
+    expect(hit.distance).toBeCloseTo(toHit, 9);
+    // The crossing is on a tile boundary, and the tile it entered is a wall.
+    expect(hit.hitX === Math.floor(hit.hitX) || hit.hitY === Math.floor(hit.hitY)).toBe(true);
+    expect(map.isWalkable(hit.mapX, hit.mapY)).toBe(false);
+
+    // And the unambiguous case: straight ahead, the north wall's near boundary is
+    // 3.5 tiles away with no competing surface.
+    const ahead = castColumns(map, makeCamera(CENTRE, CENTRE, Direction.N, width, 32))[width / 2]!;
+    expect(ahead.mapY).toBe(0);
+    expect(ahead.distance).toBeCloseTo(3.5, 9);
   });
 
   it("reports Infinity for a column that sees nothing, not zero", () => {

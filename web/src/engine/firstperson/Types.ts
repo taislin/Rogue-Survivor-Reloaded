@@ -74,18 +74,35 @@ export interface Camera {
   readonly rightX: number;
   readonly rightY: number;
   /**
-   * Half-width of the view plane, per tile of camera depth.
+   * Tangent of the *half* horizontal field of view.
    *
-   * `1 / tan(fov / 2)`, so the total field of view is `2 * atan(planeLength)`.
+   * `tan(fov / 2)`, so the total field of view is `2 * atan(planeLength)`.
    *
-   * **Not scaled by the viewport width.** That was the first version, and it is
-   * wrong in a way that is invisible on the surface: `cameraX` already runs from
-   * -1 to +1 across the screen, so the width cancels, and multiplying by `width / 2`
-   * made the *field of view* depend on how many pixels the canvas happened to
-   * have. At 1366px wide the edges subtend nearly 180° — a fisheye, with the
-   * outermost columns looking almost straight sideways.
+   * **Not scaled by the viewport width, and not its reciprocal.** Two separate
+   * mistakes, both of which produce a plausible picture:
+   *
+   *  - Scaling by `width / 2` (the first version) makes the *field of view* depend
+   *    on how many pixels the canvas has. `cameraX` already runs -1..1 across the
+   *    screen, so the width cancels. At 1366px the edges subtended nearly 180° — a
+   *    fisheye that only appeared at one window size.
+   *  - `1 / tan` (the second version) inverts it, which is the reciprocal of what
+   *    a view plane means, and is invisible at 90° because `atan(tan(45°))` and
+   *    `atan(1/tan(45°))` are both 45°. Only a field of view that is not 90 tells
+   *    the two apart, so the test uses one.
+   *
+   * A ray is `dir + right * planeLength * cameraX`, whose lateral-to-forward ratio
+   * at the screen edge is therefore `planeLength` — the tangent of the half field
+   * of view, as it must be.
    */
   readonly planeLength: number;
+  /**
+   * Tangent of the half *vertical* field of view, derived from the aspect ratio.
+   *
+   * The horizontal field of view is what the option asks for; the vertical one
+   * follows from the panel's shape. Without this the same `planeLength` is used
+   * for both axes, and a 864x672 panel is squashed vertically by a third.
+   */
+  readonly verticalPlaneLength: number;
   /** Height above the floor, in tiles. */
   readonly eyeHeight: number;
   /** Wall height, in tiles. */
@@ -127,7 +144,12 @@ export function makeCamera(
     // every billboard lands on the wrong side.
     rightX: -dirY,
     rightY: dirX,
-    planeLength: 1 / Math.tan(halfFov),
+    planeLength: Math.tan(halfFov),
+    // The vertical field of view follows from the aspect ratio rather than being
+    // asked for: at a fixed horizontal field of view, a 864x672 panel sees less
+    // vertically than it does horizontally, and using one `planeLength` for both
+    // squashes the picture by a third.
+    verticalPlaneLength: Math.tan(halfFov) * (height / width),
     eyeHeight: EYE_HEIGHT,
     wallHeight: WALL_HEIGHT,
     width,
@@ -153,6 +175,28 @@ export interface RayHit {
   /** Face normal, pointing back toward the camera. */
   readonly normalX: number;
   readonly normalY: number;
+  /**
+   * Where the ray actually crossed the face, in tile coordinates.
+   *
+   * Not the tile centre, and not reconstructible from `mapX`/`mapY` alone: the
+   * face is the *boundary* of the tile the ray entered, and it lies somewhere
+   * along it. A wall reconstructed from its tile centre is half a tile too far
+   * away, which turns a one-tile corridor into a wider one and every wall
+   * thickness into a different thickness.
+   */
+  readonly hitX: number;
+  readonly hitY: number;
+  /**
+   * Where along the face the ray landed, 0..1, measured along the wall.
+   *
+   * This is what selects which texel of a wall texture a column shows, and it is
+   * the difference between a wall with brickwork and a wall that is a flat colour
+   * with one vertical stripe. A y-face runs along x and an x-face runs along y, so
+   * it is the fractional coordinate along the running axis — taken from the *tile*
+   * origin rather than the crossing point, so the texture is pinned to the wall
+   * and does not slide as the camera moves.
+   */
+  readonly wallU: number;
   /**
    * What stopped the ray.
    *
@@ -181,8 +225,26 @@ export interface WallColumn {
   /** Top and bottom of the column on screen. */
   readonly top: number;
   readonly bottom: number;
-  /** Perpendicular distance to the face, in tiles — the z-buffer value. */
-  readonly distance: number;
+  /**
+   * Distance from the camera to the face, in tiles.
+   *
+   * **Radial, not perpendicular.** The two agree down the middle of the screen and
+   * differ towards the edges, and they are not interchangeable:
+   *
+   *  - the *height* of the column comes from the perpendicular distance, because
+   *    that is what the projection divides by — and it is **signed**, negative for
+   *    every column left of centre, which is most of a wide field of view;
+   *  - the *depth* for sorting and the z-buffer has to be the radial distance,
+   *    because "which of these two walls is nearer" is not answerable from how far
+   *    to the side each one is. Sorting on the signed perpendicular put every
+   *    left-hand wall behind every right-hand one.
+   *
+   * Carrying one number for both is the bug; carrying two with distinct names is
+   * the fix.
+   */
+  readonly depth: number;
+  /** Signed perpendicular distance: negative left of centre, positive right. */
+  readonly perpDist: number;
   /** The hit this came from, for the texture and the face. */
   readonly hit: RayHit;
 }

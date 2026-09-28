@@ -7,3 +7,8 @@ coverage/
 
 # BaseAI porting scratch (fragments + merge script)
 .porting/
+
+# The render a golden-image test wrote when it failed, for a human to look at.
+# Never committable: it is the *broken* output, and the failure message says so.
+# The intended new image is a deliberate `git rm` of the golden and a re-run.
+tests/goldens/**/actual/

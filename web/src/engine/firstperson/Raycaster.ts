@@ -115,6 +115,14 @@ export function castRay(
 
     const hit = surfaceAt(map, mapX, mapY);
     if (hit !== null) {
+      // The crossing is on the *boundary* of the tile just entered, so its moving
+      // coordinate comes from the ray and its fixed one from the grid line. Both
+      // are recorded rather than reconstructed by the projector, because a
+      // projection that has to re-derive the hit point is a second place for the
+      // same arithmetic to go wrong — and half a tile of error there silently
+      // thickens every wall.
+      const hitX = side === 0 ? mapX + 0.5 - stepX * 0.5 : posX + distance * rayX;
+      const hitY = side === 1 ? mapY + 0.5 - stepY * 0.5 : posY + distance * rayY;
       return {
         distance,
         mapX,
@@ -122,6 +130,13 @@ export function castRay(
         side,
         normalX: side === 0 ? -stepX : 0,
         normalY: side === 1 ? -stepY : 0,
+        hitX,
+        hitY,
+        // An x-face runs along y and a y-face along x. Taken from the tile origin
+        // so the texture is fixed to the wall, not to the ray: a value derived
+        // from the crossing point alone would make the brickwork crawl as the
+        // player turns.
+        wallU: side === 0 ? hitY - mapY : hitX - mapX,
         surface: hit.surface,
         imageId: hit.imageId,
         // The engine's FOV, not the renderer's cone. A wall the ray reaches but
