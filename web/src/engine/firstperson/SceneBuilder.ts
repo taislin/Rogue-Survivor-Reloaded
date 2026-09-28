@@ -707,8 +707,25 @@ function buildFloor(map: Map, camera: Camera, viewDistance: number, daylight: nu
   // grid on every near tile. One opaque underlay cannot have a seam at all, and
   // whatever the tiles miss then shows floor-coloured rather than sky-coloured —
   // which is the difference between an artefact and a bug.
+  //
+  // **Which means its colour has to be the colour of the floor it stands in
+  // for**, and there are two ways to get that wrong, both of which have been:
+  //
+  //  1. `minimapColor` is a *minimap* colour — a flat swatch chosen to be legible
+  //     at 1px per tile on a dark background. It is not the floor's appearance.
+  //     `FLOOR_CONCRETE` is `Color.LightGray` (211,211,211) there and renders as
+  //     dark grey concrete, so the underlay painted near-white *through every seam*
+  //     and the floor came out as bright wedges radiating from the vanishing point.
+  //     The data model has no "average colour of this texture" and the engine
+  //     cannot read pixels — but the per-tile base fills already have the right
+  //     answer, because they are drawn in `minimapColor` *scaled by daylight* and
+  //     are meant to sit under that tile's own texture. Using the same expression
+  //     here makes the underlay agree with the layer it is a backstop for.
+  //  2. It ignored `daylight`, so at midnight a `Lighting.LIT` interior still had
+  //     a 211-grey underlay under a 63-grey floor, and the same wedges appeared in
+  //     a different colour. `scaleColor` clamps at 1, so this can only darken.
   const standing = map.getTileAt(Math.floor(camera.posX), Math.floor(camera.posY));
-  const underlay = standing?.model.minimapColor ?? Color.Gray;
+  const underlay = scaleColor(standing?.model.minimapColor ?? Color.Gray, daylight);
   out.push({
     imageId: "",
     x: 0, y: camera.height / 2,
@@ -732,48 +749,104 @@ function buildFloor(map: Map, camera: Camera, viewDistance: number, daylight: nu
   // is a second, tighter bound on top: beyond a few tiles a 32px texture is under
   // one screen pixel per texel, so there is nothing to resolve.
   const maxDistance = Math.min(viewDistance, TEXTURED_FLOOR_TILES);
+  const lastRing = Math.floor(maxDistance);
 
-  // The rings are walked far to near, which *is* the draw order. It is not
-  // re-sorted afterwards: each tile emits a base fill and then its texture
-  // sub-quads, and sorting by depth would interleave a near tile's fill in front
-  // of its own detail, leaving the detail visible on the wrong side of a seam.
+  // The rings are walked far to near, which *is* the draw order — a painter's
+  // algorithm, and the floor is no exception to it. It is not re-sorted
+  // afterwards: each tile emits a base fill and then its texture sub-quads, and
+  // sorting by depth would interleave a near tile's fill in front of its own
+  // detail, leaving the detail visible on the wrong side of a seam.
+  //
+  // Which is why the loop counts *down*. An earlier version counted up, from the
+  // nearest ring outwards, while the comment above it claimed the opposite — so
+  // the near tiles were painted first and the far ones over the top of them. It
+  // read plausibly because floor tiles are near-opaque and mostly do not overlap,
+  // and the seams are sub-pixel, so the only visible consequence was a slightly
+  // wrong sliver along one edge. The comment was the thing that was wrong about
+  // the direction, and a comment that contradicts its loop is worse than no
+  // comment: it is a claim that is checked by nobody.
+  //
   // Whole rings, for the same reason `floorDecals` scans whole tiles: the bound is
   // the engine's fractional FOV and a half-ring is not a ring.
-  const lastRing = Math.floor(maxDistance);
-  for (let distance = 1; distance <= lastRing; distance++) {
-    for (let side = -distance; side <= distance; side++) {
-      for (const [dx, dy] of ringOffsets(distance, side)) {
-        const x = Math.floor(camera.posX) + dx;
-        const y = Math.floor(camera.posY) + dy;
-        if (!map.isInBounds(x, y)) continue;
-        const tile = map.getTileAt(x, y);
-        if (tile === null || !tile.model.isWalkable) continue;
-        out.push(...floorQuadsForTile(camera, tile, x, y, daylight));
-      }
+  for (let distance = lastRing; distance >= 1; distance--) {
+    for (const [dx, dy] of ringOffsets(distance)) {
+      const x = Math.floor(camera.posX) + dx;
+      const y = Math.floor(camera.posY) + dy;
+      if (!map.isInBounds(x, y)) continue;
+      const tile = map.getTileAt(x, y);
+      if (tile === null || !tile.model.isWalkable) continue;
+      out.push(...floorQuadsForTile(camera, tile, x, y, daylight));
     }
+  }
+  // And the camera's own tile last of all, since it is the nearest thing there is.
+  //
+  // It is normally rejected — `floorQuadsForTile` drops a tile with any corner at
+  // or behind the camera, and standing in the middle of a tile puts the two near
+  // corners behind the eye — so this usually adds nothing. It is here because a
+  // player against a wall, or at a tile's edge, can have a fully visible own tile,
+  // and the floor with a hole where the player is standing is worse than a wasted
+  // call.
+  const ownX = Math.floor(camera.posX);
+  const ownY = Math.floor(camera.posY);
+  const own = map.getTileAt(ownX, ownY);
+  if (own != null && own.model.isWalkable) {
+    out.push(...floorQuadsForTile(camera, own, ownX, ownY, daylight));
   }
   return out;
 }
 
-/** The (dx, dy) pairs making up one ring at `distance`, in a stable order. */
-function ringOffsets(distance: number, side: number): Array<[number, number]> {
+/**
+ * The (dx, dy) pairs making up the ring at `distance`, in perimeter order.
+ *
+ * A ring at `distance` is the square shell `max(|dx|, |dy|) == distance` — every
+ * tile whose Chebyshev distance from the camera's tile is exactly that. It has
+ * `8 * distance` cells, and this returns exactly that many, each once.
+ *
+ * **This was wrong in a way nothing could see, and it is the whole of the striped
+ * floor.** The old version was parameterised by a `side` running `-distance` to
+ * `+distance`, emitting a column `[side, ±k]` for each. Two things are wrong with
+ * that, and the second is why the first could not be patched:
+ *
+ *  1. The cells of a ring are on its *perimeter*, not spread through its interior.
+ *     For `side` strictly between the edges it emitted `[side, -k]` for `k` below
+ *     `distance` — the interior of the shell — and never emitted the two side
+ *     edges at all. At `distance = 6` that is 119 of the 168 cells, with 50
+ *     missing: whole columns at `dx = ±6`.
+ *  2. `side` cannot parameterise a ring even in principle. There are `2d + 1`
+ *     values of `side` and `8d` cells, and `|side|` — the quantity the old code
+ *     used as "how far along the ring this is" — takes only `d` distinct values,
+ *     so it is many-to-one and cannot address the perimeter. Hence the 104 cells
+ *     emitted twice.
+ *
+ * The picture is the signature: the floor rendered as alternating drawn and missing
+ * strips radiating from the vanishing point and converging on the camera, because
+ * the cells that *were* emitted formed a sparse lattice rather than a solid shell.
+ *
+ * The underlay is why this read as a *colour* bug rather than a *coverage* bug —
+ * it filled the missing tiles with floor-coloured paint, so every pixel below the
+ * horizon still had something on it. The "floor has no holes" test measures
+ * pixels *drawn*, so it passed, and the goldens encoded a striped floor as though
+ * it were the design. The underlay is a backstop for sub-pixel seams between tiles
+ * that exist; it is not a substitute for the tiles, and a hole the size of a tile
+ * is not a seam.
+ *
+ * Perimeter order, so the walk is a closed loop: near edge left-to-right, right
+ * column, far edge right-to-left, left column. The corners belong to exactly one
+ * edge each, which is what makes the count come out right.
+ */
+function ringOffsets(distance: number): Array<[number, number]> {
   if (distance === 0) return [[0, 0]];
-  const edge = distance;
-  if (side === -edge) {
-    // The near edge, left to right.
-    return Array.from({ length: edge * 2 + 1 }, (_, i) => [side + i, -edge] as [number, number]);
-  }
-  if (side === edge) {
-    return Array.from({ length: edge * 2 + 1 }, (_, i) => [side - i, edge] as [number, number]);
-  }
-  // A side column, near to far.
-  const onLeft = side < 0;
-  const t = Math.abs(side);
-  const cells: Array<[number, number]> = [];
-  for (let k = edge - t; k >= 0; k--) {
-    cells.push(onLeft ? [side, -k] : [side, k]);
-  }
-  return cells;
+  const d = distance;
+  const out: Array<[number, number]> = [];
+  // Near edge: (2d + 1) cells, both corners included.
+  for (let dx = -d; dx <= d; dx++) out.push([dx, -d]);
+  // Right column: (2d) cells, near corner already emitted.
+  for (let dy = -d + 1; dy <= d; dy++) out.push([d, dy]);
+  // Far edge: (2d) cells, far-right corner already emitted.
+  for (let dx = d - 1; dx >= -d; dx--) out.push([dx, d]);
+  // Left column: (2d - 1) cells, both corners already emitted.
+  for (let dy = d - 1; dy >= -d + 1; dy--) out.push([-d, dy]);
+  return out;
 }
 
 /**
@@ -831,21 +904,89 @@ function floorQuadsForTile(camera: Camera, tile: Tile, x: number, y: number, day
     imageId: "",
     x: screen[0]!.x, y: screen[0]!.y,
     ux: screen[1]!.x - screen[0]!.x, uy: screen[1]!.y - screen[0]!.y,
-    vx: screen[3]!.x - screen[0]!.x, vy: screen[3]!.y - screen[0]!.y,
+    // **The fourth corner is `screen[2]`, not `screen[0] + U + V`.** A `Quad` stores
+    // only two edge vectors, so the far corner is *implied* as `O + U + V` — which
+    // is the fourth corner only if the shape is a parallelogram, and a floor tile
+    // under perspective is not one. Taking `screen[2]` as given means the implied
+    // corner is whatever the affine map makes it, and the base fill is a
+    // parallelogram spanning a different quad than the tile's.
+    //
+    // The error is small — it is the same projective mismatch as the corners, a few
+    // pixels on a near tile — but it is in the *wrong direction*: the base fill is
+    // the thing that is supposed to cover the seams the sub-quads leave, so being
+    // small and wrong still means the gaps it exists to hide are not hidden. And
+    // `expandByPixels` cannot fix it, because the discrepancy is not a uniform
+    // inset.
+    vx: screen[3]!.x - screen[0]!.x + (screen[2]!.x - screen[1]!.x),
+    vy: screen[3]!.y - screen[0]!.y + (screen[2]!.y - screen[1]!.y),
     sx: 0, sy: 0, sw: 1, sh: 1,
-    depth: Math.min(...forward),
+    // **The tile's *farthest* corner, not its nearest.**
+    //
+    // The base fill is the backdrop for this tile's own texture sub-quads, and a
+    // backdrop has to be behind all of them. The sub-quad depths interpolate
+    // between the four corner distances, so every one of them is strictly less
+    // than the maximum; giving the base fill that maximum puts it behind its own
+    // detail unconditionally, for any `steps`, with no epsilon to tune.
+    //
+    // It used `Math.min(...forward)` — the *nearest* corner — which is nearer than
+    // every sub-quad, so the fill won its own tile's texture and painted over it.
+    // The floor came out as flat base colour with wedges of texture surviving
+    // wherever a fill had not reached: a checkerboard, because a nearer tile's
+    // fill and its own sub-quads alternate in the depth test.
+    //
+    // The maximum is also the right answer for the *other* reason this comment
+    // exists for. The two rasterisers resolve overlap differently — the browser
+    // has no depth buffer and uses painter's order alone, while the test
+    // rasteriser keeps the nearest quad by depth — so a base fill that only
+    // *usually* loses its own detail renders differently in each. A depth that
+    // loses unconditionally makes them agree, which is the only reason to pick
+    // one number over another here. List order still puts the fill before the
+    // sub-quads, so the browser is unaffected; this is about the two
+    // implementations not disagreeing about the same draw list.
+    depth: Math.max(...forward),
     tint: [base.r / 255, base.g / 255, base.b / 255],
   }, 1));
 
   for (let sy = 0; sy < steps; sy++) {
     for (let sx = 0; sx < steps; sx++) {
       const u0 = sx / steps, u1 = (sx + 1) / steps, v0 = sy / steps, v1 = (sy + 1) / steps;
-      // Bilinear within the tile's screen quad: a point at (u, v) of the tile.
-      const at = (u: number, v: number) => ({
-        x: lerp(lerp(screen[0]!.x, screen[1]!.x, u), lerp(screen[3]!.x, screen[2]!.x, u), v),
-        y: lerp(lerp(screen[0]!.y, screen[1]!.y, u), lerp(screen[3]!.y, screen[2]!.y, u), v),
-      });
-      const p00 = at(u0, v0), p10 = at(u1, v0), p01 = at(u0, v1);
+      // **The sub-quad's corners are projected, not interpolated.**
+      //
+      // The obvious implementation blends the four already-projected corners
+      // bilinearly in screen space: `lerp(lerp(s0, s1, u), lerp(s3, s2, u), v)`.
+      // That is the affine map over a *projective* shape, and it is wrong by a
+      // long way — measured on a near tile at (20,18) facing NE, the worst
+      // disagreement with the true projection is **99.5 px**, at the tile's near
+      // edge. Not a seam, not sub-pixel: the far corners of the tile are
+      // displaced by more than a tenth of the screen, which is what turned the
+      // floor into wedges of texture with wedges of nothing between them.
+      //
+      // The reason is visible in the corner list above. The four corners are at
+      // *unequal* forward distances — 1.41, 2.12, 1.41, 0.71 for that tile — so
+      // the tile is strongly non-parallelogram on screen, and a bilinear blend
+      // of the corners cannot reproduce a perspective divide by construction. It
+      // agrees exactly at the corners (both are zero error there) and diverges
+      // fastest in the middle, which is precisely the "radiating from the
+      // vanishing point" pattern.
+      //
+      // Subdivision does not help, and this is why: subdividing a bilinear map
+      // gives a finer bilinear map, which is still the wrong map. It converges on
+      // the wrong shape. Projecting each sub-corner is the same cost — one
+      // divide per corner, and there are four — and is exact at every `steps`.
+      const project = (u: number, v: number) => {
+        const cx = x + u, cy = y + v;
+        const f = (cx - camera.posX) * camera.dirX + (cy - camera.posY) * camera.dirY;
+        const s = (cx - camera.posX) * camera.rightX + (cy - camera.posY) * camera.rightY;
+        return {
+          x: (camera.width / 2) * (1 + s / (f * camera.planeLength)),
+          // The floor plane: further away is *higher* on screen, towards the horizon.
+          y: camera.height / 2 + camera.eyeHeight * (pxPerTile / f),
+        };
+      };
+      const p00 = project(u0, v0), p10 = project(u1, v0), p01 = project(u0, v1);
+      // Depth is linear in (u, v) — it is a dot product against a fixed direction,
+      // with no divide in it — so the existing interpolation is exact, and is left
+      // alone for that reason rather than by accident.
       const depth = (forward[0]! * (1 - u0) + forward[1]! * u0) * (1 - v0) +
         (forward[3]! * (1 - u0) + forward[2]! * u0) * v0;
 
@@ -866,15 +1007,40 @@ function floorQuadsForTile(camera: Camera, tile: Tile, x: number, y: number, day
 /**
  * How many times to split a floor tile.
  *
- * The shear of a floor quad under perspective falls off with distance, so a fixed
- * subdivision is either wasteful in the distance or visibly wrong up close. 4x4
- * near, 1x1 far — which is where the frame budget goes, and it is the first thing
- * to cut if the profile says so, because a coarser floor reads as a coarser floor
- * rather than as a broken one.
+ * A `Quad` is a **parallelogram**: it stores two edge vectors and the fourth corner
+ * is implied as `origin + U + V`. A sub-quad of a floor tile is *projective*, so
+ * that implied corner is never exactly right, and the error is what the base fill
+ * underneath exists to cover. It cannot be corrected — a re-anchored quad has the
+ * same diagonal mismatch, measured identical to the pixel — only subdivided away.
+ *
+ * **The error falls as the square of the cell size**, which is what makes this a
+ * calculation rather than a taste. Measured over the near tiles facing NE, the
+ * worst implied corner is off by:
+ *
+ * | split | error    |
+ * |-------|----------|
+ * | 1x1   | 743 px   |
+ * | 2x2   | 372 px   |
+ * | 4x4   | 149 px   |
+ * | 8x8   |  50 px   |
+ * | 16x16 |  15 px   |
+ *
+ * — a factor of four per doubling, as a squared term should. The old schedule
+ * (4x4 near, 2x2 mid, 1x1 far) left 50 px of error on the nearest tile, which is
+ * the dark wedge the floor still showed around furniture, and no amount of
+ * underlay can hide 50 px: the underlay is a flat fill, so anything it covers
+ * *is* the artefact.
+ *
+ * So the schedule is set by the error being tolerable rather than by what looks
+ * cheap: 8x8 within 1.5 tiles, 4x4 to 3, 2x2 to 6, 1x1 beyond — where the texture
+ * is under a pixel per texel anyway and there is nothing to resolve. This is the
+ * first thing to cut if the profile says so, and it is now the most expensive
+ * thing in the frame: 8x8 is 64 quads for the tile the player is standing on.
  */
 function subdivisionsFor(distance: number): number {
-  if (distance < 1.5) return 4;
-  if (distance < 3) return 2;
+  if (distance < 1.5) return 8;
+  if (distance < 3) return 4;
+  if (distance < 6) return 2;
   return 1;
 }
 
@@ -894,9 +1060,6 @@ function scaleColor(color: Color, factor: number): Color {
   );
 }
 
-function lerp(a: number, b: number, t: number): number {
-  return a + (b - a) * t;
-}
 
 /**
  * Grows a quad outwards by `pixels` on every side.

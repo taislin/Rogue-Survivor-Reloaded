@@ -31,6 +31,26 @@ describe("the view mode option", () => {
     expect(GameOptions.load().viewMode).toBe("top-down");
   });
 
+  it("labels the first-person view as experimental, and only in the display", () => {
+    // The second renderer is a work in progress, and the options value column is
+    // the one place a player looks before turning it on — so it says so there.
+    // The top-down view is the one a first run gets and keeps its `(default)`.
+    expect(GameOptions.viewModeName("first-person")).toBe("first-person  (experimental)");
+    expect(GameOptions.viewModeName("top-down")).toBe("top-down  (default)");
+
+    // **Display only.** The annotation must not leak into the stored value or the
+    // type, because `isFirstPersonView` compares the string exactly and a mode of
+    // `"first-person  (experimental)"` would read as top-down — silently handing
+    // the player the other renderer, which is the precise failure this file exists
+    // to prevent. So the value is unchanged, and it still round-trips.
+    const options = new GameOptions();
+    options.viewMode = "first-person";
+    expect(options.viewMode).toBe("first-person");
+    expect(GameOptions.isFirstPersonView(options.viewMode)).toBe(true);
+    GameOptions.save(options);
+    expect(GameOptions.load().viewMode).toBe("first-person");
+  });
+
   it("is first-person only for the value that says so", () => {
     for (const mode of VIEW_MODES) {
       expect(GameOptions.isFirstPersonView(mode)).toBe(mode === "first-person");

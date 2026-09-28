@@ -1178,9 +1178,17 @@ export class GameOptions {
    * chosen to read as words already, because they are also the option's saved
    * form and there is no reason for the two to differ. The annotation marks the
    * one a first run gets, the same way the sprite style marks the complete set.
+   *
+   * **The experimental tag is display-only and marks the first-person view as
+   * unfinished.** It is a claim about this renderer, not about the option: the
+   * second renderer is a work in progress, and the value column is the only place
+   * a player looks before turning it on. `"first-person  (experimental)"` — the
+   * mode string is left alone, so the saved form and the type stay `"first-person"`
+   * and a build without this annotation reads the same value.
    */
   static viewModeName(mode: ViewMode): string {
-    return mode === DEFAULT_VIEW_MODE ? `${mode}  (default)` : mode;
+    if (mode !== DEFAULT_VIEW_MODE) return `${mode}  (experimental)`;
+    return `${mode}  (default)`;
   }
 
   // ── Saving & Loading (localStorage JSON instead of binary) ──────────────

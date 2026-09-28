@@ -64,12 +64,12 @@ function markAllInView(map: GameMap): void {
   }
 }
 
-function corridor(width = 9, height = 21): GameMap {
+function corridor(width = 9, height = 21, floor: TileID = TileID.FLOOR_CONCRETE): GameMap {
   const map = new GameMap(1, "test", width, height);
   map.lighting = Lighting.LIT;
   for (let x = 0; x < width; x++) {
     for (let y = 0; y < height; y++) {
-      map.setTileModelAt(x, y, model(TileID.FLOOR_CONCRETE));
+      map.setTileModelAt(x, y, model(floor));
     }
   }
   outline(map, 0, 0, width, height, TileID.WALL_BRICK);
@@ -140,6 +140,51 @@ function floorCoverage(inputs: SceneInputs): { undrawn: number; total: number } 
   return { undrawn, total: (HEIGHT - from) * WIDTH };
 }
 
+/**
+ * How much of the lower half is covered by **textured** floor, ignoring the flat
+ * fills entirely.
+ *
+ * **This is the metric the "no holes" test above could not be.** That one counts a
+ * pixel as covered if *anything* drew it, and the underlay draws the entire lower
+ * half by construction — so it reported 100% while the floor was a checkerboard of
+ * texture and base colour. Three separate defects passed it:
+ *
+ *  1. `ringOffsets` emitted 119 of 168 tiles, so half the floor was never drawn.
+ *  2. Sub-quad corners were placed by bilinear interpolation of projected corners
+ *     rather than by projecting them — up to 99.5 px wrong on a near tile.
+ *  3. Each tile's base fill sat at its *nearest* corner depth, so it won the depth
+ *     test against its own texture and painted over it.
+ *
+ * All three are invisible to a coverage count, because the underlay fills in behind
+ * them. This one asks the question that actually matters: how much of the floor is
+ * *floor* rather than backdrop. The flat fills are removed from the draw list
+ * entirely, so a tile that is drawn-but-covered counts as nothing.
+ *
+ * The threshold is not 100% and cannot be: tiles past `TEXTURED_FLOOR_TILES` are
+ * deliberately flat-shaded, and the camera's own row cannot be one quad because
+ * half of it is behind the eye. So this measures the *textured* region only — the
+ * rings the builder promised to texture — and asks that they be nearly solid.
+ */
+function texturedFloorCoverage(inputs: SceneInputs): { painted: number; total: number } {
+  const scene = buildScene(inputs);
+  const textured = scene.quads.filter((q) => q.imageId !== "");
+  const surface = createSurface(WIDTH, HEIGHT, [0, 0, 0]);
+  drawList(surface, textured, texturesFor(textured));
+
+  // The region the builder claims to texture: below the horizon, and above the
+  // projected position of the texture cutoff ring. Derived from the scene rather
+  // than hard-coded, so a change to `TEXTURED_FLOOR_TILES` moves it with it.
+  let total = 0, painted = 0;
+  const from = Math.floor(HEIGHT / 2);
+  for (let y = from; y < HEIGHT; y++) {
+    for (let x = 0; x < WIDTH; x++) {
+      total++;
+      if (surface.z[y * WIDTH + x] !== Infinity) painted++;
+    }
+  }
+  return { painted, total };
+}
+
 function texturesFor(quads: readonly Quad[]): Map<string, Texture> {
   const out = new Map<string, Texture>();
   let n = 0;
@@ -154,6 +199,175 @@ function texturesFor(quads: readonly Quad[]): Map<string, Texture> {
 }
 
 describe("the floor has no holes in it", () => {
+  it("is nearly all *textured* floor below the horizon, not just covered by the underlay", () => {
+    // The regression this whole section is for. "Covered" was the wrong question
+    // for a long time: the underlay guarantees coverage, so a floor with half its
+    // tiles missing, its sub-quads 100px out of place, and its own base fills
+    // painting over the texture all measured 100% covered.
+    //
+    // The fix for each is in `buildFloor` / `floorQuadsForTile`; what this pins is
+    // that *textured* quads, alone, cover nearly the whole lower half. Asserted
+    // for all eight facings because the shear — and so the old bilinear error —
+    // differs in each, and the diagonals are the worst case.
+    for (const facing of Direction.COMPASS) {
+      const { painted, total } = texturedFloorCoverage(sceneInputs(corridor(), facing));
+      const pct = painted / total;
+      expect(
+        pct,
+        `facing ${facing.name}: only ${painted} of ${total} floor pixels are textured floor ` +
+          `(${(100 * pct).toFixed(1)}%) — the rest is underlay showing through`,
+      ).toBeGreaterThan(0.75);
+    }
+  });
+
+  it("places each textured sub-quad by projecting it, not by interpolating projected corners", () => {
+    // The specific arithmetic, pinned as a relationship between the draw list and
+    // the projection it claims to implement.
+    //
+    // A floor tile's four corners are at *unequal* forward distances, so its
+    // screen shape is projective and a `Quad` — which is affine — can only
+    // approximate it. The old code chose the approximation that is cheapest to
+    // write: blend the four projected corners bilinearly in screen space. That is
+    // the wrong map, and not by a little: measured on a near tile at (20,18)
+    // facing NE, the worst disagreement with the true projection is **99.5 px**,
+    // at the tile's own centre.
+    //
+    // Subdivision cannot rescue it, which is why this was so persistent: subdividing
+    // a bilinear map yields a finer bilinear map, converging on the *wrong* shape.
+    // So the check is that every sub-quad's corners land where the perspective
+    // divide puts them, to well under a pixel.
+    const scene = buildScene(sceneInputs(corridor(21, 21), Direction.NE, { posX: 10.5, posY: 10.5 }));
+    const camera = scene.camera;
+    const pxPerTile = camera.width / (2 * camera.verticalPlaneLength);
+    const project = (cx: number, cy: number) => {
+      const f = (cx - camera.posX) * camera.dirX + (cy - camera.posY) * camera.dirY;
+      const s = (cx - camera.posX) * camera.rightX + (cy - camera.posY) * camera.rightY;
+      return {
+        x: (camera.width / 2) * (1 + s / (f * camera.planeLength)),
+        y: camera.height / 2 + camera.eyeHeight * (pxPerTile / f),
+      };
+    };
+
+    // Group the sub-quads by tile. A textured floor quad's source rect is a
+    // regular subdivision of a 32px texture, so `(sx, sy)` identifies the cell
+    // and the four cells of a 2x2 split share a tile with a common origin.
+    const textured = scene.quads.filter((q) => q.imageId.includes("floor"));
+    expect(textured.length, "no textured floor quads to check").toBeGreaterThan(20);
+
+    // Rebuild each tile's projection from the camera and confirm the quads land on
+    // it.
+    //
+    // **The subdivision step is searched for, not recovered from the source rect.**
+    // `sx` is `floor(u0 * 32)`, so it quantises `u0` to 1/32 — which was exact while
+    // a tile was split 2x2 and is not exact at 8x8, where a step is 1/8 and the
+    // quantisation is worth up to 5 px of screen position. A test that read the
+    // step back out of the texture coordinates and then complained about the
+    // mismatch was measuring its own rounding, and started failing when the floor
+    // got *more* accurate. So: for each quad, find the (tile, step) whose projected
+    // corner is nearest, and require that to be within a pixel. The nearest-fit is
+    // the assertion — an interpolated quad is off by tens of pixels and cannot be
+    // mistaken for a projected one.
+    const origin = Math.floor(camera.posX);
+    const oy = Math.floor(camera.posY);
+    let checked = 0;
+    let worst = 0;
+    for (const quad of textured) {
+      let best = Infinity;
+      for (let dx = -6; dx <= 6; dx++) {
+        for (let dy = -6; dy <= 6; dy++) {
+          for (const steps of [1, 2, 4, 8]) {
+            for (let sy = 0; sy < steps; sy++) {
+              for (let sx = 0; sx < steps; sx++) {
+                const truth = project(origin + dx + sx / steps, oy + dy + sy / steps);
+                best = Math.min(best, Math.hypot(quad.x - truth.x, quad.y - truth.y));
+              }
+            }
+          }
+        }
+      }
+      worst = Math.max(worst, best);
+      checked++;
+    }
+    expect(checked, "no sub-quads to check").toBeGreaterThan(20);
+    expect(
+      worst,
+      `a sub-quad is ${worst.toFixed(2)}px from every point the perspective divide could put it, ` +
+        `so the corners are being interpolated rather than projected`,
+    ).toBeLessThan(1.5);
+  });
+
+  it("puts every tile's base fill behind its own texture, so it cannot paint over it", () => {
+    // The third defect, and the subtlest: the base fill is a *backdrop* for its own
+    // tile's sub-quads, so it has to lose to all of them.
+    //
+    // It used the tile's **nearest** corner depth, which is by construction nearer
+    // than every sub-quad — their depths interpolate between the corners. So each
+    // base fill won the depth test against its own tile's texture and painted over
+    // it, and the floor came out as flat colour with wedges of texture surviving
+    // wherever a neighbouring fill had not reached. A checkerboard: the base fill
+    // and the sub-quads alternate in the depth test, and which wins depends on
+    // where in the tile you are looking.
+    //
+    // **Asserted on the depth ordering itself, not on a reconstructed grouping.**
+    // An earlier attempt identified each quad's tile by matching its projected
+    // origin and then compared within the group — and it matched a *neighbouring*
+    // tile's base fill, because adjacent tiles project to within a couple of pixels
+    // of each other and a slack large enough for `expandByPixels` is also large
+    // enough to catch the next tile along. A test that cannot reliably say which
+    // quad belongs to which tile is asserting noise.
+    //
+    // What is actually needed is much simpler and is a property of the numbers
+    // themselves: a tile's base fill must be at or behind *every* depth in the
+    // range its own sub-quads span. The sub-quad depths are the corner distances
+    // interpolated, so they all lie within [min corner, max corner] — and the
+    // base fill is at the max. So the check is: recompute the corner distances for
+    // the tile each base fill belongs to, and confirm the fill is not nearer than
+    // that tile's own range.
+    const scene = buildScene(sceneInputs(corridor(21, 21), Direction.N, { posX: 10.5, posY: 10.5 }));
+    const camera = scene.camera;
+    const cornerForwards = (tx: number, ty: number) => [0, 1, 2, 3].map((i) => {
+      const cx = tx + (i === 1 || i === 2 ? 1 : 0);
+      const cy = ty + (i >= 2 ? 1 : 0);
+      return (cx - camera.posX) * camera.dirX + (cy - camera.posY) * camera.dirY;
+    });
+
+    // Every flat, sheared quad nearer than the underlay is a tile base fill. Its
+    // own tile is the one whose *maximum* corner distance equals the fill's depth:
+    // that is the invariant the fix establishes, and it is checkable without
+    // reconstructing geometry.
+    const baseFills = scene.quads.filter((q) => q.imageId === "" && q.depth < MAX_RAY_DISTANCE
+      && (q.uy !== 0 || q.vx !== 0));
+    expect(baseFills.length, "no base fills to check").toBeGreaterThan(10);
+
+    const origin = Math.floor(camera.posX), oy = Math.floor(camera.posY);
+    const tileMaxima = new Map<number, { tx: number; ty: number; max: number; min: number }>();
+    for (let dx = -7; dx <= 7; dx++) {
+      for (let dy = -7; dy <= 7; dy++) {
+        const f = cornerForwards(origin + dx, oy + dy);
+        const max = Math.max(...f), min = Math.min(...f);
+        tileMaxima.set(Math.round(max * 1000), { tx: origin + dx, ty: oy + dy, max, min });
+      }
+    }
+
+    let matched = 0;
+    for (const base of baseFills) {
+      const tile = tileMaxima.get(Math.round(base.depth * 1000));
+      if (tile === undefined) continue;
+      matched++;
+      // The fill sits at the tile's maximum corner distance, so it is at or behind
+      // every one of that tile's sub-quads. Anything nearer would win the depth
+      // test and paint over the texture.
+      expect(
+        base.depth,
+        `tile (${tile.tx},${tile.ty}): its base fill is at ${base.depth.toFixed(3)} but the tile's ` +
+          `corners span ${tile.min.toFixed(3)}..${tile.max.toFixed(3)} — a fill nearer than the ` +
+          `farthest corner wins the depth test against its own texture`,
+      ).toBeGreaterThanOrEqual(tile.max - 1e-6);
+    }
+    expect(matched, "no base fill matched a tile's maximum corner distance")
+      .toBeGreaterThan(5);
+  });
+
   it("covers every pixel below the horizon, from every facing", () => {
     // The regression this file exists for. The floor was striped because a quad is
     // affine and a floor tile under perspective is projective: every per-tile quad
@@ -191,6 +405,78 @@ describe("the floor has no holes in it", () => {
     const scene = buildScene(sceneInputs(corridor(), Direction.N));
     const depths = scene.quads.map((q) => q.depth);
     expect(depths.some((d) => !Number.isFinite(d)), "a quad has a non-finite depth").toBe(false);
+  });
+
+  it("paints the underlay in the floor's own colour, or the seams are white", () => {
+    // The underlay exists to be seen **only through the seams** between floor
+    // tiles — a quad is affine, a floor tile under perspective is projective, and
+    // every neighbour pulls inward a little. So the underlay is not part of the
+    // picture; it is the colour of whatever the picture fails to cover. Get the
+    // colour wrong and every seam becomes a visible artefact, which is strictly
+    // worse than the hole it was hiding.
+    //
+    // It was wrong, in two independent ways, and both had to be fixed for this to
+    // hold:
+    //
+    //  1. It used `minimapColor` raw. That is a *minimap* swatch — flat and
+    //     legible at 1px per tile — not the floor's appearance. `FLOOR_CONCRETE`
+    //     is `Color.LightGray` there, so a dark grey concrete floor had a
+    //     near-white underlay behind it and the floor rendered as bright wedges
+    //     radiating from the vanishing point.
+    //  2. It ignored `daylight` while every per-tile base fill respected it, so
+    //     the same wedges appeared in a *different* colour at midnight.
+    //
+    // The invariant is that the underlay and the base fills are computed by the
+    // same expression, so the backstop always matches the layer it backs up. It
+    // is asserted as a relationship rather than as a literal, so retuning a
+    // tile's minimap colour cannot make it stale.
+    const underlayOf = (scene: ReturnType<typeof buildScene>) =>
+      scene.quads.find((q) => q.imageId === "" && q.depth >= MAX_RAY_DISTANCE)!.tint!;
+    // A floor tile's base fill, as opposed to the other flat quads. The
+    // discriminator is geometric rather than positional: a floor tile under
+    // perspective is a *sheared* parallelogram, while a fogged column is a
+    // 1px-wide axis-aligned strip. Matching on "flat and tinted" alone picks up
+    // the fog, which is `Color.Black` on a lit map, and the assertion below then
+    // compares the underlay against pure black and fails for the wrong reason.
+    const baseFillOf = (scene: ReturnType<typeof buildScene>) =>
+      scene.quads.find(
+        (q) => q.imageId === "" && q.depth < MAX_RAY_DISTANCE
+          && q.tint !== undefined && (q.uy !== 0 || q.vx !== 0),
+      )!.tint!;
+
+    for (const floor of [TileID.FLOOR_CONCRETE, TileID.FLOOR_OFFICE, TileID.FLOOR_PLANKS, TileID.FLOOR_ASPHALT]) {
+      const map = corridor(9, 21, floor);
+      for (const daylight of [1, 0.3]) {
+        const scene = buildScene(sceneInputs(map, Direction.N, { daylight }));
+        const label = `${TileID[floor]} at daylight ${daylight}`;
+        expect(underlayOf(scene), `the underlay does not match the floor it backs (${label})`)
+          .toEqual(baseFillOf(scene));
+      }
+    }
+  });
+
+  it("darkens the underlay with the time of day, as every other floor fill does", () => {
+    // The narrower half of the same bug, called out separately because it is the
+    // one that survives a retune: a synthesis that can only *darken* is what
+    // stops a midnight view being a flashlight, and an unscaled underlay punches
+    // a full-brightness hole in the middle of a dark floor.
+    const map = corridor(9, 21, TileID.FLOOR_CONCRETE);
+    const underlayOf = (daylight: number) =>
+      buildScene(sceneInputs(map, Direction.N, { daylight }))
+        .quads.find((q) => q.imageId === "" && q.depth >= MAX_RAY_DISTANCE)!.tint!;
+
+    const day = underlayOf(1);
+    const night = underlayOf(0.3);
+    for (let i = 0; i < 3; i++) {
+      expect(night[i]!, `the underlay is not darkened at midnight (channel ${i})`)
+        .toBeLessThan(day[i]!);
+      // Monotonic and non-inverting: night is `daylight` of day, so a 0.3 factor
+      // cannot come out brighter than the day value it came from.
+      expect(night[i]!).toBeLessThanOrEqual(day[i]! + 1e-9);
+    }
+    // And never *brighter* than full daylight whatever the hour, because
+    // `scaleColor` clamps — an underlay brighter than noon would reveal a dark map.
+    expect(underlayOf(2)).toEqual(day);
   });
 });
 
@@ -516,6 +802,92 @@ describe("the two implementations of a quad agree", () => {
     }
   });
 
+  it("returns the corners in perimeter order, because a bowtie clips to two triangles", () => {
+    // The one property of a quad's corners that nothing else here pins, and the
+    // one a `Quad` type cannot express: **which corner is which.**
+    //
+    // `O, O+U, O+V, O+U+V` is the obvious listing and it is a bowtie — the second
+    // and third points are opposite corners, so the path crosses itself. `clip()`
+    // fills a self-intersecting path by the even-odd rule, which yields the union
+    // of the two triangles it bounds rather than the parallelogram. On a real
+    // frame that is **43% of every sheared quad clipped away**, worst quad 42.5%
+    // of its area surviving, and the floor renders as black wedges radiating from
+    // the vanishing point.
+    //
+    // The suite could not see it, and the reason is worth recording: the software
+    // rasteriser inverse-maps each texel from `O + u·U + v·V` and tests
+    // `0 ≤ u,v ≤ 1`, which is right for *any* ordering of the four corners. Every
+    // golden passed. So the check has to be on the ordering itself.
+    //
+    // The property asserted is the geometric one — **the four corners are all four
+    // vertices of the parallelogram, and the path does not cross itself** — rather
+    // than a literal index-by-index comparison, so it stays true if the helper is
+    // ever legitimately re-expressed (rotated to start elsewhere, say) while still
+    // failing on a bowtie.
+    for (const quad of [
+      { imageId: "", x: 300, y: 400, ux: 60, uy: -14, vx: 40, vy: 22, sx: 0, sy: 0, sw: 1, sh: 1, depth: 2 },
+      { imageId: "", x: 300, y: 400, ux: 60, uy: 14, vx: -40, vy: 22, sx: 0, sy: 0, sw: 1, sh: 1, depth: 2 },
+      // A wall column: degenerate in the shear, axis-aligned. The ordering must
+      // still be a perimeter, or the fast path is what is quietly relying on it.
+      { imageId: "Tiles/wall_brick", x: 12, y: 300, ux: 1, uy: 0, vx: 0, vy: 42, sx: 5, sy: 0, sw: 1, sh: 32, depth: 3.5 },
+    ] as Quad[]) {
+      const corners = quadCorners(quad);
+      expect(corners, "four distinct corners").toHaveLength(4);
+      const key = (p: readonly [number, number]) => p.join(",");
+
+      // All four distinct, and the four vertices the parallelogram actually has.
+      const expected = new Set([
+        key([quad.x, quad.y]),
+        key([quad.x + quad.ux, quad.y + quad.uy]),
+        key([quad.x + quad.vx, quad.y + quad.vy]),
+        key([quad.x + quad.ux + quad.vx, quad.y + quad.uy + quad.vy]),
+      ]);
+      expect(new Set(corners.map(key)), "the corners are not the parallelogram's four vertices")
+        .toEqual(expected);
+
+      // Non-adjacent edges must not cross — and **both** pairs of them.
+      //
+      // A 4-cycle has two pairs of opposite edges, and which pair crosses depends
+      // on the ordering: walking the bowtie, `O+U→O+V` and `O+U+V→O` are the two
+      // *diagonals* of the parallelogram and they cross, while `O→O+U` and
+      // `O+V→O+U+V` are opposite sides and do not. Checking only the first pair
+      // therefore passes on the bug — which is exactly what a one-pair check did
+      // when this test was first written.
+      const cross = (a: readonly [number, number], b: readonly [number, number],
+                     c: readonly [number, number], d: readonly [number, number]): boolean => {
+        const side = (p: readonly [number, number], q: readonly [number, number], r: readonly [number, number]) =>
+          Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]));
+        if (side(a, b, c) === 0 || side(a, b, d) === 0) return false; // collinear
+        return side(a, b, c) !== side(a, b, d) && side(c, d, a) !== side(c, d, b);
+      };
+      const [c0, c1, c2, c3] = corners as Array<[number, number]>;
+      for (const [a, b, c, d, label] of [
+        [c0!, c1!, c2!, c3!, "edges 0-1 and 2-3"],
+        [c1!, c2!, c3!, c0!, "edges 1-2 and 3-0"],
+      ] as Array<[[number, number], [number, number], [number, number], [number, number], string]>) {
+        expect(cross(a, b, c, d), `${label} cross: the corner order self-intersects, so clip() fills two triangles`)
+          .toBe(false);
+      }
+    }
+
+    // And it holds for the quads a real frame produces, including the floor
+    // sub-quads whose shear and source offset both vary per tile.
+    const side = (p: readonly [number, number], q: readonly [number, number], r: readonly [number, number]) =>
+      Math.sign((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]));
+    const cross = (a: readonly [number, number], b: readonly [number, number],
+                   c: readonly [number, number], d: readonly [number, number]): boolean => {
+      if (side(a, b, c) === 0 || side(a, b, d) === 0) return false;
+      return side(a, b, c) !== side(a, b, d) && side(c, d, a) !== side(c, d, b);
+    };
+    const scene = buildScene(sceneInputs(corridor(), Direction.NE));
+    for (const quad of scene.quads) {
+      const [a, b, c, d] = quadCorners(quad) as Array<[number, number]>;
+      // Both pairs of opposite edges, for the reason given above.
+      expect(cross(a!, b!, c!, d!), "a frame quad's corners are in bowtie order (0-1 / 2-3)").toBe(false);
+      expect(cross(b!, c!, d!, a!), "a frame quad's corners are in bowtie order (1-2 / 3-0)").toBe(false);
+    }
+  });
+
   it("is what the browser renderer actually uses, rather than a copy of the maths", () => {
     // The four tests above pin `quadAffine`, which is not the same as pinning the
     // renderer: it could hand-roll its own matrix and every one of them would still
@@ -554,7 +926,20 @@ describe("the two implementations of a quad agree", () => {
     };
     const [a, b, c, d] = quadAffine(quad);
     const buggy = [a, b, c, d, quad.x - a * quad.sx, quad.y - d * quad.sy];
-    const [px, py] = sourceCorners(quad)[3]!;
+    // The **far** corner, `O+U+V`, found by position rather than by index.
+    //
+    // It has to be the far corner: `c·sy` is the term that couples the two axes,
+    // so it is only non-zero at a corner that is offset along *both* `U` and `V`.
+    // Probing `O+V` instead measures a quarter of the error and the assertion
+    // passes for the wrong reason. And the index is not a stable way to name it —
+    // `sourceCorners` returns the perimeter order, in which the far corner is
+    // third, but a test that has to be edited when a helper is reordered is a
+    // test that will be edited rather than read.
+    const targets = quadCorners(quad);
+    const far = targets.reduce((best, corner) =>
+      corner[0] + corner[1] > best[0] + best[1] ? corner : best,
+    );
+    const [px, py] = sourceCorners(quad)[targets.indexOf(far)]!;
     const gotX = a * px + c * py + buggy[4]!;
     const wantX = quad.x + quad.ux + quad.vx;
     // The dropped `c·sy` term, quantified: 18 * 16 / 8 = 36px.

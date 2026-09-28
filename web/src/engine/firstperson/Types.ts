@@ -358,22 +358,47 @@ export function quadAffine(quad: Quad): readonly [number, number, number, number
   return [a, b, c, d, quad.x - a * quad.sx - c * quad.sy, quad.y - b * quad.sx - d * quad.sy];
 }
 
-/** The four corners of a quad, in the order `quadAffine`'s source corners map to. */
+/**
+ * The four corners of a quad, **in perimeter order**: `O`, `O+U`, `O+U+V`, `O+V`.
+ *
+ * The order is load-bearing and was wrong at first. `O, O+U, O+V, O+U+V` — the
+ * obvious listing, and the one this function shipped — is a *bowtie*: the second
+ * and fourth points are the two far corners, so the path crosses itself in the
+ * middle. A self-intersecting path under `ctx.clip()` is filled by the even-odd
+ * rule, which is the union of the two triangles it bounds rather than the
+ * parallelogram, so **43% of every sheared quad is clipped away** — measured on a
+ * real frame, worst quad 42.5% of its area surviving. The floor came out as
+ * black wedges radiating from the vanishing point.
+ *
+ * Nothing caught it because the software rasteriser never uses this order: it
+ * inverse-maps each texel from `O + u·U + v·V` and tests `0 ≤ u,v ≤ 1`, which is
+ * correct for *any* order of the four corners. A shared `Quad` type constrains
+ * shape, not behaviour, and this is the sharpest instance yet.
+ *
+ * `O, O+U, O+U+V, O+V` walks the boundary, so the winding is consistent and the
+ * clip is the parallelogram.
+ */
 export function quadCorners(quad: Quad): Array<[number, number]> {
   return [
     [quad.x, quad.y],
     [quad.x + quad.ux, quad.y + quad.uy],
-    [quad.x + quad.vx, quad.y + quad.vy],
     [quad.x + quad.ux + quad.vx, quad.y + quad.uy + quad.vy],
+    [quad.x + quad.vx, quad.y + quad.vy],
   ];
 }
 
-/** The four corners of a quad's source rect, in the matching order. */
+/**
+ * The four corners of a quad's source rect, in the matching perimeter order.
+ *
+ * `O, O+U, O+U+V, O+V` in source space, so `quadAffine` maps corner *i* to corner
+ * *i* — which is the invariant `firstperson-scene.test.ts` asserts, and which only
+ * means anything because the two lists are walked the same way round.
+ */
 export function sourceCorners(quad: Quad): Array<[number, number]> {
   return [
     [quad.sx, quad.sy],
     [quad.sx + quad.sw, quad.sy],
-    [quad.sx, quad.sy + quad.sh],
     [quad.sx + quad.sw, quad.sy + quad.sh],
+    [quad.sx, quad.sy + quad.sh],
   ];
 }
