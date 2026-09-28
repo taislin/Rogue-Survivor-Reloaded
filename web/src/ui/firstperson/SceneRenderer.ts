@@ -2,7 +2,7 @@ import { Color } from "@engine/Color";
 import { Rect } from "@engine/Rect";
 import type { Scene, SceneInputs } from "@engine/firstperson/SceneBuilder";
 import { buildScene } from "@engine/firstperson/SceneBuilder";
-import type { Quad, SceneRendererStats } from "@engine/firstperson/Types";
+import { quadAffine, type Quad, type SceneRendererStats } from "@engine/firstperson/Types";
 
 /**
  * Draws a first-person frame with Canvas2D.
@@ -190,14 +190,14 @@ export class SceneRenderer {
     ctx.lineTo(quad.x + quad.ux + quad.vx, quad.y + quad.uy + quad.vy);
     ctx.closePath();
     ctx.clip();
-    // Map the source rect's top-left to the quad's origin and the source's x and y
-    // axes onto the quad's edge vectors.
-    ctx.transform(
-      quad.ux / quad.sw, quad.uy / quad.sw,
-      quad.vx / quad.sh, quad.vy / quad.sh,
-      quad.x - (quad.sx * quad.ux) / quad.sw,
-      quad.y - (quad.sy * quad.vy) / quad.sh,
-    );
+    // From `quadAffine`, not from a derivation here. The first version of this was
+    // written inline and got the translation wrong: it supplied `x - a·sx` and
+    // `y - d·sy` where the matrix needs `x - a·sx - c·sy` and `y - b·sx - d·sy`, so
+    // every sheared quad landed `c·sy` to the right of where it belonged and the
+    // floor did not line up with itself. No golden caught it, because the goldens
+    // go through a rasteriser that maps texels from the quad's corners instead.
+    const [a, b, c, d, e, f] = quadAffine(quad);
+    ctx.transform(a, b, c, d, e, f);
     ctx.drawImage(image, 0, 0);
     ctx.restore();
     this.drawCalls++;

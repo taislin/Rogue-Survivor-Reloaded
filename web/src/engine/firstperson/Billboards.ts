@@ -43,6 +43,7 @@ export function collectBillboards(
   camera: Camera,
   zBuffer: Float32Array,
   spriteHeight: number = ACTOR_SPRITE_HEIGHT,
+  maxDistance: number = Number.POSITIVE_INFINITY,
 ): { billboards: Billboard[]; culled: number } {
   const out: Billboard[] = [];
   let culled = 0;
@@ -65,13 +66,12 @@ export function collectBillboards(
     const imageId = actor.model.imageId;
     if (imageId == null || imageId === "") continue;
 
-    const rect = billboardRect(
-      camera,
-      pos.x + 0.5,
-      pos.y + 0.5,
-      spriteHeight,
-    );
+    const rect = billboardRect(camera, pos.x + 0.5, pos.y + 0.5, spriteHeight);
     if (rect === null) continue;
+    // The engine's reach, not the camera's. `Rules.actorFOV` is a circle of
+    // `fov / 0.866` and the camera is a cone, so a cone-only limit would show
+    // actors the player has no sight of — the one thing this renderer must not do.
+    if (rect.depth > maxDistance) continue;
 
     // Cull against the z-buffer: the sprite must be nearer than the wall in every
     // column it covers, or there is nothing to draw.

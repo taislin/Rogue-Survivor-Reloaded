@@ -312,3 +312,54 @@ export interface SceneRendererStats {
   /** Sprites whose image was not loaded yet, per frame. */
   readonly missingImages: number;
 }
+
+/**
+ * The affine matrix mapping a quad's source rect onto the quad, in Canvas2D's
+ * `transform(a, b, c, d, e, f)` order: `(x, y)` becomes
+ * `(a·x + c·y + e, b·x + d·y + f)`.
+ *
+ * It lives in the shared contract rather than in the browser renderer because
+ * **two implementations of this primitive is how the floor ended up full of
+ * bowties.** The test rasteriser maps a texel by inverse-mapping from
+ * `origin + u·U + v·V`; a browser maps it with a matrix. Those are the same
+ * geometry written twice, and the first version of this was wrong in the browser
+ * only — the translation terms were `x − a·sx` and `y − d·sy` where they must be
+ * `x − a·sx − c·sy` and `y − b·sx − d·sy`. Every sheared quad was displaced by
+ * `(c·sy, b·sx)`, which for a floor sub-quad is `vx·sy / sh` sideways: the tiles
+ * did not line up with their neighbours, and the picture was bowties and gaps.
+ *
+ * Every golden image passed, because the goldens only exercise the rasteriser.
+ * A shared `Quad` type constrains the two implementations' *shape*; it does not
+ * make them agree, and it did not.
+ *
+ * The invariant is that this matrix sends the source rect's four corners to the
+ * quad's four corners, and `firstperson-scene.test.ts` asserts exactly that — in
+ * Node, with no browser.
+ */
+export function quadAffine(quad: Quad): readonly [number, number, number, number, number, number] {
+  const a = quad.ux / quad.sw;
+  const b = quad.uy / quad.sw;
+  const c = quad.vx / quad.sh;
+  const d = quad.vy / quad.sh;
+  return [a, b, c, d, quad.x - a * quad.sx - c * quad.sy, quad.y - b * quad.sx - d * quad.sy];
+}
+
+/** The four corners of a quad, in the order `quadAffine`'s source corners map to. */
+export function quadCorners(quad: Quad): Array<[number, number]> {
+  return [
+    [quad.x, quad.y],
+    [quad.x + quad.ux, quad.y + quad.uy],
+    [quad.x + quad.vx, quad.y + quad.vy],
+    [quad.x + quad.ux + quad.vx, quad.y + quad.uy + quad.vy],
+  ];
+}
+
+/** The four corners of a quad's source rect, in the matching order. */
+export function sourceCorners(quad: Quad): Array<[number, number]> {
+  return [
+    [quad.sx, quad.sy],
+    [quad.sx + quad.sw, quad.sy],
+    [quad.sx, quad.sy + quad.sh],
+    [quad.sx + quad.sw, quad.sy + quad.sh],
+  ];
+}

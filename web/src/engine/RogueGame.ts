@@ -71,6 +71,7 @@ import {
 } from "@engine/GameOptions";
 import { GameSaveManager } from "@engine/GameSave";
 import { remapForView, resolveMoveDirection, turnFacing } from "@engine/firstperson/Controls";
+import { LOS_DISTANCE_FACTOR, daylightFor } from "@engine/firstperson/Daylight";
 import { buildScene } from "@engine/firstperson/SceneBuilder";
 import { HiScore, HiScoreTable } from "@engine/HiScoreTable";
 import {
@@ -20413,6 +20414,18 @@ export class RogueGame {
 			// The same two alternate frames `DrawMap` animates between, chosen on the
 			// same `turnCounter % 2`, so the rain flickers in step between the views.
 			weatherImageId: this.weatherImage(),
+			// The engine's own sight limit, in tiles. `Rules.actorFOV` is a value in
+			// `losDistance` units — 0.866 x Euclidean — so the visible radius is that
+			// much larger, and passing the raw FOV instead would cut the view down by
+			// a seventh. Everything the renderer draws is bounded by this number,
+			// because a cone that ignores it shows the player more than the rules
+			// allow, which is the one failure this whole renderer has to avoid.
+			maxViewDistance: this.m_Rules.actorFOV(
+				this.m_Player,
+				this.m_Session.worldTime,
+				this.m_Session.world!.weather,
+			) / LOS_DISTANCE_FACTOR,
+			daylight: daylightFor(this.m_Session.worldTime.phase),
 		});
 		this.m_UI.UI_DrawScene(scene);
 	}

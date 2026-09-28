@@ -8,6 +8,7 @@ import { Direction } from "@engine/Direction";
 import { DEFAULT_VIEW_MODE } from "@engine/firstperson/Types";
 import { Map as GameMap } from "@data/Map";
 import { buildScene, type Scene } from "@engine/firstperson/SceneBuilder";
+import { LOS_DISTANCE_FACTOR, daylightFor } from "@engine/firstperson/Daylight";
 
 /**
  * The first-person view, driven through a real played game.
@@ -35,7 +36,6 @@ import { buildScene, type Scene } from "@engine/firstperson/SceneBuilder";
  */
 describe("first person, in a real game", () => {
   let runner: HeadlessRunner;
-  let game: RogueGame;
   let ui: NullRogueUI;
 
   beforeAll(async () => {
@@ -188,6 +188,9 @@ describe("first person, in a real game", () => {
 /** The UI whose call counts `tileDrawCalls` reads. Set in `beforeAll`. */
 let probingUI: NullRogueUI | null = null;
 
+/** The played game, so the module-level scene helper can read the engine's own FOV. */
+let game: RogueGame;
+
 /**
  * The map's per-tile draw calls.
  *
@@ -200,8 +203,16 @@ function tileDrawCalls(): number {
   return (counts["UI_DrawImageTinted"] ?? 0) + (counts["UI_DrawGrayLevelImage"] ?? 0);
 }
 
-/** Builds a scene the way `RogueGame.DrawFirstPersonScene` does. */
+/**
+ * Builds a scene the way `RogueGame.DrawFirstPersonScene` does, including the two
+ * engine-supplied limits rather than convenient ones.
+ *
+ * That is the point of doing it here and not in the scene tests: the FOV comes
+ * from `Rules.actorFOV` through the same arithmetic the game uses, so a change to
+ * the night or weather penalty shows up as a change in what this renderer draws.
+ */
 function buildFor(map: GameMap, x: number, y: number, facing: Direction): Scene {
+  const actor = game.m_Player;
   return buildScene({
     map,
     posX: x,
@@ -210,6 +221,10 @@ function buildFor(map: GameMap, x: number, y: number, facing: Direction): Scene 
     width: 864,
     height: 672,
     isInside: map.getTileAt(Math.floor(x), Math.floor(y))?.isInside ?? false,
-    actionPoints: 100,
+    actionPoints: actor.actionPoints,
+    maxViewDistance:
+      game.m_Rules.actorFOV(actor, game.session.worldTime, game.session.world!.weather) /
+      LOS_DISTANCE_FACTOR,
+    daylight: daylightFor(game.session.worldTime.phase),
   });
 }

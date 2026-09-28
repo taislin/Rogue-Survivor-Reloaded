@@ -13,7 +13,7 @@ import { castColumns, columnDistances, MAX_RAY_DISTANCE } from "./Raycaster";
 import { columnQuad, projectColumns, sortFarToNear } from "./Projector";
 import { Point } from "@engine/Point";
 import type { WallColumn } from "./Types";
-import { collectBillboards } from "./Billboards";
+import { collectBillboards, ACTOR_SPRITE_HEIGHT } from "./Billboards";
 
 /**
  * Assembles a first-person frame: a camera, and an ordered list of quads to draw.
@@ -68,6 +68,32 @@ export interface SceneInputs {
    * reads as a screen-wide effect. Here it is one full-viewport quad.
    */
   weatherImageId?: string | null;
+  /**
+   * How far the player can actually see, in tiles.
+   *
+   * **This is the renderer's knowledge limit, and it comes from the engine.** The
+   * camera's cone is 100° and the raycaster will happily trace to 64 tiles, but
+   * `Rules.actorFOV` says the player sees a circle of `fov / 0.866` — 3.5 tiles at
+   * midnight, or about 9 by day. Without this the renderer draws the floor to six
+   * tiles and the player sees further than the rules allow, which is the one thing
+   * a second renderer must never do.
+   *
+   * So the engine supplies the number and the renderer obeys it. Per-tile
+   * `isInView` also gates the *walls* — anything past the FOV becomes fog — but the
+   * floor was not gated, which is how a 3/8 FOV still showed six tiles of it.
+   */
+  maxViewDistance: number;
+  /**
+   * How bright it is, 0..1, from the time of day.
+   *
+   * A synthesis, and marked as one: `Map.lighting` is per *map*, so a LIT interior
+   * is the same value at midnight as at noon, and using it alone gives a
+   * daylight-bright floor at 3am. This scales the backdrop and the floor so the
+   * night reads as night. It never *brightens* past full daylight, and it never
+   * darkens below the map's own lighting, so it cannot reveal anything the rules
+   * withhold — it only stops the view being a flashlight.
+   */
+  daylight: number;
 }
 
 /** Where a frame's milliseconds went. The measurement the plan asks for. */
@@ -130,6 +156,9 @@ export const WEATHER_ALPHA = 0.35;
 
 export function buildScene(inputs: SceneInputs): Scene {
   const startedAt = performance.now();
+  // The engine's number, not the renderer's. Clamped to the raycaster's own bound
+  // so a large FOV cannot make it trace forever.
+  const viewDistance = Math.max(1, Math.min(MAX_RAY_DISTANCE, inputs.maxViewDistance));
   const camera = makeCamera(
     inputs.posX,
     inputs.posY,
@@ -140,7 +169,7 @@ export function buildScene(inputs: SceneInputs): Scene {
   );
 
   const raycastStart = performance.now();
-  const hits = castColumns(inputs.map, camera);
+  const hits = castColumns(inputs.map, camera, viewDistance);
   const raycastMs = performance.now() - raycastStart;
   const zBuffer = columnDistances(hits);
   const columns = sortFarToNear(projectColumns(camera, hits));
@@ -187,12 +216,18 @@ export function buildScene(inputs: SceneInputs): Scene {
   // number the port plan worries about, arrived at honestly rather than by
   // guessing. The flat colour is the tile's own minimap colour, which is the only
   // per-tile colour the data model has.
-  const floorQuads = buildFloor(inputs.map, camera);
+  const floorQuads = buildFloor(inputs.map, camera, viewDistance, inputs.daylight);
 
   // ── Decorations, decals ──────────────────────────────────────────────────
   // A sprite behind a wall is neither drawn nor counted as drawn, so `culled` is a
   // measurement of the depth test working rather than of the renderer doing more.
-  const { billboards, culled: culledBillboards } = collectBillboards(inputs.map, camera, zBuffer);
+  const { billboards, culled: culledBillboards } = collectBillboards(
+    inputs.map,
+    camera,
+    zBuffer,
+    ACTOR_SPRITE_HEIGHT,
+    viewDistance,
+  );
   sortFarToNear(billboards);
 
   // Decorations go on the wall they sit on, as a second column over the first. The
@@ -204,7 +239,7 @@ export function buildScene(inputs: SceneInputs): Scene {
   // billboard would be the obvious thing and it is wrong twice over: a corpse
   // standing upright, and a bandage roll standing upright. The art supports the
   // decal — they are top-down icons in a top-down game.
-  const decals = floorDecals(inputs.map, camera);
+  const decals = floorDecals(inputs.map, camera, viewDistance);
 
   const quadsWithBillboards = [
     ...floorQuads,
@@ -226,7 +261,7 @@ export function buildScene(inputs: SceneInputs): Scene {
       totalMs: performance.now() - startedAt,
     },
     backdrop: {
-      color: backdropColor(inputs, camera),
+      color: backdropColor(inputs),
       isCeiling: inputs.isInside,
     },
     weather:
@@ -302,19 +337,25 @@ function fogColor(inputs: SceneInputs): Color {
 }
 
 /** The colour behind everything: a ceiling indoors, sky outdoors. */
-function backdropColor(inputs: SceneInputs, camera: Camera): Color {
+function backdropColor(inputs: SceneInputs): Color {
   if (inputs.isInside) {
     // Indoors the backdrop above the walls is a ceiling, and a dark one: there is
     // no ceiling texture in the game and inventing one is not worth it, but a
     // *sky*-coloured band above an interior wall would read as a hole in the roof.
     // r first, for the reason on `fogColor`.
-    return Color.fromArgb(
-      Math.round(10 * camera.eyeHeight),
-      Math.round(10 * camera.eyeHeight),
-      Math.round(14 * camera.eyeHeight),
+    return scaleColor(
+      Color.fromArgb(
+        Math.round(10 * 0.75),
+        Math.round(10 * 0.75),
+        Math.round(14 * 0.75),
+      ),
+      inputs.daylight,
     );
   }
-  return inputs.map.lighting === Lighting.LIT ? Color.LightGray : Color.fromArgb(40, 44, 58);
+  return scaleColor(
+    inputs.map.lighting === Lighting.LIT ? Color.LightGray : Color.fromArgb(40, 44, 58),
+    inputs.daylight,
+  );
 }
 
 /**
@@ -363,14 +404,25 @@ function wallDecorations(columns: WallColumn[], map: Map): Quad[] {
  * are limited to the tiles the camera can see a floor for at all — a corpse 30
  * tiles away behind four walls is in nobody's field of view.
  */
-function floorDecals(map: Map, camera: Camera): Quad[] {
+function floorDecals(map: Map, camera: Camera, viewDistance: number): Quad[] {
   const out: Quad[] = [];
-  const maxDistance = TEXTURED_FLOOR_TILES + 2;
+  // The engine's bound, and nothing looser: a corpse the player cannot see is an
+  // actor's death reported before it happens.
+  //
+  // **Iterated as whole tiles.** The bound is `Rules.actorFOV / 0.866`, which is
+  // 3.46 at midnight and 1.38 at the tightest — a fraction, because it comes from
+  // the rules rather than from a constant. Using it directly as a loop bound walks
+  // a half-tile grid, and `Map.getTileAt(1.38, y)` indexes `tilesGrid[1.38]`, which
+  // is `undefined`, and the next read throws. The integer scan below is a radius in
+  // *tiles*; the fractional value is only ever used to test a real distance, which
+  // is where its precision actually means something.
+  const reach = Math.ceil(viewDistance);
+  const maxDistance = viewDistance;
   const originX = Math.floor(camera.posX);
   const originY = Math.floor(camera.posY);
 
-  for (let dy = -maxDistance; dy <= maxDistance; dy++) {
-    for (let dx = -maxDistance; dx <= maxDistance; dx++) {
+  for (let dy = -reach; dy <= reach; dy++) {
+    for (let dx = -reach; dx <= reach; dx++) {
       const x = originX + dx;
       const y = originY + dy;
       if (!map.isInBounds(x, y)) continue;
@@ -439,7 +491,7 @@ function decalQuad(imageId: string, centreX: number, centreY: number, size: numb
  * That is what `subdivisionsFor` decides, and it is a cost calculation rather than
  * a constant because the shear falls off with distance.
  */
-function buildFloor(map: Map, camera: Camera): Quad[] {
+function buildFloor(map: Map, camera: Camera, viewDistance: number, daylight: number): Quad[] {
   const out: Quad[] = [];
 
   // The underlay: one quad covering everything below the horizon, in the colour of
@@ -476,13 +528,19 @@ function buildFloor(map: Map, camera: Camera): Quad[] {
   // tiles a 32px texture is under one screen pixel per texel, so a mode 7 floor
   // would be spending thousands of draw calls to render aliasing noise — the
   // number the port plan worries about, arrived at honestly rather than guessed.
-  const maxDistance = Math.min(MAX_RAY_DISTANCE, TEXTURED_FLOOR_TILES);
+  // Bounded by what the player can see, not by what looks good. The texture cutoff
+  // is a second, tighter bound on top: beyond a few tiles a 32px texture is under
+  // one screen pixel per texel, so there is nothing to resolve.
+  const maxDistance = Math.min(viewDistance, TEXTURED_FLOOR_TILES);
 
   // The rings are walked far to near, which *is* the draw order. It is not
   // re-sorted afterwards: each tile emits a base fill and then its texture
   // sub-quads, and sorting by depth would interleave a near tile's fill in front
   // of its own detail, leaving the detail visible on the wrong side of a seam.
-  for (let distance = 1; distance <= maxDistance; distance++) {
+  // Whole rings, for the same reason `floorDecals` scans whole tiles: the bound is
+  // the engine's fractional FOV and a half-ring is not a ring.
+  const lastRing = Math.floor(maxDistance);
+  for (let distance = 1; distance <= lastRing; distance++) {
     for (let side = -distance; side <= distance; side++) {
       for (const [dx, dy] of ringOffsets(distance, side)) {
         const x = Math.floor(camera.posX) + dx;
@@ -490,7 +548,7 @@ function buildFloor(map: Map, camera: Camera): Quad[] {
         if (!map.isInBounds(x, y)) continue;
         const tile = map.getTileAt(x, y);
         if (tile === null || !tile.model.isWalkable) continue;
-        out.push(...floorQuadsForTile(camera, tile, x, y));
+        out.push(...floorQuadsForTile(camera, tile, x, y, daylight));
       }
     }
   }
@@ -535,7 +593,7 @@ function ringOffsets(distance: number, side: number): Array<[number, number]> {
  * there in the tile's own colour. The cost is one extra quad per tile — not per
  * sub-quad — and it doubles as the flat shading for tiles past the texture cutoff.
  */
-function floorQuadsForTile(camera: Camera, tile: Tile, x: number, y: number): Quad[] {
+function floorQuadsForTile(camera: Camera, tile: Tile, x: number, y: number, daylight: number): Quad[] {
   const corners = [
     { x, y }, { x: x + 1, y }, { x: x + 1, y: y + 1 }, { x, y: y + 1 },
   ];
@@ -568,7 +626,7 @@ function floorQuadsForTile(camera: Camera, tile: Tile, x: number, y: number): Qu
   // stripes. Overlapping the neighbours by a pixel is a two-line fix for something
   // that subdivision cannot fix at any budget, and the overlap is invisible where
   // neighbouring tiles share a model, which is most of a floor.
-  const base = tile.model.minimapColor;
+  const base = scaleColor(tile.model.minimapColor, daylight);
   out.push(expandByPixels({
     imageId: "",
     x: screen[0]!.x, y: screen[0]!.y,
@@ -618,6 +676,22 @@ function subdivisionsFor(distance: number): number {
   if (distance < 1.5) return 4;
   if (distance < 3) return 2;
   return 1;
+}
+
+/**
+ * A colour scaled towards black.
+ *
+ * Used only to *darken*. It cannot brighten, so it can never turn a dark map into a
+ * lit one — the limit is that the renderer is prevented from showing more than the
+ * rules allow, and this is a nudge in the other direction.
+ */
+function scaleColor(color: Color, factor: number): Color {
+  const k = Math.max(0, Math.min(1, factor));
+  return Color.fromArgb(
+    Math.round(color.r * k),
+    Math.round(color.g * k),
+    Math.round(color.b * k),
+  );
 }
 
 function lerp(a: number, b: number, t: number): number {

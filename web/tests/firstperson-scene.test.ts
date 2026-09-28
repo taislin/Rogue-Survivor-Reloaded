@@ -5,9 +5,11 @@ import { Map as GameMap, Lighting } from "@data/Map";
 import { Models } from "@data/Models";
 import { GameTiles, TileID } from "@gameplay/GameTiles";
 import type { TileModel } from "@data/TileModel";
-import type { Quad } from "@engine/firstperson/Types";
+import { quadAffine, quadCorners, sourceCorners, type Quad } from "@engine/firstperson/Types";
 import { Direction } from "@engine/Direction";
 import { buildScene, TEXTURED_FLOOR_TILES, type SceneInputs } from "@engine/firstperson/SceneBuilder";
+import { MAX_RAY_DISTANCE, castColumns } from "@engine/firstperson/Raycaster";
+import { projectColumns } from "@engine/firstperson/Projector";
 import { isUnoccluded } from "@engine/firstperson/Billboards";
 import { encodePng, diffImages } from "./helpers/png";
 import { createSurface, drawList, solidTexture, type Texture } from "./helpers/softRaster";
@@ -75,16 +77,36 @@ function corridor(width = 9, height = 21): GameMap {
 const WIDTH = 288;
 const HEIGHT = 224;
 
+/**
+ * Where the camera stands in the corridor, and why there.
+ *
+ * A living actor has `FOV: 8`, and `losDistance` is `0.866 x Euclidean`, so the
+ * player sees about **9.2 tiles** — less at night, less still in rain. Standing at
+ * y = 14.5 in a 21-deep corridor puts the far wall 13.5 tiles away, which is
+ * genuinely out of sight, and the picture was drawn anyway because the renderer
+ * traced rays to 64 tiles.
+ *
+ * So the camera is placed where the far wall is *inside* the field of view, and the
+ * bound is asserted separately below. A fixture that quietly relies on the renderer
+ * seeing further than the rules allow is how the leak survived the first review.
+ */
+const CAMERA_Y = 8.5;
+
 function sceneInputs(map: GameMap, facing: Direction, overrides: Partial<SceneInputs> = {}): SceneInputs {
   return {
     map,
     posX: 4.5,
-    posY: 14.5,
+    posY: CAMERA_Y,
     facing,
     width: WIDTH,
     height: HEIGHT,
     isInside: false,
     actionPoints: 100,
+    // Daylight and a full-day field of view, so the fixtures show the whole view.
+    // The engine's own values are what the wiring test supplies; these two are the
+    // "unobstructed" case a geometry fixture wants.
+    maxViewDistance: 9,
+    daylight: 1,
     ...overrides,
   };
 }
@@ -213,6 +235,62 @@ describe("the draw list", () => {
     expect(scene.counts.floorQuads).toBeLessThan(scene.quads.length * 0.75);
   });
 
+  it("draws no further than the engine says the player can see", () => {
+    // The information leak this closes. The camera's cone is 100° and the raycaster
+    // will trace to 64 tiles; `Rules.actorFOV` says the player sees a circle of
+    // `fov / 0.866`. Without the bound, a 3/8 field of view — midnight, heavy rain,
+    // the exact conditions of the screenshot that prompted this — still rendered
+    // six tiles of floor, which is a game showing the player more than its rules
+    // permit. The only symptom is that first person is more informative than the
+    // game is.
+    const near = 3.46; // a 3/8 FOV, as Rules computes it
+    const scene = buildScene(sceneInputs(corridor(), Direction.N, { maxViewDistance: near }));
+
+    // **Walls** come from rays, which stop at exactly the limit, so they are
+    // bounded strictly. This is the part that matters: without it the renderer
+    // reaches out to 64 tiles and paints a lit interior the player is not allowed
+    // to see.
+    const map = corridor();
+    let furthestWall = 0;
+    for (const column of projectColumns(scene.camera, castColumns(map, scene.camera, near))) {
+      furthestWall = Math.max(furthestWall, column.depth);
+    }
+    expect(furthestWall).toBeLessThanOrEqual(near + 1e-6);
+
+    // **Floor** is walked tile by tile, so a tile whose *near* corner is inside the
+    // limit is drawn whole and its far corner can sit a fraction outside it. Bounded
+    // by a tile rather than exactly, and deliberately: a tile is the smallest thing
+    // the floor is made of, and clipping one would be a ragged edge for no gain.
+    let furthestFloor = 0;
+    for (const quad of scene.quads) {
+      // The underlay sits at exactly `MAX_RAY_DISTANCE` — further than any ray, so
+      // it draws first and loses to everything. It is a fill, not geometry.
+      if (quad.depth >= MAX_RAY_DISTANCE) continue;
+      if (!quad.imageId.includes("floor")) continue;
+      furthestFloor = Math.max(furthestFloor, quad.depth);
+    }
+    expect(furthestFloor).toBeLessThanOrEqual(near + 1);
+    expect(furthestFloor).toBeGreaterThan(near - 1);
+
+    // And the effect is visible: a short view sees fewer wall columns, because the
+    // far ones are past the limit rather than merely fogged.
+    const wide = buildScene(sceneInputs(corridor(), Direction.N, { maxViewDistance: 40 }));
+    expect(scene.counts.wallQuads).toBeLessThan(wide.counts.wallQuads);
+  });
+
+  it("walks whole tiles whatever the view distance is", () => {
+    // The bound is `fov / 0.866`, so 3.46 or 1.38 — a fraction, because it comes
+    // from the rules rather than from a constant. Used directly as a loop bound it
+    // walks a half-tile grid, and `Map.getTileAt(1.38, y)` indexes `tilesGrid[1.38]`,
+    // which is undefined. The integer constant that used to sit here hid it.
+    for (const maxViewDistance of [1.38, 3.46, 9.24, 13.7]) {
+      const scene = buildScene(sceneInputs(corridor(), Direction.N, { maxViewDistance }));
+      for (const quad of scene.quads) {
+        expect(Number.isFinite(quad.x + quad.y + quad.depth), `NaN at ${maxViewDistance}`).toBe(true);
+      }
+    }
+  });
+
   it("only textures the floor within the stated distance", () => {
     // Beyond a few tiles a 32px texture is under one screen pixel per texel, so a
     // full mode 7 floor would spend thousands of calls to render aliasing noise.
@@ -282,6 +360,134 @@ describe("the draw list", () => {
         expect(spread, `${label}: not a grey (${color.r},${color.g},${color.b})`).toBeLessThanOrEqual(32);
       }
     }
+  });
+});
+
+describe("the two implementations of a quad agree", () => {
+  /**
+   * The test the browser run needed and did not have.
+   *
+   * The floor rendered as bowties: the Canvas2D transform that maps a quad's
+   * source rect onto the quad had the wrong translation, so every *sheared* quad —
+   * which is every textured floor tile and nothing else — landed
+   * `c · sy` sideways of where it belonged. The wall columns were fine, because
+   * they are axis-aligned and take a different code path entirely, which is why
+   * the walls looked plausible and the floor did not.
+   *
+   * Every golden image passed, because the goldens rasterise with a different
+   * implementation: the software renderer inverse-maps each texel from
+   * `origin + u·U + v·V`, which is right by construction and never had the bug.
+   * So the two implementations of one primitive disagreed, and a shared `Quad`
+   * type did nothing to stop it — a shared type constrains shape, not behaviour.
+   *
+   * This asserts the invariant that actually holds them together: the matrix maps
+   * the source rect's four corners onto the quad's four corners. It runs in Node,
+   * and it does not need a browser to have caught the bug.
+   */
+  function expectCornersMapped(quad: Quad): void {
+    const [a, b, c, d, e, f] = quadAffine(quad);
+    const apply = (px: number, py: number): [number, number] => [a * px + c * py + e, b * px + d * py + f];
+    const sources = sourceCorners(quad);
+    const targets = quadCorners(quad);
+    for (let i = 0; i < 4; i++) {
+      const [px, py] = sources[i]!;
+      const [gotX, gotY] = apply(px, py);
+      const [wantX, wantY] = targets[i]!;
+      expect(gotX, `corner ${i} x for ${JSON.stringify(quad)}`).toBeCloseTo(wantX, 9);
+      expect(gotY, `corner ${i} y for ${JSON.stringify(quad)}`).toBeCloseTo(wantY, 9);
+    }
+  }
+
+  it("maps a sheared quad's source corners onto its corners", () => {
+    // The shape that failed: a floor sub-quad, with both a shear and a non-zero
+    // source offset — which is exactly what makes the missing `c·sy` and `b·sx`
+    // terms non-zero and the bug visible.
+    expectCornersMapped({
+      imageId: "Tiles/floor_concrete",
+      x: 100.5, y: 200.25,
+      ux: 30, uy: -12,
+      vx: 18, vy: 4,
+      sx: 8, sy: 16, sw: 8, sh: 8,
+      depth: 3,
+    });
+  });
+
+  it("maps an axis-aligned quad too, which is every wall column", () => {
+    expectCornersMapped({
+      imageId: "Tiles/wall_brick",
+      x: 12, y: 300,
+      ux: 1, uy: 0, vx: 0, vy: 42,
+      sx: 5, sy: 0, sw: 1, sh: 32,
+      depth: 3.5,
+    });
+  });
+
+  it("maps a billboard, which has a non-zero source offset in both axes", () => {
+    expectCornersMapped({
+      imageId: "Actors/zombie",
+      x: 400, y: 150,
+      ux: 24, uy: 0, vx: 0, vy: 48,
+      sx: 0, sy: 0, sw: 32, sh: 32,
+      depth: 5,
+    });
+  });
+
+  it("holds for every quad a real frame produces, not just the three shapes above", () => {
+    // The fixtures are the point. A hand-written quad proves the algebra; a frame
+    // proves the algebra is what the renderer is actually handed, including the
+    // quads whose shear and source offset both vary per tile.
+    const scene = buildScene(sceneInputs(corridor(), Direction.NE));
+    for (const quad of scene.quads) {
+      expectCornersMapped(quad);
+    }
+    expect(scene.quads.length).toBeGreaterThan(50);
+  });
+
+  it("is what the browser renderer actually uses, rather than a copy of the maths", () => {
+    // The four tests above pin `quadAffine`, which is not the same as pinning the
+    // renderer: it could hand-roll its own matrix and every one of them would still
+    // pass, which is exactly what a mutation confirmed — reintroducing the original
+    // bug at the call site left this file green.
+    //
+    // So the guard is on the source, and it is two-sided on purpose. The positive
+    // check is what stops it passing vacuously — a previous source-scanning test in
+    // this project had a pattern that never matched the file it was guarding, and
+    // asserted nothing for ever. If `quadAffine(` ever stops appearing here, the
+    // positive check fails loudly rather than the negative one failing silently.
+    const source = readFileSync(
+      join(__dirname, "../src/ui/firstperson/SceneRenderer.ts"),
+      "utf-8",
+    );
+    expect(source, "the renderer should delegate to quadAffine").toContain("quadAffine(quad)");
+    // No division by a quad field anywhere in the renderer: building the matrix
+    // *is* the bug, and that arithmetic has no business being anywhere but the
+    // shared module. Deliberately a division and not a mention of `sx`/`sw` —
+    // the axis-aligned path passes the source rect straight to `drawImage`, so
+    // reading those fields is correct, and a guard that forbade it would have
+    // failed on the right code.
+    expect(
+      source.match(/\/\s*quad\./g) ?? [],
+      "the renderer is dividing by a quad field, so it is building the matrix itself",
+    ).toEqual([]);
+  });
+
+  it("fails if the translation drops either term", () => {
+    // The mutation, as an assertion. The bug was `x - a·sx` for `x - a·sx - c·sy`;
+    // if the test cannot be made to fail by exactly that, it is not testing the
+    // thing that broke.
+    const quad: Quad = {
+      imageId: "x", x: 100, y: 200, ux: 30, uy: -12, vx: 18, vy: 4,
+      sx: 8, sy: 16, sw: 8, sh: 8, depth: 1,
+    };
+    const [a, b, c, d] = quadAffine(quad);
+    const buggy = [a, b, c, d, quad.x - a * quad.sx, quad.y - d * quad.sy];
+    const [px, py] = sourceCorners(quad)[3]!;
+    const gotX = a * px + c * py + buggy[4]!;
+    const wantX = quad.x + quad.ux + quad.vx;
+    // The dropped `c·sy` term, quantified: 18 * 16 / 8 = 36px.
+    expect(gotX).not.toBeCloseTo(wantX, 6);
+    // Displaced a whole `c · sy` to the right, which is 18 * 16 / 8 = 36px here.
+    expect(gotX - wantX).toBeCloseTo((quad.vx * quad.sy) / quad.sh, 9);
   });
 });
 
