@@ -2,7 +2,13 @@ import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { HeadlessRunner } from "../../src/sim/HeadlessRunner";
 import { NullRogueUI } from "@ui/NullRogueUI";
 import { IRogueUI, GameKeyEvent, MouseButton } from "@engine/IRogueUI";
-import { RogueGame, INVENTORYPANEL_X, GROUNDINVENTORYPANEL_Y } from "@engine/RogueGame";
+import {
+  RogueGame,
+  INVENTORYPANEL_X,
+  GROUNDINVENTORYPANEL_Y,
+  MAP_PANEL_WIDTH,
+  MAP_PANEL_HEIGHT,
+} from "@engine/RogueGame";
 import { GameMode } from "@engine/Session";
 import { SimRatio } from "@engine/GameOptions";
 import { Item } from "@data/Item";
@@ -297,6 +303,78 @@ describe("picking an item up off the ground", () => {
 
     expect(player.inventory!.contains(item)).toBe(true);
     expect(ground.isEmpty).toBe(true);
+  });
+
+  it("claims the map panel by its canvas pixels at any display scale", () => {
+    // The bug this pins: `HandleMouseLook` compared the mouse position against
+    // `MAP_PANEL_WIDTH`/`HEIGHT` **without** dividing by `UI_GetCanvasScale*`,
+    // while every other conversion in the file does. The two only agree at a
+    // 1366x768 window, so at any other size the handler claimed the wrong region:
+    //
+    //  - below 1366 (a 1280x720 laptop is scale 0.94) it over-claimed 58 logical px
+    //    past the panel, into the side panel and the first item slot at x=872. This
+    //    handler runs first in the play loop and `continue`s when it claims, so the
+    //    over-claimed band is stolen before the inventory is ever asked.
+    //  - above 1366 it under-claimed: at 1920x1080 (1.41) the right 249px of the
+    //    map could not be hovered, and at 2560x1440 half the map was dead.
+    //
+    // The 2x case above did not catch it, and neither did `panel-hitboxes.test.ts`:
+    // both compared logical constants to logical constants and never set a scale.
+    // The existing guard was written for the *map zoom* bug (2x zoom made the grid
+    // wider than the panel), which is a different axis and a different fix.
+    //
+    // Asserted as a claim about *both* edges at once, because the two failures pull
+    // in opposite directions and a one-sided test passes on half the bug: whatever
+    // the scale, a position inside the panel must be claimed and a position in the
+    // side panel must not be.
+    //
+    // **What this reliably pins, and what it does not.** The under-claim half is
+    // deterministic and fails loudly on the old code at every scale above 1:1 — the
+    // right edge of the panel is simply unreachable. The over-claim half is
+    // *verified* here too, but it does not fail on the old code in this fixture,
+    // because the over-claimed band maps to a tile just outside the 27-tile view
+    // rect, so `IsInViewRect` returns false and the handler declines the mouse
+    // anyway. Whether the over-claim actually steals a slot therefore depends on
+    // the player standing right of centre, where that tile *is* in view — which is
+    // what makes it intermittent and position-dependent in the field. The
+    // arithmetic is in the comment on `HandleMouseLook`; the regression that is
+    // cheap to assert is the under-claim, and that is what this holds down.
+    const map = game.session.currentMap!;
+    for (const displayScale of [1, 0.75, 1280 / 1366, 1.25, 1920 / 1366, 2, 3]) {
+      const probe = new MouseProbeUI();
+      probe.displayScale = displayScale;
+      const label = `display scale ${displayScale.toFixed(3)}`;
+
+      withProbe(probe, () => {
+        // A point deep inside the map panel must be claimed by the look handler.
+        const insideX = Math.floor(MAP_PANEL_WIDTH / 2);
+        const insideY = Math.floor(MAP_PANEL_HEIGHT / 2);
+        probe.mousePosition = probe.fromCanvas(insideX, insideY);
+        const claimedInside = game.HandleMouseLook(probe.mousePosition);
+        expect(claimedInside, `${label}: the middle of the map panel is not hoverable`).toBe(true);
+
+        // The right-hand edge of the panel, 4px inside, must be claimed too —
+        // this is the half that under-claimed above 1:1, and it is the half a
+        // centre-point check cannot see.
+        const edgeX = MAP_PANEL_WIDTH - 4;
+        probe.mousePosition = probe.fromCanvas(edgeX, insideY);
+        expect(
+          game.HandleMouseLook(probe.mousePosition),
+          `${label}: the right edge of the map panel is not hoverable`,
+        ).toBe(true);
+
+        // And the side panel must never be claimed, however far the test reaches
+        // past the panel edge — this is the half that over-claimed below 1:1.
+        for (const sidePanelX of [MAP_PANEL_WIDTH + 1, INVENTORYPANEL_X, INVENTORYPANEL_X + 16]) {
+          probe.mousePosition = probe.fromCanvas(sidePanelX, insideY);
+          expect(
+            game.HandleMouseLook(probe.mousePosition),
+            `${label}: the look handler claimed the side panel at x=${sidePanelX}`,
+          ).toBe(false);
+        }
+      });
+    }
+    expect(map).toBeDefined();
   });
 
   it("reports the hovered item without taking it, on a click-free move", () => {

@@ -7227,8 +7227,34 @@ export class RogueGame {
 		//
 		// Testing the panel's pixels directly is exact at either zoom and does not
 		// depend on the two coordinate spaces happening to line up.
-		if (mousePos.x < 0 || mousePos.y < 0) return false;
-		if (mousePos.x >= MAP_PANEL_WIDTH || mousePos.y >= MAP_PANEL_HEIGHT)
+		//
+		// Browser port: `mousePos` is in **CSS** pixels, not logical ones. Every other
+		// conversion in this file divides by `UI_GetCanvasScale*` first — see
+		// `MouseToMap` and `PanelSlotAtMouse`, both of which do exactly this — and
+		// this test did not, so it compared a CSS coordinate against logical
+		// constants. The two only agree at a 1366x768 window, which is why it looked
+		// correct and was not:
+		//
+		//  - Below 1366 (a 1280x720 laptop is scale 0.94) the claim reached logical
+		//    922 against a panel that ends at 864, so it **over-claimed by 58px** —
+		//    into the side panel, and into the first item slot at x=872. This handler
+		//    runs first in the play loop and `continue`s when it claims the mouse, so
+		//    the over-claimed band is stolen before the inventory is ever asked.
+		//    Whether it actually took a slot depended on `IsInViewRect` then passing
+		//    for the over-claimed tile, i.e. on where the player was standing — an
+		//    intermittent, position-dependent failure, which is the worst kind.
+		//  - Above 1366 it **under-claimed**: at 1920x1080 (scale 1.41) the claim
+		//    stopped at logical 615, so the right 249px of the map could not be
+		//    hovered at all, and at 2560x1440 half the map was dead.
+		//
+		// This is the same defect `6977b63` fixed for the 2x map zoom, reintroduced
+		// for every display scale other than exactly 1. The old test could not catch
+		// it because it compared logical constants to logical constants and never
+		// set a scale.
+		const logicalX = Math.trunc(mousePos.x / this.m_UI.UI_GetCanvasScaleX());
+		const logicalY = Math.trunc(mousePos.y / this.m_UI.UI_GetCanvasScaleY());
+		if (logicalX < 0 || logicalY < 0) return false;
+		if (logicalX >= MAP_PANEL_WIDTH || logicalY >= MAP_PANEL_HEIGHT)
 			return false;
 
 		const mouseMap = this.MouseToMap(mousePos);
