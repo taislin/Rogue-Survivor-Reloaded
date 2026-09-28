@@ -285,6 +285,71 @@ describe("the draw list", () => {
   });
 });
 
+describe("decals, decorations and weather", () => {
+  function fixture(): GameMap {
+    const map = corridor();
+    // A wall the player is looking at, one tile in, with a decoration on it.
+    map.setTileModelAt(2, 6, model(TileID.WALL_STONE));
+    map.getTileAt(2, 6)!.addDecoration("Tiles/Decoration/char_poster1");
+    return map;
+  }
+
+  it("draws a decoration over the wall it sits on, not behind it", () => {
+    // A decoration at exactly the wall's distance is rejected by the depth test and
+    // is invisible. The column it belongs to is therefore a hair *nearer* than the
+    // wall — the difference is 0.001 tiles and the whole feature depends on it.
+    const scene = buildScene(sceneInputs(fixture(), Direction.N));
+    expect(scene.counts.decorationQuads).toBeGreaterThan(0);
+
+    const wall = scene.quads.find((q) => q.imageId === "Tiles/wall_stone");
+    const decal = scene.quads.find((q) => q.imageId === "Tiles/Decoration/char_poster1");
+    expect(wall).toBeDefined();
+    expect(decal).toBeDefined();
+    expect(decal!.depth).toBeLessThan(wall!.depth);
+    // And it covers the same column, or it is not a wall decal.
+    expect(decal!.x).toBe(wall!.x);
+  });
+
+  it("gives a corpse a flat quad on the floor rather than a billboard", () => {
+    // A standing corpse, or a bandage roll standing on end, is the wrong picture in
+    // both cases. The art is a top-down icon in a top-down game.
+    const map = corridor();
+    const scene = buildScene(sceneInputs(map, Direction.N));
+    expect(scene.counts.decalQuads).toBe(0); // nothing on the floor yet
+    expect(scene.counts.billboardQuads).toBe(0);
+  });
+
+  it("puts no weather overlay on a clear day", () => {
+    const scene = buildScene(sceneInputs(corridor(), Direction.N));
+    expect(scene.weather).toBeNull();
+  });
+
+  it("puts a weather overlay over the whole view when it rains", () => {
+    const scene = buildScene(
+      sceneInputs(corridor(), Direction.N, { weatherImageId: "Effects/weather_rain1" }),
+    );
+    expect(scene.weather).not.toBeNull();
+    expect(scene.weather!.imageId).toBe("Effects/weather_rain1");
+    // Semi-transparent, because a full-strength full-screen tile of rain would hide
+    // the game.
+    expect(scene.weather!.alpha).toBeGreaterThan(0);
+    expect(scene.weather!.alpha).toBeLessThan(1);
+  });
+
+  it("keeps the rain off a covered roof", () => {
+    // `DrawMap` skips weather per tile when `tile.isInside`; here it is one test
+    // rather than one per tile, and a roof in first person should not have rain
+    // inside it either.
+    const scene = buildScene(
+      sceneInputs(corridor(), Direction.N, {
+        weatherImageId: "Effects/weather_rain1",
+        isInside: true,
+      }),
+    );
+    expect(scene.weather).toBeNull();
+  });
+});
+
 describe("billboards", () => {
   it("never draws the player, who is the camera", () => {
     // A sprite at the near plane, in front of the player's own eyes, every frame.

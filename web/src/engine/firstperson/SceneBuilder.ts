@@ -11,6 +11,8 @@ import {
 } from "./Types";
 import { castColumns, columnDistances, MAX_RAY_DISTANCE } from "./Raycaster";
 import { columnQuad, projectColumns, sortFarToNear } from "./Projector";
+import { Point } from "@engine/Point";
+import type { WallColumn } from "./Types";
 import { collectBillboards } from "./Billboards";
 
 /**
@@ -58,6 +60,14 @@ export interface SceneInputs {
   actionPoints: number;
   /** A multiplier the player or an effect applies to the view, 1 = normal. */
   fovScale?: number;
+  /**
+   * The weather, for the overlay. Null when it is clear.
+   *
+   * Top-down draws a full-tile weather image over every *visible outdoor* tile
+   * (`DrawMap` checks `!tile.isInside`), which is per-tile work for something that
+   * reads as a screen-wide effect. Here it is one full-viewport quad.
+   */
+  weatherImageId?: string | null;
 }
 
 /** Where a frame's milliseconds went. The measurement the plan asks for. */
@@ -77,6 +87,15 @@ export interface Scene {
   readonly camera: Camera;
   /** Sky or ceiling fill, drawn first and covering the viewport. */
   readonly backdrop: { color: Color; isCeiling: boolean };
+  /**
+   * A full-viewport weather overlay, drawn last, or null.
+   *
+   * Last, because rain is in front of everything including the player's own hands.
+   * It is *not* skipped indoors: `DrawMap` skips it per tile when
+   * `tile.isInside`, and doing the same here is one test rather than a test per
+   * tile — a covered roof in first person should not have rain on it either.
+   */
+  readonly weather: { imageId: string; alpha: number } | null;
   readonly quads: Quad[];
   /** Per-column wall distance, for the billboard pass's depth test. */
   readonly zBuffer: Float32Array;
@@ -89,6 +108,7 @@ export interface Scene {
     floorQuads: number;
     billboardQuads: number;
     decalQuads: number;
+    decorationQuads: number;
     fogColumns: number;
     /** Sprites the z-buffer dropped, which is a measurement, not a count of work. */
     culledBillboards: number;
@@ -97,6 +117,16 @@ export interface Scene {
 
 /** Tiles of floor that get a textured quad before the flat shading takes over. */
 export const TEXTURED_FLOOR_TILES = 6;
+
+/**
+ * How opaque the weather overlay is.
+ *
+ * A constant rather than a per-weather one because the top-down view does not vary
+ * it either: it draws the rain image at full strength over every outdoor tile, so
+ * varying it here would be inventing a difference the rest of the game does not
+ * have. Two alternate frames are used for the animation, exactly as `DrawMap` does.
+ */
+export const WEATHER_ALPHA = 0.35;
 
 export function buildScene(inputs: SceneInputs): Scene {
   const startedAt = performance.now();
@@ -159,13 +189,30 @@ export function buildScene(inputs: SceneInputs): Scene {
   // per-tile colour the data model has.
   const floorQuads = buildFloor(inputs.map, camera);
 
-  // ── Billboards ───────────────────────────────────────────────────────────
+  // ── Decorations, decals ──────────────────────────────────────────────────
   // A sprite behind a wall is neither drawn nor counted as drawn, so `culled` is a
   // measurement of the depth test working rather than of the renderer doing more.
   const { billboards, culled: culledBillboards } = collectBillboards(inputs.map, camera, zBuffer);
   sortFarToNear(billboards);
 
-  const quadsWithBillboards = [...floorQuads, ...quads, ...billboards.map((b) => b.quad)];
+  // Decorations go on the wall they sit on, as a second column over the first. The
+  // art is flat icons drawn in the tile's plane, so a column is the only place they
+  // can go: a billboard would stand them up like a poster.
+  const decorations = wallDecorations(columns, inputs.map);
+
+  // Corpses and ground items are on the floor, so they are drawn *flat* on it. A
+  // billboard would be the obvious thing and it is wrong twice over: a corpse
+  // standing upright, and a bandage roll standing upright. The art supports the
+  // decal — they are top-down icons in a top-down game.
+  const decals = floorDecals(inputs.map, camera);
+
+  const quadsWithBillboards = [
+    ...floorQuads,
+    ...quads,
+    ...decorations,
+    ...billboards.map((b) => b.quad),
+    ...decals,
+  ];
 
   return {
     camera,
@@ -182,6 +229,10 @@ export function buildScene(inputs: SceneInputs): Scene {
       color: backdropColor(inputs, camera),
       isCeiling: inputs.isInside,
     },
+    weather:
+      inputs.weatherImageId == null || inputs.weatherImageId === "" || inputs.isInside
+        ? null
+        : { imageId: inputs.weatherImageId, alpha: WEATHER_ALPHA },
     quads: quadsWithBillboards,
     zBuffer,
     counts: {
@@ -189,7 +240,8 @@ export function buildScene(inputs: SceneInputs): Scene {
       wallQuads,
       floorQuads: floorQuads.length,
       billboardQuads: billboards.length,
-      decalQuads: 0,
+      decalQuads: decals.length,
+      decorationQuads: decorations.length,
       fogColumns,
       culledBillboards,
     },
@@ -263,6 +315,118 @@ function backdropColor(inputs: SceneInputs, camera: Camera): Color {
     );
   }
   return inputs.map.lighting === Lighting.LIT ? Color.LightGray : Color.fromArgb(40, 44, 58);
+}
+
+/**
+ * A tile's decorations, as extra columns over the wall they sit on.
+ *
+ * Decided by `Tile.decorations`, which the generators fill with image ids. A wall
+ * with a poster on it gets the brick column *and* the poster column, in that order
+ * and at the same depth, so the poster covers the brick rather than the other way
+ * round.
+ */
+function wallDecorations(columns: WallColumn[], map: Map): Quad[] {
+  const out: Quad[] = [];
+  for (const column of columns) {
+    const hit = column.hit;
+    if (hit.surface !== "wall") continue;
+    const tile = map.getTileAt(hit.mapX, hit.mapY);
+    const decorations = tile?.getDecorations;
+    if (decorations == null || decorations.length === 0) continue;
+    for (const imageId of decorations) {
+      out.push({
+        imageId,
+        x: column.x,
+        y: column.top,
+        ux: column.width,
+        uy: 0,
+        vx: 0,
+        vy: column.bottom - column.top,
+        // The decoration is a 32x32 icon stretched over the whole column, the same
+        // as the wall. Slicing it per column would be more faithful to how it is
+        // drawn top-down and is a refinement, not a correctness question.
+        sx: 0, sy: 0, sw: 32, sh: 32,
+        // A hair nearer than the wall, so the depth test draws it over rather than
+        // rejecting it against the column it sits on. Without this every decoration
+        // is invisible: it is at exactly the same distance as the wall behind it.
+        depth: column.depth - 0.001,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Corpses and ground items, as flat quads on the floor.
+ *
+ * Both are gated on the engine's view for the same reason billboards are, and both
+ * are limited to the tiles the camera can see a floor for at all — a corpse 30
+ * tiles away behind four walls is in nobody's field of view.
+ */
+function floorDecals(map: Map, camera: Camera): Quad[] {
+  const out: Quad[] = [];
+  const maxDistance = TEXTURED_FLOOR_TILES + 2;
+  const originX = Math.floor(camera.posX);
+  const originY = Math.floor(camera.posY);
+
+  for (let dy = -maxDistance; dy <= maxDistance; dy++) {
+    for (let dx = -maxDistance; dx <= maxDistance; dx++) {
+      const x = originX + dx;
+      const y = originY + dy;
+      if (!map.isInBounds(x, y)) continue;
+      const tile = map.getTileAt(x, y);
+      if (tile === null || !tile.model.isWalkable) continue;
+      if (!tile.isInView) continue;
+
+      const forward = (x + 0.5 - camera.posX) * camera.dirX + (y + 0.5 - camera.posY) * camera.dirY;
+      if (forward <= 0.01 || forward > maxDistance) continue;
+
+      const sideways = (x + 0.5 - camera.posX) * camera.rightX + (y + 0.5 - camera.posY) * camera.rightY;
+      const pxPerTile = camera.width / (2 * camera.verticalPlaneLength);
+      const size = pxPerTile / forward;
+      const centreX = (camera.width / 2) * (1 + sideways / (forward * camera.planeLength));
+      const centreY = camera.height / 2 + camera.eyeHeight * (pxPerTile / forward);
+
+      const corpses = map.getCorpsesAt(new Point(x, y));
+      if (corpses != null) {
+        // A tile can hold several, and all of them are drawn — the tile is walked
+        // once rather than once per corpse.
+        for (const corpse of corpses) {
+          // The sprite is the dead actor's own. `Corpse.rotation` is the random
+          // tumble the top-down view applies to the sprite; a flat decal on the
+          // floor has no facing to tumble, so it is dropped rather than faked.
+          const imageId = corpse.deadGuy.model.imageId;
+          if (imageId == null || imageId === "") continue;
+          out.push(decalQuad(imageId, centreX, centreY, size, forward));
+        }
+      }
+
+      // Ground items: one icon for the whole stack, which is what the top-down view
+      // does too — `DrawItemsStack`, not one sprite per item. Drawing every item
+      // would be a pile of overlapping icons on a decal the size of one tile.
+      const ground = map.getItemsAt(new Point(x, y));
+      const topItem = ground?.items[0]?.model.imageId;
+      if (topItem != null && topItem !== "") {
+        out.push(decalQuad(topItem, centreX, centreY, size, forward));
+      }
+    }
+  }
+  sortFarToNear(out);
+  return out;
+}
+
+function decalQuad(imageId: string, centreX: number, centreY: number, size: number, depth: number): Quad {
+  return {
+    imageId,
+    x: centreX - size / 2,
+    y: centreY - size / 2,
+    ux: size,
+    uy: 0,
+    vx: 0,
+    vy: size,
+    sx: 0, sy: 0, sw: 32, sh: 32,
+    depth,
+  };
 }
 
 /**

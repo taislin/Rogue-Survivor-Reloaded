@@ -116,6 +116,22 @@ export class SceneRenderer {
     for (const quad of scene.quads) {
       this.drawQuad(ctx, quad, resolveImage);
     }
+
+    // The weather last, over everything including the walls: rain is in front of
+    // all of it. One quad, because top-down achieves the same effect with a
+    // full-tile image per outdoor tile and a screen-wide effect does not need to
+    // know how many tiles there are.
+    if (scene.weather !== null) {
+      const image = resolveImage(scene.weather.imageId);
+      if (image === null) {
+        this.missingImages++;
+      } else {
+        ctx.globalAlpha = scene.weather.alpha;
+        ctx.drawImage(image, panel.left, panel.top, panel.width, panel.height);
+        ctx.globalAlpha = 1;
+        this.drawCalls++;
+      }
+    }
     ctx.restore();
   }
 

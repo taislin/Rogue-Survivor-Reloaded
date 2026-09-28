@@ -20332,6 +20332,54 @@ export class RogueGame {
 	}
 
 	/**
+	 * A short line from the player out in the direction they are facing, on the
+	 * minimap.
+	 *
+	 * Not a wedge: a line, because the minimap is 2px per tile and a wedge at that
+	 * scale is a smudge. Two tiles long, which is far enough to read the heading off
+	 * a 100x100 raster and short enough not to look like a path.
+	 */
+	private DrawFirstPersonHeading(): void {
+		const origin = this.m_Player.location.position;
+		// `Direction.dx/dy` is a unit step in the 8-way grid, and the minimap's y
+		// grows downward, so the vector can be used as-is.
+		const facing = this.m_FirstPersonFacing;
+		const from = new Point(
+			MINIMAP_X + (origin.x + 0.5) * MINITILE_SIZE,
+			MINIMAP_Y + (origin.y + 0.5) * MINITILE_SIZE,
+		);
+		const to = new Point(
+			from.x + facing.dx * MINITILE_SIZE * 2,
+			from.y + facing.dy * MINITILE_SIZE * 2,
+		);
+		this.m_UI.UI_DrawLine(Color.White, from.x, from.y, to.x, to.y);
+	}
+
+	/**
+	 * The weather sprite for this turn, or null when it is clear.
+	 *
+	 * Two alternate frames chosen on `turnCounter % 2`, which is the C# animation
+	 * and is kept as-is so the rain flickers in step between the two views. It was
+	 * inline in `DrawMap` and is a method now, because the first-person scene needs
+	 * the same answer and a second copy of a `switch` over the weather is a second
+	 * thing to forget to update.
+	 */
+	private weatherImage(): string | null {
+		switch (this.m_Session.world?.weather) {
+			case Weather.RAIN:
+				return this.m_Session.worldTime.turnCounter % 2 === 0
+					? GameImages.WEATHER_RAIN1
+					: GameImages.WEATHER_RAIN2;
+			case Weather.HEAVY_RAIN:
+				return this.m_Session.worldTime.turnCounter % 2 === 0
+					? GameImages.WEATHER_HEAVY_RAIN1
+					: GameImages.WEATHER_HEAVY_RAIN2;
+			default:
+				return null;
+		}
+	}
+
+	/**
 	 * Builds and hands over a first-person frame.
 	 *
 	 * All of the geometry is `firstperson`'s and none of it is here: this collects
@@ -20362,6 +20410,9 @@ export class RogueGame {
 			// because that is the only one the engine tracks a view of.
 			isInside: tile?.isInside ?? false,
 			actionPoints: this.m_Player.actionPoints,
+			// The same two alternate frames `DrawMap` animates between, chosen on the
+			// same `turnCounter % 2`, so the rain flickers in step between the views.
+			weatherImageId: this.weatherImage(),
 		});
 		this.m_UI.UI_DrawScene(scene);
 	}
@@ -20412,24 +20463,7 @@ export class RogueGame {
 		const bottom = Math.min(map.height + 1, this.m_MapViewRect.bottom);
 
 		// get weather image.
-		let weatherImage: string | null;
-		switch (this.m_Session.world!.weather) {
-			case Weather.RAIN:
-				weatherImage =
-					this.m_Session.worldTime.turnCounter % 2 === 0
-						? GameImages.WEATHER_RAIN1
-						: GameImages.WEATHER_RAIN2;
-				break;
-			case Weather.HEAVY_RAIN:
-				weatherImage =
-					this.m_Session.worldTime.turnCounter % 2 === 0
-						? GameImages.WEATHER_HEAVY_RAIN1
-						: GameImages.WEATHER_HEAVY_RAIN2;
-				break;
-			default:
-				weatherImage = null;
-				break;
-		}
+		const weatherImage = this.weatherImage();
 
 		///////////////////////////////////////////
 		// Layered draw:
@@ -21555,16 +21589,27 @@ export class RogueGame {
 			);
 		}
 
-		// show view rect.
-		this.m_UI.UI_DrawRect(
-			Color.White,
-			new Rect(
-				MINIMAP_X + this.m_MapViewRect.left * MINITILE_SIZE,
-				MINIMAP_Y + this.m_MapViewRect.top * MINITILE_SIZE,
-				this.m_MapViewRect.width * MINITILE_SIZE,
-				this.m_MapViewRect.height * MINITILE_SIZE,
-			),
-		);
+		// show the view: a rectangle in top-down, a heading wedge in first person.
+		//
+		// The rectangle is the *tile window*, so it means nothing in a view that has
+		// no tile window — the player is always at the centre of a first-person
+		// frame, and a 27x21 box drawn around them would claim they can see a region
+		// rather than a direction. The wedge is what the view actually is, and on the
+		// minimap it matters *more* than the rectangle did: with no peripheral view,
+		// the heading is the only thing that says which way the player is looking.
+		if (GameOptions.isFirstPersonView(s_Options.viewMode)) {
+			this.DrawFirstPersonHeading();
+		} else {
+			this.m_UI.UI_DrawRect(
+				Color.White,
+				new Rect(
+					MINIMAP_X + this.m_MapViewRect.left * MINITILE_SIZE,
+					MINIMAP_Y + this.m_MapViewRect.top * MINITILE_SIZE,
+					this.m_MapViewRect.width * MINITILE_SIZE,
+					this.m_MapViewRect.height * MINITILE_SIZE,
+				),
+			);
+		}
 
 		// show player tags.
 		//
