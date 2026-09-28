@@ -105,6 +105,20 @@ export interface IRogueUI {
   UI_PostMouseButtons(buttons: MouseButton): void;
 
   /**
+   * Clicks in a row on the same spot, then cleared. 0 when there were none, 1
+   * for a single click, 2 for a double click, and so on.
+   *
+   * This is the browser-port addition the C# has no analogue for: the original
+   * had a mouse but no double-click, and the platform owns the multi-click
+   * timing, so an implementation must report the count the browser gave it
+   * rather than timing clicks itself. **It consumes, like `UI_PeekKey` and
+   * `UI_PeekMouseButtons` above, and an implementation must** - a caller polls
+   * it, and a version that did not clear would see 2 on every pass and take the
+   * double-click branch forever.
+   */
+  UI_PeekClickCount(): number;
+
+  /**
    * Wheel movement since the previous call, in pixels. 0 when there was none.
    *
    * **This consumes, like `UI_PeekKey` and `UI_PeekMouseButtons` above, and an

@@ -33,6 +33,14 @@
         justify-content: center;
         overflow: hidden;
         font-family: "Lucida Console", "Courier New", monospace;
+        /*
+         * The page is one canvas with nothing selectable on it, so a
+         * right-button drag just puts a text selection and a highlight over
+         * the game. `user-select` is the only thing that stops it; the RMB
+         * context menu itself is cancelled in `ui/InputHandler`.
+         */
+        user-select: none;
+        -webkit-user-select: none;
       }
 
       #gameCanvas {

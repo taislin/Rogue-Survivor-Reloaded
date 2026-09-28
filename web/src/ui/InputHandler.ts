@@ -12,6 +12,13 @@ export class InputHandler {
   private readonly mouseState = { x: 0, y: 0, buttons: null as MouseButton | null };
   /** Wheel movement in pixels since the last `peekWheel`. See `wheelPixels`. */
   private wheelDelta = 0;
+  /**
+   * Clicks on the same spot since the last one was reported, and where that was.
+   * See `peekClickCount` - the browser counts clicks for us via `event.detail`,
+   * and this is the state that decides whether a second one is a *double* click
+   * or two separate clicks.
+   */
+  private clicks = { count: 0, x: 0, y: 0 };
 
   // Resolvers waiting for the next key
   private waiters: Array<(e: GameKeyEvent) => void> = [];
@@ -81,6 +88,10 @@ export class InputHandler {
     document.addEventListener("mousedown", this.onMouseDown);
     document.addEventListener("mouseup",   this.onMouseUp);
     document.addEventListener("wheel",     this.onWheel, { passive: false });
+    // `contextmenu` is the only way to suppress the browser's own RMB menu:
+    // preventDefault on `mousedown` or `mouseup` does not stop it, and the
+    // menu is what the game is competing with, not the button.
+    document.addEventListener("contextmenu", this.onContextMenu);
   }
 
   /** Remove event listeners. Call on teardown. */
@@ -91,6 +102,7 @@ export class InputHandler {
     document.removeEventListener("mousedown", this.onMouseDown);
     document.removeEventListener("mouseup",   this.onMouseUp);
     document.removeEventListener("wheel",     this.onWheel);
+    document.removeEventListener("contextmenu", this.onContextMenu);
   }
 
   // ── Input API (consumed by CanvasUI) ──────────────────────────────────────
@@ -164,6 +176,33 @@ export class InputHandler {
 
   postMouseButtons(buttons: MouseButton): void {
     this.mouseState.buttons = buttons === MouseButton.None ? null : buttons;
+  }
+
+  /**
+   * Clicks in a row on the same spot since the last call, then cleared. 0 when
+   * there were none, 1 for a single click, 2 for a double click, and so on.
+   *
+   * Consuming, for the same reason as `peekKey` and `peekMouseButtons`: a caller
+   * polls this in a loop, and a non-consuming version would report 2 forever, so
+   * every pass would take the "double click" branch.
+   *
+   * The count comes from the browser's own `MouseEvent.detail`, taken when the
+   * press was recorded, rather than from a timer here. The platform already
+   * knows the multi-click interval and the slop distance, and they differ per
+   * platform and per user settings; recomputing them is how a hand-rolled double
+   * click ends up feeling wrong. `detail` is 0 on a synthesised event (a test, or
+   * a `dispatchEvent` with no init), so it is floored at 1.
+   *
+   * Only the left button counts. A double right-click is a context-menu gesture
+   * in every UI convention that has one, and the game binds the right button to
+   * real commands.
+   */
+  peekClickCount(): number {
+    const buttons = this.mouseState.buttons;
+    if (buttons !== MouseButton.Left) return 0;
+    const n = this.clicks.count;
+    this.clicks.count = 0;
+    return n;
   }
 
   /**
@@ -265,7 +304,44 @@ export class InputHandler {
   };
 
   private readonly onMouseDown = (e: MouseEvent): void => {
-    this.mouseState.buttons = this.mapButtons(e.buttons);
+    this.postMouseDown(e.buttons, e.detail);
+  };
+
+  /**
+   * Records a press. `detail` is the platform's own click counter within a
+   * multi-click sequence, and 0 on a synthesised event; see `peekClickCount`.
+   *
+   * Public as the injection seam for the headless UI and the tests, exactly as
+   * `postKey` and `postWheel` are - the suite runs in a `node` environment with
+   * no DOM, so a test cannot dispatch a real `mousedown` to reach this.
+   */
+  postMouseDown(buttons: number, detail: number): void {
+    this.mouseState.buttons = this.mapButtons(buttons);
+    this.clicks.count = Math.max(1, detail);
+  }
+
+  /**
+   * Suppresses the browser's own right-click menu.
+   *
+   * The game uses the right button for real commands - cancel a mode, the
+   * options screen's own bindings - and in a browser those are unusable without
+   * this: the native menu opens over the canvas on every press, so the command
+   * fires and then the menu opens on top of the screen the player is trying to
+   * act on, and dismissing it costs a second click. Its own entries are the
+   * worst of it - "Save image as..." on a page that is one canvas, because
+   * anything painted in one is a saveable image to the browser.
+   *
+   * Registered on `document` rather than the canvas so it also covers a
+   * right-click on the letterboxing around the canvas, which is where a player
+   * aiming at the edge of the map will actually click.
+   *
+   * `preventDefault` is the whole fix and needs no condition: there is no
+   * genuine text selection or link on this page to protect. The right button
+   * keeps working as a game input either way - it is `mousedown` that
+   * `onMouseDown` already records, and this only cancels the menu.
+   */
+  private readonly onContextMenu = (e: MouseEvent): void => {
+    e.preventDefault();
   };
 
   /**

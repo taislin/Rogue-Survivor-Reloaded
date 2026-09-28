@@ -259,6 +259,7 @@ export class CanvasUI implements IRogueUI {
   UI_PostKey(e: GameKeyEvent): void        { this.input.postKey(e); }
   UI_GetMousePosition(): Point             { return this.input.getMousePosition(this.canvas); }
   UI_PeekMouseButtons(): MouseButton | null { return this.input.peekMouseButtons(); }
+  UI_PeekClickCount(): number { return this.input.peekClickCount(); }
   UI_PostMouseButtons(b: MouseButton): void { this.input.postMouseButtons(b); }
   UI_PeekWheel(): number                   { return this.input.peekWheel(); }
 

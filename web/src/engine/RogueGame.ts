@@ -47,8 +47,10 @@ import {
 	ActionBreak,
 	ActionBump,
 	ActionDropItem,
+	ActionGetFromContainer,
 	ActionSay,
 	ActionShout,
+	ActionTakeItem,
 	ActionUnequipItem,
 	ActionUseItem,
 	ActionWait,
@@ -127,6 +129,7 @@ import { PlayerCommand } from "@engine/PlayerCommand";
 import { Point } from "@engine/Point";
 import { Rect } from "@engine/Rect";
 import { Rules } from "@engine/Rules";
+import type { RuleResult } from "@engine/Rules";
 import { AchievementIDs, DifficultySide, Scoring } from "@engine/Scoring";
 import {
 	GameMode,
@@ -6345,6 +6348,16 @@ export class RogueGame {
 				const isLooking = this.HandleMouseLook(mousePos);
 				if (isLooking) continue;
 
+				// Double click on the map: pick an item up, or grab the top item
+				// out of a container. Reached before the inventory and corpse
+				// handlers because a double click on a tile that holds an item is
+				// about the tile, and those two are about the panel and the
+				// corpse respectively.
+				if (this.HandleMouseDoubleClick(mousePos, mouseButtons, ev.clickDetail)) {
+					loop = false;
+					continue;
+				}
+
 				// Inventory?
 				const invRes = this.HandleMouseInventory(mousePos, mouseButtons, false);
 				if (invRes.ok) {
@@ -7195,6 +7208,71 @@ export class RogueGame {
 		this.DrawFootnote(Color.White, "press ESC to leave");
 		this.m_UI.UI_Repaint();
 		await this.WaitEscape();
+	}
+
+	/**
+	 * Double click on the map: pick an item up, or take the top item out of a
+	 * container. Returns true if it acted, so the caller can end the turn.
+	 *
+	 * A browser-port addition, not a port. The C# had no double click anywhere;
+	 * picking things up meant walking onto the tile (`ActionTakeItem` from
+	 * `isBumpableFor`) or opening the container. This is the mouse equivalent for
+	 * the case where the player is already standing somewhere they cannot step,
+	 * or does not want to step.
+	 *
+	 * The range rule is the same one bumping uses, and it is enforced through
+	 * `ActionTakeItem` / `ActionGetFromContainer` rather than re-derived here, so
+	 * a double click can never reach further than a bump could - the question in
+	 * the request was "if in range", and the existing rules already answer it.
+	 * A click out of range reports why, rather than doing nothing silently.
+	 *
+	 * Only the left button: a double right-click is a context-menu gesture, and
+	 * the right button is bound to real commands.
+	 */
+	HandleMouseDoubleClick(
+		mousePos: Point,
+		mouseButtons: MouseButton | null,
+		clickDetail: number,
+	): boolean {
+		// 2 is a double click. 1 is an ordinary click, which is nothing here -
+		// the tile popup that inspects a tile is on hover, not on click.
+		if (clickDetail < 2 || mouseButtons !== MouseButton.Left) return false;
+
+		const player = this.m_Player;
+		const map = player.location.map!;
+		const mapPos = this.MouseToMap(mousePos);
+		if (!map.isInBoundsPoint(mapPos) || !this.IsInViewRect(mapPos)) return false;
+
+		// A container wins over loose items on the same tile, because that is
+		// what bumping does: `isBumpableFor` checks the map object first and
+		// offers `ActionGetFromContainer`. Doing it the other way round would let
+		// a double click scoop a dropped item out of a crate the player is
+		// standing on, which bumping will not let them do.
+		const mapObj = map.getMapObjectAtPoint(mapPos);
+		if (mapObj !== null && mapObj.isContainer) {
+			const action = new ActionGetFromContainer(player, this, mapPos);
+			if (action.isLegal()) {
+				action.perform();
+				this.RedrawPlayScreen();
+				return true;
+			}
+			this.AddMessage(this.MakeErrorMessage(`Cannot take from there : ${action.failReason}.`));
+			this.RedrawPlayScreen();
+			return false;
+		}
+
+		const inv = map.getItemsAt(mapPos);
+		if (inv === null || inv.isEmpty) return false;
+
+		const action = new ActionTakeItem(player, this, mapPos, inv.topItem!);
+		if (action.isLegal()) {
+			action.perform();
+			this.RedrawPlayScreen();
+			return true;
+		}
+		this.AddMessage(this.MakeErrorMessage(`Cannot take that : ${action.failReason}.`));
+		this.RedrawPlayScreen();
+		return false;
 	}
 
 	// C# HandleMouseLook — RogueGame.cs:6622
@@ -8486,73 +8564,100 @@ export class RogueGame {
 		let loop = true;
 		let actionDone = false;
 
-		this.ClearOverlays();
-		this.AddOverlay(
-			new OverlayPopup(
-				this.BARRICADE_MODE_TEXT,
-				this.MODE_TEXTCOLOR,
-				this.MODE_BORDERCOLOR,
-				this.MODE_FILLCOLOR,
-				new Point(0, 0),
-			),
-		);
+		const map = player.location.map!;
+		// The tile the cursor is on, and whether the object there is a legal
+		// target. Both are carried between iterations because they are the state
+		// of the last mouse position, and the redraw at the top of the loop
+		// happens before the next wait has produced a new one.
+		let hovered: Point | null = null;
+		let hoverOk = false;
 
 		do {
+			this.ClearOverlays();
+			this.AddOverlay(
+				new OverlayPopup(
+					this.BARRICADE_MODE_TEXT,
+					this.MODE_TEXTCOLOR,
+					this.MODE_BORDERCOLOR,
+					this.MODE_FILLCOLOR,
+					new Point(0, 0),
+				),
+			);
+			if (hovered != null) {
+				const p = this.MapToScreen(hovered.x, hovered.y);
+				this.AddOverlay(
+					new OverlayRect(
+						hoverOk ? Color.LightGreen : Color.Red,
+						new Rect(p.x, p.y, TILE_SIZE, TILE_SIZE),
+					),
+				);
+			}
+			this.ClearMessages();
+			this.AddMessage(
+				new Message(
+					"Direction to barricade/repair, or <LMB> on the door.",
+					this.m_Session.worldTime.turnCounter,
+					Color.LightGreen,
+				),
+			);
 			this.RedrawPlayScreen();
-			const dir = await this.WaitDirectionOrCancel();
 
-			if (dir == null) {
-				loop = false;
-			} else if (dir !== Direction.NEUTRAL) {
-				const pos = player.location.position.add(new Point(dir.dx, dir.dy));
-				if (player.location.map!.isInBoundsPoint(pos)) {
-					const mapObj = player.location.map!.getMapObjectAt(pos.x, pos.y);
-					if (mapObj != null) {
-						if (mapObj instanceof DoorWindow) {
-							const door = mapObj as DoorWindow;
-							const res = this.m_Rules.canActorBarricadeDoor(player, door);
-							if (res.ok) {
-								this.DoBarricadeDoor(player, door);
-								this.RedrawPlayScreen();
-								loop = false;
-								actionDone = true;
-							} else {
-								this.AddMessage(
-									this.MakeErrorMessage(
-										`Cannot barricade ${door.theName} : ${res.reason}.`,
-									),
-								);
-							}
-						} else if (mapObj instanceof Fortification) {
-							const fort = mapObj as Fortification;
-							const res = this.m_Rules.canActorRepairFortification(
-								player,
-								fort,
-							);
-							if (res.ok) {
-								this.DoRepairFortification(player, fort);
-								this.RedrawPlayScreen();
-								loop = false;
-								actionDone = true;
-							} else {
-								this.AddMessage(
-									this.MakeErrorMessage(
-										`Cannot repair ${fort.theName} : ${res.reason}.`,
-									),
-								);
-							}
-						} else {
-							this.AddMessage(
-								this.MakeErrorMessage(
-									`${mapObj.theName} cannot be repaired or barricaded.`,
-								),
-							);
+			const ev = await this.WaitKeyOrMouse();
+			const key = ev.key;
+
+			if (key != null) {
+				// Escape, or a direction key: the original keyboard path.
+				if (key.key === "Escape") {
+					loop = false;
+				} else {
+					const command = InputTranslator.keyToCommand(
+						RogueGame.KeyBindings(),
+						key.key,
+						key.ctrl,
+						key.alt,
+						key.shift,
+						key.code,
+					);
+					const dir = this.CommandToDirection(command);
+					if (dir != null) {
+						hovered = null;
+						if (this.BarricadeAdjacent(player, dir)) {
+							actionDone = true;
+							loop = false;
+						}
+					}
+				}
+			} else {
+				const mapPos = this.MouseToMap(ev.mousePos);
+				const onMap =
+					map.isInBoundsPoint(mapPos) && this.IsInViewRect(mapPos);
+				// Track the cursor on every movement, and act on a fresh LMB.
+				// `WaitKeyOrMouse` only reports a button when it is *new*, so a
+				// held button does not re-fire this each pass.
+				if (onMap) {
+					const legal = this.BarricadeLegality(player, mapPos);
+					if (legal.ok) {
+						hovered = mapPos;
+						hoverOk = true;
+						if (ev.mouseButtons === MouseButton.Left) {
+							hovered = null;
+							this.BarricadeAt(player, mapPos);
+							actionDone = true;
+							loop = false;
 						}
 					} else {
-						this.AddMessage(
-							this.MakeErrorMessage("Nothing to barricade there."),
-						);
+						// Only show the red box over a tile that actually holds a
+						// barricadable thing - a bare floor tile is not a target
+						// and a red box on every empty square is noise.
+						if (legal.reason !== RogueGame.BARRICADE_NOTHING_THERE) {
+							hovered = mapPos;
+							hoverOk = false;
+						} else {
+							hovered = null;
+						}
 					}
+				} else {
+					hovered = null;
 				}
 			}
 		} while (loop);
@@ -8561,112 +8666,282 @@ export class RogueGame {
 		return actionDone;
 	}
 
+	/**
+	 * "Nothing here", as opposed to "here, but you may not". See
+	 * `BREAK_NOTHING_THERE`; the mouse path needs the same distinction.
+	 */
+	private static readonly BARRICADE_NOTHING_THERE = "barricade-nothing-there";
+
+	/** Barricadable at this tile? `reason` explains a no; see `BARRICADE_NOTHING_THERE`. */
+	BarricadeLegality(player: Actor, pos: Point): RuleResult {
+		const map = player.location.map!;
+		if (!map.isInBoundsPoint(pos)) {
+			return { ok: false, reason: RogueGame.BARRICADE_NOTHING_THERE };
+		}
+		const mapObj = map.getMapObjectAt(pos.x, pos.y);
+		// Bound to a local first: `rule-result-usage` treats a bare `return
+		// rules.foo(...)` as a truthiness test, since the only thing it can see
+		// is a call whose result is not immediately `.ok`-ed. The caller does
+		// read `.ok`, and the local is the shape that guard already accepts.
+		if (mapObj instanceof DoorWindow) {
+			const res = this.m_Rules.canActorBarricadeDoor(player, mapObj);
+			return res;
+		}
+		if (mapObj instanceof Fortification) {
+			const res = this.m_Rules.canActorRepairFortification(player, mapObj);
+			return res;
+		}
+		return { ok: false, reason: RogueGame.BARRICADE_NOTHING_THERE };
+	}
+
+	/** Acts on a legal target, or explains why not. Reports the C# error text. */
+	BarricadeAt(player: Actor, pos: Point): void {
+		const map = player.location.map!;
+		const mapObj = map.getMapObjectAt(pos.x, pos.y);
+		if (mapObj instanceof DoorWindow) {
+			const res = this.m_Rules.canActorBarricadeDoor(player, mapObj);
+			if (res.ok) {
+				this.DoBarricadeDoor(player, mapObj);
+			} else {
+				this.AddMessage(
+					this.MakeErrorMessage(`Cannot barricade ${mapObj.theName} : ${res.reason}.`),
+				);
+			}
+		} else if (mapObj instanceof Fortification) {
+			const res = this.m_Rules.canActorRepairFortification(player, mapObj);
+			if (res.ok) {
+				this.DoRepairFortification(player, mapObj);
+			} else {
+				this.AddMessage(
+					this.MakeErrorMessage(`Cannot repair ${mapObj.theName} : ${res.reason}.`),
+				);
+			}
+		} else {
+			this.AddMessage(
+				this.MakeErrorMessage(
+					`${mapObj === null ? "Nothing" : mapObj.theName} cannot be repaired or barricaded.`,
+				),
+			);
+		}
+		this.RedrawPlayScreen();
+	}
+
+	/**
+	 * The keyboard path: the object one step in `dir`. Split out of the loop so
+	 * the direction and mouse branches share the rules and the error text.
+	 */
+	BarricadeAdjacent(player: Actor, dir: Direction): boolean {
+		const map = player.location.map!;
+		const pos = player.location.position.add(new Point(dir.dx, dir.dy));
+		if (!map.isInBoundsPoint(pos)) return false;
+		if (map.getMapObjectAt(pos.x, pos.y) === null) {
+			this.AddMessage(this.MakeErrorMessage("Nothing to barricade there."));
+			this.RedrawPlayScreen();
+			return false;
+		}
+		this.BarricadeAt(player, pos);
+		return true;
+	}
+
 	// C# HandlePlayerBreak — RogueGame.cs:7885
+	//
+	// Now the *only* way to break or bash as the player, since bumping no
+	// longer offers it (see `DoPlayerBump`). That makes this mode the place a
+	// destructive action has to be asked for deliberately, which is also why it
+	// takes a mouse: a direction key or an LMB on the object, with the hovered
+	// tile outlined green when it is breakable and red when it is not.
 	async HandlePlayerBreak(player: Actor): Promise<boolean> {
 		let loop = true;
 		let actionDone = false;
-
-		this.ClearOverlays();
-		this.AddOverlay(
-			new OverlayPopup(
-				this.BREAK_MODE_TEXT,
-				this.MODE_TEXTCOLOR,
-				this.MODE_BORDERCOLOR,
-				this.MODE_FILLCOLOR,
-				new Point(0, 0),
-			),
-		);
+		const map = player.location.map!;
+		let hovered: Point | null = null;
+		let hoverOk = false;
 
 		do {
+			this.ClearOverlays();
+			this.AddOverlay(
+				new OverlayPopup(
+					this.BREAK_MODE_TEXT,
+					this.MODE_TEXTCOLOR,
+					this.MODE_BORDERCOLOR,
+					this.MODE_FILLCOLOR,
+					new Point(0, 0),
+				),
+			);
+			if (hovered != null) {
+				const p = this.MapToScreen(hovered.x, hovered.y);
+				this.AddOverlay(
+					new OverlayRect(
+						hoverOk ? Color.LightGreen : Color.Red,
+						new Rect(p.x, p.y, TILE_SIZE, TILE_SIZE),
+					),
+				);
+			}
+			this.ClearMessages();
+			this.AddMessage(
+				new Message(
+					"Direction to break, or <LMB> on the object.",
+					this.m_Session.worldTime.turnCounter,
+					Color.LightGreen,
+				),
+			);
 			this.RedrawPlayScreen();
-			const dir = await this.WaitDirectionOrCancel();
 
-			if (dir == null) {
-				loop = false;
-			} else {
-				if (dir === Direction.NEUTRAL) {
-					const exitThere = player.location.map!.getExitAt(
-						player.location.position,
+			const ev = await this.WaitKeyOrMouse();
+			const key = ev.key;
+
+			if (key != null) {
+				if (key.key === "Escape") {
+					loop = false;
+				} else {
+					const command = InputTranslator.keyToCommand(
+						RogueGame.KeyBindings(),
+						key.key,
+						key.ctrl,
+						key.alt,
+						key.shift,
+						key.code,
 					);
-					if (exitThere == null) {
-						this.AddMessage(this.MakeErrorMessage("No exit there."));
-					} else {
-						const mapTo = exitThere.toMap!;
-						const actorTo = mapTo.getActorAtPoint(exitThere.toPosition);
-						if (actorTo != null) {
-							if (this.m_Rules.areEnemies(player, actorTo)) {
-								const res = this.m_Rules.canActorMeleeAttack(player, actorTo);
-								if (res.ok) {
-									await this.DoMeleeAttack(player, actorTo);
-									loop = false;
-									actionDone = true;
-								} else {
-									this.AddMessage(
-										this.MakeErrorMessage(
-											`Cannot attack ${actorTo.name} : ${res.reason}.`,
-										),
-									);
-								}
-							} else {
-								this.AddMessage(
-									this.MakeErrorMessage(`${actorTo.name} is not your enemy.`),
-								);
-							}
-						} else {
-							const objTo = mapTo.getMapObjectAt(
-								exitThere.toPosition.x,
-								exitThere.toPosition.y,
-							);
-							if (objTo != null) {
-								const res = this.m_Rules.isBreakableFor(player, objTo);
-								if (res.ok) {
-									await this.DoBreak(player, objTo);
-									loop = false;
-									actionDone = true;
-								} else {
-									this.AddMessage(
-										this.MakeErrorMessage(
-											`Cannot break ${objTo.theName} : ${res.reason}.`,
-										),
-									);
-								}
-							} else {
-								this.AddMessage(
-									this.MakeErrorMessage(
-										"Nothing to break or attack on the other side.",
-									),
-								);
-							}
+					const dir = this.CommandToDirection(command);
+					if (dir != null) {
+						hovered = null;
+						// The wait/through-an-exit path is async (melee attack, DoBreak).
+						const res = await this.BreakFrom(player, dir);
+						if (res.done) {
+							actionDone = true;
+							loop = false;
 						}
+					}
+				}
+			} else {
+				const mapPos = this.MouseToMap(ev.mousePos);
+				if (map.isInBoundsPoint(mapPos) && this.IsInViewRect(mapPos)) {
+					const legal = this.BreakLegality(player, mapPos);
+					if (legal.ok) {
+						hovered = mapPos;
+						hoverOk = true;
+						if (ev.mouseButtons === MouseButton.Left) {
+							hovered = null;
+							await this.DoBreak(player, map.getMapObjectAt(mapPos.x, mapPos.y)!);
+							actionDone = true;
+							loop = false;
+						}
+					} else if (legal.reason !== RogueGame.BREAK_NOTHING_THERE) {
+						// Only outline a tile that actually holds something; a red box
+						// on every empty square of the map is noise, not feedback.
+						hovered = mapPos;
+						hoverOk = false;
+					} else {
+						hovered = null;
 					}
 				} else {
-					const pos = player.location.position.add(new Point(dir.dx, dir.dy));
-					if (player.location.map!.isInBoundsPoint(pos)) {
-						const mapObj = player.location.map!.getMapObjectAt(pos.x, pos.y);
-						if (mapObj != null) {
-							const res = this.m_Rules.isBreakableFor(player, mapObj);
-							if (res.ok) {
-								await this.DoBreak(player, mapObj);
-								this.RedrawPlayScreen();
-								loop = false;
-								actionDone = true;
-							} else {
-								this.AddMessage(
-									this.MakeErrorMessage(
-										`Cannot break ${mapObj.theName} : ${res.reason}.`,
-									),
-								);
-							}
-						} else {
-							this.AddMessage(this.MakeErrorMessage("Nothing to break there."));
-						}
-					}
+					hovered = null;
 				}
 			}
 		} while (loop);
 
 		this.ClearOverlays();
 		return actionDone;
+	}
+
+	/**
+	 * "Nothing here", as opposed to "here, but you may not". The mouse path
+	 * needs the distinction: it outlines a tile that holds something it cannot
+	 * act on, but stays silent on empty floor, which is most of the map.
+	 */
+	private static readonly BREAK_NOTHING_THERE = "break-nothing-there";
+
+	/** Breakable at this tile? `reason` explains a no; see `BREAK_NOTHING_THERE`. */
+	BreakLegality(player: Actor, pos: Point): RuleResult {
+		const map = player.location.map!;
+		if (!map.isInBoundsPoint(pos)) return { ok: false, reason: RogueGame.BREAK_NOTHING_THERE };
+		const mapObj = map.getMapObjectAt(pos.x, pos.y);
+		if (mapObj === null) return { ok: false, reason: RogueGame.BREAK_NOTHING_THERE };
+		// See `BarricadeLegality` on why this is bound before it is returned.
+		const res = this.m_Rules.isBreakableFor(player, mapObj);
+		return res;
+	}
+
+	/**
+	 * The keyboard path, split out of the loop so the direction and mouse
+	 * branches share `BreakLegality`. Kept async because breaking through an
+	 * exit can be a melee attack, which the C# also blocks on.
+	 */
+	async BreakFrom(
+		player: Actor,
+		dir: Direction,
+	): Promise<{ done: boolean }> {
+		const map = player.location.map!;
+
+		if (dir === Direction.NEUTRAL) {
+			const exitThere = map.getExitAt(player.location.position);
+			if (exitThere == null) {
+				this.AddMessage(this.MakeErrorMessage("No exit there."));
+				return { done: false };
+			}
+			const mapTo = exitThere.toMap!;
+			const actorTo = mapTo.getActorAtPoint(exitThere.toPosition);
+			if (actorTo != null) {
+				if (this.m_Rules.areEnemies(player, actorTo)) {
+					const res = this.m_Rules.canActorMeleeAttack(player, actorTo);
+					if (res.ok) {
+						await this.DoMeleeAttack(player, actorTo);
+						return { done: true };
+					}
+					this.AddMessage(
+						this.MakeErrorMessage(
+							`Cannot attack ${actorTo.name} : ${res.reason}.`,
+						),
+					);
+				} else {
+					this.AddMessage(
+						this.MakeErrorMessage(`${actorTo.name} is not your enemy.`),
+					);
+				}
+				return { done: false };
+			}
+			const objTo = mapTo.getMapObjectAt(
+				exitThere.toPosition.x,
+				exitThere.toPosition.y,
+			);
+			if (objTo != null) {
+				const res = this.m_Rules.isBreakableFor(player, objTo);
+				if (res.ok) {
+					await this.DoBreak(player, objTo);
+					return { done: true };
+				}
+				this.AddMessage(
+					this.MakeErrorMessage(
+						`Cannot break ${objTo.theName} : ${res.reason}.`,
+					),
+				);
+			} else {
+				this.AddMessage(
+					this.MakeErrorMessage(
+						"Nothing to break or attack on the other side.",
+					),
+				);
+			}
+			return { done: false };
+		}
+
+		const pos = player.location.position.add(new Point(dir.dx, dir.dy));
+		if (!map.isInBoundsPoint(pos)) return { done: false };
+		const mapObj = map.getMapObjectAt(pos.x, pos.y);
+		if (mapObj == null) {
+			this.AddMessage(this.MakeErrorMessage("Nothing to break there."));
+			return { done: false };
+		}
+		const res = this.m_Rules.isBreakableFor(player, mapObj);
+		if (res.ok) {
+			await this.DoBreak(player, mapObj);
+			this.RedrawPlayScreen();
+			return { done: true };
+		}
+		this.AddMessage(
+			this.MakeErrorMessage(`Cannot break ${mapObj.theName} : ${res.reason}.`),
+		);
+		return { done: false };
 	}
 
 	// C# HandlePlayerBuildFortification — RogueGame.cs:8003
@@ -11985,6 +12260,16 @@ export class RogueGame {
 		key: GameKeyEvent | null;
 		mousePos: Point;
 		mouseButtons: MouseButton | null;
+		/**
+		 * The platform's own click counter for the press that woke this wait, or
+		 * 0 when it was a key or a plain cursor move. 2 means a double click.
+		 *
+		 * Read at the same moment as `mouseButtons`, and consumed with it, so the
+		 * two cannot disagree about which press they describe - the wait polls,
+		 * and both have to be drained or the same click is seen again on the next
+		 * pass.
+		 */
+		clickDetail: number;
 	}> {
 		this.m_UI.UI_PeekKey(); // consume keys to avoid repeats
 		// Start the idle clock the first time the player is actually given control.
@@ -11994,15 +12279,20 @@ export class RogueGame {
 		const prevMousePos = this.m_UI.UI_GetMousePosition();
 		let mousePos = new Point(-1, -1);
 		let mouseButtons: MouseButton | null = null;
+		let clickDetail = 0;
 		for (;;) {
 			const inKey = this.m_UI.UI_PeekKey();
 			if (inKey != null) {
 				this.noteGameInput();
-				return { key: inKey, mousePos, mouseButtons };
+				return { key: inKey, mousePos, mouseButtons, clickDetail: 0 };
 			}
 
 			mousePos = this.m_UI.UI_GetMousePosition();
 			mouseButtons = this.m_UI.UI_PeekMouseButtons();
+			// Read on every poll, not only on the way out, because it consumes: a
+			// poll that skipped it would leave a pending 2 to be reported against
+			// the *next* press, turning an ordinary click into a double click.
+			clickDetail = this.m_UI.UI_PeekClickCount();
 
 			// A press counts when it is *new*, not when it is merely present. C# gets
 			// this from `UI_PeekMouseButtons` consuming the flag, and so do the browser
@@ -12020,13 +12310,13 @@ export class RogueGame {
 
 			if (buttonChanged) {
 				this.noteGameInput();
-				return { key: null, mousePos, mouseButtons };
+				return { key: null, mousePos, mouseButtons, clickDetail };
 			}
 			if (!mousePos.equals(prevMousePos)) {
 				// Movement is deliberately *not* activity. A player reading the map moves
 				// the cursor over it constantly, and counting that would starve the
 				// catch-up during exactly the thinking time it exists to fill.
-				return { key: null, mousePos, mouseButtons };
+				return { key: null, mousePos, mouseButtons, clickDetail };
 			}
 
 			// Nothing to do but wait. If the player has been idle long enough, give one
@@ -14365,53 +14655,59 @@ export class RogueGame {
 
 	// C# DoPlayerBump — RogueGame.cs:13440
 	// async: C# blocks on WaitYesOrNo.
+	//
+	// Bumping no longer breaks or bashes anything; it only moves, or reports
+	// why it cannot. This is a deliberate divergence from the C#.
+	//
+	// C# (and alpha10.1, which added it) stops on every bump into a breakable
+	// and asks `Really break <thing>?` — Y/N — because a bump *is* the move key.
+	// Walking into a wall to edge up to a window was one keystroke from
+	// destroying it, and the cost of that mistake is a whole piece of furniture.
+	// The confirmation is the price of making a destructive action reachable from
+	// the movement keys, and it is paid on *every* bump, including the ones
+	// where the player only wanted to move.
+	//
+	// The QOL version is that the question is not asked at all, because there is
+	// a dedicated mode for the answer: `PlayerCommand.BREAK_MODE` (K, since B is
+	// barricade) opens `HandlePlayerBreak`, which is a direction-pick like
+	// barricade mode and shows the BREAK MODE banner while it waits. So the
+	// intentional act is the one that requires a mode and a direction, and the
+	// accidental one — bumping — does nothing.
+	//
+	// Tiredness is still checked, but only on the path that can actually cost AP:
+	// `isLegal()` is the gate on the move, and a bump into a breakable is simply
+	// an illegal move now.
 	async DoPlayerBump(player: Actor, direction: Direction): Promise<boolean> {
 		const bump = new ActionBump(player, this, direction);
 
 		if (bump === null) return false;
 
-		// special case: tearing down barricades as living.
-		// alpha10.1 moved up because civs models can now bash doors as a bump action;
-		// added break check and simplified test.
+		if (bump.isLegal()) {
+			bump.perform();
+			return true;
+		}
+
+		// Bumping into something breakable is no longer a destructive offer, it
+		// is just a blocked move. Say so with the way out, rather than a Y/N that
+		// tempts the player to destroy the furniture to get unstuck.
 		if (
 			(bump.concreteAction instanceof ActionBreak ||
 				bump.concreteAction instanceof ActionBashDoor) &&
 			!player.model.abilities.isUndead
 		) {
-			const doWhat =
-				bump.concreteAction instanceof ActionBreak
-					? `break ${bump.concreteAction.mapObject.theName}`
-					: "tear down the barricade";
-
-			if (this.m_Rules.isActorTired(player)) {
-				this.AddMessage(this.MakeErrorMessage(`Too tired to ${doWhat}.`));
-				this.RedrawPlayScreen();
-				return false;
-			} else {
-				// ask for confirmation.
-				this.AddMessage(this.MakeYesNoMessage(`Really ${doWhat}`));
-				this.RedrawPlayScreen();
-				const confirm = await this.WaitYesOrNo();
-
-				if (confirm) {
-					bump.concreteAction.perform();
-					return true;
-				} else {
-					this.AddMessage(
-						new Message(
-							"Good, keep everything secure.",
-							this.m_Session.worldTime.turnCounter,
-							Color.Yellow,
-						),
-					);
-					return false;
-				}
-			}
-		}
-
-		if (bump.isLegal()) {
-			bump.perform();
-			return true;
+			const isBreak = bump.concreteAction instanceof ActionBreak;
+			const what = isBreak
+				? (bump.concreteAction as ActionBreak).mapObject.theName
+				: "the barricade";
+			this.AddMessage(
+				this.MakeErrorMessage(
+					`Cannot move into ${what} - press ${
+						s_KeyBindings.get(PlayerCommand.BREAK_MODE) ?? "?"
+					} to ${isBreak ? "break" : "tear it down"}.`,
+				),
+			);
+			this.RedrawPlayScreen();
+			return false;
 		}
 
 		this.AddMessage(

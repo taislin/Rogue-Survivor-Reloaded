@@ -37,6 +37,7 @@ export class NullRogueUI implements IRogueUI {
   private readonly keyQueue: GameKeyEvent[] = [];
   private mousePos: Point = new Point(0, 0);
   private pendingButtons: MouseButton | null = null;
+  private pendingClickCount = 0;
   /** Wheel movement in pixels, consumed by `UI_PeekWheel`. */
   private pendingWheel = 0;
 
@@ -102,6 +103,23 @@ export class NullRogueUI implements IRogueUI {
 
   UI_PostMouseButtons(buttons: MouseButton): void {
     this.pendingButtons = buttons;
+  }
+
+  /**
+   * Headless: a test sets the count and reads it once, so there is no timer and
+   * no queue to drain. The contract that matters is the same as
+   * `UI_PeekMouseButtons` above - a value of 2 means a double click - and a
+   * read here does not persist, so a polling caller cannot wedge on it.
+   */
+  UI_PeekClickCount(): number {
+    const n = this.pendingClickCount;
+    this.pendingClickCount = 0;
+    return this.pendingButtons === MouseButton.Left ? n : 0;
+  }
+
+  /** Inject a click count for `UI_PeekClickCount`. For tests. */
+  UI_PostClickCount(count: number): void {
+    this.pendingClickCount = count;
   }
 
   /**
