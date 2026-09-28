@@ -2,8 +2,17 @@
 
 > **Status (2026-09-28):** Phases 1–7 ported and playable. Phase 8 tasks 1–11
 > done; only 12 (optional touch support) remains. `npm run verify` is green end to
-> end — type-check, 719 tests in 48 files with coverage enforced, and the Vite
+> end — type-check, 832 tests in 56 files with coverage enforced, and the Vite
 > build. Read [Current State & Handover](#1-current-state--handover).
+>
+> **A first-person view mode now exists** (branch `feature/first-person-view`),
+> behind `(Gfx) View Mode` in the options and `F` in game. Top-down remains the
+> default, so the C# behaviour is what a first run shows. It is **not verified in
+> a browser** — there was none in the environment it was built in — so the one
+> outstanding action is to open the game with `?debug=1`, press `F`, and look at
+> it. See [§5.4](#54-firstperson--pseudo-3d-view-mode), which leads with that
+> caveat and then records what was decided, what turned out to be wrong twice, and
+> what is still open.
 >
 > **Ten presentation and correctness defects were found and fixed 2026-09-28**,
 > all of them invisible to `tsc`, to the build, and to the headless simulator —
@@ -480,7 +489,7 @@ loudly.
   `5b2dc59`; the side panel, hitbox, popup and minimap fixes `4a6e845` and
   `2ebdddf`; the four typeface families `47c5b64`; and the look-handler and
   typeface-repaint fixes `6977b63`.
-- **Current state (2026-09-28): 719 tests across 48 files, `npm run verify` green
+- **Current state (2026-09-28): 832 tests across 56 files, `npm run verify` green
   end to end — type-check, coverage, and the Vite build.** Note that this was *not*
   true on arrival: the suite was red on Linux, for the reason in §1.6, and this
   line claimed otherwise. Verify it rather than reading it.
@@ -524,7 +533,7 @@ Full detail in `web/.porting/CONVENTIONS.md`. The ones that matter:
 |---|---|
 | `npm run verify` | type-check + coverage + build — what CI runs, in one command |
 | `npm run type-check` | `tsc --noEmit`; covers `src/`, `sim/` and `tests/` — necessary, **not sufficient** |
-| `npm run test` | Vitest, 719 tests in 48 files |
+| `npm run test` | Vitest, 832 tests in 56 files |
 | `npm run test:coverage` | Vitest with coverage thresholds enforced |
 | `npm run build` | Vite production build |
 | `npm run sim` | Headless engine run — the real test |
@@ -542,11 +551,11 @@ Phases 1–7 are ported and building. Historical per-slice detail has been remov
 | 1 — Scaffold & primitives | Vite + Express, `IRogueUI`, `CanvasUI`, `InputHandler`, `Point`/`Rect`/`Color`, `DiceRoller` | Done |
 | 2 — Data layer | `Actor`, `Map`, `World`, `ActorModel`, `GameItems`, `GameActors`, `GameImages` | Done |
 | 3 — Engine core | `Rules`, `LOS`, `Session`, `Scoring`, `GameOptions`, `ui/OptionsScreen.ts` | Done |
-| 4 — Game loop | `RogueGame.ts` (~26 KLOC) all 10 slices | Ported, **0 stubs — and now behaviourally exercised headless (§1.2) *and* played in a browser** |
+| 4 — Game loop | `RogueGame.ts` (~26 KLOC) all 10 slices | Ported, **0 stubs — behaviourally exercised headless (§1.2) *and* played in a browser**; a first-person renderer is now available behind an option (§5.4) |
 | 5 — World gen & AI | `BaseAI` (184/184), all 11 AI controllers, 4 generator files (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator` 5 814 lines, `StdTownGenerator`) | Done |
 | 6 — Audio | Web Audio SFX + music | Done |
 | 7 — Save / load | localStorage / IndexedDB, `Session` serialisation | Done |
-| 8 — Polish, sim, CI | Headless harness, 719 tests, CI, PWA, Docker, asset pass, frame-cost pass, desktop wrapper | **In progress** — 11 of 12 tasks done; only 12 (optional touch) remains. See §4.1 |
+| 8 — Polish, sim, CI | Headless harness, 832 tests, CI, PWA, Docker, asset pass, frame-cost pass, desktop wrapper | **In progress** — 11 of 12 tasks done; only 12 (optional touch) remains. See §4.1 |
 
 Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks, 3 SFX), extracted from the C# embedded resources. **Total 24.9 MB**, down from 51.6 MB before the Phase 8 asset pass — see §4.1c.
 
@@ -564,7 +573,7 @@ Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks,
 | 2 | Deterministic `--seed` for reproducible runs | **Done** (`Session.useSeed`, `--seed`) |
 | 3 | Drive the sim to a clean full-length run and fix what it finds | **In progress, and the goal changed** — no seed now reaches 1 000 turns, because that is *correct* behaviour (§1.2: the undead bot is shot by survivors). Keep sweeping seeds for crashes, not for turn count |
 | 4 | Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`) | **Done and verified in a browser** — now 1366×768 widescreen, smooth filtering (the old `image-rendering: pixelated` made upscaled text unreadable) |
-| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 719 tests, 48 files, thresholds enforced (50/75/57/50) |
+| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Done** — 832 tests, 56 files, thresholds enforced (50/75/57/50) |
 | 6 | GitHub Actions CI | **Done** — `.github/workflows/ci.yml`, type-check + coverage + build + seeded sim, plus a docker smoke job |
 | 7 | PWA manifest + service worker (offline play) | **Done** — manifest, drawn icons, runtime-caching `sw.js` |
 | 8 | Docker image for the self-hosted server | **Done but unverified** — docker is not installed locally, so the image has never been built; CI will exercise it first |
@@ -619,6 +628,14 @@ once with `npm run verify`. `tests/` is in `tsconfig.json`'s include list, so
 | `options-coverage.test.ts` | Every option id has a name, a description and a value. `describe` **throws** for an unhandled id, which is a black screen the moment the player scrolls to that row — this suite exists because the font option shipped that way |
 | `screenshot-naming.test.ts` | `UI_SaveScreenshot` uses the path it is given and produces a safe filename |
 | `save-graph-coverage.test.ts` | Every field the save specs declare is actually written, so a spec cannot drift into a field nothing persists |
+| `firstperson-option.test.ts` | The `(Gfx) View Mode` option: defaults to top-down so a first run shows the C#'s game, round-trips through storage, survives a restore-previous, and reads an unrecognised stored value as top-down rather than as a renderer. Includes the failure direction: `mode !== "first-person"` is *true* for a typo |
+| `map-screen-conversion.test.ts` | `UI_MapToScreen`/`UI_ScreenToMap`: the browser and headless renderers agree over a grid of inputs at both zooms, the two directions invert each other, and `RogueGame` **asks** rather than deciding. Replaced a source-scanning test that passed for the wrong reason — its pattern never matched the source it guarded |
+| `firstperson-raster.test.ts` | The golden harness proving itself: a z-buffered software rasteriser and a PNG encoder, checked by inflating the encoder's own IDAT back to the pixels that went in. Found two bugs in the harness that would have been baked into every golden |
+| `firstperson-geometry.test.ts` | The camera basis (screen-right is two compass steps, not `Direction.right`) and the raycaster: distances in tiles rather than ray parameter, face normals for all eight facings, doors closed and open, the map edge, the `inView` gate, and a 1500-ray sweep asserting walls are one tile thick |
+| `firstperson-projector.test.ts` | The projection: the horizon and the wall centred on it, inverse-proportional height, the on-axis column finite at every viewport parity, the texture slice taken from the axis the wall runs along, and far-to-near ordering |
+| `firstperson-scene.test.ts` | A whole frame: **every pixel below the horizon is covered, from all eight facings** (the floor was striped with holes and no count said so), walls after floor, the frame budget, the `inView` fog, decorations nearer than the wall they sit on, weather over the view and not through a roof, and five golden images |
+| `firstperson-controls.test.ts` | The control scheme with rendering still top-down, so the headless simulator can verify it: the remap is the identity in top-down, turning costs no action point or turn, the facing is exact for all eight facings, every direction is reachable by turning, and the new bindings collide with nothing |
+| `firstperson-wiring.test.ts` | The view in a real played game: the option reaches the renderer, the tile loop stops (573 calls top-down vs 94, and `UI_DrawImage` is 43 in *both* — the minimap's markers), a turn is one redraw, and 40 bot turns run without a crash |
 | `save-graph-roundtrip.test.ts` | A real played world through save/load, compared field by field — the check §1.1i bug 64 shows is not "it did not throw" |
 | `integration/save-load.test.ts` | The same at the `Session` level, including a save that cannot be restored failing loudly instead of killing the game |
 | `integration/mouse-paths.test.ts` | Inventory and corpse hit-testing through real mouse positions, at 1× and 2× display scale |
@@ -891,7 +908,7 @@ All three cost a wrong conclusion first:
 5. **Coverage** — ✅ `@vitest/coverage-v8`, thresholds at 50/75/57/50, set under the
    measured baseline rather than at an aspirational number. **The baseline is now
    60.17/80.71/72.66/60.17** (statements/branches/functions/lines), re-measured
-   2026-09-28; it was 61.7/81.1/74.9/61.7 on 2026-09-27, against
+   2026-09-28; it was 61.7/81.1/74.9/61.7 on 2026-09-27 and 60.78/81.11/73.22/60.78 now, against
    52.68/77.14/59.97 when the data-layer audit landed. Statements and lines have
    *fallen* from a peak of 65.15/65.15: the renderer, HUD, options, font and
    serialisation work added reachable UI code the suites cover less thoroughly than
@@ -990,131 +1007,172 @@ port's side alone.
 
 ### 5.4 First-person / pseudo-3D view mode
 
-Not scheduled, not started. A second renderer that presents the same game in
-first person, built entirely from the sprites that already ship. No new art.
-Recorded here because the enabling facts are not obvious and are expensive to
-re-derive.
+**Built** (branch `feature/first-person-view`, 9 commits). It is a **second
+renderer behind an option** — `(Gfx) View Mode`, defaulting to top-down, so the
+C# behaviour is what a first run still shows and a player who has never heard of
+this sees the game that was ported. `F` toggles it in game; the options screen is
+its real home, and the hotkey writes the *option* and then calls the same
+`ApplyOptions` the options screen does, so there is one place a view change takes
+effect.
 
-**The art already suits it.** This is the finding that makes the idea viable,
-and it is the opposite of what a top-down game's assets usually look like.
-Checked directly in `src/Resources/Images/`: `Actors/zombie.png` is a
-front-facing figure with raised arms, `MapObjects/car1.png` is a head-on car
-rather than a plan view, and `Tiles/wall_brick.png` is a flat brick *texture* —
-exactly what column-based wall rendering wants. The original artist drew
-everything facing the viewer even though the game is top-down, so billboarding
-these sprites will likely look better than the current view does. Two caveats:
-small items are isometric rather than front-on (`Items/item_bandages.png` is a
-side view), and tile decorations are flat icons that only work as wall decals.
+`npm run verify` is green: **832 tests, 56 files, 60.78/81.11/73.22/60.78** against
+50/75/57/50. What follows is what was decided, what turned out to be wrong, and
+what is still open.
 
-**The data model cooperates.** Recorded precisely, because the whole design
-rests on it:
+#### The one thing that has not been done
 
-- **Walls are real grid cells** (ids 12–18, `isWalkable` and `isTransparent`
-  both false), not a property of adjacent floors. A DDA ray terminates on
-  `!tile.model.isWalkable`.
-- **Walls are exactly one tile thick** — `MapGenerator.tileRectangle`
-  (`MapGenerator.ts:154-202`) fills a four-line outline, not a band. This is
-  load-bearing: no ray starting in walkable space can reach an interior wall
-  face, so the face normal is derivable from the ray direction alone and **no
-  autotiling or per-face data is needed**, which is the thing that usually makes
-  a grid raycaster expensive.
-- `isWalkable === isTransparent` for all 18 defined models. The single
-  exception is `TileModel.UNDEF` (`false, true`) — not walkable but see-through —
-  so terminate rays on `isWalkable` and unfilled space correctly occludes.
-- 7 wall ids share only **5 distinct images**: `WALL_POLICE_STATION`,
-  `WALL_STONE` and `WALL_SUBWAY` all render `TILE_WALL_STONE`
-  (`GameTiles.ts:65-68`), differing only in minimap colour. A first-person view
-  will make that aliasing visible where it is currently invisible.
-- Every sprite is a single 32×32 still image — 1124 files, no sprite sheets.
-  Billboard scale is therefore a constant over ray distance.
-- `Map.lighting` (`DARKNESS`/`OUTSIDE`/`LIT`) is per **map**, not per tile.
-  There is no per-tile lighting to compute, so any fog is a synthesis and should
-  be commented as one.
+**The pixels have never been looked at.** There is no browser in the environment
+this was built in, so the Canvas2D blit — the `drawImage` calls, the affine
+transform for the sheared floor quads, the clip to the panel — is unverified. The
+geometry is verified three ways (unit tests, a source-level test suite, and golden
+images rasterised by a software renderer in `tests/`), and the *wiring* is verified
+by `tests/firstperson-wiring.test.ts` driving a real generated world. But the
+rendering path that actually runs in a browser has not run in a browser.
 
-**Two engine changes, both small.** Everything else lives in the UI layer:
+This is not a hypothetical gap, and it is why the caveat sits at the top rather
+than in a footnote. Earlier in this work the test rasteriser and the browser
+**disagreed about flat-coloured quads**: the golden showed 67 floor base fills as
+"missing texture", a defect the game does not have. A shared `Quad` type did not
+prevent it — two implementations of one primitive, and a shared type constrains
+their *shape*, not their *behaviour*. The obvious response to that golden would
+have been to "fix" the renderer.
 
-1. `RogueGame.DrawMap` branches on a render mode and calls a new
-   `IRogueUI.UI_DrawScene(scene)` instead of the tile loop. `NullRogueUI` no-ops
-   it — the headless sim is the test harness and must stay untouched — and
-   `CanvasUI` ignores it. Precedent: `UI_BeginScaledDraw` was added the same way,
-   with a comment recording why it is not in `IRogueUI.cs`.
-2. **Redirect `RogueGame.ScreenToMap` through a new
-   `UI_ScreenToMap(gx, gy): Point | null`.** Today it converts a cursor position
-   to a tile for hover and click; in first person a click is a *ray*. Without
-   this, tooltips and click-to-interact break silently. `CanvasUI` keeps today's
-   arithmetic, `FirstPersonUI` ray-picks. Easy to overlook and it is not
-   testable by inspection.
+**So: run `?debug=1`, press `F`, and look at it.** The `[fp]` line prints frame ms
+against the 16.7 ms budget plus the raycast/build/draw phases separately, because
+"the floor is too slow" and "the raycast is too slow" have different fixes and one
+number cannot tell them apart.
 
-**The one genuine gameplay conflict: FOV is a circle, a first-person view is a
-cone.** `Rules.actorFOV` returns 8 for a living, and `Rules.losDistance` is
-`0.866 × Euclidean` (`Rules.ts:1881`), so the player can see a circle of radius
-**~9.24 tiles in every direction**, and `IsVisibleToPlayer` reads `tile.isInView`
-across that whole circle. A 90° cone shows roughly a quarter of it.
+#### What was decided
 
-**Resolution: mouse-look is free, decided.** Rotation costs no turn and no
-stamina; only movement and actions do. The player surveys their full FOV by
-turning, as in any grid FPS, and the engine rules stay byte-identical to the
-original. Camera angle is then a free float while actions still snap to the
-existing 8-way `Direction.COMPASS`, separating presentation angle from rules
-direction. The game already ships `Icons/threat_high_danger` and friends, so
-off-screen threat markers are free reuses of existing art.
+**Rotation is quantised to one eighth of a turn, and that is load-bearing.** The
+facing is stored as a `Direction`, not as an angle, so it is *always* a
+`Direction.COMPASS` entry and walking forward returns that object exactly — no
+rounding, and therefore no way for the controls and the view to disagree. It also
+removes trigonometry from the whole subsystem: there is no `Math.sin` anywhere in
+the port and this is why one is not needed.
 
-**The floor is the whole cost problem.** Walls are ~496 `drawImage` calls at
-2 px columns and billboards are cheap, but a mode 7 floor is a per-texel
-operation: the 992×672 view is ~992×336 texels below the horizon, which even at
-quarter resolution is **~20 000 calls/frame** against the 658/frame treated as
-the budget in §4.1d. On a GPU that is one fragment shader; in Canvas2D it is
-roughly 40–120 ms/frame. Two routes to a textured floor:
+The scheme: **Left/Right turn (45° each, free — no turn, no action point),
+Up/Down walk forward and back along the facing.** The four diagonals are
+unreachable, because any diagonal is a rotation away and then a step forward.
 
-- **Per-tile subdivided quads in Canvas2D.** Project each visible floor tile to
-  a screen quad, `setTransform`, subdivide near tiles (2×2 → 4×4) to hide affine
-  error where the trapezoid skew is worst. ~400–1800 calls. Some warping on
-  nearby tiles; not very visible at 32 px art. No new technology.
-- **A small raw-WebGL2 offscreen canvas** for the 3D view only, composited under
-  the existing 2D HUD. True mode 7 at full resolution, trivially 60 fps, and
-  still zero dependencies — raw WebGL2 is ~250 lines, not a framework. The cost
-  is a second rendering path, and `CanvasUI`/`NullRogueUI` must exist regardless
-  for the sim.
+Watch out for `Direction.right`: it advances one *compass* step, 45°, so
+`Direction.right(N)` is **NE**. The name reads like a perpendicular and is not one.
+Screen-right is two steps.
 
-**Not yet decided between those two.** It is the one open decision in this
-section, and it should be made with a measured draw-call profile rather than a
-guess — see the profiling note at the end.
+**No `actor.direction` exists to update — in the C# or the port.** The C# `Actor`
+is 1083 lines with no match for the word, and the engine's direction is a *command
+argument* threaded from the keypress, never state read back off an actor. So the
+camera is purely presentational: no save field, no `actorSpec` entry, nothing that
+can perturb the simulation.
 
-**Modules.** `FirstPerson/{Camera,Raycaster,Projector,Scene}.ts` and
-`ui/FirstPersonUI.ts`. `Raycaster` and `Projector` take a `Map` and have no DOM
-dependency, so they unit-test in Node — that is where the tests belong, since a
-raycaster is only geometry. Note the grid is **y-down**, so the usual
-left-handed raycaster basis must be flipped; easy to get backwards and hard to
-see.
+**The remap is a pure function applied at dispatch**, not a binding. An arrow-key
+`LOOK_LEFT` binding would fight `MOVE_W` for the same key and the winner would
+depend on the view mode, leaving the binding table unable to say what a key does.
+The controls were therefore fully tested *before* any pixels existed, with
+rendering still top-down, so the headless simulator could verify them.
 
-**Commit order,** on a branch, once the data work in §1.5 has landed:
+**Do not trust this section's arithmetic — it was wrong twice.** The original plan
+quoted a 992×672 viewport; it is **864×672**, the map panel's size, so the
+below-horizon area is 864×336. And it asked for the floor to be settled "with a
+measured draw-call profile" while also warning that the profile cannot see this
+renderer. Both were true and they contradicted each other; §4.1d's profile counts
+calls on `NullRogueUI`, which drops every painting call. Resolved by adding the
+`[fp]` browser tally rather than by picking a number.
 
-1. `Raycaster` + tests, no UI at all
-2. Walls only, flat-shaded floor — proves the camera and the seam
-3. Billboards (actors, corpses, ground items, non-blocking map objects,
-   decorations), far→near, per-column depth-tested against a `Float32Array` of
-   wall distances so a zombie half behind a door clips correctly
-4. Floor
-5. Sky/ceiling from `tile.isInside`, one full-screen gradient for distance fog
-   (the cheap way to make the night/rain FOV penalties read, at zero per-texel
-   cost), rain overlay
-6. Mode toggle, persisted via `storage` the way `MapZoom` already is
+**`Color.fromArgb` takes `(r, g, b, a)` here — the reverse of C#'s
+`FromArgb(alpha, r, g, b)`.** Passing the alpha first compiles, type-checks, and
+silently yields a translucent *red*. Nothing catches it: the software rasteriser
+writes alpha 255 unconditionally, so a golden image is identical either way and
+only the browser blends it. A test now checks the synthesised colours are opaque
+and greyish, with the spread limit chosen so `255,24,24,34` cannot slip through.
 
-**If the frame budget bites, cut in this order:** billboard partial occlusion
-first — draw whole sprites and accept a little pop through doorways; it is the
-nicest feature to lose and the most expensive. Then floor subdivision depth.
-Walls and the raycaster stay.
+#### The three bugs the picture caught and the counts did not
 
-**Do not** start by touching `RogueGame` beyond the two changes
-above. The `IRogueUI` seam exists for exactly this; the same advice as §6.1, and
-for the same reason.
+Worth the whole exercise, and worth recording in the shape they took:
 
-**And per §1.5 item 1: this is a renderer change, so the browser is the
-definition of done, not the sim.** The sim will be green throughout, because
-`NullRogueUI` drops every painting call. A raycaster that projects every sprite
-off-screen, or picks the wrong wall face, is invisible to `npm test` and to
-`npm run sim` — both will pass on a completely broken renderer. Profile with
-`npm run profile`, then open the game and look at it.
+1. **The floor was striped with holes.** A `Quad` is affine; a floor tile under
+   perspective is projective. Interpolating four corners bilinearly gives a shape
+   slightly *smaller* than the truth at every edge, so two neighbouring tiles each
+   pull inward and the sliver between them is drawn by nothing. Subdivision shrinks
+   the error and never removes it, at a 16×16 grid on every near tile; expanding
+   the quads does not close it either, because the error grows with the tile's
+   screen size and the nearest tile is 40 px tall. What works is **one opaque
+   underlay that cannot have a seam**, so whatever the tiles miss shows
+   floor-coloured rather than sky-coloured. 0 of 32 256 floor pixels undrawn,
+   asserted for all eight facings.
+2. **The underlay had `depth: Infinity`,** so the depth test rejected it as
+   already occluded. A depth buffer starts at "nothing here" *as* `Infinity`, so
+   the one quad that must never be occluded is the one that cannot use it. It
+   existed, read correctly, and drew nothing.
+3. **The wall height was divided by the lateral offset instead of the distance.**
+   They agree down the middle of the screen and differ by 1.64× at the edges — and
+   the lateral offset of the wall *directly ahead* is zero, so the most ordinary
+   wall in the game divided by zero. 18 assertions passed and the picture was a
+   solid grey rectangle.
+
+`planeLength` is `tan(fov / 2)` and took two attempts. Scaling it by `width / 2`
+made the *field of view* depend on the canvas size — at 1366 px the edges subtended
+nearly 180°. Its reciprocal is invisible at 90° because `atan(tan 45°)` and
+`atan(1/tan 45°)` are both 45°, so the test that "proved" it used a 90° field of
+view and could not tell the two apart. It now checks 60, 75, 100 and 120.
+
+#### Still open
+
+- **Look at it.** Everything above.
+- **The `[fp]` numbers have never been read**, so the frame cost is designed-for
+  rather than measured: ~730 quads at 864×672, of which 288 are wall columns and
+  ~440 floor. Whether that holds 60 fps is unknown.
+- **`MapToScreen` still returns `Point`,** falling back to the pre-move arithmetic
+  when a renderer cannot place a position. Turning it into `Point | null` wants
+  doing in one pass *with* the renderer in hand — ~90 call sites, each needing a
+  decision, and not 90 decisions made against a view that did not exist yet.
+- **Map-anchored overlays are not yet projected.** Floating damage numbers, target
+  icons and the melee-attack icon all position by `MapToScreen`; the conversion now
+  goes through the UI, but nothing consumes it in first person yet, so those
+  overlays are drawn in the wrong place rather than not at all.
+- **The wall textures were not judged in a browser.** 3 of 5 are flat and tile
+  well; `wall_hospital` is an embossed top-down panel and `wall_char_office` is a
+  dark fill with a red border. At 1.5 tiles tall a 32×32 texture is a 1.5×
+  vertical stretch, which is mild on brick and questionable on the other two. If
+  they look wrong, add one optional `TileModel.wallTextureCrop` — as a reaction to
+  seeing it, not a table built up front.
+- **`wall_stone` is shared by three wall ids** that differ only in minimap colour.
+  Invisible top-down, identical in first person. A per-face tint from `minimapColor`
+  would separate them, at no per-texel cost.
+- **Off-screen threat markers** are cheap — the game already ships
+  `Icons/threat_high_danger` — and would be a genuine gain in a view with no
+  peripheral vision.
+- **The in-game help screen reads the manual text file, not the binding table,** so
+  it does not list the new keys. The option description and the toggle message do
+  say that the arrow keys change meaning, which covers the surprise; the manual is
+  a content follow-up.
+
+#### Verified along the way, so it need not be re-derived
+
+- **The art claim holds, mostly.** `Actors/zombie.png` and `skeleton.png` are
+  front-facing with raised arms; `MapObjects/car1.png` is a head-on car;
+  `Tiles/wall_brick.png`, `wall_stone.png` and `wall_sewer.png` are flat
+  tileable textures. `wall_hospital.png` is an embossed panel with a drop shadow
+  and `wall_char_office.png` is a dark fill with a red border — both readable as
+  wall columns, neither ideal.
+- **Walls really are one tile thick.** `MapGenerator.tileRectangle` fills a
+  four-line outline, and a 1500-ray sweep over a fixture with an interior pillar
+  asserts that no ray from walkable space reaches a face with a solid tile in front
+  of it. Everything this renderer is cheap *because of* rests on that.
+- **A closed door needs no special case; an open one does.** A closed door is not
+  walkable, so the DDA stops on it and it is just a wall with another texture. An
+  *open* door is walkable, so a raycaster terminating on walkability walks through
+  it and never draws it. Hence three surface kinds: `wall`, `object`
+  (transparent — a billboard), and `edge` (fog).
+- **Rendering is gated on `tile.isInView`, not on the camera's cone.**
+  `Rules.actorFOV` is a circle of ~9.24 tiles and the camera is a cone, so rays
+  reach walls the player may not see. Drawing those hands over exactly what the
+  rules withhold. A wall in view is drawn; one out of it is fog.
+- **The tile loop is the discriminator between the renderers, and not the method
+  you would guess.** Top-down spends 573 painting calls per frame, 61
+  `UI_DrawImageTinted` and 404 `UI_DrawGrayLevelImage`. First person spends 94,
+  `UI_DrawScene` 1, and **zero** of those two. `UI_DrawImage` is 43 in *both*,
+  because the minimap's position markers go through it.
 
 ### 5.5 Housekeeping
 
