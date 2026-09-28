@@ -22,6 +22,6 @@
       "@gameplay/*": ["src/gameplay/*"]
     }
   },
-  "include": ["src", "sim", "tests", "vitest.config.ts"],
+  "include": ["src", "sim", "tests", "vitest.config.mts"],
   "exclude": ["server", "node_modules", "dist"]
 }

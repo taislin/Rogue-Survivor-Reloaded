@@ -11,7 +11,7 @@ import { resolve } from "path";
  * the DOM has leaked into `engine/` or `data/` — put it in a `*.dom.test.ts`
  * and opt that file in with a `@vitest-environment` docblock.
  *
- * The aliases must stay in sync with `vite.config.ts` and `tsconfig.json`; all
+ * The aliases must stay in sync with `vite.config.mts` and `tsconfig.json`; all
  * three list the same four roots.
  */
 export default defineConfig({
