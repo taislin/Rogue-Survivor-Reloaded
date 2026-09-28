@@ -2875,14 +2875,27 @@ export class RogueGame {
 					Color.LightGreen,
 				),
 			);
-			this.AddMessage(new Message("<press ENTER>", 0, Color.Yellow));
-			this.RedrawPlayScreen();
-			await this.WaitEnter();
+			// Browser port: no "<press ENTER>" here, and no `ClearMessages`
+			// below either.
+			//
+			// C# stopped for a keypress, wiped the log, printed the welcome
+			// banner, stopped for another keypress, then wiped again and
+			// printed "wakes up". The wipes are not decoration -- they are
+			// how C# makes each screen readable, by discarding the one
+			// before it. Take the keypresses away and the wipes delete text
+			// the player never had a chance to read: the banner would be
+			// drawn and cleared inside a single frame, and the advisor
+			// hints with it.
+			//
+			// So the intro stays in the log and scrolls away on its own.
+			// That is the right shape for a turn-based game: the log is
+			// already a scrolling record read at the player's own pace,
+			// and nothing in the intro is a decision that needs
+			// acknowledging. Two keypresses before the first turn bought
+			// nothing the log does not already do.
 		}
 
 		// welcome banner.
-		this.ClearMessages();
-		this.ClearMessagesHistory();
 		this.AddMessage(
 			new Message("*****************************", 0, Color.LightGreen),
 		);
@@ -2909,13 +2922,13 @@ export class RogueGame {
 				Color.LightGreen,
 			),
 		);
-		this.AddMessage(new Message("<press ENTER>", 0, Color.Yellow));
 		this.RefreshPlayer();
 		this.RedrawPlayScreen();
-		await this.WaitEnter();
 
 		// wake up!
-		this.ClearMessages();
+		// Not cleared. The banner above is now the top of the log the
+		// player reads as play starts, rather than something a keypress
+		// used to erase before they could finish it.
 		this.AddMessage(
 			new Message(
 				`${isUndead ? `${this.m_Player.name} rises...` : `${this.m_Player.name} wakes up.`}`,
