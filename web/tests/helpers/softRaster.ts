@@ -1,4 +1,5 @@
 import type { RgbaImage } from "./png";
+import type { Quad } from "@engine/firstperson/Types";
 
 /**
  * A software rasteriser for the first-person view, for golden-image tests.
@@ -12,19 +13,22 @@ import type { RgbaImage } from "./png";
  *
  * So the definition of done for this renderer has to be an image, not a count.
  *
- * **What it does and does not check.** It renders the same draw list the browser
- * blits, through the same affine mapping, so it pins geometry, depth ordering,
- * occlusion, face selection and fog. It does not check the *art*: the sprites are
- * lossless WebP, which Node cannot decode without a dependency, so the textures
- * here are procedural stand-ins keyed by name. That split is deliberate — the art
- * is a human's eye, and the geometry is a test's.
+ * **It consumes the engine's own `Quad`, imported rather than redeclared. A
+ * structurally identical local type would make "the same draw list the browser
+ * blits" a claim about resemblance rather than identity, and the golden image
+ * would then be testing a lookalike of the thing that ships.
+ *
+ * What it does and does not check: the same quads, through the same affine
+ * mapping, so it pins geometry, depth ordering, occlusion, face selection and
+ * fog. Not the *art* — the sprites are lossless WebP, which Node cannot decode
+ * without a dependency, so the textures here are procedural stand-ins keyed by
+ * name. The art is a human's eye; the geometry is a test's.
  *
  * The primitive is a textured parallelogram rather than a rectangle because that
  * is what a floor tile under perspective actually is, and because it is exactly
- * what `Canvas2D`'s `setTransform` + `drawImage` can do. Anything Canvas2D cannot
- * express — a real perspective divide, a texture-mapped trapezoid in one quad —
- * cannot be expressed here either, so the two implementations cannot silently
- * disagree about what a quad *is*.
+ * what `Canvas2D` can do. Anything Canvas2D cannot express cannot be expressed
+ * here either, so the two implementations cannot silently disagree about what a
+ * quad *is*.
  */
 
 /** A texture: RGBA, `width * height * 4` bytes, row-major. */
@@ -36,30 +40,8 @@ export interface Texture {
   data: Uint8Array;
 }
 
-/**
- * One textured parallelogram.
- *
- * P(u, v) = (x, y) + u * (ux, uy) + v * (vx, vy), for u, v in [0, 1], sampling
- * the source rect (sx, sy, sw, sh) of the image. An axis-aligned rectangle is the
- * special case uy = vx = 0, which is how wall columns and billboards are drawn.
- */
-export interface Quad {
-  imageId: string;
-  x: number;
-  y: number;
-  ux: number;
-  uy: number;
-  vx: number;
-  vy: number;
-  sx: number;
-  sy: number;
-  sw: number;
-  sh: number;
-  /** Camera-space distance, for the depth test and for fog. */
-  depth: number;
-  /** Multiplied into the sampled colour; omit for untinted. */
-  tint?: readonly [number, number, number];
-}
+/** Re-exported so tests import the primitive from one place. */
+export type { Quad };
 
 export interface Surface extends RgbaImage {
   /** Camera-space depth per pixel; `Infinity` where nothing has been drawn. */
