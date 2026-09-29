@@ -98,13 +98,16 @@ jobs:
         run: npm run test:coverage
 
       - name: Assemble the site and validate it
-        # Same script the Pages deploy runs, so a broken assembly fails here
-        # rather than in a deploy. It asserts the files the published site needs
-        # and that the game's service worker carries a stamped cache version.
+        # The same command the Pages deploy runs, which is the point: a broken
+        # assembly fails here rather than in a deploy. `build:pages` and not
+        # `build:site` — build:site only assembles whatever is already in dist/,
+        # and the step above left an unstamped build there, so it correctly
+        # refused to publish a worker that would never evict. That guard firing
+        # on this step is how the mistake was found.
         env:
           BASE_PATH: /Rogue-Survivor-Reloaded/game/
         run: |
-          npm run build:site
+          npm run build:pages
           node ../docs/tools/check-site.mjs
 
       - name: Upload coverage report
