@@ -325,6 +325,21 @@ export class CanvasUI implements IRogueUI {
   }
 
   UI_Clear(color: Color): void {
+    // A frame starts here, so this is where a sprite-set change has to be
+    // noticed. It is the *only* place that can do it, and getting that wrong is
+    // why choosing a different style used to need a page reload.
+    //
+    // The invalidation used to live solely in `loadImage`, which is reached only
+    // on a cache *miss*, plus once in `UI_PreloadImages` at boot. After a warm
+    // cache neither ever runs again: every subsequent frame is a hit, draws the
+    // old sprite, and returns. So `setImageSet` bumped its generation, the
+    // generation was correct, and the cache was stale and unreachable at the same
+    // time -- the style could not change for the rest of the session.
+    //
+    // Here, before anything is drawn, the cache is guaranteed to describe the set
+    // the frame is about to draw. It is one integer comparison per frame.
+    this.invalidateImagesIfSetChanged();
+
     this.ctx.fillStyle = color.toCssRgba();
     // The logical surface, not `canvas.width`/`height`: the context carries a
     // scale transform, so backing-store dimensions would be read as logical
@@ -960,6 +975,13 @@ export class CanvasUI implements IRogueUI {
    * drawing the old one until the page was reloaded. Keyed on the generation
    * rather than on a callback from the options screen so that every way of
    * changing the set is covered, including ones that do not exist yet.
+   *
+   * Called from `UI_Clear`, which every frame passes through on its way to
+   * drawing, so it runs before any cached sprite can be read. It is also still
+   * called from `loadImage` and `UI_PreloadImages`; those are now redundant
+   * rather than load-bearing, and are kept because they cost one integer
+   * comparison and because a preload that refetched nothing would be a silent
+   * regression if this ever moved again.
    */
   private invalidateImagesIfSetChanged(): void {
     if (this.imageCacheGeneration === getImageSetGeneration()) return;
