@@ -27,8 +27,19 @@ export const SFX_ROOT = `${ASSETS_ROOT}/sfx`;
 /** Sprite file extension. Kept here so no call site hardcodes it. */
 export const IMAGE_EXTENSION = "webp";
 
-/** Sprite sets shipped in `assets/images/`; the others are variations of `classic`. */
-export const IMAGE_SETS = ["classic", "deonapocalypse_v9_r1", "genesis_classic_1.4"] as const;
+/**
+ * Sprite sets shipped in `assets/images/`; the others are variations of `classic`.
+ *
+ * This array is the single source of truth: `GameOptions` reads the option's
+ * bounds from it, so a set listed here appears in the options screen with no
+ * other edit, and one missing from it is unreachable no matter what is on disk.
+ */
+export const IMAGE_SETS = [
+  "classic",
+  "deonapocalypse_v9_r1",
+  "genesis_classic_1.4",
+  "dafttiles_b1",
+] as const;
 export type ImageSet = (typeof IMAGE_SETS)[number];
 
 export const DEFAULT_IMAGE_SET: ImageSet = "classic";

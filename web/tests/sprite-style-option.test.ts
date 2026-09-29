@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import {
   DEFAULT_IMAGE_SET,
+  IMAGE_EXTENSION,
   IMAGE_SETS,
   getImageSet,
   getImageSetGeneration,
@@ -18,12 +19,26 @@ const IMAGES_DIR = join(__dirname, "../public/assets/images");
 
 /** Every file under `dir`, recursively. Sprites are nested by category. */
 function countFiles(dir: string): number {
-  let total = 0;
+  return listFiles(dir).length;
+}
+
+/**
+ * Every sprite under `dir`, as paths relative to it, recursively.
+ *
+ * Returns names rather than a count because the callers that care about these
+ * files care about *which* they are: a per-file check is the only one that can
+ * name the offending path, and a count cannot notice a single bad file among
+ * three hundred.
+ */
+function listFiles(dir: string, base = dir): string[] {
+  const out: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.isDirectory()) total += countFiles(join(dir, entry.name));
-    else total++;
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...listFiles(full, base));
+    else if (entry.name.endsWith(".db")) continue; // the set's own metadata, not a sprite
+    else out.push(relative(base, full));
   }
-  return total;
+  return out;
 }
 
 /**
@@ -50,8 +65,20 @@ beforeEach(() => {
 });
 
 describe("the sprite sets on disk", () => {
-  it("names three, and the default is the complete one", () => {
-    expect(IMAGE_SETS.length).toBe(3);
+  it("names the sets that ship, and the default is the complete one", () => {
+    // The names, not a count. A bare `toBe(3)` fails just as loudly when a set
+    // is added, but it does not say *which* one, and it cannot catch a typo: an
+    // array of four names with one misspelt satisfies `length === 4` and ships a
+    // sprite set that no row in the options screen can reach. Spelling them out
+    // also means adding a set is a deliberate edit to this list, which is the
+    // point — it is the second copy of `IMAGE_SETS`, and a second copy should
+    // have to be updated by hand.
+    expect([...IMAGE_SETS]).toEqual([
+      "classic",
+      "deonapocalypse_v9_r1",
+      "genesis_classic_1.4",
+      "dafttiles_b1",
+    ]);
     expect(DEFAULT_IMAGE_SET).toBe("classic");
     expect(IMAGE_SETS).toContain(DEFAULT_IMAGE_SET);
   });
@@ -63,8 +90,31 @@ describe("the sprite sets on disk", () => {
     for (const set of IMAGE_SETS) {
       expect(
         existsSync(join(IMAGES_DIR, set)),
-        `assets/images/${set} is advertised as a sprite set but has no folder`
+        `assets/images/${set} is advertised as a sprite set but has no folder`,
       ).toBe(true);
+    }
+  });
+
+  it("ships sprites as WebP, not PNG, for every set", () => {
+    // `IMAGE_EXTENSION` is "webp" and `imagePathIn` builds every URL from it, so a
+    // stray PNG is a 404 the player only meets by picking that style. The loader
+    // skips a missing image rather than failing, so the symptom is not a crash:
+    // it is a set with silent holes in it, which is what `classic` exists to paper
+    // over.
+    //
+    // Recursive, and that is the whole point of it being recursive. Sprites live
+    // in per-category subdirectories, so a root-level check sees about 20 of
+    // `dafttiles_b1`'s 340 files and would pass with a PNG sitting in `Actors/`.
+    // Verified: adding one there leaves the shallow version green.
+    for (const set of IMAGE_SETS) {
+      const files = listFiles(join(IMAGES_DIR, set));
+      expect(files.length, `assets/images/${set} has no sprite files at all`).toBeGreaterThan(0);
+      for (const name of files) {
+        expect(
+          name.endsWith(`.${IMAGE_EXTENSION}`),
+          `assets/images/${set}/${name} is not .${IMAGE_EXTENSION}, so imagePathIn cannot resolve it`,
+        ).toBe(true);
+      }
     }
   });
 
