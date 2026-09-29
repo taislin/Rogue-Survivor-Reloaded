@@ -1,5 +1,6 @@
 import { defineConfig } from "vitest/config";
 import { resolve } from "path";
+import { BASE_PATH } from "./base-path";
 
 /**
  * Vitest config.
@@ -13,8 +14,15 @@ import { resolve } from "path";
  *
  * The aliases must stay in sync with `vite.config.mts` and `tsconfig.json`; all
  * three list the same four roots.
+ *
+ * `base` must stay in sync with `vite.config.mts` too, and the way to guarantee
+ * that is to import it from the same module rather than repeat the value. Vitest
+ * does not inherit the Vite config, so without this the suite would keep
+ * asserting `/assets/...` while the Pages build emits `/Rogue-Survivor-Reloaded/
+ * game/assets/...` — passing, and shipping a game that cannot load a sprite.
  */
 export default defineConfig({
+  base: BASE_PATH,
   resolve: {
     alias: {
       "@engine": resolve(__dirname, "src/engine"),

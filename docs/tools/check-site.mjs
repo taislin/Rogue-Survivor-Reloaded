@@ -40,6 +40,25 @@ const RUNTIME_ONLY = new Set(['is-active', 'is-hidden']);
 const PAGES = readdirSync(DOCS).filter((f) => f.endsWith('.html'));
 const LOCAL_NAV = ['index.html', 'manual.html', 'controls.html', 'guide.html', 'info.html'];
 
+// Prefixes that resolve in the *published* site but not in docs/ alone.
+//
+// The published site is docs/ and the built game side by side (see
+// web/scripts/build-site.mjs): docs/ is the landing page at the root, the game
+// is assembled into game/ beneath it. So a link to `game/…` is correct and
+// works, and this checker would otherwise report it missing — which is the right
+// answer to the wrong question, because it validates docs/ as a standalone
+// directory and the game has never been part of that directory.
+//
+// It is an allowlist of prefixes rather than a "skip the check" flag on purpose.
+// The link stays as relative as every other link in this site, so the docs
+// remain position-independent, and the alternative — making it absolute — would
+// hardcode the Pages subdirectory into a site that is otherwise happy in any
+// directory. build-site.mjs is what guarantees the target exists, and it fails
+// the build if game/index.html is missing from the assembled output.
+const EXTERNAL_PREFIXES = ['game/'];
+
+const isExternal = (ref) => EXTERNAL_PREFIXES.some((p) => ref.startsWith(p));
+
 const fails = [];
 const fail = (page, msg) => fails.push(`${page}: ${msg}`);
 
@@ -64,6 +83,9 @@ for (const page of PAGES) {
     if (ref.split('#')[0].startsWith('..')) {
       fail(page, `reference escapes docs/ (will 404 on Pages): ${ref}`);
     }
+
+    // Assembled alongside docs/ at deploy time; see EXTERNAL_PREFIXES above.
+    if (isExternal(ref)) continue;
 
     if (!existsSync(join(DOCS, ref.split('#')[0]))) {
       fail(page, `missing target: ${ref}`);

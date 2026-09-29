@@ -72,6 +72,44 @@ jobs:
         # failure here is reproducible locally with the identical command.
         run: npm run sim -- --size 1 --turns 30 --seed 12345 --undead
 
+      - name: Test and build under a subdirectory base
+        # Pages serves the game from /Rogue-Survivor-Reloaded/game/, and every
+        # step above runs at the default base of "/". Running both halves is the
+        # point: a base is easy to leave hardcoded in one place, and a hardcoded
+        # "/assets" under a subdirectory does not fail a test — it ships a black
+        # screen, because the port preloads all 1 124 sprites before the first
+        # frame and cannot draw one it has not fetched.
+        #
+        # check-base is the real gate. It greps the built output for a
+        # root-absolute URL, which is the failure the test suite structurally
+        # cannot see. It only has teeth here: at base "/" a root-absolute URL is
+        # correct by definition, so running it against a root build would pass
+        # while asserting nothing.
+        env:
+          BASE_PATH: /Rogue-Survivor-Reloaded/game/
+        run: |
+          npm run type-check
+          npm run build
+          npm run check:base
+
+      - name: Test under a subdirectory base
+        env:
+          BASE_PATH: /Rogue-Survivor-Reloaded/game/
+        run: npm run test:coverage
+
+      - name: Assemble the site and validate it
+        # The same command the Pages deploy runs, which is the point: a broken
+        # assembly fails here rather than in a deploy. `build:pages` and not
+        # `build:site` — build:site only assembles whatever is already in dist/,
+        # and the step above left an unstamped build there, so it correctly
+        # refused to publish a worker that would never evict. That guard firing
+        # on this step is how the mistake was found.
+        env:
+          BASE_PATH: /Rogue-Survivor-Reloaded/game/
+        run: |
+          npm run build:pages
+          node ../docs/tools/check-site.mjs
+
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4

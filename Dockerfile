@@ -1,4 +1,15 @@
-# Rogue Survivor Reloaded — browser port, production image.
+# Rogue Survivor Reloaded — browser port, containerised production build.
+#
+# NOT the deploy path. The site is published by .github/workflows/pages.yml, as
+# a static bundle assembled from docs/ and the game. This image exists to run a
+# production build locally (`npm run serve` equivalent) and for CI to prove the
+# bundle is shippable, which is worth having: it is the only check that exercises
+# the Express server and a cold container start.
+#
+# One consequence of not being the deploy path, worth knowing before deploying it
+# anyway: there is no stamp-cache-version step here, so this image's sw.js
+# carries the committed CACHE_VERSION. Serving it means returning players never
+# get the new build. `npm run build:pages` is what the real deploy uses.
 #
 # Build from the REPOSITORY ROOT (not web/):
 #     docker build -t rogue-survivor-web .

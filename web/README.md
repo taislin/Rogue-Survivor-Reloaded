@@ -43,7 +43,7 @@ You do not bump it by hand. `scripts/stamp-cache-version.mjs` runs after
 `npm run build` and rewrites that line in `dist/` to a hash of the built files,
 so the version changes exactly when the cached content does. A commit that
 touches no cached content leaves returning players' caches intact, which is the
-point: the `/assets/` handler is cache-first with no revalidation, so a manual
+point: the assets handler is cache-first with no revalidation, so a manual
 bump that is too eager costs every returning player a re-download of the shell
 plus every sprite and track they had cached. The committed value in `sw.js` is
 the fallback for local builds and for any build that skips the script.
@@ -67,6 +67,10 @@ All run from `web/`.
 | `npm test`          | Vitest suite                                                |
 | `npm run test:coverage` | Vitest with V8 coverage                               |
 | `npm run verify`    | type-check + coverage + build (the full gate)               |
+| `npm run check:base` | Fail if the built output has a root-absolute URL. Only meaningful with `BASE_PATH` set |
+| `npm run build:site` | Assemble `_site/`: `docs/` at the root, the game in `game/` |
+| `npm run build:pages` | `build` + stamp the cache version + `build:site`, i.e. the whole Pages build |
+| `npm run preview:site` | Serve `_site/` under the Pages path prefix, for the browser check |
 | `npm run sim`       | Headless simulation — plays a full game in Node, no browser |
 | `npm run profile`   | Headless draw-call profiler                                 |
 
@@ -81,17 +85,24 @@ All run from `web/`.
 ├── docs/                 Static website (GitHub Pages source)
 ├── Dockerfile
 ├── LICENSE.txt           GPLv3 (inherited from the original)
+├── _site/                Assembled site (gitignored): docs/ + game/
 └── web/                  The port
     ├── index.html        Entry page; owns the 1366x768 canvas
+    ├── base-path.ts      The deployment base; read by vite + vitest config
     ├── public/
     │   ├── assets/       Sprites (.webp) and audio (.ogg)
     │   └── sw.js         Service worker
-    ├── server/           Express production server
+    ├── scripts/
+    │   ├── stamp-cache-version.mjs  Derive the worker's cache version
+    │   ├── check-base.mjs           Fail on a root-absolute URL in dist/
+    │   └── build-site.mjs           Assemble _site/ for GitHub Pages
+    ├── server/           Express production server (local prod testing only)
     ├── sim/              Headless simulator CLI + profiler
     ├── src/
     │   ├── main.ts       Browser entry point
     │   ├── data/         Map, Actor, Item, Tile, World, Doll, …
     │   ├── engine/       Rules, LOS, RogueGame, actions, audio, items
+    │   │   └── BaseUrl.ts  The base every asset and font URL is built from
     │   ├── gameplay/     Game data tables, AI controllers, map generators
     │   ├── sim/          HeadlessRunner
     │   └── ui/           IRogueUI implementations (Canvas, Null, Options)
@@ -309,16 +320,18 @@ compare against it before "fixing" the port.
 ## Website
 
 [`docs/`](../docs/) is a static site — landing page, the complete game manual,
-the control reference, and notes on how the port works. It is published at
-**`/docs/`** on the same host as the game, by the deployment below, rather than
-by GitHub Pages.
+the control reference, and notes on how the port works. It is the **landing
+page of the published site**, at the root, and the game is one click below it at
+`/game/`.
 
-That is possible because every link in it is relative. `docs/index.html` links
-to `manual.html`, and `docs/assets/css/site.css` reaches its fonts through
-`../fonts/` — nothing is rooted at `/`. So the site works unchanged in any
-directory, and the build just copies it into the game's `dist/`. The game itself
-cannot move, by contrast: `src/engine/AssetPaths.ts` hardcodes `/assets` and
-builds all 1 153 sprite and audio URLs from it, so it has to own the root.
+The game is the half that cannot move. `engine/BaseUrl.ts` supplies the base
+that `AssetPaths.ts`, `GameSounds.ts` and `ui/fonts.ts` build every asset and
+font URL from, and it is a build-time constant — so the game works at a domain
+root or in a subdirectory, whichever it was built for, and which one is a
+deployment decision rather than a code one. The docs site has no such
+constraint: every link in it is relative (`manual.html`, `assets/css/site.css`,
+`../fonts/`), so it works unchanged in any directory. That is the whole
+asymmetry, and it is why the root belongs to the website.
 
 ```bash
 node docs/tools/check-site.mjs      # validate links, assets, tags, CSS coverage
@@ -327,35 +340,83 @@ node docs/tools/build-manual.mjs    # regenerate manual.html from the source tex
 
 `docs/manual.html` is generated from `src/Resources/Manual/RS Manual.txt` — the
 original manual by the game's author, reformatted and not rewritten. See
-[`docs/README.md`](../docs/README.md) for the conventions.
+[`docs/README.md`](../docs/README.md) for the conventions. Editing it by hand
+does not survive the next regeneration: the generator is the whole file, so a
+hand-made nav link vanishes on the next `build-manual.mjs` run.
 
 ---
 
 ## Deploying
 
-[`render.yaml`](../render.yaml) at the repository root deploys this as a Render
-**static site** — a CDN-served bundle with no server process. That is the right
-service type here: the port has no API, no database and no uploads, so a server
-would do nothing but hand back files, and would cost a 0.1-CPU runtime and a
-15-minute idle spin-down to do it. Static sites do neither.
+[`../.github/workflows/pages.yml`](../.github/workflows/pages.yml) publishes the
+site to GitHub Pages on every push to `master`. It is a static site with no
+server process anywhere in the path: the port has no API, no database and no
+uploads, so anything serving it would do nothing but hand back files.
 
-The build command runs from the repository root, so it does its own `cd`:
+Pages cannot build anything — it serves a directory as committed — so the
+workflow builds and hands Pages an artifact, and **Settings → Pages → Source has
+to be "GitHub Actions"** rather than "Deploy from a branch". Locally, the same
+three steps are one command:
 
 ```bash
-cd web && npm ci && npm run build
-  && node scripts/stamp-cache-version.mjs
-  && mkdir -p dist/docs && cp -r ../docs/. dist/docs/
+BASE_PATH=/Rogue-Survivor-Reloaded/game/ npm run build:pages
 ```
 
-`stamp-cache-version.mjs` runs **after** the build and before the `docs/` copy.
-The ordering matters: the website is not part of what the service worker caches,
-so a docs-only change must not evict returning players' game caches.
+which is `build` → `stamp-cache-version.mjs` → `build-site.mjs`, and assembles
+`_site/` with `docs/` at the root and the game in `game/`. The base comes from
+`actions/configure-pages`'s `base_path` output rather than being written down, so
+renaming the repository moves the base with it.
 
-The root `Dockerfile` and `web/server/` are no longer the deploy path. Both
-still work and CI still builds and smoke-tests the image, which is what proves
-the bundle is shippable; `npm run serve` is still the local way to check a
-production build. Keep the Dockerfile in step with the Blueprint's build command
-— they run the same two npm commands, so the only thing to watch is drift.
+**The base path is the part that is easy to get wrong, and the failure is
+silent.** A hardcoded `/assets` under a subdirectory does not fail a test — it
+ships a black screen, because the port preloads all 1 124 sprites before the
+first frame and cannot draw one it has not fetched. So two things guard it, both
+run in CI:
+
+- `npm run check:base` greps the *built output* for a root-absolute URL. The
+  test suite cannot do this: its asset assertions resolve against `public/` on
+  disk and never build a URL a browser would request. The check only has teeth
+  for a subpath build, since at base `/` a root-absolute URL is correct by
+  definition — so CI re-runs the suite with `BASE_PATH` set.
+- The suite itself runs under a subpath base as well as the default one, which
+  catches a base-agnostic path that got hardcoded in one module. `vitest.config.mts`
+  imports the value from `base-path.ts` rather than repeating it, because
+  Vitest does not inherit the Vite config: set it in one file only and the tests
+  pass against a base production does not use.
+
+`stamp-cache-version.mjs` still runs, and still matters — see *Offline play*
+above. `scripts/build-site.mjs` refuses to assemble a site whose service worker
+carries the committed `CACHE_VERSION`, because that deploy looks fine and leaves
+every returning player on the previous build.
+
+**Do the browser check before merging**, because it is the one thing none of the
+above can do. Every check here is static analysis of the built artifact, and a
+wrong base is a black screen rather than an error. `npm run preview:site` serves
+`_site/` under the Pages path prefix — not at `/`, which would serve the game a
+404 for every asset and look like the very bug being tested — so the URLs the
+built page asks for are the ones the server answers:
+
+```bash
+BASE_PATH=/Rogue-Survivor-Reloaded/game/ npm run build:pages
+npm run preview:site      # then open the printed game URL
+```
+
+`--base /` serves at the root if you built a root-base bundle, and `--open` just
+prints the URLs. One trap: the worker caches assets cache-first, so a browser
+that already loaded this origin can keep showing an earlier build until the
+worker updates, which it does on navigation and at most daily. A private window
+or a different port avoids that entirely.
+
+`sw.js` and `manifest.webmanifest` resolve their paths against their own URL
+rather than being templated. Vite copies `public/` to the output untransformed,
+so neither can read the build's base, and the alternative — having something
+substitute into them — is a second place for the base to be wrong. The result is
+that the same built site works at a domain root, under a Pages subdirectory, and
+from a local file server.
+
+The root `Dockerfile` and `web/server/` are not part of this path. Both still
+work, CI still builds and smoke-tests the image, and `npm run serve` is still
+the local way to check a production build.
 
 ---
 

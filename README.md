@@ -4,7 +4,10 @@ A browser-playable TypeScript port of **Rogue Survivor** by [Jacques Ruiz (rogue
 
 The game is a turn-based, real-time survival roguelike: you play a survivor (or an undead) in a procedurally generated city, scavenging while the district behind you floods with the dead. Survive the nights.
 
-**Website**: the manual, controls and project notes live in [`docs/`](docs/), published with GitHub Pages. See [`docs/README.md`](docs/README.md) for how to enable it if editing.
+**Website**: the manual, controls and project notes live in [`docs/`](docs/), and are
+published with GitHub Pages as the landing page of the same site the game is served
+from — the game is at `/game/`. See [`docs/README.md`](docs/README.md) for the site
+conventions and [`web/README.md`](web/README.md#deploying) for how the site is built.
 
 ![Screenshot](docs/assets/img/screens/screen1.webp)
 

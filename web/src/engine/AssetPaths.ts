@@ -1,13 +1,23 @@
 import { SOUND_FILES, MUSIC_FILES } from "@gameplay/GameSounds";
+import { BASE_URL } from "@engine/BaseUrl";
 
 /**
  * Runtime asset locations.
  *
- * `web/public/assets/` is served at `/assets/`:
+ * `web/public/assets/` is served under the deployment's base path:
  *
- *   /assets/images/<imageSet>/<Category>/<name>.webp  sprites
- *   /assets/music/RS - <Title>.ogg                     music
- *   /assets/sfx/sfx - <name>.ogg                       sound effects
+ *   <base>assets/images/<imageSet>/<Category>/<name>.webp  sprites
+ *   <base>assets/music/RS - <Title>.ogg                     music
+ *   <base>assets/sfx/sfx - <name>.ogg                       sound effects
+ *
+ * The base is `import.meta.env.BASE_URL` rather than a literal, which is what
+ * lets the same build serve from a domain root and from a subdirectory. See
+ * `web/base-path.ts` for who sets it and why the desktop build must keep `/`.
+ * This is the one constant the whole asset layer hangs off — every path below
+ * derives from it — so if the base is ever wrong, it is wrong for all 1 153
+ * files at once, and the symptom is a black screen rather than a broken
+ * sprite: the port preloads every image before the first frame, because a
+ * browser cannot draw one it has not fetched.
  *
  * The C# original kept the same three `Resources/` subtrees and resolved them by
  * id, with a `*_FILE` companion constant per id (see `GameSounds.cs`). The web
@@ -19,7 +29,10 @@ import { SOUND_FILES, MUSIC_FILES } from "@gameplay/GameSounds";
  * scripts/optimize-sprites.py). `IMAGE_EXTENSION` is the one place that knows.
  */
 
-export const ASSETS_ROOT = "/assets";
+// The base comes from engine/BaseUrl.ts, which explains both why it is read
+// from the build and why the read is guarded. Always ends in a slash, which is
+// why no separator is added below.
+export const ASSETS_ROOT = `${BASE_URL}assets`;
 export const IMAGES_ROOT = `${ASSETS_ROOT}/images`;
 export const MUSIC_ROOT = `${ASSETS_ROOT}/music`;
 export const SFX_ROOT = `${ASSETS_ROOT}/sfx`;
@@ -77,7 +90,7 @@ export function setImageSet(set: string): void {
   imageSetGeneration++;
 }
 
-/** `Activities/chasing` (or `Activities\chasing`) -> `/assets/images/classic/Activities/chasing.webp`. */
+/** `Activities/chasing` (or `Activities\chasing`) -> `<base>assets/images/classic/Activities/chasing.webp`. */
 export function imagePath(imageId: string): string {
   return imagePathIn(currentImageSet, imageId);
 }
@@ -94,7 +107,7 @@ export function imagePathIn(set: ImageSet, imageId: string): string {
   return `${IMAGES_ROOT}/${set}/${imageId.replace(/\\/g, "/")}.${IMAGE_EXTENSION}`;
 }
 
-/** `army` -> `/assets/music/RS - Army.ogg`; already-resolved `*_FILE` values pass through. */
+/** `army` -> `<base>assets/music/RS - Army.ogg`; already-resolved `*_FILE` values pass through. */
 export function musicPath(musicId: string): string {
   const file = MUSIC_FILES[musicId];
   if (file != null) return `${MUSIC_ROOT}/${file}.ogg`;
@@ -102,7 +115,7 @@ export function musicPath(musicId: string): string {
   return `${MUSIC_ROOT}/${musicId}.ogg`;
 }
 
-/** `undead rise` -> `/assets/sfx/sfx - undead rise.ogg`; already-resolved `*_FILE` values pass through. */
+/** `undead rise` -> `<base>assets/sfx/sfx - undead rise.ogg`; already-resolved `*_FILE` values pass through. */
 export function soundPath(soundId: string): string {
   const file = SOUND_FILES[soundId];
   if (file != null) return `${SFX_ROOT}/${file}.ogg`;
@@ -123,7 +136,7 @@ export function soundPath(soundId: string): string {
  * The port kept a single `musicPath()` for that, which consults `MUSIC_FILES` and
  * on a miss falls through to `` `${MUSIC_ROOT}/${musicId}.ogg` ``. `undead rise`
  * is in `SOUND_FILES` and not `MUSIC_FILES`, so it resolved to
- * `/assets/music/undead rise.ogg` — a 404, verified against the shipped files
+ * `<base>assets/music/undead rise.ogg` — a 404, verified against the shipped files
  * (`assets/sfx/sfx - undead rise.ogg` exists; `assets/music/` has no such file).
  * Because `play()` assigns `audioElement.src` *before* the request fails, the
  * effect did not merely fail to play: it replaced and so silenced whatever was

@@ -1,5 +1,8 @@
+import { BASE_URL } from "@engine/BaseUrl";
+
 export class GameSounds {
-  static readonly PATH = "/assets/sfx/";
+  // Prefixed with the deployment base, not a literal: see engine/BaseUrl.ts.
+  static readonly PATH = `${BASE_URL}assets/sfx/`;
 
   static readonly UNDEAD_EAT = "undead eat";
   static readonly UNDEAD_EAT_FILE = `${GameSounds.PATH}sfx - undead eat`;
@@ -12,7 +15,7 @@ export class GameSounds {
 }
 
 export class GameMusics {
-  static readonly PATH = "/assets/music/";
+  static readonly PATH = `${BASE_URL}assets/music/`;
 
   static readonly ARMY = "army";
   static readonly ARMY_FILE = `${GameMusics.PATH}RS - Army`;

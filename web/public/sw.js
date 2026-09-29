@@ -42,6 +42,27 @@ const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const ASSET_CACHE = `${CACHE_VERSION}-assets`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 
+/**
+ * Where this worker is mounted, derived from its own URL rather than written
+ * down.
+ *
+ * A service worker cannot read the build's base path: this file lives in
+ * `public/`, and Vite copies `public/` to the output untransformed, so there is
+ * no `import.meta.env` here and nothing for a build step to substitute into.
+ * The two options were therefore to make this file base-agnostic, or to have
+ * something template it. Resolving against the script's own URL is the better
+ * of the two: it is correct at any mount point, and it cannot be wrong in the
+ * way a hardcoded path is, because there is no path to get out of date. The
+ * same build works on a domain root, under a Pages project subdirectory, and
+ * from a local file server.
+ *
+ * `self.location` is the worker script's URL in both the classic and module
+ * registrations, so this holds either way.
+ */
+const SCOPE_PATH = new URL("./", self.location.href).pathname;
+const ASSETS_PREFIX = `${SCOPE_PATH}assets/`;
+const INDEX_URL = new URL("index.html", self.location.href).href;
+
 // The favicon is precached alongside the shell: it is what a browser shows
 // when the game is launched from the home screen with no connection, and a
 // missing one falls back to a default page icon.
@@ -53,21 +74,24 @@ const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 // then went offline should not silently get the platform font instead — and the
 // faces are 306 KB together, which is small next to the 55 MB of sprites and
 // audio that are deliberately *not* precached below.
+//
+// Relative, for the reason above: the Cache API resolves these against the
+// worker's own URL, so "./index.html" is the right file at any mount point.
 const SHELL_URLS = [
-  "/",
-  "/index.html",
-  "/manifest.webmanifest",
-  "/icon-reloaded.png",
-  "/icon-192.png",
-  "/icon-512.png",
-  "/fonts/JetBrainsMono-Regular.woff2",
-  "/fonts/JetBrainsMono-Bold.woff2",
-  "/fonts/IosevkaTermSlab-Regular.woff2",
-  "/fonts/IosevkaTermSlab-Bold.woff2",
-  "/fonts/hack-regular.woff2",
-  "/fonts/hack-bold.woff2",
-  "/fonts/IBMPlexMono-Regular.woff2",
-  "/fonts/IBMPlexMono-Bold.woff2",
+  "./",
+  "./index.html",
+  "./manifest.webmanifest",
+  "./icon-reloaded.png",
+  "./icon-192.png",
+  "./icon-512.png",
+  "./fonts/JetBrainsMono-Regular.woff2",
+  "./fonts/JetBrainsMono-Bold.woff2",
+  "./fonts/IosevkaTermSlab-Regular.woff2",
+  "./fonts/IosevkaTermSlab-Bold.woff2",
+  "./fonts/hack-regular.woff2",
+  "./fonts/hack-bold.woff2",
+  "./fonts/IBMPlexMono-Regular.woff2",
+  "./fonts/IBMPlexMono-Bold.woff2",
 ];
 
 /**
@@ -126,13 +150,13 @@ self.addEventListener("fetch", (event) => {
           caches.open(SHELL_CACHE).then((cache) => cache.put(request, copy));
           return response;
         })
-        .catch(() => caches.match(request).then((cached) => cached ?? caches.match("/index.html")))
+        .catch(() => caches.match(request).then((cached) => cached ?? caches.match(INDEX_URL)))
     );
     return;
   }
 
   // Game assets: cache first, they are immutable for a given build.
-  if (url.pathname.startsWith("/assets/")) {
+  if (url.pathname.startsWith(ASSETS_PREFIX)) {
     event.respondWith(
       caches.match(request).then((cached) => {
         if (cached) return cached;
