@@ -502,7 +502,7 @@ loudly.
   `5b2dc59`; the side panel, hitbox, popup and minimap fixes `4a6e845` and
   `2ebdddf`; the four typeface families `47c5b64`; and the look-handler and
   typeface-repaint fixes `6977b63`.
-- **Current state (2026-09-29): 1141 tests across 64 files, `npm run verify` green**
+- **Current state (2026-09-29): 1143 tests across 64 files, `npm run verify` green**
   — type-check, coverage gate and build all pass. Coverage is ~59.8% statements /
   49.7% branches / 72.1% functions / 61.0% lines, which clears the measured floor
   in `vitest.config.mts`.
@@ -1377,7 +1377,7 @@ Stages 4 and 5 have not started.
 |---|---|---|
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
-| **3** | merged content pack | **data tables, sprite files, the actors (2 of 4) and all 143 tiles done.** `ItemID` (+~180), the 12 `{id, img}` maps, `makeItem*` factories, and the remaining ~580 `GameImages` constants **not started** |
+| **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles and 24 of 95 items done.** The other 71 items, `makeItem*` factories, and the remaining ~550 `GameImages` constants **not started** |
 | **4** | 37 gated features | **not started** — the bulk of the work |
 | **5** | content, audio, credits | **not started** |
 
@@ -1403,7 +1403,7 @@ Two things a later session should not have to re-derive:
   all); and the weather/rot sprite collision (it does not exist — `imagePathIn`
   permits subpaths, so the merge just left 14 unreferenced files).
 
-Gate: `cd web && npm run verify` — **1141 tests across 64 files, green** as of
+Gate: `cd web && npm run verify` — **1143 tests across 64 files, green** as of
 the data-merge commit. `BROWSER_PORT_PLAN.md` §5.6d is the only place the data
 decisions are written down.
 
@@ -1875,19 +1875,50 @@ and fail in CI, which is the worst arrangement available. Regenerate with
 Mutation-checked: making a C# wall walkable, dropping a water tile's `isWater`,
 and dropping its `waterCoverImageId` each fail the suite.
 
+**Items — 24 of 95 done, deliberately in one piece rather than in a rush.**
+`scripts/port-item-models.py` parses `GameItems.cs`, where every item is built
+the same way with the sprite as the *third* constructor argument. That matters:
+`FOOD_RAW_RABBIT` is drawn by `ITEM_RAW_RABBIT`, `MELEE_KATANA` by `ITEM_KATANA`,
+and there is no naming rule that gets 95 of those right — the sprite is read from
+the source, not guessed from the id.
+
+Only the maps whose entire value is `{id, img}` are emitted — **16 foods and 8
+entertainments**, with their `ItemID` entries and 24 `GameImages` constants. The
+other 71 are listed by the script with the field each one needs, because the C#
+states it per item in a different shape each time: `new Verb("slash", "slashes")`
+for melee, an `AmmoType` for ranged, a `DollPart` for armour, a *second* image
+for a burnt-out light and for a tagged spray can. A generator that guessed those
+would be worse than the lines it replaced.
+
+**No `ItemID` is emitted without the map entry that gives it a model.** An enum
+member with nothing behind it is a hole in `this.models` — and the guard added in
+`8c15688` now fails on exactly that. So each id arrives with its model, which is
+why this is 24 rather than 95.
+
+**15 more ids the C# has and the data does not**, reported and not emitted: 6
+`Ammo` and 9 `GrenadePrimed`. The fork makes the *primed* grenade a distinct
+item, and ammo its own item, neither of which vanilla has a table for. Adding
+them would mean `ItemID` members nothing can build — Stage 4/5 content.
+
+**When this stage finishes, add the test that closes the other direction:** every
+row of every merged `Items_*.json` binds to a model. It cannot be written yet,
+because 71 rows legitimately have no map entry — but it is the check that stops a
+new CSV row from being silently skipped by `if (!meta) continue`, and it should
+land with the last of them, not after.
+
 **Content ids and maps** — the hand-edited core, and where the real cost is:
 
 | Change | Where | Count |
 |---|---|---|
-| `ItemID` — **append only, never renumber** (saved keybindings are `[commandNumber, key]`) | `GameItems.ts` (`_COUNT = 69` at `:136`) | ~+180 |
-| 12 hand-written `{id, img}` maps — the sprite id is **not in the JSON**, it lives in TypeScript | `GameItems.ts:150-159, 190-194, 230-247, 289-300, 381-389, 415-420, 443-448, 480-483, 510-517, 526-531, 557-560` | ~+180 |
-| `makeItem*` factories | `BaseMapGenerator.ts:780-1064` | 56 → ~110 |
+| `ItemID` — **append only, never renumber** (saved keybindings are `[commandNumber, key]`) | `GameItems.ts` | **24 of 95 done** (`_COUNT` 69 → 93) |
+| 10 hand-written `{id, img}` maps — the sprite id is **not in the JSON**, it lives in TypeScript | `GameItems.ts` | **foodMap and entMap done**; melee 25, ranged 16, grenade 9, medicine 8, backpack 5, light 4, body armour 2, spray paint 2 to go |
+| `makeItem*` factories — how spawns place the new items | `BaseMapGenerator.ts` | not started; only needed once the items are playable |
 | `ActorID` + sprite map + the two switches | `GameActors.ts` | **done, 2 of 4** — see below |
 | `TileID` + models | `GameTiles.ts` | **done — 143 ids (was 19), 124 new** |
 | `GameImages` constants for the tile sprites | `GameImages.ts` | **done — 125 new**, pulled in by the tiles |
 | 4 new minimap colours | `Color.ts` | **done** — SteelBlue, Sienna, SeaGreen, OliveDrab, MediumPurple, Khaki, Cornsilk, BlanchedAlmond, all .NET values |
 | `GameImages` constants | `GameImages.ts` | ~+711 |
-| `Skills.NAMES`, `Rules.SKILL_*` | `Skills.ts:62-69`, `Rules.ts:277-327` | +1 (`BOWS` → `BOWS_EXPLOSIVES`) |
+| `Skills.NAMES`, `Rules.SKILL_*` | `Skills.ts`, `Rules.ts` | +1 (`BOWS` → `BOWS_EXPLOSIVES`) — **not started** |
 
 **The `TileID` ordinal fix — done, and much cheaper than predicted.** This was
 flagged as the one genuinely new cost in Stage 3, on the reasoning that the fork

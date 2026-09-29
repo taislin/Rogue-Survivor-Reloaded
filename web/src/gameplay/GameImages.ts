@@ -513,6 +513,33 @@ export class GameImages {
   static readonly ITEM_SPRAYPAINT4 = "Items/item_spraypaint4";
   static readonly ITEM_STENCH_KILLER = "Items/item_stench_killer";
   static readonly ITEM_SUBWAY_BADGE = "Items/item_subway_badge";
+
+  // ── Still Alive food and entertainment (scripts/port-item-models.py). Paths
+  // verbatim from the fork's GameImages.cs, hence item_book_CHAR.
+  static readonly ITEM_BOOK_BLUE = "Items/item_book_blue";
+  static readonly ITEM_BOOK_CHAR = "Items/item_book_CHAR";
+  static readonly ITEM_BOOK_GREEN = "Items/item_book_green";
+  static readonly ITEM_BOOK_RED = "Items/item_book_red";
+  static readonly ITEM_CHICKEN_EGG = "Items/item_chicken_egg";
+  static readonly ITEM_COOKED_CHICKEN = "Items/item_cooked_chicken";
+  static readonly ITEM_COOKED_DOG_MEAT = "Items/item_cooked_dog_meat";
+  static readonly ITEM_COOKED_FISH = "Items/item_cooked_fish";
+  static readonly ITEM_COOKED_HUMAN_FLESH = "Items/item_cooked_human_flesh";
+  static readonly ITEM_COOKED_RABBIT = "Items/item_cooked_rabbit";
+  static readonly ITEM_GRAPES = "Items/item_grapes";
+  static readonly ITEM_MAGAZINE1 = "Items/item_magazine1";
+  static readonly ITEM_MAGAZINE2 = "Items/item_magazine2";
+  static readonly ITEM_MAGAZINE3 = "Items/item_magazine3";
+  static readonly ITEM_MAGAZINE4 = "Items/item_magazine4";
+  static readonly ITEM_PEANUTS = "Items/item_peanuts";
+  static readonly ITEM_RAW_CHICKEN = "Items/item_raw_chicken";
+  static readonly ITEM_RAW_DOG_MEAT = "Items/item_raw_dog_meat";
+  static readonly ITEM_RAW_FISH = "Items/item_raw_fish";
+  static readonly ITEM_RAW_HUMAN_FLESH = "Items/item_raw_human_flesh";
+  static readonly ITEM_RAW_RABBIT = "Items/item_raw_rabbit";
+  static readonly ITEM_SNACK_BAR = "Items/item_snack_bar";
+  static readonly ITEM_VEGETABLES = "Items/item_vegetables";
+  static readonly ITEM_WILD_BERRIES = "Items/item_wild_berries";
   static readonly ITEM_TRUNCHEON = "Items/item_truncheon";
   static readonly ITEM_WOODEN_PLANK = "Items/item_wooden_plank";
   static readonly ITEM_ZTRACKER = "Items/item_ztracker";

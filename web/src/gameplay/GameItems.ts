@@ -133,7 +133,35 @@ export enum ItemID {
   UNIQUE_SANTAMAN_SHOTGUN = 67,
   UNIQUE_HANS_VON_HANZ_PISTOL = 68,
 
-  _COUNT = 69,
+  // ── Still Alive items (scripts/port-item-models.py). Append-only: a save
+  // names items by this number. Only the 24 whose whole model is `{id, img}`
+  // are here; the other 71 need a verb, an AmmoType, a DollPart or a second
+  // image, and arrive with the map entry that builds them.
+  FOOD_WILD_BERRIES = 69,
+  FOOD_VEGETABLES = 70,
+  FOOD_SNACK_BAR = 71,
+  FOOD_PEANUTS = 72,
+  FOOD_GRAPES = 73,
+  FOOD_RAW_FISH = 74,
+  FOOD_COOKED_FISH = 75,
+  FOOD_RAW_RABBIT = 76,
+  FOOD_COOKED_RABBIT = 77,
+  FOOD_RAW_CHICKEN = 78,
+  FOOD_COOKED_CHICKEN = 79,
+  FOOD_RAW_DOG_MEAT = 80,
+  FOOD_COOKED_DOG_MEAT = 81,
+  FOOD_RAW_HUMAN_FLESH = 82,
+  FOOD_COOKED_HUMAN_FLESH = 83,
+  FOOD_CHICKEN_EGG = 84,
+  ENT_BOOK_CHAR = 85,
+  ENT_BOOK_BLUE = 86,
+  ENT_BOOK_GREEN = 87,
+  ENT_BOOK_RED = 88,
+  ENT_MAGAZINE1 = 89,
+  ENT_MAGAZINE2 = 90,
+  ENT_MAGAZINE3 = 91,
+  ENT_MAGAZINE4 = 92,
+  _COUNT = 93,
 }
 
 export class GameItems implements ItemModelDB {
@@ -191,6 +219,22 @@ export class GameItems implements ItemModelDB {
       FOOD_ARMY_RATION: { id: ItemID.FOOD_ARMY_RATION, img: GameImages.ITEM_ARMY_RATION },
       FOOD_GROCERIES: { id: ItemID.FOOD_GROCERIES, img: GameImages.ITEM_GROCERIES },
       FOOD_CANNED_FOOD: { id: ItemID.FOOD_CANNED_FOOD, img: GameImages.ITEM_CANNED_FOOD },
+      FOOD_WILD_BERRIES: { id: ItemID.FOOD_WILD_BERRIES, img: GameImages.ITEM_WILD_BERRIES },
+      FOOD_VEGETABLES: { id: ItemID.FOOD_VEGETABLES, img: GameImages.ITEM_VEGETABLES },
+      FOOD_SNACK_BAR: { id: ItemID.FOOD_SNACK_BAR, img: GameImages.ITEM_SNACK_BAR },
+      FOOD_PEANUTS: { id: ItemID.FOOD_PEANUTS, img: GameImages.ITEM_PEANUTS },
+      FOOD_GRAPES: { id: ItemID.FOOD_GRAPES, img: GameImages.ITEM_GRAPES },
+      FOOD_RAW_FISH: { id: ItemID.FOOD_RAW_FISH, img: GameImages.ITEM_RAW_FISH },
+      FOOD_COOKED_FISH: { id: ItemID.FOOD_COOKED_FISH, img: GameImages.ITEM_COOKED_FISH },
+      FOOD_RAW_RABBIT: { id: ItemID.FOOD_RAW_RABBIT, img: GameImages.ITEM_RAW_RABBIT },
+      FOOD_COOKED_RABBIT: { id: ItemID.FOOD_COOKED_RABBIT, img: GameImages.ITEM_COOKED_RABBIT },
+      FOOD_RAW_CHICKEN: { id: ItemID.FOOD_RAW_CHICKEN, img: GameImages.ITEM_RAW_CHICKEN },
+      FOOD_COOKED_CHICKEN: { id: ItemID.FOOD_COOKED_CHICKEN, img: GameImages.ITEM_COOKED_CHICKEN },
+      FOOD_RAW_DOG_MEAT: { id: ItemID.FOOD_RAW_DOG_MEAT, img: GameImages.ITEM_RAW_DOG_MEAT },
+      FOOD_COOKED_DOG_MEAT: { id: ItemID.FOOD_COOKED_DOG_MEAT, img: GameImages.ITEM_COOKED_DOG_MEAT },
+      FOOD_RAW_HUMAN_FLESH: { id: ItemID.FOOD_RAW_HUMAN_FLESH, img: GameImages.ITEM_RAW_HUMAN_FLESH },
+      FOOD_COOKED_HUMAN_FLESH: { id: ItemID.FOOD_COOKED_HUMAN_FLESH, img: GameImages.ITEM_COOKED_HUMAN_FLESH },
+      FOOD_CHICKEN_EGG: { id: ItemID.FOOD_CHICKEN_EGG, img: GameImages.ITEM_CHICKEN_EGG },
     };
     for (const d of foodData as any[]) {
       const meta = foodMap[d.ID];
@@ -557,6 +601,14 @@ export class GameItems implements ItemModelDB {
     const entMap: Record<string, { id: ItemID; img: string }> = {
       ENT_BOOK: { id: ItemID.ENT_BOOK, img: GameImages.ITEM_BOOK },
       ENT_MAGAZINE: { id: ItemID.ENT_MAGAZINE, img: GameImages.ITEM_MAGAZINE },
+      ENT_BOOK_CHAR: { id: ItemID.ENT_BOOK_CHAR, img: GameImages.ITEM_BOOK_CHAR },
+      ENT_BOOK_BLUE: { id: ItemID.ENT_BOOK_BLUE, img: GameImages.ITEM_BOOK_BLUE },
+      ENT_BOOK_GREEN: { id: ItemID.ENT_BOOK_GREEN, img: GameImages.ITEM_BOOK_GREEN },
+      ENT_BOOK_RED: { id: ItemID.ENT_BOOK_RED, img: GameImages.ITEM_BOOK_RED },
+      ENT_MAGAZINE1: { id: ItemID.ENT_MAGAZINE1, img: GameImages.ITEM_MAGAZINE1 },
+      ENT_MAGAZINE2: { id: ItemID.ENT_MAGAZINE2, img: GameImages.ITEM_MAGAZINE2 },
+      ENT_MAGAZINE3: { id: ItemID.ENT_MAGAZINE3, img: GameImages.ITEM_MAGAZINE3 },
+      ENT_MAGAZINE4: { id: ItemID.ENT_MAGAZINE4, img: GameImages.ITEM_MAGAZINE4 },
     };
     for (const d of entData as any[]) {
       const meta = entMap[d.ID];
