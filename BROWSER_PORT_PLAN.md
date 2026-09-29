@@ -1378,7 +1378,7 @@ Stages 4 and 5 have not started.
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
 | **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles, 90 of 95 items and all 123 item factories done.** The 5 backpacks (a new mechanic) and ~420 unused `GameImages` constants are the only content left; nothing *calls* the new factories yet, which is placement and belongs to Stage 4/5 |
-| **4** | 37 gated features | **6 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`. 31 remain |
+| **4** | 37 gated features | **7 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (part 2a; the light-source scan in 2b is not done). 30 remain |
 | **5** | content, audio, credits | **not started** |
 
 Two things a later session should not have to re-derive:
@@ -2381,6 +2381,73 @@ plan for rather than discover:
 > Sixteen mutations, each caught. Three of the first six did not fail, and each
 > was a test bug rather than an implementation bug: two used `AMMO_SHOTGUN`,
 > which is exempt and so was never stamped, making the assertion vacuous.
+
+> ### `DarknessFov` — 2a done (true darkness), 2b deliberately not (light sources)
+>
+> The feature is two separable halves, and only the cheap one is here. Splitting it
+> matters because 2a is what unblocks the two Stage 2 features that have been
+> parked since Stage 2, while 2b is the expensive one.
+>
+> **2a — the arithmetic, ~80 lines.** The C# has *two* floor constants where the
+> port had one, and the pair is the whole feature:
+>
+> | | vanilla | Still Alive |
+> |---|---|---|
+> | `MINIMAL_FOV_PLAYER` | 2 | **0** — "ensures basements … are truly *dark*" |
+> | `MINIMAL_FOV_LIVINGACTORS` | 2 | **1** — "NPC AI goes haywire if they can't see at all" |
+> | night penalties (sunset/evening/midnight/deep/sunrise) | 1/2/3/4/2 | **4/6/5/7/4** |
+> | stand-on bonus | 1 | 2, and **suppressed when FOV is already 0** |
+> | torch indoors | 0 | +2 |
+> | outside at night | — | floor of 1, before the clamp |
+>
+> The player/NPC asymmetry looks like a typo and is load-bearing: the player is
+> meant to be blind, the NPCs are not, and a blind NPC stops pathing. The night
+> penalties and the floors are **one** rebalance — the penalties were steepened
+> "to offset the new BaseView FOV" — so they are read as a single record chosen by
+> the flag (`Rules.fovProfile`) rather than as six `hasFeature` tests that could
+> disagree after an edit. **The registry test asserts `DarknessFov` has exactly two
+> readers, one in `Rules` and one in `LOS`, and that is the design.**
+>
+> The `LOS` half is a 10-line `isAdjacent` shortcut. `losDistance` is a *circle*
+> (`sqrt(0.75 * d^2)`), which excludes the four diagonal neighbours of a tile at
+> Chebyshev distance 1 — so at FOV 1 a player would see a cross with four blind
+> corners. The C#'s comment says exactly that.
+>
+> **The C#'s "lazy workaround" of a floor of 1 outdoors at night is nearly dead,
+> and the arithmetic is worth recording.** Base view range is 8 and the steepest
+> penalty is 7, so an ordinary outdoor player is already at 1 and the line changes
+> nothing. It only bites when heavy rain (−2) and exhaustion (−2) take the range
+> to −3. The test asserts both cases, with a comment, because the one that looks
+> load-bearing is the one that is not.
+>
+> Eight mutations caught. **Two more were no-ops, and saying so is the honest
+> result:** removing the gate on the `isAdjacent` shortcut, and removing the
+> shortcut's own `maxRange > 0` clause, both change nothing — under CLASSIC the
+> floor is 2 so the diagonals pass the circle anyway, and at range 0 the loop
+> bounds have already collapsed to the actor's own tile. The C# has the same
+> redundancy. Rather than manufacture a test that "catches" their removal, there
+> is a test that *demonstrates* why they are unnecessary, and both clauses are
+> kept for fidelity with a comment saying they are not load-bearing.
+>
+> **2b — the Release 7-5 "other lit tiles" scan, ~180 lines, not here.** A
+> whole-map pass in `computeFOVFor` that adds to the visible set the tiles lit by
+> a burning barrel, a tile fire, an actor's torch, a lit candle, or a dropped
+> light. The good news is that it needs **no new data types** — the C# has no
+> per-tile light-level grid either; the scan only ever adds keys to the same
+> `Set<number>` the port already has, so both renderers light up for free. The
+> reasons it is not here: it is a per-FOV-recompute W×H×trace loop that the
+> headless sim and minimap will feel, and two of its branches are blocked on
+> `Feature.TileFires` (`isAnyTileFireThere`) and on a `GameTiles.isWallModel`
+> predicate that does not exist. The three dead tint helpers the author abandoned
+> (`LOS.cs:638-680`) are not ported at all.
+>
+> **So today a player in a basement sees exactly one tile**, and a burning barrel
+> two tiles away lights nothing. `tests/darkness-fov.test.ts` pins that as the
+> 2a behaviour, so the day 2b lands and starts lighting tiles at a distance, that
+> test fails and says why.
+>
+> `DarknessGating` and `LightPriority` — both parked since Stage 2 as "needs
+> `DarknessFov`" — now unblock, and are next.
 
 > ### `ArmorResist` — half done, and the half is not the one the table implies
 >

@@ -153,10 +153,11 @@ describe("Feature registry is wired", () => {
     // Asserting the exact multiset means a new reader has to be added here, which
     // is the point: a reader is a decision, not an accident.
     expect(sites.map((s) => s.feature).sort())
-      .toEqual(["Alcohol", "ArmorResist", "Cooking", "Cooking", "FireBarrels",
-                "FireBarrels", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-                "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "ItemDespawn",
-                "ItemDespawn", "WeaponWeight"]);
+      .toEqual(["Alcohol", "ArmorResist", "Cooking", "Cooking", "DarknessFov",
+                "DarknessFov", "FireBarrels", "FireBarrels", "FoodPoisoning",
+                "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
+                "FoodPoisoning", "FoodPoisoning", "ItemDespawn", "ItemDespawn",
+                "WeaponWeight"]);
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     expect(at("Alcohol")).toMatch(/HeadlessRunner\.ts:\d+$/);
     expect(at("WeaponWeight")).toMatch(/Rules\.ts:\d+$/);
@@ -180,6 +181,17 @@ describe("Feature registry is wired", () => {
     const poison = sites.filter((s) => s.feature === "FoodPoisoning");
     expect(poison.filter((s) => /Rules\.ts/.test(s.at))).toHaveLength(2);
     expect(poison.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(4);
+
+    // DarknessFov is a single reader and that is the point: the whole rebalance
+    // is selected in one place (`Rules.fovProfile`), so there is exactly one
+    // gate to get wrong rather than five independent ones that could disagree.
+    // Two readers in two files, and the split matters: `Rules.fovProfile` picks
+    // the number set and `LOS` decides what a range of 0 can see. A third
+    // independent gate for a third number would be a third chance to disagree
+    // with the other two, which is why the numbers themselves are one record.
+    const dark = sites.filter((s) => s.feature === "DarknessFov");
+    expect(dark.filter((s) => /Rules\.ts/.test(s.at))).toHaveLength(1);
+    expect(dark.filter((s) => /LOS\.ts/.test(s.at))).toHaveLength(1);
 
     // FireBarrels is two readers in two different files, and the split is the
     // point: the generator decides what a barrel *is*, the turn loop decides what

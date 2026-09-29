@@ -8,6 +8,8 @@ import type { Map as GameMap } from '@data/Map';
 import type { Weather } from '@data/Weather';
 import { Direction } from '@engine/Direction';
 import { Point } from '@engine/Point';
+import { Feature, hasFeature } from '@engine/FeatureFlags';
+import { Session } from '@engine/Session';
 import { coordKey, coordKeyToPoint } from '@engine/CoordKey';
 import type { WorldTime } from '@engine/WorldTime';
 
@@ -285,9 +287,40 @@ export class LOS {
     for (let x = xmin; x <= xmax; x++) {
       for (let y = ymin; y <= ymax; y++) {
         const to = new Point(x, y);
-        if (rules.losDistance(from, to) > maxRange) continue;
+
+        // Still Alive, Release 6-2: adjacent tiles skip the circular distance
+        // test entirely.
+        //
+        // `losDistance` is a *circle* (`sqrt(0.75 * d^2)`), which excludes the
+        // four diagonal neighbours of a tile at Chebyshev distance 1. So at
+        // `maxRange` 0 the player would see the four cardinal neighbours but not
+        // the corners -- a visible cross with four blind corners, and the C#'s
+        // comment says exactly that. Below, `isAdjacent && maxRange > 0` then
+        // admits them outright.
+        //
+        // Gated because it is only observable once `MINIMAL_FOV_PLAYER` is 0;
+        // with vanilla's floor of 2 the diagonals are inside the circle anyway and
+        // the two branches agree.
+        const darkFov = hasFeature(Session.get().ruleset, Feature.DarknessFov);
+        const isAdjacent = rules.isAdjacent(from, to);
+        if (!darkFov || !isAdjacent) {
+          if (rules.losDistance(from, to) > maxRange) continue;
+        }
         const key = coordKey(x, y);
         if (visibleSet.has(key)) continue;
+
+        // ... and are visible without being traced, provided there is any range
+        // at all.
+        //
+        // The `maxRange > 0` clause is unreachable as written, because the loop
+        // bounds above already collapse to the actor's own tile at range 0. The
+        // C# has the same clause and the same bounds. It is kept for fidelity and
+        // because the bounds are the kind of thing that gets refactored; the test
+        // says so rather than pretending to cover it.
+        if (darkFov && isAdjacent && maxRange > 0) {
+          visibleSet.add(key);
+          continue;
+        }
 
         if (!LOS.fovSub(map, from, to, maxRange, visibleSet)) {
           const tile = map.getTileAt(x, y);

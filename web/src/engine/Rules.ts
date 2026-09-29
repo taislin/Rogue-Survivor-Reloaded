@@ -144,7 +144,23 @@ export class Rules {
   static readonly BARRICADING_MAX = 2 * DoorWindow.BASE_HITPOINTS;
 
   // FOV
-  private static readonly MINIMAL_FOV = 2;
+  /**
+   * True darkness: the player sees nothing, and an NPC sees their own tile.
+   *
+   * Still Alive, Release 6-2 and 7-5. The C# has *two* constants where the port
+   * had one, and the pair is the whole feature:
+   *
+   * - `MINIMAL_FOV_PLAYER = 0` "ensures basements and other places without
+   *   natural light are truly dark".
+   * - `MINIMAL_FOV_LIVINGACTORS = 1` because, in the C#'s own words, "NPC AI
+   *   goes haywire if they can't see at all. it's just not possible to have total
+   *   darkness for them".
+   *
+   * So the asymmetry is deliberate and load-bearing: the player is meant to be
+   * blind in a basement, and the NPCs are not, because an NPC that cannot see
+   * stops pathing and the simulation hangs.
+   */
+
 
   // Day/Night and weather effects
   static readonly FOV_PENALTY_SUNSET = 1;
@@ -155,6 +171,58 @@ export class Rules {
   static readonly NIGHT_STA_PENALTY = 2;
   static readonly FOV_PENALTY_RAIN = 1;
   static readonly FOV_PENALTY_HEAVY_RAIN = 2;
+  /**
+   * The whole Release 6-2 FOV rebalance, in one place.
+   *
+   * Every number here is *paired* with a vanilla one, and the pairs are not
+   * independent: the night penalties were steepened "to offset the new BaseView
+   * FOV" at the same time as the floor was dropped to 0. Ship only half and
+   * nothing is ever dark -- a gentle night penalty plus a floor of 0 gives back
+   * what the floor took away. So they are read as a single record chosen by the
+   * flag, rather than as five separate `hasFeature` tests that could disagree
+   * with each other after an edit.
+   */
+  static readonly DARK_FOV: Readonly<{
+    penalties: { sunset: number; evening: number; midnight: number; deepNight: number; sunrise: number };
+    standOnBonus: number;
+    insideTorchBonus: number;
+    minimalFovPlayer: number;
+    minimalFovLivingActors: number;
+    /** Whether `standOnFovBonus` is suppressed when FOV has already reached 0. */
+    standOnNeedsFov: boolean;
+  }> = {
+    penalties: { sunset: 4, evening: 6, midnight: 5, deepNight: 7, sunrise: 4 },
+    standOnBonus: 2,
+    insideTorchBonus: 2,
+    minimalFovPlayer: 0,
+    minimalFovLivingActors: 1,
+    standOnNeedsFov: true,
+  };
+
+  /** Vanilla's numbers, spelled out so the contrast is visible in one place. */
+  private static readonly CLASSIC_FOV = {
+    standOnBonus: 1,
+    insideTorchBonus: 0,
+    minimalFovPlayer: 2,
+    minimalFovLivingActors: 2,
+    standOnNeedsFov: false,
+  };
+
+  /** The record in force for the live ruleset. Every reader goes through this. */
+  private get fovProfile(): typeof Rules.CLASSIC_FOV & {
+    penalties: { sunset: number; evening: number; midnight: number; deepNight: number; sunrise: number };
+  } {
+    if (!hasFeature(Session.get().ruleset, Feature.DarknessFov)) {
+      return { ...Rules.CLASSIC_FOV, penalties: {
+        sunset: Rules.FOV_PENALTY_SUNSET,
+        evening: Rules.FOV_PENALTY_EVENING,
+        midnight: Rules.FOV_PENALTY_MIDNIGHT,
+        deepNight: Rules.FOV_PENALTY_DEEP_NIGHT,
+        sunrise: Rules.FOV_PENALTY_SUNRISE,
+      } };
+    }
+    return Rules.DARK_FOV;
+  }
 
   // Weapons & firing
   static readonly MELEE_WEAPON_BREAK_CHANCE = 1;
@@ -2616,6 +2684,9 @@ export class Rules {
   actorFOV(actor: Actor, time: WorldTime, weather: Weather): number {
     const t = time;
     const w = weather;
+    // One read of the profile, at the top, so every branch below is visibly
+    // looking at the same set of numbers.
+    const profile = this.fovProfile;
 
     // Sleeping actors have no FOV.
     if (actor.isSleeping) return 0;
@@ -2637,6 +2708,8 @@ export class Rules {
         // night & weather penalty
         FOV -= this.nightFovPenalty(actor, t);
         FOV -= this.weatherFovPenalty(actor, w);
+        // (the night penalties are read through `fovProfile` inside
+        // `nightFovPenalty`; the two halves are one rebalance)
         break;
       default:
         throw new Error("unhandled lighting");
@@ -2662,15 +2735,47 @@ export class Rules {
           lightBonus = 1;
         }
       }
+      // Still Alive, Release 6-2: a torch is worth more indoors, which is the
+      // only way a basement is ever navigable. Gated with the rest of the
+      // rebalance -- a constant reading the feature is off would be a value
+      // nothing consults, and the test below would have to know that.
+      if (
+        lightBonus > 0 &&
+        actor.location.map!.getTileAt(actor.location.position.x, actor.location.position.y)!.isInside
+      ) {
+        lightBonus += profile.insideTorchBonus;
+      }
       FOV += lightBonus;
     }
 
     // standing on some map objects.
     const mobj = actor.location.map!.getMapObjectAtPoint(actor.location.position);
-    if (mobj && mobj.standOnFovBonus) ++FOV;
+    // Still Alive, Release 6-2: gated on FOV > 0, so a player who is already
+    // blind does not get +2 out of it. Without the check the floor is undone at
+    // the last moment, which is exactly the bug the `MINIMAL_FOV_PLAYER = 0`
+    // above was introduced to fix.
+    if (mobj && (!profile.standOnNeedsFov || FOV > 0) && mobj.standOnFovBonus) {
+      FOV += profile.standOnBonus;
+    }
 
-    // done.
-    FOV = Math.max(Rules.MINIMAL_FOV, FOV);
+    // Still Alive, Release 6-2, and the C# calls it "a lazy workaround": outside
+    // at night, never drop below 1. It is *not* redundant with the clamp below --
+    // the player clamp is 0, so without this a player outdoors at midnight with
+    // no torch would be blind. It is only redundant for NPCs, and it is applied
+    // before the clamp anyway.
+    if (
+      profile.standOnNeedsFov && // the C# guards this with the same flag it
+      light === Lighting.OUTSIDE && // uses for the FOV>0 check above
+      t.isNight &&
+      FOV < 1
+    ) {
+      FOV = 1;
+    }
+
+    // done. The split is the feature: the player may be blind, an NPC may not.
+    FOV = actor.isPlayer
+      ? Math.max(profile.minimalFovPlayer, FOV)
+      : Math.max(profile.minimalFovLivingActors, FOV);
     return FOV;
   }
 
@@ -2772,19 +2877,29 @@ export class Rules {
 
   // ── Day/Night, Weather & Lighting ────────────────────────────────────────
 
+  /**
+   * How much the night takes off an actor's view range.
+   *
+   * Also read by the location panel (`RogueGame.ts:21396`) to print "you can see
+   * less well at night", so it is not private to `actorFOV`.
+   */
   nightFovPenalty(actor: Actor, time: WorldTime): number {
     if (actor.model.abilities.isUndead) return 0;
+    // Still Alive's Release 6-2 numbers are much steeper than vanilla's
+    // 1/2/3/4/2, and they are read through the same profile as the FOV floor
+    // because the two are one rebalance. See `DARK_FOV`.
+    const p = this.fovProfile.penalties;
     switch (time.phase) {
       case DayPhase.SUNSET:
-        return Rules.FOV_PENALTY_SUNSET;
+        return p.sunset;
       case DayPhase.EVENING:
-        return Rules.FOV_PENALTY_EVENING;
+        return p.evening;
       case DayPhase.MIDNIGHT:
-        return Rules.FOV_PENALTY_MIDNIGHT;
+        return p.midnight;
       case DayPhase.DEEP_NIGHT:
-        return Rules.FOV_PENALTY_DEEP_NIGHT;
+        return p.deepNight;
       case DayPhase.SUNRISE:
-        return Rules.FOV_PENALTY_SUNRISE;
+        return p.sunrise;
       default:
         return 0;
     }
@@ -2820,9 +2935,19 @@ export class Rules {
     }
   }
 
+  /**
+   * FOV in an unlit interior. Still Alive, Release 6-2 and 7-5.
+   *
+   * Undeads keep their base view range — they are modelled as seeing in the dark
+   * — and everyone else falls to the floor, which is 0 for the player and 1 for
+   * an NPC. The `isPlayer` test is on the *actor*, not the faction, so a player
+   * driving an undead actor still gets the undead branch.
+   */
   darknessFov(actor: Actor): number {
+    const profile = this.fovProfile;
     if (actor.model.abilities.isUndead) return actor.sheet.baseViewRange;
-    return Rules.MINIMAL_FOV;
+    if (actor.isPlayer) return profile.minimalFovPlayer;
+    return profile.minimalFovLivingActors;
   }
 
   odorsDecay(map: GameMap, pos: Point, weather: Weather): number {
