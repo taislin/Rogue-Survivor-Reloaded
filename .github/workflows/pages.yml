@@ -1,0 +1,116 @@
+# Publish the site to GitHub Pages: docs at the root, game at /game/.
+#
+# NOT a release. `release.yml` is `workflow_dispatch`-only because a tag and the
+# archives on it are irreversible; this runs on every push, because a stale copy
+# of the website is a bug rather than a decision. The distinction is worth
+# keeping straight: nothing here creates a version, a tag, or an attachment.
+#
+# Pages cannot build anything. It serves a directory as committed, so either the
+# built output is committed (36 MB of game into git — no) or a workflow builds it
+# and hands Pages an artifact. This is the second, which is why Pages → Settings
+# → Source has to be "GitHub Actions" rather than "Deploy from a branch".
+#
+# The base path is the part that is easy to get wrong. The game cannot live at
+# the domain root, because `engine/AssetPaths.ts` and two other modules build
+# asset URLs from a base that the *desktop* build requires to be "/" while here
+# it is a subdirectory — so the build is told which, and `scripts/check-base.mjs`
+# verifies the result. That check is a deploy gate rather than a nicety: the port
+# preloads all 1 124 sprites before the first frame, so a wrong base does not
+# degrade, it shows a black screen, and nothing in the test suite can see it.
+#
+# `base_path` comes from actions/configure-pages rather than being written down,
+# so renaming the repository or moving to a custom domain moves the base with it.
+# It is "/" with no trailing slash, hence the `/game/` appended here;
+# `web/base-path.ts` normalises the result.
+
+name: Pages
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "web/**"
+      - "docs/**"
+      - ".github/workflows/pages.yml"
+  pull_request:
+    branches: [master]
+    paths:
+      - "web/**"
+      - "docs/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+# One deploy at a time, and a newer commit wins: two uploads racing for the
+# same site is a way to end up serving the older build.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    name: build and deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    # All the npm scripts live in web/, so the working directory is set once
+    # here rather than in every step.
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Build the site
+        env:
+          # The repo name is not in here on purpose — base_path carries it.
+          # For a project page this is /Rogue-Survivor-Reloaded/game/; for a
+          # user or custom-domain site base_path is empty and this is /game/.
+          BASE_PATH: ${{ steps.pages.outputs.base_path }}/game/
+        run: npm run build:pages
+
+      - name: Verify no root-absolute URL survived
+        # The deploy gate. A failure here means the build is servable at a
+        # subdirectory and useless anywhere else, and the fix is in the module
+        # that hardcoded the path — not in this workflow.
+        env:
+          BASE_PATH: ${{ steps.pages.outputs.base_path }}/game/
+        run: npm run check:base
+
+      - name: Show the assembled tree
+        # Not a check — build-site.mjs already asserts the files that matter,
+        # and fails on a missing one. This is here so a deploy log records what
+        # was actually uploaded, which is the first thing anyone wants when a
+        # page is unexpectedly missing.
+        run: |
+          echo "site root: $(ls ../_site | tr '\n' ' ')"
+          echo "game root: $(ls ../_site/game | tr '\n' ' ')"
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

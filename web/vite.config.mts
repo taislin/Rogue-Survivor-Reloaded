@@ -1,8 +1,12 @@
 import { defineConfig } from "vite";
 import { resolve } from "path";
+import { BASE_PATH } from "./base-path";
 
 export default defineConfig({
   root: ".",
+  // See base-path.ts. This is the only thing that has to agree with the test
+  // config, and the two read the same module so that they cannot drift.
+  base: BASE_PATH,
   publicDir: "public",
   resolve: {
     alias: {

@@ -14,6 +14,7 @@ import {
 } from "@engine/AssetPaths";
 import { GameOptions, OptionIDs } from "@engine/GameOptions";
 import { storage } from "@engine/storage";
+import { BASE } from "./helpers/assetPath";
 
 const IMAGES_DIR = join(__dirname, "../public/assets/images");
 
@@ -130,16 +131,16 @@ describe("the sprite sets on disk", () => {
 
   it("resolves an image against the current set, and against a named one", () => {
     setImageSet("genesis_classic_1.4");
-    expect(imagePath("Actors/zombie")).toContain("/assets/images/genesis_classic_1.4/");
+    expect(imagePath("Actors/zombie")).toContain(`${BASE}assets/images/genesis_classic_1.4/`);
     // The named form is what the fallback needs: at that point the current set is
     // still the selected one.
-    expect(imagePathIn(DEFAULT_IMAGE_SET, "Actors/zombie")).toContain("/assets/images/classic/");
+    expect(imagePathIn(DEFAULT_IMAGE_SET, "Actors/zombie")).toContain(`${BASE}assets/images/classic/`);
   });
 
   it("takes both path separators, because the C# ids use backslashes", () => {
     setImageSet("deonapocalypse_v9_r1");
     expect(imagePath("Tiles\\wall_brick")).toBe(
-      "/assets/images/deonapocalypse_v9_r1/Tiles/wall_brick.webp"
+      `${BASE}assets/images/deonapocalypse_v9_r1/Tiles/wall_brick.webp`
     );
   });
 
@@ -229,6 +230,6 @@ describe("the fallback rule", () => {
     const primary = imagePathIn(set, "Actors/rare-sprite-only-in-classic");
     const fallback = imagePathIn(DEFAULT_IMAGE_SET, "Actors/rare-sprite-only-in-classic");
     expect(primary).not.toBe(fallback);
-    expect(fallback).toContain("/assets/images/classic/");
+    expect(fallback).toContain(`${BASE}assets/images/classic/`);
   });
 });

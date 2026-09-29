@@ -1,3 +1,5 @@
+import { BASE_URL } from "@engine/BaseUrl";
+
 /**
  * The in-game typeface.
  *
@@ -289,7 +291,12 @@ async function registerFaces(font: BundledFont): Promise<void> {
   await Promise.all(
     font.faces.map(async ({ file, weight }) => {
       try {
-        const face = new FontFace(font.family, `url(/fonts/${file})`, { weight });
+        // Base-prefixed, not a literal `/fonts/`. A root-absolute URL is only
+        // correct when the game is served from the domain root, and a font that
+        // 404s is not as loud as a missing sprite — the port carries on in the
+        // platform font, which the service worker's own header calls out as the
+        // offline failure this precaches against. See engine/BaseUrl.ts.
+        const face = new FontFace(font.family, `url(${BASE_URL}fonts/${file})`, { weight });
         await face.load();
         fontSet.add(face);
       } catch (e) {

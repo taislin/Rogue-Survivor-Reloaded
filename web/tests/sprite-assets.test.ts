@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { imagePath, IMAGE_EXTENSION, IMAGE_SETS, DEFAULT_IMAGE_SET, getImageSet, setImageSet } from "@engine/AssetPaths";
 import { GameImages, allImageIds } from "@gameplay/GameImages";
+import { BASE, publicFilePath } from "./helpers/assetPath";
 
 /**
  * Every sprite id the game can ask for resolves to a file that exists.
@@ -43,7 +44,7 @@ describe("sprite assets on disk", () => {
     const missing: string[] = [];
     for (const id of ids) {
       // to filesystem path: /assets/... -> public/assets/...
-      const rel = imagePath(id).replace(/^\//, "");
+      const rel = publicFilePath(imagePath(id));
       if (!existsSync(resolve(webRoot, "public", rel))) missing.push(id);
     }
     expect(missing, `${missing.length} sprite id(s) have no file on disk`).toEqual([]);
@@ -73,8 +74,8 @@ describe("sprite assets on disk", () => {
     const id = "Tiles\\floor_asphalt";
     const p = imagePath(id);
     expect(p).not.toContain("\\");
-    expect(p).toBe(`/assets/images/classic/Tiles/floor_asphalt.webp`);
-    expect(existsSync(resolve(webRoot, "public", p.replace(/^\//, "")))).toBe(true);
+    expect(p).toBe(`${BASE}assets/images/classic/Tiles/floor_asphalt.webp`);
+    expect(existsSync(publicFilePath(p))).toBe(true);
   });
 });
 
@@ -111,7 +112,7 @@ describe("preload manifest", () => {
     // The manifest is only useful if it is complete; a gap here is a sprite that
     // will be missing from the screen.
     const missing = allImageIds().filter((id) => {
-      const rel = imagePath(id).replace(/^\//, "");
+      const rel = publicFilePath(imagePath(id));
       return !existsSync(resolve(webRoot, "public", rel));
     });
     expect(missing, `${missing.length} manifest id(s) have no file on disk`).toEqual([]);
@@ -174,14 +175,24 @@ describe("favicon and manifest icons", () => {
 
   it("resolves every icon the manifest declares", () => {
     expect(manifest.icons.length).toBeGreaterThan(0);
+    // Relative to the manifest, not to the base. This is the one place the
+    // suite handles a URL that is *not* base-prefixed, and the two cases are
+    // not interchangeable: stripping the base here left ".icon-reloaded.png"
+    // and reported four missing icons that all exist. `publicFilePath` is for
+    // `AssetPaths` output; a manifest `src` resolves against the manifest's own
+    // URL, so it only needs the "./" removed.
     const missing = manifest.icons
-      .map((i) => i.src.replace(/^\//, ""))
+      .map((i) => i.src.replace(/^\.\//, ""))
       .filter((rel) => !existsSync(resolve(publicDir, rel)));
     expect(missing, `manifest icon(s) with no file: ${missing.join(", ")}`).toEqual([]);
   });
 
   it("includes the reloaded icon in the manifest, so the installed app matches the tab", () => {
-    expect(manifest.icons.some((i) => i.src === "/icon-reloaded.png")).toBe(true);
+    // Pinned as "./icon-reloaded.png" rather than tolerating either form: the
+    // manifest has to stay base-agnostic so the same file works at a domain
+    // root and under a Pages subdirectory, and this is where that decision is
+    // enforced. A test accepting both would let it be reverted silently.
+    expect(manifest.icons.some((i) => i.src === "./icon-reloaded.png")).toBe(true);
   });
 
   it("keeps a maskable icon, which Android needs for a non-cropped install", () => {

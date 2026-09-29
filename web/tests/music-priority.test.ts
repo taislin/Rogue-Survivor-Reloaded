@@ -6,6 +6,7 @@ import { MusicPriority } from "@engine/audio/IMusicManager";
 import { NullMusicManager } from "@engine/audio/NullMusicManager";
 import { audioPath, isKnownAudioId, musicPath, soundPath } from "@engine/AssetPaths";
 import { GameSounds, GameMusics } from "@gameplay/GameSounds";
+import { publicFilePath } from "./helpers/assetPath";
 
 /**
  * The music manager is handed *sound effects* as well as tracks, and it used to
@@ -33,7 +34,7 @@ import { GameSounds, GameMusics } from "@gameplay/GameSounds";
 
 /** `/assets/...` -> the file under `web/public`. */
 function publicFile(url: string): string {
-  return join(__dirname, "..", "public", url.replace(/^\//, ""));
+  return publicFilePath(url);
 }
 
 describe("every id the music manager is given resolves to a real file", () => {
