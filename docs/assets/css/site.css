@@ -346,7 +346,14 @@ hr {
 .shots {
   display: grid;
   gap: 1.25rem;
-  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  /* `min(420px, 100%)` rather than a bare `420px`. A grid track's minimum is
+     also its *min-content contribution* to the parent, so a hard 420px floor in
+     a column narrower than that does not clip -- it inflates the parent. Measured
+     in the hero at a 1024px viewport: the visual column was pinned at 420px when
+     its `0.85fr` share was 398px, so the gallery quietly took ~70px off the
+     headline beside it. `min()` lets the track shrink to the container instead,
+     which is what "one image per row" is supposed to mean. */
+  grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
 }
 
 .shot {
@@ -779,4 +786,138 @@ q { quotes: "\201C" "\201D"; color: inherit; }
   body { background: #fff; color: #000; }
   .manual h2 { break-before: page; }
   a { color: #000; text-decoration: underline; }
+}
+
+/* --- Screenshot lightbox ---------------------------------------------------
+   Driven by :target rather than JavaScript, so a screenshot is expandable on a
+   page with scripting off, and the open/close state is a real URL the player can
+   bookmark or share. `lightbox.js` only adds Escape-to-close and focus handling,
+   which CSS cannot express.
+
+   The state lives on the body, not on the overlay, for two reasons: a
+   full-screen fixed overlay on :target alone would still leave the page behind it
+   scrollable, and every open control would need the overlay's id hardcoded twice
+   (once in the href, once in the markup) for no gain. `body:has(.lightbox:target)`
+   is one rule and it is the only place that knows the overlay exists. */
+
+body:has(.lightbox:target) { overflow: hidden; }
+
+/* The affordance. The whole card is the hit target, not just the image, because
+   a 1562px-wide screenshot scaled into a 420px column is not a comfortable thing
+   to aim at. */
+.shot__zoom {
+  display: block;
+  position: relative;
+  border-radius: 2px;
+  cursor: zoom-in;
+}
+
+.shot__zoom::after {
+  content: "Expand";
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border-lit);
+  border-radius: 3px;
+  background: var(--bg-glass);
+  color: var(--text-dim);
+  font: 500 0.68rem/1 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.shot__zoom:hover::after,
+.shot__zoom:focus-visible::after { opacity: 1; }
+
+/* No hover on a touch device, so the hint would never appear and the cards would
+   look unremarkable. Shown outright there instead of hidden. */
+@media (hover: none) {
+  .shot__zoom::after { opacity: 1; }
+}
+
+.lightbox {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  padding: clamp(1rem, 4vw, 3rem);
+  grid-template-rows: auto 1fr;
+  gap: 0.75rem;
+}
+
+.lightbox:target { display: grid; }
+
+/* The backdrop is a link, so clicking away from the image closes without any
+   script. It sits under the panel and fills the viewport, which is why the
+   panel needs a higher z-index rather than the backdrop being a pseudo-element:
+   a pseudo-element cannot be clicked to navigate. */
+.lightbox__backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background: #060504;
+  cursor: zoom-out;
+}
+
+.lightbox__panel {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 0.75rem;
+  min-height: 0;
+}
+
+.lightbox__img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  min-height: 0;
+  margin: 0 auto;
+  object-fit: contain;
+  background: #000;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 30px 90px -30px rgba(0, 0, 0, 1);
+}
+
+.lightbox__cap {
+  margin: 0;
+  text-align: center;
+  color: var(--text-dim);
+  font: 500 0.8rem/1.5 var(--font-mono);
+}
+
+.lightbox__close {
+  position: absolute;
+  top: clamp(0.5rem, 2vw, 1.5rem);
+  right: clamp(0.5rem, 2vw, 1.5rem);
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1px solid var(--border-lit);
+  border-radius: 50%;
+  background: var(--bg-glass);
+  color: var(--text);
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.lightbox__close:hover { border-color: var(--ember); color: var(--ember); }
+
+/* The close control is hidden while its overlay is closed, so it never becomes a
+   stray tab stop. `:not(:target)` rather than a JS class for the same reason the
+   rest of this is CSS. */
+.lightbox:not(:target) .lightbox__close { display: none; }
+
+/* Respect a reduced-motion preference for the one transition here. */
+@media (prefers-reduced-motion: reduce) {
+  .shot__zoom::after { transition: none; }
 }

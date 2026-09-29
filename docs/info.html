@@ -97,24 +97,6 @@
       </table>
     </div>
 
-    <p>Most methods in the engine carry a comment pointing at the C# method they came
-      from, for example <code>// C# HandleCredits &mdash; RogueGame.cs:2248</code>. That is
-      deliberate: it is what makes a regression traceable back to the original.</p>
-
-    <h3 id="headless">Running the game without a browser</h3>
-    <p>Because everything reaches the screen through <code>IRogueUI</code>, a second
-      implementation that simply drops every painting call and answers key presses locally
-      lets the entire engine run headless. That is what
-      <a href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/BROWSER_PORT_PLAN.md">the simulator</a>
-      and the test suite are built on: same generators, same AI, same turn loop, in Node.
-    </p>
-
-    <div class="callout callout--warn">
-      <span class="callout__label">This is not a convenience</span>
-      <p>A clean type-check and a clean build do <em>not</em> mean the port works. The
-        first headless run found nine runtime bugs, two of them fatal, and none of them
-        visible to the type-checker. If you change engine code, run the simulator.</p>
-    </div>
 
     <h2 id="stack">Under the hood</h2>
     <div class="grid grid--2">
@@ -159,36 +141,9 @@
       player's side because the player's own view was correct. Each fix is pinned by a test,
       and the
       <a href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/BROWSER_PORT_PLAN.md">porting
-        plan</a> records the reasoning, including the audits that came back clean.</p>
+        plan</a> records the reasoning, including the audits that came back clean.
+    </p>
 
-    <div class="table-wrap" style="margin:1.25rem 0">
-      <table>
-        <thead>
-          <tr>
-            <th>Known limitation</th>
-            <th>Detail</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>No touch support</td>
-            <td>Keyboard and mouse only, as in the original. This is the last item
-              outstanding on the porting plan, and it is marked optional.</td>
-          </tr>
-          <tr>
-            <td>Saving is not yet a true roundtrip</td>
-            <td>The world and map graph are not serialised yet, so a save cannot be
-              reloaded into an identical world. The <code>TODO</code> is in
-              <code>Session.save</code>.</td>
-          </tr>
-          <tr>
-            <td>Death screenshots off by default</td>
-            <td>The original wrote a file silently; in a browser that is a download prompt
-              on every death. The option still exists.</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
 
     <h2 id="credits">Credits</h2>
     <div class="card">
@@ -232,16 +187,6 @@
         players for their feedback and eagerness to die!&rdquo;</p>
     </div>
 
-    <div class="card" style="margin-top:1rem">
-      <h3>About this website</h3>
-      <p>Static HTML in <code>docs/</code>, served by GitHub Pages. No framework, no
-        build step, no tracking. The manual page is generated from the original
-        <code>RS Manual.txt</code> by <code>docs/tools/build-manual.mjs</code>, which
-        reformats the text and does not rewrite a word of it. Every sprite on the site is
-        the game's own artwork.
-      </p>
-    </div>
-
     <h2 id="license">License</h2>
     <p>The original game and this port are both covered by the
       <b>GNU General Public License v3</b>, inherited from the original project. The full
@@ -258,7 +203,7 @@
 
     <p class="btn-row" style="margin-top:2rem">
       <a class="btn btn--primary" href="https://github.com/taislin/Rogue-Survivor-Reloaded">Source on GitHub</a>
-      <a class="btn" href="manual.html">Read the manual</a>
+      <a class="btn" href="manual.html">Read the original manual</a>
     </p>
   </main>
 
