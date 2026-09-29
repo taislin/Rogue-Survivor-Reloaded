@@ -78,7 +78,8 @@ Porting a C# WinForms zombie-survival roguelike (195 files, ~2.5 MB, largest `Ro
 4. [Phase 8 — Polish, Headless Simulation & Deployment](#4-phase-8--polish-headless-simulation--deployment)
    - [4.1](#41-task-list) tasks · [4.1a](#41a-test-suite-layout) **the test index** · [4.1b](#41b-deployment-notes) deploy · [4.1c](#41c-asset-payload-pass-tasks-9--10) assets · [4.1d](#41d-frame-cost-task-11) frame cost · [4.1e](#41e-neutralino-desktop-wrapper--appdata-persistence) desktop
    - [4.2](#42-headless-harness-design-for-whoever-extends-it) harness internals · [4.3](#43-test-strategy) test strategy
-5. [Future Plans](#5-future-plans) — [5.1](#51-mobile--touch-support-phase-8-task-12) touch · [5.2](#52-where-the-fidelity-work-stands) · [5.3](#53-renderer-and-layout) · [5.4](#54-first-person--pseudo-3d-view-mode) · [5.5](#55-housekeeping)
+5. [Future Plans](#5-future-plans) — [5.1](#51-mobile--touch-support-phase-8-task-12) touch · [5.2](#52-where-the-fidelity-work-stands) · [5.3](#53-renderer-and-layout) · [5.4](#54-first-person--pseudo-3d-view-mode) · [5.5](#55-housekeeping) · [5.6](#56-still-alive-as-a-parallel-ruleset-stages-15) **Still Alive as a parallel ruleset (Stages 1–5)**
+6. [`RogueGame.ts` decomposition](#6-roguegamets-decomposition) — the overdue refactor, and the prerequisite for §5.6 Stages 4–5 · [6.1](#61-the-deferral-is-already-on-record) · [6.2](#62-the-real-structure-two-hubs-everything-else-a-leaf) · [6.3](#63-the-recorded-target-table-is-wrong-in-two-places) · [6.4](#64-wave-0--the-test-seam-before-anything-else) · [6.5](#65-wave-1--the-free-leaves-and-the-alias-block) · [6.6](#66-wave-2--the-render-cluster) · [6.7](#67-wave-3--the-new-game-flow) · [6.8](#68-never--the-two-hubs) · [6.9](#69-what-breaks-in-the-order-it-breaks) · [6.10](#610-sequencing-verification-and-stopping)
 
 ---
 
@@ -1342,3 +1343,617 @@ view and could not tell the two apart. It now checks 60, 75, 100 and 120.
   should work out what writes it before it becomes a committed mystery.
 - The Docker image has never been built locally (§4 task 8); CI exercises it
   first, and that is the first time anyone will know whether it works.
+
+### 5.6 Still Alive as a parallel ruleset (Stages 1–5)
+
+> **Status: planned 2026-09-29, not started.** The decision is to ship Still
+> Alive as a **second ruleset alongside classic**, selectable at new-game time,
+> on a **separate axis from `GameMode`**. Nothing below has been implemented. The
+> fork audit it draws on is [`STILL_ALIVE_REFERENCE.md`](STILL_ALIVE_REFERENCE.md);
+> this section is the implementation plan, not the survey.
+>
+> `file:line` citations here were verified against the working tree on
+> 2026-09-29, after the base-path refactor in `e78e125`'s successor commits.
+> **`RogueGame.ts` is the one that moves** — it grew past 27 000 lines during
+> that work, and two citations here were already stale on first write and had to
+> be re-derived. Treat the line numbers as of this date and re-grep before
+> trusting one.
+
+#### 5.6a The decision, and the one structural idea
+
+The question was whether classic and Still Alive could both live in one build.
+They can, but **not as two content sets** — and the reason they cannot is the
+same reason a single superset works. Four facts decide it, all verified rather
+than assumed:
+
+- **`Models` is a process-wide singleton with self-registering constructors.**
+  Four `static` fields (`data/Models.ts:22-27`); each database assigns itself as
+  the first statement of its own constructor (`GameItems.ts:143`,
+  `GameActors.ts:60`, `GameTiles.ts:51`, `GameFactions.ts:35`); all four are
+  constructed once at `RogueGame.ts:1337-1340` and never rebuilt —
+  `LoadDataSkills`/`LoadDataItems`/`LoadDataActors` are empty stubs
+  (`RogueGame.ts:27400-27410`). Last one constructed wins.
+  `tests/generator-integrity.test.ts:20-26` already documents the consequence in
+  prose: *"two games in one process share state."*
+- **Saves record `modelId` as a bare number, and the design already accepts what
+  that costs.** `specs.ts:610-616` says it outright: *"a save is only loadable
+  against the same data build, exactly as it is for the C#."* Worse,
+  `Actor.sheet` is `{kind:"skip"}` and is **re-derived in `finish`** from
+  `self.model.startingSheet` — so a save read against a different table
+  re-labels every actor in the world and recomputes its HP/STA/FOV. Silently
+  wrong, not a load error: `Session.load` validates only `graph != null` and
+  `graphVersion === 1`.
+- **`TileID` is ordinal.** `tests/tile-palette.test.ts:145` derives walkable and
+  transparent from `id <= TileID.RAIL_EW`. Two orderings, one invariant, dead.
+  `GameGangs.ts:33-48` and `GameFactions.ts:22-32` have *already* inlined raw
+  item numbers to break an import cycle, so the ids have leaked across module
+  boundaries once.
+- **`Rules.SKILL_*` are mutable process-global statics** — 43 written by
+  `Skills.load()` (`Skills.ts:124-209`) onto a class whose skill constants are
+  `static` even though `Rules` itself is per-`RogueGame` (`Rules.ts:277-327`).
+  Two packs cannot coexist in memory even with the three above fixed.
+
+So the design is **one superset content pack plus a ruleset flag.** The fork's
+CSVs are a strict column superset of ours (`WEIGHT`; `FIRE_RESIST%` and
+`INF_RESIST%`; food's two poison/cooking columns — all additions, never
+replacements), and the handful of items the fork *removed* (the six
+unique-NPC weapons, `JASON_MYERS`) are simply kept. Classic becomes "the flag
+is off": Still Alive items never spawn, its buildings never generate, its
+mechanics never run. And in a superset:
+
+- **Saves stay compatible, and `GRAPH_VERSION` does not move.** A classic save's
+  ids still mean what they meant because nothing shifted. This is the whole
+  reason to prefer a superset to two packs, and it is worth stating twice,
+  because it is the property that would be lost first and hardest to recover.
+- **The renderer needs zero changes.** `grep GameImages\.` over
+  `src/ui/` and `src/engine/firstperson/` returns nothing; every draw is
+  `imageCache.get(id) → drawImage` (`CanvasUI.ts:376-461`).
+- **The serialiser needs zero changes for new state.** A scalar field on
+  `Actor`/`Item`/`MapObject`/`Corpse`/`Location`/`Inventory`/`District`/`World`
+  is picked up structurally; `Tile` is the sole exception at ~4 lines
+  (`specs.ts:317-347`); a new item class is 1 line in `specs.ts`.
+
+**The cost this relocates rather than removes, and the one thing that makes it
+tolerable.** A ruleset flag does not reduce complexity; it moves it into
+`RogueGame.ts` (already 26 878 lines) and `BaseTownGenerator.ts` (5 805) as
+`if (stillAlive)` in turn-processing code, where ~100 such branches would be
+invisible to every existing test. The mitigation is to make the branches
+**enumerable and tested** rather than scattered, and that is the first thing
+Stage 1 builds:
+
+```ts
+// src/engine/FeatureFlags.ts
+export const enum Feature {
+  Alcohol, Cooking, Fishing, Butchering, TileFires, FireExtinguishers,
+  SiphonFuel, DarknessFov, FoodPoisoning, WeaponWeight, ArmorResist,
+  ShelterBackpacks, FireBarrels, AnimalShelter, Farm, FuelStation, FireStation,
+  Church, Bank, Bar, Clinic, Library, Junkyard, Graveyard, ShoppingMall,
+  ArmyBase, SportsCourts, AmbientAudio, CHARResearchRaid, BlackOpsRaid,
+  HelicopterRescue, WorldDecay, ItemDespawn, DifficultyAtCreation,
+}
+export function hasFeature(ruleset: Ruleset, f: Feature): boolean;
+```
+
+`hasFeature` **throws on an unhandled id**, copying the discipline that
+`GameOptions.optionName` and `.describe` already use (`GameOptions.ts:717-938`)
+and that `tests/options-coverage.test.ts` already enforces. A new source-scanner
+test then parses every `.ts` under `src/` and asserts the set of `hasFeature`
+arguments equals `Object.keys(Feature)` exactly — both directions. That is the
+same shape as the four scanners this project already runs
+(`rule-result-usage.test.ts`, `point-identity.test.ts`, `silent-failures.test.ts`,
+and the positional half of `data-tables.test.ts`), and it converts "how much
+Still Alive has leaked into the engine" from a judgement call into a number the
+build reports.
+
+The flag is deliberately **not** more `Rules.has*` predicates. `Rules.has*`
+(`Rules.ts:2845-2871`) is a `GameMode` layer, and the two axes compose — C&I
+zombies inside a Still Alive district is a legitimate combination that a single
+flattened enum cannot express. That is the reason for a separate field.
+
+#### 5.6b Stage 1 — the ruleset axis
+
+Cheap, and everything else depends on it. No content, no behaviour change.
+
+| # | Change | Where | Note |
+|---|---|---|---|
+| 1.1 | `enum Ruleset { CLASSIC, STILL_ALIVE }` | `Session.ts`, beside `GameMode` (`:25-29`) | separate enum, not a `GameMode` member |
+| 1.2 | `Session.ruleset` field, accessor, `reset()` default | mirror `m_GameMode` (`:131`, `:202-207`) | |
+| 1.3 | Serialise beside `gameMode`; restore beside `:518` | `Session.ts:337`, `:518` | additive; **no `GRAPH_VERSION` bump** |
+| 1.4 | `descRuleset` / `descShortRuleset`, `throw` on unhandled | copy `descGameMode` (`:625-636`) and `descShortGameMode` (`:638-649`) | the throw is the point; a silent `default` here is how a mode would mis-branch without failing |
+| 1.5 | `FeatureFlags.ts` as above + the two-way scanner test | new file + new test | the load-bearing deliverable |
+| 1.6 | `HandleSelectRuleset()` screen, called from `HandleNewCharacter` | `RogueGame.ts:1979`, cloned from `HandleNewGameMode` (`:2016-2170`) | ~155 lines; `DrawMenuOrOptions` → `descs` array → `switch` per index → `DrawFootnote` → `UI_WaitKey` → `switch(key.key)`. `IRogueUI` is already complete for it. For mouse support swap `UI_WaitKey` for `WaitMenuInput` and `MenuRowAtMouse`, the `HandleMainMenu` pattern (`:1843-1877`) — `m_MenuRowBands` is populated as a side effect of `DrawMenuOrOptions` |
+| 1.7 | Hide/force options per ruleset, reusing the existing marker idea | `OptionsScreen.entryName` (`:150-166`) and `GameOptions.describe` (`:813-938`) | the `-V`/`=S` suffixes already do this for `GameMode`; a second axis needs its own letter, and `optionName`/`describe`/`describeValue` must all gain the case or the game throws on selection |
+| 1.8 | `HeadlessOptions.ruleset`; read at boot; `--ruleset` CLI flag | `HeadlessRunner.ts:10-33` and `:138`; `sim/cli.ts:25-70`; **and the duplicated `parseArgs` in `sim/profile.ts:43-69`** | the sim bypasses the whole new-game menu path (`HeadlessRunner.ts:148` calls `StartNewGame` directly), so it is unaffected by 1.6 — but it hard-codes `GM_STANDARD` today and must hard-code or default the ruleset explicitly for the same reason |
+| 1.9 | HUD / score / graveyard label for the new axis | `hud-layout.test.ts:230` pins the three `GameMode` label strings | |
+
+**Verification.** `npm run verify` green. New test: a headless run per ruleset
+from one seed, asserting identical world generation (the flag gates content, not
+generation) and an explicit `featureCount()` per ruleset, so the registry cannot
+grow silently. The 15-fix scan from §5.6c becomes a second assertion here.
+
+#### 5.6c Stage 2 — the fifteen bug fixes
+
+`STILL_ALIVE_REFERENCE.md` §6 lists fifteen defects in vanilla Alpha 10.1 that
+the fork fixed, none of which is in the port. They split by whether gating them
+is defensible, and the split matters: **a correctness fix behind a flag is
+still a bug in the other mode.**
+
+**Unconditional — correct in both rulesets, take them as ordinary bug fixes:**
+
+| Fix | Fork location | Size |
+|---|---|---|
+| Furniture spawns on top of exits/stairs | `MapGenerator.cs:278, 304` | 2 lines |
+| Worldgen throws when no CHAR district is a candidate | `RogueGame.cs:4059, 4197` | ~15 |
+| Police-station prisoner is invincible | `BaseTownGenerator.cs:9146` | 1 |
+| Sewers Thing is invincible | `RogueGame.cs:4693` | 1 |
+| `RateItemExchange` throws on unhandled item types | `BaseAI.cs:6933, 6981, 6994` | ~10 |
+| Item duplication when giving an item to a follower | `RogueGame.cs:20920, 21389` | ~35 |
+| Infinite battery recharge (left hand tested before right) | `Rules.cs:1330-1373, 2030-2040` | ~30 |
+| `Attack.efficientRange` off-by-one — a range-1 weapon can never hit | `Attack.cs:56-64` | 4 |
+| Plank duplication on a 1-plank door repair | `Rules.cs:2630` | 4 |
+| Fires travel through walls; fuel cans destroy walls; corpses stay alight | `RogueGame.cs:24622, 20019, 23732` | ~15 |
+| Flee-stamina logic checks the fleeing NPC's gun, not the enemy's | `BaseAI.cs:3598` | 3 |
+| AI stuck in an open/close-door loop underground | `BaseAI.cs:4209` | 1 |
+| NPCs take `IsForbiddenToAI` items — vanilla enforces it only in the AI layer | `Rules.cs:665, 811, 869` | ~25 |
+
+**Gated — these change behaviour, so they are Still Alive's and not classic's:**
+
+| Fix | Fork location | Why gate it |
+|---|---|---|
+| AI drops its torch in favour of its cell phone | `BaseAI.cs:1895-1927` | only coherent with the darkness rework |
+| Reading/healing/barricading is blocked in total darkness | `RogueGame.cs:21492-21525` | depends on `DarknessFov` |
+
+**Verification.** One test per fix, written first against the *broken* code so a
+regression is a red test rather than a reopened investigation — the same
+technique §1.1a used. The door-loop guard and the flee-stamina fix are the two
+that most repay it, because both are one line and neither is visible in a
+screenshot.
+
+#### 5.6d Stage 3 — the merged content pack
+
+The mechanical half. Three of the four generators are script runs, and all three
+are deterministic — no timestamps, sorted directory reads — so re-running with
+no input change produces zero diff. **None of the three is an npm script and
+none runs in CI or `verify`**; `data-tables.test.ts`, `sprite-assets.test.ts` and
+`audio-levels.test.ts` are the only backstop, which is why they are named in
+every step below.
+
+**Data tables** — merge 16 CSVs into `src/Resources/Data/` (ours ∪ theirs, ours
+first so vanilla rows keep their ids):
+
+| Step | Where | Count |
+|---|---|---|
+| `COLUMNS` — `WEIGHT` on melee | `convert-csv.js:48-51` | 1 line |
+| `COLUMNS` — `WEIGHT` on ranged | `convert-csv.js:52-54` | 1 line |
+| `COLUMNS` — `FIRE_RESIST%`, `INF_RESIST%` on armors | `convert-csv.js:32` | 1 line |
+| `COLUMNS` — 2 poison/cooking columns on food | `convert-csv.js:41-43` | 1 line — **mandatory**, the raw headers contain spaces and `data-tables.test.ts:85` rejects whitespace in keys |
+| `COLUMNS` — new `Items_Backpacks.csv` | between `:32` and `:33` | 1 line |
+| `EXPECTED_COLUMNS` — mirror all five (second hand-maintained copy, `.json`-keyed) | `data-tables.test.ts:27-43` | 5 lines |
+| `node scripts/convert-csv.js` | — | atomic; throws before writing on any schema mismatch (`convert-csv.js:134-148`) |
+
+Row growth across the 15 shared tables: Entertainment 1→7, Explosives 1→9,
+Food 3→18, Lights 2→6, Medicine 6→12, Melee 16→36, Ranged 10→21, Actors 27→29,
+Armors 7→8, Spraypaints 4→5.
+
+**Sprites** — 711 files, and this part is genuinely a script run. Drop them into
+`web/public/assets/images/classic/` (397 → ~1 108) at the same relative paths —
+349 are byte-identical to ours and 48 are ours-only, so the merge is mostly
+additive — then:
+
+```sh
+cd web
+python3 scripts/optimize-sprites.py            # dry run: reports only
+python3 scripts/optimize-sprites.py --apply    # converts, deletes the PNGs
+```
+
+The script is all-or-nothing: it re-decodes every file it writes and compares
+against the source, and a single mismatch aborts the whole run having touched
+nothing (`optimize-sprites.py:161-182`). It reads only
+`public/assets/images` (`:38-39`), so the C# tree's 398 PNGs are not in scope.
+Two traps: `rglob("*.png")` is case-sensitive, and the fork ships
+`Images/shopping_mall plan.png` with a literal space, which needs a rename
+because `imagePathIn` does not encode (`AssetPaths.ts:107`).
+
+Decision needed on the **weather/rot collision**: the fork puts `weather_rain1`,
+`rot1_1`…`rot5_2` under `Effects/`, we keep them at the image-set root
+(`GameImages.ts:401-415`). The merge produces both, so 14 constants need
+repointing or one location needs deleting.
+
+If the sprites instead ship as a **fifth image set**, the cost is three edits —
+`AssetPaths.ts:50-56`, the prose in `GameOptions.ts:923-924`, and the hard-coded
+list in `sprite-style-option.test.ts:77-82` — but `sprite-style-option.test.ts:122-130`
+asserts the *largest* set **is** `classic`, because the per-id fallback
+(`CanvasUI.ts:921-953`) points there. A merged `classic` keeps that true; a
+larger separate set inverts it. **Merge into `classic`.**
+
+**Content ids and maps** — the hand-edited core, and where the real cost is:
+
+| Change | Where | Count |
+|---|---|---|
+| `ItemID` — **append only, never renumber** (saved keybindings are `[commandNumber, key]`) | `GameItems.ts` (`_COUNT = 69` at `:136`) | ~+180 |
+| 12 hand-written `{id, img}` maps — the sprite id is **not in the JSON**, it lives in TypeScript | `GameItems.ts:150-159, 190-194, 230-247, 289-300, 381-389, 415-420, 443-448, 480-483, 510-517, 526-531, 557-560` | ~+180 |
+| `makeItem*` factories | `BaseMapGenerator.ts:780-1064` | 56 → ~110 |
+| `ActorID` + sprite map + the two 27-arm switches | `GameActors.ts:25-54, 72-101, 247-367, 384-430` | +3 actors |
+| `TileID` + 124 models | `GameTiles.ts:6-27, 53-81` | 19 → 143 |
+| `GameImages` constants | `GameImages.ts` | ~+711 |
+| `Skills.NAMES`, `Rules.SKILL_*` | `Skills.ts:62-69`, `Rules.ts:277-327` | +1 (`BOWS` → `BOWS_EXPLOSIVES`) |
+
+**The `TileID` ordinal fix — the one genuinely new cost in Stage 3.** The fork
+interleaves new walls *and* new floors, so a superset list cannot be ordinal and
+`id <= TileID.RAIL_EW` has to go. `GameTiles.ts` must carry walkable and
+transparent as data rather than have them inferred from position, and
+`tile-palette.test.ts:145` becomes a check against the flag instead of the
+ordinal. Nothing else in the project depends on tile ordering, but this is the
+one place where the superset design does not compose for free.
+
+**Tests that assert a single global content set** — each needs re-scoping to
+"every row of the merged table", not merely extending:
+
+| Test | Assertion | What it becomes |
+|---|---|---|
+| `data-tables.test.ts:23-24` | one CSV dir, one JSON dir | unchanged (still one merged set) |
+| `data-tables.test.ts:78, 85, 89-106` | exact ordered key list; no whitespace; positional JSON↔CSV equality | update `EXPECTED_COLUMNS` to the merged columns |
+| `sprite-assets.test.ts:37-51, 111-119` | every id resolves to a file | unchanged, and now covers 711 more |
+| `sprite-assets.test.ts:53-70` | no `.png` under any set | unchanged; `optimize-sprites.py` deletes them |
+| `sprite-assets.test.ts:93, 96-99` | `> 200` ids, no duplicates | unchanged |
+| `model-data-binding.test.ts:53-58` | asserts the *ordering property* of one CSV | relax: ordering is now an implementation detail, not a contract |
+| `model-data-binding.test.ts:61, 83, 166` | one enum ↔ one CSV row; distinct sprites | unchanged — reads the CSV, so new rows are covered free |
+| `skills-data.test.ts:87, 95, 104` | 43 assignments; vanilla *values* into process-global statics; `NAMES.length === _COUNT` | the vanilla-value assertions must become per-ruleset, or skill rebalance is impossible |
+| `actor-sprites.test.ts:80-91`, `actor-abilities.test.ts:151` | expectation lists must **partition** the enum exactly | update the lists |
+| `audio-levels.test.ts:70-80, 96-107` | every id has a gain; sfx end at peak ≈ 0.95 | see Stage 5 |
+| `save-graph-coverage.test.ts:52, 55, 64, 70, 106-109` | ledger disjointness, subclass-before-base, no pending classes | unaffected — it constrains the *format*, not content |
+| `save-graph-roundtrip.test.ts:195-197, 609-611` | field-by-field isomorphism; constructors identical | unaffected, and stronger in a superset: nothing is remapped |
+
+**Payload and preload.** The image set goes 397 → ~1 108 files, the
+preload manifest 395 → ~1 100 ids (`allImageIds()` at `GameImages.ts:426-439`
+enumerates the constants reflectively, so the manifest follows automatically),
+and the asset payload 30 MB → ~50 MB. Two consequences to plan for rather than
+discover:
+
+- **`public/sw.js`'s committed `CACHE_VERSION` must be bumped.** The `/assets/*`
+  handler is cache-first, so a deploy that adds 711 sprites without a bump keeps
+  serving the old set to anyone who has played, and the new ids 404 from cache
+  forever. `npm run build:pages` runs `scripts/stamp-cache-version.mjs`; `npm run
+  build` and `npm run build:release` do not.
+- **A sprite on disk with no `GameImages` constant is never preloaded and never
+  drawn** — exactly as `classic/blank_texture.webp` is today. That is the
+  cheapest place to save effort and the safest: add the file, skip the constant,
+  and nothing breaks.
+
+#### 5.6e Stage 4 — mechanics
+
+The largest stage, and the one that puts branches in the god file. Everything is
+gated on a `Feature` from §5.6a, and the per-item serialisation cost is close to
+zero precisely because of the dump-every-own-field design.
+
+| Feature | New state | Serialisation | Engine work |
+|---|---|---|---|
+| `WeaponWeight` | none (model field) | 0 | `Rules.actorSpeed` subtracts; melee/ranged model getters; 1 CSV column |
+| `ArmorResist` | none (model field) | 0 | fire-damage scaling + infection roll; 2 CSV columns |
+| `Alcohol` | `Actor.bloodAlcohol`, `previousBloodAlcohol` | 0 (own fields) | `IsDrunk`, 4 accuracy tiers, the 5-step description and colour, BAC decay, nightmare suppression |
+| `FoodPoisoning` | `Actor` flag | 0 | 20% roll on raw meat, 1% recovery, Hardy bonus, antiviral check, vomit penalty |
+| `Cooking` | `ItemFood._cookedDegree`, `_maxCookedDegree` | 0 | `canActorCookFood`, `ActionCookFood`, campfires/barrels as heat sources |
+| `Fishing` | `Activity.FISHING` | 0 | rod equip gate, `ActionWait(isFishing)` flag, Unsuspicious bonus, `Map.hasFishing` |
+| `Butchering` | `Actor.causeOfDeath` | 0 | bladed-weapon gate, raw vs cooked by cause, `MapObject.canUseForButchering` |
+| `TileFires` | `Tile.flags.IS_ON_FIRE`, `Tile.scorched` | **~4 lines** — `tilesGrid` packs `modelId` + `flags` + `decorations` (`specs.ts:317-347`) | spread, extinguish, rain, damage to actors/corpses/crops, fuel units on barrels/cars |
+| `DarknessFov` | none | 0 | `MINIMAL_FOV_PLAYER 0` vs `MINIMAL_FOV_LIVINGACTORS 1`; night penalties; the FOV-0 gates from Stage 2 |
+| `FireExtinguishers`, `SiphonFuel` | `Barrel`/`Campfire`/`Car` fuel units | new class specs | 3 new map-object classes, siphon flow, extinguisher targeting mode |
+| `ShelterBackpacks` | nested `Inventory` on an `Item` | new codec + 1 class spec | slot tiers gated on Hauler, transfer rules, nested-inventory UI |
+| Item model flags | `ItemModel` +6 bools | 0 | `isFlameWeapon`, `isThrowable`, `isForbiddenToAI`, `isBatteryPowered`, `causesTileFires`, `canGoInBackpacks` |
+| `Activity` +19 | enum | 0 | cosmetic labels, but they become load-bearing: `CivilianAI` filters trade partners on `isFightingOrFleeing` |
+| 7 new `PlayerCommand`s | enum — **append only** | 0 | bury, cook, destroy item, make fire, unload ammo, inspection mode, swap inventory |
+
+`AmmoType` +7 and `AttackKind.OTHER` and `FireMode.FLAMING` are enum growth on
+mechanic axes that are already shared — no per-pack variant needed.
+
+The AI work (fire avoidance, darkness navigation, trap fear, the animal AI, the
+dog pack rewrite, cooking/fishing/butchering behaviours) is the fork's
+`BaseAI.cs` 6 422 → 8 322. Two things in it should **not** be copied:
+`ExplorationData.cs` is pre-Alpha-10 and loses `GetExploredAge`, and the fork's
+`BehaviorWander` is a net regression against ours. Both are listed in
+`STILL_ALIVE_REFERENCE.md` §7.
+
+**Verification.** A test per feature asserting it is reachable under
+`STILL_ALIVE` and unreachable under `CLASSIC` — the negative half is the one
+that matters, and it is the one a coverage number cannot give. Then two headless
+runs per seed, one per ruleset, both required to terminate (§4.3's harness) —
+`headless-no-hang.test.ts` and the loop detectors are what a ruleset flag is most
+likely to upset, because turning mechanics on for one mode can produce an AI
+cycle the other mode never had.
+
+#### 5.6f Stage 5 — content and audio
+
+**Map generation.** `BaseTownGenerator.cs` 5 850 → 12 042 is fifteen new
+building types plus a restructured block-roll, a three-map shopping mall, an
+army underground, and 124 new tile models. All of it gates on a `Feature` and
+reuses the existing `Parameters` object (`BaseTownGenerator.ts:92-207`,
+`DEFAULT_PARAMS` at `:253`), which `RogueGame` already save/restore-swaps per
+district (`:25186-25190`) and tunes per `DistrictKind` in a `switch`
+(`:25060-25137`, with `districtSize` reaching the generator at `:25137`). The tennis and basketball courts are ~97 of the 124 new tiles
+and are the single most expensive item in the audit for the least gameplay.
+
+**One sharp edge to carry in from the audit:** the mall generator needs a
+49×49 block, which does not fit cleanly alongside the fork's own 50×50 minimum
+district size — `MakeMallBlocks` has a special case to avoid double-roads when
+`map.Width > 50`. Copying the mall without the district-size change, or with a
+different one, produces a broken district. Decide the district size *before* the
+mall, not after.
+
+**Audio is the one place "mechanical" is false.** The sprite pipeline handles
+711 files unchanged; the sound pipeline does not, because
+`measure-audio-levels.mjs` measures *filenames* and the fork's 180 new files use
+a different convention (`bash_wood_nearby.ogg` against our `sfx - ` prefix):
+
+1. **Rename on copy** to whatever `GameSounds`/`SOUND_FILES` adopt.
+   `AssetPaths.ts:118-124` and `measure-audio-levels.mjs:112` both key off the
+   basename, so the filename *is* the id.
+2. `sfx - undead eat.ogg` splits into `nearby` + `player` variants, and
+   `sfx - undead rise.ogg` **does not exist in the fork at all**, though
+   `GameSounds.ts:7-11` references both. Keep ours, re-source, or add ids.
+3. **180 `GameSounds` constants + 180 `SOUND_FILES` entries are mandatory**, not
+   optional: `audio-levels.test.ts:76-80` fails without them.
+4. The `_nearby`/`_player`/`_far`/`_visible` suffixes imply a distance model
+   that does not exist in the port, and the fork's matrix is 3 spatial tiers ×
+   15 weapon classes. That model has to be built.
+5. **13 ambients need a new audio channel.** `AssetPaths.ts:35-38` has music and
+   sfx only.
+6. `node scripts/measure-audio-levels.mjs` needs `sox` on `PATH` (present at
+   `/usr/bin/sox`) and reads `public/assets/{music,sfx}` **flat and `.ogg`-only**
+   via `readdirSync` (`:104, 112`) — a subdirectory or a `.wav` is invisible to
+   both the script and `soundPath()`.
+
+Music is a smaller merge: 22 fork tracks against our 24, with different names
+(`RS - CHAR researchers.ogg`, `Shopping Mall.ogg`, `Post-rescue.ogg`).
+
+**Attribution is settled and not optional.** The fork's media are CC0 / CC-BY
+3.0 with mandatory attribution — roughly 90 `freesound.org` sources plus sprite
+contributions — and every file has been modified. Per `STILL_ALIVE_REFERENCE.md`
+§8 this lands as a credits page plus a main-menu entry, which is what the fork
+itself did. The port already has `HandleCredits()` (`RogueGame.ts:3121`) to hang
+it from, and `docs/` to publish it.
+
+#### 5.6g Risks, and what would make me stop
+
+- **God-file growth is the real cost, and the registry mitigates it rather than
+  removing it.** The scanner test makes the branch count *visible*; it does not
+  make `RogueGame.ts` smaller. If Stage 4's features end up scattered rather than
+  funnelled through `FeatureFlags`, stop and refactor before Stage 5, because
+  Stage 5's 15 building generators are where scattered branches become
+  unreviewable. **§6 is that refactor**, sequenced so the four free leaves and the
+  render cluster come out before any Still Alive mechanic lands. The two regions
+  §6 refuses to split — `14008–18936` and `8770–11628`, 27.8% of the file — are
+  where Stage 4's branches will end up, which is the point: they go where the
+  code already is rather than where the flag is.
+- **Payload is paid by classic players.** 30 MB → ~50 MB and a 2.5× preload, for
+  content half the audience never sees. The only mitigation that works is a
+  per-ruleset preload list — which means the manifest stops being
+  `allImageIds()` and becomes a function of the ruleset, and that is a small but
+  real change to the loading path and to `sprite-assets.test.ts`.
+- **Two copies of the balance surface.** Difficulty, scoring, hi-scores and the
+  post-mortem screen all gain a ruleset dimension, and the scoring multipliers in
+  particular are a second balance surface to tune rather than one.
+- **QA doubles.** Every bug report becomes "which ruleset?", and a fix can be
+  right in one and wrong in the other. The Stage 4 negative tests are what keep
+  that honest; without them the two modes drift.
+- **The 48 ours-only and 73 theirs-only sprites** need a merge decision, not a
+  mechanical one, and `STILL_ALIVE_REFERENCE.md` §7 lists the fork places where
+  it is the *older* code. Copying from it without that list is how a regression
+  gets in.
+
+**Sequencing, and the one thing I would not skip.** Stage 1 is days and Stage 2
+is days, and they are worth doing on their own merits whatever is decided about
+Stages 3–5: Stage 2's unconditional half is thirteen genuine bug fixes to a
+shipped game, four of which the existing test suite would catch if they ever
+regressed. Stages 3–5 are the part that is hard to reverse, and **Stage 1 alone
+converts every later change from a fork into an additive diff behind a flag** —
+which is the whole argument for doing Stage 1 first even if the rest is never
+done.
+
+---
+
+## 6. `RogueGame.ts` decomposition
+
+> **Status: planned 2026-09-29, not started.** This is a refactor of the port
+> itself, not a Still Alive feature. It is a **prerequisite for §5.6 Stages 4–5**,
+> and it is what makes §5.6g's "stop and refactor before Stage 5" an instruction
+> rather than a shrug. Stages 1–3 of that plan do **not** need it: Stage 3 is data
+> and sprites and never opens this file.
+>
+> `file:line` citations verified 2026-09-29. Counts are from an AST walk of the
+> 595 methods and 173 property declarations in the 27,722-line file; the two
+> regions whose figures changed on re-measurement are NEWGAME (28 outbound, not
+> 51) and RENDER (11, not 45), because those count only calls landing *outside*
+> the region.
+
+### 6.1 The deferral is already on record
+
+`86f0887` ("Port the RogueGame scaffold") says, verbatim:
+
+> every `DoXXX` action, every `HandlePlayerXXX` command and every `Draw*` method reads/writes the same private fields (`m_Player`, `m_Session`, `m_Overlays`, `m_ViewRect`, …) — a split would make most of that state public and thread a `game` reference through ~500 call sites; […] The module table below is therefore **deferred to a post-Phase-4 refactor** (Phase 8) — it stays as the target shape **once the game runs and the real cross-method dependencies are known**.
+
+The condition is met. The game runs, and the cross-method dependencies are now
+measured rather than estimated. The file went 4,044 → 27,722 lines in the 138
+commits since. This is an overdue decision, not a new one.
+
+### 6.2 The real structure: two hubs, everything else a leaf
+
+| Region | Lines | % | Outbound | Verdict |
+|---|---|---|---|---|
+| `14008–18936` `Do*`/`On*` action primitives | 4,929 | 17.8% | 410 | **Hub 1.** 212 calls into messaging alone. |
+| `8770–11628` `HandlePlayer*` command handlers | 2,859 | 10.3% | 266 | **Hub 2.** |
+| `23235–23492` map⇄screen coordinates | 258 | 0.9% | **0** | Free. |
+| `12767–14007` `Describe*` | 1,241 | 4.5% | **4**, all messaging | Best ratio in the file. |
+| `24066–24208` `GetUser*` paths | 143 | 0.5% | **0** | Free. |
+| `23844–24065` menu chrome | 222 | 0.8% | **0** | Free; 14 inbound sites stay. |
+| `27470–27684` `do*` aliases | 215 | 0.8% | 38, **0 field reads** | Pure adapter. Exists only for `Actions.ts`. |
+| `20517–23492` render cluster | 2,976 | 10.7% | **11** | Highest value. |
+| `1760–3481` new-game flow | 1,722 | 6.2% | **28** over 18 targets | Cheapest *after* Waves 1–2. |
+
+**27.8% of the file is the two hubs**, and they are where 676 edges point. That is
+the god object, and it is the part worth keeping intact. Everything else is a leaf
+that happens to be trapped in the same file.
+
+### 6.3 The recorded target table is wrong in two places
+
+| Planned module | ~lines | Maps onto | Actual outbound |
+|---|---|---|---|
+| `GameActions.ts` | 6,000 | `14008–18936` | **410** — Hub 1 |
+| `GameEvents.ts` | 3,000 | `4680–5977` | 79 |
+| `GameRenderer.ts` | 3,500 | `20517–23492` | **11** |
+| `GameUI.ts` | 4,000 | `6680–7991` + `23844–24065` | low |
+
+The two hardest-coupled regions were slated for extraction and the two easiest for
+retention. Following the recorded table would have failed, and would have been
+read as proof that splitting is impossible. Retaining `GameActions`/`GameEvents`
+and extracting `GameRenderer`/`GameUI` inverts that.
+
+### 6.4 Wave 0 — the test seam, before anything else
+
+`tests/helpers/` holds `assetPath.ts`, `grepAll.ts`, `png.ts`, `softRaster.ts` and
+**nothing game-related**. Six tests construct a real
+`RogueGame(new NullRogueUI(), new NullMusicManager())`; two reach through
+`prototype as any` (`gender-helpers.test.ts:41`, `minimap-cache.test.ts:162`);
+three write private fields (`idle-district-sim.test.ts` monkey-patches
+`SimulateDistrict` on the instance); and `panel-hitboxes.test.ts:96` hand-builds a
+structural fake of the whole class.
+
+**Deliverable:** a `GameContext` interface in `src/engine/` listing the members
+crossing a seam — the 11 service fields (`m_UI`, `m_Rules`, `m_Session`,
+`m_MusicManager`, `m_TownGenerator`, …) plus `m_Player`, `m_PlayerFOV`,
+`m_MapViewRect`, `m_Overlays`, `m_FirstPersonFacing` — and a
+`tests/helpers/game.ts` that builds a conforming double. `NullRogueUI` is the
+existing precedent: it implements `IRogueUI` and drops every paint call, and it is
+why the sim cannot silently diverge.
+
+Four module-level singletons must be resolved in the same pass: `s_Options`
+(118 uses), `s_KeyBindings` (28), `s_Hints` (15), `s_MapZoom` (12).
+
+**567 of 584 methods are public** — only 17 are `private`. The `private` boundary
+is effectively absent, so a split without a deliberate interface pass just
+relocates the god object into N sibling modules that import each other. Wave 0 is
+where that pass happens.
+
+### 6.5 Wave 1 — the free leaves and the alias block
+
+2,079 lines, ~4 outbound edges in total. Cut the file to 25,643 and prove the
+import graph works.
+
+1. `24066–24208` `GetUser*` paths → `engine/Paths.ts` — 143 lines, 0 outbound, 3
+   fields.
+2. `23844–24065` menu chrome → `engine/MenuChrome.ts` — 222 lines, 0 outbound.
+   `DrawMenuOrOptions` already populates `m_MenuRowBands` as a side effect, so
+   `MenuRowAt`/`MenuRowAtMouse`/`WaitMenuInput` move as a unit and the 14 inbound
+   sites become delegations.
+3. `23235–23492` coordinates → `engine/MapCoordinates.ts` — 258 lines, **0
+   outbound** (every `this.X(` in range is internal to it). 86 inbound
+   `this.MapToScreen|ScreenToMap|MouseToMap` sites keep working through
+   delegations. The 5 minimap-cache fields and `collectPlayerTagTiles` move with
+   it — that static is *already* extracted for exactly this reason.
+4. `12767–14007` `Describe*` → `engine/Describe.ts` — 1,241 lines, 4 outbound (all
+   messaging), 23 field reads, all header verbs/colours. 56 inbound sites
+   delegate. `GetAdvisorHintText` (501 lines) is a pure function of state and is
+   the best single item in the region.
+5. `27470–27684` `do*` aliases → `engine/GameFacade.ts` — 215 lines, 0 field
+   reads, one consumer. It exists **solely** so `Actions.ts` can use camelCase,
+   and moving it behind the Wave 0 interface is the last thing standing between
+   `Actions.ts` and a real type.
+
+Wave 1 is where most of the risk profile is settled: 4 of the 5 extractions are
+leaves that never call back into the hubs.
+
+### 6.6 Wave 2 — the render cluster
+
+`20517–23492`, 2,976 lines, 11 outbound. The shape is already validated:
+`firstperson/` was built alongside from the first commit with a **37-line
+bridge** (`RogueGame.ts:21085-21121`) and a plain `SceneInputs` object, and
+`SceneBuilder` holds no `RogueGame` reference at all. `web/README.md:132-134`
+promises the `// C# Foo — RogueGame.cs:12345` comments make regressions
+traceable, and splitting along C# `#region` boundaries *improves* that promise.
+
+- **`engine/MapRenderer.ts`**, taking a `SceneInputs`-shaped data object. Follow
+  `buildScene` exactly: data in, geometry out, no `this`.
+- **152 `RedrawPlayScreen` sites and 191 overlay-method sites stay on
+  `RogueGame`** as one-line delegations. This is the whole reason Wave 2 is safe
+  and the reason it is not a rewrite.
+- **`m_AnimOffsets` is the one field that crosses the seam** — written by
+  `AnimateAttackLunge` (`:15270`, gameplay) and read by `DrawActorSprite`
+  (`:21518`). Its own comment at `:15205` already calls it "a render-only value",
+  so the field moves to the renderer and `AnimateAttackLunge` writes through a
+  renderer method. That is the one design decision this wave requires.
+- `IsValidPointInRect`/hint plumbing is unchanged.
+
+### 6.7 Wave 3 — the new-game flow
+
+`1760–3481`, 1,722 lines, 16 methods, 28 outbound calls to 18 targets. It is the
+worst ratio in the file **as measured on day one** — and that ratio is why it goes
+last, not whether it goes at all. Because Waves 1–2 land first, 20 of its 28 edges
+terminate in modules that by then already exist:
+
+| Outbound target | Lands in |
+|---|---|
+| `DrawMenuOrOptions`, `DrawHeader`, `DrawFootnote`, `MenuRowAtMouse` | Wave 1 `MenuChrome` |
+| `GetUserSave`, `GetUserManualFilePath`, `GetUserHiScoreTextFilePath` | Wave 1 `Paths` |
+| `DescribeSkillShort` | Wave 1 `Describe` |
+| `AddMessage`, `ClearMessages`, `ClearMessagesHistory` | messaging (Wave 1) |
+| `HandleHelpMode`, `HandleHintsScreen` | sibling modal screens |
+| **`GenerateWorld`, `RefreshPlayer`, `RedrawPlayScreen`, `ApplyOptions`, `LoadGame`** | **hubs — 5 edges stay** |
+
+So it goes from 28 hub-ward edges to ~5. It is §5.6b's `HandleSelectRuleset` that
+makes it worth doing anyway: the new-game flow is the natural home for the ruleset
+picker, and adding a screen to a 1,722-line region is materially worse than
+adding it to a module.
+
+### 6.8 Never — the two hubs
+
+`14008–18936` (4,929 lines, 410 outbound) and `8770–11628` (2,859 lines, 266
+outbound) stay. Together they are 27.8% of the file and the reason the split is
+worth doing rather than the reason it fails. If a future split proposal starts
+here, it is the same proposal the 2024 deferral already rejected, with the same
+measured reason.
+
+### 6.9 What breaks, in the order it breaks
+
+**Five source-scanning assertions fail silently, and this is the one to fix
+first.**
+
+- `rule-result-usage.test.ts:111-116` reads `RogueGame.ts` as text and asserts
+  `canActorRun(actor).ok` and
+  `canActorInitiateTradeWith(this.m_Player, actor).ok` appear. Those bodies move
+  in Wave 2 and 3; the test then either fails for the wrong reason or — worse —
+  stops matching and guards nothing.
+- `gender-helpers.test.ts:89-99` greps for one sentence and asserts it appears
+  **exactly once**.
+- `minimap-cache.test.ts:203` greps `src/` for a decoration call; it survives, but
+  `collectPlayerTagTiles` must stay reachable as a static.
+
+The precedent for the fix is `map-screen-conversion.test.ts:140-155`, which
+documents replacing a scanner because *"its pattern never matched the source it
+was guarding … and there is no version of a regex over a 26 000-line file that is
+not one formatting change away from asserting nothing again."* **Each of these
+becomes a behavioural test before its region moves**, not after. This is the same
+discipline as §1.1a and §5.6c.
+
+Also: `web/.porting/assemble_roguegame.py` is gitignored, untracked and already
+dead (it hardcodes inputs that no longer exist). A split invalidates a dead tool,
+nothing live.
+
+### 6.10 Sequencing, verification, and stopping
+
+| Wave | Lines out | Residual | Gate before the next |
+|---|---|---|---|
+| 0 | 0 | 27,722 | `GameContext` + `tests/helpers/game.ts` exist; the 4 singletons resolved; the 567 public methods given a deliberate pass |
+| 1 | 2,079 | 25,643 | `npm run verify` green; the 4 scanners replaced by behavioural tests |
+| 2 | 2,976 | 22,667 | first-person goldens unchanged; the `m_AnimOffsets` decision made and tested |
+| 3 | 1,722 | 20,945 | new-game flow reachable end to end in the sim |
+
+**Every wave is a pure move.** No behaviour change, no signature change that a
+caller notices, one commit per region with the file's line count as the reviewable
+diff. `npm run verify` green at each: 935 tests, type-check, build. The
+first-person golden PNGs (`tests/goldens/firstperson/`, 8 frames) are the strongest
+available check on Wave 2 and must be byte-identical.
+
+**Stop if** Wave 0 turns out to require changing a public signature that a test or
+`HeadlessRunner` depends on — that is the moment the deferral's stated cost
+("thread a `game` reference through ~500 call sites") turns out to be the real
+number rather than the pessimistic one, and the honest move is to stop and reassess
+rather than push three waves deep. **Do not start Wave 1 before that is answered.**
