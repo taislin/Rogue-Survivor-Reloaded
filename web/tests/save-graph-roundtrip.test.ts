@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { HeadlessRunner } from "../src/sim/HeadlessRunner";
 import { NullRogueUI } from "@ui/NullRogueUI";
 import { RogueGame } from "@engine/RogueGame";
-import { Session, SaveFormat } from "@engine/Session";
+import { Session, SaveFormat, GameMode, Ruleset } from "@engine/Session";
 import { storage } from "@engine/storage";
 import { WorldTime } from "@engine/WorldTime";
 import { GRAPH_VERSION, type GraphData } from "@engine/serialization/SessionGraph";
@@ -382,6 +382,48 @@ describe("Session.save and Session.load", () => {
     expect(loadedSession.currentMap!.countActors).toBeGreaterThan(0);
     expect(loadedSession.worldTime.turnCounter).toBe(session.worldTime.turnCounter);
     expect(loadedSession.loadedPlayer).not.toBeNull();
+  });
+
+  it("loads a save written before the ruleset field existed, as CLASSIC", () => {
+    // The ruleset is additive in the hand-written root object, not in the graph,
+    // so nothing about `GRAPH_VERSION` had to change and every existing save in
+    // the wild has no `ruleset` key at all. `Session.load` therefore defaults it.
+    //
+    // Defaulting to CLASSIC rather than rejecting the save is the right call and
+    // worth pinning: a pre-ruleset save *was* a classic save, and the alternatives
+    // — guessing STILL_ALIVE, or refusing — would either invent a content set the
+    // player never chose or throw away a run over a missing field.
+    const { data: graph } = freshRoundTrip();
+    storage.setItem(
+      Session.STORAGE_KEY,
+      JSON.stringify({
+        gameMode: GameMode.GM_STANDARD,
+        seed: session.seed,
+        lastTurnPlayerActed: session.lastTurnPlayerActed,
+        graphVersion: GRAPH_VERSION,
+        graph,
+      })
+    );
+
+    expect(Session.load()).toBe(true);
+    expect(Session.get().ruleset).toBe(Ruleset.CLASSIC);
+  });
+
+  it("keeps the ruleset across a round trip", () => {
+    // The same field, with a value: a Still Alive save must come back as a Still
+    // Alive save, or the world would silently revert to classic content.
+    const previous = session.ruleset;
+    session.ruleset = Ruleset.STILL_ALIVE;
+    try {
+      Session.save(session, SaveFormat.FORMAT_JSON);
+      const raw = JSON.parse(storage.getItem(Session.STORAGE_KEY)!);
+      expect(raw.ruleset).toBe(Ruleset.STILL_ALIVE);
+
+      expect(Session.load()).toBe(true);
+      expect(Session.get().ruleset).toBe(Ruleset.STILL_ALIVE);
+    } finally {
+      session.ruleset = previous;
+    }
   });
 
   it("still refuses a save with no graph, rather than loading the scalars alone", () => {

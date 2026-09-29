@@ -1,7 +1,8 @@
 import { RogueGame, SimFlags } from "@engine/RogueGame";
 import { NullRogueUI } from "@ui/NullRogueUI";
 import { NullMusicManager } from "@engine/audio/NullMusicManager";
-import { GameMode, Session } from "@engine/Session";
+import { GameMode, Ruleset, Session } from "@engine/Session";
+import { Feature, hasFeature } from "@engine/FeatureFlags";
 import { SimRatio } from "@engine/GameOptions";
 import { ActorID } from "@gameplay/GameActors";
 import { SkillID } from "@gameplay/Skills";
@@ -30,6 +31,16 @@ export interface HeadlessOptions {
   verbose?: boolean;
   /** Write progress breadcrumbs to stderr — for diagnosing a stuck run. */
   trace?: boolean;
+  /**
+   * Which ruleset to play. Defaults to `CLASSIC`.
+   *
+   * Explicit rather than inherited, and for the same reason `GM_STANDARD` is
+   * hard-coded on the line below: the sim bypasses the whole new-game menu path
+   * (`StartNewGame` is called directly), so a ruleset selected in the browser
+   * would leak in through the process-wide `Session` singleton and make a run
+   * depend on leftovers. Set it here, every run.
+   */
+  ruleset?: Ruleset;
 }
 
 /** What a run produced — the raw material for balance/AI analysis. */
@@ -136,6 +147,15 @@ export class HeadlessRunner {
     s_Options.isAdvisorEnabled = false; // no advisor popups mid-run
 
     game.session.gameMode = GameMode.GM_STANDARD;
+    game.session.ruleset = opts.ruleset ?? Ruleset.CLASSIC;
+    // The first real reader of a Feature outside the registry's own tables. It
+    // is here rather than left implicit because the harness is the only place a
+    // run can be *labelled* with the content set it played, and a metrics
+    // report that does not say which ruleset produced it is not comparable with
+    // one that does. BROWSER_PORT_PLAN §5.6b item 1.8.
+    if (hasFeature(game.session.ruleset, Feature.Alcohol)) {
+      step("ruleset: Still Alive (alcohol on)");
+    }
 
     // ── Character ───────────────────────────────────────────────────────────
     game.m_CharGen.isUndead = isUndead;

@@ -28,6 +28,23 @@ export enum GameMode {
   GM_VINTAGE,
 }
 
+/**
+ * Which content/mechanic ruleset a session runs under. Deliberately a separate
+ * axis from `GameMode` and not a fourth `GameMode` member: the two compose.
+ * C&I zombies inside a Still Alive district is a legitimate combination that a
+ * single flattened enum cannot express, and `Rules.has*` is a `GameMode` layer
+ * that still needs to answer that question independently.
+ *
+ * `CLASSIC` is not "no ruleset" — it is the port as it has been since the start,
+ * Alpha 10.1. `STILL_ALIVE` is the fork in `_refs/StillAlive-master`, as a
+ * superset: its content is present in the model tables either way, and the flag
+ * decides what spawns, what generates and what runs. See BROWSER_PORT_PLAN §5.6.
+ */
+export enum Ruleset {
+  CLASSIC,
+  STILL_ALIVE,
+}
+
 export enum ScriptStage {
   STAGE_0,
   STAGE_1,
@@ -130,6 +147,13 @@ export class Session {
   // ── Game mode ───────────────────────────────────────────────────────────
   private m_GameMode: GameMode = GameMode.GM_STANDARD;
 
+  // ── Ruleset ─────────────────────────────────────────────────────────────
+  // Orthogonal to gameMode. Not assigned in reset(), for the same reason
+  // m_GameMode is not: the new-game picker runs after reset() and sets it, and
+  // Session.load() restores it from the save over the top of the reset. Only the
+  // construction-time default matters, and it is CLASSIC.
+  private m_Ruleset: Ruleset = Ruleset.CLASSIC;
+
   // ── World map ───────────────────────────────────────────────────────────
   private m_WorldTime: WorldTime | null = null;
   private m_World: World | null = null;
@@ -204,6 +228,13 @@ export class Session {
   }
   set gameMode(value: GameMode) {
     this.m_GameMode = value;
+  }
+
+  get ruleset(): Ruleset {
+    return this.m_Ruleset;
+  }
+  set ruleset(value: Ruleset) {
+    this.m_Ruleset = value;
   }
 
   get worldTime(): WorldTime {
@@ -335,6 +366,7 @@ export class Session {
 
     const data = {
       gameMode: session.m_GameMode,
+      ruleset: session.m_Ruleset,
       seed: session.seed,
       lastTurnPlayerActed: session.lastTurnPlayerActed,
       eventRaids: session.m_Event_Raids,
@@ -516,6 +548,11 @@ export class Session {
       session.reset();
 
       session.m_GameMode = data.gameMode as GameMode;
+      // Absent in a pre-ruleset save, which predates this field. Defaulting to
+      // CLASSIC rather than rejecting the save is right: a CLASSIC save is
+      // loadable under a superset content build with nothing shifted, and
+      // guessing anything else would hand the player a ruleset they did not pick.
+      session.m_Ruleset = (data.ruleset as Ruleset) ?? Ruleset.CLASSIC;
       session.seed = data.seed as number;
       session.lastTurnPlayerActed = data.lastTurnPlayerActed as number;
       session.m_Event_Raids = data.eventRaids as number[][][];
@@ -645,6 +682,33 @@ export class Session {
         return "VTG";
       default:
         throw new Error("unhandled game mode");
+    }
+  }
+
+  // The `default: throw` is load-bearing, and it is the same discipline the
+  // GameMode helpers above already use. A ruleset that fell through to a
+  // fallback string would produce a session that runs with an unrecognised
+  // content set rather than one that refuses to start. See BROWSER_PORT_PLAN
+  // §5.6b item 1.4.
+  static descRuleset(ruleset: Ruleset): string {
+    switch (ruleset) {
+      case Ruleset.CLASSIC:
+        return "Classic - Rogue Survivor Alpha 10.1, as ported";
+      case Ruleset.STILL_ALIVE:
+        return "Still Alive - the Rogue Survivor: Still Alive fork";
+      default:
+        throw new Error("unhandled ruleset");
+    }
+  }
+
+  static descShortRuleset(ruleset: Ruleset): string {
+    switch (ruleset) {
+      case Ruleset.CLASSIC:
+        return "Classic";
+      case Ruleset.STILL_ALIVE:
+        return "Still Alive";
+      default:
+        throw new Error("unhandled ruleset");
     }
   }
 

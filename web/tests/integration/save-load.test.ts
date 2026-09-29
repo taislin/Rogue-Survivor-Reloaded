@@ -3,7 +3,7 @@ import { RogueGame } from "@engine/RogueGame";
 import { NullRogueUI } from "@ui/NullRogueUI";
 import { NullMusicManager } from "@engine/audio/NullMusicManager";
 import { SimRatio } from "@engine/GameOptions";
-import { GameMode, Session } from "@engine/Session";
+import { GameMode, Ruleset, Session } from "@engine/Session";
 import { GameSaveManager } from "@engine/GameSave";
 import { GRAPH_VERSION } from "@engine/serialization/SessionGraph";
 import { SkillID } from "@gameplay/Skills";
@@ -98,6 +98,12 @@ describe("a save carries the world", () => {
     expect(data.nextAutoSaveTime).toBe(4321);
     expect(data.charUndergroundFacility_Activated).toBe(true);
     expect(data.gameMode).toBe(GameMode.GM_STANDARD);
+    // The ruleset is a sibling of gameMode in the hand-written root object, not
+    // in the graph, so `save-graph-roundtrip.test.ts` cannot see it — this is the
+    // only place it is checked end to end. It matters more than it looks: a save
+    // that lost the ruleset would load as CLASSIC under `?? Ruleset.CLASSIC`, and
+    // a Still Alive world would silently come back as a classic one.
+    expect(data.ruleset).toBe(Ruleset.CLASSIC);
     expect(data.graphVersion).toBe(GRAPH_VERSION);
     expect(data.graph).not.toBeNull();
   });
