@@ -1,12 +1,32 @@
 # Rogue Survivor: Still Alive — Reference Fork Audit
 
-> **Status (2026-09-29): nothing ported, by decision.** This file is a survey of
-> `_refs/StillAlive-master/`, the GPLv3 fork of Rogue Survivor Alpha 10.1
-> maintained as **Rogue Survivor: Still Alive** (v2.11 / Release 8-2, by MP,
-> 2017–2023) on GitLab. `web/` tracks **vanilla Alpha 10.1 only** — every
-> Still-Alive-specific feature was searched for and none is present. This
-> document records what the fork has, what the port would cost to take, and
-> which parts of it are outright regressions.
+> **Status (2026-09-29): porting has started — this file is now out of date as a
+> statement of fact, and stays accurate only as a survey.** It was written when
+> the decision was "nothing ported", which was true then and is not true now.
+> [`BROWSER_PORT_PLAN.md`](BROWSER_PORT_PLAN.md) §5.6 is the live progress
+> board; the short version:
+>
+> - **Stage 1 done** (`f0782aa`, `4d43299`) — a `Ruleset` axis, save
+>   compatibility, a `Feature` registry, a picker.
+> - **Stage 2 done** (`dd42e82`) — eight of the fifteen §6 defects, applied
+>   unconditionally. Four turned out **not to apply** to this codebase and one
+>   could not be confirmed; see §5.6c, which has the corrections.
+> - **Stage 3 half done, uncommitted** — the 16 content tables are merged into
+>   one superset under `web/data/`, with the converter and
+>   `data-tables.test.ts` following. Sprites, ids, maps and `GameImages`
+>   constants are not started.
+> - **Stages 4–5 not started.**
+>
+> One thing below is now actively misleading and is corrected in §5.6d rather
+> than here: the fork's **rebalanced values are deliberately not in the merged
+> tables** — shared ids keep vanilla's numbers, so classic is unchanged, and
+> the fork's tuning is Stage 4 work behind the flag. §5.6d lists what is owed.
+>
+> The rest of this document stands as a survey of `_refs/StillAlive-master/`,
+> the GPLv3 fork of Rogue Survivor Alpha 10.1 maintained as **Rogue Survivor:
+> Still Alive** (v2.11 / Release 8-2, by MP, 2017–2023) on GitLab. It records
+> what the fork has, what it would cost to take, and which parts are outright
+> regressions.
 >
 > It is written to be read once and then left alone. The next person who opens
 > `_refs/` should be able to skip the diffing and go straight to §5 (the tiering)

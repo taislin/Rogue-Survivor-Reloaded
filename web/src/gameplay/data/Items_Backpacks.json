@@ -1,0 +1,47 @@
+[
+  {
+    "ID": "BACKPACK_WAIST_POUCH",
+    "NAME": "waist pouch",
+    "PLURAL": "waist pouches",
+    "INV_SLOTS": 2,
+    "ENC": 1,
+    "WEIGHT": 1,
+    "FLAVOR": "Back in fashion."
+  },
+  {
+    "ID": "BACKPACK_SATCHEL",
+    "NAME": "satchel",
+    "PLURAL": "satchels",
+    "INV_SLOTS": 4,
+    "ENC": 2,
+    "WEIGHT": 2,
+    "FLAVOR": "The messenger's choice."
+  },
+  {
+    "ID": "BACKPACK_DAYPACK",
+    "NAME": "daypack",
+    "PLURAL": "daypacks",
+    "INV_SLOTS": 6,
+    "ENC": 3,
+    "WEIGHT": 3,
+    "FLAVOR": "Versatile, ubiquitous."
+  },
+  {
+    "ID": "BACKPACK_HIKING_PACK",
+    "NAME": "hiking pack",
+    "PLURAL": "hiking packs",
+    "INV_SLOTS": 8,
+    "ENC": 4,
+    "WEIGHT": 4,
+    "FLAVOR": "Hit the trail."
+  },
+  {
+    "ID": "BACKPACK_ARMY_RUCKSACK",
+    "NAME": "army rucksack",
+    "PLURAL": "army rucksacks",
+    "INV_SLOTS": 10,
+    "ENC": 5,
+    "WEIGHT": 5,
+    "FLAVOR": "For long marches."
+  }
+]

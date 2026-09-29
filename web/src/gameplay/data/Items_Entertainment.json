@@ -16,5 +16,77 @@
     "VALUE": 60,
     "BORE_CHANCE": 100,
     "FLAVOR": "Emergency toilet paper."
+  },
+  {
+    "ID": "ENT_BOOK_CHAR",
+    "NAME": "CHAR book",
+    "PLURAL": "CHAR books",
+    "STACKING": 1,
+    "VALUE": 1,
+    "BORE_CHANCE": 100,
+    "FLAVOR": "Emergency toilet paper."
+  },
+  {
+    "ID": "ENT_BOOK_BLUE",
+    "NAME": "book",
+    "PLURAL": "books",
+    "STACKING": 1,
+    "VALUE": 120,
+    "BORE_CHANCE": 10,
+    "FLAVOR": "Something about wizards..."
+  },
+  {
+    "ID": "ENT_BOOK_GREEN",
+    "NAME": "book",
+    "PLURAL": "books",
+    "STACKING": 1,
+    "VALUE": 120,
+    "BORE_CHANCE": 10,
+    "FLAVOR": "'True' crime..."
+  },
+  {
+    "ID": "ENT_BOOK_RED",
+    "NAME": "book",
+    "PLURAL": "books",
+    "STACKING": 1,
+    "VALUE": 120,
+    "BORE_CHANCE": 10,
+    "FLAVOR": "Schlocky romance..."
+  },
+  {
+    "ID": "ENT_MAGAZINE1",
+    "NAME": "magazine",
+    "PLURAL": "magazines",
+    "STACKING": 10,
+    "VALUE": 60,
+    "BORE_CHANCE": 100,
+    "FLAVOR": "Home decorating."
+  },
+  {
+    "ID": "ENT_MAGAZINE2",
+    "NAME": "magazine",
+    "PLURAL": "magazines",
+    "STACKING": 10,
+    "VALUE": 60,
+    "BORE_CHANCE": 100,
+    "FLAVOR": "Gentleman's pictorial."
+  },
+  {
+    "ID": "ENT_MAGAZINE3",
+    "NAME": "magazine",
+    "PLURAL": "magazines",
+    "STACKING": 10,
+    "VALUE": 60,
+    "BORE_CHANCE": 100,
+    "FLAVOR": "Musicians and bands."
+  },
+  {
+    "ID": "ENT_MAGAZINE4",
+    "NAME": "magazine",
+    "PLURAL": "magazines",
+    "STACKING": 10,
+    "VALUE": 60,
+    "BORE_CHANCE": 100,
+    "FLAVOR": "Celebrities and diet fads."
   }
 ]

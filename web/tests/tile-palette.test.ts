@@ -136,25 +136,68 @@ describe("the tile table is fully populated", () => {
     }
   });
 
+  /**
+   * Prefixes whose members are walkable and transparent. Everything else in the
+   * enum is a wall.
+   *
+   * This replaces an assertion that read `id <= TileID.RAIL_EW` to decide what a
+   * floor is, which silently assumed the enum is ordered floors-first. It is,
+   * today — but the Still Alive content pack interleaves new walls *and* new
+   * floors (`wall_mall`, `floor_white_tile`, `wall_pillar_concrete`,
+   * `parking_asphalt_ns` all arrive in one batch), so the next person to append
+   * a wall tile would have had to remember that appending a wall is illegal.
+   * Deriving it from the name instead means the table can grow in any order, and
+   * a *wrong* flag is caught rather than being reclassified by a boundary that
+   * moves.
+   */
+  const WALKABLE_PREFIXES = ["FLOOR_", "ROAD_", "RAIL_", "PARKING_", "WALK_"];
+
+  const tileName = (id: TileID): string => TileID[id] ?? "";
+
   it("keeps isWalkable and isTransparent consistent with the C# table", () => {
-    // GameTiles.cs passes (walkable, transparent); floors are both true,
-    // walls both false. A swapped pair would make walls walkable.
+    // GameTiles.cs passes (walkable, transparent) and the two always agree:
+    // floors are both true, walls both false. A swapped pair would make walls
+    // walkable, so that agreement is the invariant.
     for (let i = 1; i < TileID._COUNT; i++) {
       const model = tiles.get(i);
+      expect(
+        model.isWalkable,
+        `TileID ${i} (${tileName(i as TileID)}) has isWalkable !== isTransparent`,
+      ).toBe(model.isTransparent);
+    }
+  });
+
+  it("agrees with what the tile is called, not with its position in the enum", () => {
+    for (let i = 1; i < TileID._COUNT; i++) {
       const id = i as TileID;
-      const isFloor = id <= TileID.RAIL_EW;
-      expect(model.isWalkable, `TileID ${i} walkable`).toBe(isFloor);
-      expect(model.isTransparent, `TileID ${i} transparent`).toBe(isFloor);
+      const shouldBeWalkable = WALKABLE_PREFIXES.some((p) => tileName(id).startsWith(p));
+      expect(
+        tiles.get(id).isWalkable,
+        `TileID ${i} (${tileName(id)}) isWalkable disagrees with its name`,
+      ).toBe(shouldBeWalkable);
     }
   });
 
   it("gives every wall a minimap colour that is not the UNDEF pink", () => {
     // A missing colour shows as magenta; catching it here beats seeing it.
-    for (let id = TileID.WALL_BRICK; id < TileID._COUNT; id++) {
-      const c = tiles.get(id).minimapColor;
-      expect(`${c.r},${c.g},${c.b}`, `wall ${id} is UNDEF pink`).not.toBe(
+    // Keyed on `isWalkable` rather than on `id >= WALL_BRICK`, for the same
+    // reason as above.
+    for (let i = 1; i < TileID._COUNT; i++) {
+      if (tiles.get(i).isWalkable) continue;
+      const c = tiles.get(i).minimapColor;
+      expect(`${c.r},${c.g},${c.b}`, `wall ${i} (${tileName(i as TileID)}) is UNDEF pink`).not.toBe(
         `${Color.Pink.r},${Color.Pink.g},${Color.Pink.b}`
       );
     }
+  });
+
+  it("would not have accepted a wall inserted before the last floor", () => {
+    // The premise behind the two tests above, asserted so they cannot pass
+    // vacuously: the old `id <= RAIL_EW` check really did classify by position,
+    // so appending a wall to the middle of the table would have flipped the
+    // walkable/transparent expectation for it *and* for everything after it.
+    const lastFloor = WALKABLE_PREFIXES.length > 0 ? tiles.get(TileID.RAIL_EW) : null;
+    expect(lastFloor?.isWalkable).toBe(true);
+    expect(tileName(TileID.RAIL_EW).startsWith("RAIL_")).toBe(true);
   });
 });
