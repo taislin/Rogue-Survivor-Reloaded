@@ -70,6 +70,7 @@ All run from `web/`.
 | `npm run check:base` | Fail if the built output has a root-absolute URL. Only meaningful with `BASE_PATH` set |
 | `npm run build:site` | Assemble `_site/`: `docs/` at the root, the game in `game/` |
 | `npm run build:pages` | `build` + stamp the cache version + `build:site`, i.e. the whole Pages build |
+| `npm run preview:site` | Serve `_site/` under the Pages path prefix, for the browser check |
 | `npm run sim`       | Headless simulation — plays a full game in Node, no browser |
 | `npm run profile`   | Headless draw-call profiler                                 |
 
@@ -387,6 +388,24 @@ run in CI:
 above. `scripts/build-site.mjs` refuses to assemble a site whose service worker
 carries the committed `CACHE_VERSION`, because that deploy looks fine and leaves
 every returning player on the previous build.
+
+**Do the browser check before merging**, because it is the one thing none of the
+above can do. Every check here is static analysis of the built artifact, and a
+wrong base is a black screen rather than an error. `npm run preview:site` serves
+`_site/` under the Pages path prefix — not at `/`, which would serve the game a
+404 for every asset and look like the very bug being tested — so the URLs the
+built page asks for are the ones the server answers:
+
+```bash
+BASE_PATH=/Rogue-Survivor-Reloaded/game/ npm run build:pages
+npm run preview:site      # then open the printed game URL
+```
+
+`--base /` serves at the root if you built a root-base bundle, and `--open` just
+prints the URLs. One trap: the worker caches assets cache-first, so a browser
+that already loaded this origin can keep showing an earlier build until the
+worker updates, which it does on navigation and at most daily. A private window
+or a different port avoids that entirely.
 
 `sw.js` and `manifest.webmanifest` resolve their paths against their own URL
 rather than being templated. Vite copies `public/` to the output untransformed,
