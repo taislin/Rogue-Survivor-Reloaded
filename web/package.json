@@ -15,6 +15,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:coverage:serial": "vitest run --coverage --no-file-parallelism --coverage.reporter=text",
     "verify": "npm run type-check && npm run test:coverage && npm run build",
     "profile": "esbuild sim/profile.ts --bundle --platform=node --format=esm --tsconfig=tsconfig.json --outfile=node_modules/.cache/profile.mjs --log-level=warning && node node_modules/.cache/profile.mjs",
     "neu:dev": "npx @neutralinojs/neu run",

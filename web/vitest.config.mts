@@ -45,25 +45,31 @@ export default defineConfig({
       // the numbers do not drift run to run.
       //
       // Re-measured on 58 files / 867 tests, sitting ~2-3.5 points below actual
-      // so ordinary edits do not flap the build while a real drop still fails CI:
-      //   statements 60.57%  branches 50.33%  functions 72.53%  lines 61.86%
+      // so ordinary edits do not flap the build while a real drop still fails CI.
       //
-      // **Why branches moved down from 75, and why it is not a lowering.**
+      // **Measure coverage with `--no-file-parallelism`.** The default parallel
+      // run is not a measurement. Two runs of an identical tree disagree — not
+      // only in the numerator but in the *denominator* (statements 26403 vs
+      // 26409, lines 23983 vs 23989), because the set of instrumented modules
+      // depends on which worker imports what and when. Per-file numbers are
+      // stable throughout; only the aggregate moves. Serial runs are bit-identical
+      // across repeats, and that is the number recorded here:
       //
-      // The 75 came from the first suite: 6 files, 74 tests, branches 76.39%. The
-      // denominator has since grown about tenfold and the numerator has not kept
-      // up, so the same code now measures 50%. The cause is one file:
-      // `src/engine/RogueGame.ts` is 6098 branches -- 41% of all 14747 in the
-      // project -- at 31% covered. No realistic amount of testing moves the total:
-      // even taking that single file to 50% only reaches 58%. A gate that cannot
-      // be passed is not a gate, and a permanently red `verify` is how a coverage
-      // number stops being read at all.
+      //   statements 59.90%  branches 49.71%  functions 72.55%  lines 61.13%
       //
-      // So branches is set as an honest floor, and the other three are raised
-      // above where they used to be so the gate is net *stricter* than the one it
-      // replaces, not looser. Raising branches again means writing tests against
-      // `RogueGame.ts` specifically -- the whole-world and AI code is where the
-      // remaining branches are, and that is worth doing on its own merits.
+      // The wobble is ~0.05 points, so the gates are not *at* risk of flapping —
+      // but a per-file improvement smaller than that is invisible globally, and
+      // the honest way to judge a new test is the per-file row from
+      // `--coverage.reporter=text`, not the total. Steering the total means
+      // `RogueGame.ts`: 4374 uncovered branches, 41% of the project's, at 31%
+      // covered, and the next-best targets are a handful of files at 0.
+      //
+      // **Why branches is a floor and not a target.** The original 75 came from
+      // the first suite — 6 files, 74 tests, branches 76.39% — and no realistic
+      // amount of testing reaches it now: `RogueGame.ts` alone is 6098 branches
+      // and taking it to 50% still only reaches 58%. A gate that cannot be passed
+      // is not a gate. The other three are set *above* where they used to be, so
+      // the gate is net stricter than the one it replaces.
       //
       // Known blind spot, deliberately not excluded: the two WebAudio managers
       // (61 branches, 0%) call an API node does not have. Excluding 0.4% of the
