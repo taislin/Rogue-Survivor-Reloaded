@@ -166,3 +166,46 @@ describe("medicine binds by ID, not by row position", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
+
+/**
+ * Every `ItemID` must resolve to a real model.
+ *
+ * The gap this closes, and it is the one that matters for the Still Alive
+ * content pack: each of the ten hand-written `{id, img}` maps in `GameItems.ts`
+ * binds its CSV rows with `if (!meta) continue;`. A row with no map entry — a
+ * new `FOOD_RAW_RABBIT`, say — is therefore *silently skipped*, and its
+ * `ItemID` resolves to a hole in `this.models`. Nothing throws, nothing warns,
+ * the enum says the item exists, and the game is simply short one item.
+ *
+ * The enum is where the compiler stops helping: adding `FOOD_RAW_RABBIT` to
+ * `ItemID` and forgetting the map entry is a clean type-check. So the check
+ * that the two agree has to live here.
+ *
+ * `get` returns `this.models[id]` with no fallback, so a hole is `undefined`
+ * rather than a sentinel — which makes the assertion direct.
+ */
+describe("every ItemID resolves to a model", () => {
+  it("has no hole in the model array", () => {
+    const holes: string[] = [];
+    for (let i = 0; i < ItemID._COUNT; i++) {
+      const model = items.get(i);
+      if (model === undefined || model === null) {
+        holes.push(`${i} (${ItemID[i]})`);
+      }
+    }
+    expect(holes, "ItemIDs with no model — usually a CSV row missing from one of the maps")
+      .toEqual([]);
+  });
+
+  it("gives every model the id it was registered under", () => {
+    // Catches a copy-paste slip where the entry exists but points at another
+    // item's id, which is the shape of the original binding bug: every field
+    // valid, every field someone else's.
+    const wrong: string[] = [];
+    for (let i = 0; i < ItemID._COUNT; i++) {
+      const model = items.get(i);
+      if (model && model.id !== i) wrong.push(`${i} (${ItemID[i]}) has model.id ${model.id}`);
+    }
+    expect(wrong).toEqual([]);
+  });
+});
