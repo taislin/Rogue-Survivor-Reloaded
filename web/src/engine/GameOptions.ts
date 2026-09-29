@@ -66,9 +66,33 @@ export enum OptionIDs {
   GAME_DAYS_BEFORE_ITEM_DESPAWNS,
   /** Still Alive, Release 7-6. Appended, per the numeric-id rule. */
   GAME_REDUCED_MAPOBJECT_LIGHTING,
+  /**
+   * Still Alive, Release 7-4. Appended after the two Release 7-6 rows: the
+   * numeric id is what a stored options blob carries, so inserting here would
+   * silently re-point somebody's saved setting at a different option.
+   */
+  GAME_RESOURCES_AVAILABILITY,
   UI_SPRITE_STYLE, // browser port
   UI_FONT_CHOICE, // browser port
   UI_VIEW_MODE, // browser port
+}
+
+/**
+ * Still Alive, Release 7-4: how plentiful the world is.
+ *
+ * One knob, and it reaches surprisingly far -- starting kit, meat per corpse,
+ * fish odds, plant fruiting, the antiviral drop in an army-supplies cache, the
+ * dynamite in an underground cache, and the survival-difficulty rating. See
+ * BROWSER_PORT_PLAN for the full reader list.
+ *
+ * `LOW = 0` is not an accident: the C#'s difficulty screen steps the value with
+ * `-1`/`+1` and clamps at the ends, so the numbering has to run from LOW to HIGH
+ * or Left and Right are swapped.
+ */
+export enum Resources {
+  LOW = 0,
+  MED = 1,
+  HIGH = 2,
 }
 
 export enum ZupDays {
@@ -141,6 +165,13 @@ export class GameOptions {
    * a graphics one.
    */
   static readonly DEFAULT_REDUCED_MAPOBJECT_LIGHTING = false;
+  /**
+   * Still Alive, Release 7-4. MED, and it matters that it is the *default*:
+   * `computeDifficultyRating` scales the survivor's rating by 1.5 on LOW and
+   * 0.5 on HIGH, so the shipped default is the only setting that neither
+   * inflates nor deflates a score.
+   */
+  static readonly DEFAULT_RESOURCES_AVAILABILITY: Resources = Resources.MED;
   static readonly DEFAULT_ZOMBIFIEDS_UPGRADE_DAYS: ZupDays = ZupDays.THREE;
   static readonly DEFAULT_AUTOSAVE_PERIOD = 24; // alpha10.1
   static readonly DEFAULT_SPRITE_STYLE: ImageSet = DEFAULT_IMAGE_SET;
@@ -191,6 +222,7 @@ export class GameOptions {
   private m_SuppliesDropFactor = 0;
   private m_DaysBeforeDiscardedItemDespawns = 0;
   private m_ReducedMapObjectLighting = false;
+  private m_ResourcesAvailability: Resources = Resources.MED;
   private m_ShowTargets = false;
   private m_ShowPlayerTargets = false;
   private m_ZupDays: ZupDays = ZupDays.OFF;
@@ -547,6 +579,14 @@ export class GameOptions {
     this.m_ReducedMapObjectLighting = value;
   }
 
+  /** Still Alive, Release 7-4. See `DEFAULT_RESOURCES_AVAILABILITY`. */
+  get resourcesAvailability(): Resources {
+    return this.m_ResourcesAvailability;
+  }
+  set resourcesAvailability(value: Resources) {
+    this.m_ResourcesAvailability = value;
+  }
+
   get showTargets(): boolean {
     return this.m_ShowTargets;
   }
@@ -713,6 +753,7 @@ export class GameOptions {
     this.m_DaysBeforeDiscardedItemDespawns =
       GameOptions.DEFAULT_DAYS_BEFORE_ITEM_DESPAWNS;
     this.m_ReducedMapObjectLighting = GameOptions.DEFAULT_REDUCED_MAPOBJECT_LIGHTING;
+    this.m_ResourcesAvailability = GameOptions.DEFAULT_RESOURCES_AVAILABILITY;
     this.m_ShowTargets = true;
     this.m_ShowPlayerTargets = true;
     this.m_ZupDays = GameOptions.DEFAULT_ZOMBIFIEDS_UPGRADE_DAYS;
@@ -792,6 +833,10 @@ export class GameOptions {
         return "   (Map) Reveal Starting District";
       case OptionIDs.GAME_REINC_LIVING_RESTRICTED:
         return " (Reinc) Civilians only Reinc.";
+      case OptionIDs.GAME_RESOURCES_AVAILABILITY:
+        // Still Alive, Release 7-4. The C# prefixes "(Living)", which is a
+        // leftover from when the difficulty screen was the only one that had it.
+        return " (Living) Resources availability";
       case OptionIDs.GAME_REINCARNATE_AS_RAT:
         return " (Reinc) Can Reincarnate as Rat";
       case OptionIDs.GAME_REINCARNATE_TO_SEWERS:
@@ -901,6 +946,12 @@ export class GameOptions {
         return "You start the game with knowing parts of the map you start in.";
       case OptionIDs.GAME_REINC_LIVING_RESTRICTED:
         return "Limit choices of reincarnations as livings to civilians only. If disabled allow you to reincarnte into all kinds of livings.";
+      case OptionIDs.GAME_RESOURCES_AVAILABILITY:
+        return (
+          "How plentiful the world is. It is not one number: it sets your starting food, " +
+          "how much meat a corpse yields, your odds of catching a fish, how often plants fruit, " +
+          "and what turns up in supply caches."
+        );
       case OptionIDs.GAME_REINCARNATE_AS_RAT:
         return "Enables the possibility to reincarnate into a zombie rat.";
       case OptionIDs.GAME_REINCARNATE_TO_SEWERS:
@@ -1008,6 +1059,43 @@ export class GameOptions {
         return "Your Zombie Self";
       default:
         throw new Error("unhandled ReincMode");
+    }
+  }
+
+  /** The display name of a resources-availability level. */
+  static resourcesAvailabilityName(availability: Resources): string {
+    switch (availability) {
+      case Resources.LOW:
+        return "LOW";
+      case Resources.MED:
+        return "MED";
+      case Resources.HIGH:
+        return "HIGH";
+      default:
+        throw new Error("unhandled Resources");
+    }
+  }
+
+  /**
+   * `Resources` as a percentage, for the four readers that want a chance rather
+   * than a name: the antiviral in an army-supplies cache, the dynamite in an
+   * underground cache, and so on.
+   *
+   * **33/54/75, not 33/50/66.** Not a typo and not "nicely spaced" -- those are
+   * the C#'s exact numbers, and they are not evenly spaced on purpose. HIGH is
+   * 75 rather than 100, so even the most plentiful world leaves the occasional
+   * cache bare, which is what makes scavenging a search rather than a formality.
+   */
+  static resourcesAvailabilityToInt(availability: Resources): number {
+    switch (availability) {
+      case Resources.LOW:
+        return 33;
+      case Resources.MED:
+        return 54;
+      case Resources.HIGH:
+        return 75;
+      default:
+        throw new Error("unhandled Resources");
     }
   }
 
@@ -1160,6 +1248,12 @@ export class GameOptions {
         return this.canReincarnateAsRat ? "YES   (default NO)" : "NO    (default NO)";
       case OptionIDs.GAME_REINCARNATE_TO_SEWERS:
         return this.canReincarnateToSewers ? "YES   (default NO)" : "NO    (default NO)";
+      case OptionIDs.GAME_RESOURCES_AVAILABILITY:
+        return `${GameOptions.resourcesAvailabilityName(this.resourcesAvailability).padEnd(
+          4,
+        )}  (default ${GameOptions.resourcesAvailabilityName(
+          GameOptions.DEFAULT_RESOURCES_AVAILABILITY,
+        )})`;
       case OptionIDs.GAME_REVEAL_STARTING_DISTRICT:
         return this.revealStartingDistrict ? "YES   (default YES)" : "NO    (default YES)";
       case OptionIDs.GAME_SHAMBLERS_UPGRADE:

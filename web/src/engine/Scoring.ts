@@ -6,7 +6,9 @@ import { Actor } from "@data/Actor";
 import { Map as GameMap } from "@data/Map";
 import { Models } from "@data/Models";
 import { WorldTime } from "@engine/WorldTime";
-import { GameOptions, ZupDays } from "@engine/GameOptions";
+import { Feature, hasFeature } from "@engine/FeatureFlags";
+import { GameOptions, Resources, ZupDays } from "@engine/GameOptions";
+import { Session } from "@engine/Session";
 import { GameMusics } from "@gameplay/GameSounds";
 import { SkillID } from "@gameplay/Skills";
 
@@ -394,6 +396,27 @@ export class Scoring {
         GameOptions.DEFAULT_SUPPLIESDROP_FACTOR;
       if (side === DifficultySide.FOR_SURVIVOR) rating -= 0.5 * k;
       else rating += 0.5 * k;
+    }
+
+    // - Resources availability : x1.5 (LOW) -> x0.5 (HIGH), survivor only
+    //
+    // The one difficulty factor that is a *multiplier on the whole rating*
+    // rather than an additive term, and it is a multiplier in only one
+    // direction. Playing LOW as a survivor makes the game worth 1.5x; playing
+    // HIGH as a survivor halves it. For the zombies there is no adjustment at
+    // all -- a plentiful world is no easier or harder to conquer, only a
+    // different kind of game, and the C# declines to score that.
+    //
+    // Gated because the option outlives the ruleset: it lives in localStorage,
+    // so a player who set HIGH under Still Alive and then started a CLASSIC
+    // game still has HIGH in the blob, and an ungated reader would quietly halve
+    // their classic score. Hiding the row in the options screen is not enough.
+    if (
+      side === DifficultySide.FOR_SURVIVOR &&
+      hasFeature(Session.get().ruleset, Feature.ResourcesAvailability)
+    ) {
+      if (options.resourcesAvailability === Resources.LOW) rating *= 1.5;
+      else if (options.resourcesAvailability === Resources.HIGH) rating *= 0.5;
     }
 
     // - Zombifieds UpDay

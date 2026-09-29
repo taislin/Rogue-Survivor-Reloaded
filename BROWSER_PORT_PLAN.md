@@ -1378,7 +1378,7 @@ Stages 4 and 5 have not started.
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
 | **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles, 90 of 95 items and all 123 item factories done.** The 5 backpacks (a new mechanic) and ~420 unused `GameImages` constants are the only content left; nothing *calls* the new factories yet, which is placement and belongs to Stage 4/5 |
-| **4** | 37 gated features | **14 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (both halves), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`, `TileFires`, `FireExtinguishers`, `Butchering`. 23 remain |
+| **4** | 37 gated features | **15 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (both halves), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`, `TileFires`, `FireExtinguishers`, `Butchering`, `ResourcesAvailability`. 22 remain |
 | **5** | content, audio, credits | **not started** |
 
 Two things a later session should not have to re-derive:
@@ -2874,6 +2874,7 @@ zero precisely because of the dump-every-own-field design.
 | `FoodPoisoning` | `Actor.isFoodPoisoned` | **0** (own field, carried by the writer) | **DONE** — 20% base × perishing factor 1/3/5, 1% per-turn recovery, Hardy bonus, medkit/antiviral cure on the C#'s exact model list, and the 5% vomit action (stamina/sleep/food cost, two-day decoration timer) |
 | `Cooking` | `ItemFood._cookedDegree`, `_maxCookedDegree` | 0 | `canActorCookFood`, `ActionCookFood`, campfires/barrels as heat sources |
 | `Fishing` | `Activity.FISHING` | 0 | rod equip gate, `ActionWait(isFishing)` flag, Unsuspicious bonus, `Map.hasFishing` |
+| `ResourcesAvailability` | none (option + `Resources` enum) | 0 | **DONE** — `GAME_RESOURCES_AVAILABILITY` option, the 33/54/75 projection, the survivor-only difficulty multiplier, and the starting kit. The Butchering meat quantity now reads it instead of the hardcoded `2` |
 | `Butchering` | `Actor.causeOfDeath`, `Abilities.isLivingAnimal` | 0 | **DONE** — the player's-bladed-weapon gate, fire-death-means-cooked, `bestBefore` divided by rot level, rabbit/chicken/dog/human meat, the no-sanity-hit carve-out for animals. `ResourcesAvailability` (3/2/1) not implemented, so the C#'s `default: 2` is hardcoded for animals; `RABBIT`/`CHICKEN` still unspawnable without `UnintelligentAnimalAI`, so the unrecognised-animal arm yields no meat where the C# throws |
 | `TileFires` | `Tile.flags.IS_ON_FIRE`, `Tile.scorched` | **~4 lines** — `tilesGrid` packs `modelId` + `flags` + `decorations` (`specs.ts:317-347`) | spread, extinguish, rain, damage to actors/corpses/crops, fuel units on barrels/cars |
 | `DarknessFov` | none | 0 | `MINIMAL_FOV_PLAYER 0` vs `MINIMAL_FOV_LIVINGACTORS 1`; night penalties; the FOV-0 gates from Stage 2 |

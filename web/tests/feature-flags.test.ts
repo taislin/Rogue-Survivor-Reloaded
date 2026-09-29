@@ -167,8 +167,10 @@ describe("Feature registry is wired", () => {
                  "FireBarrels", "FireBarrels", "FireExtinguishers",
                  "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
                  "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-                 "ItemDespawn", "ItemDespawn", "LightPriority", "SiphonFuel",
-                 "SiphonFuel", "TileFires", "WeaponWeight"]);
+                 "ItemDespawn", "ItemDespawn", "LightPriority",
+                 "ResourcesAvailability", "ResourcesAvailability",
+                 "ResourcesAvailability", "SiphonFuel", "SiphonFuel",
+                 "TileFires", "WeaponWeight"]);
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     // `Alcohol`'s *first* reader is now in `RogueGame` (the per-turn decay), and
     // the harness line is one of six rather than the only one.
@@ -204,6 +206,15 @@ describe("Feature registry is wired", () => {
     expect(alc.filter((s) => /Rules\.ts/.test(s.at))).toHaveLength(2);
     expect(alc.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(4);
     expect(alc.filter((s) => /HeadlessRunner\.ts/.test(s.at))).toHaveLength(1);
+
+    // ResourcesAvailability is three readers in three files: the options row and
+    // its arrow keys, the difficulty rating multiplier, and the starting kit.
+    // The Butchering meat quantity reads it too, but through a helper rather
+    // than inline, so it is counted at its one caller.
+    const res = sites.filter((s) => s.feature === "ResourcesAvailability");
+    expect(res.filter((s) => /OptionsScreen\.ts/.test(s.at))).toHaveLength(1);
+    expect(res.filter((s) => /Scoring\.ts/.test(s.at))).toHaveLength(1);
+    expect(res.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(1);
 
     // Butchering is two readers in two files: the "you need a bladed weapon"
     // check, and the meat block. The insanity carve-out for animals is gated by

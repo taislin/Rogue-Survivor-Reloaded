@@ -76,6 +76,7 @@ import {
 	OptionIDs,
 	Options,
 	ReincMode,
+	Resources,
 	SimRatio,
 	ZupDays,
 } from "@engine/GameOptions";
@@ -3122,6 +3123,46 @@ export class RogueGame {
 		this.m_UI.UI_Repaint();
 	}
 
+	/**
+	 * Still Alive, Release 7-4: what the player is holding on turn one.
+	 *
+	 * Gated, and the gate is the whole point: CLASSIC starts you with nothing,
+	 * which is what every classic speedrun and every classic test fixture assumes.
+	 * The C# guards this with `#if DEBUG`/`#else` and its release build grants
+	 * the big flashlight unconditionally. The port follows the *ruleset* rather
+	 * than the C#'s build flag, because the distinction that matters is which
+	 * game you are playing, not whether assertions were compiled in.
+	 *
+	 * Note the HIGH arm builds an improvised club and then never adds it to the
+	 * inventory. That is a bug in the C# -- `Item melee = ...` with no `AddAll`
+	 * -- and it is preserved deliberately. A scavenged world handing you a free
+	 * club is a balance change, and fixing it here would mean the port and the
+	 * fork disagree about difficulty in a way nobody asked for. Recorded in the
+	 * plan as a known C# bug.
+	 */
+	GiveStartingKitForResources(): void {
+		if (!hasFeature(this.m_Session.ruleset, Feature.ResourcesAvailability)) return;
+		const player = this.m_Player;
+		if (player?.inventory == null) return;
+		switch (s_Options.resourcesAvailability) {
+			case Resources.HIGH: {
+				player.inventory.addAll(new ItemFood(this.m_GameItems.get(ItemID.FOOD_GROCERIES)));
+				// Built and discarded, exactly as the C# does. See the note above.
+				void new ItemMeleeWeapon(this.m_GameItems.get(ItemID.MELEE_IMPROVISED_CLUB));
+				break;
+			}
+			case Resources.MED: {
+				const snack = new ItemFood(this.m_GameItems.get(ItemID.FOOD_SNACK_BAR));
+				snack.quantity = 2;
+				player.inventory.addAll(snack);
+				break;
+			}
+			case Resources.LOW:
+				// nothing. You start with your hands.
+				break;
+		}
+	}
+
 	// C# StartNewGame — RogueGame.cs:2178
 	async StartNewGame(): Promise<void> {
 		const isUndead = this.m_CharGen.isUndead;
@@ -3164,6 +3205,8 @@ export class RogueGame {
 				);
 			}
 		}
+
+		this.GiveStartingKitForResources();
 
 		// scoring : hello there.
 		this.m_Session.scoring.addVisit(
@@ -8498,12 +8541,16 @@ export class RogueGame {
 			// Not ported: the C# throws here. See the doc comment.
 			if (pair === undefined) return;
 			meatId = burntToDeath ? pair[1] : pair[0];
-			// The C#'s `default` ResourcesAvailability case.
-			quantity = 2;
+			// The C#'s ResourcesAvailability switch: 3 / 2 / 1.
+			quantity = Rules.meatQuantityPerCorpse(s_Options.resourcesAvailability);
 		} else {
 			meatId = burntToDeath
 				? ItemID.FOOD_COOKED_HUMAN_FLESH
 				: ItemID.FOOD_RAW_HUMAN_FLESH;
+			// A human body is *not* scaled. The C#'s ResourcesAvailability switch
+			// sits inside the animal arm only, so a person yields quantity 1 at
+			// every setting. Worth saying out loud, because "why does a rabbit
+			// give more meat than a person" is otherwise a fair question.
 		}
 
 		const model = Models.items.get(meatId) as ItemFoodModel;

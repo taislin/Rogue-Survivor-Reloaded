@@ -2,10 +2,12 @@ import { IMAGE_SETS } from "@engine/AssetPaths";
 import type { IMusicManager } from "@engine/audio/IMusicManager";
 import { Color } from "@engine/Color";
 import { DEFAULT_VIEW_MODE, VIEW_MODES } from "@engine/firstperson/Types";
+import { Feature, hasFeature } from "@engine/FeatureFlags";
 import {
 	GameOptions,
 	OptionIDs,
 	Options,
+	Resources,
 	SimRatio,
 	ZupDays,
 } from "@engine/GameOptions";
@@ -102,6 +104,12 @@ export class OptionsScreen {
 		OptionIDs.GAME_REVEAL_STARTING_DISTRICT,
 		// living
 		OptionIDs.GAME_MAX_CIVILIANS,
+		// Still Alive, Release 7-4. One gate covers both the row's presence and
+		// its arrow-key handling, below, so CLASSIC cannot show a row that does
+		// nothing when you press Left.
+		...(hasFeature(Session.get().ruleset, Feature.ResourcesAvailability)
+			? [OptionIDs.GAME_RESOURCES_AVAILABILITY]
+			: []),
 		// OptionIDs.GAME_MAX_DOGS,
 		OptionIDs.GAME_ZOMBIFICATION_CHANCE,
 		OptionIDs.GAME_AGGRESSIVE_HUNGRY_CIVILIANS,
@@ -633,6 +641,18 @@ export class OptionsScreen {
 				break;
 			case OptionIDs.GAME_MAX_CIVILIANS:
 				o.maxCivilians += dir * 5;
+				break;
+			case OptionIDs.GAME_RESOURCES_AVAILABILITY:
+				// Clamped at both ends rather than wrapping: the C# does
+				// `if (!= LOW) --` and `if (!= HIGH) ++`, so Left at LOW and Right
+				// at HIGH are no-ops instead of jumping to the other extreme.
+				o.resourcesAvailability = dir === -1
+					? o.resourcesAvailability > Resources.LOW
+						? ((o.resourcesAvailability - 1) as Resources)
+						: Resources.LOW
+					: o.resourcesAvailability < Resources.HIGH
+						? ((o.resourcesAvailability + 1) as Resources)
+						: Resources.HIGH;
 				break;
 			case OptionIDs.GAME_MAX_DOGS:
 				o.maxDogs += dir;

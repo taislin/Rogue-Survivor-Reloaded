@@ -10,6 +10,7 @@ import { ActorAction } from "@data/ActorAction";
 import { Attack, AttackKind } from "@data/Attack";
 import { BlastAttack } from "@data/BlastAttack";
 import { Corpse } from "@data/Corpse";
+import { Resources } from "@engine/GameOptions";
 import { Defence } from "@data/Defence";
 import { DollPart } from "@data/Doll";
 import { Item } from "@data/Item";
@@ -2022,6 +2023,27 @@ export class Rules {
     }
 
     return OK;
+  }
+
+  /**
+   * Still Alive, Release 7-4: how much meat one animal corpse yields.
+   *
+   * HIGH 3, MED 2, LOW 1. The C# writes this as a `switch` on
+   * `ResourcesAvailability` with a `default: 2`, so the fallthrough is MED
+   * rather than the enum's first member -- the two agree at MED, but a bad
+   * cast into this function should not silently double a LOW world's yield.
+   */
+  static meatQuantityPerCorpse(availability: Resources): number {
+    switch (availability) {
+      case Resources.HIGH:
+        return 3;
+      case Resources.MED:
+        return 2;
+      case Resources.LOW:
+        return 1;
+      default:
+        return 2;
+    }
   }
 
   // ── Distances ────────────────────────────────────────────────────────────
