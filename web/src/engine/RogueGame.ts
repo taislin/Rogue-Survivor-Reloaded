@@ -25699,8 +25699,22 @@ export class RogueGame {
 
 					// Sim ends - either aborted or normal end.
 
-					// remove "ESC" message.
-					this.RemoveLastMessage();
+				// Drop the whole progress block, not just its last line.
+				//
+				// C# removes the "<keep ESC pressed>" line, and that is all it has to
+				// do: its log is repainted from scratch on the next action. Here the
+				// screen was left on the last progress frame, because nothing redrew
+				// after this method returned, so the player was still looking at
+				// "Simulating district, please wait 143/900..." long after the 900th
+				// turn -- which reads as the simulation still running, and is what made
+				// the district switch look like it had stalled.
+				//
+				// Clearing the log is safe here and not a loss: the loop calls
+				// `ClearMessages` before its first redraw, so by the time it exits the
+				// log holds nothing but simulation output. The caller's "leaves X" and
+				// "enters Y" lines are added after this returns, so they are not
+				// caught by this.
+				this.ClearMessages();
 
 					// since sim arbitrary messes with actor APs, we're not quite sure were they are now.
 					// so force them back to zero to have a clean start.
@@ -25725,6 +25739,34 @@ export class RogueGame {
 	AfterPlayerEnterDistrict(): void {
 		// restart sim thread if on
 		if (s_Options.isSimON && s_Options.simThread) this.StartSimThread();
+
+		// Rebuild the view, and put the new district on screen.
+		//
+		// `BeforePlayerEnterDistrict` calls `clearView` on both the map being
+		// left and the one being entered, so that the simulation shows the player
+		// nothing. That is right for the duration and wrong afterwards: nothing
+		// rebuilt the destination's `isInView`, and `setViewAndMarkVisited` --
+		// which its own comment calls the thing that "makes actors, items and
+		// corpses drawable at all" -- is only reached from `UpdatePlayerFOV`.
+		// So the player arrived in a district with a black map until some later
+		// keypress happened to run an FOV update, which is the second half of the
+		// reported symptom: a keypress to get out of black, then another to see
+		// anything.
+		//
+		// This is the same pair the play loop ends a turn with, and it is here
+		// rather than in the catch-up because the player has to be *on* the new
+		// map: the catch-up runs before the move, so an FOV update there would
+		// compute it for the map being left.
+		if (this.m_Player != null) {
+			this.UpdatePlayerFOV(this.m_Player);
+			this.ComputeViewRect(this.m_Player.location.position);
+			this.RefreshPlayer();
+			// And draw it. Without this the frame on the canvas is still the
+			// simulation's, so the switch ends on a stale progress screen and the
+			// next thing the player does is the repaint that would have happened
+			// here.
+			this.RedrawPlayScreen();
+		}
 	}
 
 	// C# OnPlayerChangeMap — RogueGame.cs:21375
