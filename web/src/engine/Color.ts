@@ -92,6 +92,26 @@ export class Color {
   static readonly BurlyWood     = new Color(222, 184, 135);
   static readonly HotPink       = new Color(255, 105, 180);
 
+  // ── Still Alive minimap palette ──
+  //
+  // Added for the 125 tile models ported from the fork by
+  // scripts/port-tile-models.py. These are the .NET `System.Drawing` values,
+  // which is what the C# names actually refer to, and which this file's
+  // existing entries already follow -- CornflowerBlue (100,149,237),
+  // CadetBlue (95,158,160), BurlyWood (222,184,135), Chocolate (210,105,30)
+  // and LightBlue (173,216,230) are all .NET's, not approximations.
+  //
+  // The minimap is the only reader, so a wrong value here is invisible until a
+  // district renders in a colour that is not quite the district's.
+  static readonly SteelBlue       = new Color(70, 130, 180);
+  static readonly Sienna          = new Color(160, 82, 45);
+  static readonly SeaGreen        = new Color(46, 139, 87);
+  static readonly OliveDrab       = new Color(107, 142, 35);
+  static readonly MediumPurple    = new Color(147, 112, 219);
+  static readonly Khaki           = new Color(240, 230, 140);
+  static readonly Cornsilk        = new Color(255, 248, 220);
+  static readonly BlanchedAlmond  = new Color(255, 235, 205);
+
   toString(): string {
     return `rgba(${this.r},${this.g},${this.b},${this.a})`;
   }

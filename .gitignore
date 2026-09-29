@@ -76,3 +76,5 @@ Desktop.ini
 web/neutralinojs.log
 
 _refs/
+# python bytecode from the merge/codegen scripts
+__pycache__/

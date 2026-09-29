@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { GameTiles, TileID } from "@gameplay/GameTiles";
 import { Color } from "@engine/Color";
 import { DollPart } from "@data/Doll";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 /**
  * Regression tests for the six §1.1f fidelity bugs in the four previously
@@ -152,8 +154,6 @@ describe("the tile table is fully populated", () => {
    */
   const WALKABLE_PREFIXES = ["FLOOR_", "ROAD_", "RAIL_", "PARKING_", "WALK_"];
 
-  const tileName = (id: TileID): string => TileID[id] ?? "";
-
   it("keeps isWalkable and isTransparent consistent with the C# table", () => {
     // GameTiles.cs passes (walkable, transparent) and the two always agree:
     // floors are both true, walls both false. A swapped pair would make walls
@@ -199,5 +199,71 @@ describe("the tile table is fully populated", () => {
     const lastFloor = WALKABLE_PREFIXES.length > 0 ? tiles.get(TileID.RAIL_EW) : null;
     expect(lastFloor?.isWalkable).toBe(true);
     expect(tileName(TileID.RAIL_EW).startsWith("RAIL_")).toBe(true);
+  });
+});
+
+/**
+ * The Still Alive tiles, pinned against the flags the C# declares.
+ *
+ * The name-prefix test above is a *consistency* check: it proves the port agrees
+ * with itself, that a tile called `WALL_` is a wall. That is not the same as
+ * agreeing with the C#, and the difference is the whole risk here — a tile that
+ * the fork made a wall and the port made a floor is passable, and a floor the
+ * port made a wall is a place the player cannot stand. Neither shows up in a
+ * self-consistent table.
+ *
+ * `tests/fixtures/still-alive-tiles.json` is the C#'s own `new TileModel(...)`
+ * flags, extracted by `scripts/port-tile-models.py --fixture`. It is committed
+ * rather than read from `_refs/` at test time because `_refs/` is gitignored,
+ * so a test that opened `GameTiles.cs` would fail in CI and pass locally — the
+ * worst possible arrangement. The script is the way to regenerate it.
+ */
+interface ForkTileFlags {
+  walkable: boolean;
+  transparent: boolean;
+  water: boolean;
+  waterCover: string | null;
+  flammableInFork: boolean;
+  canDecayInFork: boolean;
+}
+
+/** The enum key for an id, or "" past the end. */
+const tileName = (id: TileID): string => TileID[id] ?? "";
+
+const forkFlags = JSON.parse(
+  readFileSync(resolve(__dirname, "fixtures/still-alive-tiles.json"), "utf-8"),
+) as Record<string, ForkTileFlags>;
+
+describe("Still Alive tiles carry the C#'s flags", () => {
+  it("has a fixture entry for every tile in the enum", () => {
+    // The reverse direction: a tile added to GameTiles without a fixture entry
+    // would otherwise be checked by nothing at all.
+    const missing: string[] = [];
+    for (let i = 1; i < TileID._COUNT; i++) {
+      const name = tileName(i as TileID);
+      if (name && !(name in forkFlags)) missing.push(name);
+    }
+    // The 19 vanilla tiles are not in the fixture: they predate the fork and
+    // are checked by the other suites. Only the appended ones must appear.
+    const vanilla = new Set(["FLOOR_ASPHALT", "FLOOR_CONCRETE", "FLOOR_GRASS",
+      "FLOOR_OFFICE", "FLOOR_PLANKS", "FLOOR_SEWER_WATER", "FLOOR_TILES",
+      "FLOOR_WALKWAY", "ROAD_ASPHALT_EW", "ROAD_ASPHALT_NS", "RAIL_EW",
+      "WALL_BRICK", "WALL_CHAR_OFFICE", "WALL_HOSPITAL", "WALL_POLICE_STATION",
+      "WALL_SEWER", "WALL_STONE", "WALL_SUBWAY"]);
+    expect(missing.filter((m) => !vanilla.has(m)), "Still Alive tiles with no fixture entry").toEqual([]);
+  });
+
+  it.each(Object.keys(forkFlags))("%s matches the C#", (name) => {
+    const id = (TileID as unknown as Record<string, number>)[name];
+    expect(id, `${name} is in the fixture but not in TileID`).toBeTypeOf("number");
+    const model = tiles.get(id);
+    const want = forkFlags[name];
+    expect(model.isWalkable, `${name} isWalkable`).toBe(want.walkable);
+    expect(model.isTransparent, `${name} isTransparent`).toBe(want.transparent);
+    // Water is a TileModel field rather than a constructor argument, so it is
+    // the one flag a transcription pass is most likely to miss.
+    expect(model.isWater, `${name} isWater`).toBe(want.water);
+    expect(model.waterCoverImageId || null, `${name} waterCoverImageId`)
+      .toBe(want.waterCover);
   });
 });

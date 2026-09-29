@@ -2,7 +2,7 @@
 
 > **Status (2026-09-29):** Phases 1–7 ported and playable. Phase 8 tasks 1–11
 > done; only 12 (optional touch support) remains. `npm run verify` — type-check,
-> coverage gate and build — is **green**: **992 tests in 64 files**. The coverage
+> coverage gate and build — is **green**: **1141 tests in 64 files**. The coverage
 > gate's branch floor was lowered from 75% to a measured ~47% with the reasoning
 > recorded in `vitest.config.mts`; 75% came from the first 6-file suite and is
 > unreachable now that `RogueGame.ts` alone is 6098 branches. Read
@@ -478,6 +478,8 @@ loudly.
   - `f0782aa` — Stage 1, the `Ruleset` axis (946 tests)
   - `4d43299` — ruleset picker, HUD/title labels, `NullRogueUI.pushKeys` (954)
   - `dd42e82` — Stage 2, eight of fifteen audited defects (971)
+  - `cfcf2ea` … `2f18ffe` — Stage 3 so far: merged data tables, 711 sprites,
+    the 2 doable actors, and 124 tile models (1141)
   - **Uncommitted**: Stage 3's merged data tables + the `TileID` ordering tests
     (992). `web/data/` is new and `web/scripts/merge-content-tables.py` is new;
     `src/` is untouched.
@@ -500,7 +502,7 @@ loudly.
   `5b2dc59`; the side panel, hitbox, popup and minimap fixes `4a6e845` and
   `2ebdddf`; the four typeface families `47c5b64`; and the look-handler and
   typeface-repaint fixes `6977b63`.
-- **Current state (2026-09-29): 992 tests across 64 files, `npm run verify` green**
+- **Current state (2026-09-29): 1141 tests across 64 files, `npm run verify` green**
   — type-check, coverage gate and build all pass. Coverage is ~59.8% statements /
   49.7% branches / 72.1% functions / 61.0% lines, which clears the measured floor
   in `vitest.config.mts`.
@@ -553,7 +555,7 @@ Full detail in `web/.porting/CONVENTIONS.md`. The ones that matter:
 |---|---|
 | `npm run verify` | type-check + coverage + build — what CI runs, in one command |
 | `npm run type-check` | `tsc --noEmit`; covers `src/`, `sim/` and `tests/` — necessary, **not sufficient** |
-| `npm run test` | Vitest, 992 tests in 64 files |
+| `npm run test` | Vitest, 1141 tests in 64 files |
 | `npm run test:coverage` | Vitest with coverage thresholds enforced |
 | `npm run build` | Vite production build |
 | `npm run sim` | Headless engine run — the real test |
@@ -575,7 +577,7 @@ Phases 1–7 are ported and building. Historical per-slice detail has been remov
 | 5 — World gen & AI | `BaseAI` (184/184), all 11 AI controllers, 4 generator files (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator` 5 814 lines, `StdTownGenerator`) | Done |
 | 6 — Audio | Web Audio SFX + music | Done |
 | 7 — Save / load | localStorage / IndexedDB, `Session` serialisation | Done |
-| 8 — Polish, sim, CI | Headless harness, 992 tests, CI, PWA, Docker, asset pass, frame-cost pass, desktop wrapper | **In progress** — 11 of 12 tasks done; only 12 (optional touch) remains. See §4.1 |
+| 8 — Polish, sim, CI | Headless harness, 1141 tests, CI, PWA, Docker, asset pass, frame-cost pass, desktop wrapper | **In progress** — 11 of 12 tasks done; only 12 (optional touch) remains. See §4.1 |
 | 9 — Still Alive ruleset | Parallel ruleset on a separate axis from `GameMode`, one superset content pack | **In progress** — Stages 1–2 committed, Stage 3 half done, Stages 4–5 not started. See §5.6 |
 
 Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks, 3 SFX), extracted from the C# embedded resources. **Total 24.9 MB**, down from 51.6 MB before the Phase 8 asset pass — see §4.1c.
@@ -594,7 +596,7 @@ Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks,
 | 2 | Deterministic `--seed` for reproducible runs | **Done** (`Session.useSeed`, `--seed`) |
 | 3 | Drive the sim to a clean full-length run and fix what it finds | **In progress, and the goal changed** — no seed now reaches 1 000 turns, because that is *correct* behaviour (§1.2: the undead bot is shot by survivors). Keep sweeping seeds for crashes, not for turn count |
 | 4 | Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`) | **Done and verified in a browser** — now 1366×768 widescreen, smooth filtering (the old `image-rendering: pixelated` made upscaled text unreadable) |
-| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Harness done, gate passing** — 992 tests, 64 files, thresholds set and met. The branch floor was once 75% and made `verify` red for most of the port's life; it was lowered to a measured value rather than left unpassable, with the reasoning in `vitest.config.mts`. Actual: ~59.8% statements / 49.7% branches / 72.1% functions / 61.0% lines |
+| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Harness done, gate passing** — 1141 tests, 64 files, thresholds set and met. The branch floor was once 75% and made `verify` red for most of the port's life; it was lowered to a measured value rather than left unpassable, with the reasoning in `vitest.config.mts`. Actual: ~59.8% statements / 49.7% branches / 72.1% functions / 61.0% lines |
 | 6 | GitHub Actions CI | **Done** — `.github/workflows/ci.yml`, type-check + coverage + build + seeded sim, plus a docker smoke job |
 | 7 | PWA manifest + service worker (offline play) | **Done** — manifest, drawn icons, runtime-caching `sw.js` |
 | 8 | Docker image for the self-hosted server | **Done but unverified** — docker is not installed locally, so the image has never been built; CI will exercise it first |
@@ -1058,7 +1060,7 @@ renderer and not about the option: the stored value is still `"first-person"`,
 because `isFirstPersonView` compares it exactly and an annotated value would read
 as top-down and silently hand the player the other view.
 
-`npm run verify` is green: **992 tests, 64 files**. It was red for most of this
+`npm run verify` is green: **1141 tests, 64 files**. It was red for most of this
 work — branch coverage sat at 49.88% against a 75% floor — and the floor was
 later lowered to a measured value, because a gate that cannot be passed is not a
 gate (`vitest.config.mts` records why 75% is unreachable). The earlier figure in
@@ -1375,7 +1377,7 @@ Stages 4 and 5 have not started.
 |---|---|---|
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
-| **3** | merged content pack | **data tables, sprite files, and the actors done** (2 of 4). `ItemID` (+~180), the 12 `{id, img}` maps, `makeItem*` factories, `TileID` + 124 tile models, and the 711 `GameImages` constants **not started** |
+| **3** | merged content pack | **data tables, sprite files, the actors (2 of 4) and all 143 tiles done.** `ItemID` (+~180), the 12 `{id, img}` maps, `makeItem*` factories, and the remaining ~580 `GameImages` constants **not started** |
 | **4** | 37 gated features | **not started** — the bulk of the work |
 | **5** | content, audio, credits | **not started** |
 
@@ -1401,7 +1403,7 @@ Two things a later session should not have to re-derive:
   all); and the weather/rot sprite collision (it does not exist — `imagePathIn`
   permits subpaths, so the merge just left 14 unreferenced files).
 
-Gate: `cd web && npm run verify` — **992 tests across 64 files, green** as of
+Gate: `cd web && npm run verify` — **1141 tests across 64 files, green** as of
 the data-merge commit. `BROWSER_PORT_PLAN.md` §5.6d is the only place the data
 decisions are written down.
 
@@ -1626,7 +1628,7 @@ direction.
 
 #### 5.6d Stage 3 — the merged content pack
 
-> **Status: the data half is done 2026-09-29, uncommitted** (971 → 992 tests,
+> **Status: the data half is done 2026-09-29** (`cfcf2ea`, 971 → 992 tests,
 > `verify` green). Sprites, ids, maps and `GameImages` are not started. The
 > estimates in this subsection were written before the fork's tables were opened;
 > **four of them were wrong and two decisions were taken against what the plan
@@ -1835,6 +1837,44 @@ waiting. Worth noting the failure this avoids is silent: `abilitiesFor` and
 `defaultControllerFor` both `switch` without a `default`, so a forgotten case
 returns a default-constructed object rather than throwing.
 
+**Tiles — done, and the flags are now pinned rather than trusted.**
+`scripts/port-tile-models.py` parses `GameTiles.cs` and emits the 124 new ids,
+125 `GameImages` constants and 124 model lines, so the `new TileModel(...)`
+arguments are copied out of the text rather than transcribed by hand. Appended
+only: the existing 19 keep their values.
+
+Two things are dropped **on purpose and counted on stdout**: `CanDecay` (94
+tiles) and `IsFlammable` (5 — `FLOOR_PLANTED`, `FLOOR_RED_CARPET`,
+`FLOOR_BLUE_CARPET`, `WALL_WOOD_PLANKS`, `WALL_RED_CURTAINS`). The port's
+`TileModel` has no such fields, and both are tile-fire content with no vanilla
+equivalent. `isWater`/`waterCoverImageId` *are* ported — 10 water tiles.
+
+**A parser bug that lost 15 tiles, and the check that caught it.** The first
+run appended 110 tiles and reported no error. The C# enum interleaves bare
+`//@@MP (Release 6-1)` comments with **no trailing comma**, so splitting the
+enum body on commas glued each comment to the name after it, and
+`FLOOR_POND_CENTER` and `FLOOR_FOOD_COURT_POOL` — plus 13 more — silently
+vanished. The symptom was a shorter-than-expected tile list with nothing
+reporting a shortfall. It is now parsed line-wise with comments and
+`#region`/`#endregion` stripped, brace-matched rather than regex-matched, and
+the script prints a count so a short list is visible. The real check is in the
+plan's own numbers: this section predicted 19 → 143, the broken run gave 129.
+
+**The flags are pinned against the C#, in both directions.**
+`tests/fixtures/still-alive-tiles.json` holds the C#'s own flags for all 142
+models, and `tile-palette.test.ts` asserts the port matches them. That matters
+because the name-prefix test is only *self-consistency*: it proves a tile called
+`WALL_` is a wall, not that the fork agrees. A wall the port made a floor is
+passable, and nothing in a self-consistent table would show it.
+
+The fixture is committed rather than read from `_refs/` at test time because
+`_refs/` is gitignored — a test that opened `GameTiles.cs` would pass locally
+and fail in CI, which is the worst arrangement available. Regenerate with
+`python3 scripts/port-tile-models.py --fixture tests/fixtures/still-alive-tiles.json`.
+
+Mutation-checked: making a C# wall walkable, dropping a water tile's `isWater`,
+and dropping its `waterCoverImageId` each fail the suite.
+
 **Content ids and maps** — the hand-edited core, and where the real cost is:
 
 | Change | Where | Count |
@@ -1843,7 +1883,9 @@ returns a default-constructed object rather than throwing.
 | 12 hand-written `{id, img}` maps — the sprite id is **not in the JSON**, it lives in TypeScript | `GameItems.ts:150-159, 190-194, 230-247, 289-300, 381-389, 415-420, 443-448, 480-483, 510-517, 526-531, 557-560` | ~+180 |
 | `makeItem*` factories | `BaseMapGenerator.ts:780-1064` | 56 → ~110 |
 | `ActorID` + sprite map + the two switches | `GameActors.ts` | **done, 2 of 4** — see below |
-| `TileID` + 124 models | `GameTiles.ts:6-27, 53-81` | 19 → 143 |
+| `TileID` + models | `GameTiles.ts` | **done — 143 ids (was 19), 124 new** |
+| `GameImages` constants for the tile sprites | `GameImages.ts` | **done — 125 new**, pulled in by the tiles |
+| 4 new minimap colours | `Color.ts` | **done** — SteelBlue, Sienna, SeaGreen, OliveDrab, MediumPurple, Khaki, Cornsilk, BlanchedAlmond, all .NET values |
 | `GameImages` constants | `GameImages.ts` | ~+711 |
 | `Skills.NAMES`, `Rules.SKILL_*` | `Skills.ts:62-69`, `Rules.ts:277-327` | +1 (`BOWS` → `BOWS_EXPLOSIVES`) |
 
