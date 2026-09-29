@@ -435,7 +435,12 @@ export class GameItems implements ItemModelDB {
         atk,
         d.ISFRAGILE === 1,
         d.TOOLBASHDMGBONUS ?? 0,
-        d.TOOLBUILDBONUS ?? 0
+        d.TOOLBUILDBONUS ?? 0,
+        // Still Alive's WEIGHT column. `?? 0` rather than a bare read: the
+        // column only exists because the merge added it, and an older merged
+        // table without it would otherwise load every melee weapon as NaN
+        // weight, which `actorSpeed` would turn into a negative-speed actor.
+        d.WEIGHT ?? 0
       );
       model.equipmentPart = DollPart.RIGHT_HAND;
       model.stackingLimit = d.STACKINGLIMIT;
@@ -509,7 +514,8 @@ export class GameItems implements ItemModelDB {
         // Column is MAXAMMO (Items_RangedWeapons.csv). Reading `MAX_AMMO`
         // gave every ranged weapon maxAmmo = undefined, so guns could never
         // hold a magazine.
-        d.MAXAMMO
+        d.MAXAMMO,
+        d.WEIGHT ?? 0
       );
       model.equipmentPart = DollPart.RIGHT_HAND;
       if (meta.unique) {

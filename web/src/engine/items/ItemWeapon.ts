@@ -4,10 +4,30 @@ import { Attack, AttackKind } from "@data/Attack";
 
 export class ItemWeaponModel extends ItemModel {
   readonly attack: Attack;
+  /**
+   * Still Alive encumbrance: subtracted from the wielder's speed.
+   *
+   * The C# puts this on the two subclasses rather than the base —
+   * `ItemMeleeWeaponModel.Weight` is a settable property assigned in an object
+   * initialiser, `ItemRangedWeaponModel`'s is a positional constructor argument
+   * (Release 7-6) — so there is no common declaration to port. It lives on the
+   * base here because `Rules.actorSpeed` reads it off whatever weapon is
+   * equipped, and the default of 0 is what every weapon the port already had
+   * means: the `WEIGHT` column did not exist in vanilla Alpha 10.1, so nothing
+   * weighs anything under CLASSIC even with the flag on.
+   */
+  readonly weight: number;
 
-  constructor(aName: string, theNames: string, imageId: string, attack: Attack) {
+  constructor(
+    aName: string,
+    theNames: string,
+    imageId: string,
+    attack: Attack,
+    weight: number = 0,
+  ) {
     super(aName, theNames, imageId);
     this.attack = attack;
+    this.weight = weight;
   }
 }
 
@@ -37,9 +57,10 @@ export class ItemMeleeWeaponModel extends ItemWeaponModel {
     attack: Attack,
     isFragile: boolean = false,
     toolBashDamageBonus: number = 0,
-    toolBuildBonus: number = 0
+    toolBuildBonus: number = 0,
+    weight: number = 0
   ) {
-    super(aName, theNames, imageId, attack);
+    super(aName, theNames, imageId, attack, weight);
     this.isFragile = isFragile;
     this.toolBashDamageBonus = toolBashDamageBonus;
     this.toolBuildBonus = toolBuildBonus;
@@ -114,9 +135,10 @@ export class ItemRangedWeaponModel extends ItemWeaponModel {
     imageId: string,
     attack: Attack,
     ammoType: AmmoType,
-    maxAmmo: number
+    maxAmmo: number,
+    weight: number = 0
   ) {
-    super(aName, theNames, imageId, attack);
+    super(aName, theNames, imageId, attack, weight);
     this.ammoType = ammoType;
     this.maxAmmo = maxAmmo;
   }

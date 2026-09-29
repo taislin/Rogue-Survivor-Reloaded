@@ -39,6 +39,8 @@ import { Point } from "@engine/Point";
 import { GameMode } from "@engine/Session";
 import { DayPhase, WorldTime } from "@engine/WorldTime";
 import { ItemBodyArmor } from "@engine/items/ItemBodyArmor";
+import { Feature, hasFeature } from "@engine/FeatureFlags";
+import { Session } from "@engine/Session";
 import {
   ItemGrenade,
   ItemGrenadeModel,
@@ -2103,6 +2105,19 @@ export class Rules {
     // wearing armor.
     const armor = actor.getEquippedItem(DollPart.TORSO);
     if (armor instanceof ItemBodyArmor) speed -= armor.weight;
+
+    // carrying a heavy weapon. Still Alive (Release 7-6), gated because it
+    // changes the speed of every actor with a gun in hand, not just the ones
+    // holding a new item.
+    //
+    // The fork reads the model off a cast, ranged first and melee in the `else`,
+    // so an exotic weapon subclass would contribute nothing. One read off the
+    // common base covers the same two cases without the fallthrough, and the
+    // `weight` default of 0 means a model without the column cannot slow anyone.
+    if (hasFeature(Session.get().ruleset, Feature.WeaponWeight)) {
+      const weapon = actor.getEquippedItem(DollPart.RIGHT_HAND);
+      if (weapon instanceof ItemWeapon) speed -= weapon.weaponModel.weight;
+    }
 
     // dragging corpses.
     if (actor.draggedCorpse !== null) speed /= 2;

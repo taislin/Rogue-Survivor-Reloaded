@@ -2,7 +2,7 @@
 
 > **Status (2026-09-29):** Phases 1–7 ported and playable. Phase 8 tasks 1–11
 > done; only 12 (optional touch support) remains. `npm run verify` — type-check,
-> coverage gate and build — is **green**: **1504 tests in 65 files**. The coverage
+> coverage gate and build — is **green**: **1513 tests in 66 files**. The coverage
 > gate's branch floor was lowered from 75% to a measured ~47% with the reasoning
 > recorded in `vitest.config.mts`; 75% came from the first 6-file suite and is
 > unreachable now that `RogueGame.ts` alone is 6098 branches. Read
@@ -502,7 +502,7 @@ loudly.
   `5b2dc59`; the side panel, hitbox, popup and minimap fixes `4a6e845` and
   `2ebdddf`; the four typeface families `47c5b64`; and the look-handler and
   typeface-repaint fixes `6977b63`.
-- **Current state (2026-09-29): 1504 tests across 65 files, `npm run verify` green**
+- **Current state (2026-09-29): 1513 tests across 66 files, `npm run verify` green**
   — type-check, coverage gate and build all pass. Coverage is ~59.8% statements /
   49.7% branches / 72.1% functions / 61.0% lines, which clears the measured floor
   in `vitest.config.mts`.
@@ -555,7 +555,7 @@ Full detail in `web/.porting/CONVENTIONS.md`. The ones that matter:
 |---|---|
 | `npm run verify` | type-check + coverage + build — what CI runs, in one command |
 | `npm run type-check` | `tsc --noEmit`; covers `src/`, `sim/` and `tests/` — necessary, **not sufficient** |
-| `npm run test` | Vitest, 1504 tests in 65 files |
+| `npm run test` | Vitest, 1513 tests in 66 files |
 | `npm run test:coverage` | Vitest with coverage thresholds enforced |
 | `npm run build` | Vite production build |
 | `npm run sim` | Headless engine run — the real test |
@@ -577,7 +577,7 @@ Phases 1–7 are ported and building. Historical per-slice detail has been remov
 | 5 — World gen & AI | `BaseAI` (184/184), all 11 AI controllers, 4 generator files (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator` 5 814 lines, `StdTownGenerator`) | Done |
 | 6 — Audio | Web Audio SFX + music | Done |
 | 7 — Save / load | localStorage / IndexedDB, `Session` serialisation | Done |
-| 8 — Polish, sim, CI | Headless harness, 1504 tests, CI, PWA, Docker, asset pass, frame-cost pass, desktop wrapper | **In progress** — 11 of 12 tasks done; only 12 (optional touch) remains. See §4.1 |
+| 8 — Polish, sim, CI | Headless harness, 1513 tests, CI, PWA, Docker, asset pass, frame-cost pass, desktop wrapper | **In progress** — 11 of 12 tasks done; only 12 (optional touch) remains. See §4.1 |
 | 9 — Still Alive ruleset | Parallel ruleset on a separate axis from `GameMode`, one superset content pack | **In progress** — Stages 1–2 committed, Stage 3 half done, Stages 4–5 not started. See §5.6 |
 
 Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks, 3 SFX), extracted from the C# embedded resources. **Total 24.9 MB**, down from 51.6 MB before the Phase 8 asset pass — see §4.1c.
@@ -596,7 +596,7 @@ Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks,
 | 2 | Deterministic `--seed` for reproducible runs | **Done** (`Session.useSeed`, `--seed`) |
 | 3 | Drive the sim to a clean full-length run and fix what it finds | **In progress, and the goal changed** — no seed now reaches 1 000 turns, because that is *correct* behaviour (§1.2: the undead bot is shot by survivors). Keep sweeping seeds for crashes, not for turn count |
 | 4 | Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`) | **Done and verified in a browser** — now 1366×768 widescreen, smooth filtering (the old `image-rendering: pixelated` made upscaled text unreadable) |
-| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Harness done, gate passing** — 1504 tests, 65 files, thresholds set and met. The branch floor was once 75% and made `verify` red for most of the port's life; it was lowered to a measured value rather than left unpassable, with the reasoning in `vitest.config.mts`. Actual: ~62.6% statements / 51.9% branches / 73% functions / 63% lines |
+| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Harness done, gate passing** — 1513 tests, 66 files, thresholds set and met. The branch floor was once 75% and made `verify` red for most of the port's life; it was lowered to a measured value rather than left unpassable, with the reasoning in `vitest.config.mts`. Actual: ~62.7% statements / 52.0% branches / 73% functions / 63% lines |
 | 6 | GitHub Actions CI | **Done** — `.github/workflows/ci.yml`, type-check + coverage + build + seeded sim, plus a docker smoke job |
 | 7 | PWA manifest + service worker (offline play) | **Done** — manifest, drawn icons, runtime-caching `sw.js` |
 | 8 | Docker image for the self-hosted server | **Done but unverified** — docker is not installed locally, so the image has never been built; CI will exercise it first |
@@ -1060,7 +1060,7 @@ renderer and not about the option: the stored value is still `"first-person"`,
 because `isFirstPersonView` compares it exactly and an annotated value would read
 as top-down and silently hand the player the other view.
 
-`npm run verify` is green: **1504 tests, 65 files**. It was red for most of this
+`npm run verify` is green: **1513 tests, 66 files**. It was red for most of this
 work — branch coverage sat at 49.88% against a 75% floor — and the floor was
 later lowered to a measured value, because a gate that cannot be passed is not a
 gate (`vitest.config.mts` records why 75% is unreachable). The earlier figure in
@@ -1403,7 +1403,7 @@ Two things a later session should not have to re-derive:
   all); and the weather/rot sprite collision (it does not exist — `imagePathIn`
   permits subpaths, so the merge just left 14 unreferenced files).
 
-Gate: `cd web && npm run verify` — **1504 tests across 65 files, green** as of
+Gate: `cd web && npm run verify` — **1513 tests across 66 files, green** as of
 the data-merge commit. `BROWSER_PORT_PLAN.md` §5.6d is the only place the data
 decisions are written down.
 
@@ -2068,13 +2068,65 @@ plan for rather than discover:
 
 #### 5.6e Stage 4 — mechanics
 
+> **Status: the first two features are done 2026-09-29** — `WeaponWeight` and
+> `ArmorResist`. The first is the *first feature with a real reader in gameplay
+> code*; until now `hasFeature` was called only from `HeadlessRunner`, so
+> `feature-flags.test.ts`'s partition was satisfied by a pending list. Two things
+> in that suite changed as a consequence and are worth knowing: `WeaponWeight`
+> left `PENDING_WIRING` (a feature that is both read and pending is a stale
+> entry, and the suite fails on it), and the reader-list assertion now names
+> **two** call sites with their files, because "how much of the fork is in the
+> engine" is only a question while the list is exact.
+>
+> ### `WeaponWeight` — done
+>
+> The smallest feature in the table, and a good shape for the rest: the data was
+> already merged, so this is a model field, a CSV read, and one gated line.
+>
+> `ItemWeaponModel.weight` is a new field with a **default of 0**. The C# puts
+> `Weight` on the two subclasses — `ItemMeleeWeaponModel`'s is a settable property
+> assigned in an object initialiser, `ItemRangedWeaponModel`'s is a positional
+> constructor argument (Release 7-6) — so there is no common declaration to port.
+> It lives on the port's shared base because `Rules.actorSpeed` reads it off
+> whatever is equipped, and 0 is what every weapon the port already had means:
+> `WEIGHT` did not exist in vanilla Alpha 10.1, so the merge gave all of them 0.
+>
+> The read in `actorSpeed` is gated on `Feature.WeaponWeight`. The fork casts the
+> equipped weapon, ranged first and melee in the `else`, so an exotic subclass
+> contributes nothing there; one read off the common base covers the same two
+> cases without the fallthrough.
+>
+> **A test written from intuition would have "fixed" a correct number.** The
+> katana's `WEIGHT` is **0** upstream — checked against the fork's own CSV, not
+> against what a katana ought to weigh. The mace is 5 and the minigun 20. The test
+> asserts all three, so the value is pinned rather than approximated.
+>
+> `tests/weapon-weight.test.ts` is written as a **pair** — the same actor, the same
+> weapon, both rulesets — because the negative half is the one a coverage number
+> cannot give: a weight applying to *both* would be a behaviour change to classic
+> wearing a feature's name. Also asserted: every vanilla weapon weighs 0, a
+> non-weapon in the right hand weighs nothing (a grenade is the probe, since food
+> has no `equipmentPart` and can never be in hand), and no actor that can hold a
+> weapon goes negative on any weapon in the table. Mutation-checked: removing the
+> gate, and not reading the column, each fail.
+>
+> **One honest gap, recorded rather than papered over.** The `speed >= 0` clamp
+> is unreachable with the shipped data. The slowest actor that *has an inventory*
+> is a civilian at 100 — the ones at 50 are undead, and `hasInventory` is false for
+> all of them — so the worst case is `(100/2) - 10 armour - 20 minigun = 20`. A
+> zombie at 50 *would* reach −5, which is presumably why the fork has the clamp,
+> but a zombie cannot be handed a minigun. So the test asserts the invariant over
+> every (holder, weapon) pair, and says in its comment that deleting the clamp
+> would not fail it. A test that looks like coverage of the clamp and is not is
+> worse than one that admits the limit.
+
 The largest stage, and the one that puts branches in the god file. Everything is
 gated on a `Feature` from §5.6a, and the per-item serialisation cost is close to
 zero precisely because of the dump-every-own-field design.
 
 | Feature | New state | Serialisation | Engine work |
 |---|---|---|---|
-| `WeaponWeight` | none (model field) | 0 | `Rules.actorSpeed` subtracts; melee/ranged model getters; 1 CSV column |
+| `WeaponWeight` | none (model field) | 0 | **DONE** — `ItemWeaponModel.weight`, read from the merged `WEIGHT`, subtracted in `actorSpeed` under the flag |
 | `ArmorResist` | none (model field) | 0 | fire-damage scaling + infection roll; 2 CSV columns |
 | `Alcohol` | `Actor.bloodAlcohol`, `previousBloodAlcohol` | 0 (own fields) | `IsDrunk`, 4 accuracy tiers, the 5-step description and colour, BAC decay, nightmare suppression |
 | `FoodPoisoning` | `Actor` flag | 0 | 20% roll on raw meat, 1% recovery, Hardy bonus, antiviral check, vomit penalty |

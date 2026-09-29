@@ -128,13 +128,20 @@ describe("Feature registry is wired", () => {
   it("the scan is finding call sites at all, and the expected number of them", () => {
     // Anti-vacuity. If the pattern stops matching — a rename, a reformat, a
     // helper wrapping the call — the tests below pass by finding nothing, and
-    // this is the assertion that says so. The count is the Stage 1 total: no
-    // gameplay code reads a feature yet, so the only reader is this suite's
-    // sibling, the harness line in HeadlessRunner.
+    // this is the assertion that says so.
+    //
+    // `Alcohol` is not read by gameplay code either: it is the harness line in
+    // HeadlessRunner, which sets a field the engine has no reader for yet.
+    // `WeaponWeight` is the first feature with a real reader in `Rules`.
+    // Both call sites are named and located, so a rename or a moved file fails
+    // here rather than silently dropping out of the partition below.
     const sites = hasFeatureCallSites();
     expect(sites.length).toBeGreaterThan(0);
-    expect(sites.map((s) => s.feature)).toEqual(["Alcohol"]);
-    expect(sites[0]!.at).toMatch(/HeadlessRunner\.ts:\d+$/);
+    expect(sites.map((s) => s.feature).sort()).toEqual(["Alcohol", "WeaponWeight"]);
+    expect(sites.find((s) => s.feature === "Alcohol")!.at)
+      .toMatch(/HeadlessRunner\.ts:\d+$/);
+    expect(sites.find((s) => s.feature === "WeaponWeight")!.at)
+      .toMatch(/Rules\.ts:\d+$/);
   });
 
   it("every Feature member is read, pending, or withheld — and never two of them", () => {
