@@ -1378,7 +1378,7 @@ Stages 4 and 5 have not started.
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
 | **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles, 90 of 95 items and all 123 item factories done.** The 5 backpacks (a new mechanic) and ~420 unused `GameImages` constants are the only content left; nothing *calls* the new factories yet, which is placement and belongs to Stage 4/5 |
-| **4** | 37 gated features | **13 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (both halves), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`, `TileFires`, `FireExtinguishers`. 24 remain |
+| **4** | 37 gated features | **14 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (both halves), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`, `TileFires`, `FireExtinguishers`, `Butchering`. 23 remain |
 | **5** | content, audio, credits | **not started** |
 
 Two things a later session should not have to re-derive:
@@ -2766,6 +2766,56 @@ plan for rather than discover:
 >
 > Ten mutations, each caught.
 
+> ### `Butchering` — done, and the surprise is that fire is a cooking method
+>
+> Still Alive, Release 7-6 (`RogueGame.cs:11700`). Carving a corpse no longer only
+> *destroys* it — it yields food, and the food depends on two things you would not
+> guess:
+>
+> - **You do not choose how the meat is cooked. The corpse does.** The meat is
+>   cooked if and only if `deadGuy.causeOfDeath == "fire"`. That single string
+>   comparison is the entire purpose of the new `Actor.causeOfDeath` field, and it
+>   is why that field had to be a string rather than a boolean: the fork is already
+>   spending booleans like `tileFires` and `causesTileFires`, and this one is a
+>   *cause*, of which there are many.
+> - **Rot shortens the shelf life.**
+>   `bestBefore = now + TURNS_PER_DAY * bestBeforeDays / (rotLevel + 1)`. A corpse
+>   at rot level 5 ("about to crumble to dust") gives meat good for a sixth of its
+>   normal time. Rot itself is bucketed off the corpse's *remaining hit points*,
+>   not its age, which is worth knowing before writing a test that assumes
+>   otherwise.
+>
+> The bladed-weapon requirement is **player only**, and that is the C#'s own
+> decision, with its reasoning in a comment: it "decided not to enforce this for
+> NPCs, as having them prioritise bladed weapons seemed like too much of a faff."
+> Enforcing it for the AI too would make every NPC carry a knife, which is a
+> different game. The port matches the C# rather than the summary.
+>
+> `canUseForButchering` is a flag on `ItemMeleeWeaponModel` set by thirteen entries
+> in the melee table — the same thirteen the C# spells out one at a time at
+> `GameItems.cs`. It is a list, and not a test of the weapon's name, because "is it
+> sharp" is not something the melee model already carries. A combat knife and a
+> chainsaw qualify; a baseball bat and a frying pan do not, and the test says so.
+>
+> Two deliberate non-ports:
+>
+> - The C#'s meat switch has three cases (rabbit, chicken, feral dog) and a
+>   `default` that **throws** `ArgumentException`. Not ported. The port still has
+>   no `RABBIT` or `CHICKEN` model — they need an `UnintelligentAnimalAI` the port
+>   has no controller for — so a live animal that did exist would crash the
+>   butcher. A missing content row must not be able to take the game down, so the
+>   default arm falls through to no meat, and a test asserts it does not throw.
+> - The meat *quantity* is the C#'s `ResourcesAvailability` 3/2/1 switch, which
+>   lives in a feature of its own that does not exist yet, so the `default: 2` is
+>   hardcoded. Note it is inside the C#'s *animal* arm only: a human body is never
+>   scaled by it and the item keeps the quantity it was built with, which is 1.
+>
+> The no-insanity carve-out for animals is the reason `isLivingAnimal` is a flag on
+> `Abilities` and not a list of ids: the sanity rule, the meat switch and the AI all
+> need to ask the same question, and only the flag answers it. It is deliberately
+> *ungated*, which is what keeps Classic byte-identical — an actor that is not an
+> animal still gets exactly vanilla's sanity hit.
+
 > ### `ArmorResist` — half done, and the half is not the one the table implies
 >
 > The row above says "fire-damage scaling + infection roll". **Only the infection
@@ -2824,7 +2874,7 @@ zero precisely because of the dump-every-own-field design.
 | `FoodPoisoning` | `Actor.isFoodPoisoned` | **0** (own field, carried by the writer) | **DONE** — 20% base × perishing factor 1/3/5, 1% per-turn recovery, Hardy bonus, medkit/antiviral cure on the C#'s exact model list, and the 5% vomit action (stamina/sleep/food cost, two-day decoration timer) |
 | `Cooking` | `ItemFood._cookedDegree`, `_maxCookedDegree` | 0 | `canActorCookFood`, `ActionCookFood`, campfires/barrels as heat sources |
 | `Fishing` | `Activity.FISHING` | 0 | rod equip gate, `ActionWait(isFishing)` flag, Unsuspicious bonus, `Map.hasFishing` |
-| `Butchering` | `Actor.causeOfDeath` | 0 | bladed-weapon gate, raw vs cooked by cause, `MapObject.canUseForButchering` |
+| `Butchering` | `Actor.causeOfDeath`, `Abilities.isLivingAnimal` | 0 | **DONE** — the player's-bladed-weapon gate, fire-death-means-cooked, `bestBefore` divided by rot level, rabbit/chicken/dog/human meat, the no-sanity-hit carve-out for animals. `ResourcesAvailability` (3/2/1) not implemented, so the C#'s `default: 2` is hardcoded for animals; `RABBIT`/`CHICKEN` still unspawnable without `UnintelligentAnimalAI`, so the unrecognised-animal arm yields no meat where the C# throws |
 | `TileFires` | `Tile.flags.IS_ON_FIRE`, `Tile.scorched` | **~4 lines** — `tilesGrid` packs `modelId` + `flags` + `decorations` (`specs.ts:317-347`) | spread, extinguish, rain, damage to actors/corpses/crops, fuel units on barrels/cars |
 | `DarknessFov` | none | 0 | `MINIMAL_FOV_PLAYER 0` vs `MINIMAL_FOV_LIVINGACTORS 1`; night penalties; the FOV-0 gates from Stage 2 |
 | `FireExtinguishers`, `SiphonFuel` | `Barrel`/`Campfire`/`Car` fuel units | new class specs | 3 new map-object classes, siphon flow, extinguisher targeting mode |

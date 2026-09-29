@@ -409,10 +409,18 @@ export class GameItems implements ItemModelDB {
     //
     // Image, id and verb in one table: the file previously carried two
     // identical 16-entry maps, which is two places to forget to update.
-    const meleeMap: Record<string, { id: ItemID; img: string; verb: [string, string?]; unique?: boolean }> = {
+    // `butcher: true` marks the thirteen models the fork's `CanUseForButchering`
+    // covers -- an equipped *bladed* weapon. A combat knife and a chainsaw
+    // qualify; a frying pan and a baseball bat do not. It is a list because "is it
+    // sharp" is not something the melee model already carries, and the fork spells
+    // the same thirteen out one at a time at `GameItems.cs`.
+    const meleeMap: Record<
+      string,
+      { id: ItemID; img: string; verb: [string, string?]; unique?: boolean; butcher?: boolean }
+    > = {
       MELEE_BASEBALLBAT: { id: ItemID.MELEE_BASEBALLBAT, img: GameImages.ITEM_BASEBALL_BAT, verb: ["smash", "smashes"] },
-      MELEE_COMBAT_KNIFE: { id: ItemID.MELEE_COMBAT_KNIFE, img: GameImages.ITEM_COMBAT_KNIFE, verb: ["stab", "stabs"] },
-      MELEE_CROWBAR: { id: ItemID.MELEE_CROWBAR, img: GameImages.ITEM_CROWBAR, verb: ["strike"] },
+      MELEE_COMBAT_KNIFE: { id: ItemID.MELEE_COMBAT_KNIFE, img: GameImages.ITEM_COMBAT_KNIFE, verb: ["stab", "stabs"] , butcher: true},
+      MELEE_CROWBAR: { id: ItemID.MELEE_CROWBAR, img: GameImages.ITEM_CROWBAR, verb: ["strike"], butcher: true },
       UNIQUE_JASON_MYERS_AXE: { id: ItemID.UNIQUE_JASON_MYERS_AXE, img: GameImages.ITEM_JASON_MYERS_AXE, verb: ["slash", "slashes"], unique: true },
       MELEE_HUGE_HAMMER: { id: ItemID.MELEE_HUGE_HAMMER, img: GameImages.ITEM_HUGE_HAMMER, verb: ["smash", "smashes"] },
       MELEE_SMALL_HAMMER: { id: ItemID.MELEE_SMALL_HAMMER, img: GameImages.ITEM_SMALL_HAMMER, verb: ["smash"] },
@@ -426,31 +434,31 @@ export class GameItems implements ItemModelDB {
       UNIQUE_FAMU_FATARU_KATANA: { id: ItemID.UNIQUE_FAMU_FATARU_KATANA, img: GameImages.ITEM_FAMU_FATARU_KATANA, verb: ["slash", "slashes"], unique: true },
       UNIQUE_BIGBEAR_BAT: { id: ItemID.UNIQUE_BIGBEAR_BAT, img: GameImages.ITEM_BIGBEAR_BAT, verb: ["smash", "smashes"], unique: true },
       UNIQUE_ROGUEDJACK_KEYBOARD: { id: ItemID.UNIQUE_ROGUEDJACK_KEYBOARD, img: GameImages.ITEM_ROGUEDJACK_KEYBOARD, verb: ["bash", "bashes"], unique: true },
-      MELEE_BONESAW: { id: ItemID.MELEE_BONESAW, img: GameImages.ITEM_BONESAW, verb: ["saw"], unique: true },
-      MELEE_KATANA: { id: ItemID.MELEE_KATANA, img: GameImages.ITEM_KATANA, verb: ["slash", "slashes"], unique: true },
+      MELEE_BONESAW: { id: ItemID.MELEE_BONESAW, img: GameImages.ITEM_BONESAW, verb: ["saw"], unique: true , butcher: true},
+      MELEE_KATANA: { id: ItemID.MELEE_KATANA, img: GameImages.ITEM_KATANA, verb: ["slash", "slashes"], unique: true , butcher: true},
       MELEE_BARBED_WIRE_BAT: { id: ItemID.MELEE_BARBED_WIRE_BAT, img: GameImages.ITEM_BARBED_WIRE_BAT, verb: ["smash", "smashes"], unique: true },
       MELEE_KEYBOARD: { id: ItemID.MELEE_KEYBOARD, img: GameImages.ITEM_KEYBOARD, verb: ["bash", "bashes"], unique: true },
       MELEE_TENNIS_RACKET: { id: ItemID.MELEE_TENNIS_RACKET, img: GameImages.ITEM_TENNIS_RACKET, verb: ["bash", "bashes"] },
       MELEE_HOCKEY_STICK: { id: ItemID.MELEE_HOCKEY_STICK, img: GameImages.ITEM_HOCKEY_STICK, verb: ["bash", "bashes"] },
-      MELEE_MACHETE: { id: ItemID.MELEE_MACHETE, img: GameImages.ITEM_MACHETE, verb: ["slash", "slashes"] },
-      MELEE_STANDARD_AXE: { id: ItemID.MELEE_STANDARD_AXE, img: GameImages.ITEM_STANDARD_AXE, verb: ["chop"] },
+      MELEE_MACHETE: { id: ItemID.MELEE_MACHETE, img: GameImages.ITEM_MACHETE, verb: ["slash", "slashes"] , butcher: true},
+      MELEE_STANDARD_AXE: { id: ItemID.MELEE_STANDARD_AXE, img: GameImages.ITEM_STANDARD_AXE, verb: ["chop"] , butcher: true},
       MELEE_PICKAXE: { id: ItemID.MELEE_PICKAXE, img: GameImages.ITEM_PICKAXE, verb: ["strike"] },
       MELEE_PIPE_WRENCH: { id: ItemID.MELEE_PIPE_WRENCH, img: GameImages.ITEM_PIPE_WRENCH, verb: ["bash", "bashes"] },
-      MELEE_CHAINSAW: { id: ItemID.MELEE_CHAINSAW, img: GameImages.ITEM_CHAINSAW, verb: ["cut", "cuts"] },
-      MELEE_CLEAVER: { id: ItemID.MELEE_CLEAVER, img: GameImages.ITEM_CLEAVER, verb: ["chop"] },
+      MELEE_CHAINSAW: { id: ItemID.MELEE_CHAINSAW, img: GameImages.ITEM_CHAINSAW, verb: ["cut", "cuts"] , butcher: true},
+      MELEE_CLEAVER: { id: ItemID.MELEE_CLEAVER, img: GameImages.ITEM_CLEAVER, verb: ["chop"] , butcher: true},
       MELEE_BRASS_KNUCKLES: { id: ItemID.MELEE_BRASS_KNUCKLES, img: GameImages.ITEM_BRASS_KNUCKLES, verb: ["strike"] },
       MELEE_FLAIL: { id: ItemID.MELEE_FLAIL, img: GameImages.ITEM_FLAIL, verb: ["strike"] },
-      MELEE_KITCHEN_KNIFE: { id: ItemID.MELEE_KITCHEN_KNIFE, img: GameImages.ITEM_KITCHEN_KNIFE, verb: ["slash", "slashes"] },
-      MELEE_SCIMITAR: { id: ItemID.MELEE_SCIMITAR, img: GameImages.ITEM_SCIMITAR, verb: ["slash", "slashes"] },
+      MELEE_KITCHEN_KNIFE: { id: ItemID.MELEE_KITCHEN_KNIFE, img: GameImages.ITEM_KITCHEN_KNIFE, verb: ["slash", "slashes"] , butcher: true},
+      MELEE_SCIMITAR: { id: ItemID.MELEE_SCIMITAR, img: GameImages.ITEM_SCIMITAR, verb: ["slash", "slashes"] , butcher: true},
       MELEE_MACE: { id: ItemID.MELEE_MACE, img: GameImages.ITEM_MACE, verb: ["smash", "smashes"] },
       MELEE_NUNCHAKU: { id: ItemID.MELEE_NUNCHAKU, img: GameImages.ITEM_NUNCHAKU, verb: ["strike"] },
       MELEE_FRYING_PAN: { id: ItemID.MELEE_FRYING_PAN, img: GameImages.ITEM_FRYING_PAN, verb: ["bash", "bashes"] },
       MELEE_PITCH_FORK: { id: ItemID.MELEE_PITCH_FORK, img: GameImages.ITEM_PITCH_FORK, verb: ["pierce"] },
-      MELEE_SCYTHE: { id: ItemID.MELEE_SCYTHE, img: GameImages.ITEM_SCYTHE, verb: ["slash", "slashes"] },
-      MELEE_SICKLE: { id: ItemID.MELEE_SICKLE, img: GameImages.ITEM_SICKLE, verb: ["slash", "slashes"] },
+      MELEE_SCYTHE: { id: ItemID.MELEE_SCYTHE, img: GameImages.ITEM_SCYTHE, verb: ["slash", "slashes"] , butcher: true},
+      MELEE_SICKLE: { id: ItemID.MELEE_SICKLE, img: GameImages.ITEM_SICKLE, verb: ["slash", "slashes"] , butcher: true},
       MELEE_SPEAR: { id: ItemID.MELEE_SPEAR, img: GameImages.ITEM_SPEAR, verb: ["pierce"] },
       MELEE_SPIKED_MACE: { id: ItemID.MELEE_SPIKED_MACE, img: GameImages.ITEM_SPIKED_MACE, verb: ["smash", "smashes"] },
-      MELEE_FIRE_AXE: { id: ItemID.MELEE_FIRE_AXE, img: GameImages.ITEM_FIRE_AXE, verb: ["chop"] },
+      MELEE_FIRE_AXE: { id: ItemID.MELEE_FIRE_AXE, img: GameImages.ITEM_FIRE_AXE, verb: ["chop"] , butcher: true},
     };
 
     for (const d of meleeData as any[]) {
@@ -468,6 +476,7 @@ export class GameItems implements ItemModelDB {
         d.PLURAL,
         meta.img,
         atk,
+        meta.butcher === true,
         d.ISFRAGILE === 1,
         d.TOOLBASHDMGBONUS ?? 0,
         d.TOOLBUILDBONUS ?? 0,

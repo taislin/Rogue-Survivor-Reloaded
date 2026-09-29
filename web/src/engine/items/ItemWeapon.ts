@@ -45,6 +45,16 @@ export class ItemWeapon extends Item {
 }
 
 export class ItemMeleeWeaponModel extends ItemWeaponModel {
+  /**
+   * Can this be used to butcher a corpse? Still Alive, Release 7-6.
+   *
+   * The C#'s rule is "an equipped bladed weapon", and the thirteen models that
+   * satisfy it are a *list* -- a combat knife and a chainsaw qualify, a frying pan
+   * and a baseball bat do not. It is on the model rather than derived from
+   * `isFragile` or the weapon's verb, because "is it sharp" is not a number the
+   * melee model already carries.
+   */
+  readonly canUseForButchering: boolean;
   readonly isFragile: boolean;
   readonly isTool: boolean;
   readonly toolBashDamageBonus: number;
@@ -55,12 +65,14 @@ export class ItemMeleeWeaponModel extends ItemWeaponModel {
     theNames: string,
     imageId: string,
     attack: Attack,
+    canUseForButchering: boolean = false,
     isFragile: boolean = false,
     toolBashDamageBonus: number = 0,
     toolBuildBonus: number = 0,
     weight: number = 0
   ) {
     super(aName, theNames, imageId, attack, weight);
+    this.canUseForButchering = canUseForButchering;
     this.isFragile = isFragile;
     this.toolBashDamageBonus = toolBashDamageBonus;
     this.toolBuildBonus = toolBuildBonus;

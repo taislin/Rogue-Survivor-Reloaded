@@ -54,7 +54,12 @@ import { ItemBarricadeMaterial, ItemEntertainment, ItemSprayScent } from "@engin
 import { ItemMedicine } from "@engine/items/ItemMedicine";
 import { ItemTracker } from "@engine/items/ItemTracker";
 import { ItemTrap } from "@engine/items/ItemTrap";
-import { ItemAmmo, ItemRangedWeapon, ItemWeapon } from "@engine/items/ItemWeapon";
+import {
+  ItemAmmo,
+  type ItemMeleeWeaponModel,
+  ItemRangedWeapon,
+  ItemWeapon,
+} from "@engine/items/ItemWeapon";
 import { DoorWindow, Fortification, PowerGenerator } from "@engine/mapobjects/MapObjects";
 
 import { FactionID } from "@gameplay/GameFactions";
@@ -1936,6 +1941,21 @@ export class Rules {
     // 2. Corpse not in same tile as actor.
     if (!corpse.position.equals(actor.location.position) || !actor.location.map!.hasCorpse(corpse)) {
       return fail("not in same location");
+    }
+    // 3. Need a suitable bladed melee weapon. Still Alive, Release 7-6.
+    //
+    // **Player only**, and that is the C#'s decision, not an omission: it says it
+    // "decided not to enforce this for NPCs, as having them prioritise bladed
+    // weapons seemed like too much of a faff. may be revisited". Enforcing it for
+    // the AI as well would make every NPC carry a knife, which is a different game.
+    if (
+      hasFeature(Session.get().ruleset, Feature.Butchering) &&
+      actor.isPlayer
+    ) {
+      const melee = actor.getEquippedMeleeWeapon();
+      if (melee === null || !(melee.model as ItemMeleeWeaponModel).canUseForButchering) {
+        return fail("need a bladed weapon equipped");
+      }
     }
 
     return OK;

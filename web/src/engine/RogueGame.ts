@@ -97,7 +97,7 @@ import {
 	type ItemGrenadePrimedModel,
 	ItemPrimedExplosive,
 } from "@engine/items/ItemExplosive";
-import { ItemFood } from "@engine/items/ItemFood";
+import { ItemFood, type ItemFoodModel } from "@engine/items/ItemFood";
 import { ItemLight, ItemLightModel } from "@engine/items/ItemLight";
 import { ItemMedicine } from "@engine/items/ItemMedicine";
 import {
@@ -8444,18 +8444,105 @@ export class RogueGame {
 		}
 	}
 
+	/**
+	 * What comes off the body, and how fresh. Still Alive, Release 7-6
+	 * (`RogueGame.cs:11700`).
+	 *
+	 * Two surprises, and both are the feature:
+	 *
+	 * - **Fire is a cooking method you do not choose.** Meat off a body that
+	 *   died of fire comes out *cooked*; anything else comes out raw. That is the
+	 *   whole of the `causeOfDeath` field's purpose, and it is why the check is
+	 *   the string `"fire"` rather than a boolean.
+	 * - **Rot shortens the shelf life.** The meat's `bestBefore` is
+	 *   `currentTurn + TURNS_PER_DAY * bestBeforeDays / rotLevel`, so a corpse at
+	 *   rot level 5 ("about to crumble to dust") yields meat good for a fifth of
+	 *   its normal time. The `++rotLevel` avoids dividing by zero, because the
+	 *   C#'s levels start at 0.
+	 *
+	 * **The C# throws on an unrecognised animal name, and that is not ported.**
+	 * Its switch has three cases — rabbit, chicken, feral dog — and a `default`
+	 * that throws. The port has no `RABBIT` or `CHICKEN` model yet (they need
+	 * `Abilities.isLivingAnimal`, which this feature added, *and* an
+	 * `UnintelligentAnimalAI` the port has no controller for), so any living
+	 * animal that did exist would crash the butcher. A missing model must not be
+	 * able to take the game down, so the default arms fall through to "no meat",
+	 * and a test says so.
+	 *
+	 * The meat *quantity* is the C#'s `default: 2` case. It is really
+	 * `GameOptions.ResourcesAvailability` (3/2/1), which is its own pending
+	 * feature, so the default is hardcoded and the site is commented.
+	 */
+	private ButcherMeat(a: Actor, c: Corpse): void {
+		const map = a.location.map!;
+		const currentTurn = map.localTime.turnCounter;
+		const rotLevel = this.m_Rules.corpseRotLevel(c) + 1;
+		const dead = c.deadGuy;
+		const burntToDeath = dead.causeOfDeath === "fire";
+
+		// (raw, cooked) per species, keyed the way the C# does: by the dead guy's
+		// *model name*, not by an id. That is the C#'s choice and it is a fragile
+		// one -- a rename of "rabbit" silently changes the meat -- so the mapping
+		// is stated here rather than left implicit.
+		const ANIMAL_MEAT: Readonly<Record<string, readonly [ItemID, ItemID]>> = {
+			// rabbit, chicken, feral dog
+			"rabbit": [ItemID.FOOD_RAW_RABBIT, ItemID.FOOD_COOKED_RABBIT],
+			"chicken": [ItemID.FOOD_RAW_CHICKEN, ItemID.FOOD_COOKED_CHICKEN],
+			"feral dog": [ItemID.FOOD_RAW_DOG_MEAT, ItemID.FOOD_COOKED_DOG_MEAT],
+		};
+
+		let meatId: ItemID;
+		let quantity = 1;
+		if (dead.model.abilities.isLivingAnimal) {
+			const pair = ANIMAL_MEAT[dead.model.name];
+			// Not ported: the C# throws here. See the doc comment.
+			if (pair === undefined) return;
+			meatId = burntToDeath ? pair[1] : pair[0];
+			// The C#'s `default` ResourcesAvailability case.
+			quantity = 2;
+		} else {
+			meatId = burntToDeath
+				? ItemID.FOOD_COOKED_HUMAN_FLESH
+				: ItemID.FOOD_RAW_HUMAN_FLESH;
+		}
+
+		const model = Models.items.get(meatId) as ItemFoodModel;
+		const bestBefore =
+			currentTurn + ((WorldTime.TURNS_PER_DAY * model.bestBeforeDays) / rotLevel);
+		// The C#'s trailing `new ItemFood(model, bestBefore, true, isRaw)` flags
+		// are `isForbiddenToAI` and `canBeCooked`; the port reads both off the model
+		// (the five raw meats already carry `canCauseFoodPoisoning`, and
+		// `canBeCooked` came in with `Cooking`), so only the turn count is passed.
+		const meat = new ItemFood(model, bestBefore);
+		meat.quantity = quantity;
+		// The C# sets this for both branches, so the meat is not the AI's to take.
+		meat.isForbiddenToAI = true;
+
+		// into the inventory if it fits, else on the ground.
+		if (!a.inventory!.addAll(meat)) this.DropItem(a, meat);
+		this.AddMessage(this.MakeMessage(a, "carved off some raw meat."));
+	}
+
 	// C# DoButcherCorpse — RogueGame.cs:7009
 	DoButcherCorpse(a: Actor, c: Corpse): void {
 		const isVisible = this.IsVisibleToPlayer(a);
 
 		this.SpendActorActionPoints(a, Rules.BASE_ACTION_COST);
 
-		this.SeeingCauseInsanity(
-			a,
-			a.location,
-			Rules.SANITY_HIT_BUTCHERING_CORPSE,
-			`${a.name} butchering ${c.deadGuy.name}`,
-		);
+		// Cause insanity -- but not for an animal. Still Alive, Release 7-6: a
+		// dead rabbit was food anyway, so carving one up is not a horror.
+		if (!c.deadGuy.model.abilities.isLivingAnimal) {
+			this.SeeingCauseInsanity(
+				a,
+				a.location,
+				Rules.SANITY_HIT_BUTCHERING_CORPSE,
+				`${a.name} butchering ${c.deadGuy.name}`,
+			);
+		}
+
+		if (hasFeature(this.m_Session.ruleset, Feature.Butchering)) {
+			this.ButcherMeat(a, c);
+		}
 
 		const dmg = this.m_Rules.actorDamageVsCorpses(a);
 

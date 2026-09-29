@@ -87,6 +87,20 @@ export class Actor {
    * Plain own fields, so the graph writer carries them with no spec entry -- the
    * same as `isFoodPoisoned`.
    */
+  /**
+   * What killed this actor, as a free-form string: "fire", "zombie bite", ...
+   *
+   * Still Alive, Release 7-6. Only one value is read today -- butchering checks
+   * for `"fire"`, because meat off a body burnt to death comes out *cooked* and
+   * anything else comes out raw. That is the whole feature, and it is a
+   * surprising one: fire is a cooking method you do not choose.
+   *
+   * A string rather than an enum because the C# has a string, and because the set
+   * of causes is open (every weapon, every hazard). A plain own field, so the
+   * graph writer carries it with no spec entry.
+   */
+  causeOfDeath: string = "";
+
   bloodAlcohol: number = 0;
   /**
    * Last turn's `bloodAlcohol`, snapshotted at the top of the turn.

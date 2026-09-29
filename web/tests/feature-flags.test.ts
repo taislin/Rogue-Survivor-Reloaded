@@ -161,14 +161,14 @@ describe("Feature registry is wired", () => {
     // is the point: a reader is a decision, not an accident.
     expect(sites.map((s) => s.feature).sort())
       .toEqual(["Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol",
-                 "Alcohol", "Alcohol", "ArmorResist", "Cooking", "Cooking",
-                 "DarknessFov", "DarknessFov", "DarknessFov",
-                 "DarknessGating", "FireBarrels", "FireBarrels",
-                 "FireExtinguishers", "FoodPoisoning", "FoodPoisoning",
+                 "Alcohol", "Alcohol", "ArmorResist", "Butchering",
+                 "Butchering", "Cooking", "Cooking", "DarknessFov",
+                 "DarknessFov", "DarknessFov", "DarknessGating",
+                 "FireBarrels", "FireBarrels", "FireExtinguishers",
                  "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-                 "FoodPoisoning", "ItemDespawn", "ItemDespawn",
-                 "LightPriority", "SiphonFuel", "SiphonFuel", "TileFires",
-                 "WeaponWeight"]);
+                 "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
+                 "ItemDespawn", "ItemDespawn", "LightPriority", "SiphonFuel",
+                 "SiphonFuel", "TileFires", "WeaponWeight"]);
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     // `Alcohol`'s *first* reader is now in `RogueGame` (the per-turn decay), and
     // the harness line is one of six rather than the only one.
@@ -204,6 +204,14 @@ describe("Feature registry is wired", () => {
     expect(alc.filter((s) => /Rules\.ts/.test(s.at))).toHaveLength(2);
     expect(alc.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(4);
     expect(alc.filter((s) => /HeadlessRunner\.ts/.test(s.at))).toHaveLength(1);
+
+    // Butchering is two readers in two files: the "you need a bladed weapon"
+    // check, and the meat block. The insanity carve-out for animals is gated by
+    // neither, because it reads a data flag rather than a behaviour change --
+    // an actor that is *not* a living animal gets exactly vanilla's sanity hit.
+    const butcher = sites.filter((s) => s.feature === "Butchering");
+    expect(butcher.filter((s) => /Rules\.ts/.test(s.at))).toHaveLength(1);
+    expect(butcher.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(1);
 
     // FireExtinguishers is a single reader, in the spray-paint mode dispatch. One
     // gate there covers the banner, the refusal message and the handler call, so
