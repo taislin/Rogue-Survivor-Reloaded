@@ -774,6 +774,12 @@ export class GameItems implements ItemModelDB {
       );
       model.equipmentPart = DollPart.LEFT_HAND;
       model.flavorDescription = d.FLAVOR ?? "";
+      // Still Alive, Release 7-1: exactly two lights are throwable, and the
+      // "flares and candles" the C# names are a flare and a glowstick. A dropped
+      // torch does *not* count as a light source, because a torch should be off
+      // when it is not in somebody's hand.
+      model.isThrowable =
+        meta.id === ItemID.LIGHT_FLARE || meta.id === ItemID.LIGHT_GLOWSTICK;
       this.setModel(meta.id, model);
     }
 

@@ -172,6 +172,24 @@ const LIT_GRAY2 = Color.LightGray;
 const LIT_GRAY3 = Color.fromArgb(230, 230, 230);
 const LIT_BROWN = Color.BurlyWood; // C#: BurlyWood (222,184,135), not Brown
 
+/** The fourteen wall models, from `GameTiles.cs:528`. */
+const WALL_MODEL_IDS: readonly TileID[] = [
+  TileID.WALL_BRICK,
+  TileID.WALL_CHAR_OFFICE,
+  TileID.WALL_HOSPITAL,
+  TileID.WALL_LIGHT_BROWN,
+  TileID.WALL_POLICE_STATION,
+  TileID.WALL_STONE,
+  TileID.WALL_SUBWAY,
+  TileID.WALL_ARMY_BASE,
+  TileID.WALL_FUEL_STATION,
+  TileID.WALL_WOOD_PLANKS,
+  TileID.WALL_CONCRETE,
+  TileID.WALL_PILLAR_CONCRETE,
+  TileID.WALL_RED_CURTAINS,
+  TileID.WALL_MALL,
+];
+
 export class GameTiles extends TileModelDB {
   private readonly models: TileModel[] = new Array(TileID._COUNT);
 
@@ -403,6 +421,21 @@ export class GameTiles extends TileModelDB {
 
   override get(id: number): TileModel {
     return this.models[id] ?? TileModel.UNDEF;
+  }
+
+  /**
+   * Is this one of the fourteen *wall* models? Still Alive, Release 6-3.
+   *
+   * The explicit list, not `!model.isWalkable`, even though all fourteen happen to
+   * be unwalkable. The reason is the use: `DarknessFov` 2b skips lighting a *tile
+   * fire* on a wall, because making a wall "visible" makes it transparent and
+   * you can see straight through the building. That is a list of fifteen specific
+   * models, and `!isWalkable` would quietly include things the C# leaves dark --
+   * rail, doors, anything else that is unwalkable.
+   */
+  isWallModel(model: TileModel): boolean {
+    for (const id of WALL_MODEL_IDS) if (this.models[id] === model) return true;
+    return false;
   }
 
   isRoadModel(model: TileModel): boolean {

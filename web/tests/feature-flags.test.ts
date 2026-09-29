@@ -162,12 +162,12 @@ describe("Feature registry is wired", () => {
     expect(sites.map((s) => s.feature).sort())
       .toEqual(["Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol",
                  "Alcohol", "Alcohol", "ArmorResist", "Cooking", "Cooking",
-                 "DarknessFov", "DarknessFov", "DarknessGating",
-                 "FireBarrels", "FireBarrels", "FoodPoisoning",
+                 "DarknessFov", "DarknessFov", "DarknessFov",
+                 "DarknessGating", "FireBarrels", "FireBarrels",
                  "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-                 "FoodPoisoning", "FoodPoisoning", "ItemDespawn",
-                 "ItemDespawn", "LightPriority", "SiphonFuel", "SiphonFuel",
-                 "TileFires", "WeaponWeight"]);
+                 "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
+                 "ItemDespawn", "ItemDespawn", "LightPriority", "SiphonFuel",
+                 "SiphonFuel", "TileFires", "WeaponWeight"]);
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     // `Alcohol`'s *first* reader is now in `RogueGame` (the per-turn decay), and
     // the harness line is one of six rather than the only one.
@@ -238,7 +238,10 @@ describe("Feature registry is wired", () => {
     // with the other two, which is why the numbers themselves are one record.
     const dark = sites.filter((s) => s.feature === "DarknessFov");
     expect(dark.filter((s) => /Rules\.ts/.test(s.at))).toHaveLength(1);
-    expect(dark.filter((s) => /LOS\.ts/.test(s.at))).toHaveLength(1);
+    // Two in LOS, not one: the 2a adjacency shortcut and the 2b light scan. Both
+    // must be gated separately -- the shortcut governs what FOV 0 can see at all,
+    // the scan governs whether a fire two tiles away is visible from anywhere.
+    expect(dark.filter((s) => /LOS\.ts/.test(s.at))).toHaveLength(2);
 
     // FireBarrels is two readers in two different files, and the split is the
     // point: the generator decides what a barrel *is*, the turn loop decides what

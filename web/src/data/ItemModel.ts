@@ -15,6 +15,15 @@ export class ItemModel {
   dontAutoEquip: boolean = false;
   isUnbreakable: boolean = false;
   /**
+   * A light you can throw down. Still Alive, Release 7-1.
+   *
+   * The C# puts this on `ItemModel` rather than `ItemLightModel` even though only
+   * two items set it (a flare and a glowstick), and `DarknessFov` 2b reads it as
+   * "a light on the ground that counts as a light source". It is here rather than
+   * on the light model to match, but nothing outside the two uses it.
+   */
+  isThrowable: boolean = false;
+  /**
    * Booze, cigarettes and energy drinks. Still Alive, Release 5-7.
    *
    * They are `ItemMedicine` for historical reasons -- they heal a point of

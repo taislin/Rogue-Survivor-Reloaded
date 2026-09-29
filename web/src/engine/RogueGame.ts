@@ -9710,6 +9710,7 @@ export class RogueGame {
 			player,
 			this.m_Session.worldTime,
 			this.m_Session.world!.weather,
+			true, // Release 6-5: light sources outside the actor's own FOV
 		);
 		const potentialTargets = this.m_Rules.getEnemiesInFov(player, fov);
 
@@ -11105,6 +11106,7 @@ export class RogueGame {
 			follower,
 			this.m_Session.worldTime,
 			this.m_Session.world!.weather,
+			true, // Release 6-5: light sources outside the actor's own FOV
 		);
 
 		let loop = true;
@@ -29091,6 +29093,7 @@ export class RogueGame {
 			player,
 			this.m_Session.worldTime,
 			this.m_Session.world!.weather,
+			true, // Release 6-5: light sources outside the actor's own FOV
 		);
 		// Push the FOV onto the map's tiles. Without this nothing is ever marked
 		// in-view, so IsVisibleToPlayer is false everywhere and no actor, item or

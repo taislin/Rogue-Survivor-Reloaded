@@ -10,6 +10,12 @@ import { Direction } from '@engine/Direction';
 import { Point } from '@engine/Point';
 import { Feature, hasFeature } from '@engine/FeatureFlags';
 import { Session } from '@engine/Session';
+import { Options as GameOptionsSingleton } from '@engine/GameOptions';
+import { GameTiles } from '@gameplay/GameTiles';
+import { Models } from '@data/Models';
+import { GameImages } from '@gameplay/GameImages';
+import { DollPart } from '@data/Doll';
+import { ItemLight } from '@engine/items/ItemLight';
 import { coordKey, coordKeyToPoint } from '@engine/CoordKey';
 import type { WorldTime } from '@engine/WorldTime';
 
@@ -267,7 +273,8 @@ export class LOS {
     rules: Rules,
     actor: Actor,
     time: WorldTime,
-    weather: Weather
+    weather: Weather,
+    checkForOtherLitTiles: boolean = false
   ): Set<number> {
     const map = actor.location.map;
     const visibleSet = new Set<number>();
@@ -353,6 +360,209 @@ export class LOS {
       }
     }
 
+    // Still Alive, Release 6-5, and the second half of `Feature.DarknessFov`.
+    //
+    // A tile with a light source on it is visible even when it is *outside* the
+    // actor's own FOV -- otherwise a survivor standing in a pitch-dark basement
+    // cannot see the burning barrel two tiles away that is the only reason they
+    // are not dead. The 2a half of the feature is the FOV floor of 0; this half is
+    // what makes a floor with a fire in it playable.
+    //
+    // `actor.isPlayer` only, and the C#'s reason is worth quoting: "otherwise the
+    // game runs like a slideshow" (Release 7-1). Lighting sources are added to the
+    // *same* visible set for the AI as for the player, so every NPC would see
+    // every light on the map and walk straight to it. The C# has no per-tile light
+    // level grid either -- this only ever adds keys to the set it already had --
+    // which is why both renderers get it for free.
+    // Both conditions here rather than at the four call sites, which is what the
+    // C# does: it passes `true` everywhere and filters on `actor.IsPlayer` inside
+    // ("otherwise the game runs like a slideshow", Release 7-1). The feature gate
+    // is the branch's own addition, and it belongs beside the player check so the
+    // two cannot disagree about when the scan is worth its cost.
+    if (
+      checkForOtherLitTiles &&
+      actor.isPlayer &&
+      hasFeature(Session.get().ruleset, Feature.DarknessFov)
+    ) {
+      LOS.addOtherLitTiles(map, actor, visibleSet);
+    }
+
     return visibleSet;
+  }
+
+  /**
+   * The whole-map scan for lights outside the actor's own FOV. Still Alive,
+   * Release 6-5/7-5/7-6 (`LOS.cs:404-621`).
+   *
+   * Four kinds of source, checked in the C#'s order and each `continue`ing after
+   * it fires, so the first match wins and a tile lit by two things is not
+   * processed twice:
+   *
+   * | source | footprint |
+   * |---|---|
+   * | burning map object (barrel, campfire, car) | own tile, 8 neighbours, and unless `reducedMapObjectLighting` the two-over and the eight three-point bearings |
+   * | tile fire | own tile and 8 neighbours, **skipped on a wall** |
+   * | actor holding a working light | own tile and 8 neighbours |
+   * | lit candle decoration | own tile and 8 neighbours |
+   * | throwable light on the ground | own tile and 8 neighbours |
+   *
+   * Two details that are load-bearing:
+   *
+   * - **The LOS check uses range 10, not the actor's FOV.** That is the whole
+   *   point: a source beyond the actor's view range but within ten tiles and in
+   *   line of sight is still seen.
+   * - **A tile fire does not light a wall.** Lighting a wall makes it
+   *   "visible", which makes it *transparent*, and you can see straight through
+   *   the building. Hence `GameTiles.isWallModel`, the explicit fifteen-model
+   *   list rather than `!isWalkable`.
+   */
+  private static addOtherLitTiles(
+    map: GameMap,
+    actor: Actor,
+    visibleSet: Set<number>
+  ): void {
+    const from = actor.location.position;
+    const reduced = GameOptionsSingleton.reducedMapObjectLighting;
+
+    for (let x = 0; x < map.width; x++) {
+      for (let y = 0; y < map.height; y++) {
+        const spot = new Point(x, y);
+        if (spot.x === from.x && spot.y === from.y) continue;
+
+        // Only consider spots we actually have line of sight to, at range 10.
+        const trace = new Set<number>();
+        trace.add(coordKey(x, y));
+        if (!LOS.fovSub(map, from, spot, 10, trace)) continue;
+
+        const lightNeighbourhood = (): void => {
+          visibleSet.add(coordKey(x, y));
+          for (const d of Direction.COMPASS) {
+            const next = d.applyTo(spot);
+            if (map.isInBounds(next.x, next.y)) visibleSet.add(coordKey(next.x, next.y));
+          }
+        };
+
+        // 1. burning map objects -- barrels, campfires, cars
+        const mapObj = map.getMapObjectAtPoint(spot);
+        if (mapObj !== null && mapObj.isOnFire) {
+          LOS.lightMapObject(map, spot, visibleSet, reduced);
+          continue;
+        }
+
+        // 2. tile fires, but not on a wall (see the doc comment)
+        if (map.isAnyTileFireThere(spot)) {
+          if (!(Models.tiles as GameTiles).isWallModel(map.getTileAt(x, y)!.model)) {
+            lightNeighbourhood();
+            continue;
+          }
+        }
+
+        // 3. actors holding a working light
+        const other = map.getActorAtPoint(spot);
+        if (other !== null) {
+          const held = other.getEquippedItem(DollPart.LEFT_HAND);
+          if (held instanceof ItemLight && held.batteries > 0) {
+            lightNeighbourhood();
+            continue;
+          }
+        }
+
+        // 4. a lit candle
+        if (map.getTileAt(x, y)!.hasDecoration(GameImages.DECO_LIT_CANDLE)) {
+          lightNeighbourhood();
+          continue;
+        }
+
+        // 5. a throwable light on the ground. A dropped *torch* does not count:
+        //    a torch should be off when nobody is holding it.
+        for (const item of map.getItemsAt(spot)?.items ?? []) {
+          if (item instanceof ItemLight && item.model.isThrowable) {
+            lightNeighbourhood();
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * The footprint of a burning map object, which is the one non-trivial shape
+   * here: the 8-neighbourhood plus, at two tiles out along the same bearing, the
+   * tile itself and the two three-point bearings either side of it.
+   *
+   * That lights a 21-tile blob rather than the 9-tile disc the other sources get,
+   * so a burning barrel is visible from further away than a lit candle. The
+   * corner cells (NE/SE/SW/NW at two tiles) are deliberately *not* lit -- the
+   * C#'s comment calls them out by name -- which is why this is not simply a
+   * radius-2 disc.
+   */
+  private static lightMapObject(
+    map: GameMap,
+    spot: Point,
+    visibleSet: Set<number>,
+    reduced: boolean
+  ): void {
+    const lit = (p: Point, range: number): void => {
+      if (LOS.extendedIsInViewLineCheck(map, spot, p, range)) {
+        visibleSet.add(coordKey(p.x, p.y));
+      }
+    };
+    visibleSet.add(coordKey(spot.x, spot.y));
+    for (const d of Direction.COMPASS) {
+      const next = d.applyTo(spot);
+      if (!map.isInBounds(next.x, next.y)) continue;
+      visibleSet.add(coordKey(next.x, next.y));
+      if (reduced) continue;
+
+      // Two steps out along the *same* bearing -- so the diagonals of the
+      // 8-ring get a two-over too, and the cardinals get theirs.
+      const twoOver = d.applyTo(next);
+      // Range 3, not 1: the C# allows for the two-step.
+      lit(twoOver, 3);
+
+      // And the two three-point bearings, e.g. NNE and NNW when going north.
+      for (const three of LOS.threePointBearings(d, twoOver)) {
+        lit(three, 2);
+      }
+    }
+  }
+
+  /** In bounds, and in line of sight. `LOS.cs:625` (Release 7-6). */
+  private static extendedIsInViewLineCheck(
+    map: GameMap,
+    from: Point,
+    to: Point,
+    tilesRange: number = 1
+  ): boolean {
+    if (!map.isInBounds(to.x, to.y)) return false;
+    return LOS.canTraceViewLine(map, from, to, tilesRange);
+  }
+
+  /**
+   * The two three-point bearings either side of a cardinal, as offsets from the
+   * tile two steps out along it.
+   *
+   * The C# writes these out as four blocks in a switch, naming eight positions:
+   * N gives NNE and NNW, E gives ENE and ESE, S gives SSE and SSW, W gives WSW and
+   * WNW. **None of those eight exist as a `Direction` in the port** -- the
+   * compass stops at the eight points -- so they are computed from the cardinal's
+   * own offset rather than looked up, which also removes four chances to get the
+   * handedness wrong:
+   *
+   *   bearing = (2*cx ± cy, 2*cy ± cx)
+   *
+   * which for N (0,-1) gives (1,-2) and (-1,-2) -- NNE and NNW, in that order.
+   * A test pins all eight against the C#'s names.
+   */
+  private static threePointBearings(
+    cardinal: Direction,
+    twoOver: Point
+  ): readonly [Point, Point] {
+    const cx = cardinal.dx;
+    const cy = cardinal.dy;
+    return [
+      new Point(twoOver.x + cy, twoOver.y + cx),
+      new Point(twoOver.x - cy, twoOver.y - cx),
+    ];
   }
 }

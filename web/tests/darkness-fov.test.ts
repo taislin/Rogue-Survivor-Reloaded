@@ -309,37 +309,44 @@ describe("Feature.DarknessFov: the registry", () => {
   });
 });
 
-describe("Feature.DarknessFov: part 2b is not here yet", () => {
-  it("documents the half that is deliberately missing", () => {
-    // Not a test of behaviour -- a test of a known gap, so the gap shows up in
-    // the suite rather than only in the plan.
+describe("Feature.DarknessFov: part 2b is no longer missing", () => {
+  it("a burning barrel in the dark IS visible, two tiles away", () => {
+    // This test used to assert the *absence* of distant light, and document that
+    // 2b was unimplemented. That claim is now false: the Release 6-5 scan landed,
+    // and a player in a pitch-dark basement can see a burning barrel. The
+    // assertion has to move with it, or the suite documents a gap that no longer
+    // exists -- which is how a stale "known gap" comment outlives its gap.
     //
-    // 2a (here) is the arithmetic: two floor constants, the night rebalance, the
-    // two conditional bonuses, and the LOS adjacency shortcut. It is what makes a
-    // basement dark.
-    //
-    // 2b is the Release 7-5 "other lit tiles" scan -- a whole-map pass in
-    // `computeFOVFor` that adds to the visible set the tiles lit by a burning
-    // barrel, a tile fire, an actor's torch, a lit candle, or a dropped light.
-    // That is ~180 lines and is **not** implemented, so a barrel burning two
-    // tiles away in the dark lights nothing. It is separate because it needs no
-    // new data types -- it only ever adds keys to the same `Set<number>` the port
-    // already has -- but it is a per-FOV-recompute W x H x trace loop, and two
-    // of its branches are blocked on `Feature.TileFires` (`isAnyTileFireThere`)
-    // and on a `GameTiles.isWallModel` predicate that does not exist yet.
-    //
-    // A player in the dark therefore currently sees exactly one tile, which is
-    // the 2a behaviour and not the fork's. The assertion below pins that, so the
-    // moment 2b lands and starts lighting tiles at a distance, it fails.
-    place(Lighting.DARKNESS, true);
+    // The mechanical detail: the old version placed a `Campfire` without setting
+    // `fireState`, so it was never alight and the assertion passed for the wrong
+    // reason even while 2b was genuinely absent.
+    const a = place(Lighting.DARKNESS, true);
     map.placeMapObject(
-      new Campfire("lit barrel", "MapObjects/campfire", MapObjectBreak.BREAKABLE, 100),
-      new Point(25, 20),
+      Object.assign(
+        new Campfire("lit barrel", "MapObjects/campfire", MapObjectBreak.BREAKABLE, 100),
+        { fireState: MapObjectFire.ONFIRE },
+      ),
+      new Point(a.location.position.x + 2, a.location.position.y),
     );
-    const lit = place(Lighting.DARKNESS, true);
-    const set = LOS.computeFOVFor(rules, lit, noon(), Weather.CLEAR);
-    expect(set.has(coordKey(25, 20)), "2b is not implemented: no distant light yet").toBe(false);
+    const set = LOS.computeFOVFor(rules, a, noon(), Weather.CLEAR, true);
+    expect(set.has(coordKey(a.location.position.x + 2, a.location.position.y)),
+      "2b is implemented: a distant light is visible").toBe(true);
+  });
+
+  it("and without the scan the same barrel is not", () => {
+    // The other half, and the reason the test above is meaningful: the base FOV
+    // of 0 really does show nothing. `checkForOtherLitTiles` defaults to false,
+    // which is what the AI sensor path uses.
+    const a = place(Lighting.DARKNESS, true);
+    map.placeMapObject(
+      Object.assign(
+        new Campfire("lit barrel", "MapObjects/campfire", MapObjectBreak.BREAKABLE, 100),
+        { fireState: MapObjectFire.ONFIRE },
+      ),
+      new Point(a.location.position.x + 2, a.location.position.y),
+    );
+    const set = LOS.computeFOVFor(rules, a, noon(), Weather.CLEAR);
+    expect(set.has(coordKey(a.location.position.x + 2, a.location.position.y)),
+      "without the scan, nothing but the player's own tile").toBe(false);
   });
 });
-
-

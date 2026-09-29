@@ -570,6 +570,9 @@ export class GameImages {
   // ── Still Alive medicine, paint and explosives (scripts/port-item-models.py).
   static readonly ITEM_AMMO_FUEL = "Items/item_ammo_fuel";
   static readonly ITEM_SIPHON_KIT = "Items/item_siphon_kit";
+  // Still Alive, Release 7-1. One of the ~420 constants the sprite commit
+  // deferred; added here because `DarknessFov` 2b reads it.
+  static readonly DECO_LIT_CANDLE = "Tiles/Decoration/lit_candle";
   static readonly ITEM_BEER_BOTTLE_BROWN = "Items/item_beer_bottle_brown";
   static readonly ITEM_BEER_BOTTLE_GREEN = "Items/item_beer_bottle_green";
   static readonly ITEM_BEER_CAN_BLUE = "Items/item_beer_can_blue";

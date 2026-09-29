@@ -59,6 +59,12 @@ const scorched = (x: number, y: number): boolean =>
 beforeEach(() => {
   new GameActors();
   new GameTiles();
+  // Pinned, and *before* `RogueGame` is built, because the game constructs its
+  // `Rules` -- and so its `DiceRoller` -- from `Session.get().seed`. The two
+  // averaged tests below deliberately re-seed per trial, and without this the
+  // seed one of them left behind would decide the outcome of the next test in
+  // the file: the suite was flaky at 4-passes-3-fails for exactly that reason.
+  Session.useSeed(1);
   game = new RogueGame(new NullRogueUI());
   map = new GameMap(1, "test", 30, 30);
   Session.get().ruleset = Ruleset.STILL_ALIVE;
@@ -251,7 +257,17 @@ describe("Feature.TileFires: burning out", () => {
     // almost nothing: the first version of this test got `rain 10 vs clear 6` and
     // "failed" in the wrong direction on nothing but the roller's sequence. The
     // per-fire variance is the whole difficulty of testing anything probabilistic.
-    const livesIn = async (weather: Weather): Promise<number> => {
+    /**
+     * `trial` seeds the session, and it **must** be set before `RogueGame` is
+     * constructed: the game builds its `Rules` -- and therefore its
+     * `DiceRoller` -- from `Session.get().seed`. The first version of this helper
+     * took no seed, so all 25 "trials" were byte-identical runs and the average
+     * was one sample multiplied by 25. That is the more insidious half of the
+     * "probabilistic tests need trial counts" lesson: a trial count is worthless
+     * unless the trials actually differ.
+     */
+    const livesIn = async (weather: Weather, trial: number): Promise<number> => {
+      Session.useSeed(1000 + trial);
       Session.get().weather = weather;
       const m = new GameMap(1, "t", 20, 20);
       const g = new RogueGame(new NullRogueUI());
@@ -273,8 +289,8 @@ describe("Feature.TileFires: burning out", () => {
     let rainTotal = 0;
     const TRIALS = 25;
     for (let i = 0; i < TRIALS; i++) {
-      clearTotal += await livesIn(Weather.CLEAR);
-      rainTotal += await livesIn(Weather.RAIN);
+      clearTotal += await livesIn(Weather.CLEAR, i);
+      rainTotal += await livesIn(Weather.RAIN, i);
     }
     const clear = clearTotal / TRIALS;
     const rain = rainTotal / TRIALS;
@@ -287,7 +303,10 @@ describe("Feature.TileFires: burning out", () => {
     // aren't affected by weather") understates what the code does: it makes them
     // roughly twice as long-lived in the same weather. Preserved as-is, with the
     // discrepancy written down rather than quietly "corrected".
-    const lives = async (inside: boolean): Promise<number> => {
+    //
+    // Same seeding discipline as the rain/clear helper above; see the note there.
+    const lives = async (inside: boolean, trial: number): Promise<number> => {
+      Session.useSeed(2000 + trial);
       Session.get().weather = Weather.CLEAR;
       const m = new GameMap(1, "t", 20, 20);
       const g = new RogueGame(new NullRogueUI());
@@ -305,9 +324,24 @@ describe("Feature.TileFires: burning out", () => {
       }
       return turns;
     };
-    const indoor = await lives(true);
-    const outdoor = await lives(false);
-    expect(indoor, `indoor ${indoor} vs outdoor ${outdoor}`).toBeGreaterThan(outdoor);
+    // Averaged, and for the same reason the rain/clear comparison is: a single
+    // fire's lifetime is a geometric distribution on a per-turn roll, and one
+    // sample of each is worth almost nothing. This one was left single-sampled
+    // when the rain/clear test was fixed -- the same bug in the test three lines
+    // away, found later by the merge shifting the roller's sequence. **When one
+    // probabilistic test turns out to need trial counts, go and look for the
+    // others.**
+    let indoorTotal = 0;
+    let outdoorTotal = 0;
+    const TRIALS = 25;
+    for (let i = 0; i < TRIALS; i++) {
+      indoorTotal += await lives(true, i);
+      outdoorTotal += await lives(false, i);
+    }
+    const indoor = indoorTotal / TRIALS;
+    const outdoor = outdoorTotal / TRIALS;
+    expect(indoor, `indoor ${indoor.toFixed(1)} vs outdoor ${outdoor.toFixed(1)}, over ${TRIALS}`)
+      .toBeGreaterThan(outdoor);
   });
 });
 

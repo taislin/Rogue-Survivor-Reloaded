@@ -64,6 +64,8 @@ export enum OptionIDs {
   GAME_AUTOSAVE_PERIOD, // alpha10.1
   /** Still Alive, Release 7-6. Appended: the ID is stored by number in saves. */
   GAME_DAYS_BEFORE_ITEM_DESPAWNS,
+  /** Still Alive, Release 7-6. Appended, per the numeric-id rule. */
+  GAME_REDUCED_MAPOBJECT_LIGHTING,
   UI_SPRITE_STYLE, // browser port
   UI_FONT_CHOICE, // browser port
   UI_VIEW_MODE, // browser port
@@ -129,6 +131,16 @@ export class GameOptions {
   static readonly DEFAULT_SUPPLIESDROP_FACTOR = 100;
   /** Still Alive, Release 7-6. Four days, and the option is `--` not clamped. */
   static readonly DEFAULT_DAYS_BEFORE_ITEM_DESPAWNS = 4;
+  /**
+   * Still Alive, Release 7-6. Default OFF, i.e. a burning barrel lights its whole
+   * surroundings.
+   *
+   * ON drops the two-over and the eight three-point bearings, leaving a burning
+   * object lighting only its own tile and the eight adjacent to it -- a radius-1
+   * disc instead of the C#'s larger footprint. It is a difficulty knob dressed as
+   * a graphics one.
+   */
+  static readonly DEFAULT_REDUCED_MAPOBJECT_LIGHTING = false;
   static readonly DEFAULT_ZOMBIFIEDS_UPGRADE_DAYS: ZupDays = ZupDays.THREE;
   static readonly DEFAULT_AUTOSAVE_PERIOD = 24; // alpha10.1
   static readonly DEFAULT_SPRITE_STYLE: ImageSet = DEFAULT_IMAGE_SET;
@@ -178,6 +190,7 @@ export class GameOptions {
   private m_NatGuardFactor = 0;
   private m_SuppliesDropFactor = 0;
   private m_DaysBeforeDiscardedItemDespawns = 0;
+  private m_ReducedMapObjectLighting = false;
   private m_ShowTargets = false;
   private m_ShowPlayerTargets = false;
   private m_ZupDays: ZupDays = ZupDays.OFF;
@@ -526,6 +539,14 @@ export class GameOptions {
     this.m_DaysBeforeDiscardedItemDespawns = value;
   }
 
+  /** Still Alive, Release 7-6. See `DEFAULT_REDUCED_MAPOBJECT_LIGHTING`. */
+  get reducedMapObjectLighting(): boolean {
+    return this.m_ReducedMapObjectLighting;
+  }
+  set reducedMapObjectLighting(value: boolean) {
+    this.m_ReducedMapObjectLighting = value;
+  }
+
   get showTargets(): boolean {
     return this.m_ShowTargets;
   }
@@ -691,6 +712,7 @@ export class GameOptions {
     this.m_SuppliesDropFactor = GameOptions.DEFAULT_SUPPLIESDROP_FACTOR;
     this.m_DaysBeforeDiscardedItemDespawns =
       GameOptions.DEFAULT_DAYS_BEFORE_ITEM_DESPAWNS;
+    this.m_ReducedMapObjectLighting = GameOptions.DEFAULT_REDUCED_MAPOBJECT_LIGHTING;
     this.m_ShowTargets = true;
     this.m_ShowPlayerTargets = true;
     this.m_ZupDays = GameOptions.DEFAULT_ZOMBIFIEDS_UPGRADE_DAYS;
@@ -822,6 +844,8 @@ export class GameOptions {
       return "  (Save) AutoSave Period"; // alpha10.1
     case OptionIDs.GAME_DAYS_BEFORE_ITEM_DESPAWNS: // Still Alive, Release 7-6
       return "   (Map) Days before a junk item despawns";
+    case OptionIDs.GAME_REDUCED_MAPOBJECT_LIGHTING: // Still Alive, Release 7-6
+      return "   (Map) Fires have a smaller light radius";
     case OptionIDs.UI_SPRITE_STYLE:
       return "  (Gfx) Sprite Style";
     case OptionIDs.UI_FONT_CHOICE:
@@ -942,6 +966,9 @@ export class GameOptions {
         return "When mouse over an actor, will draw icons on actors that are targeting, are targeted or are in group with this actor.";
       case OptionIDs.UI_SHOW_PLAYER_TARGETS:
         return "Will draw icons on actors that are targeting you.";
+    case OptionIDs.GAME_REDUCED_MAPOBJECT_LIGHTING: // Still Alive, Release 7-6
+      return "A burning barrel or campfire lights a smaller area.\n" +
+        "Cheaper to draw and easier to hide from.";
     case OptionIDs.GAME_DAYS_BEFORE_ITEM_DESPAWNS: // Still Alive, Release 7-6
       return "The number of in-game days at which point an item that a non-follower NPC discarded get despawned.\n" +
         "Only applies to common, low-value items. Doesn't affect items dropped by the player or their followers.\n" +
@@ -1186,6 +1213,8 @@ export class GameOptions {
         return this.showPlayerTargets ? "ON    (default ON)" : "OFF   (default ON)";
       case OptionIDs.UI_SHOW_TARGETS:
         return this.showTargets ? "ON    (default ON)" : "OFF   (default ON)";
+    case OptionIDs.GAME_REDUCED_MAPOBJECT_LIGHTING: // Still Alive, Release 7-6
+      return this.reducedMapObjectLighting ? "ON    (default OFF)" : "OFF   (default OFF)";
     case OptionIDs.GAME_DAYS_BEFORE_ITEM_DESPAWNS: // Still Alive, Release 7-6
       return `${this.daysBeforeDiscardedItemDespawns.toString().padStart(3)}  (default ${GameOptions.DEFAULT_DAYS_BEFORE_ITEM_DESPAWNS})`;
     case OptionIDs.GAME_AUTOSAVE_PERIOD: // alpha10.1

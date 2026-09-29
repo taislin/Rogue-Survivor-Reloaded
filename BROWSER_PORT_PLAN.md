@@ -1378,7 +1378,7 @@ Stages 4 and 5 have not started.
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
 | **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles, 90 of 95 items and all 123 item factories done.** The 5 backpacks (a new mechanic) and ~420 unused `GameImages` constants are the only content left; nothing *calls* the new factories yet, which is placement and belongs to Stage 4/5 |
-| **4** | 37 gated features | **12 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (part 2a; the light-source scan in 2b is not done), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`, `TileFires`. 25 remain |
+| **4** | 37 gated features | **12 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (both halves), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`, `TileFires`. 25 remain |
 | **5** | content, audio, credits | **not started** |
 
 Two things a later session should not have to re-derive:
@@ -2382,7 +2382,7 @@ plan for rather than discover:
 > was a test bug rather than an implementation bug: two used `AMMO_SHOTGUN`,
 > which is exempt and so was never stamped, making the assertion vacuous.
 
-> ### `DarknessFov` — 2a done (true darkness), 2b deliberately not (light sources)
+> ### `DarknessFov` — both halves done: true darkness, and the lights in it
 >
 > The feature is two separable halves, and only the cheap one is here. Splitting it
 > matters because 2a is what unblocks the two Stage 2 features that have been
@@ -2447,7 +2447,7 @@ plan for rather than discover:
 > test fails and says why.
 >
 > `DarknessGating` and `LightPriority` — both parked since Stage 2 as "needs
-> `DarknessFov`" — now unblock, and are next.
+> `DarknessFov`" — were unblocked by 2a and are now done.
 
 > ### `DarknessGating` — done, and it is why `DarknessFov` 2a was worth landing first
 >
