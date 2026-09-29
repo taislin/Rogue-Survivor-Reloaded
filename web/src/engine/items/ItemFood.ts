@@ -46,6 +46,15 @@ export class ItemFood extends Item {
   /** Copied from the model, as `ItemFood.cs:62` does. */
   readonly canCauseFoodPoisoning: boolean;
   readonly canBeCooked: boolean;
+  /**
+   * How cooked this is, and how cooked it needs to be. Still Alive, Release 7-6.
+   *
+   * Mutable, unlike the flags: cooking is a property of *this piece of food* and
+   * of how long it has sat by the fire, not of the row it came from. Four turns by
+   * a fire, per `ItemFood.cs:66`, so the fourth pass finishes it.
+   */
+  cookedDegree: number = 0;
+  readonly maxCookedDegree: number = 4;
 
   constructor(model: ItemModel, bestBeforeTurns?: number) {
     super(model);

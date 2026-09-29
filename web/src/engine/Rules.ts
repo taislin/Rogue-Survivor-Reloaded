@@ -59,6 +59,8 @@ import { DoorWindow, Fortification, PowerGenerator } from "@engine/mapobjects/Ma
 import { FactionID } from "@gameplay/GameFactions";
 import { GangID } from "@gameplay/GameGangs";
 import { ItemID } from "@gameplay/GameItems";
+import { Models } from "@data/Models";
+import { ItemModel } from "@data/ItemModel";
 import { SkillID } from "@gameplay/Skills";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -2176,6 +2178,82 @@ export class Rules {
   actorRecoverFromFoodPoisoningChanceBonus(actor: Actor): number {
     return Rules.SKILL_HARDY_FOOD_POISONING_RECOVERY_CHANCE_BONUS *
       actor.sheet.skillTable.getSkillLevel(SkillID.HARDY);
+  }
+
+  /**
+   * The cooked twin of a raw meat, or null if the item is not one.
+   *
+   * **By id, not by name.** The fork does this with a `switch` on the food's
+   * `AName` -- `case "some raw fish": ... COOKED_FISH` -- which means renaming a
+   * row in the CSV silently stops the meat from ever cooking, and it fails in
+   * the worst direction: the raw item still poisons, so a player who cooked it
+   * would eat a poisonous piece of meat for the rest of the run. There is no
+   * case for a default, so an unmapped name simply leaves the raw item sitting
+   * by the fire forever.
+   *
+   * Only five pairs exist, because those are the five `CanBeCooked` rows.
+   */
+  cookedFoodFor(raw: ItemModel): ItemModel | null {
+    const id: Record<number, number> = {
+      [ItemID.FOOD_RAW_FISH]: ItemID.FOOD_COOKED_FISH,
+      [ItemID.FOOD_RAW_RABBIT]: ItemID.FOOD_COOKED_RABBIT,
+      [ItemID.FOOD_RAW_CHICKEN]: ItemID.FOOD_COOKED_CHICKEN,
+      [ItemID.FOOD_RAW_DOG_MEAT]: ItemID.FOOD_COOKED_DOG_MEAT,
+      [ItemID.FOOD_RAW_HUMAN_FLESH]: ItemID.FOOD_COOKED_HUMAN_FLESH,
+    };
+    const cooked = id[raw.id];
+    return cooked === undefined ? null : Models.items.get(cooked);
+  }
+
+  /**
+   * Can `actor` cook `it`? Still Alive, Release 7-6.
+   *
+   * Four refusals, in the C#'s order, and each with the reason it gives: not
+   * food, no need to cook it, not in the actor's inventory, not next to a fire.
+   * The reason comes back with the answer rather than a bare boolean, because the
+   * C# uses it for the "you cannot cook this because ..." message and losing it
+   * would make the command silently do nothing. It is a returned field rather
+   * than a C#-style `out` parameter because TypeScript has no equivalent that
+   * reads well.
+   *
+   * Gated on `Feature.Cooking`: the "next to a fire" test walks eight
+   * neighbouring tiles, and returning true for classic would make an
+   * always-available command on a feature the ruleset does not have.
+   */
+  canActorCookFoodItem(actor: Actor, it: Item): { can: boolean; reason: string } {
+    if (!hasFeature(Session.get().ruleset, Feature.Cooking)) {
+      return { can: false, reason: "not available in this ruleset" };
+    }
+    if (!(it instanceof ItemFood)) {
+      return { can: false, reason: "not food" };
+    }
+    if (!it.canBeCooked) {
+      return { can: false, reason: "no need to cook it" };
+    }
+    if (actor.inventory === null || !actor.inventory.contains(it)) {
+      return { can: false, reason: "not in inventory" };
+    }
+    if (!this.isActorNextToFire(actor)) {
+      return { can: false, reason: "must be next to a fire" };
+    }
+    return { can: true, reason: "" };
+  }
+
+  /** The eight compass neighbours, as `Direction.COMPASS` in the C#. */
+  private isActorNextToFire(actor: Actor): boolean {
+    const map = actor.location.map;
+    if (!map) return false;
+    const pos = actor.location.position;
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        if (dx === 0 && dy === 0) continue;
+        const at = new Point(pos.x + dx, pos.y + dy);
+        if (!map.isInBounds(at.x, at.y)) continue;
+        const obj = map.getMapObjectAt(at.x, at.y);
+        if (obj !== null && obj.isOnFire) return true;
+      }
+    }
+    return false;
   }
 
   /**

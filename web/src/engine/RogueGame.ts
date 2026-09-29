@@ -3934,6 +3934,64 @@ export class RogueGame {
 		);
 	}
 
+	/**
+	 * Advance the cooking of anything lying on an alight map object, and swap a
+	 * finished piece of raw meat for its cooked twin. Still Alive, Release 7-6.
+	 *
+	 * The fork collects the finished pieces into a temporary inventory first, and
+	 * that ordering is load-bearing rather than incidental: it removes every
+	 * finished item from the tile *before* adding any replacement, so two pieces
+	 * of the same raw meat finishing on the same turn cannot consume each other
+	 * through the inventory it is being added back into.
+	 *
+	 * The cooked twin keeps the raw item's `bestBefore`, so cooking does not
+	 * silently make old meat fresh again -- a spoiled rabbit is still a spoiled
+	 * rabbit, it just no longer poisons. The twin is non-poisoning and
+	 * non-cookable, both from its own row.
+	 */
+	private CookFoodOnFires(map: Map): void {
+		// The gate is here rather than at the call site, so the method is safe to
+		// call from anywhere. The turn loop's own check was removed for the same
+		// reason `FoodPoisoning`'s recovery is gated inside its function: a caller
+		// that forgets the flag cooks under classic and nothing says so.
+		if (!hasFeature(this.m_Session.ruleset, Feature.Cooking)) return;
+		for (const obj of map.mapObjects) {
+			if (!obj.isOnFire) continue;
+			const inv = map.getItemsAt(obj.location.position);
+			if (inv === null || inv.countItems === 0) continue;
+
+			// Pull the finished pieces out first. `Map` has no "remove this
+			// instance" -- `removeAllQuantity` is by identity, and a new
+			// Inventory is what the C# does.
+			const finished: ItemFood[] = [];
+			for (const it of inv.items.slice()) {
+				if (!(it instanceof ItemFood)) continue;
+				if (!it.canBeCooked) continue;
+				if (it.cookedDegree >= it.maxCookedDegree) continue;
+				it.cookedDegree++;
+				if (it.cookedDegree >= it.maxCookedDegree) finished.push(it);
+			}
+			if (finished.length === 0) continue;
+
+			for (const raw of finished) {
+				const cookedModel = this.m_Rules.cookedFoodFor(raw.model);
+				if (cookedModel === null) {
+					// No twin: leave it cooked to the max rather than deleting the
+					// player's meat. Reachable only if a future raw row is added
+					// without a cooked one.
+					continue;
+				}
+				const pos = obj.location.position;
+				inv.removeAllQuantity(raw);
+				const cooked = new ItemFood(
+					cookedModel,
+					raw.bestBefore?.turnCounter,
+				);
+				map.dropItemAt(cooked, pos);
+			}
+		}
+	}
+
 	// C# NextMapTurn — RogueGame.cs:3178
 	// async: C# blocks on AddMessagePressEnter/AnimDelay (infection messages,
 	// corpse/zombie announcements) — those are awaitable in the port.
@@ -4222,6 +4280,13 @@ export class RogueGame {
 					}
 				}
 			}
+
+			// 3.5. Cook the meat (Still Alive, Release 7-6). Automatic and
+			// per-turn, not a player action -- the C# ticks every alight map
+			// object and advances whatever food is lying on it, so a piece left
+			// by a fire finishes on its own. Only the player's map needs this;
+			// the C# cooks NPC food instantly. Gated inside the method.
+			this.CookFoodOnFires(map);
 
 			// 4. Actor gauges & states
 			// Food poisoning clears itself (Still Alive, Release 7-6). Ahead of the

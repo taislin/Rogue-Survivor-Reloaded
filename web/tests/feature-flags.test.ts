@@ -153,12 +153,21 @@ describe("Feature registry is wired", () => {
     // Asserting the exact multiset means a new reader has to be added here, which
     // is the point: a reader is a decision, not an accident.
     expect(sites.map((s) => s.feature).sort())
-      .toEqual(["Alcohol", "ArmorResist", "FoodPoisoning", "FoodPoisoning",
-                "FoodPoisoning", "FoodPoisoning", "WeaponWeight"]);
+      .toEqual(["Alcohol", "ArmorResist", "Cooking", "Cooking", "FoodPoisoning",
+                "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
+                "WeaponWeight"]);
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     expect(at("Alcohol")).toMatch(/HeadlessRunner\.ts:\d+$/);
     expect(at("WeaponWeight")).toMatch(/Rules\.ts:\d+$/);
     expect(at("ArmorResist")).toMatch(/Rules\.ts:\d+$/);
+    // `Cooking` is two, like `FoodPoisoning`: the predicate in `Rules` beside the
+    // other "can this actor" questions, and the per-turn tick in `RogueGame`,
+    // which guards its own loop over map objects for the same reason
+    // `FoodPoisoning`'s sweep does.
+    const cook = sites.filter((s) => s.feature === "Cooking");
+    expect(cook.filter((s) => /Rules\.ts/.test(s.at))).toHaveLength(1);
+    expect(cook.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(1);
+
     // The food-poisoning readers are split two-and-two, so the file is asserted
     // per site rather than per feature.
     const poison = sites.filter((s) => s.feature === "FoodPoisoning");
