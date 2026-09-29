@@ -256,7 +256,19 @@ export enum ItemID {
   EXPLOSIVE_FUEL_CAN_PRIMED = 165,
   EXPLOSIVE_FUEL_PUMP_PRIMED = 166,
   EXPLOSIVE_PLASMA_CHARGE_PRIMED = 167,
-  _COUNT = 168,
+  /**
+   * Still Alive, Release 7-1. The two items `Feature.SiphonFuel` needs; both are
+   * appended, since a save stores ItemIDs by number and anything below 168 is a
+   * different item rather than a renamed one.
+   *
+   * `AMMO_FUEL` is deliberately *not* one of the six C#-only ammo rows left
+   * un-ported: `Feature.ItemDespawn`'s exemption list already names
+   * `AmmoType.FUEL` and had nothing to match it against, so the row lands here
+   * and that branch finally becomes reachable.
+   */
+  AMMO_FUEL = 168,
+  SIPHON_KIT = 169,
+  _COUNT = 170,
 }
 
 export class GameItems implements ItemModelDB {
@@ -779,6 +791,10 @@ export class GameItems implements ItemModelDB {
       [ItemID.AMMO_HEAVY_RIFLE, "heavy rifle bullets", GameImages.ITEM_AMMO_HEAVY_RIFLE, AmmoType.HEAVY_RIFLE, 20],
       [ItemID.AMMO_SHOTGUN, "shotgun shells", GameImages.ITEM_AMMO_SHOTGUN, AmmoType.SHOTGUN, 10],
       [ItemID.AMMO_BOLTS, "crossbow bolts", GameImages.ITEM_AMMO_BOLTS, AmmoType.BOLT, 30],
+      // Still Alive, Release 7-1. Stack limit 20, and that number is not
+      // cosmetic: `HandlePlayerSiphonFuel` clamps the stack to it, which is also
+      // why a `Car`'s tank is capped at 99 rather than at a day's burn.
+      [ItemID.AMMO_FUEL, "fuel", GameImages.ITEM_AMMO_FUEL, AmmoType.FUEL, 20],
     ];
     for (const [id, name, img, type, quantity] of ammo) {
       const model = new ItemAmmoModel(name, name, img, type, quantity);
@@ -786,6 +802,23 @@ export class GameItems implements ItemModelDB {
       model.flavorDescription = "";
       this.setModel(id, model);
     }
+
+    // Miscellaneous. Still Alive, Release 7-1.
+    //
+    // Hand-written rather than CSV-driven because there is no `Items_Misc.csv` in
+    // the merged pack, so there is no row to read. The siphon kit is a plain
+    // `ItemModel` -- not stackable, no special behaviour of its own; the *fuel* it
+    // produces is the `AMMO_FUEL` ammo row above.
+    const siphonKit = new ItemModel(
+      "siphon kit",
+      "siphon kits",
+      GameImages.ITEM_SIPHON_KIT,
+    );
+    siphonKit.isPlural = true;
+    siphonKit.flavorDescription =
+      "Siphon fuel from cars for chainsaws and flamethrowers.";
+    siphonKit.isStackable = false;
+    this.setModel(ItemID.SIPHON_KIT, siphonKit);
 
     // Traps
     const trapMap: Record<string, { id: ItemID; img: string }> = {

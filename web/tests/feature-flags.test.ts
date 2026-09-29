@@ -166,7 +166,8 @@ describe("Feature registry is wired", () => {
                  "FireBarrels", "FireBarrels", "FoodPoisoning",
                  "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
                  "FoodPoisoning", "FoodPoisoning", "ItemDespawn",
-                 "ItemDespawn", "LightPriority", "WeaponWeight"]);
+                 "ItemDespawn", "LightPriority", "SiphonFuel", "SiphonFuel",
+                 "WeaponWeight"]);
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     // `Alcohol`'s *first* reader is now in `RogueGame` (the per-turn decay), and
     // the harness line is one of six rather than the only one.
@@ -202,6 +203,16 @@ describe("Feature registry is wired", () => {
     expect(alc.filter((s) => /Rules\.ts/.test(s.at))).toHaveLength(2);
     expect(alc.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(4);
     expect(alc.filter((s) => /HeadlessRunner\.ts/.test(s.at))).toHaveLength(1);
+
+    // SiphonFuel has two readers in one file, and the second one is the
+    // interesting one: the `use` dispatch and the handler's own guard. The handler
+    // keeps its gate even though the only caller already checked, because it is
+    // the method a test -- and eventually an AI action -- will reach, and a method
+    // that is only safe because of its caller is a method with a precondition
+    // nobody wrote down.
+    const siphon = sites.filter((s) => s.feature === "SiphonFuel");
+    expect(siphon).toHaveLength(2);
+    expect(siphon.every((s) => /RogueGame\.ts/.test(s.at))).toBe(true);
 
     // DarknessGating has exactly one reader, in Rules, and that is the design
     // rather than an accident: five separate behaviours refuse in the dark

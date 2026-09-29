@@ -1378,7 +1378,7 @@ Stages 4 and 5 have not started.
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
 | **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles, 90 of 95 items and all 123 item factories done.** The 5 backpacks (a new mechanic) and ~420 unused `GameImages` constants are the only content left; nothing *calls* the new factories yet, which is placement and belongs to Stage 4/5 |
-| **4** | 37 gated features | **10 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (part 2a; the light-source scan in 2b is not done), `DarknessGating`, `LightPriority`, `Alcohol`. 27 remain |
+| **4** | 37 gated features | **11 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (part 2a; the light-source scan in 2b is not done), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`. 26 remain |
 | **5** | content, audio, credits | **not started** |
 
 Two things a later session should not have to re-derive:
@@ -2602,6 +2602,49 @@ plan for rather than discover:
 > mutates the shared NPC), and the "bandages get nobody drunk" test drove a path
 > that the waste check refused before the alcohol block was reached. Both passed
 > with the corresponding mutation applied.
+
+> ### `SiphonFuel` — done, and the first feature that only needed content
+>
+> Draining a wrecked car into a fuel stack. Still Alive, Release 7-1, plus the
+> Release 7-3 fuel pump. The only feature so far whose *entire* prerequisite was
+> two missing item rows rather than a new mechanic — and it went in quickly because
+> `Car` and its `fuelUnits` already existed from the `FireBarrels` work.
+>
+> **The mechanic is a unit conversion with an asymmetry**: the tank becomes an ammo
+> stack, clamped to `AMMO_FUEL`'s limit of 20, and whatever the inventory will not
+> take is left in the car. You drain what you can carry and the rest stays put.
+> That is also why `Car`'s tank is capped at 99 rather than at a day's burn — 99 is
+> the siphonable total, not a burn time.
+>
+> Two details that are easy to miss and both are mutation-tested:
+>
+> - **One car per turn.** The C# returns out of the adjacency callback on the first
+>   success, so a survivor standing between two wrecks gets one tank's worth.
+> - **The 10% chance of drinking some** rolls per *successful* car, not per
+>   attempt, and fires *after* the fuel is banked — so you keep the fuel and
+>   still get sick.
+>
+> The fuel pump is the Release 7-3 arm and needs no fuel of its own: a pump is
+> unpowered, so siphoning from one is refused with **its own message** rather than
+> the generic "no cars" one. Both are pinned, because collapsing them into one
+> message tells the player something they cannot act on — the inventory-full case
+> is the other distinct message, and a survivor between a live car and a dead pump
+> gets fuel rather than an excuse.
+>
+> **The two items are appended, not read from a CSV.** `AMMO_FUEL` is an
+> `ItemAmmoModel` with `AmmoType.FUEL`; `SIPHON_KIT` is a hand-written plain
+> `ItemModel` because there is no `Items_Misc.csv` in the merged pack. Both ids sit
+> above the old enum, per the append-only rule — a save stores ItemIDs by number.
+>
+> `AMMO_FUEL` also **closes a gap left by `ItemDespawn`**: that feature's
+> exemption list names `AmmoType.FUEL` and has had nothing to match it against since
+> it landed, so one of its four ammo exemptions was unreachable. It is live now,
+> and the test says so rather than leaving the exemption looking decorative.
+>
+> Six mutations, each caught. The handler keeps its own `hasFeature` guard even
+> though its only caller already checks — a method that is safe only because of
+> its caller is a method with a precondition nobody wrote down, and it is the
+> method a test (and eventually an AI action) reaches directly.
 
 > ### `ArmorResist` — half done, and the half is not the one the table implies
 >

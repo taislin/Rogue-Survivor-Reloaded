@@ -29,7 +29,7 @@ import { Inventory } from "@data/Inventory";
 import { Item } from "@data/Item";
 import { Location } from "@data/Location";
 import { Exit, Lighting, Map } from "@data/Map";
-import { Barrel, Campfire } from "@engine/mapobjects/MapObjects";
+import { Barrel, Campfire, Car } from "@engine/mapobjects/MapObjects";
 import { MapObject, MapObjectBreak, MapObjectFire } from "@data/MapObject";
 import { Message } from "@data/Message";
 import { Models } from "@data/Models";
@@ -17692,6 +17692,14 @@ export class RogueGame {
 		//else if (it instanceof ItemSprayScent)  // alpha10 new way to use spray scent
 		//    this.DoUseSprayScentItem(actor, it);
 		else if (it instanceof ItemTrap) this.DoUseTrapItem(actor, it);
+		// Still Alive, Release 7-1: using a siphon kit drains an adjacent car.
+		// Placed before the fallthrough so a kit is never silently consumed.
+		else if (
+			hasFeature(this.m_Session.ruleset, Feature.SiphonFuel) &&
+			it.model.id === ItemID.SIPHON_KIT
+		) {
+			this.HandlePlayerSiphonFuel();
+		}
 		else if (it instanceof ItemEntertainment) {
 			// Release 6-2: too dark to read. Unlike medicine this has no carve-out
 			// -- there is no "but you can smoke while reading".
@@ -21081,6 +21089,108 @@ export class RogueGame {
 	/// Put the object on fire : firestate = onfire, jump -1.
 	/// </summary>
 	/// <param name="mapObj"></param>
+	/**
+	 * Siphon fuel out of an adjacent wrecked car.
+	 *
+	 * Still Alive, Release 7-1 (`RogueGame.cs:14248`), plus the Release 7-3 fuel
+	 * pump. Reached by *using* a siphon kit, not by a `PlayerCommand` — which is
+	 * why there is no new command in the enum.
+	 *
+	 * The mechanic is a unit conversion: a `Car`'s tank is read as an ammo stack,
+	 * clamped to `AMMO_FUEL`'s stack limit, and whatever the inventory will not
+	 * take is left in the car. That asymmetry is the whole design — you drain what
+	 * you can carry and the rest stays put — and it is also why `Car`'s tank is
+	 * capped at 99 rather than at a day's burn.
+	 *
+	 * Two details that are easy to miss:
+	 *
+	 * - **One car per turn.** The C# `return`s out of the adjacency callback on
+	 *   the first successful car, so a survivor standing between two wrecks gets
+	 *   one tank's worth, not two.
+	 * - **The 10% chance of drinking some.** A siphon hose has its obvious hazard.
+	 *   It rolls per *successful* car, not per attempt, and it fires after the fuel
+	 *   has already been banked.
+	 *
+	 * The fuel pump branch is Release 7-3 and needs no fuel of its own: a pump is
+	 * unpowered, so siphoning from one is refused with its own message rather than
+	 * the generic "no cars" one.
+	 */
+	HandlePlayerSiphonFuel(): boolean {
+		if (!hasFeature(this.m_Session.ruleset, Feature.SiphonFuel)) return false;
+
+		const map = this.m_Player.location.map!;
+		let refuelled = false;
+		let fueledCar = false;
+		let pumpAdjacent = false;
+
+		for (const d of Direction.COMPASS) {
+			const pt = d.applyTo(this.m_Player.location.position);
+			if (!map.isInBounds(pt.x, pt.y)) continue;
+			const mapObj = map.getMapObjectAtPoint(pt);
+			if (mapObj === null) continue;
+
+			if (mapObj instanceof Car) {
+				if (mapObj.fuelUnits <= 0) continue;
+				fueledCar = true;
+
+				const limit = Models.items.get(ItemID.AMMO_FUEL).stackingLimit;
+				const stack = new ItemAmmo(Models.items.get(ItemID.AMMO_FUEL));
+				stack.quantity = Math.min(mapObj.fuelUnits, limit);
+				const added = this.m_Player.inventory!.addAsMuchAsPossible(stack)
+					.quantityAdded;
+				mapObj.fuelUnits -= added;
+
+				// One car per turn, and the roll is per successful car.
+				if (added > 0) {
+					if (this.m_Rules.rollChance(Rules.VOMIT_WHILE_SIPHONING_CHANCE)) {
+						this.DoVomit(this.m_Player);
+						this.AddMessage(
+							this.MakeMessage(
+								this.m_Player,
+								"accidentally drank a bit of fuel",
+							),
+						);
+					}
+					refuelled = true;
+					break;
+				}
+			} else if (mapObj.imageId === GameImages.OBJ_FUEL_PUMP) {
+				pumpAdjacent = true;
+			}
+		}
+
+		if (refuelled) return true;
+		if (pumpAdjacent) {
+			this.AddMessage(
+				new Message(
+					"Fuel pumps need power. It's not possible to siphon from them.",
+					this.m_Session.worldTime.turnCounter,
+					Color.Red,
+				),
+			);
+			return false;
+		}
+		if (!fueledCar) {
+			this.AddMessage(
+				new Message(
+					"Not adjacent to any cars with fuel left.",
+					this.m_Session.worldTime.turnCounter,
+					Color.Red,
+				),
+			);
+			return false;
+		}
+		// A car was there with fuel, but the inventory took none of it.
+		this.AddMessage(
+			new Message(
+				"Cannot siphon fuel; inventory already full.",
+				this.m_Session.worldTime.turnCounter,
+				Color.Red,
+			),
+		);
+		return false;
+	}
+
 	/**
 	 * Whether the player is drunk enough to lose control of an action.
 	 *

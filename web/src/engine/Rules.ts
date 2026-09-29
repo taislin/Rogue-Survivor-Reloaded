@@ -192,6 +192,8 @@ export class Rules {
   private static readonly FIRING_WHEN_HAMMERED = 0.66;
   private static readonly FIRING_WHEN_DRUNK = 0.75;
   private static readonly FIRING_WHEN_TIPSY = 0.95;
+  /** Still Alive, Release 7-1. The siphon hose has its hazard. */
+  static readonly VOMIT_WHILE_SIPHONING_CHANCE = 10;
   /**
    * The whole Release 6-2 FOV rebalance, in one place.
    *
