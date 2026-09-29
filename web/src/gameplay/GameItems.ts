@@ -270,6 +270,17 @@ export class GameItems implements ItemModelDB {
     // the ItemID enum today, but a positional loop over a CSV is exactly the
     // bug that had 9 of 27 actors reading each other's stats (see GameActors
     // and Actors.csv), and this table had no reason to be the exception.
+    // Still Alive, Release 5-7 (`ItemModel.isRecreational`): the five items that
+    // are medicine only so they can restore a point of sanity. The fork's
+    // `GameItems.cs` sets the flag on exactly these five and no others.
+    const RECREATIONAL_MEDICINES = new Set<ItemID>([
+      ItemID.MEDICINE_ALCOHOL_BEER_BOTTLE_GREEN,
+      ItemID.MEDICINE_ALCOHOL_BEER_CAN_BLUE,
+      ItemID.MEDICINE_ALCOHOL_BEER_CAN_RED,
+      ItemID.MEDICINE_CIGARETTES,
+      ItemID.MEDICINE_ENERGY_DRINK,
+    ]);
+
     const medMap: Record<string, { id: ItemID; img: string; plural: boolean }> = {
       // IsPlural is set on everything except the medikit (GameItems.cs:703,
       // 718, 727, 735, 743).
@@ -304,6 +315,13 @@ export class GameItems implements ItemModelDB {
       model.isPlural = meta.plural;
       model.stackingLimit = d.STACKING;
       model.flavorDescription = d.FLAVOR ?? "";
+      // Still Alive, Release 5-7. The five boozes-and-smokes: they are
+      // ItemMedicine so they can restore sanity, and this flag is what lets
+      // every other "is it medicine?" question tell them apart. Set by ID
+      // rather than by a CSV column because the merged table has no such
+      // column, and adding one would mean teaching the merge script about a
+      // field the classic tables do not have.
+      model.isRecreational = RECREATIONAL_MEDICINES.has(meta.id);
       this.setModel(meta.id, model);
     }
 

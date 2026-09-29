@@ -155,8 +155,8 @@ describe("Feature registry is wired", () => {
     expect(sites.map((s) => s.feature).sort())
       .toEqual(["Alcohol", "ArmorResist", "Cooking", "Cooking", "FireBarrels",
                 "FireBarrels", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-                "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-                "WeaponWeight"]);
+                "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "ItemDespawn",
+                "ItemDespawn", "WeaponWeight"]);
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     expect(at("Alcohol")).toMatch(/HeadlessRunner\.ts:\d+$/);
     expect(at("WeaponWeight")).toMatch(/Rules\.ts:\d+$/);
@@ -185,6 +185,11 @@ describe("Feature registry is wired", () => {
     // point: the generator decides what a barrel *is*, the turn loop decides what
     // a lit barrel *does*. Collapsing either into a helper would hide the flag
     // behind an abstraction and make the count the only place it shows up.
+    // ItemDespawn is two readers in two files for the same reason FireBarrels is:
+    // the drop decides what becomes litter, the turn loop decides when litter goes.
+    const despawn = sites.filter((s) => s.feature === "ItemDespawn");
+    expect(despawn.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(2);
+
     const barrels = sites.filter((s) => s.feature === "FireBarrels");
     expect(barrels.filter((s) => /BaseMapGenerator\.ts/.test(s.at))).toHaveLength(1);
     expect(barrels.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(1);

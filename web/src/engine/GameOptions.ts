@@ -62,6 +62,8 @@ export enum OptionIDs {
   GAME_SKELETONS_UPGRADE,
   GAME_SHAMBLERS_UPGRADE,
   GAME_AUTOSAVE_PERIOD, // alpha10.1
+  /** Still Alive, Release 7-6. Appended: the ID is stored by number in saves. */
+  GAME_DAYS_BEFORE_ITEM_DESPAWNS,
   UI_SPRITE_STYLE, // browser port
   UI_FONT_CHOICE, // browser port
   UI_VIEW_MODE, // browser port
@@ -125,6 +127,8 @@ export class GameOptions {
   static readonly DEFAULT_MAX_REINCARNATIONS = 1;
   static readonly DEFAULT_NATGUARD_FACTOR = 100;
   static readonly DEFAULT_SUPPLIESDROP_FACTOR = 100;
+  /** Still Alive, Release 7-6. Four days, and the option is `--` not clamped. */
+  static readonly DEFAULT_DAYS_BEFORE_ITEM_DESPAWNS = 4;
   static readonly DEFAULT_ZOMBIFIEDS_UPGRADE_DAYS: ZupDays = ZupDays.THREE;
   static readonly DEFAULT_AUTOSAVE_PERIOD = 24; // alpha10.1
   static readonly DEFAULT_SPRITE_STYLE: ImageSet = DEFAULT_IMAGE_SET;
@@ -173,6 +177,7 @@ export class GameOptions {
   private m_AggressiveHungryCivilians = false;
   private m_NatGuardFactor = 0;
   private m_SuppliesDropFactor = 0;
+  private m_DaysBeforeDiscardedItemDespawns = 0;
   private m_ShowTargets = false;
   private m_ShowPlayerTargets = false;
   private m_ZupDays: ZupDays = ZupDays.OFF;
@@ -506,6 +511,21 @@ export class GameOptions {
     this.m_SuppliesDropFactor = value;
   }
 
+  /**
+   * How many in-game days a junk item an NPC dropped may sit before it goes.
+   *
+   * Still Alive, Release 7-6. The default of 4 is a *deferral*, not a
+   * cleanup: the despawn sweep only runs once the world clock is already past
+   * `days * TURNS_PER_DAY`, so on a short run nothing is ever swept at all.
+   */
+  get daysBeforeDiscardedItemDespawns(): number {
+    return this.m_DaysBeforeDiscardedItemDespawns;
+  }
+  set daysBeforeDiscardedItemDespawns(value: number) {
+    if (value < 0) value = 0;
+    this.m_DaysBeforeDiscardedItemDespawns = value;
+  }
+
   get showTargets(): boolean {
     return this.m_ShowTargets;
   }
@@ -669,6 +689,8 @@ export class GameOptions {
     this.m_AggressiveHungryCivilians = true;
     this.m_NatGuardFactor = GameOptions.DEFAULT_NATGUARD_FACTOR;
     this.m_SuppliesDropFactor = GameOptions.DEFAULT_SUPPLIESDROP_FACTOR;
+    this.m_DaysBeforeDiscardedItemDespawns =
+      GameOptions.DEFAULT_DAYS_BEFORE_ITEM_DESPAWNS;
     this.m_ShowTargets = true;
     this.m_ShowPlayerTargets = true;
     this.m_ZupDays = GameOptions.DEFAULT_ZOMBIFIEDS_UPGRADE_DAYS;
@@ -798,6 +820,8 @@ export class GameOptions {
         return "  (Help) Show Player Targets";
     case OptionIDs.GAME_AUTOSAVE_PERIOD:
       return "  (Save) AutoSave Period"; // alpha10.1
+    case OptionIDs.GAME_DAYS_BEFORE_ITEM_DESPAWNS: // Still Alive, Release 7-6
+      return "   (Map) Days before a junk item despawns";
     case OptionIDs.UI_SPRITE_STYLE:
       return "  (Gfx) Sprite Style";
     case OptionIDs.UI_FONT_CHOICE:
@@ -918,6 +942,10 @@ export class GameOptions {
         return "When mouse over an actor, will draw icons on actors that are targeting, are targeted or are in group with this actor.";
       case OptionIDs.UI_SHOW_PLAYER_TARGETS:
         return "Will draw icons on actors that are targeting you.";
+    case OptionIDs.GAME_DAYS_BEFORE_ITEM_DESPAWNS: // Still Alive, Release 7-6
+      return "The number of in-game days at which point an item that a non-follower NPC discarded get despawned.\n" +
+        "Only applies to common, low-value items. Doesn't affect items dropped by the player or their followers.\n" +
+        "Does not apply to items in the player or an NPCs's inventory or bank safe.";
     case OptionIDs.GAME_AUTOSAVE_PERIOD: // alpha10.1
       return "Will autosave at regular intervals when you start sleeping, start a long wait or change map.\nManually saving the game will reschedule the next autosave.";
     case OptionIDs.UI_SPRITE_STYLE:
@@ -1158,6 +1186,8 @@ export class GameOptions {
         return this.showPlayerTargets ? "ON    (default ON)" : "OFF   (default ON)";
       case OptionIDs.UI_SHOW_TARGETS:
         return this.showTargets ? "ON    (default ON)" : "OFF   (default ON)";
+    case OptionIDs.GAME_DAYS_BEFORE_ITEM_DESPAWNS: // Still Alive, Release 7-6
+      return `${this.daysBeforeDiscardedItemDespawns.toString().padStart(3)}  (default ${GameOptions.DEFAULT_DAYS_BEFORE_ITEM_DESPAWNS})`;
     case OptionIDs.GAME_AUTOSAVE_PERIOD: // alpha10.1
       return `${(this.autoSavePeriodInHours === 0 ? "OFF" : `${this.autoSavePeriodInHours}h`).padEnd(4)}  (default ${GameOptions.DEFAULT_AUTOSAVE_PERIOD}h)`;
     case OptionIDs.UI_SPRITE_STYLE:

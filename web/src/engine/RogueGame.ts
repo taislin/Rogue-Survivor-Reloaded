@@ -88,7 +88,7 @@ import {
 	ItemExplosive,
 	type ItemExplosiveModel,
 	ItemGrenade,
-	type ItemGrenadeModel,
+	ItemGrenadeModel,
 	ItemGrenadePrimed,
 	type ItemGrenadePrimedModel,
 	ItemPrimedExplosive,
@@ -110,6 +110,7 @@ import { ItemTrap } from "@engine/items/ItemTrap";
 import {
 	AmmoType,
 	ItemAmmo,
+	type ItemAmmoModel,
 	ItemMeleeWeapon,
 	ItemMeleeWeaponModel,
 	ItemRangedWeapon,
@@ -3706,6 +3707,12 @@ export class RogueGame {
 						),
 					);
 				}
+
+				// Still Alive, Release 7-6: age out NPC litter. This fires on
+				// *any* day-phase change -- morning to afternoon, afternoon to
+				// evening, and so on -- not only at dawn, which is what the C# does
+				// and why the sweep runs up to four times a day rather than once.
+				this.DespawnJunkInDistrict(district);
 			}
 
 			// alpha10
@@ -17261,6 +17268,12 @@ export class RogueGame {
 				map.removeItemAt(it, position);
 		}
 
+		// Still Alive, Release 7-6: picked up is no longer junk, so the clock
+		// restarts if it is dropped again. Unconditional rather than gated --
+		// the field is only ever set when the feature is on, so there is nothing
+		// to clear under CLASSIC, and the write makes "rescued" true either way.
+		it.droppedOnTurnNumber = null;
+
 		// message
 		if (
 			this.IsVisibleToPlayer(actor) ||
@@ -17526,6 +17539,18 @@ export class RogueGame {
 
 		// make sure it is unequipped.
 		it.equippedPart = DollPart.NONE;
+
+		// Still Alive, Release 7-6: only an NPC's litter is allowed to rot. The
+		// `!==` rather than `===` matters, and matches the C#: the player's own
+		// drops are never stamped, and neither is a follower's, so a companion
+		// handing you down their last bandage cannot lose it to the sweep.
+		if (
+			hasFeature(this.m_Session.ruleset, Feature.ItemDespawn) &&
+			actor !== this.m_Player &&
+			actor.leader !== this.m_Player
+		) {
+			this.ApplyItemTurnTracker(it);
+		}
 	}
 
 	// C# DropCloneItem — RogueGame.cs:15168
@@ -20918,6 +20943,120 @@ export class RogueGame {
 				--obj.fuelUnits;
 				if (obj.fuelUnits <= 0) this.UnapplyOnFire(obj);
 			}
+		}
+	}
+
+	/**
+	 * Mark an item as junk that an NPC has discarded, so the sweep can age it out.
+	 *
+	 * Still Alive, Release 7-6 (`RogueGame.cs:21451`).
+	 *
+	 * The whole feature is this whitelist read upside down. Everything the player
+	 * might still want is *exempted* here, and only what falls off the end gets a
+	 * timestamp. So the order is a performance list -- most-commonly-dropped first,
+	 * as the C# comments -- and getting an exemption wrong means the item
+	 * disappears from a map the player is looking at.
+	 *
+	 * Two of the C#'s exemptions are **not** ported, and it is worth saying which
+	 * and why:
+	 *
+	 * - `SLEEPING_BAG` and `FISHING_ROD` do not exist as items in the port
+	 *   (`Fishing` is still pending), so the branch has nothing to compare against.
+	 * - `ItemBackpack` does not exist either (`ShelterBackpacks` is pending). The
+	 *   C# exempts backpacks in *both* this function and the sweep; when that
+	 *   feature lands, both sites must be revisited together, or stashed
+	 *   backpacks will start rotting.
+	 *
+	 * The `isRecreational` test is the interesting one. Beer, cigarettes and energy
+	 * drinks are all `ItemMedicine` -- historically, to restore a point of sanity --
+	 * so a bare "is it medicine" keeps every dropped beer bottle forever, which is
+	 * exactly the clutter this feature exists to remove. The flag is why the C#
+	 * reads "keep all medicine *except booze*".
+	 */
+	private ApplyItemTurnTracker(it: Item): void {
+		if (it instanceof ItemMedicine && !it.model.isRecreational) return;
+		if (it instanceof ItemEntertainment) return;
+		if (it instanceof ItemFood) return;
+		// The C# tests `it is ItemGrenade`, a *subclass* of `ItemExplosive`, so a
+		// stick of dynamite or a smoke grenade is not exempt and does rot. The
+		// port has the same subclass, so this is a direct transcription.
+		if (it instanceof ItemGrenade) return;
+		if (it instanceof ItemAmmo) {
+			// Some ammo is early-game clutter; the four below are the guns a
+			// survivor is likely to still be using when the sweep starts.
+			const t = (it.model as ItemAmmoModel).ammoType;
+			if (
+				t !== AmmoType.BOLT &&
+				t !== AmmoType.LIGHT_PISTOL &&
+				t !== AmmoType.NAIL &&
+				t !== AmmoType.FUEL
+			) {
+				return;
+			}
+		}
+		if (it instanceof ItemTrap && it.model.id !== ItemID.TRAP_EMPTY_CAN) return;
+		if (it.isUnique || it.isForbiddenToAI) return;
+		it.droppedOnTurnNumber = this.m_Session.worldTime.turnCounter;
+	}
+
+	/**
+	 * Age out junk an NPC dropped, once the world is old enough to care.
+	 *
+	 * Still Alive, Release 7-6 (`RogueGame.cs:9062`).
+	 *
+	 * Two details that are easy to get wrong:
+	 *
+	 * - **The sweep skips tiles the player can see.** An item vanishing in plain
+	 *   sight is a bug, not cleanup, so a visible tile is never even scanned.
+	 * - **The comparison is `>=` against a whole number of days**, and the
+	 *   caller's outer guard is `worldTurn > days * TURNS_PER_DAY`. So an item
+	 *   stamped exactly `days` days ago is removed only on the *next* sweep, which
+	 *   is a day later than the number in the option suggests.
+	 *
+	 * Iterating a copy of the item list matters: `removeItemAt` mutates the
+	 * inventory this loop is walking.
+	 */
+	private DeleteItemsSittingIdle(map: Map, currentTurn: number): void {
+		const days = RogueGame.Options().daysBeforeDiscardedItemDespawns;
+		if (days <= 0) return;
+		for (let x = 0; x < map.width; x++) {
+			for (let y = 0; y < map.height; y++) {
+				if (this.IsVisibleToPlayer(map, new Point(x, y))) continue;
+				const inv = map.getItemsAt(new Point(x, y));
+				if (inv === null) continue;
+				for (const it of inv.items.slice()) {
+					if (it.droppedOnTurnNumber === null) continue;
+					const idleTurns = currentTurn - it.droppedOnTurnNumber;
+					if (idleTurns >= days * WorldTime.TURNS_PER_DAY) {
+						map.removeItemAt(it, new Point(x, y));
+					}
+				}
+			}
+		}
+	}
+
+	/**
+	 * Run the despawn sweep for every map in a district.
+	 *
+	 * The `>` rather than `>=` is the C#'s: the sweep does not start until the
+	 * world clock is strictly past one full despawn window, so a short game never
+	 * sweeps anything at all.
+	 *
+	 * The feature gate lives *here* rather than at the turn-loop call site, beside
+	 * the other guard, for two reasons. It keeps the two conditions in one place,
+	 * where a reader can see that both must hold; and it means the flag is covered
+	 * by the same tests as the rate limit, instead of being untestable turn-loop
+	 * plumbing that only a source scanner can vouch for. A gate at the call site
+	 * is a gate nobody can mutate-check.
+	 */
+	private DespawnJunkInDistrict(district: District): void {
+		if (!hasFeature(this.m_Session.ruleset, Feature.ItemDespawn)) return;
+		if (this.m_Session.worldTime.turnCounter <=
+			RogueGame.Options().daysBeforeDiscardedItemDespawns * WorldTime.TURNS_PER_DAY) {
+			return;
+		}
+		for (const map of district.maps) {
+			this.DeleteItemsSittingIdle(map, map.localTime.turnCounter);
 		}
 	}
 

@@ -1378,7 +1378,7 @@ Stages 4 and 5 have not started.
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
 | **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles, 90 of 95 items and all 123 item factories done.** The 5 backpacks (a new mechanic) and ~420 unused `GameImages` constants are the only content left; nothing *calls* the new factories yet, which is placement and belongs to Stage 4/5 |
-| **4** | 37 gated features | **5 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them). 32 remain |
+| **4** | 37 gated features | **6 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`. 31 remain |
 | **5** | content, audio, credits | **not started** |
 
 Two things a later session should not have to re-derive:
@@ -2313,6 +2313,74 @@ plan for rather than discover:
 > deliberately. `isMetal` is read by other features — fuel stations, the fuel-pump
 > explosion — and adding a flag to a core class as a side effect of a generator
 > is how that goes wrong.
+
+> ### `ItemDespawn` — done, and it is a whitelist read upside down
+>
+> The smallest of the remaining features and the only one that needed almost no
+> new machinery: one nullable int on `Item`, one game option, and ~75 lines of
+> plain code. The port's graph writer carried the field with no spec entry, the
+> same as `Actor.isFoodPoisoned`, so serialization cost nothing — worth knowing,
+> because budgeting it would have been the obvious mistake.
+>
+> The logic is a list of **exemptions**. `ApplyItemTurnTracker` returns early for
+> everything worth keeping and stamps whatever falls off the end; the sweep later
+> deletes what has aged out. So the bug surface is a mistake in the *keep* list,
+> and the failure mode is an item vanishing from a map the player is looking at.
+> The test asserts each exemption individually for that reason.
+>
+> **The ammo line reads backwards, and the C#'s own comment is what saves you.**
+> It is:
+>
+> ```csharp
+> if (ammo.AmmoType != BOLT && != LIGHT_PISTOL && != NAIL && != FUEL) return;
+> ```
+>
+> A `return` in this whitelist is an exemption, so the four *named* types are the
+> ones that fall through and get deleted — not the ones that are kept. The
+> comment above it says as much ("nails, crossbows and pistols are early-game
+> weps … thus these are just clutter"). Porting this as "the four that are kept"
+> inverts the feature, and **the first draft of this test did exactly that** and
+> passed, because the tests asserted the inverted reading. Only mutation caught
+> it. The C#'s `ItemGrenade` is likewise a *subclass* of `ItemExplosive`, so a
+> dynamite stick is not exempt and does rot.
+>
+> Three further details that are easy to get wrong, and two of which the tests
+> were wrong about first:
+>
+> - **`isRecreational` is the whole reason beer is allowed to rot.** Beer,
+>   cigarettes and energy drinks are all `ItemMedicine` — historically so they
+>   can restore sanity — so a bare "is it medicine" preserves every dropped
+>   bottle forever, which is precisely the clutter the feature exists to remove.
+>   The fork sets the flag on exactly five items and no others.
+> - **The sweep skips visible tiles**, so an item cannot vanish in plain sight.
+>   The guard reads `tile.isInView`, which nothing computes in a unit test — the
+>   first version of that test passed because *no* tile was visible, i.e. for the
+>   wrong reason, and now asserts `isInView` before relying on it.
+> - **Two clocks.** The rate-limit guard reads the *session's* world time; the
+>   ageing reads the *map's* local time. Advancing only one exercises the early
+>   return, so the tests set both.
+>
+> The `>=` boundary on the age is off-by-one-ish (`>` would mean "the day
+> *after*"), and no other test in the file lands on it, so there is a dedicated
+> one that sets the two clocks to deliberately different values.
+>
+> **The feature gate lives inside `DespawnJunkInDistrict`, not at the turn-loop
+> call site.** That is a deliberate change from the C# and from how the earlier
+> features were wired. At the call site the gate is turn-loop plumbing that only
+> a source scanner can vouch for, and a mutation that deletes it fails nothing;
+> inside the method it sits beside the other guard and the "does nothing under
+> CLASSIC" test is a real test of the flag. *A gate at the call site is a gate
+> nobody can mutation-check.*
+>
+> Two of the C#'s exemptions are deliberately **not** ported, and both need
+> revisiting when their feature lands: `SLEEPING_BAG` and `FISHING_ROD` do not
+> exist as items yet, and `ItemBackpack` does not either — the C# exempts
+> backpacks in *both* this method and the sweep, so when `ShelterBackpacks`
+> arrives both sites must change together or stashed backpacks will start rotting.
+>
+> Sixteen mutations, each caught. Three of the first six did not fail, and each
+> was a test bug rather than an implementation bug: two used `AMMO_SHOTGUN`,
+> which is exempt and so was never stamped, making the assertion vacuous.
 
 > ### `ArmorResist` — half done, and the half is not the one the table implies
 >
