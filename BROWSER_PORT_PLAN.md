@@ -1375,7 +1375,7 @@ Stages 4 and 5 have not started.
 |---|---|---|
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
-| **3** | merged content pack | **data tables done, uncommitted.** Sprites, ids, maps, `GameImages` **not started** |
+| **3** | merged content pack | **data tables + sprite files done.** `GameImages` constants, `ItemID`/`ActorID`, the 12 image maps and `makeItem*` factories **not started** — the hand-edited remainder |
 | **4** | 37 gated features | **not started** — the bulk of the work |
 | **5** | content, audio, credits | **not started** |
 
@@ -1387,10 +1387,19 @@ Two things a later session should not have to re-derive:
   Alive tuning are *not* in the data. They are Stage 4 work, and the list is in
   `merge-content-tables.py`'s output, not only in prose. `ItemID` and
   `PlayerCommand` are append-only and still must be.
-- **Two claims in the subsections below were written before the fork was opened
-  and are now known to be wrong**: the row-growth estimates in §5.6d (low on
-  almost every table) and the `TileID` cost (the flagged "one genuinely new
-  cost" turned out to need no `src/` change at all). Both are corrected in place.
+- **"Ours wins" applies to the sprites too, and there it costs something the
+  CSVs did not.** The fork re-drew **66** of the 349 shared sprites. For the
+  CSVs a discarded value can be re-read from the merge script's output, but for
+  art there is nowhere to keep the fork's version — it is simply not copied and
+  exists only in `_refs/`. Carrying both needs a Still-Alive-specific id or a
+  per-ruleset image map, which is a Stage 5 decision. `merge-sprite-sets.py`
+  prints the 66.
+- **Three claims in the subsections below were written before the fork was
+  opened and are now known to be wrong**, each corrected in place: the
+  row-growth estimates in §5.6d (low on almost every table); the `TileID` cost
+  (the flagged "one genuinely new cost" turned out to need no `src/` change at
+  all); and the weather/rot sprite collision (it does not exist — `imagePathIn`
+  permits subpaths, so the merge just left 14 unreferenced files).
 
 Gate: `cd web && npm run verify` — **992 tests across 64 files, green** as of
 the data-merge commit. `BROWSER_PORT_PLAN.md` §5.6d is the only place the data
@@ -1714,36 +1723,48 @@ strictly appended. Mutation-checked — it fails when `FOOD_ARMY_RATION`'s
 nutrition is set to the fork's 0.33, which is exactly the accident it exists to
 prevent.
 
-**Sprites** — 711 files, and this part is genuinely a script run. Drop them into
-`web/public/assets/images/classic/` (397 → ~1 108) at the same relative paths —
-349 are byte-identical to ours and 48 are ours-only, so the merge is mostly
-additive — then:
+**Sprites — files on disk done, `GameImages` constants not.** The set is now
+397 → **1 108 files**, added by `scripts/merge-sprite-sets.py` and converted by
+the existing `optimize-sprites.py` (which re-decodes every file it writes and
+aborts the whole run on one mismatch; 711 verified faithful, 652.9 KB →
+324.2 KB). Verified by sha256 snapshot: **all 397 original sprites byte-identical,
+0 modified, 0 removed.**
 
-```sh
-cd web
-python3 scripts/optimize-sprites.py            # dry run: reports only
-python3 scripts/optimize-sprites.py --apply    # converts, deletes the PNGs
-```
+Merged into `classic` rather than added as a fifth set, as this section already
+decided: `sprite-style-option.test.ts` asserts the largest set *is* `classic`,
+because the per-id fallback retries against it, and a larger separate set would
+invert that so every other set silently loaded Still Alive art.
 
-The script is all-or-nothing: it re-decodes every file it writes and compares
-against the source, and a single mismatch aborts the whole run having touched
-nothing (`optimize-sprites.py:161-182`). It reads only
-`public/assets/images` (`:38-39`), so the C# tree's 398 PNGs are not in scope.
-Two traps: `rglob("*.png")` is case-sensitive, and the fork ships
-`Images/shopping_mall plan.png` with a literal space, which needs a rename
-because `imagePathIn` does not encode (`AssetPaths.ts:107`).
+Same ours-wins policy as the CSV merge, and it turned out to matter more here.
+Measured on canonicalised pixels: of the 349 ids both trees have, **283 are
+identical and 66 are re-drawn by the fork** — recoloured pills, re-skinned
+survivors, a re-textured `Tiles/rail_ew` (ours is a 938-colour noisy texture,
+theirs a 417-colour one), and all eight shop frontages on the district tiles.
+Overwriting would change classic's appearance with no flag near it.
 
-Decision needed on the **weather/rot collision**: the fork puts `weather_rain1`,
-`rot1_1`…`rot5_2` under `Effects/`, we keep them at the image-set root
-(`GameImages.ts:401-415`). The merge produces both, so 14 constants need
-repointing or one location needs deleting.
+**The difference from the CSV merge, and Stage 5's debt.** Art is not a number,
+so there is nowhere to *keep* the fork's version the way the discarded CSV
+values can be re-read from the merge script's output. For those 66 the fork's
+art is simply not copied, and it exists only in `_refs/`. Carrying both needs a
+Still-Alive-specific id or a per-ruleset image map, which is Stage 5's call, not
+a file copy. `merge-sprite-sets.py` prints the list. One rename was forced:
+`shopping_mall plan.png` → `shopping_mall_plan`, because `imagePathIn` builds
+the URL by concatenation and does not encode, so a space 404s.
 
-If the sprites instead ship as a **fifth image set**, the cost is three edits —
-`AssetPaths.ts:50-56`, the prose in `GameOptions.ts:923-924`, and the hard-coded
-list in `sprite-style-option.test.ts:77-82` — but `sprite-style-option.test.ts:122-130`
-asserts the *largest* set **is** `classic`, because the per-id fallback
-(`CanvasUI.ts:921-953`) points there. A merged `classic` keeps that true; a
-larger separate set inverts it. **Merge into `classic`.**
+The weather/rot collision this section flagged **does not exist**: the fork puts
+`weather_rain1` and `rot1_1`…`rot5_2` under `Effects/`, we keep them at the set
+root, and `imagePathIn` permits subpaths — so the merge produced
+`Effects/weather_rain1.webp` *and* the root-level one, and the existing bare
+constants keep resolving to ours. The `Effects/` copies are unreferenced files
+rather than 14 constants to repoint. That is the same cheap option §5.6d
+recommends for anything else: add the file, skip the constant, nothing breaks.
+
+Two things still outstanding here, and they are the hand-edited part:
+
+| Change | Where | Count |
+|---|---|---|
+| `GameImages` constants for the 711 new sprites | `GameImages.ts` | ~+711, and the preload manifest follows automatically (`allImageIds()` enumerates them reflectively) |
+| 12 hand-written `{id, img}` maps — the sprite id is **not** in the JSON, it lives in TypeScript | `GameItems.ts` | ~+180 |
 
 **Content ids and maps** — the hand-edited core, and where the real cost is:
 
