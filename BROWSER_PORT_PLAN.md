@@ -672,6 +672,25 @@ Two constraints worth preserving:
   Vite content-hashes the bundle, so it is picked up by the runtime handler
   rather than needing a build plugin to inject a manifest. Navigations are
   network-first so a stale `index.html` can never shadow a new build.
+- **Desktop releases are cut by hand, from
+  `.github/workflows/release.yml`.** It is `workflow_dispatch`-only, `dry_run`
+  defaults on, and it refuses to build from anything but the default branch. The
+  build and publish steps are separate jobs so the job that runs `npm ci` and a
+  Vite + Neutralino build never holds a token that can push a tag; the archives
+  cross between them as an artifact. Inputs and the full rationale are in
+  `web/README.md` § *Releasing*.
+- **A `neu build` that produced no executables was a green build.** Not a
+  hypothetical — this is what `npm run build:release` did on a machine without
+  `web/bin/`, which is every clean checkout and every CI runner, because
+  `web/bin/` is gitignored. `neu build` logs "Copying binaries...", finds
+  nothing to copy, and **exits 0** with a `resources.neu` and no clients. The
+  only symptom was `build-release.mjs` failing seconds later on
+  `missing .../RogueSurvivorReloaded-win_x64.exe`, which names the renamed
+  application binary rather than the missing prerequisite. `build-release.mjs`
+  now runs `neu update` itself and then asserts the seven client files are
+  present, so the error names the cause. The lesson is the §1.1a one again:
+  **absence of an error is not evidence of correctness**, and this time the
+  absence was in the tool's exit code rather than in a grep.
 
 
 ### 4.1c Asset payload pass (tasks 9 + 10)

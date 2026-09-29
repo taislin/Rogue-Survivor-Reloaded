@@ -1,0 +1,335 @@
+# Publish a desktop release.
+#
+# Manual only (`workflow_dispatch`). Nothing here runs on push, and that is the
+# point: a release is irreversible in the ways that matter. The tag, the archives
+# attached to it, and the fact that a version number now exists in package.json
+# are all things you would rather create deliberately than have CI do because
+# somebody merged.
+#
+# It builds and uploads exactly the three archives `npm run build:release`
+# produces, and adds nothing of its own to them:
+#
+#   web/dist-release/rogue_survivor_reloaded-win-<version>-<commit>.zip
+#   web/dist-release/rogue_survivor_reloaded-linux-<version>-<commit>.zip
+#   web/dist-release/rogue_survivor_reloaded-mac-<version>-<commit>.zip
+#
+# `scripts/build-release.mjs` does the packaging, including the zip writer and
+# the Unix exec bits, and its header explains why those live in a script rather
+# than in a shell pipeline. This workflow's only job is to run it on Linux, then
+# attach the result to a GitHub release.
+#
+# WHY TWO JOBS. The build runs `npm ci` and executes a Vite + Neutralino build
+# tree; the publish step needs `contents: write` to create a tag and a release.
+# Splitting them means the job that runs third-party code holds a token that
+# cannot push a tag, and the exact bytes that get published are handed over as
+# an artifact rather than being produced by the same step that uploads them.
+#
+# WHY NO TEST STEP. `npm run build:release` shells out to `npm run build:desktop`,
+# which runs `npm run build`, which is `tsc -p tsconfig.json && vite build` - and
+# `tsconfig.json`'s include list is `["src", "sim", "tests", "vitest.config.mts"]`.
+# So the release build already type-checks the test suite, and a compile error
+# anywhere in it fails the release. Behavioural coverage is CI's job
+# (`.github/workflows/ci.yml`); re-running the full suite here would add minutes
+# to a manual run without closing a gap that is not already closed on push to the
+# default branch.
+
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag. Blank = v<version> from web/package.json."
+        type: string
+        default: ""
+      notes:
+        description: "Release notes (Markdown). Blank = an auto-generated asset list with sizes and checksums."
+        type: string
+        default: ""
+      draft:
+        description: "Create as a draft, for a human to publish."
+        type: boolean
+        default: false
+      prerelease:
+        description: "Mark as a pre-release rather than latest."
+        type: boolean
+        default: false
+      dry_run:
+        description: "Build and check the archives, but publish nothing."
+        type: boolean
+        default: true
+      allow_off_default_branch:
+        description: "Allow publishing from a branch that is not the default. The tag will point at that branch's commit."
+        type: boolean
+        default: false
+
+# Read-only by default. Only the publish job is granted write, so a build that
+# goes wrong cannot push a tag as a side effect.
+permissions:
+  contents: read
+
+# Serialise, do not cancel. Two releases of the same project racing each other
+# would race the tag, and a half-cancelled run is worse than a queued one.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build release archives
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      commit: ${{ steps.meta.outputs.commit }}
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Refuse to build a release off the default branch
+        # A tag is just a pointer, so without this a run dispatched from a
+        # feature branch publishes a plausible-looking official build of work in
+        # progress. `inputs.*` is interpolated into the shell, so the booleans
+        # come in as env vars and are compared as strings rather than trusted.
+        env:
+          REF: ${{ github.ref }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          ALLOW_OFF: ${{ inputs.allow_off_default_branch }}
+        run: |
+          set -euo pipefail
+          if [ "$ALLOW_OFF" = "true" ]; then
+            echo "allow_off_default_branch is set; building from $REF"
+            exit 0
+          fi
+          if [ "$REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
+            echo "::error::refusing to build a release from $REF"
+            echo "::error::the default branch is $DEFAULT_BRANCH - dispatch from there, or tick"
+            echo "::error::'allow_off_default_branch' if you really mean this commit"
+            exit 1
+          fi
+          echo "building from the default branch ($DEFAULT_BRANCH)"
+
+      - name: Record what is being released
+        # Read once and passed on, so the tag the release gets and the tag baked
+        # into the three filenames come from the same value rather than from two
+        # reads of a file that could change between them.
+        id: meta
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          commit="$(git rev-parse --short HEAD)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "building $version at $commit"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build release archives
+        run: npm run build:release
+
+      - name: Check the archives before anything is published
+        # This is the last point at which a bad build is cheap. A missing
+        # platform or a zero-byte zip is otherwise discovered by a player, and by
+        # then it is already a published release. Matching on the exact names
+        # rather than on a count is deliberate: three wrong names still means
+        # three files.
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          COMMIT: ${{ steps.meta.outputs.commit }}
+        run: |
+          set -euo pipefail
+          for slug in win linux mac; do
+            f="dist-release/rogue_survivor_reloaded-${slug}-${VERSION}-${COMMIT}.zip"
+            if [ ! -s "$f" ]; then
+              echo "::error::missing or empty: web/$f"
+              echo "::error::dist-release/ actually contains:"
+              ls -l dist-release/ || true
+              exit 1
+            fi
+            echo "$(du -h "$f" | cut -f1)	$f"
+          done
+          stray="$(find dist-release -maxdepth 1 -name '*.zip' ! \
+            -name "rogue_survivor_reloaded-win-${VERSION}-${COMMIT}.zip" \
+            ! -name "rogue_survivor_reloaded-linux-${VERSION}-${COMMIT}.zip" \
+            ! -name "rogue_survivor_reloaded-mac-${VERSION}-${COMMIT}.zip")"
+          if [ -n "$stray" ]; then
+            echo "::warning::unexpected archives in dist-release/, not uploaded:"
+            echo "$stray"
+          fi
+
+      - name: Summarise
+        if: always()
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          COMMIT: ${{ steps.meta.outputs.commit }}
+        run: |
+          {
+            echo "### Archives"
+            echo
+            echo "| Platform | Archive | Size | SHA-256 |"
+            echo "|---|---|---|---|"
+            for slug in win linux mac; do
+              f="dist-release/rogue_survivor_reloaded-${slug}-${VERSION}-${COMMIT}.zip"
+              [ -f "$f" ] || continue
+              printf '| %s | `%s` | %s | `%s` |\n' \
+                "$slug" "$(basename "$f")" \
+                "$(du -h "$f" | cut -f1)" \
+                "$(sha256sum "$f" | cut -d' ' -f1)"
+            done
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        # Path is workspace-relative: `working-directory` applies to `run` steps
+        # only, not to `uses`.
+        with:
+          name: release-archives
+          path: web/dist-release/*.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: create the GitHub release
+    needs: build
+    if: ${{ inputs.dry_run != true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    # No `defaults.run.working-directory` here, unlike the build job: this job
+    # has no npm steps, and the artifact was downloaded to `dist-release/` at the
+    # workspace root. Setting it to `web` would make every glob below resolve to
+    # `web/dist-release/`, which is not where anything is.
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-archives
+          path: dist-release
+
+      - name: Resolve the tag
+        id: tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_TAG" ]; then
+            tag="$INPUT_TAG"
+            if [ "$tag" != "v$VERSION" ]; then
+              echo "::warning::using your tag $tag, but the archives are named for version $VERSION"
+              echo "::warning::bump web/package.json and web/neutralino.config.json if that was not intended"
+            fi
+          else
+            tag="v$VERSION"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "tag: $tag"
+
+      - name: Build the release body
+        # Notes typed in the dispatch box win. Otherwise this is a manifest: what
+        # is attached, how big, and what it hashes to - the part a reader of a
+        # release page actually needs, and the part nobody writes down by hand.
+        env:
+          INPUT_NOTES: ${{ inputs.notes }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          VERSION: ${{ needs.build.outputs.version }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ -n "$INPUT_NOTES" ]; then
+            printf '%s\n' "$INPUT_NOTES" > release-notes.md
+            cat release-notes.md
+            exit 0
+          fi
+          {
+            echo "Desktop build \`$TAG\` of Rogue Survivor Reloaded $VERSION."
+            echo
+            echo "Download the archive for your platform, unpack it, and run the binary."
+            echo "Each archive holds the client and the whole game payload, so there is nothing else to install."
+            echo
+            echo "| Platform | Archive | Size | SHA-256 |"
+            echo "|---|---|---|---|"
+            for slug in win linux mac; do
+              for f in dist-release/rogue_survivor_reloaded-"$slug"-*.zip; do
+                [ -f "$f" ] || continue
+                bytes="$(stat -c%s "$f")"
+                mb="$(awk -v b="$bytes" 'BEGIN { printf "%.1f", b / 1048576 }')"
+                printf '| %s | `%s` | %s MB | `%s` |\n' \
+                  "$slug" "$(basename "$f")" "$mb" \
+                  "$(sha256sum "$f" | cut -d' ' -f1)"
+              done
+            done
+            echo
+            echo "The Linux archive holds \`linux_arm64\`, \`linux_armhf\` and \`linux_x64\`."
+            echo "The macOS archive holds \`mac_arm64\`, \`mac_universal\` and \`mac_x64\`."
+            echo
+            echo "Built from \`$SHA\`."
+          } | tee release-notes.md
+
+      - name: Create the release, or replace its archives
+        # `gh release create` is the GitHub CLI already on the runner, rather
+        # than a third-party action: it is one less thing whose permissions and
+        # behaviour we would have to take on trust for a step that can create a
+        # tag.
+        #
+        # `--draft`/`--prerelease` take explicit =true/=false so the dispatch
+        # booleans cannot be swallowed by a shell that eats the value as another
+        # argument. `gh` marks the newest non-draft, non-prerelease release as
+        # "latest" on its own, so there is no --latest flag to get wrong.
+        #
+        # Re-running the workflow for a tag that already exists replaces the
+        # archives rather than failing, which is the only sane behaviour when the
+        # only thing that changed between two runs is the build.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          TARGET: ${{ github.sha }}
+          DRAFT: ${{ inputs.draft }}
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "release $TAG already exists; replacing its archives"
+            gh release upload "$TAG" dist-release/*.zip --clobber
+            gh release edit "$TAG" \
+              --title "$TAG" \
+              --notes-file release-notes.md \
+              --draft="$DRAFT" \
+              --prerelease="$PRERELEASE"
+          else
+            echo "creating release $TAG at $TARGET"
+            gh release create "$TAG" dist-release/*.zip \
+              --target "$TARGET" \
+              --title "$TAG" \
+              --notes-file release-notes.md \
+              --draft="$DRAFT" \
+              --prerelease="$PRERELEASE"
+          fi
+
+      - name: Confirm
+        # Read the release back rather than trusting that the create succeeded:
+        # a draft, or an archive that gh silently skipped, is the kind of thing
+        # you want to see in the log and not discover from the release page.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release view "$TAG" \
+            --json url,isDraft,isPrerelease,tagName,assets \
+            --jq '"release : \(.tagName)\nurl     : \(.url)\ndraft   : \(.isDraft)\nprerelease: \(.isPrerelease)\nassets  :\n" + ([.assets[] | "  \(.name)  \(.size) bytes"] | join("\n"))'
+          count="$(gh release view "$TAG" --json assets --jq '.assets | length')"
+          if [ "$count" -lt 3 ]; then
+            echo "::error::release $TAG has $count assets, expected 3"
+            exit 1
+          fi

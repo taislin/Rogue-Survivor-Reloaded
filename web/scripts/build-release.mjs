@@ -37,7 +37,12 @@
  * archive identifies its own build. See `zipDirectory` for why the zip is
  * written here rather than shelled out to a `zip` binary.
  *
- * Requires Node 16.7+ (fs.cpSync).
+ * Requires Node 16.7+ (fs.cpSync), and network access on the first run of any
+ * given machine: `neu update` downloads ~28 MB of Neutralino clients into
+ * `web/bin/` (gitignored, per-architecture, and the reason a clean checkout
+ * cannot produce a release on its own). That step is in `main()` rather than
+ * left to the caller because `neu build` fails silently without it - see
+ * `updateClients`.
  */
 
 import { spawnSync } from "node:child_process";
@@ -60,6 +65,7 @@ import { deflateRawSync } from "node:zlib";
 
 const webRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const neuOut = join(webRoot, "dist", "RogueSurvivorReloaded");
+const neuBin = join(webRoot, "bin");
 const webDist = join(webRoot, "dist");
 const releaseDir = join(webRoot, "dist-release");
 
@@ -137,18 +143,70 @@ const DIST_FILES = [
   "icon-maskable-512.png",
 ];
 
-function build() {
-  console.log("> npm run build:desktop");
-  // shell: true so Windows resolves `npm` to npm.cmd; without it recent Node
-  // versions refuse to spawn a .cmd directly (EINVAL).
-  const result = spawnSync("npm", ["run", "build:desktop"], {
+function run(tool, args, what) {
+  // shell: true so Windows resolves `npm`/`npx` to their .cmd shims; without it
+  // recent Node versions refuse to spawn a .cmd directly (EINVAL).
+  const result = spawnSync(tool, args, {
     cwd: webRoot,
     stdio: "inherit",
     shell: true,
   });
   if (result.status !== 0) {
-    throw new Error(`build:desktop failed (exit ${result.status})`);
+    throw new Error(`${what} failed (exit ${result.status})`);
   }
+}
+
+/**
+ * Every platform's Neutralino client, as `neu update` names them. The
+ * suffixed application binary in each release folder is one of these renamed,
+ * so this is also the list `neu build` has to be able to copy.
+ */
+const CLIENTS = [
+  "neutralino-win_x64.exe",
+  "neutralino-linux_arm64",
+  "neutralino-linux_armhf",
+  "neutralino-linux_x64",
+  "neutralino-mac_arm64",
+  "neutralino-mac_universal",
+  "neutralino-mac_x64",
+];
+
+/**
+ * Download the Neutralino clients for every platform into `web/bin/`.
+ *
+ * This is a prerequisite, not a nicety, and its absence is invisible. `neu
+ * build` starts with "Copying binaries...", finds an empty or missing `bin/`,
+ * has nothing to copy, and exits 0 having produced only `resources.neu` - a
+ * build that looks complete and contains no executables. It is `build-release`
+ * that notices, some seconds later, with "missing .../RogueSurvivorReloaded-
+ * win_x64.exe", and by then the cause is two steps back.
+ *
+ * So it runs here, where the error can say what it means, rather than being left
+ * to whoever runs the script to know. `web/bin/` is gitignored, which is the
+ * right call (28 MB of binaries, per-architecture) and is exactly why a fresh
+ * checkout - and every CI runner - starts without them.
+ */
+function updateClients() {
+  console.log("> npx @neutralinojs/neu update");
+  run("npx", ["@neutralinojs/neu", "update"], "neu update");
+}
+
+/**
+ * Fail with the reason rather than the symptom. See `updateClients`.
+ */
+function checkClients() {
+  const missing = CLIENTS.filter((c) => !existsSync(join(neuBin, c)));
+  if (missing.length > 0) {
+    throw new Error(
+      `missing Neutralino clients in web/bin/: ${missing.join(", ")}\n` +
+        `Run "npx @neutralinojs/neu update" (needs network access) and try again.`
+    );
+  }
+}
+
+function build() {
+  console.log("> npm run build:desktop");
+  run("npm", ["run", "build:desktop"], "build:desktop");
 }
 
 function copyWebDist(target) {
@@ -393,7 +451,11 @@ function archivePlatforms(version, commit) {
 }
 
 function main() {
+  // Before the build, not after: `neu build` cannot tell you it had nothing to
+  // copy, and the failure it produces is a renamed-binary error two steps later.
+  updateClients();
   build();
+  checkClients();
 
   // Full wipe, not a merge: a stale binary or a leftover asset from an earlier
   // build would ship invisibly, and there is no way to tell it apart from the

@@ -61,7 +61,7 @@ All run from `web/`.
 | `npm run build:server` | Compile the Express server to `dist-server/`            |
 | `npm run build:all` | Both of the above                                           |
 | `npm run build:desktop` | Bundle + Neutralino clients for every platform -> `dist/RogueSurvivorReloaded/` |
-| `npm run build:release` | `build:desktop`, then regroup into `dist-release/RogueSurvivorReloaded-{windows,linux,macos}/` |
+| `npm run build:release` | `neu update`, then `build:desktop`, then regroup into `dist-release/RogueSurvivorReloaded-{windows,linux,macos}/` and zip each |
 | `npm run serve`     | Run the built server                                        |
 | `npm run type-check`| `tsc --noEmit`                                              |
 | `npm test`          | Vitest suite                                                |
@@ -263,6 +263,17 @@ keeps every existing mouse behaviour and adds:
   the map: 31 tiles across instead of 21. See [Display](#display).
 - **Desktop build.** `npm run build:release` produces zipped per-platform
   archives — Windows, Linux, macOS — via Neutralino. See `scripts/build-release.mjs`.
+  It runs `neu update` first, which is a prerequisite rather than a nicety:
+  `web/bin/` is gitignored, and `neu build` given an empty one logs
+  "Copying binaries...", copies nothing, and **exits 0** with a
+  `resources.neu` and no executables. The script therefore downloads the
+  clients itself and then asserts they are there, so the failure names the
+  cause instead of surfacing later as a missing `RogueSurvivorReloaded-win_x64.exe`.
+  It needs network access on the first run of a given machine.
+- **Releases are cut from GitHub Actions, by hand.** `.github/workflows/release.yml`
+  is `workflow_dispatch`-only. It builds the three archives and attaches them to
+  a tag; `dry_run` defaults to on, so the first run of it costs nothing but
+  build minutes. See [Releasing](#releasing).
 - **Offline play** in the browser, via a service worker. Deliberately *not*
   shipped in the desktop archives; the reasoning is in that script's header.
 - **Death screenshots default to off**, because a silent file write in C# is a
@@ -345,6 +356,43 @@ still work and CI still builds and smoke-tests the image, which is what proves
 the bundle is shippable; `npm run serve` is still the local way to check a
 production build. Keep the Dockerfile in step with the Blueprint's build command
 — they run the same two npm commands, so the only thing to watch is drift.
+
+---
+
+## Releasing
+
+Desktop archives are published by
+[`.github/workflows/release.yml`](../.github/workflows/release.yml), which is
+**`workflow_dispatch`-only**. Nothing runs on push, because a tag, a set of
+attached archives, and a version bump in `package.json` are all things you would
+rather create deliberately.
+
+Go to **Actions → Release → Run workflow**. The inputs:
+
+| Input | Default | |
+|---|---|---|
+| `tag` | blank | Blank uses `v<version>` from this file's `package.json`. A custom tag warns if the archives are named for a different version. |
+| `notes` | blank | Blank auto-generates a table of the three archives with sizes and SHA-256s. |
+| `draft` | off | Create as a draft for a human to publish. |
+| `prerelease` | off | Mark as a pre-release rather than latest. |
+| `dry_run` | **on** | Build and check the archives, publish nothing. Turn this off to actually release. |
+| `allow_off_default_branch` | off | The build refuses to run anywhere but the default branch, since a tag is just a pointer and would otherwise faithfully publish whatever was dispatched. |
+
+Two jobs, and the split is deliberate: **build** runs `npm ci` and the whole
+Vite + Neutralino build holding a read-only token, and **publish** holds
+`contents: write` and does nothing but attach the artifact it was handed. So a
+build that goes wrong cannot push a tag as a side effect, and the bytes that get
+published are the ones that were built rather than the ones the publishing step
+produced.
+
+Re-running for a tag that already exists **replaces the archives** rather than
+failing, which is the only sane behaviour when the only thing that changed
+between two runs is the build.
+
+There is no separate test step: `npm run build:release` runs `npm run build`,
+which is `tsc -p tsconfig.json` over an include list that contains `tests/`. The
+release build therefore already fails on a compile error anywhere in the test
+suite. Behavioural coverage is CI's job.
 
 ---
 
