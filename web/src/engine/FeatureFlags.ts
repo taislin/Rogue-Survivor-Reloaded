@@ -195,7 +195,6 @@ export type Stage = 2 | 4 | 5;
  * `hasFeature` call, and the test follows.
  */
 const PENDING_WIRING: Readonly<Partial<Record<string, Stage>>> = {
-  DifficultyAtCreation: 4,
   ShelterBackpacks: 4,
   HelicopterRescue: 4,
   BlackOpsRaid: 4,

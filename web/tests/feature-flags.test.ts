@@ -164,9 +164,9 @@ describe("Feature registry is wired", () => {
                  "Alcohol", "Alcohol", "ArmorResist", "Butchering",
                  "Butchering", "Cooking", "Cooking", "DarknessFov",
                  "DarknessFov", "DarknessFov", "DarknessGating",
-                 "FireBarrels", "FireBarrels", "FireExtinguishers",
+                 "DifficultyAtCreation", "DifficultyAtCreation",
+                 "FireBarrels", "FireBarrels", "FireExtinguishers", "Fishing",
                  "Fishing", "Fishing", "Fishing", "Fishing", "Fishing",
-                 "Fishing",
                  "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
                  "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
                  "ItemDespawn", "ItemDespawn", "LightPriority",
@@ -217,6 +217,13 @@ describe("Feature registry is wired", () => {
     expect(res.filter((s) => /OptionsScreen\.ts/.test(s.at))).toHaveLength(1);
     expect(res.filter((s) => /Scoring\.ts/.test(s.at))).toHaveLength(1);
     expect(res.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(1);
+
+    // DifficultyAtCreation is two readers in two files, and the split is the
+    // feature: a screen nobody can reach, and a screen that leaves the same rows
+    // editable mid-game, are the two halves of the same bug.
+    const difficulty = sites.filter((s) => s.feature === "DifficultyAtCreation");
+    expect(difficulty.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(1);
+    expect(difficulty.filter((s) => /OptionsScreen\.ts/.test(s.at))).toHaveLength(1);
 
     // Butchering is two readers in two files: the "you need a bladed weapon"
     // check, and the meat block. The insanity carve-out for animals is gated by

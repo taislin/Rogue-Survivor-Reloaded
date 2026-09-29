@@ -72,13 +72,19 @@ import { daylightFor, LOS_DISTANCE_FACTOR } from "@engine/firstperson/Daylight";
 import { buildScene } from "@engine/firstperson/SceneBuilder";
 import { AdvisorHint, GameHintsStatus } from "@engine/GameHints";
 import {
+	DIFFICULTY_OPTIONS,
 	GameOptions,
 	idleAdvanceMs,
 	OptionIDs,
 	Options,
+	OptionsCategory,
 	ReincMode,
+	RESCUE_DAY_RANDOM,
+	RESCUE_DAY_RANDOM_MAX,
+	RESCUE_DAY_RANDOM_MIN,
 	Resources,
 	SimRatio,
+	stepGameOption,
 	ZupDays,
 } from "@engine/GameOptions";
 import { GameSaveManager } from "@engine/GameSave";
@@ -2052,6 +2058,15 @@ export class RogueGame {
 			// undead.
 		}
 
+		// Choose difficulty, including the helicopter rescue day.
+		// C# RogueGame.cs:2881-2887 — the screen is *not* gated on the player
+		// being living, so an undead run picks its difficulty too.
+		if (hasFeature(this.m_Session.ruleset, Feature.DifficultyAtCreation)) {
+			const difficulty = await this.HandleNewCharacterDifficulty(roller);
+			if (!difficulty.ok) return false;
+			this.m_Session.armyHelicopterRescueDay = difficulty.rescueDay;
+		}
+
 		// done
 		return true;
 	}
@@ -2827,6 +2842,273 @@ export class RogueGame {
 	}
 
 
+
+	/**
+	 * C# `HandleNewCharacterDifficulty(out int chosenDay)` — `RogueGame.cs:3782`,
+	 * called from `RogueGame.cs:2884`. The fork's answer to "a player should not be
+	 * able to change how hard the run is once it has started", and the other half
+	 * of this feature is the mid-game options screen giving these rows up
+	 * (`ui/OptionsScreen.ts`, which drops every `DIFFICULTY_OPTIONS` member).
+	 *
+	 * Two behaviours here are the C#'s and are not what the shape of the code
+	 * suggests:
+	 *
+	 * - **`R` resets to the shipped defaults, not to the values the screen was
+	 *   entered with.** The C# says so in a comment on the line itself
+	 *   ("`prevOptions; //@@MP - used to restore changes in this session, now
+	 *   resets defaults`", `RogueGame.cs:3930`) — it is a deliberate change and
+	 *   not an unfinished one. So `R` here is `resetToDefaultValues(DIFFICULTY)`
+	 *   and *not* the `Options.clone()` the mid-game screen keeps for its own `R`.
+	 * - **Escape discards everything changed on the screen**, by reloading the
+	 *   stored options (`RogueGame.cs:4046`). That is load-bearing rather than
+	 *   tidy: the C#'s own comment is that it stops a player tweaking difficulty
+	 *   and then loading a save that was started with different settings.
+	 *
+	 * The `ingame`-style lock the C# *does not* have is worth saying plainly,
+	 * because the feature is named for it: neither `HandleOptions` nor this screen
+	 * tests its `ingame` parameter — the C# comments the parameter as unused
+	 * (`RogueGame.cs:1509`, `:1503`) and the whole mechanism is a deleted block
+	 * of the mid-game option list. So the rows are gone from the mid-game screen
+	 * for Still Alive and the screen is not offered mid-game at all, but no
+	 * runtime check refuses an edit. See BROWSER_PORT_PLAN §5.6e.
+	 *
+	 * The mode filters (Release 7-6) are the C#'s: two rows are STD-only, three
+	 * are dropped in VTG, and one — antiviral pills — is VTG-only *and* is not an
+	 * option this build has, so that filter has nothing to remove. The port asks
+	 * `Rules.hasImmediateZombification` / `Rules.hasEvolution` rather than
+	 * comparing the mode itself, because those are the `GameMode`-layer predicates
+	 * and a `GameMode` comparison here would be a second place to keep in step.
+	 */
+	async HandleNewCharacterDifficulty(
+		roller: DiceRoller,
+	): Promise<{ ok: boolean; rescueDay: number }> {
+		const list = this.difficultyOptionList(this.m_Session.gameMode);
+		const menuEntries = list.map((id) => GameOptions.optionName(id));
+
+		let loop = true;
+		let choiceDone = false;
+		let selected = 0;
+		do {
+			// Recomputed every frame, not once outside the loop: an arrow key
+			// changes the value it displays, so a hoisted array would show the
+			// numbers as they were when the screen opened.
+			const values = list.map((id) =>
+				s_Options.describeValue(this.m_Session.gameMode, id),
+			);
+
+			// display.
+			this.m_UI.UI_Clear(Color.Black);
+			const gx = 0;
+			let gy = 0;
+			this.m_UI.UI_DrawStringBoldLarge(
+				Color.Yellow,
+				`[${Session.descGameMode(this.m_Session.gameMode)}] Set Difficulty Options`,
+				gx,
+				gy,
+			);
+
+			// intro.
+			gy += 2 * MENU_BOLD_LINE_SPACING;
+			this.m_UI.UI_DrawStringBoldLarge(
+				Color.White,
+				"The army have established a safe zone and are evacuating towns all around the region.",
+				gx,
+				gy,
+			);
+			gy += MENU_BOLD_LINE_SPACING;
+			this.m_UI.UI_DrawStringBoldLarge(
+				Color.White,
+				"You must find a way to survive until helicopter rescue arrives (choose the day below).",
+				gx,
+				gy,
+			);
+			gy += MENU_BOLD_LINE_SPACING;
+			this.m_UI.UI_DrawStringBoldLarge(
+				Color.White,
+				"You don't have to make it to the helicopter, but after that point you'll be on your own...",
+				gx,
+				gy,
+			);
+
+			// the options.
+			gy += 2 * MENU_BOLD_LINE_SPACING;
+			const gyRef = { value: gy };
+			// Windowed at 20 rows: 17 options plus the description block, the
+			// rating and the caution line, with the heading and intro above.
+			this.DrawMenuOrOptions(
+				selected,
+				Color.White,
+				menuEntries,
+				Color.LightGreen,
+				values,
+				gx,
+				gyRef,
+				false,
+				400,
+				20,
+			);
+			gy = gyRef.value;
+
+			// describe current option.
+			gy += MENU_BOLD_LINE_SPACING;
+			this.m_UI.UI_DrawStringBoldLarge(
+				Color.White,
+				menuEntries[selected].trimStart(),
+				gx,
+				gy,
+			);
+			gy += MENU_BOLD_LINE_SPACING;
+			for (const line of GameOptions.describe(list[selected]).split("\n")) {
+				this.m_UI.UI_DrawStringLarge(Color.White, `  ${line}`, gx, gy);
+				gy += MENU_LINE_SPACING;
+			}
+
+			// difficulty rating.
+			gy += MENU_BOLD_LINE_SPACING;
+			const diffForSurvivor = Math.floor(
+				100 *
+					Scoring.computeDifficultyRating(
+						s_Options,
+						DifficultySide.FOR_SURVIVOR,
+						0,
+					),
+			);
+			const diffForUndead = Math.floor(
+				100 *
+					Scoring.computeDifficultyRating(
+						s_Options,
+						DifficultySide.FOR_UNDEAD,
+						0,
+					),
+			);
+			this.m_UI.UI_DrawStringBoldLarge(
+				Color.Yellow,
+				`Difficulty Rating : ${diffForSurvivor}% as survivor / ${diffForUndead}% as undead.`,
+				gx,
+				gy,
+			);
+			gy += MENU_BOLD_LINE_SPACING;
+			this.m_UI.UI_DrawStringBoldLarge(
+				Color.White,
+				"Note: your game score decreases with each reincarnation.",
+				gx,
+				gy,
+			);
+
+			// caution.
+			gy += MENU_BOLD_LINE_SPACING;
+			this.m_UI.UI_DrawStringBoldLarge(
+				Color.Red,
+				"* Caution : increasing these values can make the game run slower and saving/loading longer.",
+				gx,
+				gy,
+			);
+
+			// footnote.
+			this.DrawFootnote(
+				Color.White,
+				"Move cursor then left/right to change values, R to restore defaults, ENTER to proceed, ESC to cancel",
+			);
+			this.m_UI.UI_Repaint();
+
+			// handle.
+			const key = await this.m_UI.UI_WaitKey();
+			switch (key.key) {
+				case "ArrowUp": // move up
+					if (selected > 0) --selected;
+					else selected = menuEntries.length - 1;
+					break;
+				case "ArrowDown": // move down
+					selected = (selected + 1) % menuEntries.length;
+					break;
+
+				case "r":
+				case "R":
+					// Defaults, not the values this session was entered with — see
+					// the method comment.
+					s_Options.resetToDefaultValues(OptionsCategory.DIFFICULTY);
+					break;
+
+				case "Escape": // cancel
+					loop = false;
+					choiceDone = false;
+					break;
+
+				case "Enter":
+					loop = false;
+					choiceDone = true;
+					break;
+
+				case "ArrowLeft":
+					stepGameOption(list[selected], -1);
+					break;
+				case "ArrowRight":
+					stepGameOption(list[selected], 1);
+					break;
+			}
+		} while (loop);
+
+		// apply options.
+		if (choiceDone) {
+			// Lock in the day the player chose. "random" is resolved here rather
+			// than when the arrow was pressed, so a player who pressed R after
+			// picking random gets a *fresh* roll of the same choice instead of the
+			// day they rolled and then discarded — which is what the C#'s
+			// `HiddenRescueDay` split is for (`RogueGame.cs:4038-4042`).
+			//
+			// The C# rolls with `new Random()`, which makes a "random" rescue day
+			// different on every run and unseedable. The port rolls with the game's
+			// own roller so a seeded run stays reproducible, which is the same
+			// reason `HandleNewCharacter` seeds its roller from the session.
+			s_Options.hiddenRescueDay =
+				s_Options.visibleRescueDay === RESCUE_DAY_RANDOM
+					? roller.roll(RESCUE_DAY_RANDOM_MIN, RESCUE_DAY_RANDOM_MAX)
+					: s_Options.visibleRescueDay;
+			this.ApplyOptions(false);
+			this.SaveOptions();
+		} else {
+			// Drop the changes. `LoadOptions` reads the stored blob back into the
+			// singleton, which is what makes cancelling safe rather than merely
+			// tidy.
+			await this.LoadOptions();
+		}
+
+		return {
+			ok: choiceDone,
+			rescueDay: s_Options.hiddenRescueDay,
+		};
+	}
+
+	/**
+	 * The difficulty rows for `mode`, in screen order.
+	 *
+	 * `DIFFICULTY_OPTIONS` is the whole set; this applies the two mode filters
+	 * from `RogueGame.cs:3805-3820` and drops the rats row for the C#'s reason
+	 * (`RogueGame.cs:3790` — Release 5 removed rats upgrades upstream, and this
+	 * port still has the option from classic's list).
+	 *
+	 * A filter over a constant rather than anything stateful — it is called once
+	 * per frame of the screen, and the result depends only on `mode`.
+	 */
+	private difficultyOptionList(mode: GameMode): OptionIDs[] {
+		return DIFFICULTY_OPTIONS.filter((id) => {
+			switch (id) {
+				case OptionIDs.GAME_RATS_UPGRADE:
+					return false;
+				// "=S" in the mid-game screen's legend: standard mode only.
+				case OptionIDs.GAME_ZOMBIFICATION_CHANCE:
+				case OptionIDs.GAME_STARVED_ZOMBIFICATION_CHANCE:
+					return Rules.hasImmediateZombification(mode);
+				// "-V": never offered in vintage.
+				case OptionIDs.GAME_ALLOW_UNDEADS_EVOLUTION:
+				case OptionIDs.GAME_SHAMBLERS_UPGRADE:
+				case OptionIDs.GAME_SKELETONS_UPGRADE:
+					return Rules.hasEvolution(mode);
+				default:
+					return true;
+			}
+		});
+	}
 
 	// C# LoadManual — RogueGame.cs:2034
 	async LoadManual(): Promise<void> {

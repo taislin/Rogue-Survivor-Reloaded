@@ -220,16 +220,28 @@ describe("the options row", () => {
     Options.resourcesAvailability = Resources.MED;
   });
 
-  it("is listed under Still Alive and absent under classic", () => {
+  it("is off the mid-game options screen, because it moved to character creation", () => {
+    // This assertion used to be "listed under Still Alive, absent under
+    // classic". It is now absent under *both*, and the reason is
+    // `Feature.DifficultyAtCreation`: the fork deletes every difficulty row from
+    // the mid-game list (`RogueGame.cs:1557-1582`, under a
+    // `//MOVED TO CHARACTER CREATION` comment) and puts them on a screen in
+    // character creation instead. Resources Availability is one of them.
+    //
+    // Worth reading as a change of premise rather than a bug: an option that is
+    // *only* configurable at character creation is strictly harder to change
+    // than one that is also in the options screen, and this one is the sharpest
+    // example in the fork — it decides your starting kit.
     Session.get().ruleset = Ruleset.STILL_ALIVE;
-    expect(listOf(screen())).toContain(OptionIDs.GAME_RESOURCES_AVAILABILITY);
+    expect(listOf(screen())).not.toContain(OptionIDs.GAME_RESOURCES_AVAILABILITY);
     Session.get().ruleset = Ruleset.CLASSIC;
-    // One gate covers the row *and* the arrow keys, so CLASSIC cannot show a
-    // row that does nothing when you press Left.
     expect(listOf(screen())).not.toContain(OptionIDs.GAME_RESOURCES_AVAILABILITY);
   });
 
   it("steps with the arrow keys", () => {
+    // The step is shared with the creation screen now (`stepGameOption`), so
+    // this is the same code path the difficulty menu drives; what the arrow keys
+    // do is a property of the option, not of the screen it is shown on.
     const s = screen();
     adjust(s, 1);
     expect(Options.resourcesAvailability).toBe(Resources.HIGH);

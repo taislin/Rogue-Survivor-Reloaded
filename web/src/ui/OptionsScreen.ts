@@ -1,16 +1,12 @@
-import { IMAGE_SETS } from "@engine/AssetPaths";
 import type { IMusicManager } from "@engine/audio/IMusicManager";
 import { Color } from "@engine/Color";
-import { DEFAULT_VIEW_MODE, VIEW_MODES } from "@engine/firstperson/Types";
 import { Feature, hasFeature } from "@engine/FeatureFlags";
 import {
+	DIFFICULTY_OPTIONS,
 	GameOptions,
-	IdleAdvance,
 	OptionIDs,
 	Options,
-	Resources,
-	SimRatio,
-	ZupDays,
+	stepGameOption,
 } from "@engine/GameOptions";
 import type { GameKeyEvent, IRogueUI } from "@engine/IRogueUI";
 import { MouseButton } from "@engine/IRogueUI";
@@ -18,7 +14,6 @@ import type { Point } from "@engine/Point";
 import { menuValueColumnX } from "@engine/RogueGame";
 import { DifficultySide, Scoring } from "@engine/Scoring";
 import { Session } from "@engine/Session";
-import { FONT_CHOICES } from "@ui/fonts";
 
 /**
  * One drawn list row, in logical canvas pixels.
@@ -73,7 +68,20 @@ export class OptionsScreen {
 	 */
 	private static readonly WHEEL_PIXELS_PER_ROW = 40;
 
-	/** C# `list` array — order is exactly the on-screen order. */
+	/**
+	 * C# `list` array — order is exactly the on-screen order.
+	 *
+	 * The difficulty rows are *removed* rather than disabled under Still Alive,
+	 * and that is the fork's own mechanism rather than something this port
+	 * invented: the C# deletes the same block from this list and leaves it
+	 * commented under `//MOVED TO CHARACTER CREATION` (`RogueGame.cs:1557-1582`).
+	 * Worth being precise about, because the feature is named for it and the C#
+	 * has no lock: `HandleOptions` does not test its `ingame` parameter — the
+	 * parameter is commented as unused (`RogueGame.cs:1509`) — and there is no
+	 * runtime check anywhere that refuses a mid-game edit. The lock *is* the row
+	 * not being there. A player who wants the mid-game screen back with difficulty
+	 * rows under Classic gets exactly classic's list.
+	 */
 	private readonly list: OptionIDs[] = [
 		OptionIDs.GAME_AUTOSAVE_PERIOD, // alpha10.1
 		// display & sounds
@@ -135,9 +143,34 @@ export class OptionsScreen {
 		OptionIDs.GAME_REINC_LIVING_RESTRICTED,
 		OptionIDs.GAME_REINCARNATE_AS_RAT,
 		OptionIDs.GAME_REINCARNATE_TO_SEWERS,
-	];
+	].filter((id) => !this.movesToCharacterCreation(id));
 
 	private readonly menuEntries: string[];
+
+	/**
+	 * Does this row belong to the character-creation difficulty screen?
+	 *
+	 * Read from the `list` initialiser, so it is called before `menuEntries` and
+	 * before the constructor body — a plain method call, not a field, because a
+	 * field initialised earlier would not be initialised yet.
+	 *
+	 * Membership comes from `DIFFICULTY_OPTIONS` rather than from a second list
+	 * written here. The two screens show overlapping rows, and a membership set
+	 * copied into each is free to drift: a row added to one would sit on the
+	 * creation screen and still be editable mid-game, which is precisely the
+	 * thing the feature exists to stop.
+	 *
+	 * Note it does not consult `run`'s `ingame` parameter, and neither does
+	 * anything else — the C#'s `HandleOptions` ignores it too. The rows are gone
+	 * from the mid-game screen *and* from the main menu's one, because for Still
+	 * Alive a difficulty change between two runs is the same cheat.
+	 */
+	private movesToCharacterCreation(id: OptionIDs): boolean {
+		return (
+			hasFeature(Session.get().ruleset, Feature.DifficultyAtCreation) &&
+			DIFFICULTY_OPTIONS.includes(id)
+		);
+	}
 
 	/**
 	 * A typeface change whose faces have not arrived yet.
@@ -606,218 +639,23 @@ export class OptionsScreen {
 	}
 
 	/**
-	 * `RogueGame.HandleOptions` Left/Right branches — the `dir` argument replaces
+	 * `RogueGame.HandleOptions` Left/Right — the `dir` argument replaces
 	 * the duplicated `case Keys.Left:` / `case Keys.Right:` switches (`-1` / `+1`).
+	 *
+	 * A thin wrapper over the shared `stepGameOption` rather than the switch
+	 * itself: the fork's character-creation difficulty screen steps the same rows
+	 * (`RogueGame.HandleNewCharacterDifficulty`), and two copies of twenty arms
+	 * would be free to disagree. What is left here is the one thing that is this
+	 * screen's alone — a typeface change needs a redraw once its faces land.
 	 */
 	private adjust(option: OptionIDs, dir: -1 | 1): void {
-		const o = Options;
-		switch (option) {
-			case OptionIDs.GAME_DISTRICT_SIZE:
-				o.districtSize += dir * 5;
-				break;
-			case OptionIDs.UI_MUSIC:
-				o.playMusic = !o.playMusic;
-				break;
-			case OptionIDs.UI_MUSIC_VOLUME:
-				o.musicVolume += dir * 5;
-				break;
-			case OptionIDs.UI_ANIM_DELAY:
-				o.isAnimDelayOn = !o.isAnimDelayOn;
-				break;
-			case OptionIDs.UI_SHOW_MINIMAP:
-				o.isMinimapOn = !o.isMinimapOn;
-				break;
-			case OptionIDs.UI_SHOW_PLAYER_TAG_ON_MINIMAP:
-				o.showPlayerTagsOnMinimap = !o.showPlayerTagsOnMinimap;
-				break;
-			case OptionIDs.UI_ADVISOR:
-				o.isAdvisorEnabled = !o.isAdvisorEnabled;
-				break;
-			case OptionIDs.UI_COMBAT_ASSISTANT:
-				o.isCombatAssistantOn = !o.isCombatAssistantOn;
-				break;
-			case OptionIDs.UI_SHOW_TARGETS:
-				o.showTargets = !o.showTargets;
-				break;
-			case OptionIDs.UI_SHOW_PLAYER_TARGETS:
-				o.showPlayerTargets = !o.showPlayerTargets;
-				break;
-			case OptionIDs.GAME_MAX_CIVILIANS:
-				o.maxCivilians += dir * 5;
-				break;
-			case OptionIDs.GAME_RESOURCES_AVAILABILITY:
-				// Clamped at both ends rather than wrapping: the C# does
-				// `if (!= LOW) --` and `if (!= HIGH) ++`, so Left at LOW and Right
-				// at HIGH are no-ops instead of jumping to the other extreme.
-				o.resourcesAvailability = dir === -1
-					? o.resourcesAvailability > Resources.LOW
-						? ((o.resourcesAvailability - 1) as Resources)
-						: Resources.LOW
-					: o.resourcesAvailability < Resources.HIGH
-						? ((o.resourcesAvailability + 1) as Resources)
-						: Resources.HIGH;
-				break;
-			case OptionIDs.GAME_MAX_DOGS:
-				o.maxDogs += dir;
-				break;
-			case OptionIDs.GAME_MAX_UNDEADS:
-				o.maxUndeads += dir * 10;
-				break;
-			case OptionIDs.GAME_DAY_ZERO_UNDEADS_PERCENT:
-				o.dayZeroUndeadsPercent += dir * 5;
-				break;
-			case OptionIDs.GAME_ZOMBIE_INVASION_DAILY_INCREASE:
-				o.zombieInvasionDailyIncrease += dir;
-				break;
-			case OptionIDs.GAME_CITY_SIZE:
-				o.citySize += dir;
-				break;
-			case OptionIDs.GAME_NPC_CAN_STARVE_TO_DEATH:
-				o.nPCCanStarveToDeath = !o.nPCCanStarveToDeath;
-				break;
-			case OptionIDs.GAME_STARVED_ZOMBIFICATION_CHANCE:
-				o.starvedZombificationChance += dir * 5;
-				break;
-			case OptionIDs.GAME_SIMULATE_DISTRICTS:
-				if (dir < 0) {
-					if (o.simulateDistricts !== SimRatio.OFF) {
-						o.simulateDistricts = (o.simulateDistricts - 1) as SimRatio;
-					}
-				} else if (o.simulateDistricts !== SimRatio.FULL) {
-					o.simulateDistricts = (o.simulateDistricts + 1) as SimRatio;
-				}
-				break;
-			case OptionIDs.GAME_SIMULATE_SLEEP:
-				o.simulateWhenSleeping = !o.simulateWhenSleeping;
-				break;
-			case OptionIDs.GAME_SIM_THREAD:
-				o.simThread = !o.simThread;
-				break;
-			case OptionIDs.GAME_IDLE_AUTO_ADVANCE:
-				// Stepped like SimRatio rather than toggled, because "off" is one
-				// value among several and not a boolean: a player who finds the
-				// fastest step aggressive needs a longer one to exist to move to.
-				if (dir < 0) {
-					if (o.idleAutoAdvance !== IdleAdvance._FIRST) {
-						o.idleAutoAdvance = (o.idleAutoAdvance - 1) as IdleAdvance;
-					}
-				} else if (o.idleAutoAdvance !== IdleAdvance._COUNT - 1) {
-					o.idleAutoAdvance = (o.idleAutoAdvance + 1) as IdleAdvance;
-				}
-				break;
-			case OptionIDs.GAME_ZOMBIFICATION_CHANCE:
-				o.zombificationChance += dir * 5;
-				break;
-			case OptionIDs.GAME_REVEAL_STARTING_DISTRICT:
-				o.revealStartingDistrict = !o.revealStartingDistrict;
-				break;
-			case OptionIDs.GAME_ALLOW_UNDEADS_EVOLUTION:
-				o.allowUndeadsEvolution = !o.allowUndeadsEvolution;
-				break;
-			case OptionIDs.GAME_UNDEADS_UPGRADE_DAYS:
-				if (dir < 0) {
-					if (o.zombifiedsUpgradeDays !== ZupDays._FIRST) {
-						o.zombifiedsUpgradeDays = (o.zombifiedsUpgradeDays - 1) as ZupDays;
-					}
-				} else if (o.zombifiedsUpgradeDays !== ZupDays._COUNT - 1) {
-					o.zombifiedsUpgradeDays = (o.zombifiedsUpgradeDays + 1) as ZupDays;
-				}
-				break;
-			case OptionIDs.GAME_MAX_REINCARNATIONS:
-				o.maxReincarnations += dir;
-				break;
-			case OptionIDs.GAME_REINCARNATE_AS_RAT:
-				o.canReincarnateAsRat = !o.canReincarnateAsRat;
-				break;
-			case OptionIDs.GAME_REINCARNATE_TO_SEWERS:
-				o.canReincarnateToSewers = !o.canReincarnateToSewers;
-				break;
-			case OptionIDs.GAME_REINC_LIVING_RESTRICTED:
-				o.isLivingReincRestricted = !o.isLivingReincRestricted;
-				break;
-			case OptionIDs.GAME_PERMADEATH:
-				o.isPermadeathOn = !o.isPermadeathOn;
-				break;
-			case OptionIDs.GAME_DEATH_SCREENSHOT:
-				o.isDeathScreenshotOn = !o.isDeathScreenshotOn;
-				break;
-			case OptionIDs.GAME_AGGRESSIVE_HUNGRY_CIVILIANS:
-				o.isAggressiveHungryCiviliansOn = !o.isAggressiveHungryCiviliansOn;
-				break;
-			case OptionIDs.GAME_NATGUARD_FACTOR:
-				o.natGuardFactor += dir * 10;
-				break;
-			case OptionIDs.GAME_SUPPLIESDROP_FACTOR:
-				o.suppliesDropFactor += dir * 10;
-				break;
-			case OptionIDs.GAME_RATS_UPGRADE:
-				o.ratsUpgrade = !o.ratsUpgrade;
-				break;
-			case OptionIDs.GAME_SHAMBLERS_UPGRADE:
-				o.shamblersUpgrade = !o.shamblersUpgrade;
-				break;
-			case OptionIDs.GAME_SKELETONS_UPGRADE:
-				o.skeletonsUpgrade = !o.skeletonsUpgrade;
-				break;
-			case OptionIDs.GAME_AUTOSAVE_PERIOD:
-				o.autoSavePeriodInHours += dir * 12;
-				break; // alpha10.1
-			case OptionIDs.UI_SPRITE_STYLE: {
-				/*
-				 * Bounded index arithmetic over the list of sets that exist on
-				 * disk, in the same shape as the SimRatio and ZupDays cases:
-				 * clamped, not wrapped, so Left on the first set is a no-op
-				 * rather than a jump to the last.
-				 *
-				 * The list is `AssetPaths.IMAGE_SETS` rather than an enum
-				 * because that is the thing that has to agree with the folders
-				 * in `assets/images/` — see `GameOptions.spriteStyle`.
-				 */
-				const index = IMAGE_SETS.indexOf(o.spriteStyle);
-				const next = index + dir;
-				if (next >= 0 && next < IMAGE_SETS.length) {
-					o.spriteStyle = IMAGE_SETS[next]!;
-				}
-				break;
-			}
-			case OptionIDs.UI_FONT_CHOICE: {
-				// Same bounded-index shape, over the typefaces `ui/fonts.ts` offers.
-				// The setter applies it, so the next frame is drawn in the new face
-				// rather than the next reload.
-				const index = FONT_CHOICES.indexOf(o.fontChoice);
-				const next = index + dir;
-				if (next >= 0 && next < FONT_CHOICES.length) {
-					o.fontChoice = FONT_CHOICES[next]!;
-					// The setter applies the choice fire-and-forget; ask for the same
-					// promise so the loop can redraw once the faces have landed. This
-					// is the cached one, not a second load.
-					this.pendingTypeface = Options.applyFontChoice();
-				}
-				break;
-			}
-			case OptionIDs.UI_VIEW_MODE: {
-				// Same bounded-index shape, over the views `firstperson/Types` offers.
-				// Unlike the two above there is nothing to apply afterwards: the view
-				// mode has no second copy to push into, and `RogueGame.ApplyOptions`
-				// picks the change up when this screen exits. See `m_ViewMode`.
-				//
-				// An unrecognised stored value — a hand-edited or truncated options
-				// blob — is not on the list, so `indexOf` is -1 and `index + dir`
-				// would land on an arbitrary neighbour. Repair it to the default and
-				// stop, rather than showing a row whose value is about to jump.
-				if (!VIEW_MODES.includes(o.viewMode)) {
-					o.viewMode = DEFAULT_VIEW_MODE;
-					break;
-				}
-				const index = VIEW_MODES.indexOf(o.viewMode);
-				const next = index + dir;
-				if (next >= 0 && next < VIEW_MODES.length) {
-					o.viewMode = VIEW_MODES[next]!;
-				}
-				break;
-			}
-			default:
-				break;
+		const faceBefore = Options.fontChoice;
+		stepGameOption(option, dir);
+		if (Options.fontChoice !== faceBefore) {
+			// The setter applies the choice fire-and-forget; ask for the same
+			// promise so the loop can redraw once the faces have landed. This is
+			// the cached one, not a second load.
+			this.pendingTypeface = Options.applyFontChoice();
 		}
 	}
 

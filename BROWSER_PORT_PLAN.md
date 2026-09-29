@@ -1378,7 +1378,7 @@ Stages 4 and 5 have not started.
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
 | **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles, 90 of 95 items and all 123 item factories done.** The 5 backpacks (a new mechanic) and ~420 unused `GameImages` constants are the only content left; nothing *calls* the new factories yet, which is placement and belongs to Stage 4/5 |
-| **4** | 37 gated features | **16 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (both halves), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`, `TileFires`, `FireExtinguishers`, `Butchering`, `ResourcesAvailability`, `Fishing` (player path only — the NPC arm is still pending, see its section). 21 remain |
+| **4** | 37 gated features | **17 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (both halves), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`, `TileFires`, `FireExtinguishers`, `Butchering`, `ResourcesAvailability`, `DifficultyAtCreation`, `Fishing` (player path only — the NPC arm is still pending, see its section). 20 remain |
 | **5** | content, audio, credits | **not started** |
 
 Two things a later session should not have to re-derive:
@@ -2870,7 +2870,7 @@ plan for rather than discover:
 > looks like coverage of the clamp and is not is worse than one that admits the
 > limit.
 
-> ### `DifficultyAtCreation` — design notes, taken while wiring it
+> ### `DifficultyAtCreation` — done, and the "lock" is a deleted list, not a check
 >
 > Still Alive, Release 7-4. Two C# pieces: `HandleNewCharacterDifficulty(out int
 > chosenDay)` at `RogueGame.cs:3782`, called from `RogueGame.cs:2884` after the
@@ -3078,7 +3078,7 @@ zero precisely because of the dump-every-own-field design.
 | `Cooking` | `ItemFood._cookedDegree`, `_maxCookedDegree` | 0 | `canActorCookFood`, `ActionCookFood`, campfires/barrels as heat sources |
 | `Fishing` | `Activity.FISHING`, `Map.hasFishing` | 0 (own fields, carried by the writer) | **player path DONE** — `FISHING_ROD` at 170, the `canActorEquipFishingRod` water gate, `DoWait`'s cast arm with the 2/1/4% `ResourcesAvailability` scaling and the Unsuspicious bonus, the raw fish with the C#'s `bestBefore`, and the move and hit force-unequips. **NPC arm NOT done** — `CivilianAI`'s go-fish behaviour, `Map.hasFishing` is never set true (no pond generator in the port), and the rod cannot be spawned: the fork's own `BaseMapGenerator.MakeItemFishingRod` has no callers |
 | `ResourcesAvailability` | none (option + `Resources` enum) | 0 | **DONE** — `GAME_RESOURCES_AVAILABILITY` option, the 33/54/75 projection, the survivor-only difficulty multiplier, and the starting kit. The Butchering meat quantity now reads it instead of the hardcoded `2` |
-| `DifficultyAtCreation` | `Session.armyHelicopterRescueDay` | ~1 line (a scalar beside `ruleset` in the save root) + a new char-gen screen | the `GAME_RESCUE_DAY` option (visible/hidden day, "6 = random"), `HandleNewCharacterDifficulty`, the difficulty rows deleted from the mid-game options screen, and an `OptionsCategory` so `R` there resets difficulty options only. Note the C# has no runtime lock at all: the whole mechanism is that the row is not in the list |
+| `DifficultyAtCreation` | `Session.armyHelicopterRescueDay` | **1 line** — a scalar beside `ruleset` in the save root, no `GRAPH_VERSION` bump | **DONE** — `GAME_RESCUE_DAY` option (visible/hidden day, "6 = random"), the `HandleNewCharacterDifficulty` screen after character creation, the difficulty rows deleted from the mid-game options screen, and `OptionsCategory` so `R` there resets difficulty options only. Its consumer, `HelicopterRescue`, is not written — the field is set and read by nothing yet |
 | `Butchering` | `Actor.causeOfDeath`, `Abilities.isLivingAnimal` | 0 | **DONE** — the player's-bladed-weapon gate, fire-death-means-cooked, `bestBefore` divided by rot level, rabbit/chicken/dog/human meat, the no-sanity-hit carve-out for animals. `ResourcesAvailability` (3/2/1) not implemented, so the C#'s `default: 2` is hardcoded for animals; `RABBIT`/`CHICKEN` still unspawnable without `UnintelligentAnimalAI`, so the unrecognised-animal arm yields no meat where the C# throws |
 | `TileFires` | `Tile.flags.IS_ON_FIRE`, `Tile.scorched` | **~4 lines** — `tilesGrid` packs `modelId` + `flags` + `decorations` (`specs.ts:317-347`) | spread, extinguish, rain, damage to actors/corpses/crops, fuel units on barrels/cars |
 | `DarknessFov` | none | 0 | `MINIMAL_FOV_PLAYER 0` vs `MINIMAL_FOV_LIVINGACTORS 1`; night penalties; the FOV-0 gates from Stage 2 |

@@ -196,6 +196,26 @@ export class Session {
   player_CurrentFireMode: FireMode = FireMode.DEFAULT;
   player_TurnCharismaRoll = 0;
 
+  /**
+   * The day the army helicopter arrives, locked in at character creation.
+   *
+   * C# `m_Session.ArmyHelicopterRescue_Day` (`Session.cs:609`), set from
+   * `HandleNewCharacterDifficulty`'s `out` parameter at `RogueGame.cs:2886` and
+   * read by the endgame from then on.
+   *
+   * It is a *session* field and not an option because it is per-run: the option
+   * holds what the player chose (`visibleRescueDay`, possibly "random") and this
+   * holds the day that choice resolved to, so a run started from day 21 and
+   * reloaded after a save cannot quietly become a day-14 run because the option
+   * was re-rolled in between.
+   *
+   * **`HelicopterRescue` is the feature that reads this and it is not written
+   * yet**, so today the field is set and read by nothing. That is the honest
+   * state rather than a placeholder: the value has to be captured at the moment
+   * the player commits to it, and capturing it later would be after the fact.
+   */
+  private m_ArmyHelicopterRescueDay = GameOptions.DEFAULT_RESCUE_DAY;
+
   // ── Properties ──────────────────────────────────────────────────────────
   /** Gets the current Session (singleton). */
   static get(): Session {
@@ -235,6 +255,14 @@ export class Session {
   }
   set ruleset(value: Ruleset) {
     this.m_Ruleset = value;
+  }
+
+  /** See `m_ArmyHelicopterRescueDay`. */
+  get armyHelicopterRescueDay(): number {
+    return this.m_ArmyHelicopterRescueDay;
+  }
+  set armyHelicopterRescueDay(value: number) {
+    this.m_ArmyHelicopterRescueDay = value;
   }
 
   get worldTime(): WorldTime {
@@ -311,6 +339,12 @@ export class Session {
     this.playerKnows_CHARUndergroundFacilityLocation = false;
     this.playerKnows_TheSewersThingLocation = false;
     this.scriptStage_PoliceStationPrisoner = ScriptStage.STAGE_0;
+    // Reset to the option's default rather than to 0, which is what a fresh
+    // `int` would be. A new character creation overwrites it on accept; a run
+    // loaded from a save gets it restored below. The case that matters is the
+    // third: a *cancelled* difficulty screen, where the field must still be a
+    // day rather than a zero that a future endgame would compare against day 1.
+    this.m_ArmyHelicopterRescueDay = GameOptions.DEFAULT_RESCUE_DAY;
     this.uniqueActors = new UniqueActors();
     this.uniqueItems = new UniqueItems();
     this.uniqueMaps = new UniqueMaps();
@@ -377,6 +411,7 @@ export class Session {
       scriptStage_PoliceStationPrisoner: session.scriptStage_PoliceStationPrisoner,
       player_CurrentFireMode: session.player_CurrentFireMode,
       player_TurnCharismaRoll: session.player_TurnCharismaRoll,
+      armyHelicopterRescueDay: session.m_ArmyHelicopterRescueDay,
       weather: session.m_Weather,
       worldTime: session.m_WorldTime ? session.m_WorldTime.turnCounter : 0,
       graphVersion: GRAPH_VERSION,
@@ -564,6 +599,12 @@ export class Session {
       session.scriptStage_PoliceStationPrisoner = data.scriptStage_PoliceStationPrisoner as ScriptStage;
       session.player_CurrentFireMode = data.player_CurrentFireMode as FireMode;
       session.player_TurnCharismaRoll = data.player_TurnCharismaRoll as number;
+      // Absent in a save from before the difficulty screen existed. The default
+      // is the option's own default rather than 0, for the same reason `ruleset`
+      // defaults to CLASSIC above: an old save is a real game, and day 0 is not a
+      // day the helicopter can arrive on.
+      session.m_ArmyHelicopterRescueDay =
+        (data.armyHelicopterRescueDay as number) ?? GameOptions.DEFAULT_RESCUE_DAY;
       session.m_Weather = (data.weather as Weather) ?? Weather.CLEAR;
 
       /*

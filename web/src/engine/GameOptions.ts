@@ -7,17 +7,25 @@
 import { GameMode } from "@engine/Session";
 import { storage } from "@engine/storage";
 import {
-  DEFAULT_IMAGE_SET,
-  setImageSet,
-  type ImageSet,
+	DEFAULT_IMAGE_SET,
+	IMAGE_SETS,
+	setImageSet,
+	type ImageSet,
 } from "@engine/AssetPaths";
+
 import {
-  DEFAULT_FONT_CHOICE,
-  fontChoiceName,
-  setFontChoice,
-  type FontChoice,
+	DEFAULT_FONT_CHOICE,
+	FONT_CHOICES,
+	fontChoiceName,
+	setFontChoice,
+	type FontChoice,
 } from "@ui/fonts";
-import { DEFAULT_VIEW_MODE, type ViewMode } from "@engine/firstperson/Types";
+
+import {
+	DEFAULT_VIEW_MODE,
+	VIEW_MODES,
+	type ViewMode,
+} from "@engine/firstperson/Types";
 
 export enum OptionIDs {
   UI_MUSIC,
@@ -76,7 +84,87 @@ export enum OptionIDs {
   UI_FONT_CHOICE, // browser port
   UI_VIEW_MODE, // browser port
   GAME_IDLE_AUTO_ADVANCE, // browser port
+  /**
+   * Still Alive, Release 7-4. Appended for the same reason as the three above it:
+   * the numeric id is what a stored options blob carries, so this goes at the end
+   * rather than beside the Still Alive rows it belongs with. It is the fork's
+   * `DIFFICULTY_RESCUE_DAY`.
+   */
+  GAME_RESCUE_DAY,
 }
+
+/**
+ * Still Alive, Release 7-4: options are split so the difficulty ones can be reset
+ * on their own.
+ *
+ * The C# added this because `R` on the character-creation difficulty screen calls
+ * `ResetToDefaultValues(DIFFICULTY)` (`RogueGame.cs:3930`), and resetting
+ * *everything* from that screen would throw away the player's font and view mode
+ * because they nudged a difficulty number. See `resetToDefaultValues`.
+ */
+export enum OptionsCategory {
+  GENERAL,
+  DIFFICULTY,
+  ALL,
+}
+
+/**
+ * The day "6" means, which is a C# convention rather than a number
+ * (`GameOptions.cs:707`): the visible rescue day is clamped to 6..100 and 6 is
+ * the "random" choice, so the screen can show a single row whose value is
+ * `random` or a real day. The real day lands in `hiddenRescueDay` instead.
+ */
+export const RESCUE_DAY_RANDOM = 6;
+
+/** The window `Random()` is drawn from (`RogueGame.cs:4040`), [from, to). */
+export const RESCUE_DAY_RANDOM_MIN = 14;
+export const RESCUE_DAY_RANDOM_MAX = 28;
+
+/**
+ * Every option the fork treats as *difficulty*, in the order
+ * `HandleNewCharacterDifficulty` shows them (`RogueGame.cs:3772-3799`).
+ *
+ * One list, read by two callers that would otherwise drift apart:
+ * `RogueGame.HandleNewCharacterDifficulty` builds the creation-time screen from
+ * it, and `OptionsScreen` drops exactly these rows from the mid-game screen —
+ * which is the C#'s whole "locked mid-game" mechanism, a deleted block of the
+ * mid-game list under a `//MOVED TO CHARACTER CREATION` comment
+ * (`RogueGame.cs:1557-1582`), not a runtime check on the `ingame` parameter.
+ *
+ * The port's list is the C#'s minus the rows for options this build has not
+ * grown yet: `LIVING_DAMAGE_PERCENT`, `SANITY`, `ANTIVIRAL_PILLS`, `BACKPACKS`,
+ * `UNDEAD_DAMAGE_PERCENT` and `BLACKOPS_RAIDS` are all in the C#'s screen and
+ * none of them is an option here, so including them would be a row that throws
+ * "unhandled option" the moment it is selected.
+ *
+ * **`GAME_RATS_UPGRADE` is in this list and not in the C#'s screen.** The C# has
+ * it commented out at `RogueGame.cs:3790` because Release 5 removed rats
+ * upgrades upstream, and this port still has the option from classic's list, so
+ * it is one of the rows that has to move — leaving it behind would be the single
+ * Still Alive difficulty option a player could still change mid-game. The screen
+ * excludes it again for the C#'s reason; see `HandleNewCharacterDifficulty`.
+ */
+export const DIFFICULTY_OPTIONS: readonly OptionIDs[] = [
+  OptionIDs.GAME_RESCUE_DAY,
+  OptionIDs.GAME_RESOURCES_AVAILABILITY,
+  OptionIDs.GAME_AGGRESSIVE_HUNGRY_CIVILIANS,
+  OptionIDs.GAME_ZOMBIFICATION_CHANCE,
+  OptionIDs.GAME_NPC_CAN_STARVE_TO_DEATH,
+  OptionIDs.GAME_STARVED_ZOMBIFICATION_CHANCE,
+  OptionIDs.GAME_MAX_CIVILIANS,
+  OptionIDs.GAME_MAX_UNDEADS,
+  OptionIDs.GAME_DAY_ZERO_UNDEADS_PERCENT,
+  OptionIDs.GAME_UNDEADS_UPGRADE_DAYS,
+  OptionIDs.GAME_ALLOW_UNDEADS_EVOLUTION,
+  OptionIDs.GAME_ZOMBIE_INVASION_DAILY_INCREASE,
+  OptionIDs.GAME_SKELETONS_UPGRADE,
+  OptionIDs.GAME_SHAMBLERS_UPGRADE,
+  // Not on the C#'s difficulty screen — see the comment above. Last so that
+  // dropping it from the screen cannot renumber anything the player has seen.
+  OptionIDs.GAME_RATS_UPGRADE,
+  OptionIDs.GAME_NATGUARD_FACTOR,
+  OptionIDs.GAME_SUPPLIESDROP_FACTOR,
+];
 
 /**
  * Still Alive, Release 7-4: how plentiful the world is.
@@ -235,6 +323,11 @@ export class GameOptions {
    * inflates nor deflates a score.
    */
   static readonly DEFAULT_RESOURCES_AVAILABILITY: Resources = Resources.MED;
+  /**
+   * Still Alive, Release 7-4. 21, and the *visible* day is the option while the
+   * real one lands in the session — see `visibleRescueDay`.
+   */
+  static readonly DEFAULT_RESCUE_DAY = 21;
   static readonly DEFAULT_ZOMBIFIEDS_UPGRADE_DAYS: ZupDays = ZupDays.THREE;
   static readonly DEFAULT_AUTOSAVE_PERIOD = 24; // alpha10.1
   static readonly DEFAULT_SPRITE_STYLE: ImageSet = DEFAULT_IMAGE_SET;
@@ -287,6 +380,8 @@ export class GameOptions {
   private m_DaysBeforeDiscardedItemDespawns = 0;
   private m_ReducedMapObjectLighting = false;
   private m_ResourcesAvailability: Resources = Resources.MED;
+  private m_VisibleRescueDay = 0;
+  private m_HiddenRescueDay = 0;
   private m_ShowTargets = false;
   private m_ShowPlayerTargets = false;
   private m_ZupDays: ZupDays = ZupDays.OFF;
@@ -658,6 +753,41 @@ export class GameOptions {
     this.m_ResourcesAvailability = value;
   }
 
+  /**
+   * The rescue day as the *player* chose it, and the one the options row shows.
+   *
+   * Two fields rather than one because "random" has to survive being shown
+   * repeatedly: the C# keeps the choice here and the rolled day in
+   * `hiddenRescueDay`, so a player who picks random and backs out of character
+   * creation sees `random` again next time rather than a specific number they
+   * never chose (`GameOptions.cs:700-706`).
+   *
+   * Clamped to 6..100, and **6 is not a day** — it is `RESCUE_DAY_RANDOM`, the
+   * value that makes the accept path roll instead of copy. The floor is 6 rather
+   * than 1 for that reason alone.
+   */
+  get visibleRescueDay(): number {
+    return this.m_VisibleRescueDay;
+  }
+  set visibleRescueDay(value: number) {
+    if (value < RESCUE_DAY_RANDOM) value = RESCUE_DAY_RANDOM;
+    if (value > 100) value = 100;
+    this.m_VisibleRescueDay = value;
+  }
+
+  /**
+   * The day the run will actually use, after a "random" choice was resolved.
+   *
+   * Never displayed: `describeValue` reads `visibleRescueDay` so the row keeps
+   * saying `random`. Written once per accepted character creation.
+   */
+  get hiddenRescueDay(): number {
+    return this.m_HiddenRescueDay;
+  }
+  set hiddenRescueDay(value: number) {
+    this.m_HiddenRescueDay = value;
+  }
+
   get showTargets(): boolean {
     return this.m_ShowTargets;
   }
@@ -801,59 +931,90 @@ export class GameOptions {
   }
 
   // ── Init ────────────────────────────────────────────────────────────────
-  resetToDefaultValues(): void {
-    this.m_DistrictSize = GameOptions.DEFAULT_DISTRICT_SIZE;
-    this.m_MaxCivilians = GameOptions.DEFAULT_MAX_CIVILIANS;
-    this.m_MaxUndeads = GameOptions.DEFAULT_MAX_UNDEADS;
-    this.m_MaxDogs = GameOptions.DEFAULT_MAX_DOGS;
-    this.m_PlayMusic = true;
-    this.m_MusicVolume = 100;
-    this.m_AnimDelay = true;
-    this.m_ShowMinimap = true;
-    this.m_ShowPlayerTagsOnMinimap = true;
-    this.m_EnabledAdvisor = true;
-    this.m_CombatAssistant = false;
-    this.simulateDistricts = GameOptions.DEFAULT_SIM_DISTRICTS;
-    this.m_SimulateWhenSleeping = false;
-    this.m_SimThread = true;
-    this.m_SpawnSkeletonChance = GameOptions.DEFAULT_SPAWN_SKELETON_CHANCE;
-    this.m_SpawnZombieChance = GameOptions.DEFAULT_SPAWN_ZOMBIE_CHANCE;
-    this.m_SpawnZombieMasterChance = GameOptions.DEFAULT_SPAWN_ZOMBIE_MASTER_CHANCE;
-    this.m_CitySize = GameOptions.DEFAULT_CITY_SIZE;
-    this.m_NPCCanStarveToDeath = true;
-    this.m_ZombificationChance = GameOptions.DEFAULT_ZOMBIFICATION_CHANCE;
-    this.m_RevealStartingDistrict = true;
-    this.m_AllowUndeadsEvolution = true;
-    this.m_DayZeroUndeadsPercent = GameOptions.DEFAULT_DAY_ZERO_UNDEADS_PERCENT;
-    this.m_ZombieInvasionDailyIncrease = GameOptions.DEFAULT_ZOMBIE_INVASION_DAILY_INCREASE;
-    this.m_StarvedZombificationChance = GameOptions.DEFAULT_STARVED_ZOMBIFICATION_CHANCE;
-    this.m_MaxReincarnations = GameOptions.DEFAULT_MAX_REINCARNATIONS;
-    this.m_CanReincarnateAsRat = false;
-    this.m_CanReincarnateToSewers = false;
-    this.m_IsLivingReincRestricted = false;
-    this.m_Permadeath = false;
-    this.m_DeathScreenshot = false; // browser default off; C# default is true.
-    this.m_AggressiveHungryCivilians = true;
-    this.m_NatGuardFactor = GameOptions.DEFAULT_NATGUARD_FACTOR;
-    this.m_SuppliesDropFactor = GameOptions.DEFAULT_SUPPLIESDROP_FACTOR;
-    this.m_DaysBeforeDiscardedItemDespawns =
-      GameOptions.DEFAULT_DAYS_BEFORE_ITEM_DESPAWNS;
-    this.m_ReducedMapObjectLighting = GameOptions.DEFAULT_REDUCED_MAPOBJECT_LIGHTING;
-    this.m_ResourcesAvailability = GameOptions.DEFAULT_RESOURCES_AVAILABILITY;
-    this.m_ShowTargets = true;
-    this.m_ShowPlayerTargets = true;
-    this.m_ZupDays = GameOptions.DEFAULT_ZOMBIFIEDS_UPGRADE_DAYS;
-    this.m_RatsUpgrade = false;
-    this.m_SkeletonsUpgrade = false;
-    this.m_ShamblersUpgrade = false;
-    this.m_AutoSavePeriodInHours = GameOptions.DEFAULT_AUTOSAVE_PERIOD; // alpha10.1
-    this.m_SpriteStyle = GameOptions.DEFAULT_SPRITE_STYLE;
-    this.applySpriteStyle();
-    this.m_FontChoice = GameOptions.DEFAULT_FONT_CHOICE;
-    void this.applyFontChoice();
-    this.m_ViewMode = GameOptions.DEFAULT_VIEW_MODE;
-    this.m_IdleAutoAdvance = GameOptions.DEFAULT_IDLE_AUTO_ADVANCE;
-    this.DEV_ShowActorsStats = false;
+  /**
+   * Restore defaults, for one category or for all of them.
+   *
+   * The split is the C#'s (`GameOptions.cs:797`, Release 7-4) and it exists for
+   * one caller: `R` on the character-creation difficulty screen, which resets the
+   * *difficulty* options to the shipped defaults. Resetting everything there
+   * would mean that nudging max-civilians also threw away the player's font,
+   * view mode and sprite style.
+   *
+   * **The difficulty arm resets to the shipped defaults, not to the values the
+   * screen was entered with** — that is the C#'s behaviour and not an
+   * oversight. Its own comment says the call "used to restore changes in this
+   * session" and now does not (`RogueGame.cs:3930`), so a player who opened the
+   * screen and pressed `R` expecting to undo their own edits instead gets a
+   * clean difficulty slate and keeps the font they had.
+   *
+   * Which options each arm owns is `DIFFICULTY_OPTIONS`; `tests/
+   * difficulty-at-creation.test.ts` asserts the two lists cannot drift, because
+   * a row that is on the screen but not in the arm is an option `R` silently
+   * leaves alone.
+   */
+  resetToDefaultValues(category: OptionsCategory = OptionsCategory.ALL): void {
+    if (category === OptionsCategory.GENERAL || category === OptionsCategory.ALL) {
+      this.m_PlayMusic = true;
+      this.m_MusicVolume = 100;
+      this.m_AnimDelay = true;
+      this.m_ShowMinimap = true;
+      this.m_ShowPlayerTagsOnMinimap = true;
+      this.m_EnabledAdvisor = true;
+      this.m_CombatAssistant = false;
+      this.simulateDistricts = GameOptions.DEFAULT_SIM_DISTRICTS;
+      this.m_SimulateWhenSleeping = false;
+      this.m_SimThread = true;
+      this.m_CitySize = GameOptions.DEFAULT_CITY_SIZE;
+      this.m_RevealStartingDistrict = true;
+      this.m_DistrictSize = GameOptions.DEFAULT_DISTRICT_SIZE;
+      this.m_Permadeath = false;
+      this.m_DeathScreenshot = false; // browser default off; C# default is true.
+      this.m_ShowTargets = true;
+      this.m_ShowPlayerTargets = true;
+      this.m_CanReincarnateAsRat = false;
+      this.m_CanReincarnateToSewers = false;
+      this.m_IsLivingReincRestricted = false;
+      this.m_MaxReincarnations = GameOptions.DEFAULT_MAX_REINCARNATIONS;
+      this.m_DaysBeforeDiscardedItemDespawns =
+        GameOptions.DEFAULT_DAYS_BEFORE_ITEM_DESPAWNS;
+      this.m_ReducedMapObjectLighting = GameOptions.DEFAULT_REDUCED_MAPOBJECT_LIGHTING;
+      this.m_AutoSavePeriodInHours = GameOptions.DEFAULT_AUTOSAVE_PERIOD; // alpha10.1
+      this.m_SpriteStyle = GameOptions.DEFAULT_SPRITE_STYLE;
+      this.applySpriteStyle();
+      this.m_FontChoice = GameOptions.DEFAULT_FONT_CHOICE;
+      void this.applyFontChoice();
+      this.m_ViewMode = GameOptions.DEFAULT_VIEW_MODE;
+      this.m_IdleAutoAdvance = GameOptions.DEFAULT_IDLE_AUTO_ADVANCE;
+      this.DEV_ShowActorsStats = false;
+    }
+    if (category === OptionsCategory.DIFFICULTY || category === OptionsCategory.ALL) {
+      this.m_MaxCivilians = GameOptions.DEFAULT_MAX_CIVILIANS;
+      this.m_MaxUndeads = GameOptions.DEFAULT_MAX_UNDEADS;
+      this.m_SpawnSkeletonChance = GameOptions.DEFAULT_SPAWN_SKELETON_CHANCE;
+      this.m_SpawnZombieChance = GameOptions.DEFAULT_SPAWN_ZOMBIE_CHANCE;
+      this.m_SpawnZombieMasterChance = GameOptions.DEFAULT_SPAWN_ZOMBIE_MASTER_CHANCE;
+      this.m_MaxDogs = GameOptions.DEFAULT_MAX_DOGS;
+      this.m_NPCCanStarveToDeath = true;
+      this.m_ZombificationChance = GameOptions.DEFAULT_ZOMBIFICATION_CHANCE;
+      this.m_AllowUndeadsEvolution = true;
+      this.m_DayZeroUndeadsPercent = GameOptions.DEFAULT_DAY_ZERO_UNDEADS_PERCENT;
+      this.m_ZombieInvasionDailyIncrease = GameOptions.DEFAULT_ZOMBIE_INVASION_DAILY_INCREASE;
+      this.m_StarvedZombificationChance = GameOptions.DEFAULT_STARVED_ZOMBIFICATION_CHANCE;
+      this.m_AggressiveHungryCivilians = true;
+      this.m_NatGuardFactor = GameOptions.DEFAULT_NATGUARD_FACTOR;
+      this.m_SuppliesDropFactor = GameOptions.DEFAULT_SUPPLIESDROP_FACTOR;
+      this.m_ZupDays = GameOptions.DEFAULT_ZOMBIFIEDS_UPGRADE_DAYS;
+      this.m_SkeletonsUpgrade = false;
+      this.m_ShamblersUpgrade = false;
+      this.m_RatsUpgrade = false;
+      this.m_ResourcesAvailability = GameOptions.DEFAULT_RESOURCES_AVAILABILITY;
+      // Both halves, because the C#'s difficulty arm resets them together
+      // (`GameOptions.cs:857`): the visible day is the option and the hidden one
+      // is its resolved twin, so resetting only the visible one would leave a
+      // stale rolled day behind for a run that never asked for a roll.
+      this.m_VisibleRescueDay = GameOptions.DEFAULT_RESCUE_DAY;
+      this.m_HiddenRescueDay = GameOptions.DEFAULT_RESCUE_DAY;
+    }
   }
 
   // ── Value-copy (C# GameOptions is a struct) ──────────────────────────────
@@ -924,6 +1085,14 @@ export class GameOptions {
         // Still Alive, Release 7-4. The C# prefixes "(Living)", which is a
         // leftover from when the difficulty screen was the only one that had it.
         return " (Living) Resources availability";
+      case OptionIDs.GAME_RESCUE_DAY:
+        // Still Alive, Release 7-4. The C#'s two difficulty screens spell these
+        // rows differently ("(Undead) Allow undeads evolution (non-VTG)" versus
+        // "(Undead) Allow Undeads Evolution") and adds the "(STD)"/"(non-VTG)"
+        // qualifiers into the name rather than filtering the row out. One name
+        // for both screens, and the qualifiers are done by filtering instead —
+        // see `HandleNewCharacterDifficulty`.
+        return " (Living) Helicopter rescue day";
       case OptionIDs.GAME_REINCARNATE_AS_RAT:
         return " (Reinc) Can Reincarnate as Rat";
       case OptionIDs.GAME_REINCARNATE_TO_SEWERS:
@@ -1040,6 +1209,11 @@ export class GameOptions {
           "How plentiful the world is. It is not one number: it sets your starting food, " +
           "how much meat a corpse yields, your odds of catching a fish, how often plants fruit, " +
           "and what turns up in supply caches."
+        );
+      case OptionIDs.GAME_RESCUE_DAY: // Still Alive, Release 7-4
+        return (
+          "Which day that the rescue helicopter will arrive. You just need to find out where that will be...\n" +
+          "Choosing random will select a day between 14-28."
         );
       case OptionIDs.GAME_REINCARNATE_AS_RAT:
         return "Enables the possibility to reincarnate into a zombie rat.";
@@ -1366,6 +1540,11 @@ export class GameOptions {
         )})`;
       case OptionIDs.GAME_REVEAL_STARTING_DISTRICT:
         return this.revealStartingDistrict ? "YES   (default YES)" : "NO    (default YES)";
+      case OptionIDs.GAME_RESCUE_DAY: // Still Alive, Release 7-4
+        // "random" reads the *visible* day, so the row keeps saying random after a
+        // run has rolled one into `hiddenRescueDay` — which is the whole reason
+        // there are two fields.
+        return `${this.visibleRescueDay === RESCUE_DAY_RANDOM ? "random" : this.visibleRescueDay.toString()} (default ${GameOptions.DEFAULT_RESCUE_DAY})`;
       case OptionIDs.GAME_SHAMBLERS_UPGRADE:
         return this.shamblersUpgrade ? "YES   (default NO)" : "NO    (default NO)";
       case OptionIDs.GAME_SKELETONS_UPGRADE:
@@ -1503,3 +1682,240 @@ export class GameOptions {
 
 /** C# `RogueGame.Options` singleton. */
 export const Options: GameOptions = new GameOptions();
+
+/**
+ * Steps one option by `dir`, which is the Left and Right key of both option
+ * screens.
+ *
+ * The C# writes this out twice — once in `HandleOptions` and once in
+ * `HandleNewCharacterDifficulty`, as two `switch` statements with a `case` per
+ * option and the arrow's direction spelled into each line. The port has one
+ * function instead, and the `dir` argument replaces the duplicated `case
+ * Keys.Left:` / `case Keys.Right:` pair. The alternative is twenty arms of
+ * step-per-arrow in two files with nothing to keep them equal, and the two
+ * screens show overlapping rows: the first divergence would be a row that steps
+ * one way on the creation screen and not at all in the options screen, which is
+ * exactly the sort of thing nobody notices until a player hits it.
+ *
+ * Acts on the `Options` singleton, as both screens do. A caller that has to
+ * re-draw afterwards (`OptionsScreen`, because a typeface change loads faces) is
+ * responsible for noticing that — compare the value, or check the option id.
+ *
+ * Options with no stepping (the booleans that only ever toggle do step; the ones
+ * here are the unused spawn chances and `GAME_MAX_DOGS`, which no list shows)
+ * fall through and do nothing, which is what the C#'s missing `case` does.
+ */
+export function stepGameOption(option: OptionIDs, dir: -1 | 1): void {
+	const o = Options;
+	switch (option) {
+		case OptionIDs.GAME_DISTRICT_SIZE:
+			o.districtSize += dir * 5;
+			break;
+		case OptionIDs.UI_MUSIC:
+			o.playMusic = !o.playMusic;
+			break;
+		case OptionIDs.UI_MUSIC_VOLUME:
+			o.musicVolume += dir * 5;
+			break;
+		case OptionIDs.UI_ANIM_DELAY:
+			o.isAnimDelayOn = !o.isAnimDelayOn;
+			break;
+		case OptionIDs.UI_SHOW_MINIMAP:
+			o.isMinimapOn = !o.isMinimapOn;
+			break;
+		case OptionIDs.UI_SHOW_PLAYER_TAG_ON_MINIMAP:
+			o.showPlayerTagsOnMinimap = !o.showPlayerTagsOnMinimap;
+			break;
+		case OptionIDs.UI_ADVISOR:
+			o.isAdvisorEnabled = !o.isAdvisorEnabled;
+			break;
+		case OptionIDs.UI_COMBAT_ASSISTANT:
+			o.isCombatAssistantOn = !o.isCombatAssistantOn;
+			break;
+		case OptionIDs.UI_SHOW_TARGETS:
+			o.showTargets = !o.showTargets;
+			break;
+		case OptionIDs.UI_SHOW_PLAYER_TARGETS:
+			o.showPlayerTargets = !o.showPlayerTargets;
+			break;
+		case OptionIDs.GAME_MAX_CIVILIANS:
+			o.maxCivilians += dir * 5;
+			break;
+		case OptionIDs.GAME_RESOURCES_AVAILABILITY:
+			// Clamped at both ends rather than wrapping: the C# does
+			// `if (!= LOW) --` and `if (!= HIGH) ++`, so Left at LOW and Right
+			// at HIGH are no-ops instead of jumping to the other extreme.
+			o.resourcesAvailability = dir === -1
+				? o.resourcesAvailability > Resources.LOW
+					? ((o.resourcesAvailability - 1) as Resources)
+					: Resources.LOW
+				: o.resourcesAvailability < Resources.HIGH
+					? ((o.resourcesAvailability + 1) as Resources)
+					: Resources.HIGH;
+			break;
+		case OptionIDs.GAME_RESCUE_DAY:
+			// A day, stepped by one, clamped by the setter to 6..100 — and 6 is
+			// `RESCUE_DAY_RANDOM`, so it is a real row value rather than a floor
+			// the player can reach and get stuck on.
+			o.visibleRescueDay += dir;
+			break;
+		case OptionIDs.GAME_MAX_DOGS:
+			o.maxDogs += dir;
+			break;
+		case OptionIDs.GAME_MAX_UNDEADS:
+			o.maxUndeads += dir * 10;
+			break;
+		case OptionIDs.GAME_DAY_ZERO_UNDEADS_PERCENT:
+			o.dayZeroUndeadsPercent += dir * 5;
+			break;
+		case OptionIDs.GAME_ZOMBIE_INVASION_DAILY_INCREASE:
+			o.zombieInvasionDailyIncrease += dir;
+			break;
+		case OptionIDs.GAME_CITY_SIZE:
+			o.citySize += dir;
+			break;
+		case OptionIDs.GAME_NPC_CAN_STARVE_TO_DEATH:
+			o.nPCCanStarveToDeath = !o.nPCCanStarveToDeath;
+			break;
+		case OptionIDs.GAME_STARVED_ZOMBIFICATION_CHANCE:
+			o.starvedZombificationChance += dir * 5;
+			break;
+		case OptionIDs.GAME_SIMULATE_DISTRICTS:
+			if (dir < 0) {
+				if (o.simulateDistricts !== SimRatio.OFF) {
+					o.simulateDistricts = (o.simulateDistricts - 1) as SimRatio;
+				}
+			} else if (o.simulateDistricts !== SimRatio.FULL) {
+				o.simulateDistricts = (o.simulateDistricts + 1) as SimRatio;
+			}
+			break;
+		case OptionIDs.GAME_SIMULATE_SLEEP:
+			o.simulateWhenSleeping = !o.simulateWhenSleeping;
+			break;
+		case OptionIDs.GAME_SIM_THREAD:
+			o.simThread = !o.simThread;
+			break;
+		case OptionIDs.GAME_IDLE_AUTO_ADVANCE:
+			// Stepped like SimRatio rather than toggled, because "off" is one
+			// value among several and not a boolean: a player who finds the
+			// fastest step aggressive needs a longer one to exist to move to.
+			if (dir < 0) {
+				if (o.idleAutoAdvance !== IdleAdvance._FIRST) {
+					o.idleAutoAdvance = (o.idleAutoAdvance - 1) as IdleAdvance;
+				}
+			} else if (o.idleAutoAdvance !== IdleAdvance._COUNT - 1) {
+				o.idleAutoAdvance = (o.idleAutoAdvance + 1) as IdleAdvance;
+			}
+			break;
+		case OptionIDs.GAME_ZOMBIFICATION_CHANCE:
+			o.zombificationChance += dir * 5;
+			break;
+		case OptionIDs.GAME_REVEAL_STARTING_DISTRICT:
+			o.revealStartingDistrict = !o.revealStartingDistrict;
+			break;
+		case OptionIDs.GAME_ALLOW_UNDEADS_EVOLUTION:
+			o.allowUndeadsEvolution = !o.allowUndeadsEvolution;
+			break;
+		case OptionIDs.GAME_UNDEADS_UPGRADE_DAYS:
+			if (dir < 0) {
+				if (o.zombifiedsUpgradeDays !== ZupDays._FIRST) {
+					o.zombifiedsUpgradeDays = (o.zombifiedsUpgradeDays - 1) as ZupDays;
+				}
+			} else if (o.zombifiedsUpgradeDays !== ZupDays._COUNT - 1) {
+				o.zombifiedsUpgradeDays = (o.zombifiedsUpgradeDays + 1) as ZupDays;
+			}
+			break;
+		case OptionIDs.GAME_MAX_REINCARNATIONS:
+			o.maxReincarnations += dir;
+			break;
+		case OptionIDs.GAME_REINCARNATE_AS_RAT:
+			o.canReincarnateAsRat = !o.canReincarnateAsRat;
+			break;
+		case OptionIDs.GAME_REINCARNATE_TO_SEWERS:
+			o.canReincarnateToSewers = !o.canReincarnateToSewers;
+			break;
+		case OptionIDs.GAME_REINC_LIVING_RESTRICTED:
+			o.isLivingReincRestricted = !o.isLivingReincRestricted;
+			break;
+		case OptionIDs.GAME_PERMADEATH:
+			o.isPermadeathOn = !o.isPermadeathOn;
+			break;
+		case OptionIDs.GAME_DEATH_SCREENSHOT:
+			o.isDeathScreenshotOn = !o.isDeathScreenshotOn;
+			break;
+		case OptionIDs.GAME_AGGRESSIVE_HUNGRY_CIVILIANS:
+			o.isAggressiveHungryCiviliansOn = !o.isAggressiveHungryCiviliansOn;
+			break;
+		case OptionIDs.GAME_NATGUARD_FACTOR:
+			o.natGuardFactor += dir * 10;
+			break;
+		case OptionIDs.GAME_SUPPLIESDROP_FACTOR:
+			o.suppliesDropFactor += dir * 10;
+			break;
+		case OptionIDs.GAME_RATS_UPGRADE:
+			o.ratsUpgrade = !o.ratsUpgrade;
+			break;
+		case OptionIDs.GAME_SHAMBLERS_UPGRADE:
+			o.shamblersUpgrade = !o.shamblersUpgrade;
+			break;
+		case OptionIDs.GAME_SKELETONS_UPGRADE:
+			o.skeletonsUpgrade = !o.skeletonsUpgrade;
+			break;
+		case OptionIDs.GAME_AUTOSAVE_PERIOD:
+			o.autoSavePeriodInHours += dir * 12;
+			break; // alpha10.1
+		case OptionIDs.UI_SPRITE_STYLE: {
+			/*
+			 * Bounded index arithmetic over the list of sets that exist on
+			 * disk, in the same shape as the SimRatio and ZupDays cases:
+			 * clamped, not wrapped, so Left on the first set is a no-op
+			 * rather than a jump to the last.
+			 *
+			 * The list is `AssetPaths.IMAGE_SETS` rather than an enum
+			 * because that is the thing that has to agree with the folders
+			 * in `assets/images/` — see `GameOptions.spriteStyle`.
+			 */
+			const index = IMAGE_SETS.indexOf(o.spriteStyle);
+			const next = index + dir;
+			if (next >= 0 && next < IMAGE_SETS.length) {
+				o.spriteStyle = IMAGE_SETS[next]!;
+			}
+			break;
+		}
+		case OptionIDs.UI_FONT_CHOICE: {
+			// Same bounded-index shape, over the typefaces `ui/fonts.ts` offers.
+			// The setter applies it, so the next frame is drawn in the new face
+			// rather than the next reload. The caller is what has to notice and
+			// redraw once the faces land; see the function comment.
+			const index = FONT_CHOICES.indexOf(o.fontChoice);
+			const next = index + dir;
+			if (next >= 0 && next < FONT_CHOICES.length) {
+				o.fontChoice = FONT_CHOICES[next]!;
+			}
+			break;
+		}
+		case OptionIDs.UI_VIEW_MODE: {
+			// Same bounded-index shape, over the views `firstperson/Types` offers.
+			// Unlike the two above there is nothing to apply afterwards: the view
+			// mode has no second copy to push into, and `RogueGame.ApplyOptions`
+			// picks the change up when this screen exits. See `m_ViewMode`.
+			//
+			// An unrecognised stored value — a hand-edited or truncated options
+			// blob — is not on the list, so `indexOf` is -1 and `index + dir`
+			// would land on an arbitrary neighbour. Repair it to the default and
+			// stop, rather than showing a row whose value is about to jump.
+			if (!VIEW_MODES.includes(o.viewMode)) {
+				o.viewMode = DEFAULT_VIEW_MODE;
+				break;
+			}
+			const index = VIEW_MODES.indexOf(o.viewMode);
+			const next = index + dir;
+			if (next >= 0 && next < VIEW_MODES.length) {
+				o.viewMode = VIEW_MODES[next]!;
+			}
+			break;
+		}
+		default:
+			break;
+	}
+}
