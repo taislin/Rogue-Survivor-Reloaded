@@ -17567,19 +17567,127 @@ export class RogueGame {
 	}
 
 	// C# DoUseItem — RogueGame.cs:15181
+	/**
+	 * Is the actor standing next to anything that throws light?
+	 *
+	 * Still Alive, Release 7-5 (`RogueGame.cs:33047`), tidied in the fork's own
+	 * Release 8-2. This is what makes "you cannot use medicine in the dark" fair
+	 * rather than absurd: absolute darkness means FOV 0, and a player holding an
+	 * unlit torch in a pitch-black basement would otherwise be told no while
+	 * standing next to a barrel that is on fire.
+	 *
+	 * A 3x3 scan — the actor's own tile, then the eight around it — because the
+	 * C# assumes ambient light "from items/decorations is always only 3x3 tiles".
+	 * That assumption is load-bearing: a brazier two tiles away does not count,
+	 * and that is the fork's behaviour, not a shortcut taken here.
+	 *
+	 * **Two of the C#'s five checks are not ported**, both because what they need
+	 * does not exist yet, and both are the kind of omission that should be a
+	 * comment rather than a silent gap:
+	 *
+	 * - `IsAnyTileFireThere` — a *tile* fire (grass, carpet, a burning floor)
+	 *   rather than a burning object. That is `Feature.TileFires`, still pending.
+	 * - `GameImages.DECO_LIT_CANDLE` — a lit candle decoration. The sprite is on
+	 *   disk and the constant is not yet declared, and adding ~420 `GameImages`
+	 *   constants is deliberately deferred (see the sprite commit's note). It
+	 *   arrives with the unused-constants work.
+	 *
+	 * When `TileFires` lands, add the tile-fire check *here*, and the two callers
+	 * below need no change.
+	 */
+	IsActorStandingInLight(actor: Actor): boolean {
+		const map = actor.location.map!;
+		const from = actor.location.position;
+		// The C# walks `Direction.COMPASS` starting *at* the actor's own tile and
+		// stepping after each test, so the centre is checked first and then the
+		// eight neighbours. The loop below reproduces that order rather than
+		// checking centre-plus-eight in some other order, because with `continue`
+		// the order decides which of several light sources is found first -- and
+		// today that is unobservable, which is exactly why it should not be left
+		// to chance.
+		const spots: Point[] = [from];
+		for (const d of Direction.COMPASS) spots.push(d.applyTo(from));
+
+		for (const spot of spots) {
+			if (!map.isInBounds(spot.x, spot.y)) continue;
+
+			// on-fire map objects
+			const mapObj = map.getMapObjectAtPoint(spot);
+			if (mapObj !== null && mapObj.isOnFire) return true;
+
+			// actors carrying a working light
+			const other = map.getActorAtPoint(spot);
+			if (other !== null) {
+				const held = other.getEquippedItem(DollPart.LEFT_HAND);
+				if (held instanceof ItemLight && held.batteries > 0) return true;
+			}
+
+			// dropped lights
+			const inv = map.getItemsAt(spot);
+			if (inv !== null) {
+				for (const item of inv.items) {
+					if (item instanceof ItemLight) return true;
+				}
+			}
+		}
+		return false;
+	}
+
 	DoUseItem(actor: Actor, it: Item): void {
+		// Still Alive, Release 6-2: it may be too dark to read or to use medicine.
+		// The C# computes this once, here, and consults it from two branches; the
+		// helper is called per branch instead, because the C#'s version is one
+		// boolean read before a chain of `instanceof` tests and a function call in
+		// each of two arms reads the same for free.
+		const absoluteDarkness = this.m_Rules.isActorInAbsoluteDarkness(actor);
 		// alpha10 defrag ai inventories
 		const defragInventory = !actor.isPlayer && it.model.isStackable;
 
 		// concrete use.
 		if (it instanceof ItemFood) this.DoUseFoodItem(actor, it);
-		else if (it instanceof ItemMedicine) this.DoUseMedicineItem(actor, it);
+		else if (it instanceof ItemMedicine) {
+			// Release 6-2, with the Release 7-5 exception: cigarettes and booze are
+			// consumable in the dark. That reads oddly until you notice neither is
+			// really medicine -- both are `ItemMedicine` only so they can restore a
+			// point of sanity, which is what `ItemModel.isRecreational` records.
+			let standingInLight = true;
+			if (absoluteDarkness) {
+				standingInLight =
+					it.model.id === ItemID.MEDICINE_CIGARETTES ||
+					this.m_Rules.isItemAlcoholForDrinking(it) ||
+					this.IsActorStandingInLight(actor);
+			}
+			if (standingInLight) this.DoUseMedicineItem(actor, it);
+			else if (actor.isPlayer) {
+				this.AddMessage(
+					new Message(
+						"You can't do that, it's too dark here.",
+						this.m_Session.worldTime.turnCounter,
+						Color.Red,
+					),
+				);
+			}
+		}
 		else if (it instanceof ItemAmmo) this.DoUseAmmoItem(actor, it);
 		//else if (it instanceof ItemSprayScent)  // alpha10 new way to use spray scent
 		//    this.DoUseSprayScentItem(actor, it);
 		else if (it instanceof ItemTrap) this.DoUseTrapItem(actor, it);
-		else if (it instanceof ItemEntertainment)
-			this.DoUseEntertainmentItem(actor, it);
+		else if (it instanceof ItemEntertainment) {
+			// Release 6-2: too dark to read. Unlike medicine this has no carve-out
+			// -- there is no "but you can smoke while reading".
+			let standingInLight = true;
+			if (absoluteDarkness) standingInLight = this.IsActorStandingInLight(actor);
+			if (standingInLight) this.DoUseEntertainmentItem(actor, it);
+			else if (actor.isPlayer) {
+				this.AddMessage(
+					new Message(
+						"You can't do that, it's too dark here.",
+						this.m_Session.worldTime.turnCounter,
+						Color.Red,
+					),
+				);
+			}
+		}
 
 		// alpha10 defrag ai inventories
 		if (defragInventory) actor.inventory!.defrag();

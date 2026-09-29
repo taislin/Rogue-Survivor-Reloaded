@@ -1378,7 +1378,7 @@ Stages 4 and 5 have not started.
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
 | **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles, 90 of 95 items and all 123 item factories done.** The 5 backpacks (a new mechanic) and ~420 unused `GameImages` constants are the only content left; nothing *calls* the new factories yet, which is placement and belongs to Stage 4/5 |
-| **4** | 37 gated features | **7 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (part 2a; the light-source scan in 2b is not done). 30 remain |
+| **4** | 37 gated features | **8 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (part 2a; the light-source scan in 2b is not done), `DarknessGating`. 29 remain |
 | **5** | content, audio, credits | **not started** |
 
 Two things a later session should not have to re-derive:
@@ -2448,6 +2448,58 @@ plan for rather than discover:
 >
 > `DarknessGating` and `LightPriority` — both parked since Stage 2 as "needs
 > `DarknessFov`" — now unblock, and are next.
+
+> ### `DarknessGating` — done, and it is why `DarknessFov` 2a was worth landing first
+>
+> The feature that had been parked since Stage 2 as "needs `DarknessFov` to be
+> coherent". Five behaviours refuse in total darkness: using medicine, reading,
+> barricading a door, building a fortification, repairing a fortification.
+>
+> **The parked dependency was real, and precisely: every one of those five checks
+> is `actorFOV(...) == 0`, and under vanilla the floor is 2.** So the entire
+> feature was *unreachable* before 2a landed — five branches that no test could
+> ever enter. Porting it first would have been a worse state than not porting,
+> because the code would have looked finished and nothing would have proved it.
+>
+> **One reader, and that is the design.** All five sites call
+> `Rules.isActorInAbsoluteDarkness`; the flag is tested once, inside it. Five
+> independent `hasFeature` calls would be five chances to disagree about what
+> "too dark" means. The registry test asserts the count is one.
+>
+> The C# passes `weather` into these `Can*` methods; the port does not, and rather
+> than widen four signatures and every call site, the helper reads the map's local
+> time and the session's weather itself — which is exactly what the C# passes.
+>
+> **The C# has two different strings for one condition** — `"it's too dark too see"`
+> on the two door checks, `"it's too dark to see"` on the two fortifications. That
+> is the text the player actually sees, so it is reproduced and both spellings are
+> pinned; a later "obvious" tidy-up has to be a deliberate act.
+>
+> **The gate is not redundant, but the thing that makes it redundant is subtle.**
+> `actorFOV` returns 0 for a *sleeping* actor before it ever consults the FOV
+> profile, so a sleeping player in a CLASSIC basement has FOV 0 and would be "in
+> absolute darkness" if the flag were dropped. That is the case the CLASSIC test
+> uses, and it is the only reason the gate does any work: for a *waking* actor the
+> vanilla floor of 2 already makes the condition false. Worth knowing, because the
+> obvious reading ("the profile makes this unreachable, drop the flag") is wrong.
+>
+> The Release 7-5 carve-out is the part that reads oddly until you see why it
+> exists: cigarettes and booze may be used in the dark, but neither is really
+> medicine — both are `ItemMedicine` only so they can restore a point of sanity,
+> which is what `ItemModel.isRecreational` records. The rule is really "you cannot
+> use *medicine* in the dark" and the exceptions are the two things that are not
+> medicine. Reading gets no carve-out at all.
+>
+> `IsActorStandingInLight` is the 3x3 scan that makes the rule fair rather than
+> absurd. Its radius is a documented limitation of the fork, not a shortcut taken
+> here: the C# assumes ambient light "is always only 3x3 tiles", so a brazier two
+> tiles away does not count, and a test pins that so nobody "fixes" it into a
+> radius scan. Two of its five checks are **not ported** — a burning *tile*
+> (`Feature.TileFires`, still pending) and a `DECO_LIT_CANDLE` decoration (a
+> `GameImages` constant, deferred) — both with comments at the omission.
+>
+> Six mutations, each caught, including the tempting "fix" that widens the 3x3
+> scan into a radius.
 
 > ### `ArmorResist` — half done, and the half is not the one the table implies
 >

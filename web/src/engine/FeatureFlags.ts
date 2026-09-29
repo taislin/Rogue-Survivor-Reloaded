@@ -196,7 +196,6 @@ export type Stage = 2 | 4 | 5;
  */
 const PENDING_WIRING: Readonly<Partial<Record<string, Stage>>> = {
   LightPriority: 2,
-  DarknessGating: 2,
   Fishing: 4,
   Butchering: 4,
   TileFires: 4,

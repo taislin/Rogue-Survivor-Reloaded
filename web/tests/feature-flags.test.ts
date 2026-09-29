@@ -154,10 +154,10 @@ describe("Feature registry is wired", () => {
     // is the point: a reader is a decision, not an accident.
     expect(sites.map((s) => s.feature).sort())
       .toEqual(["Alcohol", "ArmorResist", "Cooking", "Cooking", "DarknessFov",
-                "DarknessFov", "FireBarrels", "FireBarrels", "FoodPoisoning",
+                "DarknessFov", "DarknessGating", "FireBarrels", "FireBarrels",
                 "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-                "FoodPoisoning", "FoodPoisoning", "ItemDespawn", "ItemDespawn",
-                "WeaponWeight"]);
+                "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
+                "ItemDespawn", "ItemDespawn", "WeaponWeight"]);
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     expect(at("Alcohol")).toMatch(/HeadlessRunner\.ts:\d+$/);
     expect(at("WeaponWeight")).toMatch(/Rules\.ts:\d+$/);
@@ -181,6 +181,14 @@ describe("Feature registry is wired", () => {
     const poison = sites.filter((s) => s.feature === "FoodPoisoning");
     expect(poison.filter((s) => /Rules\.ts/.test(s.at))).toHaveLength(2);
     expect(poison.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(4);
+
+    // DarknessGating has exactly one reader, in Rules, and that is the design
+    // rather than an accident: five separate behaviours refuse in the dark
+    // (medicine, reading, barricading a door, building a fortification, repairing
+    // a fortification), and all five go through one `isActorInAbsoluteDarkness`
+    // helper. Five independent gates would be five chances to disagree about what
+    // "too dark" means.
+    expect(sites.filter((s) => s.feature === "DarknessGating")).toHaveLength(1);
 
     // DarknessFov is a single reader and that is the point: the whole rebalance
     // is selected in one place (`Rules.fovProfile`), so there is exactly one

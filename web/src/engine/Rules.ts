@@ -1252,7 +1252,12 @@ export class Rules {
       return fail("no ability to barricade");
     }
 
-    // 2. Door is not closed or broken.
+    // 2. Too dark to see. Still Alive, Release 6-2.
+    if (this.isActorInAbsoluteDarkness(actor)) {
+      return fail("it's too dark too see");
+    }
+
+    // 3. Door is not closed or broken.
     if (door.state !== DoorWindow.STATE_CLOSED && door.state !== DoorWindow.STATE_BROKEN) {
       return fail("not closed or broken");
     }
@@ -1850,6 +1855,12 @@ export class Rules {
 
   canActorRepairFortification(actor: Actor, _fort: Fortification): RuleResult {
     if (!actor) throw new Error("actor");
+
+    // 3. Too dark to see. Still Alive, Release 6-2. See `canActorBuildFortification`
+    // for the spelling note.
+    if (this.isActorInAbsoluteDarkness(actor)) {
+      return fail("it's too dark to see");
+    }
 
     // 1. Cannot use map objects.
     if (!actor.model.abilities.canUseMapObjects) {
@@ -2948,6 +2959,46 @@ export class Rules {
     if (actor.model.abilities.isUndead) return actor.sheet.baseViewRange;
     if (actor.isPlayer) return profile.minimalFovPlayer;
     return profile.minimalFovLivingActors;
+  }
+
+  /**
+   * Is this actor standing in *total* darkness — FOV exactly 0?
+   *
+   * Still Alive, Release 6-2. The feature is not "it is dim"; it is the specific
+   * value 0, which under `DarknessFov` only the *player* can ever reach, because
+   * the NPC floor is 1. So every check below is in practice a check on the player
+   * alone, which is why the AI does not need a parallel set of rules.
+   *
+   * The C# passes `weather` into these `Can*` methods as a parameter. The port
+   * does not, and rather than widen four signatures and every call site, both
+   * inputs are read from the session here — the map's own local time and the
+   * session's weather, which is exactly what the C# passes.
+   */
+  isActorInAbsoluteDarkness(actor: Actor): boolean {
+    if (!hasFeature(Session.get().ruleset, Feature.DarknessGating)) return false;
+    const map = actor.location.map;
+    if (!map) return false;
+    return this.actorFOV(actor, map.localTime, Session.get().weather) === 0;
+  }
+
+  /**
+   * Is this one of the four things you can consume in the dark?
+   *
+   * Still Alive, Release 7-5. Cigarettes and booze are the exceptions to the
+   * "too dark to use medicine" rule, which reads as odd until you notice that
+   * neither of them is actually *medicine* — they are `ItemMedicine` only
+   * historically, to restore a point of sanity, which is what
+   * `ItemModel.isRecreational` records. So the rule is really "you cannot use
+   * *medicine* in the dark", and the two exceptions are the two things that are
+   * not medicine.
+   */
+  isItemAlcoholForDrinking(item: Item): boolean {
+    return (
+      item.model.id === ItemID.MEDICINE_ALCOHOL_BEER_BOTTLE_GREEN ||
+      item.model.id === ItemID.MEDICINE_ALCOHOL_BEER_CAN_BLUE ||
+      item.model.id === ItemID.MEDICINE_ALCOHOL_BEER_CAN_RED ||
+      item.model.id === ItemID.MEDICINE_CIGARETTES
+    );
   }
 
   odorsDecay(map: GameMap, pos: Point, weather: Weather): number {
