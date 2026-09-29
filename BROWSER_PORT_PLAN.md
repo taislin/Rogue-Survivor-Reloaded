@@ -2,7 +2,7 @@
 
 > **Status (2026-09-29):** Phases 1–7 ported and playable. Phase 8 tasks 1–11
 > done; only 12 (optional touch support) remains. `npm run verify` — type-check,
-> coverage gate and build — is **green**: **1146 tests in 64 files**. The coverage
+> coverage gate and build — is **green**: **1504 tests in 65 files**. The coverage
 > gate's branch floor was lowered from 75% to a measured ~47% with the reasoning
 > recorded in `vitest.config.mts`; 75% came from the first 6-file suite and is
 > unreachable now that `RogueGame.ts` alone is 6098 branches. Read
@@ -478,8 +478,8 @@ loudly.
   - `f0782aa` — Stage 1, the `Ruleset` axis (946 tests)
   - `4d43299` — ruleset picker, HUD/title labels, `NullRogueUI.pushKeys` (954)
   - `dd42e82` — Stage 2, eight of fifteen audited defects (971)
-  - `cfcf2ea` … `04322d7` — Stage 3 so far: merged data tables, 711
-    sprites, the 2 doable actors, 124 tile models and 71 items (1143)
+  - `cfcf2ea` … — Stage 3: merged data tables, 711 sprites, the 2 doable
+    actors, 124 tile models, 90 items and 67 item factories (1504)
   - **Uncommitted**: Stage 3's merged data tables + the `TileID` ordering tests
     (992). `web/data/` is new and `web/scripts/merge-content-tables.py` is new;
     `src/` is untouched.
@@ -502,7 +502,7 @@ loudly.
   `5b2dc59`; the side panel, hitbox, popup and minimap fixes `4a6e845` and
   `2ebdddf`; the four typeface families `47c5b64`; and the look-handler and
   typeface-repaint fixes `6977b63`.
-- **Current state (2026-09-29): 1146 tests across 64 files, `npm run verify` green**
+- **Current state (2026-09-29): 1504 tests across 65 files, `npm run verify` green**
   — type-check, coverage gate and build all pass. Coverage is ~59.8% statements /
   49.7% branches / 72.1% functions / 61.0% lines, which clears the measured floor
   in `vitest.config.mts`.
@@ -555,7 +555,7 @@ Full detail in `web/.porting/CONVENTIONS.md`. The ones that matter:
 |---|---|
 | `npm run verify` | type-check + coverage + build — what CI runs, in one command |
 | `npm run type-check` | `tsc --noEmit`; covers `src/`, `sim/` and `tests/` — necessary, **not sufficient** |
-| `npm run test` | Vitest, 1146 tests in 64 files |
+| `npm run test` | Vitest, 1504 tests in 65 files |
 | `npm run test:coverage` | Vitest with coverage thresholds enforced |
 | `npm run build` | Vite production build |
 | `npm run sim` | Headless engine run — the real test |
@@ -577,7 +577,7 @@ Phases 1–7 are ported and building. Historical per-slice detail has been remov
 | 5 — World gen & AI | `BaseAI` (184/184), all 11 AI controllers, 4 generator files (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator` 5 814 lines, `StdTownGenerator`) | Done |
 | 6 — Audio | Web Audio SFX + music | Done |
 | 7 — Save / load | localStorage / IndexedDB, `Session` serialisation | Done |
-| 8 — Polish, sim, CI | Headless harness, 1146 tests, CI, PWA, Docker, asset pass, frame-cost pass, desktop wrapper | **In progress** — 11 of 12 tasks done; only 12 (optional touch) remains. See §4.1 |
+| 8 — Polish, sim, CI | Headless harness, 1504 tests, CI, PWA, Docker, asset pass, frame-cost pass, desktop wrapper | **In progress** — 11 of 12 tasks done; only 12 (optional touch) remains. See §4.1 |
 | 9 — Still Alive ruleset | Parallel ruleset on a separate axis from `GameMode`, one superset content pack | **In progress** — Stages 1–2 committed, Stage 3 half done, Stages 4–5 not started. See §5.6 |
 
 Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks, 3 SFX), extracted from the C# embedded resources. **Total 24.9 MB**, down from 51.6 MB before the Phase 8 asset pass — see §4.1c.
@@ -596,7 +596,7 @@ Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks,
 | 2 | Deterministic `--seed` for reproducible runs | **Done** (`Session.useSeed`, `--seed`) |
 | 3 | Drive the sim to a clean full-length run and fix what it finds | **In progress, and the goal changed** — no seed now reaches 1 000 turns, because that is *correct* behaviour (§1.2: the undead bot is shot by survivors). Keep sweeping seeds for crashes, not for turn count |
 | 4 | Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`) | **Done and verified in a browser** — now 1366×768 widescreen, smooth filtering (the old `image-rendering: pixelated` made upscaled text unreadable) |
-| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Harness done, gate passing** — 1146 tests, 64 files, thresholds set and met. The branch floor was once 75% and made `verify` red for most of the port's life; it was lowered to a measured value rather than left unpassable, with the reasoning in `vitest.config.mts`. Actual: ~62.3% statements / 51.9% branches / 73% functions / 63% lines |
+| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Harness done, gate passing** — 1504 tests, 65 files, thresholds set and met. The branch floor was once 75% and made `verify` red for most of the port's life; it was lowered to a measured value rather than left unpassable, with the reasoning in `vitest.config.mts`. Actual: ~62.6% statements / 51.9% branches / 73% functions / 63% lines |
 | 6 | GitHub Actions CI | **Done** — `.github/workflows/ci.yml`, type-check + coverage + build + seeded sim, plus a docker smoke job |
 | 7 | PWA manifest + service worker (offline play) | **Done** — manifest, drawn icons, runtime-caching `sw.js` |
 | 8 | Docker image for the self-hosted server | **Done but unverified** — docker is not installed locally, so the image has never been built; CI will exercise it first |
@@ -1060,7 +1060,7 @@ renderer and not about the option: the stored value is still `"first-person"`,
 because `isFirstPersonView` compares it exactly and an annotated value would read
 as top-down and silently hand the player the other view.
 
-`npm run verify` is green: **1146 tests, 64 files**. It was red for most of this
+`npm run verify` is green: **1504 tests, 65 files**. It was red for most of this
 work — branch coverage sat at 49.88% against a 75% floor — and the floor was
 later lowered to a measured value, because a gate that cannot be passed is not a
 gate (`vitest.config.mts` records why 75% is unreachable). The earlier figure in
@@ -1377,7 +1377,7 @@ Stages 4 and 5 have not started.
 |---|---|---|
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
-| **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles and 90 of 95 items done.** The 5 backpacks (a new mechanic), `makeItem*` factories, and ~420 `GameImages` constants **not started** |
+| **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles, 90 of 95 items and all 123 item factories done.** The 5 backpacks (a new mechanic) and ~420 unused `GameImages` constants are the only content left; nothing *calls* the new factories yet, which is placement and belongs to Stage 4/5 |
 | **4** | 37 gated features | **not started** — the bulk of the work |
 | **5** | content, audio, credits | **not started** |
 
@@ -1403,7 +1403,7 @@ Two things a later session should not have to re-derive:
   all); and the weather/rot sprite collision (it does not exist — `imagePathIn`
   permits subpaths, so the merge just left 14 unreferenced files).
 
-Gate: `cd web && npm run verify` — **1146 tests across 64 files, green** as of
+Gate: `cd web && npm run verify` — **1504 tests across 65 files, green** as of
 the data-merge commit. `BROWSER_PORT_PLAN.md` §5.6d is the only place the data
 decisions are written down.
 
@@ -1940,14 +1940,66 @@ the old rifle to take the new ammunition, and the superset deliberately does not
 follow — that is the "ours wins" rule applied to a weapon stat, and changing it
 would alter classic.
 
+**Factories — done: 56 → 123, and a real bug caught on the way.**
+`scripts/port-item-factories.py` transcribes the fork's 140 `MakeItem*` into the
+port's `makeItem*` convention. **67 added.** The bodies there are near-identical
+one-liners (`return new ItemMeleeWeapon(m_Game.GameItems.KATANA);`), which is
+exactly why they are generated: a katana spawning as a ranged weapon is invisible
+in a wall of similar code.
+
+**The bug the generator made, and the test that had to be written to see it.**
+The C# property name is looked up by suffix, and `KATANA` is a suffix of two ids:
+`MELEE_KATANA` and `UNIQUE_FAMU_FATARU_KATANA`. The first match won, so
+`makeItemKatana` was spawning the sword you win from a unique NPC rather than a
+shop katana. Every field was a valid item, the sprite existed, `tsc` agreed, and
+the tests that check a factory *works* — model behind it, sprite on disk — all
+passed. Five names are ambiguous (`KATANA`, `MACE`, `KEYBOARD`, `REVOLVER`,
+`SPEAR`); they are now an explicit `OVERRIDES` table and the resolver **returns
+nothing** on an ambiguous match rather than guessing, so the next one is a hard
+stop.
+
+Guarding it needed a test that could not exist before:
+`tests/fixtures/still-alive-item-factories.json` pins each of the 103 resolvable
+factories to the id the C# names, and `item-factories.test.ts` asserts the
+*identity* of the built item, not merely that it built one. Committed rather than
+read from `_refs/` (gitignored) for the same reason as the tile flags.
+Mutation-checked: pointing the katana factory at the unique sword, and
+corrupting one fixture entry, each fail.
+
+**Nine more primed explosive models, which vanilla does not have.** Vanilla has
+one (`EXPLOSIVE_GRENADE_PRIMED`) and every other explosive reuses it, so a thrown
+molotov primes into a *grenade*. The fork gives seven their own sprite and gives
+the other three their *live* sprite — all recorded rather than left implicit. The
+type system caught the three I initially missed, which is what it is for.
+
+**`item-factories.test.ts` exercises all 123 factories.** They are called by
+nothing — the town generators still place only the vanilla set — so nothing else
+in the suite runs them, and a factory naming a missing id would throw the first
+time a spawner reached for it.
+
+**Still absent, 26 factories, all for items the port does not have:** the 6
+`Ammo` ids and the 5 backpacks (Stage 4), and the still-Alive-only items with no
+merged CSV row — matches, fishing rod, siphon kit, sleeping bag, flares kit,
+glowstick box, candle box, vegetable seeds, CHAR laptop, unique book of
+armaments, police riot shield. Plus the four roll-and-branch bodies (beer,
+alcohol, liquor-for-molotov, and the two random-weapon pickers), which are
+content decisions about what a "random antique weapon" is rather than
+transliterations.
+
+**What is *not* done, and is the difference between data and a game:** nothing
+calls the new factories. The town generators still place only the vanilla set, so
+the 67 exist as spawn-ready wiring rather than as things you can meet. That is
+placement — a balance decision about how many katanas a gun shop holds — and it
+belongs with Stage 4/5 content.
+
 **Content ids and maps** — the hand-edited core, and where the real cost is:
 
 
 | Change | Where | Count |
 |---|---|---|
-| `ItemID` — **append only, never renumber** (saved keybindings are `[commandNumber, key]`) | `GameItems.ts` | **90 of 95 done** (`_COUNT` 69 → 159) |
+| `ItemID` — **append only, never renumber** (saved keybindings are `[commandNumber, key]`) | `GameItems.ts` | **done: 90 of 95 CSV-backed + 9 primed explosives** (`_COUNT` 69 → 168) |
 | 10 hand-written `{id, img}` maps — the sprite id is **not in the JSON**, it lives in TypeScript | `GameItems.ts` | **9 of 10 done**: food, ent, melee, ranged, armour, light, medicine, paint, explosives. Only backpacks remain, and they are a mechanic rather than a row |
-| `makeItem*` factories — how spawns place the new items | `BaseMapGenerator.ts` | not started; only needed once the items are playable |
+| `makeItem*` factories | `BaseMapGenerator.ts` | **done — 56 → 123** (67 generated from the fork) |
 | `ActorID` + sprite map + the two switches | `GameActors.ts` | **done, 2 of 4** — see below |
 | `TileID` + models | `GameTiles.ts` | **done — 143 ids (was 19), 124 new** |
 | `GameImages` constants for the tile sprites | `GameImages.ts` | **done — 125 new**, pulled in by the tiles |

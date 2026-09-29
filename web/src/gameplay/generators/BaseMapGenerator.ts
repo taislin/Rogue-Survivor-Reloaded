@@ -23,7 +23,7 @@ import { ItemAmmo, ItemMeleeWeapon, ItemRangedWeapon } from '@engine/items/ItemW
 import { ItemBodyArmor } from '@engine/items/ItemBodyArmor';
 import { ItemBarricadeMaterial, ItemEntertainment, ItemSprayPaint, ItemSprayPaintModel, ItemSprayScent } from '@engine/items/ItemMisc';
 import { ItemFood, ItemFoodModel } from '@engine/items/ItemFood';
-import { ItemGrenade } from '@engine/items/ItemExplosive';
+import { ItemGrenade, ItemExplosive } from '@engine/items/ItemExplosive';
 import { ItemLight } from '@engine/items/ItemLight';
 import { ItemMedicine } from '@engine/items/ItemMedicine';
 import { ItemTracker } from '@engine/items/ItemTracker';
@@ -1066,6 +1066,456 @@ export abstract class BaseMapGenerator extends MapGenerator {
     item.quantity = this.m_Rules.roll(1, model.stackingLimit);
     return item;
   }
+
+
+  makeItemArmyPrecisionRifle(): Item {
+    const item = new ItemRangedWeapon(Models.items.get(ItemID.RANGED_ARMY_PRECISION_RIFLE));
+    return item;
+  }
+
+  makeItemBarbedWireBat(): Item {
+    const item = new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_BARBED_WIRE_BAT));
+    return item;
+  }
+
+  makeItemBinoculars(): Item {
+    const item = new ItemLight(Models.items.get(ItemID.LIGHT_BINOCULARS));
+    item.isForbiddenToAI = true;
+    return item;
+  }
+
+  makeItemBioForceGun(): Item {
+    const item = new ItemRangedWeapon(Models.items.get(ItemID.RANGED_BIO_FORCE_GUN));
+    item.isForbiddenToAI = true;
+    return item;
+  }
+
+  makeItemBiohazardSuit(): Item {
+    const item = new ItemBodyArmor(Models.items.get(ItemID.ARMOR_BIOHAZARD_SUIT));
+    return item;
+  }
+
+  makeItemBrassKnuckles(): Item {
+    const item = new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_BRASS_KNUCKLES));
+    return item;
+  }
+
+  makeItemC4Explosive(): Item {
+    const item = new ItemExplosive(Models.items.get(ItemID.EXPLOSIVE_C4), Models.items.get(ItemID.EXPLOSIVE_C4_PRIMED));
+    item.isForbiddenToAI = true;
+    return item;
+  }
+
+  makeItemChainsaw(): Item {
+    const item = new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_CHAINSAW));
+    item.isForbiddenToAI = true;
+    return item;
+  }
+
+  makeItemChickenEgg(): Item {
+    // FIXME: should be map local time. As makeItemGroceries.
+    const timeNow = Session.get().worldTime.turnCounter;
+    const model = Models.items.get(ItemID.FOOD_CHICKEN_EGG) as ItemFoodModel;
+    const max = WorldTime.TURNS_PER_DAY * model.bestBeforeDays;
+    const min = Math.floor(max / 2);
+    const freshUntil = timeNow + this.m_Rules.roll(min, max);
+    return new ItemFood(model, freshUntil);
+  }
+
+  makeItemCigarettes(): Item {
+    const model = Models.items.get(ItemID.MEDICINE_CIGARETTES);
+    const item = new ItemMedicine(model);
+    item.quantity = 20;
+    return item;
+  }
+
+  makeItemCleaver(): Item {
+    const item = new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_CLEAVER));
+    return item;
+  }
+
+  makeItemCookedChicken(): Item {
+    // FIXME: should be map local time. As makeItemGroceries.
+    const timeNow = Session.get().worldTime.turnCounter;
+    const model = Models.items.get(ItemID.FOOD_COOKED_CHICKEN) as ItemFoodModel;
+    const max = WorldTime.TURNS_PER_DAY * model.bestBeforeDays;
+    const min = Math.floor(max / 2);
+    const freshUntil = timeNow + this.m_Rules.roll(min, max);
+    return new ItemFood(model, freshUntil);
+  }
+
+  makeItemCookedDogMeat(): Item {
+    // FIXME: should be map local time. As makeItemGroceries.
+    const timeNow = Session.get().worldTime.turnCounter;
+    const model = Models.items.get(ItemID.FOOD_COOKED_DOG_MEAT) as ItemFoodModel;
+    const max = WorldTime.TURNS_PER_DAY * model.bestBeforeDays;
+    const min = Math.floor(max / 2);
+    const freshUntil = timeNow + this.m_Rules.roll(min, max);
+    return new ItemFood(model, freshUntil);
+  }
+
+  makeItemCookedFish(): Item {
+    // FIXME: should be map local time. As makeItemGroceries.
+    const timeNow = Session.get().worldTime.turnCounter;
+    const model = Models.items.get(ItemID.FOOD_COOKED_FISH) as ItemFoodModel;
+    const max = WorldTime.TURNS_PER_DAY * model.bestBeforeDays;
+    const min = Math.floor(max / 2);
+    const freshUntil = timeNow + this.m_Rules.roll(min, max);
+    return new ItemFood(model, freshUntil);
+  }
+
+  makeItemCookedHumanFlesh(): Item {
+    // FIXME: should be map local time. As makeItemGroceries.
+    const timeNow = Session.get().worldTime.turnCounter;
+    const model = Models.items.get(ItemID.FOOD_COOKED_HUMAN_FLESH) as ItemFoodModel;
+    // C#: the shelf life comes off RAW_HUMAN_FLESH, not from
+    // this item -- the quirk is preserved rather than tidied away.
+    const life = (Models.items.get(ItemID.FOOD_RAW_HUMAN_FLESH) as ItemFoodModel).bestBeforeDays;
+    const max = WorldTime.TURNS_PER_DAY * life;
+    const min = Math.floor(max / 2);
+    const freshUntil = timeNow + this.m_Rules.roll(min, max);
+    return new ItemFood(model, freshUntil);
+  }
+
+  makeItemCookedRabbit(): Item {
+    // FIXME: should be map local time. As makeItemGroceries.
+    const timeNow = Session.get().worldTime.turnCounter;
+    const model = Models.items.get(ItemID.FOOD_COOKED_RABBIT) as ItemFoodModel;
+    const max = WorldTime.TURNS_PER_DAY * model.bestBeforeDays;
+    const min = Math.floor(max / 2);
+    const freshUntil = timeNow + this.m_Rules.roll(min, max);
+    return new ItemFood(model, freshUntil);
+  }
+
+  makeItemDoubleBarrel(): Item {
+    const item = new ItemRangedWeapon(Models.items.get(ItemID.RANGED_DOUBLE_BARREL));
+    return item;
+  }
+
+  makeItemDynamite(): Item {
+    const item = new ItemGrenade(Models.items.get(ItemID.EXPLOSIVE_DYNAMITE), Models.items.get(ItemID.EXPLOSIVE_DYNAMITE_PRIMED));
+    item.isForbiddenToAI = true;
+    return item;
+  }
+
+  makeItemEnergyDrink(): Item {
+    const model = Models.items.get(ItemID.MEDICINE_ENERGY_DRINK);
+    const item = new ItemMedicine(model);
+    item.quantity = this.m_Rules.roll(1, model.stackingLimit);
+    return item;
+  }
+
+  makeItemFireAxe(): Item {
+    const item = new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_FIRE_AXE));
+    return item;
+  }
+
+  makeItemFireExtinguisher(): Item {
+    const item = new ItemSprayPaint(Models.items.get(ItemID.FIRE_EXTINGUISHER));
+    item.isForbiddenToAI = true;
+    return item;
+  }
+
+  makeItemFireHazardSuit(): Item {
+    const item = new ItemBodyArmor(Models.items.get(ItemID.ARMOR_FIRE_HAZARD_SUIT));
+    item.isForbiddenToAI = true;
+    return item;
+  }
+
+  makeItemFlail(): Item {
+    const item = new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_FLAIL));
+    return item;
+  }
+
+  makeItemFlamethrower(): Item {
+    const item = new ItemRangedWeapon(Models.items.get(ItemID.RANGED_FLAMETHROWER));
+    return item;
+  }
+
+  makeItemFlashbang(): Item {
+    const item = new ItemGrenade(Models.items.get(ItemID.EXPLOSIVE_FLASHBANG), Models.items.get(ItemID.EXPLOSIVE_FLASHBANG_PRIMED));
+    return item;
+  }
+
+  makeItemFryingPan(): Item {
+    const item = new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_FRYING_PAN));
+    return item;
+  }
+
+  makeItemGrenadeLauncher(): Item {
+    const item = new ItemRangedWeapon(Models.items.get(ItemID.RANGED_GRENADE_LAUNCHER));
+    item.isForbiddenToAI = true;
+    return item;
+  }
+
+  makeItemHockeyStick(): Item {
+    const item = new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_HOCKEY_STICK));
+    return item;
+  }
+
+  makeItemHolyHandGrenade(): Item {
+    const model = Models.items.get(ItemID.EXPLOSIVE_HOLY_HAND_GRENADE);
+    const item = new ItemGrenade(model, Models.items.get(ItemID.EXPLOSIVE_HOLY_HAND_GRENADE_PRIMED));
+    item.quantity = this.m_Rules.roll(1, model.stackingLimit);
+    return item;
+  }
+
+  makeItemKatana(): Item {
+    const item = new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_KATANA));
+    return item;
+  }
+
+  makeItemKeyboard(): Item {
+    const item = new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_KEYBOARD));
+    return item;
+  }
+
+  makeItemKitchenKnife(): Item {
+    const item = new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_KITCHEN_KNIFE));
+    return item;
+  }
+
+  makeItemLargeMedikit(): Item {
+    const item = new ItemMedicine(Models.items.get(ItemID.MEDICINE_LARGE_MEDIKIT));
+    return item;
+  }
+
+  makeItemLitFlare(): Item {
+    const item = new ItemLight(Models.items.get(ItemID.LIGHT_FLARE));
+    return item;
+  }
+
+  makeItemLitGlowstick(): Item {
+    const item = new ItemLight(Models.items.get(ItemID.LIGHT_GLOWSTICK));
+    return item;
+  }
+
+  makeItemMace(): Item {
+    const item = new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_MACE));
+    return item;
+  }
+
+  makeItemMachete(): Item {
+    const item = new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_MACHETE));
+    return item;
+  }
+
+  makeItemMinigun(): Item {
+    const item = new ItemRangedWeapon(Models.items.get(ItemID.RANGED_MINIGUN));
+    item.isForbiddenToAI = true;
+    return item;
+  }
+
+  makeItemMolotov(): Item {
+    const item = new ItemGrenade(Models.items.get(ItemID.EXPLOSIVE_MOLOTOV), Models.items.get(ItemID.EXPLOSIVE_MOLOTOV_PRIMED));
+    return item;
+  }
+
+  makeItemNailGun(): Item {
+    const item = new ItemRangedWeapon(Models.items.get(ItemID.RANGED_NAIL_GUN));
+    return item;
+  }
+
+  makeItemNightVisionGoggles(): Item {
+    const item = new ItemLight(Models.items.get(ItemID.LIGHT_NIGHT_VISION));
+    return item;
+  }
+
+  makeItemNunchaku(): Item {
+    const item = new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_NUNCHAKU));
+    return item;
+  }
+
+  makeItemPickaxe(): Item {
+    const item = new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_PICKAXE));
+    return item;
+  }
+
+  makeItemPipeWrench(): Item {
+    const item = new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_PIPE_WRENCH));
+    return item;
+  }
+
+  makeItemPitchFork(): Item {
+    const item = new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_PITCH_FORK));
+    return item;
+  }
+
+  makeItemRawChicken(): Item {
+    // FIXME: should be map local time. As makeItemGroceries.
+    const timeNow = Session.get().worldTime.turnCounter;
+    const model = Models.items.get(ItemID.FOOD_RAW_CHICKEN) as ItemFoodModel;
+    const max = WorldTime.TURNS_PER_DAY * model.bestBeforeDays;
+    const min = Math.floor(max / 2);
+    const freshUntil = timeNow + this.m_Rules.roll(min, max);
+    return new ItemFood(model, freshUntil);
+  }
+
+  makeItemRawDogMeat(): Item {
+    // FIXME: should be map local time. As makeItemGroceries.
+    const timeNow = Session.get().worldTime.turnCounter;
+    const model = Models.items.get(ItemID.FOOD_RAW_DOG_MEAT) as ItemFoodModel;
+    const max = WorldTime.TURNS_PER_DAY * model.bestBeforeDays;
+    const min = Math.floor(max / 2);
+    const freshUntil = timeNow + this.m_Rules.roll(min, max);
+    return new ItemFood(model, freshUntil);
+  }
+
+  makeItemRawFish(): Item {
+    // FIXME: should be map local time. As makeItemGroceries.
+    const timeNow = Session.get().worldTime.turnCounter;
+    const model = Models.items.get(ItemID.FOOD_RAW_FISH) as ItemFoodModel;
+    const max = WorldTime.TURNS_PER_DAY * model.bestBeforeDays;
+    const min = Math.floor(max / 2);
+    const freshUntil = timeNow + this.m_Rules.roll(min, max);
+    return new ItemFood(model, freshUntil);
+  }
+
+  makeItemRawHumanFlesh(): Item {
+    // FIXME: should be map local time. As makeItemGroceries.
+    const timeNow = Session.get().worldTime.turnCounter;
+    const model = Models.items.get(ItemID.FOOD_RAW_HUMAN_FLESH) as ItemFoodModel;
+    const max = WorldTime.TURNS_PER_DAY * model.bestBeforeDays;
+    const min = Math.floor(max / 2);
+    const freshUntil = timeNow + this.m_Rules.roll(min, max);
+    return new ItemFood(model, freshUntil);
+  }
+
+  makeItemRawRabbit(): Item {
+    // FIXME: should be map local time. As makeItemGroceries.
+    const timeNow = Session.get().worldTime.turnCounter;
+    const model = Models.items.get(ItemID.FOOD_RAW_RABBIT) as ItemFoodModel;
+    const max = WorldTime.TURNS_PER_DAY * model.bestBeforeDays;
+    const min = Math.floor(max / 2);
+    const freshUntil = timeNow + this.m_Rules.roll(min, max);
+    return new ItemFood(model, freshUntil);
+  }
+
+  makeItemRevolver(): Item {
+    const item = new ItemRangedWeapon(Models.items.get(ItemID.RANGED_REVOLVER));
+    return item;
+  }
+
+  makeItemSMG(): Item {
+    const item = new ItemRangedWeapon(Models.items.get(ItemID.RANGED_SMG));
+    return item;
+  }
+
+  makeItemScimitar(): Item {
+    const item = new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_SCIMITAR));
+    return item;
+  }
+
+  makeItemScythe(): Item {
+    const item = new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_SCYTHE));
+    return item;
+  }
+
+  makeItemSickle(): Item {
+    const item = new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_SICKLE));
+    return item;
+  }
+
+  makeItemSmallMedikit(): Item {
+    const model = Models.items.get(ItemID.MEDICINE_SMALL_MEDIKIT);
+    const item = new ItemMedicine(model);
+    item.quantity = this.m_Rules.roll(1, model.stackingLimit);
+    return item;
+  }
+
+  makeItemSmokeGrenade(): Item {
+    const model = Models.items.get(ItemID.EXPLOSIVE_SMOKE_GRENADE);
+    const item = new ItemGrenade(model, Models.items.get(ItemID.EXPLOSIVE_SMOKE_GRENADE_PRIMED));
+    item.quantity = this.m_Rules.roll(1, model.stackingLimit);
+    return item;
+  }
+
+  makeItemSnackBar(): Item {
+    const model = Models.items.get(ItemID.FOOD_SNACK_BAR);
+    const item = new ItemFood(model);
+    item.quantity = this.m_Rules.roll(1, model.stackingLimit);
+    return item;
+  }
+
+  makeItemSpear(): Item {
+    const item = new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_SPEAR));
+    return item;
+  }
+
+  makeItemSpikedMace(): Item {
+    const item = new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_SPIKED_MACE));
+    return item;
+  }
+
+  makeItemStandardAxe(): Item {
+    const item = new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_STANDARD_AXE));
+    return item;
+  }
+
+  makeItemStunGun(): Item {
+    const item = new ItemRangedWeapon(Models.items.get(ItemID.RANGED_STUN_GUN));
+    return item;
+  }
+
+  makeItemTacticalShotgun(): Item {
+    const item = new ItemRangedWeapon(Models.items.get(ItemID.RANGED_TACTICAL_SHOTGUN));
+    return item;
+  }
+
+  makeItemTennisRacket(): Item {
+    const item = new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_TENNIS_RACKET));
+    return item;
+  }
+
+  makeItemVegetables(): Item {
+    // FIXME: should be map local time. As makeItemGroceries.
+    const timeNow = Session.get().worldTime.turnCounter;
+    const model = Models.items.get(ItemID.FOOD_VEGETABLES) as ItemFoodModel;
+    const max = WorldTime.TURNS_PER_DAY * model.bestBeforeDays;
+    const min = Math.floor(max / 2);
+    const freshUntil = timeNow + this.m_Rules.roll(min, max);
+    return new ItemFood(model, freshUntil);
+  }
+
+  makeItemVintagePistol(): Item {
+    const item = new ItemRangedWeapon(Models.items.get(ItemID.RANGED_VINTAGE_PISTOL));
+    return item;
+  }
+
+  makeItemWildBerries(): Item {
+    // FIXME: should be map local time. As makeItemGroceries.
+    const timeNow = Session.get().worldTime.turnCounter;
+    const model = Models.items.get(ItemID.FOOD_WILD_BERRIES) as ItemFoodModel;
+    const max = WorldTime.TURNS_PER_DAY * model.bestBeforeDays;
+    const min = Math.floor(max / 2);
+    const freshUntil = timeNow + this.m_Rules.roll(min, max);
+    return new ItemFood(model, freshUntil);
+  }
+
+  // ── Still Alive factories ──────────────────────────────────────────────────
+  //
+  // Transcribed from the fork's MakeItem* by scripts/port-item-factories.py.
+  // The bodies were near-identical one-liners there, which is exactly why
+  // they are generated rather than retyped: a katana that spawns as a
+  // ranged weapon, or a molotov with no primed sprite, would be invisible.
+  //
+  // Five C# property names are a suffix of more than one ItemID, so the choice
+  // is written down in the script's OVERRIDES rather than guessed. It was
+  // guessed at first, and `KATANA` picked `UNIQUE_FAMU_FATARU_KATANA` -- the
+  // sword you win from a unique NPC, spawned by a factory that means to hand
+  // out a shop katana. Every field was a valid item and it was the wrong one.
+  //
+  // Absent, because the item does not exist in the port yet: the 6 Ammo ids
+  // and the 5 backpacks (Stage 4), plus the still-Alive-only items with no
+  // merged CSV row -- matches, fishing rod, siphon kit, sleeping bag,
+  // flares kit, glowstick box, candle box, vegetable seeds, CHAR laptop,
+  // unique book of armaments, police riot shield. Also the four
+  // roll-and-branch bodies (beer, alcohol, liquor-for-molotov and the two
+  // random-weapon pickers), which are content decisions about what a
+  // "random antique weapon" is rather than transliterations.
+  //
+  // Nothing calls most of these yet: the town generators still place only the
+  // vanilla set. They exist so the spawn wiring is a one-line change per item.
 
   // ── Common tasks ──────────────────────────────────────────────────────────
 

@@ -235,7 +235,28 @@ export enum ItemID {
   EXPLOSIVE_PLASMA_CHARGE = 156,
   PAINT_THINNER = 157,
   FIRE_EXTINGUISHER = 158,
-  _COUNT = 159,
+  // ── Still Alive primed explosives ────────────────────────────────────────
+  //
+  // Vanilla has exactly one primed model (EXPLOSIVE_GRENADE_PRIMED) and every
+  // other explosive reuses it, so a thrown molotov primes into a *grenade*.
+  // The fork gives seven of them their own sprite and reuses the live sprite for
+  // the other three, which is recorded rather than left implicit.
+  //
+  // No CSV row, like EXPLOSIVE_GRENADE_PRIMED: the primed state is a property of
+  // the item in hand, not a row anyone edits. It needs an id because
+  // `ItemGrenade` stores `primedModelId` and the throw path looks the model up
+  // by that number.
+  EXPLOSIVE_MOLOTOV_PRIMED = 159,
+  EXPLOSIVE_DYNAMITE_PRIMED = 160,
+  EXPLOSIVE_C4_PRIMED = 161,
+  EXPLOSIVE_SMOKE_GRENADE_PRIMED = 162,
+  EXPLOSIVE_FLASHBANG_PRIMED = 163,
+  EXPLOSIVE_HOLY_HAND_GRENADE_PRIMED = 164,
+  // Same sprite as their live form in the C#.
+  EXPLOSIVE_FUEL_CAN_PRIMED = 165,
+  EXPLOSIVE_FUEL_PUMP_PRIMED = 166,
+  EXPLOSIVE_PLASMA_CHARGE_PRIMED = 167,
+  _COUNT = 168,
 }
 
 export class GameItems implements ItemModelDB {
@@ -510,17 +531,27 @@ export class GameItems implements ItemModelDB {
     // The C#'s third flag, `isProvocative`, is NOT carried over: the port's
     // `BlastAttack` has no such field, and it exists to draw zombies toward the
     // blast, which is Stage 4 AI work rather than a data row.
-    const explosiveMap: Record<string, { id: ItemID; img: string; canDamageObjects: boolean; canDestroyWalls: boolean }> = {
-      EXPLOSIVE_GRENADE: { id: ItemID.EXPLOSIVE_GRENADE, img: GameImages.ITEM_GRENADE, canDamageObjects: true, canDestroyWalls: false },
-      EXPLOSIVE_MOLOTOV: { id: ItemID.EXPLOSIVE_MOLOTOV, img: GameImages.ITEM_MOLOTOV, canDamageObjects: false, canDestroyWalls: false },
-      EXPLOSIVE_DYNAMITE: { id: ItemID.EXPLOSIVE_DYNAMITE, img: GameImages.ITEM_DYNAMITE, canDamageObjects: true, canDestroyWalls: true },
-      EXPLOSIVE_C4: { id: ItemID.EXPLOSIVE_C4, img: GameImages.ITEM_C4, canDamageObjects: true, canDestroyWalls: true },
-      EXPLOSIVE_FUEL_CAN: { id: ItemID.EXPLOSIVE_FUEL_CAN, img: GameImages.ITEM_AMMO_FUEL, canDamageObjects: true, canDestroyWalls: false },
-      EXPLOSIVE_FUEL_PUMP: { id: ItemID.EXPLOSIVE_FUEL_PUMP, img: GameImages.OBJ_FUEL_PUMP, canDamageObjects: true, canDestroyWalls: true },
-      EXPLOSIVE_SMOKE_GRENADE: { id: ItemID.EXPLOSIVE_SMOKE_GRENADE, img: GameImages.ITEM_SMOKE_GRENADE, canDamageObjects: false, canDestroyWalls: false },
-      EXPLOSIVE_FLASHBANG: { id: ItemID.EXPLOSIVE_FLASHBANG, img: GameImages.ITEM_FLASHBANG, canDamageObjects: false, canDestroyWalls: false },
-      EXPLOSIVE_HOLY_HAND_GRENADE: { id: ItemID.EXPLOSIVE_HOLY_HAND_GRENADE, img: GameImages.ITEM_HOLY_HAND_GRENADE, canDamageObjects: true, canDestroyWalls: false },
-      EXPLOSIVE_PLASMA_CHARGE: { id: ItemID.EXPLOSIVE_PLASMA_CHARGE, img: GameImages.ITEM_PLASMA_BURST_PRIMED, canDamageObjects: false, canDestroyWalls: false },    };
+    // `primedImg` is per item because the fork gives each explosive its own primed
+    // sprite; vanilla reuses the grenade's for all of them. The primed model is
+    // registered under its own id because that is how a thrown explosive finds it.
+    const explosiveMap: Record<string, {
+      id: ItemID; img: string; canDamageObjects: boolean; canDestroyWalls: boolean;
+      primedId: ItemID; primedImg: string;
+    }> = {
+      EXPLOSIVE_GRENADE: { id: ItemID.EXPLOSIVE_GRENADE, img: GameImages.ITEM_GRENADE, canDamageObjects: true, canDestroyWalls: false, primedId: ItemID.EXPLOSIVE_GRENADE_PRIMED, primedImg: GameImages.ITEM_GRENADE_PRIMED },
+      EXPLOSIVE_MOLOTOV: { id: ItemID.EXPLOSIVE_MOLOTOV, img: GameImages.ITEM_MOLOTOV, canDamageObjects: false, canDestroyWalls: false, primedId: ItemID.EXPLOSIVE_MOLOTOV_PRIMED, primedImg: GameImages.ITEM_MOLOTOV_PRIMED },
+      // player-only: the C# forbids it to the AI because they are meant to be rare
+      EXPLOSIVE_DYNAMITE: { id: ItemID.EXPLOSIVE_DYNAMITE, img: GameImages.ITEM_DYNAMITE, canDamageObjects: true, canDestroyWalls: true, primedId: ItemID.EXPLOSIVE_DYNAMITE_PRIMED, primedImg: GameImages.ITEM_DYNAMITE_PRIMED },
+      EXPLOSIVE_C4: { id: ItemID.EXPLOSIVE_C4, img: GameImages.ITEM_C4, canDamageObjects: true, canDestroyWalls: true, primedId: ItemID.EXPLOSIVE_C4_PRIMED, primedImg: GameImages.ITEM_C4_PRIMED },
+      // a primed fuel can is drawn as a fuel can -- the C# reuses the sprite
+      EXPLOSIVE_FUEL_CAN: { id: ItemID.EXPLOSIVE_FUEL_CAN, img: GameImages.ITEM_AMMO_FUEL, canDamageObjects: true, canDestroyWalls: false, primedId: ItemID.EXPLOSIVE_FUEL_CAN_PRIMED, primedImg: GameImages.ITEM_AMMO_FUEL },
+      // like the fuel can, and the plasma charge, the primed sprite is the live one
+      EXPLOSIVE_FUEL_PUMP: { id: ItemID.EXPLOSIVE_FUEL_PUMP, img: GameImages.OBJ_FUEL_PUMP, canDamageObjects: true, canDestroyWalls: true, primedId: ItemID.EXPLOSIVE_FUEL_PUMP_PRIMED, primedImg: GameImages.OBJ_FUEL_PUMP },
+      EXPLOSIVE_SMOKE_GRENADE: { id: ItemID.EXPLOSIVE_SMOKE_GRENADE, img: GameImages.ITEM_SMOKE_GRENADE, canDamageObjects: false, canDestroyWalls: false, primedId: ItemID.EXPLOSIVE_SMOKE_GRENADE_PRIMED, primedImg: GameImages.ITEM_SMOKE_GRENADE_PRIMED },
+      EXPLOSIVE_FLASHBANG: { id: ItemID.EXPLOSIVE_FLASHBANG, img: GameImages.ITEM_FLASHBANG, canDamageObjects: false, canDestroyWalls: false, primedId: ItemID.EXPLOSIVE_FLASHBANG_PRIMED, primedImg: GameImages.ITEM_FLASHBANG_PRIMED },
+      EXPLOSIVE_HOLY_HAND_GRENADE: { id: ItemID.EXPLOSIVE_HOLY_HAND_GRENADE, img: GameImages.ITEM_HOLY_HAND_GRENADE, canDamageObjects: true, canDestroyWalls: false, primedId: ItemID.EXPLOSIVE_HOLY_HAND_GRENADE_PRIMED, primedImg: GameImages.ITEM_HOLY_HAND_GRENADE_PRIMED },
+      EXPLOSIVE_PLASMA_CHARGE: { id: ItemID.EXPLOSIVE_PLASMA_CHARGE, img: GameImages.ITEM_PLASMA_BURST_PRIMED, canDamageObjects: false, canDestroyWalls: false, primedId: ItemID.EXPLOSIVE_PLASMA_CHARGE_PRIMED, primedImg: GameImages.ITEM_PLASMA_BURST_PRIMED },
+    };
 
     for (const d of explosivesData as any[]) {
       const meta = explosiveMap[d.ID];
@@ -545,11 +576,11 @@ export class GameItems implements ItemModelDB {
       const primedGrenade = new ItemGrenadePrimedModel(
         `primed ${d.NAME}`,
         `primed ${d.PLURAL}`,
-        GameImages.ITEM_GRENADE_PRIMED,
+        meta.primedImg,
         grenade
       );
       primedGrenade.equipmentPart = DollPart.RIGHT_HAND;
-      this.setModel(ItemID.EXPLOSIVE_GRENADE_PRIMED, primedGrenade);
+      this.setModel(meta.primedId, primedGrenade);
     }
 
     // Barricading

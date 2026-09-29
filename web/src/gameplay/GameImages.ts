@@ -618,6 +618,14 @@ export class GameImages {
   static readonly ITEM_WOODEN_PLANK = "Items/item_wooden_plank";
   static readonly ITEM_ZTRACKER = "Items/item_ztracker";
 
+  // ── Still Alive primed explosives, one sprite each.
+  static readonly ITEM_MOLOTOV_PRIMED = "Items/item_molotov_primed";
+  static readonly ITEM_DYNAMITE_PRIMED = "Items/item_dynamite_primed";
+  static readonly ITEM_C4_PRIMED = "Items/item_c4_primed";
+  static readonly ITEM_SMOKE_GRENADE_PRIMED = "Items/item_smoke_grenade_primed";
+  static readonly ITEM_FLASHBANG_PRIMED = "Items/item_flashbang_primed";
+  static readonly ITEM_HOLY_HAND_GRENADE_PRIMED = "Items/item_Holy_Hand_Grenade_primed";
+
   // ── Effects & Misc ────────────────────────────────────────────────────────
   static readonly EFFECT_BARRICADED = "Effects/barricaded";
   static readonly EFFECT_ONFIRE = "Effects/onFire";
