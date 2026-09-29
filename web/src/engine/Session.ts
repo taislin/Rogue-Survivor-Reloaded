@@ -693,9 +693,9 @@ export class Session {
   static descRuleset(ruleset: Ruleset): string {
     switch (ruleset) {
       case Ruleset.CLASSIC:
-        return "Classic - Rogue Survivor Alpha 10.1, as ported";
+        return "Classic - Rogue Survivor Alpha 10.1";
       case Ruleset.STILL_ALIVE:
-        return "Still Alive - the Rogue Survivor: Still Alive fork";
+        return "Still Alive - the Still Alive fork";
       default:
         throw new Error("unhandled ruleset");
     }

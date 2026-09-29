@@ -65,6 +65,31 @@ export class NullRogueUI implements IRogueUI {
     return this.keyQueue[0];
   }
 
+  /**
+   * Queue keys to be returned before the idle cycle resumes.
+   *
+   * The new-game screens — `HandleSelectRuleset`, `HandleNewGameMode`, the race,
+   * gender, undead-type and skill pickers — are modal `do { draw; wait }` loops,
+   * and the idle cycle alone can only ever hand back Enter, Escape, `n`, `y`. That
+   * is enough for an unattended run to fall through them, and not enough to
+   * drive one: there was no way to reach the second row of any of them, so the
+   * menus had no behavioural test at all.
+   *
+   * This is the seam for that. It takes key *names* rather than
+   * `GameKeyEvent`s so a test reads as the keys a player would press.
+   */
+  pushKeys(...keys: string[]): void {
+    for (const key of keys) {
+      this.keyQueue.push({
+        key,
+        keyCode: key.length === 1 ? key.toUpperCase().charCodeAt(0) : 0,
+        shift: false,
+        ctrl: false,
+        alt: false,
+      });
+    }
+  }
+
   // ── Input ──────────────────────────────────────────────────────────────────
 
   async UI_WaitKey(): Promise<GameKeyEvent> {

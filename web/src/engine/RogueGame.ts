@@ -134,6 +134,7 @@ import { AchievementIDs, DifficultySide, Scoring } from "@engine/Scoring";
 import {
 	GameMode,
 	RaidType,
+	Ruleset,
 	ScriptStage,
 	Session,
 	UniqueActor,
@@ -1975,6 +1976,11 @@ export class RogueGame {
 		// to be the one the roller uses.
 		const roller = new DiceRoller(this.m_Session.seed);
 
+		// Ruleset, before the game mode: the two compose, and the ruleset is the
+		// coarser question, so it is asked first and the mode screen can describe
+		// itself in the context it was picked for.
+		if (!(await this.HandleSelectRuleset())) return false;
+
 		// Game Mode
 		if (!(await this.HandleNewGameMode())) return false;
 
@@ -2010,6 +2016,118 @@ export class RogueGame {
 
 		// done
 		return true;
+	}
+
+	/**
+	 * Which content/mechanic ruleset to play. No C# original — this screen is new
+	 * in the port, because `GameMode` has no Still Alive equivalent to hang it on.
+	 * The axis is separate from gameMode and the two compose, so it gets its own
+	 * screen rather than more rows on that one. See BROWSER_PORT_PLAN §5.6b.
+	 */
+	async HandleSelectRuleset(): Promise<boolean> {
+		const menuEntries: string[] = [
+			Session.descRuleset(Ruleset.CLASSIC),
+			Session.descRuleset(Ruleset.STILL_ALIVE),
+		];
+		const descs: string[] = [
+			"Rogue Survivor, as it has always been played.",
+			"The Still Alive fork: more of everything.",
+		];
+
+		let loop = true;
+		let choiceDone = false;
+		let selected = 0;
+		do {
+			this.m_UI.UI_Clear(Color.Black);
+			const gx = 0;
+			let gy = 0;
+			this.m_UI.UI_DrawStringBoldLarge(
+				Color.Yellow,
+				"New Game - Choose Ruleset",
+				gx,
+				gy,
+			);
+			gy += 2 * MENU_BOLD_LINE_SPACING;
+			const gyRef = { value: gy };
+			this.DrawMenuOrOptions(
+				selected,
+				Color.White,
+				menuEntries,
+				Color.LightGray,
+				descs,
+				gx,
+				gyRef,
+			);
+			gy = gyRef.value;
+			gy += 2 * BOLD_LINE_SPACING;
+
+			let descMode: string[] = [];
+			switch (selected) {
+				case 0:
+					descMode = [
+						"Classic - Rogue Survivor Alpha 10.1.",
+						"",
+						"The original rules, unchanged. This is what the port has",
+						"been running since the start, and the default.",
+						"",
+						"- The original weapons, items and buildings.",
+						"- The original light, sound and scoring.",
+					];
+					break;
+				case 1:
+					descMode = [
+						"Still Alive - the Rogue Survivor: Still Alive fork.",
+						"",
+						"More weapons, more buildings, and a harder world.",
+						"",
+						"- More weapons, armour, food and explosives.",
+						"- Churches, banks, bars, clinics, farms, fuel stations,",
+						"  fire stations, animal shelters, junkyards and more.",
+						"- Alcohol, cooking, fishing and butchering.",
+						"- Darker nights, and fire that spreads.",
+						"",
+						"NOTE:",
+						"Most of this is not implemented yet. Choosing it today",
+						"plays the same game as Classic - see the project plan.",
+					];
+					break;
+			}
+			for (const str of descMode) {
+				this.m_UI.UI_DrawStringBoldLarge(Color.Gray, str, gx, gy);
+				gy += MENU_BOLD_LINE_SPACING;
+			}
+
+			this.DrawFootnote(
+				Color.White,
+				"cursor to move, ENTER to select, ESC to cancel",
+			);
+			this.m_UI.UI_Repaint();
+
+			const key = await this.m_UI.UI_WaitKey();
+			switch (key.key) {
+				case "ArrowUp":
+					if (selected > 0) --selected;
+					else selected = menuEntries.length - 1;
+					break;
+				case "ArrowDown":
+					selected = (selected + 1) % menuEntries.length;
+					break;
+
+				case "Escape":
+					choiceDone = false;
+					loop = false;
+					break;
+
+				case "Enter":
+					this.m_Session.ruleset =
+						selected === 1 ? Ruleset.STILL_ALIVE : Ruleset.CLASSIC;
+					choiceDone = true;
+					loop = false;
+					break;
+			}
+		} while (loop);
+
+		return choiceDone;
 	}
 
 	// C# HandleNewGameMode — RogueGame.cs:1477
@@ -2193,7 +2311,7 @@ export class RogueGame {
 			let gy = 0;
 			this.m_UI.UI_DrawStringBoldLarge(
 				Color.Yellow,
-				`[${Session.descGameMode(this.m_Session.gameMode)}] New Character - Choose Race`,
+				`[${Session.descGameMode(this.m_Session.gameMode)} / ${Session.descShortRuleset(this.m_Session.ruleset)}] New Character - Choose Race`,
 				gx,
 				gy,
 			);
@@ -2307,7 +2425,7 @@ export class RogueGame {
 			let gy = 0;
 			this.m_UI.UI_DrawStringBoldLarge(
 				Color.Yellow,
-				`[${Session.descGameMode(this.m_Session.gameMode)}] New Living - Choose Gender`,
+				`[${Session.descGameMode(this.m_Session.gameMode)} / ${Session.descShortRuleset(this.m_Session.ruleset)}] New Living - Choose Gender`,
 				gx,
 				gy,
 			);
@@ -2443,7 +2561,7 @@ export class RogueGame {
 			let gy = 0;
 			this.m_UI.UI_DrawStringBoldLarge(
 				Color.Yellow,
-				`[${Session.descGameMode(this.m_Session.gameMode)}] New Undead - Choose Type`,
+				`[${Session.descGameMode(this.m_Session.gameMode)} / ${Session.descShortRuleset(this.m_Session.ruleset)}] New Undead - Choose Type`,
 				gx,
 				gy,
 			);
@@ -2598,7 +2716,7 @@ export class RogueGame {
 			let gy = 0;
 			this.m_UI.UI_DrawStringBoldLarge(
 				Color.Yellow,
-				`[${Session.descGameMode(this.m_Session.gameMode)}] New ${this.m_CharGen.isMale ? "Male" : "Female"} Character - Choose Starting Skill`,
+				`[${Session.descGameMode(this.m_Session.gameMode)} / ${Session.descShortRuleset(this.m_Session.ruleset)}] New ${this.m_CharGen.isMale ? "Male" : "Female"} Character - Choose Starting Skill`,
 				gx,
 				gy,
 			);
@@ -20898,7 +21016,13 @@ export class RogueGame {
 						this.m_Session.scoring.side,
 						this.m_Session.scoring.reincarnationNumber,
 					),
-			)}% ${Session.descShortGameMode(this.m_Session.gameMode)}`,
+			)}% ${Session.descShortGameMode(this.m_Session.gameMode)}` +
+				// The ruleset rides on the mode line rather than taking a row of its
+				// own: Y0..Y6 are all used, and adding a seventh means growing a panel
+				// whose height is drawn in several places. It is on the HUD at all
+				// because a Still Alive world is otherwise indistinguishable from a
+				// classic one until a fork-only item turns up in a corpse's pockets.
+				` / ${Session.descShortRuleset(this.m_Session.ruleset)}`,
 			X1,
 			Y4,
 		);

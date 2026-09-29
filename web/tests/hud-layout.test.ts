@@ -39,7 +39,7 @@ import {
   MENU_LABEL_PREFIX,
 } from "@engine/RogueGame";
 import { Skills } from "@gameplay/Skills";
-import { Session, GameMode } from "@engine/Session";
+import { Session, GameMode, Ruleset } from "@engine/Session";
 import { MINIMAP_W, MINIMAP_H } from "@ui/CanvasUI";
 
 /**
@@ -260,6 +260,28 @@ describe("menu value columns clear their labels", () => {
     // 256px, so the floor should win and nothing should move.
     const columnX = menuValueColumnX(0, ["*Random*", "Living", "Undead"], RIGHT_PADDING);
     expect(columnX).toBe(RIGHT_PADDING);
+  });
+
+  it("the ruleset menu's column clears its labels too", () => {
+    // The same class of bug, a second instance. The ruleset screen
+    // (`HandleSelectRuleset`) draws through `DrawMenuOrOptions` with two labels
+    // wider than any game mode label -- "Still Alive - the Still Alive fork" is
+    // 36 against the game mode's widest 25. `menuValueColumnX` measures from the
+    // text so nothing overlaps, but the test above only asserted that for the
+    // game mode menu, and a label list is a parameter: nothing stops the new
+    // screen from being 5px too wide for the canvas without anyone checking.
+    const rulesetLabels = [
+      Session.descRuleset(Ruleset.CLASSIC),
+      Session.descRuleset(Ruleset.STILL_ALIVE),
+    ];
+    const columnX = menuValueColumnX(0, rulesetLabels, RIGHT_PADDING);
+    const widest = rulesetLabels.reduce((a, b) => (b.length > a.length ? b : a));
+    expect(columnX).toBeGreaterThanOrEqual(
+      (MENU_LABEL_PREFIX + widest.length) * MENU_CHAR_WIDTH
+    );
+    // The value column plus its longest value still has to land on the canvas.
+    // 1366 is the window width in neutralino.config.json.
+    expect(columnX + 256).toBeLessThan(1366);
   });
 
   it("offsets from gx, not from the canvas origin", () => {
