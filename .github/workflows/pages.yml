@@ -32,13 +32,17 @@ on:
       - "web/**"
       - "docs/**"
       - ".github/workflows/pages.yml"
-  pull_request:
-    branches: [master]
-    paths:
-      - "web/**"
-      - "docs/**"
-      - ".github/workflows/pages.yml"
   workflow_dispatch:
+# Deliberately no `pull_request` trigger, which is the default thing to reach for
+# and is wrong here. This workflow deploys, and its environment is the real
+# `github-pages` rather than a preview one, so a pull_request event would publish
+# the PR's build to the live site — and with `concurrency: cancel-in-progress`
+# below, could cancel a master deploy in flight while doing it. Opening a PR must
+# not be able to change what https://taislin.github.io serves.
+#
+# Nothing is lost: ci.yml runs on pull_request and already builds under a
+# subdirectory base, runs check:base, assembles the site and runs the suite at
+# both bases. A PR is validated completely; it is just not published.
 
 # One deploy at a time, and a newer commit wins: two uploads racing for the
 # same site is a way to end up serving the older build.
