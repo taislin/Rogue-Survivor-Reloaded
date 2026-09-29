@@ -4,6 +4,7 @@ import { Color } from "@engine/Color";
 import { DEFAULT_VIEW_MODE, VIEW_MODES } from "@engine/firstperson/Types";
 import {
 	GameOptions,
+	IdleAdvance,
 	OptionIDs,
 	Options,
 	SimRatio,
@@ -93,6 +94,8 @@ export class OptionsScreen {
 		OptionIDs.GAME_SIMULATE_DISTRICTS,
 		OptionIDs.GAME_SIM_THREAD,
 		OptionIDs.GAME_SIMULATE_SLEEP,
+		// pacing
+		OptionIDs.GAME_IDLE_AUTO_ADVANCE,
 		// death
 		OptionIDs.GAME_DEATH_SCREENSHOT,
 		OptionIDs.GAME_PERMADEATH,
@@ -669,6 +672,18 @@ export class OptionsScreen {
 				break;
 			case OptionIDs.GAME_SIM_THREAD:
 				o.simThread = !o.simThread;
+				break;
+			case OptionIDs.GAME_IDLE_AUTO_ADVANCE:
+				// Stepped like SimRatio rather than toggled, because "off" is one
+				// value among several and not a boolean: a player who finds the
+				// fastest step aggressive needs a longer one to exist to move to.
+				if (dir < 0) {
+					if (o.idleAutoAdvance !== IdleAdvance._FIRST) {
+						o.idleAutoAdvance = (o.idleAutoAdvance - 1) as IdleAdvance;
+					}
+				} else if (o.idleAutoAdvance !== IdleAdvance._COUNT - 1) {
+					o.idleAutoAdvance = (o.idleAutoAdvance + 1) as IdleAdvance;
+				}
 				break;
 			case OptionIDs.GAME_ZOMBIFICATION_CHANCE:
 				o.zombificationChance += dir * 5;

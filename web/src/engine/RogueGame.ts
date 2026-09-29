@@ -72,6 +72,7 @@ import { buildScene } from "@engine/firstperson/SceneBuilder";
 import { AdvisorHint, GameHintsStatus } from "@engine/GameHints";
 import {
 	GameOptions,
+	idleAdvanceMs,
 	OptionIDs,
 	Options,
 	ReincMode,
@@ -6212,11 +6213,57 @@ export class RogueGame {
 			// 2. Get input.
 			// Peek keyboard & mouse until we got an event. (C# busy-loops here;
 			// WaitKeyOrMouse is the async equivalent.)
-			const ev = await this.WaitKeyOrMouse();
+			//
+			// The timeout is the only place in the game that is passed one, and that
+			// is what keeps the option out of the six targeting modes — see
+			// `WaitKeyOrMouse`. Read from the option on every pass rather than
+			// captured once, so turning it on mid-game from a menu takes effect on
+			// the next pass instead of the next game.
+			const ev = await this.WaitKeyOrMouse(
+				idleAdvanceMs(s_Options.idleAutoAdvance),
+			);
 			this.debugTrace?.("    loop: WaitKeyOrMouse done");
 			const inKey = ev.key;
 			const mousePos = ev.mousePos;
 			const mouseButtons = ev.mouseButtons;
+
+			// 2b. Nobody pressed anything for long enough. Take the turn for them.
+			//
+			// This runs before the input dispatch rather than as a command in it, so
+			// the action is the game's and not the player's: there is no keypress to
+			// lose, nothing to echo into the message log, and no way for a binding
+			// remap to change what it does. The insanity check is the same one the
+			// `.` binding makes, and for the same reason — an insanity roll is a
+			// thing that happens *to* the player and can consume the turn by itself,
+			// so waiting as well would be two outcomes from one roll.
+			//
+			// Skipped while a hint is on screen. The hint is marked as given the
+			// moment it is displayed, so taking a turn here would tear it down
+			// unread and it would not come back — see the delivery note above.
+			// The turn therefore *waits* rather than ending: the loop redraws and
+			// goes back to the input wait, and the player ends it by reading the
+			// hint and pressing something. Falling through to the input dispatch
+			// instead would be wrong in the worst way available here — there is no
+			// key and no click to act on, so the dispatch would do nothing, the
+			// loop would redraw and wait, the timeout would fire again on the next
+			// interval, and the turn would never end. The loop would spin rather
+			// than hang the tab, but it would not be playable either.
+			//
+			// `continue` rather than `return`: in a do-while it jumps to the
+			// condition, which `loop = false` ends, and that is how every other
+			// turn-ending path in this loop leaves. Returning would also skip the
+			// upkeep below the loop — the FOV recompute, the view rect, and
+			// `lastTurnPlayerActed` — and leave the map drawn against a stale
+			// field of view.
+			if (ev.timedOut) {
+				if (this.m_AdvisorHintPending >= 0) {
+					this.deferIdleAutoAdvance();
+					continue;
+				}
+				loop = false;
+				if (!(await this.TryPlayerInsanity())) this.DoWait(player);
+				continue;
+			}
 
 			// 3. Handle input
 			if (inKey != null) {
@@ -12571,7 +12618,18 @@ export class RogueGame {
 	// The poll also spends idle time catching up the neighbouring districts — see
 	// `simulateOneBehindDistrictTurn` for why that happens here rather than in a
 	// thread of its own.
-	async WaitKeyOrMouse(): Promise<{
+	//
+	// `timeoutMs` is opt-in per call site, and that is load-bearing rather than a
+	// convenience default. This wait has seven callers: the play loop, and six
+	// *targeting* modes (barricade, break, and the four order-follower pickers) that
+	// use it to ask "which tile?". A timeout baked into the wait would fire in all
+	// of them, and the caller would read the timeout as a click and build something
+	// at the cursor — so an idle player would quietly get walls raised and orders
+	// issued to a tile they never looked at. Passing the timeout from
+	// `HandlePlayerActor` alone scopes the feature to the one wait that means
+	// "what is your next action", and leaves the six that mean "which tile" exactly
+	// as they were.
+	async WaitKeyOrMouse(timeoutMs = 0): Promise<{
 		key: GameKeyEvent | null;
 		mousePos: Point;
 		mouseButtons: MouseButton | null;
@@ -12585,6 +12643,17 @@ export class RogueGame {
 		 * pass.
 		 */
 		clickDetail: number;
+		/**
+		 * Whether the wait gave up on `timeoutMs` rather than being woken by input.
+		 *
+		 * A separate flag rather than a synthetic key because the two are not the
+		 * same claim: a timeout means "you did nothing", and the caller acts on
+		 * that differently from a keypress it did not receive. Handing back a
+		 * fabricated `.` would make an unattended turn indistinguishable from a
+		 * deliberate one everywhere downstream, which is exactly the distinction
+		 * this flag exists to keep.
+		 */
+		timedOut: boolean;
 	}> {
 		this.m_UI.UI_PeekKey(); // consume keys to avoid repeats
 		// Start the idle clock the first time the player is actually given control.
@@ -12599,7 +12668,7 @@ export class RogueGame {
 			const inKey = this.m_UI.UI_PeekKey();
 			if (inKey != null) {
 				this.noteGameInput();
-				return { key: inKey, mousePos, mouseButtons, clickDetail: 0 };
+				return { key: inKey, mousePos, mouseButtons, clickDetail: 0, timedOut: false };
 			}
 
 			mousePos = this.m_UI.UI_GetMousePosition();
@@ -12625,18 +12694,38 @@ export class RogueGame {
 
 			if (buttonChanged) {
 				this.noteGameInput();
-				return { key: null, mousePos, mouseButtons, clickDetail };
+				return { key: null, mousePos, mouseButtons, clickDetail, timedOut: false };
 			}
 			if (!mousePos.equals(prevMousePos)) {
 				// Movement is deliberately *not* activity. A player reading the map moves
 				// the cursor over it constantly, and counting that would starve the
 				// catch-up during exactly the thinking time it exists to fill.
-				return { key: null, mousePos, mouseButtons, clickDetail };
+				return { key: null, mousePos, mouseButtons, clickDetail, timedOut: false };
 			}
 
 			// Nothing to do but wait. If the player has been idle long enough, give one
 			// district turn to the world behind them before polling again.
 			await this.simulateOneDistrictTurnWhileIdle();
+
+			// …and if they have been idle long enough for the idle auto-advance
+			// option, give up. Measured from the last key or click rather than from
+			// the start of the wait, so the timeout is "no input for this long"
+			// wherever it is measured from. The two idle checks share a clock and
+			// fire in that order deliberately: `simulateOneDistrictTurnWhileIdle` is
+			// the cheaper and more deferrable of the two, so the world behind the
+			// player gets its turn before the player's own turn is taken for them.
+			//
+			// Read *after* the catch-up rather than before it, so the two cannot both
+			// decide to spend the same poll, and `m_SimulatingInIdle` is false again
+			// by this point — the catch-up clears it in a `finally`.
+			if (
+				timeoutMs > 0 &&
+				!this.m_SimulatingInIdle &&
+				this.m_LastGameInputAt !== null &&
+				this.nowMs() - this.m_LastGameInputAt >= timeoutMs
+			) {
+				return { key: null, mousePos, mouseButtons, clickDetail, timedOut: true };
+			}
 
 			await new Promise<void>((r) => setTimeout(r, 0));
 		}
@@ -12644,6 +12733,23 @@ export class RogueGame {
 
 	/** Records that the player did something, which defers the idle catch-up. */
 	private noteGameInput(): void {
+		this.m_LastGameInputAt = this.nowMs();
+	}
+
+	/**
+	 * Re-bases the idle clock when a turn did not progress.
+	 *
+	 * Distinct from `noteGameInput`, and deliberately not it: that one means "the
+	 * player pressed something", which is what defers the district catch-up, and
+	 * reusing it here would report a player action that never happened.
+	 *
+	 * Without this, a turn that declines to advance — the advisor-hint case — sits
+	 * with a stale `m_LastGameInputAt`, so the auto-advance timeout is permanently
+	 * satisfied. The input wait would return on its first poll, the loop would
+	 * redraw, and it would do that as fast as the machine can draw. This says what
+	 * the caller means, which is "nothing has happened for one more interval".
+	 */
+	private deferIdleAutoAdvance(): void {
 		this.m_LastGameInputAt = this.nowMs();
 	}
 
