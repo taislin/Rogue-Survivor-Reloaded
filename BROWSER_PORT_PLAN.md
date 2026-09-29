@@ -1378,7 +1378,7 @@ Stages 4 and 5 have not started.
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
 | **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles, 90 of 95 items and all 123 item factories done.** The 5 backpacks (a new mechanic) and ~420 unused `GameImages` constants are the only content left; nothing *calls* the new factories yet, which is placement and belongs to Stage 4/5 |
-| **4** | 37 gated features | **not started** — the bulk of the work |
+| **4** | 37 gated features | **4 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only; the fire half needs a fire-damage path that does not exist), `FoodPoisoning`, `Cooking`. 33 remain, and `FireBarrels` is next |
 | **5** | content, audio, credits | **not started** |
 
 Two things a later session should not have to re-derive:
@@ -2069,7 +2069,8 @@ plan for rather than discover:
 #### 5.6e Stage 4 — mechanics
 
 > **Status: four features are done 2026-09-29** — `WeaponWeight`,
-> `FoodPoisoning`, `Cooking`, and half of `ArmorResist`. These are the *first features with real readers in gameplay
+> `FoodPoisoning` (including its 5% vomit action), `Cooking`, and half of
+> `ArmorResist`. These are the *first features with real readers in gameplay
 > code*; until now `hasFeature` was called only from `HeadlessRunner`, so
 > `feature-flags.test.ts`'s partition was satisfied by a pending list. Two things
 > in that suite changed as a consequence and are worth knowing: each feature left
@@ -2159,8 +2160,9 @@ plan for rather than discover:
 > contraction on eating, a per-turn recovery roll, and the antiviral cure — which
 > makes this the feature where the *shape* starts to matter: the flag has to be
 > set and cleared consistently across all of them, and `feature-flags.test.ts`
-> now asserts four call sites for it (two in `Rules` where the rolls live, two in
-> the turn loop), each located by file.
+> now asserts six call sites for it (two in `Rules` where the rolls live, four in
+> `RogueGame` — the per-turn sweep, the two medicine/eat hooks, and the vomit),
+> each located by file.
 >
 > `Actor.isFoodPoisoned` is a plain bool, so the graph writer carries it with no
 > spec entry — the plan's "0 lines of serialisation", and the reason to prefer a
@@ -2182,16 +2184,58 @@ plan for rather than discover:
 > *subtraction*, so without it a high-Hardy actor would roll against a negative
 > chance on fresh meat.
 >
-> Five mutations, each caught: contraction gate removed, recovery gate removed,
-> `CAUSES_POISON` not read, the expired/spoiled factors swapped, and the
-> antiviral cure deleted.
+> Mutations, each caught: contraction gate removed, recovery gate removed,
+> `CAUSES_POISON` not read, the expired/spoiled factors swapped, the antiviral
+> cure deleted, the vomit gate removed, the `DoVomit` flag gate removed (CLASSIC
+> gets four hours), the `4` reverted to `1`, the `4` weakened to `2`, the
+> `Math.max` floor removed, the `hasDecoration` guard removed, the timer dropped
+> from two days to one, the antiviral entry deleted from the cure list, the cure
+> widened to any medicine, and the cure widened to `infectionCure > 0`.
 >
-> **Not done, and it is part of the feature:** the fork also has
-> `FOOD_POISONING_AFFECTED_ACTION_CHANCE` (5% chance to vomit), which the plan
-> lists as the "vomit penalty". It is not implemented — vomiting is a player
-> action with its own prompt and penalty, and bolting it on would make the flag
-> do something no test could describe. It belongs with `Cooking`, where the
-> `canBeCooked` column it pairs with also gains a reader.
+> **The 5% "vomit penalty" is now done too**, and it was the one part of this
+> feature that turned out not to be food poisoning's business at all.
+>
+> `TryPlayerFoodPoisoning` mirrors `TryPlayerInsanity` step for step — same
+> five steps, same early return when the generated action is not legal — because
+> the fork runs them as one chain: insanity, then drunkenness, then food
+> poisoning. The port called `TryPlayerInsanity` on its own at **35 sites**, so
+> rather than add a second call at each one, the pair is folded into
+> `TryPlayerUnwell` and all 35 now call that. A drunkenness arm is deliberately
+> *absent* rather than stubbed to `false`: `Feature.Alcohol` has no
+> implementation, and a stub that always returns false is indistinguishable from
+> a forgotten one.
+>
+> **The real find was that `DoVomit` already existed, and the fork changed it.**
+> Vanilla has vomiting — the cannibalism and nausea paths both call it — and
+> Release 7-6 changed *every* vomit: four hours of sleep and food instead of one,
+> plus the decoration put on a two-day timer. Porting that as "vomiting" would
+> have silently quadrupled the cost of vanilla cannibalism, so `DoVomit` is now
+> gated on the same flag as the contraction, and a test asserts the CLASSIC
+> one-hour case rather than trusting the gate. This is the second time in Stage 4
+> that a Still Alive change to a *shared* vanilla function has turned out to be
+> the substance of a "new" feature (`Cooking`'s `canBeCooked` was the first).
+>
+> The `hasDecoration` check is load-bearing and not obvious: without it a second
+> vomit on the same tile re-arms the two-day timer, so the tile never clears.
+> Asserting the decoration is *present* does not catch that — it is true either
+> way — so the test counts `map.timers` instead, and separately pins the
+> duration to `TURNS_PER_DAY * 2`.
+>
+> ### A bug that shipped on this branch, and the gate that is not the C#'s
+>
+> The first cut of the antiviral cure sat in the middle of `DoUseMedicineItem`
+> with **no condition on the medicine at all**, so any medicine cleared
+> `isFoodPoisoned` — bandages, sanity pills, anything. The C# is an explicit
+> three-model list, `SMALL_MEDIKIT || LARGE_MEDIKIT || PILLS_ANTIVIRAL`, and it
+> is one `else if` arm in the canned-drinks/cigarettes chain, so everything else
+> falls through it untouched.
+>
+> The instructive part is the gate that *looks* right: `med.infectionCure > 0`.
+> Medikits do carry a cure value so it passes, and it reads as a faithful
+> paraphrase — but it also admits any other curative and widens the fork's
+> behaviour. Both are caught by mutation, which is the only reason this was
+> caught at all. The cure also moved to *after* `actor.inventory.consume(med)`,
+> where the C# has it, even though the two do not interact today.
 >
 > ### `ArmorResist` — half done, and the half is not the one the table implies
 >
@@ -2248,7 +2292,7 @@ zero precisely because of the dump-every-own-field design.
 | `WeaponWeight` | none (model field) | 0 | **DONE** — `ItemWeaponModel.weight`, read from the merged `WEIGHT`, subtracted in `actorSpeed` under the flag |
 | `ArmorResist` | none (model field) | 0 | **infection roll DONE** (gated, in `Rules.infectionBlockedByArmor`). Fire scaling **blocked on `TileFires`** — the port has no fire damage. Both CSV columns merged |
 | `Alcohol` | `Actor.bloodAlcohol`, `previousBloodAlcohol` | 0 (own fields) | `IsDrunk`, 4 accuracy tiers, the 5-step description and colour, BAC decay, nightmare suppression |
-| `FoodPoisoning` | `Actor.isFoodPoisoned` | **0** (own field, carried by the writer) | **DONE** — 20% base × perishing factor 1/3/5, 1% per-turn recovery, Hardy bonus, antiviral cure. **Vomit penalty (5%) not done** — pairs with `Cooking` |
+| `FoodPoisoning` | `Actor.isFoodPoisoned` | **0** (own field, carried by the writer) | **DONE** — 20% base × perishing factor 1/3/5, 1% per-turn recovery, Hardy bonus, medkit/antiviral cure on the C#'s exact model list, and the 5% vomit action (stamina/sleep/food cost, two-day decoration timer) |
 | `Cooking` | `ItemFood._cookedDegree`, `_maxCookedDegree` | 0 | `canActorCookFood`, `ActionCookFood`, campfires/barrels as heat sources |
 | `Fishing` | `Activity.FISHING` | 0 | rod equip gate, `ActionWait(isFishing)` flag, Unsuspicious bonus, `Map.hasFishing` |
 | `Butchering` | `Actor.causeOfDeath` | 0 | bladed-weapon gate, raw vs cooked by cause, `MapObject.canUseForButchering` |

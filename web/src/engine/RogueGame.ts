@@ -6557,7 +6557,7 @@ export class RogueGame {
 
 						// actual game actions.
 						case PlayerCommand.WAIT_OR_SELF:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6566,7 +6566,7 @@ export class RogueGame {
 							break;
 
 						case PlayerCommand.WAIT_LONG:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6589,7 +6589,7 @@ export class RogueGame {
 						case PlayerCommand.MOVE_SW:
 						case PlayerCommand.MOVE_W:
 						case PlayerCommand.MOVE_NW:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6599,7 +6599,7 @@ export class RogueGame {
 							));
 							break;
 						case PlayerCommand.USE_EXIT:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6607,70 +6607,70 @@ export class RogueGame {
 							break;
 
 						case PlayerCommand.ITEM_SLOT_0:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
 							loop = !this.DoPlayerItemSlot(player, 0, inKey);
 							break;
 						case PlayerCommand.ITEM_SLOT_1:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
 							loop = !this.DoPlayerItemSlot(player, 1, inKey);
 							break;
 						case PlayerCommand.ITEM_SLOT_2:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
 							loop = !this.DoPlayerItemSlot(player, 2, inKey);
 							break;
 						case PlayerCommand.ITEM_SLOT_3:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
 							loop = !this.DoPlayerItemSlot(player, 3, inKey);
 							break;
 						case PlayerCommand.ITEM_SLOT_4:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
 							loop = !this.DoPlayerItemSlot(player, 4, inKey);
 							break;
 						case PlayerCommand.ITEM_SLOT_5:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
 							loop = !this.DoPlayerItemSlot(player, 5, inKey);
 							break;
 						case PlayerCommand.ITEM_SLOT_6:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
 							loop = !this.DoPlayerItemSlot(player, 6, inKey);
 							break;
 						case PlayerCommand.ITEM_SLOT_7:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
 							loop = !this.DoPlayerItemSlot(player, 7, inKey);
 							break;
 						case PlayerCommand.ITEM_SLOT_8:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
 							loop = !this.DoPlayerItemSlot(player, 8, inKey);
 							break;
 						case PlayerCommand.ITEM_SLOT_9:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6678,7 +6678,7 @@ export class RogueGame {
 							break;
 
 						case PlayerCommand.RUN_TOGGLE:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6686,35 +6686,35 @@ export class RogueGame {
 							break;
 
 						case PlayerCommand.CLOSE_DOOR:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
 							loop = !(await this.HandlePlayerCloseDoor(player));
 							break;
 						case PlayerCommand.BARRICADE_MODE:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
 							loop = !(await this.HandlePlayerBarricade(player));
 							break;
 						case PlayerCommand.BREAK_MODE:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
 							loop = !(await this.HandlePlayerBreak(player));
 							break;
 						case PlayerCommand.BUILD_LARGE_FORTIFICATION:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
 							loop = !(await this.HandlePlayerBuildFortification(player, true));
 							break;
 						case PlayerCommand.BUILD_SMALL_FORTIFICATION:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6724,28 +6724,28 @@ export class RogueGame {
 							));
 							break;
 						case PlayerCommand.ORDER_MODE:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
 							loop = !(await this.HandlePlayerOrderMode(player));
 							break;
 						case PlayerCommand.PULL_MODE: // alpha10
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
 							loop = !(await this.HandlePlayerPull(player));
 							break;
 						case PlayerCommand.PUSH_MODE:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
 							loop = !(await this.HandlePlayerPush(player));
 							break;
 						case PlayerCommand.FIRE_MODE:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6753,7 +6753,7 @@ export class RogueGame {
 							break;
 
 						case PlayerCommand.SHOUT:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6761,7 +6761,7 @@ export class RogueGame {
 							break;
 
 						case PlayerCommand.SLEEP:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6769,7 +6769,7 @@ export class RogueGame {
 							break;
 
 						case PlayerCommand.SWITCH_PLACE:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6777,7 +6777,7 @@ export class RogueGame {
 							break;
 
 						case PlayerCommand.USE_SPRAY:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6785,7 +6785,7 @@ export class RogueGame {
 							break;
 
 						case PlayerCommand.LEAD_MODE:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6793,7 +6793,7 @@ export class RogueGame {
 							break;
 
 						case PlayerCommand.GIVE_ITEM:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6801,7 +6801,7 @@ export class RogueGame {
 							break;
 
 						case PlayerCommand.NEGOCIATE_TRADE: // alpha10
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6809,7 +6809,7 @@ export class RogueGame {
 							break;
 
 						case PlayerCommand.MARK_ENEMIES_MODE:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6817,7 +6817,7 @@ export class RogueGame {
 							break;
 
 						case PlayerCommand.EAT_CORPSE:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6825,7 +6825,7 @@ export class RogueGame {
 							break;
 
 						case PlayerCommand.REVIVE_CORPSE:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6932,6 +6932,64 @@ export class RogueGame {
 
 	// C# TryPlayerInsanity — RogueGame.cs:6090
 	// C# blocks on AddMessagePressEnter; async here.
+	/** C# `GenerateFoodPoisonedAction` (RogueGame.cs:24151). */
+	private GenerateFoodPoisonedAction(actor: Actor): ActorAction {
+		if (actor.isPlayer || this.IsVisibleToPlayer(actor)) {
+			this.AddMessage(this.MakeMessage(actor, "feels unwell and vomits"));
+		}
+		this.DoVomit(actor);
+		return new ActionWait(actor, this);
+	}
+
+	/**
+	 * Being food poisoned can cost the player their action. Still Alive,
+	 * Release 7-6.
+	 *
+	 * Mirrors `TryPlayerInsanity` exactly — same shape, same five steps, same
+	 * early return when the generated action is not legal — because the fork runs
+	 * them as one chain: insanity, then drunkenness, then this. See
+	 * `TryPlayerUnwell`, which is that chain.
+	 */
+	async TryPlayerFoodPoisoning(): Promise<boolean> {
+		if (!hasFeature(this.m_Session.ruleset, Feature.FoodPoisoning)) return false;
+		if (!this.m_Player.isFoodPoisoned) return false;
+		if (!this.m_Rules.rollChance(Rules.FOOD_POISONING_AFFECTED_ACTION_CHANCE))
+			return false;
+
+		const unwellAction = this.GenerateFoodPoisonedAction(this.m_Player);
+		if (unwellAction == null) return false;
+		if (!unwellAction.isLegal()) return false;
+
+		this.ClearMessages();
+		this.AddMessage(
+			new Message(
+				"(you're quite unwell. you lost control for a moment)",
+				this.m_Player.location.map!.localTime.turnCounter,
+				Color.Orange,
+			),
+		);
+		if (!this.m_Player.isBotPlayer) await this.AddMessagePressEnter();
+		await unwellAction.perform();
+		return true;
+	}
+
+	/**
+	 * The fork's unwell chain: insanity first, then food poisoning.
+	 *
+	 * There is no drunkenness arm yet — `Feature.Alcohol` has no implementation,
+	 * so `TryPlayerDrunkenness` would be a stub returning false forever. It is
+	 * left out deliberately rather than stubbed, because a stub that always
+	 * returns false is indistinguishable from a forgotten one.
+	 *
+	 * Every command site called `TryPlayerInsanity` on its own; folding the pair
+	 * into one call matches the C# and means the next arm is one line rather than
+	 * seven.
+	 */
+	async TryPlayerUnwell(): Promise<boolean> {
+		if (await this.TryPlayerInsanity()) return true;
+		return this.TryPlayerFoodPoisoning();
+	}
+
 	async TryPlayerInsanity(): Promise<boolean> {
 		if (!this.m_Rules.isActorInsane(this.m_Player)) return false;
 		if (!this.m_Rules.rollChance(Rules.SANITY_INSANE_ACTION_CHANCE))
@@ -10647,7 +10705,7 @@ export class RogueGame {
 			if (other != null && this.m_Rules.areEnemies(player, other)) return false;
 		}
 
-		if (await this.TryPlayerInsanity()) return false;
+		if (await this.TryPlayerUnwell()) return false;
 
 		return true;
 	}
@@ -17628,22 +17686,57 @@ export class RogueGame {
 		}
 	}
 
-	// C# DoVomit — RogueGame.cs:15291
+	/**
+	 * C# `DoVomit` (RogueGame.cs:15291).
+	 *
+	 * **Gated, and not only because food poisoning is Still Alive-only.** Vanilla
+	 * already has vomiting — the cannibalism and nausea paths both call this — and
+	 * the fork's Release 7-6 pass changed *every* vomit: four hours of sleep and
+	 * of food instead of one, and the decoration put on a two-day timer instead
+	 * of being added every time. Quoting the C# here as "vomit" and porting it
+	 * wholesale would silently quadruple the cost of vanilla cannibalism, so both
+	 * halves are behind the flag.
+	 *
+	 * The timer is the sharper of the two changes: without the `hasDecoration`
+	 * check a second vomit on the same tile restarts the two-day clock, so the
+	 * tile never clears. Vanilla has no check and no timer, so under CLASSIC the
+	 * decoration accumulates exactly as it did.
+	 */
 	DoVomit(actor: Actor): void {
+		const stillAlive = hasFeature(this.m_Session.ruleset, Feature.FoodPoisoning);
+		const hours = stillAlive ? 4 : 1;
+
 		// beuargh.
 		actor.staminaPoints -= Rules.FOOD_VOMIT_STA_COST;
 		actor.sleepPoints = Math.max(
 			0,
-			actor.sleepPoints - WorldTime.TURNS_PER_HOUR,
+			actor.sleepPoints - WorldTime.TURNS_PER_HOUR * hours,
 		);
-		actor.foodPoints = Math.max(0, actor.foodPoints - WorldTime.TURNS_PER_HOUR);
+		actor.foodPoints = Math.max(
+			0,
+			actor.foodPoints - WorldTime.TURNS_PER_HOUR * hours,
+		);
 
 		// drop vomit ^^.
 		const loc = actor.location;
 		const map = loc.map!;
-		map
-			.getTileAt(loc.position.x, loc.position.y)
-			?.addDecoration(GameImages.DECO_VOMIT);
+		const tile = map.getTileAt(loc.position.x, loc.position.y);
+		if (tile === null || tile === undefined) return;
+		if (!stillAlive) {
+			tile.addDecoration(GameImages.DECO_VOMIT);
+			return;
+		}
+		if (!tile.hasDecoration(GameImages.DECO_VOMIT)) {
+			tile.addDecoration(GameImages.DECO_VOMIT);
+			map.addTimer(
+				new TaskRemoveDecoration(
+					WorldTime.TURNS_PER_DAY * 2,
+					loc.position.x,
+					loc.position.y,
+					GameImages.DECO_VOMIT,
+				),
+			);
+		}
 	}
 
 	// C# DoUseMedicineItem — RogueGame.cs:15304
@@ -17691,13 +17784,6 @@ export class RogueGame {
 			actor.infection -
 				this.m_Rules.actorMedicineEffect(actor, med.infectionCure),
 		);
-		// Still Alive: antivirals cure food poisoning too (RogueGame.cs:21794-21849).
-		// Gated on the same feature as the contraction, so the flag cannot be set
-		// by one ruleset and left uncured by the other.
-		if (hasFeature(this.m_Session.ruleset, Feature.FoodPoisoning) &&
-		    actor.isFoodPoisoned) {
-			actor.isFoodPoisoned = false;
-		}
 		actor.sanity = Math.min(
 			actor.sanity + this.m_Rules.actorMedicineEffect(actor, med.sanityCure),
 			this.m_Rules.actorMaxSanity(actor),
@@ -17705,6 +17791,29 @@ export class RogueGame {
 
 		// consume it.
 		actor.inventory!.consume(med);
+
+		// Still Alive: medkits and antivirals cure food poisoning too
+		// (RogueGame.cs:21845-21851, Release 7-6).
+		//
+		// The C# gates this on an explicit model list, not on `med.infectionCure
+		// > 0` and not on "some medicine was consumed" -- it is one `else if` arm in
+		// the canned-drinks/cigarettes chain, so a bandage or a sanity pill falls
+		// through it untouched. Gating on `infectionCure` instead would have been
+		// almost-but-not-quite right (medikits do carry a cure value) and would
+		// have quietly widened the fork's behaviour to every curative.
+		//
+		// Also note it fires *after* the consume, which is why the port does too.
+		if (hasFeature(this.m_Session.ruleset, Feature.FoodPoisoning) &&
+		    actor.isFoodPoisoned &&
+		    (med.model.id === ItemID.MEDICINE_SMALL_MEDIKIT ||
+		     med.model.id === ItemID.MEDICINE_LARGE_MEDIKIT ||
+		     med.model.id === ItemID.MEDICINE_PILLS_ANTIVIRAL)) {
+			actor.isFoodPoisoned = false;
+			if (actor === this.m_Player || actor.leader === this.m_Player)
+				this.AddMessage(
+					this.MakeMessage(actor, "cures their food poisoning"),
+				);
+		}
 
 		// message.
 		if (this.IsVisibleToPlayer(actor))

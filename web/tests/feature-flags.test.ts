@@ -155,7 +155,7 @@ describe("Feature registry is wired", () => {
     expect(sites.map((s) => s.feature).sort())
       .toEqual(["Alcohol", "ArmorResist", "Cooking", "Cooking", "FoodPoisoning",
                 "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-                "WeaponWeight"]);
+                "FoodPoisoning", "FoodPoisoning", "WeaponWeight"]);
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     expect(at("Alcohol")).toMatch(/HeadlessRunner\.ts:\d+$/);
     expect(at("WeaponWeight")).toMatch(/Rules\.ts:\d+$/);
@@ -170,9 +170,15 @@ describe("Feature registry is wired", () => {
 
     // The food-poisoning readers are split two-and-two, so the file is asserted
     // per site rather than per feature.
+    // Six food-poisoning readers, and the split is the interesting part: two in
+    // `Rules`, where the rolls live, and four in `RogueGame` -- the per-turn
+    // sweep, the vomit, and the two medicine/eat hooks. The file is asserted per
+    // site rather than per feature because "which half of the engine owns this" is
+    // the question a reader of this suite is actually asking, and a reader who
+    // adds a fifth hook should see the count move.
     const poison = sites.filter((s) => s.feature === "FoodPoisoning");
     expect(poison.filter((s) => /Rules\.ts/.test(s.at))).toHaveLength(2);
-    expect(poison.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(2);
+    expect(poison.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(4);
   });
 
   it("every Feature member is read, pending, or withheld — and never two of them", () => {

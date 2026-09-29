@@ -123,6 +123,8 @@ export class Rules {
   static readonly BASE_FOOD_POISONING_RECOVERY_CHANCE = 1;
   /** Per Hardy level, added to the recovery chance. */
   static readonly SKILL_HARDY_FOOD_POISONING_RECOVERY_CHANCE_BONUS = 1;
+  /** Percent chance per action that being poisoned costs the actor control. */
+  static readonly FOOD_POISONING_AFFECTED_ACTION_CHANCE = 5;
   static readonly STAMINA_COST_RUNNING = 4;
   static readonly STAMINA_REGEN_WAIT = 2;
   static readonly STAMINA_REGEN_PER_TURN = 2;
