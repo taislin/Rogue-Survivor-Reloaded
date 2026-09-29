@@ -1378,7 +1378,7 @@ Stages 4 and 5 have not started.
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
 | **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles, 90 of 95 items and all 123 item factories done.** The 5 backpacks (a new mechanic) and ~420 unused `GameImages` constants are the only content left; nothing *calls* the new factories yet, which is placement and belongs to Stage 4/5 |
-| **4** | 37 gated features | **4 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only; the fire half needs a fire-damage path that does not exist), `FoodPoisoning`, `Cooking`. 33 remain, and `FireBarrels` is next |
+| **4** | 37 gated features | **5 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them). 32 remain |
 | **5** | content, audio, credits | **not started** |
 
 Two things a later session should not have to re-derive:
@@ -2237,6 +2237,83 @@ plan for rather than discover:
 > caught at all. The cure also moved to *after* `actor.inventory.consume(med)`,
 > where the C# has it, even though the two do not interact today.
 >
+> ### `FireBarrels` — the model and the burn loop are done; nothing can light them
+>
+> Three new `MapObject` subclasses, transcribed from the C# field for field, and
+> the per-turn step that drains them. **Two of the three numbers are not what the
+> name suggests, and getting either wrong is a silent bug:**
+>
+> | | fire state | hit points | max fuel |
+> |---|---|---|---|
+> | `Barrel` | `BURNABLE` | `DoorWindow.BASE_HITPOINTS` | `TURNS_PER_DAY` = 720 |
+> | `Campfire` | `BURNABLE` | `DoorWindow.BASE_HITPOINTS` | `TURNS_PER_HOUR * 3` = **90** |
+> | `Car` | **`UNINFLAMMABLE`** | **0** | **99** |
+>
+> A barrel is a *day* and a campfire is *three hours*, so "a while" is 720 in one
+> case and 90 in the other. And a car's 99 is not a burn time at all — it is the
+> stack limit for siphoned `AMMO_FUEL`, which is why a car is capped at 99 while
+> its tank is never consumed by burning.
+>
+> **`Car` being `UNINFLAMMABLE` is what implements the C#'s "deliberately
+> exempting Car fires"** — the exemption is the fire state, not a check in the
+> burn loop. The port keeps the three-way test anyway, because that is what the
+> C# has, and a test forces a `Car` into `ONFIRE` to prove the loop still skips
+> it rather than trusting the flag.
+>
+> **The fork deleted vanilla's rain loop and replaced it with a worse one.** The
+> comment at `RogueGame.cs:6727` says the blanket "is it raining, then roll
+> `FIRE_RAIN_PUT_OUT_CHANCE` against every burning object" was drafted but
+> never implemented, and that the author is "utilising it" — but the code deletes
+> it. Vanilla 7.1.1 (still in the port) is gone, replaced by a single roll
+> inside the campfire arm at `RogueGame.cs:6812` that **has no `IsWeatherRain`
+> test anywhere in scope**; the nearest one in that file is ~600 lines earlier,
+> in an unrelated dousing check.
+>
+> Ported literally, an outdoor campfire dies every ten turns *under a clear sky*.
+> The port gates the roll on `isWeatherRain`, which is the only reading under
+> which the comment "rain may extinguish outdoor campfires" and the deleted loop
+> make sense. This is the first place in Stage 4 where the port knowingly
+> diverges from the C#, so it is called out rather than buried: the mutation that
+> removes the weather gate is one of the eight the tests catch.
+>
+> **Barrels get no rain roll at all**, only campfires, which is almost certainly
+> deliberate — a barrel is a metal drum — and the port keeps that asymmetry.
+>
+> The `isRainExtinguishedIt` flag in the C# is not incidental: it stops an
+> *extinguishing* turn from also burning a unit of fuel, so a barrel that rain
+> put out does not quietly eat wood it never had. Deleting it is caught.
+>
+> Serialization needed no codec entries. `mapObjectFields` lists only `location`
+> and is **not** an allow-list: `encodeFields` falls through to `encodePlain` for
+> any field with no codec, so `fuelUnits` and `maxFuelUnits` ride along
+> automatically. What *is* load-bearing is that each class has a spec **above**
+> the bare `MapObject` catch-all — miss that and the object saves perfectly,
+> restores as a plain `MapObject`, and `instanceof Barrel` is quietly false. Both
+> failure modes are mutation-caught.
+>
+> Eight mutations, each caught: turn-loop gate removed, drain turned into refill,
+> the rain weather-gate removed, the rain roll removed, barrels given a rain
+> roll, cars made non-exempt, the `isRainExtinguishedIt` flag lost, and the
+> `Barrel` spec deleted. Plus three more in the round-trip test: the spec deleted,
+> the specs moved below the catch-all, and the campfire's 90 changed to 720.
+>
+> **Not done, and it is the part that matters for play.** Nothing can light
+> these things. Release 7-6's `CanStartCookingFire` is ~8 checks deep and needs
+> `DarknessFov` for its "too dark to see" check, `Weather`, and
+> `ItemBarricadeMaterial` — none of which exist. So this feature is reachable
+> only by an explosion setting a barrel alight, which is the same dead end
+> `Cooking` has, and the two should be finished together. The generator methods
+> `makeObjFireBarrel` and `makeObjCampfire` exist but are **uncalled**: where
+> fire barrels appear is placement, and placement is a balance decision this
+> branch defers rather than guesses — the same reason the 67 imported item
+> factories are uncalled.
+>
+> Two fields the C# sets here are missing from the port's `MapObject`:
+> `isMetal` (Release 5-4) and `hoverDescription` (Release 7-6). They are left off
+> deliberately. `isMetal` is read by other features — fuel stations, the fuel-pump
+> explosion — and adding a flag to a core class as a side effect of a generator
+> is how that goes wrong.
+
 > ### `ArmorResist` — half done, and the half is not the one the table implies
 >
 > The row above says "fire-damage scaling + infection roll". **Only the infection

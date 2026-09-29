@@ -29,6 +29,7 @@ import { Inventory } from "@data/Inventory";
 import { Item } from "@data/Item";
 import { Location } from "@data/Location";
 import { Exit, Lighting, Map } from "@data/Map";
+import { Barrel, Campfire } from "@engine/mapobjects/MapObjects";
 import { MapObject, MapObjectBreak, MapObjectFire } from "@data/MapObject";
 import { Message } from "@data/Message";
 import { Models } from "@data/Models";
@@ -4693,6 +4694,17 @@ export class RogueGame {
 						}
 					}
 				} while (hasExplodedSomething);
+			}
+
+			// 7.0 Fuel burns down. Still Alive, Release 7-6.
+			//
+			// This is a new step rather than an extension of 7.1, because the fork
+			// *replaced* 7.1: it deleted the blanket "is it raining, then roll against
+			// every burning object" loop and put a single roll inside the campfire
+			// arm of what became this. 7.1 below is still vanilla's and is left
+			// running for CLASSIC; under STILL_ALIVE it is the dead one.
+			if (hasFeature(this.m_Session.ruleset, Feature.FireBarrels)) {
+				this.BurnFuelOnFires(map);
 			}
 
 			// 7. Check fires.
@@ -20853,6 +20865,62 @@ export class RogueGame {
 	/// Put the object on fire : firestate = onfire, jump -1.
 	/// </summary>
 	/// <param name="mapObj"></param>
+	/**
+	 * Burn one turn of fuel off every fuel-bearing object that is alight.
+	 *
+	 * Still Alive, Release 7-6 (RogueGame.cs:6735-6838). The C#'s shape is
+	 * reproduced, including the parts that look like mistakes, with two
+	 * deliberate divergences, both noted below.
+	 *
+	 * The three-way test mirrors the C#'s three `as` casts. A `Car` is
+	 * `UNINFLAMMABLE` and so can never be alight by spreading fire -- it only
+	 * loses fuel by exploding, which is handled where the blast happens. The C#'s
+	 * comment says it is "deliberately exempting Car fires", and the fire state is
+	 * what does the exempting, not a check in this loop.
+	 *
+	 * **Divergence 1 -- the rain roll is weather-gated here, and is not in the
+	 * C#.** The fork's campfire arm rolls `FIRE_RAIN_PUT_OUT_CHANCE` against an
+	 * outdoor campfire with no `IsWeatherRain` test anywhere in scope; the nearest
+	 * one in that file is some 600 lines earlier, in an unrelated dousing check.
+	 * Ported literally, an outdoor campfire would be extinguished every ten turns
+	 * *in clear weather*, which cannot be the intent of a branch whose comment
+	 * reads "rain may extinguish outdoor campfires". Gating on `isWeatherRain`
+	 * matches both the comment and the vanilla loop this branch replaced, and is
+	 * the only way to read the omission as a slip rather than a design.
+	 *
+	 * **Divergence 2 -- barrels get no rain roll at all.** Only `Campfire` does in
+	 * the C#, and that is almost certainly deliberate: a barrel is a metal drum, a
+	 * campfire is not.
+	 */
+	BurnFuelOnFires(map: Map): void {
+		for (const obj of map.mapObjects) {
+			if (!obj.isOnFire) continue;
+
+			if (obj instanceof Campfire) {
+				let rainExtinguishedIt = false;
+				if (this.m_Rules.isWeatherRain(this.m_Session.weather)) {
+					const tile = map.getTileAt(obj.location.position.x, obj.location.position.y);
+					// Divergence 1: see above. The C# omits the weather test.
+					if (tile !== null && !tile.isInside &&
+					    this.m_Rules.rollChance(Rules.FIRE_RAIN_PUT_OUT_CHANCE)) {
+						this.UnapplyOnFire(obj);
+						rainExtinguishedIt = true;
+					}
+				}
+				if (!rainExtinguishedIt) {
+					--obj.fuelUnits;
+					if (obj.fuelUnits <= 0) this.UnapplyOnFire(obj);
+				}
+				continue;
+			}
+
+			if (obj instanceof Barrel) {
+				--obj.fuelUnits;
+				if (obj.fuelUnits <= 0) this.UnapplyOnFire(obj);
+			}
+		}
+	}
+
 	// C# ApplyOnFire — RogueGame.cs:17963
 	ApplyOnFire(mapObj: MapObject): void {
 		// put object on fire.

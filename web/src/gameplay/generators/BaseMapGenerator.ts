@@ -11,7 +11,7 @@ import { DollPart } from '@data/Doll';
 import { Item } from '@data/Item';
 import { Models } from '@data/Models';
 import { Map as GameMap } from '@data/Map';
-import { MapObject } from '@data/MapObject';
+import { MapObject, MapObjectBreak, MapObjectFire } from '@data/MapObject';
 import { Zone } from '@data/Zone';
 import { DiceRoller } from '@engine/DiceRoller';
 import { Rect } from '@engine/Rect';
@@ -28,7 +28,16 @@ import { ItemLight } from '@engine/items/ItemLight';
 import { ItemMedicine } from '@engine/items/ItemMedicine';
 import { ItemTracker } from '@engine/items/ItemTracker';
 import { ItemTrap } from '@engine/items/ItemTrap';
-import { DoorWindow, Fortification, PowerGenerator, Board } from '@engine/mapobjects/MapObjects';
+import {
+  Barrel,
+  Board,
+  Campfire,
+  Car,
+  DoorWindow,
+  Fortification,
+  PowerGenerator,
+} from '@engine/mapobjects/MapObjects';
+import { Feature, hasFeature } from '@engine/FeatureFlags';
 import { GameImages } from '@gameplay/GameImages';
 import { GangID } from '@gameplay/GameGangs';
 import { ItemID } from '@gameplay/GameItems';
@@ -553,20 +562,73 @@ export abstract class BaseMapGenerator extends MapGenerator {
   /**
    * Makes a new wrecked car : transparent, not walkable but jumpable, movable.
    * Passing a DiceRoller picks a random car model.
+   *
+   * Under STILL_ALIVE this is a `Car` with a rolled fuel level (0-30, Release
+   * 7-1). Note what does *not* change: `Car` is `UNINFLAMMABLE` with zero hit
+   * points, which is exactly what the plain `MapObject` default constructor gave,
+   * so the only difference is the extra tank.
+   *
+   * The roll itself is behind the flag and not just the class, because consuming
+   * a `DiceRoller` value shifts every subsequent roll in world generation. Gating
+   * only the class would quietly reseed a different CLASSIC world for every
+   * player, which is a far worse regression than a missing fuel gauge.
    */
   protected makeObjWreckedCar(carOrRoller: DiceRoller | string): MapObject {
+    const stillAlive = hasFeature(Session.get().ruleset, Feature.FireBarrels);
+    const fuelUnits =
+      stillAlive && carOrRoller instanceof DiceRoller ? carOrRoller.roll(0, 30) : 0;
     const carImageID =
       typeof carOrRoller === 'string'
         ? carOrRoller
         : BaseMapGenerator.CARS[carOrRoller.roll(0, BaseMapGenerator.CARS.length)];
-    const car = new MapObject('wrecked car', carImageID);
-    car.breakState = 2 /* MapObjectBreak.BROKEN */;
+    const car = stillAlive
+      ? new Car('wrecked car', carImageID, MapObjectBreak.BROKEN, fuelUnits)
+      : new MapObject('wrecked car', carImageID);
+    car.breakState = MapObjectBreak.BROKEN;
     car.isMaterialTransparent = true;
     car.jumpLevel = 1;
     car.isMovable = true;
     car.weight = 100;
     car.standOnFovBonus = true;
     return car;
+  }
+
+  /**
+   * A single fuel barrel, as opposed to `makeObjBarrels`'s plural stack of
+   * unbreakable-in-practice drums. Still Alive, Release 7-6.
+   *
+   * Unbreakable, burnable, four kilos, and walkable, which is what makes it a
+   * cooking spot rather than an obstacle. `isContainer` is set "in case items were
+   * left there when the barrel was unlit", which is the C#'s own comment.
+   *
+   * Nothing calls this yet: where fire barrels appear is placement, and placement
+   * is a balance decision this branch has been deferring rather than guessing --
+   * the same reason the 67 imported item factories are uncalled.
+   */
+  protected makeObjFireBarrel(barrelImageID: string): Barrel {
+    const barrel = new Barrel('receptacle', barrelImageID, MapObjectBreak.UNBREAKABLE, 0);
+    barrel.isMaterialTransparent = true;
+    barrel.isContainer = true;
+    barrel.isMovable = true;
+    barrel.isWalkable = true;
+    barrel.weight = 4;
+    barrel.fireState = MapObjectFire.BURNABLE;
+    // `isMetal` (Release 5-4) and `hoverDescription` (Release 7-6) are not
+    // carried by the port's `MapObject` yet. They are deliberately left off
+    // rather than added here: `isMetal` is read by other features -- fuel
+    // stations, the camp fuel-pump explosion -- and adding a flag field to a
+    // core class as a side effect of a generator is how that goes wrong.
+    return barrel;
+  }
+
+  /** An unlit campfire. Still Alive, Release 7-6. See `makeObjFireBarrel`. */
+  protected makeObjCampfire(campfireImageID: string): Campfire {
+    const campfire = new Campfire('campfire', campfireImageID, MapObjectBreak.BREAKABLE, 0);
+    campfire.isMaterialTransparent = true;
+    campfire.isContainer = true;
+    campfire.isMovable = false;
+    campfire.isWalkable = true;
+    return campfire;
   }
 
   protected makeObjShelf(shelfImageID: string): MapObject {

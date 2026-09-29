@@ -62,7 +62,15 @@ import {
 } from "@engine/items/ItemMisc";
 import { ItemTracker } from "@engine/items/ItemTracker";
 import { ItemTrap } from "@engine/items/ItemTrap";
-import { Board, DoorWindow, Fortification, PowerGenerator } from "@engine/mapobjects/MapObjects";
+import {
+  Barrel,
+  Board,
+  Campfire,
+  Car,
+  DoorWindow,
+  Fortification,
+  PowerGenerator,
+} from "@engine/mapobjects/MapObjects";
 import type { ClassSpec, Enc, FieldCodec, GraphWriter, ReadCtx, RefMark } from "./SessionGraph";
 
 // ── Value types ─────────────────────────────────────────────────────────────
@@ -586,11 +594,26 @@ function mapObjectSpec(name: string, ctor: Function, matches: (v: object) => boo
   return { name, base: "MapObject", matches, create: () => Object.create(ctor.prototype), fields: mapObjectFields };
 }
 
+/*
+ * A note for whoever adds the fourth fuel-bearing map object, because this is the
+ * part that is easy to get wrong: `mapObjectFields` lists only `location`, and it
+ * is not an allow-list. A field with no codec entry is written by `encodePlain`,
+ * so `fuelUnits` and `maxFuelUnits` ride along with no spec entry at all. Adding
+ * them to the fields object would be redundant, not safer. What *is* load-bearing
+ * is the spec existing and sitting above the bare `MapObject` catch-all below --
+ * miss that and the object saves as a plain MapObject and silently loses its
+ * class, which no field-level test would notice.
+ */
+
 const mapObjectSpecs: ClassSpec[] = [
   mapObjectSpec("DoorWindow", DoorWindow, (v) => v instanceof DoorWindow),
   mapObjectSpec("PowerGenerator", PowerGenerator, (v) => v instanceof PowerGenerator),
   mapObjectSpec("Board", Board, (v) => v instanceof Board),
   mapObjectSpec("Fortification", Fortification, (v) => v instanceof Fortification),
+  // Fuel-bearing, and listed before the bare `MapObject` catch-all below.
+  mapObjectSpec("Barrel", Barrel, (v) => v instanceof Barrel),
+  mapObjectSpec("Campfire", Campfire, (v) => v instanceof Campfire),
+  mapObjectSpec("Car", Car, (v) => v instanceof Car),
   mapObjectSpec("StateMapObject", StateMapObject, (v) => v instanceof StateMapObject),
   mapObjectSpec("MapObject", MapObject, (v) => v instanceof MapObject),
 ];

@@ -203,7 +203,6 @@ const PENDING_WIRING: Readonly<Partial<Record<string, Stage>>> = {
   DarknessFov: 4,
   FireExtinguishers: 4,
   SiphonFuel: 4,
-  FireBarrels: 4,
   ShelterBackpacks: 4,
   DifficultyAtCreation: 4,
   ResourcesAvailability: 4,

@@ -153,9 +153,10 @@ describe("Feature registry is wired", () => {
     // Asserting the exact multiset means a new reader has to be added here, which
     // is the point: a reader is a decision, not an accident.
     expect(sites.map((s) => s.feature).sort())
-      .toEqual(["Alcohol", "ArmorResist", "Cooking", "Cooking", "FoodPoisoning",
+      .toEqual(["Alcohol", "ArmorResist", "Cooking", "Cooking", "FireBarrels",
+                "FireBarrels", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
                 "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-                "FoodPoisoning", "FoodPoisoning", "WeaponWeight"]);
+                "WeaponWeight"]);
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     expect(at("Alcohol")).toMatch(/HeadlessRunner\.ts:\d+$/);
     expect(at("WeaponWeight")).toMatch(/Rules\.ts:\d+$/);
@@ -179,6 +180,14 @@ describe("Feature registry is wired", () => {
     const poison = sites.filter((s) => s.feature === "FoodPoisoning");
     expect(poison.filter((s) => /Rules\.ts/.test(s.at))).toHaveLength(2);
     expect(poison.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(4);
+
+    // FireBarrels is two readers in two different files, and the split is the
+    // point: the generator decides what a barrel *is*, the turn loop decides what
+    // a lit barrel *does*. Collapsing either into a helper would hide the flag
+    // behind an abstraction and make the count the only place it shows up.
+    const barrels = sites.filter((s) => s.feature === "FireBarrels");
+    expect(barrels.filter((s) => /BaseMapGenerator\.ts/.test(s.at))).toHaveLength(1);
+    expect(barrels.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(1);
   });
 
   it("every Feature member is read, pending, or withheld — and never two of them", () => {

@@ -5,6 +5,10 @@ import { RogueGame } from "@engine/RogueGame";
 import { Session, SaveFormat, GameMode, Ruleset } from "@engine/Session";
 import { storage } from "@engine/storage";
 import { WorldTime } from "@engine/WorldTime";
+import { Point } from "@engine/Point";
+import { GameImages } from "@gameplay/GameImages";
+import { MapObjectBreak } from "@data/MapObject";
+import { Barrel, Campfire, Car } from "@engine/mapobjects/MapObjects";
 import { GRAPH_VERSION, type GraphData } from "@engine/serialization/SessionGraph";
 import { Exit, Map as GameMap } from "@data/Map";import { CLASS_SPECS, encodeScoring } from "@engine/serialization/specs";
 import {
@@ -255,6 +259,63 @@ describe("a restored map is usable, not just complete", () => {
     for (const actor of loaded.currentMap.actors) {
       expect(actor.location.map).toBe(loaded.currentMap);
     }
+  });
+
+  it("restores a fuel-bearing map object as its own class, with its fuel", () => {
+    // The class, not just the fields. If the `Barrel` spec were missing or sat
+    // below the bare `MapObject` catch-all, the object would restore perfectly
+    // and silently become a `MapObject` -- every field intact, `instanceof
+    // Barrel` false, and the burn loop's first `as` cast quietly returning null.
+    // Put one of each on the *live* map and save it, rather than hoping the
+    // generated world happens to contain one. It has to be the live map: the
+    // writer walks `session.currentMap`, so an object placed on a previously
+    // loaded graph is simply not in the save -- which is a silent pass-to-nothing
+    // rather than an error, and worth being explicit about.
+    const map = session.currentMap!;
+
+    // The tiles are found rather than
+    // hard-coded: a hard-coded (3, 3) is free in one seed and occupied in the
+    // next, and `placeMapObject` does not complain when it overwrites.
+    const spots: Point[] = [];
+    for (let y = 0; y < map.height && spots.length < 3; y++) {
+      for (let x = 0; x < map.width && spots.length < 3; x++) {
+        const p = new Point(x, y);
+        if (map.getMapObjectAt(x, y) === null) spots.push(p);
+      }
+    }
+    expect(spots).toHaveLength(3);
+    const [barrelSpot, campfireSpot, carSpot] = spots;
+
+    map.placeMapObject(
+      new Barrel("receptacle", GameImages.OBJ_BARRELS, MapObjectBreak.UNBREAKABLE, 7),
+      barrelSpot,
+    );
+    map.placeMapObject(
+      new Campfire("campfire", "MapObjects/campfire", MapObjectBreak.BREAKABLE, 5),
+      campfireSpot,
+    );
+    map.placeMapObject(
+      new Car("wrecked car", GameImages.OBJ_CAR1, MapObjectBreak.BROKEN, 42),
+      carSpot,
+    );
+    const reloaded = freshRoundTrip().loaded.currentMap;
+
+    const barrel = reloaded.getMapObjectAt(barrelSpot.x, barrelSpot.y)!;
+    const campfire = reloaded.getMapObjectAt(campfireSpot.x, campfireSpot.y)!;
+    const car = reloaded.getMapObjectAt(carSpot.x, carSpot.y)!;
+
+    expect(barrel).toBeInstanceOf(Barrel);
+    expect(campfire).toBeInstanceOf(Campfire);
+    expect(car).toBeInstanceOf(Car);
+
+    expect((barrel as Barrel).fuelUnits).toBe(7);
+    expect((campfire as Campfire).fuelUnits).toBe(5);
+    expect((car as Car).fuelUnits).toBe(42);
+
+    // A barrel is a day, a campfire three hours, a car 99 -- not one number.
+    expect((barrel as Barrel).maxFuelUnits).toBe(WorldTime.TURNS_PER_DAY);
+    expect((campfire as Campfire).maxFuelUnits).toBe(WorldTime.TURNS_PER_HOUR * 3);
+    expect((car as Car).maxFuelUnits).toBe(99);
   });
 
   it("finds every restored map object, corpse and scent by position", () => {
