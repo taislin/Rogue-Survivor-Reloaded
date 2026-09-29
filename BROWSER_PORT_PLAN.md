@@ -2,7 +2,7 @@
 
 > **Status (2026-09-29):** Phases 1–7 ported and playable. Phase 8 tasks 1–11
 > done; only 12 (optional touch support) remains. `npm run verify` — type-check,
-> coverage gate and build — is **green**: **1143 tests in 64 files**. The coverage
+> coverage gate and build — is **green**: **1146 tests in 64 files**. The coverage
 > gate's branch floor was lowered from 75% to a measured ~47% with the reasoning
 > recorded in `vitest.config.mts`; 75% came from the first 6-file suite and is
 > unreachable now that `RogueGame.ts` alone is 6098 branches. Read
@@ -502,7 +502,7 @@ loudly.
   `5b2dc59`; the side panel, hitbox, popup and minimap fixes `4a6e845` and
   `2ebdddf`; the four typeface families `47c5b64`; and the look-handler and
   typeface-repaint fixes `6977b63`.
-- **Current state (2026-09-29): 1143 tests across 64 files, `npm run verify` green**
+- **Current state (2026-09-29): 1146 tests across 64 files, `npm run verify` green**
   — type-check, coverage gate and build all pass. Coverage is ~59.8% statements /
   49.7% branches / 72.1% functions / 61.0% lines, which clears the measured floor
   in `vitest.config.mts`.
@@ -555,7 +555,7 @@ Full detail in `web/.porting/CONVENTIONS.md`. The ones that matter:
 |---|---|
 | `npm run verify` | type-check + coverage + build — what CI runs, in one command |
 | `npm run type-check` | `tsc --noEmit`; covers `src/`, `sim/` and `tests/` — necessary, **not sufficient** |
-| `npm run test` | Vitest, 1143 tests in 64 files |
+| `npm run test` | Vitest, 1146 tests in 64 files |
 | `npm run test:coverage` | Vitest with coverage thresholds enforced |
 | `npm run build` | Vite production build |
 | `npm run sim` | Headless engine run — the real test |
@@ -577,7 +577,7 @@ Phases 1–7 are ported and building. Historical per-slice detail has been remov
 | 5 — World gen & AI | `BaseAI` (184/184), all 11 AI controllers, 4 generator files (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator` 5 814 lines, `StdTownGenerator`) | Done |
 | 6 — Audio | Web Audio SFX + music | Done |
 | 7 — Save / load | localStorage / IndexedDB, `Session` serialisation | Done |
-| 8 — Polish, sim, CI | Headless harness, 1143 tests, CI, PWA, Docker, asset pass, frame-cost pass, desktop wrapper | **In progress** — 11 of 12 tasks done; only 12 (optional touch) remains. See §4.1 |
+| 8 — Polish, sim, CI | Headless harness, 1146 tests, CI, PWA, Docker, asset pass, frame-cost pass, desktop wrapper | **In progress** — 11 of 12 tasks done; only 12 (optional touch) remains. See §4.1 |
 | 9 — Still Alive ruleset | Parallel ruleset on a separate axis from `GameMode`, one superset content pack | **In progress** — Stages 1–2 committed, Stage 3 half done, Stages 4–5 not started. See §5.6 |
 
 Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks, 3 SFX), extracted from the C# embedded resources. **Total 24.9 MB**, down from 51.6 MB before the Phase 8 asset pass — see §4.1c.
@@ -596,7 +596,7 @@ Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks,
 | 2 | Deterministic `--seed` for reproducible runs | **Done** (`Session.useSeed`, `--seed`) |
 | 3 | Drive the sim to a clean full-length run and fix what it finds | **In progress, and the goal changed** — no seed now reaches 1 000 turns, because that is *correct* behaviour (§1.2: the undead bot is shot by survivors). Keep sweeping seeds for crashes, not for turn count |
 | 4 | Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`) | **Done and verified in a browser** — now 1366×768 widescreen, smooth filtering (the old `image-rendering: pixelated` made upscaled text unreadable) |
-| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Harness done, gate passing** — 1143 tests, 64 files, thresholds set and met. The branch floor was once 75% and made `verify` red for most of the port's life; it was lowered to a measured value rather than left unpassable, with the reasoning in `vitest.config.mts`. Actual: ~60.6% statements / 49.6% branches / 72.1% functions / 61.1% lines |
+| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Harness done, gate passing** — 1146 tests, 64 files, thresholds set and met. The branch floor was once 75% and made `verify` red for most of the port's life; it was lowered to a measured value rather than left unpassable, with the reasoning in `vitest.config.mts`. Actual: ~62.3% statements / 51.9% branches / 73% functions / 63% lines |
 | 6 | GitHub Actions CI | **Done** — `.github/workflows/ci.yml`, type-check + coverage + build + seeded sim, plus a docker smoke job |
 | 7 | PWA manifest + service worker (offline play) | **Done** — manifest, drawn icons, runtime-caching `sw.js` |
 | 8 | Docker image for the self-hosted server | **Done but unverified** — docker is not installed locally, so the image has never been built; CI will exercise it first |
@@ -1060,7 +1060,7 @@ renderer and not about the option: the stored value is still `"first-person"`,
 because `isFirstPersonView` compares it exactly and an annotated value would read
 as top-down and silently hand the player the other view.
 
-`npm run verify` is green: **1143 tests, 64 files**. It was red for most of this
+`npm run verify` is green: **1146 tests, 64 files**. It was red for most of this
 work — branch coverage sat at 49.88% against a 75% floor — and the floor was
 later lowered to a measured value, because a gate that cannot be passed is not a
 gate (`vitest.config.mts` records why 75% is unreachable). The earlier figure in
@@ -1377,7 +1377,7 @@ Stages 4 and 5 have not started.
 |---|---|---|
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
-| **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles and 71 of 95 items done.** 24 items (4 maps, one of them a new mechanic), `makeItem*` factories, and ~500 `GameImages` constants **not started** |
+| **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles and 90 of 95 items done.** The 5 backpacks (a new mechanic), `makeItem*` factories, and ~420 `GameImages` constants **not started** |
 | **4** | 37 gated features | **not started** — the bulk of the work |
 | **5** | content, audio, credits | **not started** |
 
@@ -1403,7 +1403,7 @@ Two things a later session should not have to re-derive:
   all); and the weather/rot sprite collision (it does not exist — `imagePathIn`
   permits subpaths, so the merge just left 14 unreferenced files).
 
-Gate: `cd web && npm run verify` — **1143 tests across 64 files, green** as of
+Gate: `cd web && npm run verify` — **1146 tests across 64 files, green** as of
 the data-merge commit. `BROWSER_PORT_PLAN.md` §5.6d is the only place the data
 decisions are written down.
 
@@ -1892,40 +1892,46 @@ sprite is read from the source, not derived from the id.
 | `rangedMap` | 16 | sprite, `Verb`, `AmmoType`, `IsUnbreakable` |
 | `armorMap` | 2 | sprite, `EquipmentPart` → `DollPart` |
 | `lightMap` | 4 | sprite **and** the 6th argument, the burnt-out sprite |
-| `medMap`, grenade, backpack, paint | 24 | **not done** — see below |
+| `medMap` | 8 | sprite, `IsPlural` (absent = the model's `false` default) |
+| `paintMap` | 2 | sprite, `tagImg` (both `UNDEF` — the extinguisher reuses the paint plumbing) |
+| `explosiveMap` | 9 | sprite + both `BlastAttack` flags the port models; radius, fuse, max throw and the six damage steps were already in the CSV |
+| backpack | 5 | **not done** — see below |
 
-Plus 47 `GameImages` constants, and **`AmmoType` 6 → 13** for the fork's seven new
-ammunitions (`NAIL`, `PRECISION_RIFLE`, `FUEL`, `CHARGE`, `MINIGUN`, `GRENADES`,
-`PLASMA`). That enum is a clean append: vanilla's first six are byte-identical,
-which is what makes appending safe for a save that stores the number.
+Plus 90 `GameImages` constants in total, and **`AmmoType` 6 → 13** for the fork's
+seven new ammunition types (`NAIL`, `PRECISION_RIFLE`, `FUEL`, `CHARGE`,
+`MINIGUN`, `GRENADES`, `PLASMA`). That enum is a clean append: vanilla's first
+six are byte-identical, which is what makes appending safe for a save that stores
+the number.
 
-**Three details the generator exists to not lose.** *Eight* of the new weapons
-are `IsUnbreakable` in the C# — four melee (`BONESAW`, `KATANA`,
-`BARBED_WIRE_BAT`, `KEYBOARD`) and four ranged (`VINTAGE_PISTOL`, `MINIGUN`,
-`GRENADE_LAUNCHER`, `BIO_FORCE_GUN`) — which is `unique: true` in the maps. Four
-of the six lights use the *same* image burnt-out, so that cannot be assumed. And
-`ITEM_BIO_FORCE_GUN` is a **latent case-sensitivity bug in the fork**: the C#
-constant says `Items\item_bio_force_gun` while the file it ships is
-`item_Bio_Force_Gun.png`, which works on Windows and 404s here. Checked across
-all 1051 of the fork's image constants — it is the only one.
+**The explosives block was a single hardcoded grenade and is now a map.** The
+sprite and the two `BlastAttack` flags are per item in the C# and absent from
+the CSV — the molotov cannot damage objects, dynamite and C4 destroy walls, and
+the fuel pump is drawn with a *map object* sprite (`OBJ_FUEL_PUMP`) while the
+fuel can borrows the ammo one. The C#'s third flag, `isProvocative`, is **not**
+carried over: the port's `BlastAttack` has no such field and it exists to draw
+zombies toward a blast, which is Stage 4 AI work.
 
-**No `ItemID` goes in without the map entry that gives it a model.** An enum
-member with nothing behind it is a hole in `this.models`, which
-`model-data-binding.test.ts` now fails on, so each id arrives with its model.
+**Two items that look like typos in the data and are not.** `FIRE_EXTINGUISHER`
+sits in `Items_Spraypaints.csv` and is built as an `ItemSprayPaintModel` — the
+fork reuses the quantity-and-tag plumbing and gives the extinguisher its
+behaviour elsewhere, so the model belongs here and the `FireExtinguishers`
+feature stays in Stage 4. Same shape as the food table's `CAUSES_POISON` and
+`CAN_BE_COOKED` columns: data staged ahead of the code that reads it.
 
-**24 items still to hand-write**, because the C# states their fields somewhere a
-regex should not guess: medicine 8 (the C# computes `plural` per row with
-`CheckPlural`), grenades 9 (the blast array is built outside the item table),
-backpacks 5 (**no map at all** — `INV_SLOTS` drives a doll rule the port does not
-have, and backpacks are a new mechanic), spray paint 2 (`tagImg` varies per can).
-Also **15 ids the C# has and the data does not**: 6 `Ammo` and 9 `GrenadePrimed`,
-where the fork makes the *primed* grenade a distinct item and vanilla has no
-table for it.
+**The 5 backpacks are Stage 4, and the reason is mechanical rather than
+tidy.** A backpack is `ItemBackpackModel(name, plural, img, INVENTORY_SLOTS,
+ENC, WEIGHT)` on `DollPart.BACK` — a doll part the port does not have — wrapping
+a nested `Inventory` with slot tiers gated on the Hauler skill. There is no map
+to add them to. Giving them models now would produce five items that exist,
+cannot be equipped, and would raise on a `PLAYER_COMMAND` slot if they were.
 
-**When the last of them lands, add the test that closes the other direction:**
-every row of every merged `Items_*.json` binds to a model. It cannot be written
-yet because 24 rows legitimately have no map entry, but it is what stops a new
-CSV row being silently skipped by `if (!meta) continue`.
+**The reverse-direction test has landed, with a named exception.** Every row of
+every merged `Items_*.json` must bind to a model, because the maps skip
+unmapped rows with `if (!meta) continue;` and adding a data row is a change no
+compiler sees. The exception list holds exactly the 5 backpacks, and a third
+test fails if an entry there *stops* being a real gap — so the list can shrink
+but cannot quietly become a lie. Mutation-checked: removing a map entry, adding
+a CSV row with no `ItemID`, and a stale exception entry each fail the suite.
 
 **One deliberate divergence, checked rather than assumed.** The port's vanilla
 `RANGED_PRECISION_RIFLE` uses `AmmoType.HEAVY_RIFLE`; the fork's *new*
@@ -1936,15 +1942,16 @@ would alter classic.
 
 **Content ids and maps** — the hand-edited core, and where the real cost is:
 
+
 | Change | Where | Count |
 |---|---|---|
-| `ItemID` — **append only, never renumber** (saved keybindings are `[commandNumber, key]`) | `GameItems.ts` | **71 of 95 done** (`_COUNT` 69 → 140) |
-| 10 hand-written `{id, img}` maps — the sprite id is **not in the JSON**, it lives in TypeScript | `GameItems.ts` | **6 of 10 done**: food, ent, melee, ranged, armour, light. To do: medicine 8, grenade 9, backpack 5 (new mechanic), paint 2 |
+| `ItemID` — **append only, never renumber** (saved keybindings are `[commandNumber, key]`) | `GameItems.ts` | **90 of 95 done** (`_COUNT` 69 → 159) |
+| 10 hand-written `{id, img}` maps — the sprite id is **not in the JSON**, it lives in TypeScript | `GameItems.ts` | **9 of 10 done**: food, ent, melee, ranged, armour, light, medicine, paint, explosives. Only backpacks remain, and they are a mechanic rather than a row |
 | `makeItem*` factories — how spawns place the new items | `BaseMapGenerator.ts` | not started; only needed once the items are playable |
 | `ActorID` + sprite map + the two switches | `GameActors.ts` | **done, 2 of 4** — see below |
 | `TileID` + models | `GameTiles.ts` | **done — 143 ids (was 19), 124 new** |
 | `GameImages` constants for the tile sprites | `GameImages.ts` | **done — 125 new**, pulled in by the tiles |
-| `GameImages` constants for the item sprites | `GameImages.ts` | **done — 71 new**, pulled in by the items |
+| `GameImages` constants for the item sprites | `GameImages.ts` | **done — 90 new**, pulled in by the items |
 | 4 new minimap colours | `Color.ts` | **done** — SteelBlue, Sienna, SeaGreen, OliveDrab, MediumPurple, Khaki, Cornsilk, BlanchedAlmond, all .NET values |
 | `GameImages` constants | `GameImages.ts` | ~+711 |
 | `Skills.NAMES`, `Rules.SKILL_*` | `Skills.ts`, `Rules.ts` | +1 (`BOWS` → `BOWS_EXPLOSIVES`) — **not started** |

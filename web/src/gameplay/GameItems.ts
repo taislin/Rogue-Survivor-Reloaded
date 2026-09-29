@@ -212,7 +212,30 @@ export enum ItemID {
   LIGHT_BINOCULARS = 137,
   LIGHT_FLARE = 138,
   LIGHT_GLOWSTICK = 139,
-  _COUNT = 140,
+  // ── Still Alive items, part 3 (scripts/port-item-models.py): medicine, spray
+  // paint and explosives. The 5 backpacks are deliberately absent -- they are
+  // the ShelterBackpacks mechanic (a nested Inventory on an Item, a BACK doll
+  // part, Hauler-gated slot tiers), not a data row. See BROWSER_PORT_PLAN 5.6d.
+  MEDICINE_SMALL_MEDIKIT = 140,
+  MEDICINE_LARGE_MEDIKIT = 141,
+  MEDICINE_ALCOHOL_BEER_BOTTLE_BROWN = 142,
+  MEDICINE_ALCOHOL_BEER_BOTTLE_GREEN = 143,
+  MEDICINE_ALCOHOL_BEER_CAN_BLUE = 144,
+  MEDICINE_ALCOHOL_BEER_CAN_RED = 145,
+  MEDICINE_CIGARETTES = 146,
+  MEDICINE_ENERGY_DRINK = 147,
+  EXPLOSIVE_MOLOTOV = 148,
+  EXPLOSIVE_DYNAMITE = 149,
+  EXPLOSIVE_C4 = 150,
+  EXPLOSIVE_FUEL_CAN = 151,
+  EXPLOSIVE_FUEL_PUMP = 152,
+  EXPLOSIVE_SMOKE_GRENADE = 153,
+  EXPLOSIVE_FLASHBANG = 154,
+  EXPLOSIVE_HOLY_HAND_GRENADE = 155,
+  EXPLOSIVE_PLASMA_CHARGE = 156,
+  PAINT_THINNER = 157,
+  FIRE_EXTINGUISHER = 158,
+  _COUNT = 159,
 }
 
 export class GameItems implements ItemModelDB {
@@ -235,6 +258,14 @@ export class GameItems implements ItemModelDB {
       MEDICINE_PILLS_SLP: { id: ItemID.MEDICINE_PILLS_SLP, img: GameImages.ITEM_PILLS_BLUE, plural: true },
       MEDICINE_PILLS_SAN: { id: ItemID.MEDICINE_PILLS_SAN, img: GameImages.ITEM_PILLS_SAN, plural: true },
       MEDICINE_PILLS_ANTIVIRAL: { id: ItemID.MEDICINE_PILLS_ANTIVIRAL, img: GameImages.ITEM_PILLS_ANTIVIRAL, plural: true },
+      MEDICINE_SMALL_MEDIKIT: { id: ItemID.MEDICINE_SMALL_MEDIKIT, img: GameImages.ITEM_SMALL_MEDIKIT, plural: false },
+      MEDICINE_LARGE_MEDIKIT: { id: ItemID.MEDICINE_LARGE_MEDIKIT, img: GameImages.ITEM_LARGE_MEDIKIT, plural: false },
+      MEDICINE_ALCOHOL_BEER_BOTTLE_BROWN: { id: ItemID.MEDICINE_ALCOHOL_BEER_BOTTLE_BROWN, img: GameImages.ITEM_BEER_BOTTLE_BROWN, plural: true },
+      MEDICINE_ALCOHOL_BEER_BOTTLE_GREEN: { id: ItemID.MEDICINE_ALCOHOL_BEER_BOTTLE_GREEN, img: GameImages.ITEM_BEER_BOTTLE_GREEN, plural: true },
+      MEDICINE_ALCOHOL_BEER_CAN_BLUE: { id: ItemID.MEDICINE_ALCOHOL_BEER_CAN_BLUE, img: GameImages.ITEM_BEER_CAN_BLUE, plural: true },
+      MEDICINE_ALCOHOL_BEER_CAN_RED: { id: ItemID.MEDICINE_ALCOHOL_BEER_CAN_RED, img: GameImages.ITEM_BEER_CAN_RED, plural: true },
+      MEDICINE_CIGARETTES: { id: ItemID.MEDICINE_CIGARETTES, img: GameImages.ITEM_CIGARETTES, plural: true },
+      MEDICINE_ENERGY_DRINK: { id: ItemID.MEDICINE_ENERGY_DRINK, img: GameImages.ITEM_ENERGY_DRINK, plural: true },
     };
     for (const d of medicineData as any[]) {
       const meta = medMap[d.ID];
@@ -469,23 +500,47 @@ export class GameItems implements ItemModelDB {
     }
 
     // Explosives
+    //
+    // The sprite and the two BlastAttack flags the port models are per item in
+    // the C# and not in the CSV: the molotov cannot damage objects, dynamite and
+    // C4 destroy walls, and the fuel pump is drawn with a *map object* sprite.
+    // Everything else -- radius, fuse, max throw, the six damage steps -- is
+    // already in `Items_Explosives.csv`.
+    //
+    // The C#'s third flag, `isProvocative`, is NOT carried over: the port's
+    // `BlastAttack` has no such field, and it exists to draw zombies toward the
+    // blast, which is Stage 4 AI work rather than a data row.
+    const explosiveMap: Record<string, { id: ItemID; img: string; canDamageObjects: boolean; canDestroyWalls: boolean }> = {
+      EXPLOSIVE_GRENADE: { id: ItemID.EXPLOSIVE_GRENADE, img: GameImages.ITEM_GRENADE, canDamageObjects: true, canDestroyWalls: false },
+      EXPLOSIVE_MOLOTOV: { id: ItemID.EXPLOSIVE_MOLOTOV, img: GameImages.ITEM_MOLOTOV, canDamageObjects: false, canDestroyWalls: false },
+      EXPLOSIVE_DYNAMITE: { id: ItemID.EXPLOSIVE_DYNAMITE, img: GameImages.ITEM_DYNAMITE, canDamageObjects: true, canDestroyWalls: true },
+      EXPLOSIVE_C4: { id: ItemID.EXPLOSIVE_C4, img: GameImages.ITEM_C4, canDamageObjects: true, canDestroyWalls: true },
+      EXPLOSIVE_FUEL_CAN: { id: ItemID.EXPLOSIVE_FUEL_CAN, img: GameImages.ITEM_AMMO_FUEL, canDamageObjects: true, canDestroyWalls: false },
+      EXPLOSIVE_FUEL_PUMP: { id: ItemID.EXPLOSIVE_FUEL_PUMP, img: GameImages.OBJ_FUEL_PUMP, canDamageObjects: true, canDestroyWalls: true },
+      EXPLOSIVE_SMOKE_GRENADE: { id: ItemID.EXPLOSIVE_SMOKE_GRENADE, img: GameImages.ITEM_SMOKE_GRENADE, canDamageObjects: false, canDestroyWalls: false },
+      EXPLOSIVE_FLASHBANG: { id: ItemID.EXPLOSIVE_FLASHBANG, img: GameImages.ITEM_FLASHBANG, canDamageObjects: false, canDestroyWalls: false },
+      EXPLOSIVE_HOLY_HAND_GRENADE: { id: ItemID.EXPLOSIVE_HOLY_HAND_GRENADE, img: GameImages.ITEM_HOLY_HAND_GRENADE, canDamageObjects: true, canDestroyWalls: false },
+      EXPLOSIVE_PLASMA_CHARGE: { id: ItemID.EXPLOSIVE_PLASMA_CHARGE, img: GameImages.ITEM_PLASMA_BURST_PRIMED, canDamageObjects: false, canDestroyWalls: false },    };
+
     for (const d of explosivesData as any[]) {
+      const meta = explosiveMap[d.ID];
+      if (!meta) continue;
       const blastDamage: number[] = [];
       for (let i = 0; i <= d.RADIUS; i++) blastDamage.push(d[`BLAST${i}`]);
 
       const grenade = new ItemGrenadeModel(
         d.NAME,
         d.PLURAL,
-        GameImages.ITEM_GRENADE,
+        meta.img,
         d.FUSE,
-        new BlastAttack(d.RADIUS, blastDamage, true, false),
+        new BlastAttack(d.RADIUS, blastDamage, meta.canDamageObjects, meta.canDestroyWalls),
         GameImages.ICON_BLAST,
         d.MAXTHROW
       );
       grenade.equipmentPart = DollPart.RIGHT_HAND;
       grenade.stackingLimit = d.STACKINGLIMIT;
       grenade.flavorDescription = d.FLAVOR ?? "";
-      this.setModel(ItemID.EXPLOSIVE_GRENADE, grenade);
+      this.setModel(meta.id, grenade);
 
       const primedGrenade = new ItemGrenadePrimedModel(
         `primed ${d.NAME}`,
@@ -583,6 +638,8 @@ export class GameItems implements ItemModelDB {
       SPRAY_PAINT2: { id: ItemID.SPRAY_PAINT2, img: GameImages.ITEM_SPRAYPAINT2, tagImg: GameImages.DECO_PLAYER_TAG2 },
       SPRAY_PAINT3: { id: ItemID.SPRAY_PAINT3, img: GameImages.ITEM_SPRAYPAINT3, tagImg: GameImages.DECO_PLAYER_TAG3 },
       SPRAY_PAINT4: { id: ItemID.SPRAY_PAINT4, img: GameImages.ITEM_SPRAYPAINT4, tagImg: GameImages.DECO_PLAYER_TAG4 },
+      PAINT_THINNER: { id: ItemID.PAINT_THINNER, img: GameImages.ITEM_PAINT_THINNER, tagImg: GameImages.UNDEF },
+      FIRE_EXTINGUISHER: { id: ItemID.FIRE_EXTINGUISHER, img: GameImages.ITEM_FIRE_EXTINGUISHER, tagImg: GameImages.UNDEF },
     };
     for (const d of spraypaintsData as any[]) {
       const meta = paintMap[d.ID];

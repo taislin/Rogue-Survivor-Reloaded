@@ -566,6 +566,27 @@ export class GameImages {
   static readonly ITEM_FLAMETHROWER = "Items/item_flamethrower";
   static readonly ITEM_FRYING_PAN = "Items/item_frying_pan";
   static readonly ITEM_GRENADE_LAUNCHER = "Items/item_grenade_launcher";
+
+  // ── Still Alive medicine, paint and explosives (scripts/port-item-models.py).
+  static readonly ITEM_AMMO_FUEL = "Items/item_ammo_fuel";
+  static readonly ITEM_BEER_BOTTLE_BROWN = "Items/item_beer_bottle_brown";
+  static readonly ITEM_BEER_BOTTLE_GREEN = "Items/item_beer_bottle_green";
+  static readonly ITEM_BEER_CAN_BLUE = "Items/item_beer_can_blue";
+  static readonly ITEM_BEER_CAN_RED = "Items/item_beer_can_red";
+  static readonly ITEM_C4 = "Items/item_c4";
+  static readonly ITEM_CIGARETTES = "Items/item_cigarettes";
+  static readonly ITEM_DYNAMITE = "Items/item_dynamite";
+  static readonly ITEM_ENERGY_DRINK = "Items/item_energy_drink";
+  static readonly ITEM_FIRE_EXTINGUISHER = "Items/item_fire_extinguisher";
+  static readonly ITEM_FLASHBANG = "Items/item_flashbang";
+  static readonly ITEM_HOLY_HAND_GRENADE = "Items/item_Holy_Hand_Grenade";
+  static readonly ITEM_LARGE_MEDIKIT = "Items/item_large_medikit";
+  static readonly ITEM_MOLOTOV = "Items/item_molotov";
+  static readonly ITEM_PAINT_THINNER = "Items/item_paint_thinner";
+  static readonly ITEM_PLASMA_BURST_PRIMED = "Items/item_plasma_burst_primed";
+  static readonly ITEM_SMALL_MEDIKIT = "Items/item_small_medikit";
+  static readonly ITEM_SMOKE_GRENADE = "Items/item_smoke_grenade";
+  static readonly OBJ_FUEL_PUMP = "MapObjects/fuel_pump";
   static readonly ITEM_HOCKEY_STICK = "Items/item_hockey_stick";
   static readonly ITEM_KATANA = "Items/item_katana";
   static readonly ITEM_KEYBOARD = "Items/item_keyboard";

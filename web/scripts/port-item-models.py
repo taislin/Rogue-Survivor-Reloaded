@@ -65,6 +65,18 @@ LIGHT_OUT_RE = re.compile(
     r"new ItemLightModel\([^;]*?GameImages\.[A-Z_0-9]+,\s*[^,]+,\s*[^,]+,\s*"
     r"GameImages\.(?P<out>[A-Z_0-9]+)\s*\)"
 )
+ISPLURAL_RE = re.compile(r"IsPlural\s*=\s*(true|false)")
+# `ItemSprayPaintModel(name, plural, img, quantity, tagImg)`
+TAGIMG_RE = re.compile(
+    r"new ItemSprayPaintModel\([^;]*?GameImages\.[A-Z_0-9]+\s*,\s*[^,]+,\s*"
+    r"GameImages\.(?P<tag>[A-Z_0-9]+)\s*\)"
+)
+# `BlastAttack(radius, damage, canDamageObjects, canDestroyWalls, isProvocative)`.
+# The port's BlastAttack has the first four and no `isProvocative`, so the third
+# flag is read and deliberately not emitted -- it drives Stage 4's AI reaction.
+BLAST_RE = re.compile(
+    r"new BlastAttack\([^,]+,[^,]+,\s*(true|false)\s*,\s*(true|false)(?:\s*,\s*(?:true|false))?\s*\)"
+)
 CONST_RE = re.compile(r'public const string (?P<name>[A-Z_0-9]+)\s*=\s*@"([^"]+)"')
 
 # The maps whose whole value the C# determines mechanically. Everything else is
@@ -83,6 +95,9 @@ EMITTABLE = {
     "RangedWeapon": "rangedMap",
     "BodyArmor": "armorMap",
     "Light": "lightMap",
+    "Medicine": "medMap",
+    "SprayPaint": "paintMap",
+    "Grenade": "explosiveMap",
 }
 
 # The id prefix -> (map name, C# model type), because the C# type is what the
@@ -100,6 +115,7 @@ PREFIX_TO_TYPE = {
     "SPRAY": "SprayPaint",
     "EXPLOSIVE": "Grenade",
     "PAINT": "SprayPaint",
+    "FIRE": "SprayPaint",
 }
 
 # What each remaining type needs, for the report. Keys are the `Item<Y>Model`
@@ -127,6 +143,13 @@ def merged_rows():
     return rows
 
 
+def chunk_of(text, start, limit=1200):
+    """The text from one `this[IDs.` up to the next, so a per-item flag cannot
+    be read off a neighbour."""
+    nxt = text.find("this[IDs.", start + 1)
+    return text[start: nxt if nxt != -1 else start + limit]
+
+
 def parse_items():
     with open(ITEMS_CS, encoding="utf-8-sig", errors="replace") as f:
         text = f.read()
@@ -141,6 +164,9 @@ def parse_items():
         verb = VERB_RE.search(tail)
         ammo = AMMO_RE.search(tail)
         light_out = LIGHT_OUT_RE.search(text[m.start(): m.start() + 500])
+        tagimg = TAGIMG_RE.search(text[m.start(): m.start() + 500])
+        blast = BLAST_RE.search(chunk_of(text, m.start()))
+        plural = ISPLURAL_RE.search(tail)
         found[ident] = {
             "type": m.group("type"),
             "img": m.group("img"),
@@ -149,6 +175,12 @@ def parse_items():
             "ammo": ammo.group(1) if ammo else None,
             "unbreakable": bool(UNBREAKABLE_RE.search(tail)),
             "outImg": light_out.group("out") if light_out else None,
+            "tagImg": tagimg.group("tag") if tagimg else None,
+            # Absent IsPlural means the C# left `bool m_IsPlural` at its
+            # default, which is false -- so this is a read, not a guess.
+            "plural": (plural.group(1) == "true") if plural else False,
+            "dmgObjects": (blast.group(1) == "true") if blast else None,
+            "destroyWalls": (blast.group(2) == "true") if blast else None,
         }
     return found
 
@@ -251,6 +283,10 @@ def main():
             problems.append("%s: no EquipmentPart found" % i)
         if t == "Light" and not d["outImg"]:
             problems.append("%s: no burnt-out image found" % i)
+        if t == "SprayPaint" and not d["tagImg"]:
+            problems.append("%s: no tag image found" % i)
+        if t == "Grenade" and d["dmgObjects"] is None:
+            problems.append("%s: no BlastAttack flags found" % i)
     if problems:
         sys.exit("incomplete extraction, refusing to emit:\n  " + "\n  ".join(problems))
 
@@ -306,6 +342,17 @@ def main():
             elif t == "Light":
                 print("      %s: { id: ItemID.%s, img: GameImages.%s, outImg: GameImages.%s },"
                       % (ident, ident, d["img"], d["outImg"]))
+            elif t == "Medicine":
+                print("      %s: { id: ItemID.%s, img: GameImages.%s, plural: %s },"
+                      % (ident, ident, d["img"], str(d["plural"]).lower()))
+            elif t == "SprayPaint":
+                print("      %s: { id: ItemID.%s, img: GameImages.%s, tagImg: GameImages.%s },"
+                      % (ident, ident, d["img"], d["tagImg"]))
+            elif t == "Grenade":
+                print("      %s: { id: ItemID.%s, img: GameImages.%s, "
+                      "canDamageObjects: %s, canDestroyWalls: %s },"
+                      % (ident, ident, d["img"],
+                         str(d["dmgObjects"]).lower(), str(d["destroyWalls"]).lower()))
 
 
 if __name__ == "__main__":
