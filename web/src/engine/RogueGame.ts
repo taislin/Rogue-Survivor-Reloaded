@@ -996,6 +996,8 @@ export class RogueGame {
 	);
 	/** Still Alive, Release 7-1: \, used when a drink finishes you. */
 	readonly VERB_BLACK_OUT: Verb = new Verb("black out on");
+	/** Still Alive, Release 7-6: \, used by the extinguisher. */
+	readonly VERB_REMOVE: Verb = new Verb("remove", "removes");
 	readonly VERB_TAKE: Verb = new Verb("take");
 	readonly VERB_THROW: Verb = new Verb("throw");
 	readonly VERB_TRADE: Verb = new Verb("trade");
@@ -10618,6 +10620,14 @@ export class RogueGame {
 		return false;
 	}
 
+	/**
+	 * Still Alive, Release 7-6: the extinguisher reuses the spray-paint *mode*,
+	 * so the banner changes with the can in your hand.
+	 */
+	readonly FIRE_EXTINGUISHER_MODE_TEXT: string[] = [
+		"EXTINGUISH MODE - directions to clean a tile or object, ESC cancels",
+	];
+
 	// C# HandlePlayerTag — RogueGame.cs:9070
 	async HandlePlayerTag(player: Actor): Promise<boolean> {
 		let loop = true;
@@ -10638,10 +10648,18 @@ export class RogueGame {
 			return false;
 		}
 
+		// Which can is this? The C# keeps a `specialCase` string and a parallel
+		// banner, with the branch re-tested inside the loop. Both are reproduced,
+		// and the gate keeps CLASSIC on the tagging path even if it is somehow
+		// handed an extinguisher.
+		const isExtinguisher =
+			hasFeature(this.m_Session.ruleset, Feature.FireExtinguishers) &&
+			sprayPaint.model.id === ItemID.FIRE_EXTINGUISHER;
+
 		this.ClearOverlays();
 		this.AddOverlay(
 			new OverlayPopup(
-				this.TAG_MODE_TEXT,
+				isExtinguisher ? this.FIRE_EXTINGUISHER_MODE_TEXT : this.TAG_MODE_TEXT,
 				this.MODE_TEXTCOLOR,
 				this.MODE_BORDERCOLOR,
 				this.MODE_FILLCOLOR,
@@ -10657,6 +10675,35 @@ export class RogueGame {
 			} else if (dir !== Direction.NEUTRAL) {
 				const pos = player.location.position.add(new Point(dir.dx, dir.dy));
 				if (player.location.map!.isInBoundsPoint(pos)) {
+					if (isExtinguisher) {
+						// The C# checks all three fire kinds on the target tile and
+						// refuses with its own message if there is nothing burning --
+						// a different refusal from the tagging one, and the player can
+						// act on it differently.
+						const map = player.location.map!;
+						const mapObj = map.getMapObjectAtPoint(pos);
+						const tile = map.getTileAt(pos.x, pos.y);
+						const burning =
+							(mapObj !== null && mapObj.isOnFire) ||
+							(tile !== null && tile.isOnFire) ||
+							// `Actor.isOnFire` does not exist in the port -- see
+							// `DoUseFireExtinguisher`. Nothing can set a survivor alight
+							// yet, so there is nothing to put out here either.
+							false;
+						if (burning) {
+							this.DoUseFireExtinguisher(player, sprayPaint, pos);
+							loop = false;
+							actionDone = true;
+						} else {
+							this.AddMessage(
+								this.MakeErrorMessage(
+									"Can't spray there : nothing to extinguish.",
+								),
+							);
+							this.RedrawPlayScreen();
+						}
+						continue;
+					}
 					const res = this.CanTag(player.location.map!, pos);
 					if (res.ok) {
 						this.DoTag(player, sprayPaint, pos);
@@ -19088,6 +19135,64 @@ export class RogueGame {
 			this.m_MusicManager.getCurrentMusicId() === GameMusics.SLEEP
 		)
 			this.m_MusicManager.stop();
+	}
+
+	/**
+	 * Put out everything burning on one adjacent tile. Still Alive, Release 7-6
+	 * (`RogueGame.cs:23439`).
+	 *
+	 * Two of the C#'s three targets are handled: a burning map object (a barrel,
+	 * campfire or car) and a burning tile. **The third is not, and the reason is
+	 * the same gap `TileFires` documents**: extinguishing an *actor* needs
+	 * `Actor.isOnFire` and `ExtinguishOnFireActor`, and the port has no per-actor
+	 * fire state at all. Nothing can set a survivor alight yet either — the
+	 * "actor catches fire" arm of `TileFires` is Release 5-7 work that was not
+	 * ported — so there is nothing to put out, and the call site says so rather
+	 * than pretending the third case is handled.
+	 *
+	 * The empty-can discard (Release 7-5) is kept: an extinguisher is 20 sprays,
+	 * and the C# throws the can away when it runs out.
+	 */
+	DoUseFireExtinguisher(
+		sprayer: Actor,
+		extinguisher: ItemSprayPaint,
+		pos: Point,
+	): void {
+		// spend AP.
+		this.SpendActorActionPoints(sprayer, Rules.BASE_ACTION_COST);
+
+		// spend paint.
+		extinguisher.paintQuantity -= 1;
+
+		// extinguish ALL fires there.
+		const map = sprayer.location.map!;
+		const mapObj = map.getMapObjectAtPoint(pos);
+		if (mapObj !== null && mapObj.isOnFire) this.UnapplyOnFire(mapObj);
+		const tile = map.getTileAt(pos.x, pos.y);
+		if (tile !== null && tile.isOnFire) this.extinguishOnFireTile(tile);
+
+		// message.
+		if (this.IsVisibleToPlayer(sprayer)) {
+			this.AddMessage(
+				this.MakeMessage(
+					sprayer,
+					`${this.Conjugate(sprayer, this.VERB_REMOVE)} the fire.`,
+				),
+			);
+		}
+
+		// discard empty spray. Still Alive, Release 7-5.
+		if (extinguisher.paintQuantity <= 0) {
+			this.DiscardItem(sprayer, extinguisher);
+			if (sprayer.isPlayer) {
+				this.AddMessage(
+					new Message(
+						"Fire extinguisher is now empty and has been discarded.",
+						map.localTime.turnCounter,
+					),
+				);
+			}
+		}
 	}
 
 	// C# DoTag — RogueGame.cs:16083

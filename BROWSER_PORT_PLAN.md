@@ -1378,7 +1378,7 @@ Stages 4 and 5 have not started.
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
 | **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles, 90 of 95 items and all 123 item factories done.** The 5 backpacks (a new mechanic) and ~420 unused `GameImages` constants are the only content left; nothing *calls* the new factories yet, which is placement and belongs to Stage 4/5 |
-| **4** | 37 gated features | **12 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (both halves), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`, `TileFires`. 25 remain |
+| **4** | 37 gated features | **13 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (both halves), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`, `TileFires`, `FireExtinguishers`. 24 remain |
 | **5** | content, audio, credits | **not started** |
 
 Two things a later session should not have to re-derive:
@@ -2723,6 +2723,48 @@ plan for rather than discover:
 > from the flammability test (fire never stops spreading), the indoor divisor
 > removed, the weather branch removed, walls allowed to light, a sixth flammable
 > tile, and the feature gate removed.
+
+> ### `FireExtinguishers` — done, and it needed almost no new machinery
+>
+> Putting a fire out with a can. Still Alive, Release 7-6. Small because the
+> *content* was already merged: `FIRE_EXTINGUISHER` (ItemID 158), its sprite, its
+> `GameImages` constant and its row in `Items_Spraypaints.csv` were all already in
+> the port from Stage 3. This is the second feature in a row where the entire
+> prerequisite was content rather than code.
+>
+> **The extinguisher is not a new verb.** It is a spray paint whose model sends
+> the existing tag mode down a different branch, so there is no new
+> `PlayerCommand` and no new mode loop. The C# threads a `specialCase` string and
+> a parallel banner through the loop and re-tests the branch inside it, and that
+> shape is reproduced — the alternative is the same loop twice.
+>
+> One gate covers the banner, the refusal message *and* the handler call, so
+> CLASSIC cannot end up with an extinguisher that announces itself in EXTINGUISH
+> MODE and then tags a floor instead.
+>
+> **Two of the C#'s three targets work**: a burning map object (barrel, campfire
+> or car) and a burning tile. The third — an actor who is *on fire* — needs
+> `Actor.isOnFire` and `ExtinguishOnFireActor`, and the port has neither. Same gap
+> `TileFires` documents, from the same Release 5-7 subsystem: nothing can set a
+> survivor alight yet, so there is nothing to put out. The call site says so
+> rather than pretending, and a test asserts `Actor` has no on-fire state at all.
+>
+> The empty-can discard (Release 7-5) is kept: 20 sprays, then the can is gone
+> with its own message.
+>
+> **Two mutations initially failed because the mode loop was untested.** Changing
+> the model check to `true`, or switching the banner back to `TAG_MODE_TEXT`,
+> broke nothing — because the tests only read the two constants, and a test that
+> reads a constant cannot catch a wrong value in the place it is *used*. The fix
+> is to drive the real loop with a scripted `WaitDirectionOrCancel` and read the
+> overlay at the moment the direction is chosen. `RedrawPlayScreen` is stubbed too:
+> it reads `m_MapViewRect`, which only `StartNewGame` sets.
+>
+> One test then failed for a fourth reason worth recording: it never equipped the
+> extinguisher, so `HandlePlayerTag` returned "No spray paint equipped." before
+> the loop and the prompt was never called.
+>
+> Ten mutations, each caught.
 
 > ### `ArmorResist` — half done, and the half is not the one the table implies
 >

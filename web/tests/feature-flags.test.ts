@@ -164,10 +164,11 @@ describe("Feature registry is wired", () => {
                  "Alcohol", "Alcohol", "ArmorResist", "Cooking", "Cooking",
                  "DarknessFov", "DarknessFov", "DarknessFov",
                  "DarknessGating", "FireBarrels", "FireBarrels",
+                 "FireExtinguishers", "FoodPoisoning", "FoodPoisoning",
                  "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-                 "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-                 "ItemDespawn", "ItemDespawn", "LightPriority", "SiphonFuel",
-                 "SiphonFuel", "TileFires", "WeaponWeight"]);
+                 "FoodPoisoning", "ItemDespawn", "ItemDespawn",
+                 "LightPriority", "SiphonFuel", "SiphonFuel", "TileFires",
+                 "WeaponWeight"]);
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     // `Alcohol`'s *first* reader is now in `RogueGame` (the per-turn decay), and
     // the harness line is one of six rather than the only one.
@@ -203,6 +204,12 @@ describe("Feature registry is wired", () => {
     expect(alc.filter((s) => /Rules\.ts/.test(s.at))).toHaveLength(2);
     expect(alc.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(4);
     expect(alc.filter((s) => /HeadlessRunner\.ts/.test(s.at))).toHaveLength(1);
+
+    // FireExtinguishers is a single reader, in the spray-paint mode dispatch. One
+    // gate there covers the banner, the refusal message and the handler call, so
+    // CLASSIC cannot end up with an extinguisher that announces itself in
+    // EXTINGUISH MODE and then tags a floor instead.
+    expect(sites.filter((s) => s.feature === "FireExtinguishers")).toHaveLength(1);
 
     // TileFires has a single reader, and deliberately so: the spread loop, the
     // burn damage and the ignite/put-out primitives are one indivisible feature.
