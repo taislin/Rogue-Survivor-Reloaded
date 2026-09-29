@@ -2826,6 +2826,8 @@ export class RogueGame {
 		return { ok: choiceDone, skID: skill };
 	}
 
+
+
 	// C# LoadManual — RogueGame.cs:2034
 	async LoadManual(): Promise<void> {
 		this.m_UI.UI_Clear(Color.Black);
@@ -13721,6 +13723,13 @@ export class RogueGame {
 			case Activity.SLEEPING:
 				return "Sleeping.";
 
+			// Still Alive, Release 7-6 (`RogueGame.cs:31629`). Ungated because it
+			// is a label rather than a behaviour: only the AI arm sets
+			// `Activity.FISHING`, that arm is behind `Feature.Fishing`, and a
+			// description of an unreachable state cannot differ.
+			case Activity.FISHING:
+				return "Fishing.";
+
 			default:
 				throw new TypeError("unhandled activity " + actor.activity);
 		}
@@ -14035,6 +14044,16 @@ export class RogueGame {
 			else inInvAdditionalDesc = "to activate trap : drop it";
 		} else if (it instanceof ItemEntertainment) {
 			lines.push(...this.DescribeItemEntertainment(it));
+		} else if (
+			isPlayerInventory &&
+			hasFeature(this.m_Session.ruleset, Feature.Fishing) &&
+			it.model.id === ItemID.FISHING_ROD
+		) {
+			// C# RogueGame.cs:32099. The rod is the one item in the game whose use is
+			// a *different key*, and this is the only place that says so -- the equip
+			// line below prints "to equip", which is true and useless.
+			inInvAdditionalDesc =
+				`to fish : <${key(PlayerCommand.WAIT_LONG)}> or <${key(PlayerCommand.WAIT_OR_SELF)}>`;
 		}
 
 		// 3. Flavor description
@@ -14752,6 +14771,17 @@ export class RogueGame {
 						`${this.Conjugate(actor, this.VERB_DRAG)} ${draggedCorpse.deadGuy.theName} corpse.`,
 					),
 				);
+		}
+
+		// If fishing, force unequip fishing rod.  (C# RogueGame.cs:17278)
+		//
+		// A cast is a *wait*: walking away from a pond ends it, and the C# does
+		// this silently (`canMessage: false`) because a survivor who has just been
+		// stabbed does not need to be told their rod is in their hand.
+		if (hasFeature(this.m_Session.ruleset, Feature.Fishing)) {
+			const leftHandItem = actor.getEquippedItem(DollPart.LEFT_HAND);
+			if (leftHandItem !== null && leftHandItem.model.id === ItemID.FISHING_ROD)
+				this.DoUnequipItem(actor, leftHandItem, false);
 		}
 
 		// Spend AP & STA, check for running, jumping and dragging corpse.
@@ -15591,14 +15621,40 @@ export class RogueGame {
 		}
 	}
 
-	// C# DoWait — RogueGame.cs:13420
-	DoWait(actor: Actor): void {
+	// C# DoWait — RogueGame.cs:23027
+	//
+	// `isFishing` exists because the C# has it, and the C# has it for a reason
+	// that matters: the *rod in the off hand* is what makes a wait a cast, and the
+	// C# therefore re-derives it here rather than trusting whichever keypress
+	// reached this function. A long wait and a single wait are both a wait, so
+	// both are a cast, and a caller that remembered to pass the flag would be one
+	// more way for the two to disagree. The parameter stays for the AI arm, which
+	// is the only thing the C# ever passes `true` to directly.
+	DoWait(actor: Actor, isFishing: boolean = false): void {
 		// spend AP.
 		this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
 
+		// player is fishing?  (C# RogueGame.cs:23049)
+		//
+		// One gate for the whole cast, covering three things: the inference, the
+		// message below and the catch block further down. They cannot disagree
+		// because there is only one decision — under CLASSIC a player holding a rod
+		// waits, breathes and nothing else, and `isFishing` stays whatever the caller
+		// passed, which is `false` for every caller that exists.
+		if (hasFeature(this.m_Session.ruleset, Feature.Fishing) && actor.isPlayer) {
+			const rod = actor.getEquippedItem(DollPart.LEFT_HAND);
+			// `LEFT_HAND`, not `getEquippedMeleeWeapon()`'s `RIGHT_HAND`: the rod is
+			// the one item the fork puts in the off hand.
+			if (rod !== null && rod.model.id === ItemID.FISHING_ROD) isFishing = true;
+		}
+
 		// message.
 		if (this.IsVisibleToPlayer(actor)) {
-			if (actor.staminaPoints < this.m_Rules.actorMaxSTA(actor))
+			if (isFishing)
+				this.AddMessage(
+					this.MakeMessage(actor, "is waiting for a fish to bite."),
+				);
+			else if (actor.staminaPoints < this.m_Rules.actorMaxSTA(actor))
 				this.AddMessage(
 					this.MakeMessage(
 						actor,
@@ -15613,6 +15669,59 @@ export class RogueGame {
 
 		// regen STA.
 		this.RegenActorStaminaPoints(actor, Rules.STAMINA_REGEN_WAIT);
+
+		// caught a fish?  (C# RogueGame.cs:23085)
+		if (isFishing) {
+			// Only the player rolls. An NPC's `caughtFish` starts true
+			// (`RogueGame.cs:23086`), so the AI arm lands a fish on its first wait —
+			// which is what makes an NPC's "fishing" a way of spending turns, and
+			// why the C#'s reel-nearby sound can be cut off by the catch.
+			let caughtFish = true;
+			if (actor.isPlayer) {
+				caughtFish = this.m_Rules.rollChance(
+					this.m_Rules.catchingFishChance(s_Options.resourcesAvailability, actor),
+				);
+			}
+
+			if (caughtFish) {
+				if (actor.isPlayer) {
+					// `AddMessageIfAudibleForPlayer` rather than `AddMessage`: the C# says
+					// this particular message is what interrupts a long wait, so a bite
+					// during one is the intended way to be interrupted.
+					this.AddMessageIfAudibleForPlayer(
+						actor.location,
+						this.MakeMessage(actor, "caught a fish!"),
+					);
+				}
+
+				const rawFish = Models.items.get(ItemID.FOOD_RAW_FISH) as ItemFoodModel;
+				const bestBefore =
+					actor.location.map!.localTime.turnCounter +
+					WorldTime.TURNS_PER_DAY * rawFish.bestBeforeDays;
+				// The C#'s trailing `new ItemFood(model, bestBefore, true, true)` are
+				// `isForbiddenToAI` and `isRaw`; the port reads the second off the
+				// row (the meat path in `ButcherMeat` does the same) and the first is
+				// set below, because it is a property of this catch rather than of the
+				// row — a *bought* fish is the AI's to take, a hooked one is not.
+				const fish = new ItemFood(rawFish, bestBefore);
+				fish.isForbiddenToAI = true;
+				if (!actor.inventory!.addAll(fish)) this.DropItem(actor, fish);
+
+				// feels good
+				if (actor.model.abilities.hasSanity)
+					// The C# passes `ActorSanRegenValue(actor, SANITY_RECOVER_CHAT_OR_TRADE)`,
+					// which adds a Strong Psyche bonus. The port has no such helper, and
+					// its two other `SANITY_RECOVER_CHAT_OR_TRADE` call sites (`DoChatActor`,
+					// `DoTradeWith`) pass the constant too, so this matches the port rather
+					// than introducing a third convention.
+					this.RegenActorSanity(actor, Rules.SANITY_RECOVER_CHAT_OR_TRADE);
+
+				// finish fishing: a rod is cast, not carried. Silent, like the C#'s
+				// `false`, because the player was told nothing about holding it.
+				const held = actor.getEquippedItem(DollPart.LEFT_HAND);
+				if (held !== null) this.DoUnequipItem(actor, held, false);
+			}
+		}
 	}
 
 	// C# DoPlayerBump — RogueGame.cs:13440
@@ -18098,6 +18207,16 @@ export class RogueGame {
 		) {
 			this.HandlePlayerSiphonFuel();
 		}
+		// Still Alive, Release 7-6: using a rod casts it, which is a sound and a
+		// sentence rather than a state change. The *state* lives in `DoWait`, which
+		// is also why the branch has to sit before the fallthrough -- a rod must
+		// never be silently consumed.
+		else if (
+			hasFeature(this.m_Session.ruleset, Feature.Fishing) &&
+			it.model.id === ItemID.FISHING_ROD
+		) {
+			this.DoUseFishingRodItem(actor);
+		}
 		else if (it instanceof ItemEntertainment) {
 			// Release 6-2: too dark to read. Unlike medicine this has no carve-out
 			// -- there is no "but you can smoke while reading".
@@ -19652,6 +19771,13 @@ export class RogueGame {
 					await this.AnimDelay(actor.isPlayer ? DELAY_NORMAL : DELAY_SHORT);
 				}
 			}
+		}
+
+		// If fishing, force unequip fishing rod.  (C# RogueGame.cs:23707)
+		if (hasFeature(this.m_Session.ruleset, Feature.Fishing)) {
+			const leftHandItem = actor.getEquippedItem(DollPart.LEFT_HAND);
+			if (leftHandItem !== null && leftHandItem.model.id === ItemID.FISHING_ROD)
+				this.DoUnequipItem(actor, leftHandItem, false);
 		}
 
 		// If sleeping, wake up dude!
@@ -21736,6 +21862,55 @@ export class RogueGame {
 	}
 
 	/**
+	 * Using a fishing rod casts it.  C# `DoUseFishingRodItem` — `RogueGame.cs:21940`.
+	 *
+	 * Of the C#'s three statements, one is ported and two are not:
+	 *
+	 * - **Not ported: dropping a two-handed right-hand weapon** (C# 21945-21956).
+	 *   That arm asks `meleeModel.IsOneHanded` / `rangedModel.IsOneHanded`, and the
+	 *   port has no such field. It is not a column: the fork sets it by hand on
+	 *   every weapon model in `GameItems.cs` (`IsOneHanded = false` throughout, `true`
+	 *   for the combat knife and the pistols). Porting it means touching 20-odd
+	 *   model constructions for a Release 7-2 field that belongs to the *shield*
+	 *   mechanic, and inventing a default would silently unequip the wrong weapons.
+	 *   Until that field lands, a survivor who equips a rod over a two-hander keeps
+	 *   both, which is the C#'s behaviour for a one-hander and a divergence for the
+	 *   rest. Recorded here and in BROWSER_PORT_PLAN rather than faked.
+	 * - **Not ported: the cast and reel sounds** (`GameSounds.FISHING_CAST_*` and
+	 *   `FISHING_REEL_*`, `GameSounds.cs:424-431`). Four of the ~180 entries that
+	 *   arrive with `Feature.ExtendedAudio`, still pending. The C# stops the cast
+	 *   sound before starting the reel precisely because the two can overlap, which
+	 *   is not worth reproducing without either.
+	 * - **Ported: the sentence.** It is the only part of a cast the player is told
+	 *   about, and it is the one that turns a rod from an inventory object into
+	 *   something to do.
+	 *
+	 * **Reachable from the player's own hands only through the AI.** A rod has
+	 * `EquipmentPart = LEFT_HAND` and so `IsEquipable`, which means both the
+	 * left-mouse and the ctrl-slot paths *equip* a rod rather than use it, and
+	 * `DoUseItem` is otherwise only reached by `ActionUseItem`. That is the C#'s
+	 * own shape and it is transcribed rather than fixed: an NPC told to use the rod
+	 * it just picked up gets the sentence, and the player gets the same information
+	 * from the inventory description's "to fish" line.
+	 *
+	 * The catch itself is in `DoWait`, because in the C# a cast is not a mode you
+	 * enter -- it is a wait with a rod in your hand.
+	 */
+	DoUseFishingRodItem(actor: Actor): void {
+		if (actor.isPlayer) {
+			this.AddMessage(
+				new Message(
+					`Now press Wait <${s_KeyBindings.get(PlayerCommand.WAIT_OR_SELF) ?? "?"}>` +
+						` or Long-Wait <${s_KeyBindings.get(PlayerCommand.WAIT_LONG) ?? "?"}>` +
+						` until a fish is hooked.`,
+					actor.location.map!.localTime.turnCounter,
+					Color.Yellow,
+				),
+			);
+		}
+	}
+
+	/**
 	 * Siphon fuel out of an adjacent wrecked car.
 	 *
 	 * Still Alive, Release 7-1 (`RogueGame.cs:14248`), plus the Release 7-3 fuel
@@ -22030,12 +22205,10 @@ export class RogueGame {
 	 * as the C# comments -- and getting an exemption wrong means the item
 	 * disappears from a map the player is looking at.
 	 *
-	 * Two of the C#'s exemptions are **not** ported, and it is worth saying which
+	 * One of the C#'s exemptions is **not** ported, and it is worth saying which
 	 * and why:
 	 *
-	 * - `SLEEPING_BAG` and `FISHING_ROD` do not exist as items in the port
-	 *   (`Fishing` is still pending), so the branch has nothing to compare against.
-	 * - `ItemBackpack` does not exist either (`ShelterBackpacks` is pending). The
+	 * - `ItemBackpack` does not exist (`ShelterBackpacks` is pending). The
 	 *   C# exempts backpacks in *both* this function and the sweep; when that
 	 *   feature lands, both sites must be revisited together, or stashed
 	 *   backpacks will start rotting.
@@ -22068,6 +22241,16 @@ export class RogueGame {
 			}
 		}
 		if (it instanceof ItemTrap && it.model.id !== ItemID.TRAP_EMPTY_CAN) return;
+		// `SLEEPING_BAG` and `FISHING_ROD`: rare items no refugee wave brings in, so
+		// they must not be deleted (C# RogueGame.cs:21477). `SLEEPING_BAG` still does
+		// not exist in the port. The rod's line needs no `hasFeature` gate, and the
+		// reason is the same one the Butchering sanity carve-out uses: this tests a
+		// *data* flag, not a behaviour. Nothing in the port can produce a rod -- the
+		// fork's own `BaseMapGenerator.MakeItemFishingRod` has no callers, and no
+		// spawn table names one -- so under CLASSIC this line cannot change anything.
+		// It is ungated rather than inert so that the day a generator does spawn
+		// rods, the exemption is already the C#'s.
+		if (it.model.id === ItemID.FISHING_ROD) return;
 		if (it.isUnique || it.isForbiddenToAI) return;
 		it.droppedOnTurnNumber = this.m_Session.worldTime.turnCounter;
 	}
@@ -23337,7 +23520,15 @@ export class RogueGame {
 				break;
 
 			case Activity.SLEEPING:
-				this.m_UI.UI_DrawImage(GameImages.ACTIVITY_SLEEPING, gx, gy);
+				this.m_UI.UI_DrawImageTinted(GameImages.ACTIVITY_SLEEPING, gx, gy, tint);
+				break;
+
+			// Still Alive, Release 7-6 (`RogueGame.cs:25965`). The C# groups
+			// FISHING with the activities that draw nothing, so this port does too:
+			// fishing is legible from the rod in the actor's hand, and the fork
+			// shipped no activity sprite for it. Ungated for the reason given on
+			// `DescribeActorActivity`'s arm.
+			case Activity.FISHING:
 				break;
 
 			default:

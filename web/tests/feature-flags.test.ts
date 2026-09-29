@@ -165,6 +165,8 @@ describe("Feature registry is wired", () => {
                  "Butchering", "Cooking", "Cooking", "DarknessFov",
                  "DarknessFov", "DarknessFov", "DarknessGating",
                  "FireBarrels", "FireBarrels", "FireExtinguishers",
+                 "Fishing", "Fishing", "Fishing", "Fishing", "Fishing",
+                 "Fishing",
                  "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
                  "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
                  "ItemDespawn", "ItemDespawn", "LightPriority",
@@ -224,11 +226,46 @@ describe("Feature registry is wired", () => {
     expect(butcher.filter((s) => /Rules\.ts/.test(s.at))).toHaveLength(1);
     expect(butcher.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(1);
 
+
     // FireExtinguishers is a single reader, in the spray-paint mode dispatch. One
     // gate there covers the banner, the refusal message and the handler call, so
     // CLASSIC cannot end up with an extinguisher that announces itself in
     // EXTINGUISH MODE and then tags a floor instead.
     expect(sites.filter((s) => s.feature === "FireExtinguishers")).toHaveLength(1);
+
+    // Fishing is six, split one-and-five, and both halves of the split are the
+    // design rather than bookkeeping.
+    //
+    // The one in `Rules` is the equip gate: a rod is a rod only beside water, and
+    // that is a *rule*, so it belongs with the other "can this actor" questions
+    // and is reachable by a test without building a message list. The C# has it as
+    // a special case at each of its two equip sites instead; folding it into
+    // `canActorEquipItem` is behaviour-identical, and it is called out in the
+    // comment there because "the C# does it twice" is the kind of thing a reader
+    // has to be told rather than left to find.
+    //
+    // The five in `RogueGame` are the five places the rod is *read*, and each is
+    // separately gated because a survivor who could do one of them without the
+    // feature would notice: the wait (which is also where a wait becomes a cast),
+    // the `use` dispatch, the move force-unequip, the hit force-unequip, and the
+    // inventory description's "to fish" line. The last one is the weakest gate in
+    // the set and is kept anyway, because it is the only part of a cast the player
+    // is *told* about, and a description that differs is a description that
+    // differs.
+    //
+    // The two force-unequips are separately gated rather than folded into one
+    // helper because they are reached from different paths (a move, and any
+    // damage) and a survivor who kept a rod through one of them and not the other
+    // would be a bug neither single gate could see.
+    const fishing = sites.filter((s) => s.feature === "Fishing");
+    expect(fishing).toHaveLength(6);
+    expect(fishing.filter((s) => /Rules\.ts/.test(s.at))).toHaveLength(1);
+    expect(fishing.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(5);
+    // And the `Rules` reader is the predicate, not the catch chance: the chance is
+    // a pure number only the gated wait asks for, the same arrangement
+    // `Rules.meatQuantityPerCorpse` has, so a second gate there would be a gate
+    // that could not change anything.
+    expect(fishing.find((s) => /Rules\.ts/.test(s.at))!.at).toMatch(/Rules\.ts:\d+$/);
 
     // TileFires has a single reader, and deliberately so: the spread loop, the
     // burn damage and the ignite/put-out primitives are one indivisible feature.

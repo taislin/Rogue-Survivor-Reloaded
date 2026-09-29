@@ -570,6 +570,9 @@ export class GameImages {
   // ── Still Alive medicine, paint and explosives (scripts/port-item-models.py).
   static readonly ITEM_AMMO_FUEL = "Items/item_ammo_fuel";
   static readonly ITEM_SIPHON_KIT = "Items/item_siphon_kit";
+  // Still Alive, Release 7-6. The sprite shipped with the classic pack, so this
+  // is only the id: the fork's `GameImages.cs:1062` has the same path.
+  static readonly ITEM_FISHING_ROD = "Items/item_fishing_rod";
   // Still Alive, Release 7-1. One of the ~420 constants the sprite commit
   // deferred; added here because `DarknessFov` 2b reads it.
   static readonly DECO_LIT_CANDLE = "Tiles/Decoration/lit_candle";

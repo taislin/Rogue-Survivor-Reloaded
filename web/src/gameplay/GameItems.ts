@@ -268,7 +268,19 @@ export enum ItemID {
    */
   AMMO_FUEL = 168,
   SIPHON_KIT = 169,
-  _COUNT = 170,
+  /**
+   * Still Alive, Release 7-6. The item `Feature.Fishing` needs, appended for the
+   * same reason the two above were.
+   *
+   * The C# has `FISHING_ROD` at `GameItems.cs:156`, mid-enum and well below the
+   * fork's other additions. Inserting it there would renumber `MATCHES`,
+   * `CHAR_LAPTOP` and everything after it, and a save stores an `ItemID` as a
+   * bare number — so an old save would resolve to a *different item* rather than
+   * to a renamed one. Append-only is the rule; the gap in the numbering is the
+   * price of not corrupting saves.
+   */
+  FISHING_ROD = 170,
+  _COUNT = 171,
 }
 
 export class GameItems implements ItemModelDB {
@@ -834,6 +846,29 @@ export class GameItems implements ItemModelDB {
       "Siphon fuel from cars for chainsaws and flamethrowers.";
     siphonKit.isStackable = false;
     this.setModel(ItemID.SIPHON_KIT, siphonKit);
+
+    // Still Alive, Release 7-6 (`GameItems.cs:3050`). Hand-written for the same
+    // reason as the siphon kit above: no CSV row.
+    //
+    // `EquipmentPart = LEFT_HAND` is the whole item, and it is *not* `RIGHT_HAND`
+    // like every weapon in the game — a rod is held in the off hand so it does
+    // not cost you whatever is in the other one. It is also what `DoWait` reads
+    // to decide a wait is a cast, and what the move handler unequips.
+    //
+    // `dontAutoEquip` because picking a rod up should not silently put it in your
+    // off hand: the C# wants a deliberate cast, which is also why the flavour text
+    // tells the player to stand next to water first.
+    const fishingRod = new ItemModel(
+      "fishing rod",
+      "fishing rods",
+      GameImages.ITEM_FISHING_ROD,
+    );
+    fishingRod.flavorDescription =
+      "Stand next to a pond then equip it to catch fish.";
+    fishingRod.isStackable = false;
+    fishingRod.equipmentPart = DollPart.LEFT_HAND;
+    fishingRod.dontAutoEquip = true;
+    this.setModel(ItemID.FISHING_ROD, fishingRod);
 
     // Traps
     const trapMap: Record<string, { id: ItemID; img: string }> = {

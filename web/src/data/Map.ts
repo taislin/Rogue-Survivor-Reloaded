@@ -42,6 +42,30 @@ export class Map {
   bgMusic: string = "";
   isSecret: boolean = false;
   lighting: Lighting = Lighting.OUTSIDE;
+  /**
+   * Does this map have somewhere to fish? Still Alive, Release 7-6.
+   *
+   * C# `Data/Map.cs:144` over `m_HasFishing`, and the port keeps the property
+   * over a backing field for one reason: the graph reader builds a map with
+   * `Object.create(Map.prototype)`, so **class field initialisers never run** and
+   * a save written before this flag existed has no `_hasFishing` key to assign.
+   * A plain field would read `undefined` on such a map, and `!hasFishing` is the
+   * test the AI arm will make — `undefined` happens to be falsy, so it would
+   * work, but only by accident and only until somebody wrote `hasFishing === true`.
+   * Defaulting in the getter is what makes "a missing key reads as false" a
+   * property of the class rather than of the code that happens to test it, and it
+   * matches the C#'s own constructor default at `Data/Map.cs:273`.
+   */
+  private _hasFishing: boolean = false;
+
+  get hasFishing(): boolean {
+    return this._hasFishing ?? false;
+  }
+
+  set hasFishing(value: boolean) {
+    this._hasFishing = value;
+  }
+
   readonly localTime: WorldTime;
 
   readonly width: number;

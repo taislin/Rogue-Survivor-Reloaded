@@ -83,10 +83,19 @@ const fuelInInventory = (): number =>
 describe("Feature.SiphonFuel: the two items", () => {
   it("appends AMMO_FUEL and SIPHON_KIT above the old enum", () => {
     // Append-only: a save stores ItemIDs by number, so anything below 168 is a
-    // different item rather than a renamed one.
+    // different item rather than a renamed one. The two ids below are what this
+    // test is about and they do not move when a *later* feature appends its own
+    // item -- `_COUNT` is the one number here that legitimately grows, and it grew
+    // to 171 when `Feature.Fishing` put `FISHING_ROD` at 170.
     expect(ItemID.AMMO_FUEL).toBe(168);
     expect(ItemID.SIPHON_KIT).toBe(169);
-    expect(ItemID._COUNT).toBe(170);
+    // "The enum is big enough for both", rather than an exact `_COUNT`. The count
+    // is the one number here that legitimately grows -- it is 171 since
+    // `Feature.Fishing` appended `FISHING_ROD` at 170 -- and pinning it in a test
+    // about two *other* items would mean every later append has to edit this file
+    // to say nothing about siphoning. The exact count is asserted where the append
+    // happens, in tests/fishing.test.ts.
+    expect(ItemID._COUNT).toBeGreaterThan(ItemID.SIPHON_KIT);
   });
 
   it("gives fuel a stack limit of 20, which is what clamps a drain", () => {

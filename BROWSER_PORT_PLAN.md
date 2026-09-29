@@ -1378,7 +1378,7 @@ Stages 4 and 5 have not started.
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
 | **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles, 90 of 95 items and all 123 item factories done.** The 5 backpacks (a new mechanic) and ~420 unused `GameImages` constants are the only content left; nothing *calls* the new factories yet, which is placement and belongs to Stage 4/5 |
-| **4** | 37 gated features | **15 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (both halves), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`, `TileFires`, `FireExtinguishers`, `Butchering`, `ResourcesAvailability`. 22 remain |
+| **4** | 37 gated features | **16 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (both halves), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`, `TileFires`, `FireExtinguishers`, `Butchering`, `ResourcesAvailability`, `Fishing` (player path only — the NPC arm is still pending, see its section). 21 remain |
 | **5** | content, audio, credits | **not started** |
 
 Two things a later session should not have to re-derive:
@@ -1981,7 +1981,10 @@ time a spawner reached for it.
 `Ammo` ids and the 5 backpacks (Stage 4), and the still-Alive-only items with no
 merged CSV row — matches, fishing rod, siphon kit, sleeping bag, flares kit,
 glowstick box, candle box, vegetable seeds, CHAR laptop, unique book of
-armaments, police riot shield. Plus the four roll-and-branch bodies (beer,
+armaments, police riot shield. (Two of those now have hand-written *models* — the
+siphon kit with `SiphonFuel` and the fishing rod with `Fishing` — which is not a
+factory: nothing places either one, and the fork's own `MakeItemFishingRod` has no
+callers at all.) Plus the four roll-and-branch bodies (beer,
 alcohol, liquor-for-molotov, and the two random-weapon pickers), which are
 content decisions about what a "random antique weapon" is rather than
 transliterations.
@@ -2372,11 +2375,16 @@ plan for rather than discover:
 > CLASSIC" test is a real test of the flag. *A gate at the call site is a gate
 > nobody can mutation-check.*
 >
-> Two of the C#'s exemptions are deliberately **not** ported, and both need
-> revisiting when their feature lands: `SLEEPING_BAG` and `FISHING_ROD` do not
-> exist as items yet, and `ItemBackpack` does not either — the C# exempts
+> One of the C#'s exemptions was deliberately **not** ported and still needs
+> revisiting: `ItemBackpack` does not exist as an item yet — the C# exempts
 > backpacks in *both* this method and the sweep, so when `ShelterBackpacks`
 > arrives both sites must change together or stashed backpacks will start rotting.
+> The other half of that pair, `FISHING_ROD`, arrived with `Fishing` and is
+> ported: the line is **ungated**, on the argument the Butchering animal carve-out
+> already uses — it tests a *data* flag rather than a behaviour, and nothing in the
+> port can produce a rod (the fork's own `BaseMapGenerator.MakeItemFishingRod` has
+> no callers), so it cannot change a classic game. `SLEEPING_BAG` remains
+> unimplemented.
 >
 > Sixteen mutations, each caught. Three of the first six did not fail, and each
 > was a test bug rather than an implementation bug: two used `AMMO_SHOTGUN`,
@@ -2862,6 +2870,201 @@ plan for rather than discover:
 > looks like coverage of the clamp and is not is worse than one that admits the
 > limit.
 
+> ### `DifficultyAtCreation` — design notes, taken while wiring it
+>
+> Still Alive, Release 7-4. Two C# pieces: `HandleNewCharacterDifficulty(out int
+> chosenDay)` at `RogueGame.cs:3782`, called from `RogueGame.cs:2884` after the
+> name step; and a block of the mid-game option list at `RogueGame.cs:1557-1582`
+> that is commented out under a heading reading `//MOVED TO CHARACTER CREATION`.
+> Two gates, one per direction: `RogueGame` runs the screen, `OptionsScreen`
+> drops the rows.
+>
+> **The name promises a lock and the C# has none.** This is the part worth
+> knowing before reading the fork's code for it. `HandleOptions` does not test its
+> `ingame` parameter — the C# comments the parameter as unused at
+> `RogueGame.cs:1509` — and there is no runtime check anywhere that refuses a
+> mid-game difficulty edit. The mechanism is that the row is *not on the list*.
+> The port matches that rather than inventing a guard, and says so in both
+> places; a test asserts the rows are gone from the mid-game screen under Still
+> Alive and that classic still has all of them.
+>
+> That makes the name's other half load-bearing in a way that is easy to
+> misread: it is **also** gone from the main menu's options screen, since the C#
+> has one list for both. A player who wants to change difficulty between two
+> Still Alive runs cannot, which is the same cheat the escape path is there to
+> stop. The `ResourcesAvailability` row went with it, and
+> `tests/resources-availability.test.ts`'s "listed under Still Alive" assertion
+> had to be **inverted** rather than moved — that row is now off the mid-game
+> screen under *both* rulesets. An inverted assertion is worth flagging because
+> it is the kind of change a reviewer skims: the feature did not hide a row
+> Still Alive lost, it moved it to a screen that does not exist for classic.
+>
+> **Two fields for one day, and `6` is not a number.** The option holds
+> `visibleRescueDay` and the run holds `Session.armyHelicopterRescueDay`, with
+> `hiddenRescueDay` in between. The split exists so "random" survives being
+> shown repeatedly: pick random, back out, and the row still says `random`
+> rather than a number you never chose. `6` is the marker and the floor is 6
+> because of it — with a floor of 1 the marker would be a day reachable by
+> accident. The C# rolls `new Random().Next(14, 28)`; the port rolls the game's
+> own `DiceRoller`, because an unseedable rescue day is a run that cannot be
+> reproduced, and `HandleNewCharacter` already seeds its roller for exactly that
+> reason.
+>
+> **The field is written and read by nothing, and that is deliberate.**
+> `HelicopterRescue` is the feature that consumes it and it is still pending. The
+> alternative — leaving the capture until the endgame exists — is worse: the
+> value has to be taken at the moment the player commits to it, and a save
+> written before then has nothing to restore. So the cost table records a scalar
+> in the save root with no reader, and `tests/integration/save-load.test.ts`
+> round-trips it so the *plumbing* is pinned even though the behaviour is not.
+>
+> **`R` on the new screen resets to the shipped defaults, not to the values the
+> screen was entered with**, and that reads as a bug until you find the C#'s own
+> comment on the line: "`prevOptions; //@@MP - used to restore changes in this
+> session, now resets defaults (Release 6-1)`" (`RogueGame.cs:3930`). Getting
+> this wrong is easy: the mid-game screen *does* keep a `prevOptions` clone for
+> its own `R`, so the obvious thing to do is copy that. It needs
+> `OptionsCategory.DIFFICULTY` instead, or pressing `R` on the creation screen
+> would throw away the player's font and view mode because they nudged a
+> number. A test asserts exactly that: a non-default music volume survives.
+>
+> **Escape discards everything changed on the screen**, by reloading the stored
+> options. That is the C#'s and it is not tidiness — its comment says it stops a
+> player tweaking difficulty and then loading a save started with different
+> settings. Without it, cancel would only close the screen.
+>
+> Two smaller ports, both because two screens now show the same rows. The
+> Left/Right switch exists twice in the C# (once per screen, with the direction
+> spelled into each line); the port has one `stepGameOption` in `GameOptions.ts`
+> that both call, because twenty arms of step-per-arrow in two files are free to
+> disagree and the first divergence is a row that steps on one screen and not
+> the other. And the row *membership* is one exported `DIFFICULTY_OPTIONS` list
+> read by both screens, with a test that walks the real mid-game list and fails
+> if a row is on it and not in the `DIFFICULTY` reset arm — a row `R` does not
+> reset is a player told "defaults" while their value stays.
+>
+> **One row where this port and the C#'s screen disagree.** The C# has
+> `GAME_RATS_UPGRADE` commented out of the difficulty list (`RogueGame.cs:3790`;
+> Release 5 removed rats upgrades upstream) and this port still has the option
+> from classic. It is in `DIFFICULTY_OPTIONS` — leaving it behind would be the
+> one Still Alive difficulty option still editable mid-game — and excluded from
+> the screen, so it moves out of the mid-game list and has no row on the new one.
+> That is a hole rather than a feature, and the comment says so.
+>
+> Six rows in the C#'s screen have no option here at all (`LIVING_DAMAGE_PERCENT`,
+> `SANITY`, `ANTIVIRAL_PILLS`, `BACKPACKS`, `UNDEAD_DAMAGE_PERCENT`,
+> `BLACKOPS_RAIDS`) and are therefore absent: a row with no `optionName` throws
+> "unhandled option" the moment it is selected, which is how the font option took
+> the game down once already.
+
+> ### `Fishing` — the player path is done; the NPC arm is not, and says so
+>
+> Still Alive, Release 7-6. A rod, a wait, and a body of water — and the whole
+> feature turns out to be one arithmetic expression plus the decision about where
+> the fishing lives.
+>
+> **The C# infers fishing centrally and overrides its own argument.**
+> `DoWait(Actor, bool isFishing = false)` takes a flag and then throws it away for
+> a player holding a rod (`RogueGame.cs:23049`). A cast is not a mode you enter: it
+> is a *wait* with a rod in the off hand. So the single wait and the long wait
+> cannot disagree, and the port keeps the parameter and the inference, because a
+> caller that remembered to pass the flag would be one more way for them to.
+>
+> **The arithmetic, and the two numbers in it that are easy to get wrong.**
+>
+> ```
+>   CATCHING_FISH_BASE_CHANCE = 2      // "percentage. can't be less than 2"
+>   HIGH  -> 4     MED -> 2     LOW -> (int)(2 * 0.5) = 1
+>   max(chance, chance + SKILL_UNSUSPICIOUS_FISHING_BONUS * level)
+> ```
+>
+> - **LOW truncates.** `(int)` is not a rounding mode, so a poor world still
+>   fishes, at half as well. Rounding would give the same answer *at a base of 2*
+>   and only differ at 3 or 5 — which is worth recording, because a mutation that
+>   swaps `Math.trunc` for `Math.round` **survives this suite** and is not a gap:
+>   the two are equal for every number the game can produce. Removing the LOW arm
+>   outright is caught.
+> - **The `Math.Max` is redundant as written and load-bearing anyway.** The right
+>   side is `chance + bonus`, which for a non-negative bonus always exceeds
+>   `chance`. Transcribed rather than simplified, because the author clearly
+>   expected a correction to bite and the two forms disagree the moment a later
+>   edit makes the bonus negative.
+>
+> **One gate, three decisions.** The `DoWait` gate covers the inference, the
+> message and the catch together, which is the point: under CLASSIC a player
+> holding a rod waits, breathes and nothing else, and there is no version of the
+> three that can disagree because there is one `if`. Five gates in `RogueGame` and
+> one in `Rules` in total; `feature-flags.test.ts` asserts the split.
+>
+> **The equip gate moved from the C#'s two sites into one rule, and it is
+> behaviour-identical rather than merely equivalent.** The fork special-cases the
+> rod in `OnLMBItem` (`RogueGame.cs:11395`) and again in `DoPlayerItemSlotUse`
+> (`RogueGame.cs:11996`). The port folds both into `Rules.canActorEquipItem`, which
+> is safe because both C# sites test the rod *first* in the same chain and then
+> fall through to a binoculars branch no rod can take — so the water test is the
+> only thing that can ever refuse one — and because the third caller,
+> `DoTakeItem`'s auto-equip, cannot reach a rod at all (`DontAutoEquip`).
+>
+> **`bestBefore` is off the *map's* clock, not the session's**
+> (`RogueGame.cs:23107`), and that distinction is invisible in a naive test: on a
+> fresh map both clocks are 0, so a port that read the wrong one produces the same
+> number and the test passes for the wrong reason. The test pushes the two clocks
+> apart before it casts.
+>
+> **The fish is `isForbiddenToAI`, and that is a property of the catch rather than
+> of the row.** The C#'s trailing `new ItemFood(RAW_FISH, bestBefore, true, true)`
+> — the first flag is `IsForbiddenToAI` and the second is `IsRaw`, which the port
+> reads off the row exactly as `ButcherMeat` already does. A fish in a shop is the
+> AI's to take; a hooked one is not. The rod itself is now also exempt from
+> `ItemDespawn`'s sweep (`RogueGame.cs:21477`), which closes the other half of the
+> comment there that had been deferring `FISHING_ROD` since the feature landed.
+>
+> **Three things the feature needs are *not* here**, each recorded at the site
+> rather than left for someone to find:
+>
+> - **The NPC arm.** `CivilianAI.cs:754` — fish when hungry and holding a rod on a
+>   map with `HasFishing`, then `BehaviorGoFish`, then walk to the nearest visible
+>   water, then to the first water tile on the map — plus `BaseAI.cs:6625` for the
+>   equip-and-wait. It is the largest and least testable part of the feature, and
+>   the port's `BaseAI` has no `BehaviorGoFish` and no pond generator, so
+>   `Map.hasFishing` is never set `true` by anything. **`Fishing` is therefore NOT
+>   done.** The `DoWait` NPC path (a non-player lands a fish on its first wait,
+>   with no roll) *is* ported, so the arm is a behaviour to switch on rather than a
+>   mechanism to build — but nothing reaches it.
+> - **`isOneHanded`.** The C#'s "unequip a two-handed right-hand weapon" arm
+>   (`RogueGame.cs:21945-21956`) reads `meleeModel.IsOneHanded`, and the port has
+>   no such field. It is not a CSV column: the fork sets it by hand on every weapon
+>   model in `GameItems.cs` (`false` throughout, `true` for the combat knife and
+>   the pistols). Porting it is Release 7-2 *shield* data across 20-odd model
+>   constructions, and inventing a default would silently unequip the wrong
+>   weapons — so a survivor who equips a rod over a two-hander keeps both, which is
+>   the C#'s behaviour for a one-hander and a divergence for the rest.
+> - **The four sounds** (`GameSounds.cs:424-431`: cast and reel, player and
+>   nearby). They arrive with `Feature.ExtendedAudio`, still pending. The C# stops
+>   the cast sound before the reel precisely because the two overlap, which is not
+>   worth reproducing without either.
+>
+> `Map.hasFishing` is a **property over a backing field**, not a plain boolean,
+> and the reason is the save graph rather than taste. `GraphReader` makes every
+> object with `Object.create(Map.prototype)`, so **class field initialisers never
+> run**; a save written before the flag existed simply has no key. A plain field
+> would read `undefined` there — falsy, so it would work, and only by accident,
+> until somebody wrote `hasFishing === true`. The test writes a real graph through
+> the real writer, deletes the key, and reads `false` back.
+>
+> `Activity.FISHING = 9` is appended rather than inserted after `RESTING` as the
+> C# has it. The C# never writes an `Activity` to a save at all, so its numbering
+> is a per-run label; the port's writer *does* carry the field (it is an own field
+> of `Actor`), so append-only is the rule here too. Both switches that `throw` on
+> an unrecognised activity are taught the new value even though nothing can set it
+> yet: an enum member nothing reaches is still a landmine, and the first NPC arm to
+> set it would take the panel down with it.
+>
+> Sixteen mutations, fifteen caught. The survivor is the truncate/round pair
+> above, which is **equivalent** for the shipped constant rather than an untested
+> behaviour — recorded here because a suite that has an equivalent mutation and one
+> that has a missing test should not look the same.
+
 The largest stage, and the one that puts branches in the god file. Everything is
 gated on a `Feature` from §5.6a, and the per-item serialisation cost is close to
 zero precisely because of the dump-every-own-field design.
@@ -2873,8 +3076,9 @@ zero precisely because of the dump-every-own-field design.
 | `Alcohol` | `Actor.bloodAlcohol`, `previousBloodAlcohol` | 0 (own fields) | `IsDrunk`, 4 accuracy tiers, the 5-step description and colour, BAC decay, nightmare suppression |
 | `FoodPoisoning` | `Actor.isFoodPoisoned` | **0** (own field, carried by the writer) | **DONE** — 20% base × perishing factor 1/3/5, 1% per-turn recovery, Hardy bonus, medkit/antiviral cure on the C#'s exact model list, and the 5% vomit action (stamina/sleep/food cost, two-day decoration timer) |
 | `Cooking` | `ItemFood._cookedDegree`, `_maxCookedDegree` | 0 | `canActorCookFood`, `ActionCookFood`, campfires/barrels as heat sources |
-| `Fishing` | `Activity.FISHING` | 0 | rod equip gate, `ActionWait(isFishing)` flag, Unsuspicious bonus, `Map.hasFishing` |
+| `Fishing` | `Activity.FISHING`, `Map.hasFishing` | 0 (own fields, carried by the writer) | **player path DONE** — `FISHING_ROD` at 170, the `canActorEquipFishingRod` water gate, `DoWait`'s cast arm with the 2/1/4% `ResourcesAvailability` scaling and the Unsuspicious bonus, the raw fish with the C#'s `bestBefore`, and the move and hit force-unequips. **NPC arm NOT done** — `CivilianAI`'s go-fish behaviour, `Map.hasFishing` is never set true (no pond generator in the port), and the rod cannot be spawned: the fork's own `BaseMapGenerator.MakeItemFishingRod` has no callers |
 | `ResourcesAvailability` | none (option + `Resources` enum) | 0 | **DONE** — `GAME_RESOURCES_AVAILABILITY` option, the 33/54/75 projection, the survivor-only difficulty multiplier, and the starting kit. The Butchering meat quantity now reads it instead of the hardcoded `2` |
+| `DifficultyAtCreation` | `Session.armyHelicopterRescueDay` | ~1 line (a scalar beside `ruleset` in the save root) + a new char-gen screen | the `GAME_RESCUE_DAY` option (visible/hidden day, "6 = random"), `HandleNewCharacterDifficulty`, the difficulty rows deleted from the mid-game options screen, and an `OptionsCategory` so `R` there resets difficulty options only. Note the C# has no runtime lock at all: the whole mechanism is that the row is not in the list |
 | `Butchering` | `Actor.causeOfDeath`, `Abilities.isLivingAnimal` | 0 | **DONE** — the player's-bladed-weapon gate, fire-death-means-cooked, `bestBefore` divided by rot level, rabbit/chicken/dog/human meat, the no-sanity-hit carve-out for animals. `ResourcesAvailability` (3/2/1) not implemented, so the C#'s `default: 2` is hardcoded for animals; `RABBIT`/`CHICKEN` still unspawnable without `UnintelligentAnimalAI`, so the unrecognised-animal arm yields no meat where the C# throws |
 | `TileFires` | `Tile.flags.IS_ON_FIRE`, `Tile.scorched` | **~4 lines** — `tilesGrid` packs `modelId` + `flags` + `decorations` (`specs.ts:317-347`) | spread, extinguish, rain, damage to actors/corpses/crops, fuel units on barrels/cars |
 | `DarknessFov` | none | 0 | `MINIMAL_FOV_PLAYER 0` vs `MINIMAL_FOV_LIVINGACTORS 1`; night penalties; the FOV-0 gates from Stage 2 |

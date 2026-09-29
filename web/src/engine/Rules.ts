@@ -421,6 +421,13 @@ export class Rules {
   static SKILL_STRONG_RESIST_DISARM_BONUS = 5;
   static SKILL_TOUGH_HP_BONUS = 6;
   static SKILL_UNSUSPICIOUS_BONUS = 20;
+  /**
+   * Still Alive, Release 7-6 (`Rules.cs:396`): +1 point of fishing chance per
+   * level of Unsuspicious. A constant like every other skill bonus, and like them
+   * it is *not* read from `Skills.csv` — the C# hardcodes it next to the skill
+   * bonuses rather than adding a `VALUE2` column, so there is no row to read.
+   */
+  static SKILL_UNSUSPICIOUS_FISHING_BONUS = 1;
   static UNSUSPICIOUS_BAD_OUTFIT_PENALTY = 75;
   static UNSUSPICIOUS_GOOD_OUTFIT_BONUS = 75;
 
@@ -436,6 +443,16 @@ export class Rules {
   static SKILL_ZINFECTOR_BONUS = 0.15;
   static SKILL_ZLIGHT_EATER_MAXFOOD_BONUS = 0.15;
   static SKILL_ZLIGHT_EATER_FOOD_BONUS = 0.1;
+
+  // Still Alive, Release 7-6. Not a skill bonus, which is why it is down here
+  // rather than in the block above: it is the base of a roll, and it is the other
+  // half of `SKILL_UNSUSPICIOUS_FISHING_BONUS`.
+  //
+  // `RogueGame.cs:392`, a percentage, with the C#'s own caveat -- "percentage.
+  // can't be less than 2" -- because `ResourcesAvailability` doubles it on HIGH
+  // and integer-halves it on LOW, so the base decides whether a poor world still
+  // fishes at all.
+  static readonly CATCHING_FISH_BASE_CHANCE = 2;
 
   // ── Fields ────────────────────────────────────────────────────────────────
   readonly diceRoller: DiceRoller;
@@ -629,7 +646,62 @@ export class Rules {
       return fail("forbidden to AI");
     }
 
+    // 4. Still Alive, Release 7-6: a fishing rod is only a rod next to water.
+    //
+    // The C# special-cases the rod at its *two* equip sites
+    // (`RogueGame.cs:11395` `OnLMBItem` and `RogueGame.cs:11996`
+    // `DoPlayerItemSlotUse`) rather than in a rule, so this is folded into the
+    // rule instead of copied twice. That is behaviour-identical rather than
+    // merely equivalent: both C# sites test the rod *first* in the same chain and
+    // then fall through to the binoculars branch, which no rod can take, and a rod
+    // is always `IsEquipable` and never `IsForbiddenToAI` for a player -- so the
+    // water test is the only thing that can ever refuse one. The third caller,
+    // `DoTakeItem`'s auto-equip, cannot reach a rod either: the model sets
+    // `DontAutoEquip`.
+    if (it.model.id === ItemID.FISHING_ROD) {
+      return this.canActorEquipFishingRod(actor, it);
+    }
+
     return OK;
+  }
+
+  /**
+   * Can this actor equip this fishing rod? Still Alive, Release 7-6.
+   *
+   * C# `CanActorEquipFishingRod` (`Rules.cs:1112`). Two reasons, in the C#'s
+   * order: "not a fishing rod" for anything else, and "not next to a body of
+   * water" for a rod the actor is not standing beside water with. The second is
+   * the whole rule -- a pond eight tiles away is as good as no pond at all, and
+   * the eight neighbours are `Direction.COMPASS`, the diagonal included.
+   *
+   * Gated on the feature, and it answers "not available in this ruleset" when the
+   * feature is off rather than skipping the check. `canActorCookFoodItem` sets
+   * that precedent: a predicate a UI asks must have a *false* to return, and under
+   * CLASSIC no rod exists to reach it, so the answer is never read either way.
+   */
+  canActorEquipFishingRod(actor: Actor, it: Item): RuleResult {
+    if (!actor) throw new Error("actor");
+    if (!it) throw new Error("item");
+
+    if (!hasFeature(Session.get().ruleset, Feature.Fishing)) {
+      return fail("not available in this ruleset");
+    }
+    if (it.model.id !== ItemID.FISHING_ROD) {
+      return fail("not a fishing rod");
+    }
+
+    const map = actor.location.map;
+    if (!map) return fail("not next to a body of water");
+    const pos = actor.location.position;
+    // The C# keeps scanning after it finds water (`continue`, not `break`); the
+    // answer is the same and eight tile lookups are not worth the difference.
+    for (const d of Direction.COMPASS) {
+      const at = d.applyTo(pos);
+      if (!map.isInBounds(at.x, at.y)) continue;
+      if (map.isAnyTileWaterThere(at)) return OK;
+    }
+
+    return fail("not next to a body of water");
   }
 
   canActorUnequipItem(actor: Actor, it: Item): RuleResult {
@@ -2961,6 +3033,55 @@ export class Rules {
 
   actorCharismaticTradeChance(actor: Actor): number {
     return Rules.SKILL_CHARISMATIC_TRADE_BONUS * actor.sheet.skillTable.getSkillLevel(SkillID.CHARISMATIC);
+  }
+
+  /**
+   * Chance, in percent, of landing a fish on one wait. Still Alive, Release 7-6.
+   *
+   * C# `RogueGame.cs:23090` — the arithmetic is `DoWait`'s own, the `Unsuspicious`
+   * half is `ActorFishingChanceFromUnsuspiciousSkill` (`Rules.cs:5255`), and both
+   * halves are here so the number is one testable expression rather than a shape
+   * buried in a message-and-roll block.
+   *
+   * Three things in that arithmetic are not incidental:
+   *
+   * - **`CATCHING_FISH_BASE_CHANCE` is 2 and the C# says it cannot be less.**
+   *   Two percent a wait is a wait measured in minutes, not turns, which is why
+   *   the C# centralises the inference in `DoWait` — a long wait is a long wait.
+   * - **LOW halves and *truncates*.** `(int)(2 * 0.5)` is 1, not 1.0 and not 0,
+   *   so a poor world still fishes, just half as well. `Math.trunc` is the same
+   *   operation; the C#'s cast is not a rounding mode.
+   * - **The `Math.Max` is redundant as written and load-bearing anyway.** The
+   *   right side is `chance + bonus`, which for a non-negative bonus is always
+   *   greater than `chance`. Transcribed rather than simplified, because the C#
+   *   author clearly expected a correction to bite and the two forms disagree the
+   *   moment a future edit makes the bonus negative.
+   *
+   * Ungated, like `meatQuantityPerCorpse`: a number that only the gated catch
+   * block in `DoWait` asks for cannot be wrong under CLASSIC, and gating it would
+   * mean returning a number that means nothing.
+   */
+  catchingFishChance(availability: Resources, actor: Actor): number {
+    let chance = Rules.CATCHING_FISH_BASE_CHANCE;
+    if (availability === Resources.HIGH) chance = Rules.CATCHING_FISH_BASE_CHANCE * 2;
+    else if (availability === Resources.LOW) {
+      chance = Math.trunc(Rules.CATCHING_FISH_BASE_CHANCE * 0.5);
+    }
+    return Math.max(chance, chance + this.actorFishingChanceFromUnsuspiciousSkill(actor));
+  }
+
+  /**
+   * C# `ActorFishingChanceFromUnsuspiciousSkill` (`Rules.cs:5255`).
+   *
+   * Unsuspicious is the one skill that helps you *lie* rather than fight, and a
+   * fisherman loitering by a pond for twenty turns is the fork's funniest new use
+   * for it: +1 point of chance per level, on top of a base that is already 2%.
+   */
+  actorFishingChanceFromUnsuspiciousSkill(actor: Actor): number {
+    return (
+      Rules.SKILL_UNSUSPICIOUS_FISHING_BONUS *
+      actor.sheet.skillTable.getSkillLevel(SkillID.UNSUSPICIOUS)
+    );
   }
 
   actorUnsuspicousChance(observer: Actor, actor: Actor): number {
