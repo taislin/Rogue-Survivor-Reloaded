@@ -2,7 +2,7 @@
 
 > **Status (2026-09-29):** Phases 1–7 ported and playable. Phase 8 tasks 1–11
 > done; only 12 (optional touch support) remains. `npm run verify` — type-check,
-> coverage gate and build — is **green**: **1141 tests in 64 files**. The coverage
+> coverage gate and build — is **green**: **1143 tests in 64 files**. The coverage
 > gate's branch floor was lowered from 75% to a measured ~47% with the reasoning
 > recorded in `vitest.config.mts`; 75% came from the first 6-file suite and is
 > unreachable now that `RogueGame.ts` alone is 6098 branches. Read
@@ -478,8 +478,8 @@ loudly.
   - `f0782aa` — Stage 1, the `Ruleset` axis (946 tests)
   - `4d43299` — ruleset picker, HUD/title labels, `NullRogueUI.pushKeys` (954)
   - `dd42e82` — Stage 2, eight of fifteen audited defects (971)
-  - `cfcf2ea` … `2f18ffe` — Stage 3 so far: merged data tables, 711 sprites,
-    the 2 doable actors, and 124 tile models (1141)
+  - `cfcf2ea` … `04322d7` — Stage 3 so far: merged data tables, 711
+    sprites, the 2 doable actors, 124 tile models and 71 items (1143)
   - **Uncommitted**: Stage 3's merged data tables + the `TileID` ordering tests
     (992). `web/data/` is new and `web/scripts/merge-content-tables.py` is new;
     `src/` is untouched.
@@ -555,7 +555,7 @@ Full detail in `web/.porting/CONVENTIONS.md`. The ones that matter:
 |---|---|
 | `npm run verify` | type-check + coverage + build — what CI runs, in one command |
 | `npm run type-check` | `tsc --noEmit`; covers `src/`, `sim/` and `tests/` — necessary, **not sufficient** |
-| `npm run test` | Vitest, 1141 tests in 64 files |
+| `npm run test` | Vitest, 1143 tests in 64 files |
 | `npm run test:coverage` | Vitest with coverage thresholds enforced |
 | `npm run build` | Vite production build |
 | `npm run sim` | Headless engine run — the real test |
@@ -577,7 +577,7 @@ Phases 1–7 are ported and building. Historical per-slice detail has been remov
 | 5 — World gen & AI | `BaseAI` (184/184), all 11 AI controllers, 4 generator files (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator` 5 814 lines, `StdTownGenerator`) | Done |
 | 6 — Audio | Web Audio SFX + music | Done |
 | 7 — Save / load | localStorage / IndexedDB, `Session` serialisation | Done |
-| 8 — Polish, sim, CI | Headless harness, 1141 tests, CI, PWA, Docker, asset pass, frame-cost pass, desktop wrapper | **In progress** — 11 of 12 tasks done; only 12 (optional touch) remains. See §4.1 |
+| 8 — Polish, sim, CI | Headless harness, 1143 tests, CI, PWA, Docker, asset pass, frame-cost pass, desktop wrapper | **In progress** — 11 of 12 tasks done; only 12 (optional touch) remains. See §4.1 |
 | 9 — Still Alive ruleset | Parallel ruleset on a separate axis from `GameMode`, one superset content pack | **In progress** — Stages 1–2 committed, Stage 3 half done, Stages 4–5 not started. See §5.6 |
 
 Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks, 3 SFX), extracted from the C# embedded resources. **Total 24.9 MB**, down from 51.6 MB before the Phase 8 asset pass — see §4.1c.
@@ -596,7 +596,7 @@ Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks,
 | 2 | Deterministic `--seed` for reproducible runs | **Done** (`Session.useSeed`, `--seed`) |
 | 3 | Drive the sim to a clean full-length run and fix what it finds | **In progress, and the goal changed** — no seed now reaches 1 000 turns, because that is *correct* behaviour (§1.2: the undead bot is shot by survivors). Keep sweeping seeds for crashes, not for turn count |
 | 4 | Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`) | **Done and verified in a browser** — now 1366×768 widescreen, smooth filtering (the old `image-rendering: pixelated` made upscaled text unreadable) |
-| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Harness done, gate passing** — 1141 tests, 64 files, thresholds set and met. The branch floor was once 75% and made `verify` red for most of the port's life; it was lowered to a measured value rather than left unpassable, with the reasoning in `vitest.config.mts`. Actual: ~59.8% statements / 49.7% branches / 72.1% functions / 61.0% lines |
+| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Harness done, gate passing** — 1143 tests, 64 files, thresholds set and met. The branch floor was once 75% and made `verify` red for most of the port's life; it was lowered to a measured value rather than left unpassable, with the reasoning in `vitest.config.mts`. Actual: ~60.6% statements / 49.6% branches / 72.1% functions / 61.1% lines |
 | 6 | GitHub Actions CI | **Done** — `.github/workflows/ci.yml`, type-check + coverage + build + seeded sim, plus a docker smoke job |
 | 7 | PWA manifest + service worker (offline play) | **Done** — manifest, drawn icons, runtime-caching `sw.js` |
 | 8 | Docker image for the self-hosted server | **Done but unverified** — docker is not installed locally, so the image has never been built; CI will exercise it first |
@@ -1060,7 +1060,7 @@ renderer and not about the option: the stored value is still `"first-person"`,
 because `isFirstPersonView` compares it exactly and an annotated value would read
 as top-down and silently hand the player the other view.
 
-`npm run verify` is green: **1141 tests, 64 files**. It was red for most of this
+`npm run verify` is green: **1143 tests, 64 files**. It was red for most of this
 work — branch coverage sat at 49.88% against a 75% floor — and the floor was
 later lowered to a measured value, because a gate that cannot be passed is not a
 gate (`vitest.config.mts` records why 75% is unreachable). The earlier figure in
