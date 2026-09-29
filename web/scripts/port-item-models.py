@@ -52,30 +52,63 @@ ITEM_RE = re.compile(
 EQUIP_RE = re.compile(r"EquipmentPart\s*=\s*DollPart\.([A-Z_]+)")
 VERB_RE = re.compile(r'new Verb\("([^"]+)"(?:\s*,\s*"([^"]+)")?\)')
 AMMO_RE = re.compile(r"AmmoType\.([A-Z_]+)")
+UNBREAKABLE_RE = re.compile(r"IsUnbreakable\s*=\s*true")
+# `ItemLightModel(name, plural, img, FOV, batteries, outImg)` -- the burnt-out
+# sprite is the sixth argument, and it is the *same* image for four of the six
+# lights, so it can be assumed either way and has to be read.
+#
+# Two arguments sit between the two images: FOV and the battery count. Counting
+# them wrong matches nothing at all, which is the failure this comment exists to
+# head off -- the first version had three and reported "no burnt-out image found"
+# for all four lights that legitimately share one.
+LIGHT_OUT_RE = re.compile(
+    r"new ItemLightModel\([^;]*?GameImages\.[A-Z_0-9]+,\s*[^,]+,\s*[^,]+,\s*"
+    r"GameImages\.(?P<out>[A-Z_0-9]+)\s*\)"
+)
 CONST_RE = re.compile(r'public const string (?P<name>[A-Z_0-9]+)\s*=\s*@"([^"]+)"')
 
-# The maps whose whole value is `{id, img}` -- no second image, no verb, no
-# flags. Everything else is reported rather than guessed at.
-SIMPLE_MAPS = {
-    "FOOD": "foodMap",
-    "ENT": "entMap",
-    "TRAP": "trapMap",
+# The maps whose whole value the C# determines mechanically. Everything else is
+# reported rather than guessed at.
+#
+# `EMITTABLE` is not "easy", it is "the C# states every field this map needs in a
+# place a regex can reach". Melee looks hard -- a hand-written verb per weapon --
+# but `new Verb("slash", "slashes")` sits in the same initialiser as the sprite,
+# so it is read rather than typed. The five new `IsUnbreakable` weapons live
+# here too, which is the detail most likely to be lost by eye.
+EMITTABLE = {
+    "Food": "foodMap",
+    "Entertainment": "entMap",
+    "Trap": "trapMap",
+    "MeleeWeapon": "meleeMap",
+    "RangedWeapon": "rangedMap",
+    "BodyArmor": "armorMap",
+    "Light": "lightMap",
+}
+
+# The id prefix -> (map name, C# model type), because the C# type is what the
+# parser keys on and the prefix is what the CSV rows are keyed by.
+PREFIX_TO_TYPE = {
+    "FOOD": "Food",
+    "ENT": "Entertainment",
+    "TRAP": "Trap",
+    "MELEE": "MeleeWeapon",
+    "RANGED": "RangedWeapon",
+    "ARMOR": "BodyArmor",
+    "LIGHT": "Light",
+    "MEDICINE": "Medicine",
+    "BACKPACK": "Backpack",
+    "SPRAY": "SprayPaint",
+    "EXPLOSIVE": "Grenade",
+    "PAINT": "SprayPaint",
 }
 
 # What each remaining type needs, for the report. Keys are the `Item<Y>Model`
 # names as they appear in the C#.
 NEEDS = {
-    "Medicine": "img + `plural` (C# CheckPlural on NAME/PLURAL)",
-    "MeleeWeapon": "img + `verb` from `new Verb(...)` + `unique?`",
-    "RangedWeapon": "img + `ammo` (AmmoType.*) + `verb` + `unique?`",
-    "BodyArmor": "img + `slot` (DollPart.*)",
-    "Light": "img + `outImg` (the burnt-out sprite; usually the same one)",
-    "Tracker": "img + `flags` (TrackingFlags from the C# initialiser)",
-    "SprayPaint": "img + `tagImg` (second GameImages.*)",
-    "Grenade": "img (+ the blast array, which lives outside the item table)",
-    "Backpack": "img + inv slots (drives a doll rule rather than a map entry)",
-    "Scentspray": "img",
-    "Barricading": "img",
+    "Medicine": "img + `plural`, which the C# computes per row with CheckPlural",
+    "SprayPaint": "img + `tagImg` (a second GameImages.* that varies per can)",
+    "Grenade": "img + the blast array, which is built outside the item table",
+    "Backpack": "no map at all -- inv slots drive a doll rule the port lacks",
 }
 
 # Ids the C# defines that no merged CSV row backs. `ItemGrenadePrimedModel` is
@@ -107,12 +140,15 @@ def parse_items():
         equip = EQUIP_RE.search(tail)
         verb = VERB_RE.search(tail)
         ammo = AMMO_RE.search(tail)
+        light_out = LIGHT_OUT_RE.search(text[m.start(): m.start() + 500])
         found[ident] = {
             "type": m.group("type"),
             "img": m.group("img"),
             "equip": equip.group(1) if equip else None,
             "verb": [verb.group(1), verb.group(2)] if verb else None,
             "ammo": ammo.group(1) if ammo else None,
+            "unbreakable": bool(UNBREAKABLE_RE.search(tail)),
+            "outImg": light_out.group("out") if light_out else None,
         }
     return found
 
@@ -166,53 +202,110 @@ def main():
                                     (" ..." if len(by_why[t]) > 3 else "")))
 
     def bucket(ident):
-        return ident.split("_", 1)[0]
+        return PREFIX_TO_TYPE.get(ident.split("_", 1)[0], ident.split("_", 1)[0])
 
-    simple = [i for i in new if bucket(i) in SIMPLE_MAPS]
-    hard = [i for i in new if bucket(i) not in SIMPLE_MAPS]
+    def by_type(t):
+        return [i for i in new if items[i]["type"] == t]
+
+    emittable, hard = [], []
     by_need = {}
-    for i in hard:
-        by_need.setdefault(items[i]["type"], []).append(i)
+    for i in new:
+        t = items[i]["type"]
+        if t in EMITTABLE:
+            emittable.append(i)
+        else:
+            hard.append(i)
+            by_need.setdefault(t, []).append(i)
 
-    print("\nemittable now (%s): %d" % (", ".join(sorted(SIMPLE_MAPS)), len(simple)))
-    for b in sorted(SIMPLE_MAPS):
-        print("  %-6s %d" % (b, len([i for i in simple if bucket(i) == b])))
-    print("\nnot emittable -- each needs a field the C# states per item: %d" % len(hard))
+    print("\nemittable: %d" % len(emittable))
+    for t in sorted(EMITTABLE):
+        rows = by_type(t)
+        if rows:
+            extra = ""
+            if t == "MeleeWeapon":
+                extra = "  (%d IsUnbreakable)" % len([i for i in rows if items[i]["unbreakable"]])
+            if t == "RangedWeapon":
+                extra = "  (%d IsUnbreakable)" % len([i for i in rows if items[i]["unbreakable"]])
+            if t == "Light":
+                extra = "  (%d share the burnt-out sprite)" % len(
+                    [i for i in rows if items[i]["outImg"] == items[i]["img"]])
+            print("  %-14s %2d -> %s%s" % (t, len(rows), EMITTABLE[t], extra))
+    print("\nnot emittable: %d" % len(hard))
     for t in sorted(by_need):
         print("  %-14s %2d   %s" % (t, len(by_need[t]), NEEDS.get(t, "?")))
     print("\n  No ItemID is emitted for these. An enum member with no model is a")
     print("  hole in `this.models`, which model-data-binding.test.ts now fails on,")
     print("  so each id arrives together with the map entry that gives it a model.")
 
-    needed_imgs = sorted({items[i]["img"] for i in new})
+    # Anything emittable but missing a field the map needs is a hard error, not a
+    # silently-short entry -- the whole point is that a flag comes from the text.
+    problems = []
+    for i in emittable:
+        d = items[i]
+        t = d["type"]
+        if t in ("MeleeWeapon", "RangedWeapon") and not d["verb"]:
+            problems.append("%s: no verb found" % i)
+        if t == "RangedWeapon" and not d["ammo"]:
+            problems.append("%s: no AmmoType found" % i)
+        if t == "BodyArmor" and not d["equip"]:
+            problems.append("%s: no EquipmentPart found" % i)
+        if t == "Light" and not d["outImg"]:
+            problems.append("%s: no burnt-out image found" % i)
+    if problems:
+        sys.exit("incomplete extraction, refusing to emit:\n  " + "\n  ".join(problems))
+
+    needed_imgs = sorted({items[i]["img"] for i in emittable}
+                         | {items[i]["outImg"] for i in emittable if items[i]["outImg"]})
     add_imgs = [c for c in needed_imgs if c not in have_imgs]
     print("\nGameImages constants: %d referenced, %d new" % (len(needed_imgs), len(add_imgs)))
     missing = [c for c in add_imgs if c not in consts]
     if missing:
         sys.exit("no C# constant for: %s" % missing)
 
+    ammos = sorted({items[i]["ammo"] for i in emittable if items[i]["ammo"]})
+    if ammos:
+        print("AmmoType values used: %s" % ", ".join(ammos))
+
     if not args.emit:
         print("\nre-run with --emit for the TypeScript")
         return
 
     print("\n/* ---- ItemID: only the emittable ones, see above ---- */")
-    for n, ident in enumerate(simple, start=len(existing)):
+    for n, ident in enumerate(emittable, start=len(existing)):
         print("  %s = %d," % (ident, n))
 
-    print("\n/* ---- GameImages: only the sprites those need ---- */")
-    simple_imgs = sorted({items[i]["img"] for i in simple})
-    for c in simple_imgs:
-        if c not in have_imgs:
-            print('  static readonly %s = "%s";' % (c, consts[c]))
+    print("\n/* ---- GameImages ---- */")
+    for c in add_imgs:
+        print('  static readonly %s = "%s";' % (c, consts[c]))
 
-    for prefix, mapname in sorted(SIMPLE_MAPS.items()):
-        rows = [i for i in simple if bucket(i) == prefix]
+    for t in sorted(EMITTABLE):
+        rows = [i for i in emittable if items[i]["type"] == t]
         if not rows:
             continue
-        print("\n/* ---- %s ---- */" % mapname)
+        print("\n/* ---- %s ---- */" % EMITTABLE[t])
         for ident in rows:
-            print("      %s: { id: ItemID.%s, img: GameImages.%s },"
-                  % (ident, ident, items[ident]["img"]))
+            d = items[ident]
+            if t in ("Food", "Entertainment", "Trap"):
+                print("      %s: { id: ItemID.%s, img: GameImages.%s },"
+                      % (ident, ident, d["img"]))
+            elif t == "MeleeWeapon":
+                verb = '["%s", "%s"]' % (d["verb"][0], d["verb"][1]) if d["verb"][1] \
+                    else '["%s"]' % d["verb"][0]
+                print("      %s: { id: ItemID.%s, img: GameImages.%s, verb: %s%s },"
+                      % (ident, ident, d["img"], verb,
+                         ", unique: true" if d["unbreakable"] else ""))
+            elif t == "RangedWeapon":
+                verb = '["%s", "%s"]' % (d["verb"][0], d["verb"][1]) if d["verb"][1] \
+                    else '["%s"]' % d["verb"][0]
+                print("      %s: { id: ItemID.%s, img: GameImages.%s, ammo: AmmoType.%s, "
+                      "verb: %s%s }," % (ident, ident, d["img"], d["ammo"], verb,
+                                         ", unique: true" if d["unbreakable"] else ""))
+            elif t == "BodyArmor":
+                print("      %s: { id: ItemID.%s, img: GameImages.%s, slot: DollPart.%s },"
+                      % (ident, ident, d["img"], d["equip"]))
+            elif t == "Light":
+                print("      %s: { id: ItemID.%s, img: GameImages.%s, outImg: GameImages.%s },"
+                      % (ident, ident, d["img"], d["outImg"]))
 
 
 if __name__ == "__main__":

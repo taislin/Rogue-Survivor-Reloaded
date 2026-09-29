@@ -88,7 +88,20 @@ export enum AmmoType {
   LIGHT_RIFLE = 3,
   HEAVY_RIFLE = 4,
   BOLT = 5,
-  _COUNT = 6,
+  // Still Alive's additions, appended in the fork's order
+  // (ItemAmmoModel.cs:17-24). The first six are byte-identical to vanilla's,
+  // which is what makes the append safe: a save that stored an AmmoType stores
+  // the number, so anything below BOLT is a new weapon rather than a renamed
+  // one. NAIL is Release 5-1, PRECISION_RIFLE 6-6, FUEL 7-1, CHARGE 7-2, and
+  // MINIGUN/GRENADES/PLASMA 7-6.
+  NAIL = 6,
+  PRECISION_RIFLE = 7,
+  FUEL = 8,
+  CHARGE = 9,
+  MINIGUN = 10,
+  GRENADES = 11,
+  PLASMA = 12,
+  _COUNT = 13,
 }
 
 export class ItemRangedWeaponModel extends ItemWeaponModel {

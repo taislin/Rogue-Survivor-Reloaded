@@ -1377,7 +1377,7 @@ Stages 4 and 5 have not started.
 |---|---|---|
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
-| **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles and 24 of 95 items done.** The other 71 items, `makeItem*` factories, and the remaining ~550 `GameImages` constants **not started** |
+| **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles and 71 of 95 items done.** 24 items (4 maps, one of them a new mechanic), `makeItem*` factories, and ~500 `GameImages` constants **not started** |
 | **4** | 37 gated features | **not started** — the bulk of the work |
 | **5** | content, audio, credits | **not started** |
 
@@ -1875,47 +1875,76 @@ and fail in CI, which is the worst arrangement available. Regenerate with
 Mutation-checked: making a C# wall walkable, dropping a water tile's `isWater`,
 and dropping its `waterCoverImageId` each fail the suite.
 
-**Items — 24 of 95 done, deliberately in one piece rather than in a rush.**
-`scripts/port-item-models.py` parses `GameItems.cs`, where every item is built
-the same way with the sprite as the *third* constructor argument. That matters:
-`FOOD_RAW_RABBIT` is drawn by `ITEM_RAW_RABBIT`, `MELEE_KATANA` by `ITEM_KATANA`,
-and there is no naming rule that gets 95 of those right — the sprite is read from
-the source, not guessed from the id.
+**Items — 71 of 95 done.** `scripts/port-item-models.py` parses `GameItems.cs`,
+where every item is built the same way with the sprite as the *third* constructor
+argument. That matters: `FOOD_RAW_RABBIT` is drawn by `ITEM_RAW_RABBIT`,
+`MELEE_KATANA` by `ITEM_KATANA`, and no naming rule gets 95 of those right — the
+sprite is read from the source, not derived from the id.
 
-Only the maps whose entire value is `{id, img}` are emitted — **16 foods and 8
-entertainments**, with their `ItemID` entries and 24 `GameImages` constants. The
-other 71 are listed by the script with the field each one needs, because the C#
-states it per item in a different shape each time: `new Verb("slash", "slashes")`
-for melee, an `AmmoType` for ranged, a `DollPart` for armour, a *second* image
-for a burnt-out light and for a tagged spray can. A generator that guessed those
-would be worse than the lines it replaced.
+`ItemID` 69 → 140, append-only. Emitted in two passes, because "emittable" means
+*the C# states every field this map needs somewhere a regex can reach*:
 
-**No `ItemID` is emitted without the map entry that gives it a model.** An enum
-member with nothing behind it is a hole in `this.models` — and the guard added in
-`8c15688` now fails on exactly that. So each id arrives with its model, which is
-why this is 24 rather than 95.
+| Map | Added | What was read out of the C# |
+|---|---|---|
+| `foodMap` | 16 | sprite |
+| `entMap` | 8 | sprite |
+| `meleeMap` | 25 | sprite, `new Verb(...)`, `IsUnbreakable` |
+| `rangedMap` | 16 | sprite, `Verb`, `AmmoType`, `IsUnbreakable` |
+| `armorMap` | 2 | sprite, `EquipmentPart` → `DollPart` |
+| `lightMap` | 4 | sprite **and** the 6th argument, the burnt-out sprite |
+| `medMap`, grenade, backpack, paint | 24 | **not done** — see below |
 
-**15 more ids the C# has and the data does not**, reported and not emitted: 6
-`Ammo` and 9 `GrenadePrimed`. The fork makes the *primed* grenade a distinct
-item, and ammo its own item, neither of which vanilla has a table for. Adding
-them would mean `ItemID` members nothing can build — Stage 4/5 content.
+Plus 47 `GameImages` constants, and **`AmmoType` 6 → 13** for the fork's seven new
+ammunitions (`NAIL`, `PRECISION_RIFLE`, `FUEL`, `CHARGE`, `MINIGUN`, `GRENADES`,
+`PLASMA`). That enum is a clean append: vanilla's first six are byte-identical,
+which is what makes appending safe for a save that stores the number.
 
-**When this stage finishes, add the test that closes the other direction:** every
-row of every merged `Items_*.json` binds to a model. It cannot be written yet,
-because 71 rows legitimately have no map entry — but it is the check that stops a
-new CSV row from being silently skipped by `if (!meta) continue`, and it should
-land with the last of them, not after.
+**Three details the generator exists to not lose.** *Eight* of the new weapons
+are `IsUnbreakable` in the C# — four melee (`BONESAW`, `KATANA`,
+`BARBED_WIRE_BAT`, `KEYBOARD`) and four ranged (`VINTAGE_PISTOL`, `MINIGUN`,
+`GRENADE_LAUNCHER`, `BIO_FORCE_GUN`) — which is `unique: true` in the maps. Four
+of the six lights use the *same* image burnt-out, so that cannot be assumed. And
+`ITEM_BIO_FORCE_GUN` is a **latent case-sensitivity bug in the fork**: the C#
+constant says `Items\item_bio_force_gun` while the file it ships is
+`item_Bio_Force_Gun.png`, which works on Windows and 404s here. Checked across
+all 1051 of the fork's image constants — it is the only one.
+
+**No `ItemID` goes in without the map entry that gives it a model.** An enum
+member with nothing behind it is a hole in `this.models`, which
+`model-data-binding.test.ts` now fails on, so each id arrives with its model.
+
+**24 items still to hand-write**, because the C# states their fields somewhere a
+regex should not guess: medicine 8 (the C# computes `plural` per row with
+`CheckPlural`), grenades 9 (the blast array is built outside the item table),
+backpacks 5 (**no map at all** — `INV_SLOTS` drives a doll rule the port does not
+have, and backpacks are a new mechanic), spray paint 2 (`tagImg` varies per can).
+Also **15 ids the C# has and the data does not**: 6 `Ammo` and 9 `GrenadePrimed`,
+where the fork makes the *primed* grenade a distinct item and vanilla has no
+table for it.
+
+**When the last of them lands, add the test that closes the other direction:**
+every row of every merged `Items_*.json` binds to a model. It cannot be written
+yet because 24 rows legitimately have no map entry, but it is what stops a new
+CSV row being silently skipped by `if (!meta) continue`.
+
+**One deliberate divergence, checked rather than assumed.** The port's vanilla
+`RANGED_PRECISION_RIFLE` uses `AmmoType.HEAVY_RIFLE`; the fork's *new*
+`RANGED_ARMY_PRECISION_RIFLE` uses the new `PRECISION_RIFLE`. The fork retunes
+the old rifle to take the new ammunition, and the superset deliberately does not
+follow — that is the "ours wins" rule applied to a weapon stat, and changing it
+would alter classic.
 
 **Content ids and maps** — the hand-edited core, and where the real cost is:
 
 | Change | Where | Count |
 |---|---|---|
-| `ItemID` — **append only, never renumber** (saved keybindings are `[commandNumber, key]`) | `GameItems.ts` | **24 of 95 done** (`_COUNT` 69 → 93) |
-| 10 hand-written `{id, img}` maps — the sprite id is **not in the JSON**, it lives in TypeScript | `GameItems.ts` | **foodMap and entMap done**; melee 25, ranged 16, grenade 9, medicine 8, backpack 5, light 4, body armour 2, spray paint 2 to go |
+| `ItemID` — **append only, never renumber** (saved keybindings are `[commandNumber, key]`) | `GameItems.ts` | **71 of 95 done** (`_COUNT` 69 → 140) |
+| 10 hand-written `{id, img}` maps — the sprite id is **not in the JSON**, it lives in TypeScript | `GameItems.ts` | **6 of 10 done**: food, ent, melee, ranged, armour, light. To do: medicine 8, grenade 9, backpack 5 (new mechanic), paint 2 |
 | `makeItem*` factories — how spawns place the new items | `BaseMapGenerator.ts` | not started; only needed once the items are playable |
 | `ActorID` + sprite map + the two switches | `GameActors.ts` | **done, 2 of 4** — see below |
 | `TileID` + models | `GameTiles.ts` | **done — 143 ids (was 19), 124 new** |
 | `GameImages` constants for the tile sprites | `GameImages.ts` | **done — 125 new**, pulled in by the tiles |
+| `GameImages` constants for the item sprites | `GameImages.ts` | **done — 71 new**, pulled in by the items |
 | 4 new minimap colours | `Color.ts` | **done** — SteelBlue, Sienna, SeaGreen, OliveDrab, MediumPurple, Khaki, Cornsilk, BlanchedAlmond, all .NET values |
 | `GameImages` constants | `GameImages.ts` | ~+711 |
 | `Skills.NAMES`, `Rules.SKILL_*` | `Skills.ts`, `Rules.ts` | +1 (`BOWS` → `BOWS_EXPLOSIVES`) — **not started** |

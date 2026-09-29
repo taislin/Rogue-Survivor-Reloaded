@@ -540,6 +540,59 @@ export class GameImages {
   static readonly ITEM_SNACK_BAR = "Items/item_snack_bar";
   static readonly ITEM_VEGETABLES = "Items/item_vegetables";
   static readonly ITEM_WILD_BERRIES = "Items/item_wild_berries";
+
+  // ── Still Alive weapons, armour and lights (scripts/port-item-models.py).
+  static readonly ITEM_ARMY_PRECISION_RIFLE = "Items/item_army_precision_rifle";
+  static readonly ITEM_ARMY_RIFLE1 = "Items/item_army_rifle1";
+  static readonly ITEM_ARMY_RIFLE2 = "Items/item_army_rifle2";
+  static readonly ITEM_ARMY_RIFLE3 = "Items/item_army_rifle3";
+  static readonly ITEM_ARMY_RIFLE4 = "Items/item_army_rifle4";
+  static readonly ITEM_BARBED_WIRE_BAT = "Items/item_barbed_wire_bat";
+  static readonly ITEM_BINOCULARS = "Items/item_binoculars";
+  static readonly ITEM_BIOHAZARD_SUIT = "Items/item_biohazard_suit";
+  // The fork's GameImages.cs spells this "Items\\item_bio_force_gun", but the
+  // file it ships is `item_Bio_Force_Gun.png`. That works on Windows, whose
+  // filesystem is case-insensitive, and 404s here. The only such mismatch of
+  // 1051 constants in the fork -- checked, not assumed.
+  static readonly ITEM_BIO_FORCE_GUN = "Items/item_Bio_Force_Gun";
+  static readonly ITEM_BONESAW = "Items/item_bonesaw";
+  static readonly ITEM_BRASS_KNUCKLES = "Items/item_brass_knuckles";
+  static readonly ITEM_CHAINSAW = "Items/item_chainsaw";
+  static readonly ITEM_CLEAVER = "Items/item_cleaver";
+  static readonly ITEM_DOUBLE_BARREL = "Items/item_double_barrel";
+  static readonly ITEM_FIRE_AXE = "Items/item_fire_axe";
+  static readonly ITEM_FIRE_HAZARD_SUIT = "Items/item_fire_hazard_suit";
+  static readonly ITEM_FLAIL = "Items/item_flail";
+  static readonly ITEM_FLAMETHROWER = "Items/item_flamethrower";
+  static readonly ITEM_FRYING_PAN = "Items/item_frying_pan";
+  static readonly ITEM_GRENADE_LAUNCHER = "Items/item_grenade_launcher";
+  static readonly ITEM_HOCKEY_STICK = "Items/item_hockey_stick";
+  static readonly ITEM_KATANA = "Items/item_katana";
+  static readonly ITEM_KEYBOARD = "Items/item_keyboard";
+  static readonly ITEM_KITCHEN_KNIFE = "Items/item_kitchen_knife";
+  static readonly ITEM_LIT_FLARE = "Items/item_lit_flare";
+  static readonly ITEM_LIT_GLOWSTICK = "Items/item_lit_glowstick";
+  static readonly ITEM_MACE = "Items/item_mace";
+  static readonly ITEM_MACHETE = "Items/item_machete";
+  static readonly ITEM_MINIGUN = "Items/item_minigun";
+  static readonly ITEM_NAIL_GUN = "Items/item_nail_gun";
+  static readonly ITEM_NIGHT_VISION = "Items/item_night_vision";
+  static readonly ITEM_NUNCHAKU = "Items/item_nunchaku";
+  static readonly ITEM_PICKAXE = "Items/item_pickaxe";
+  static readonly ITEM_PIPE_WRENCH = "Items/item_pipe_wrench";
+  static readonly ITEM_PITCH_FORK = "Items/item_pitch_fork";
+  static readonly ITEM_REVOLVER = "Items/item_revolver";
+  static readonly ITEM_SCIMITAR = "Items/item_scimitar";
+  static readonly ITEM_SCYTHE = "Items/item_scythe";
+  static readonly ITEM_SICKLE = "Items/item_sickle";
+  static readonly ITEM_SMG = "Items/item_SMG";
+  static readonly ITEM_SPEAR = "Items/item_spear";
+  static readonly ITEM_SPIKED_MACE = "Items/item_spiked_mace";
+  static readonly ITEM_STANDARD_AXE = "Items/item_standard_axe";
+  static readonly ITEM_STUN_GUN = "Items/item_stun_gun";
+  static readonly ITEM_TACTICAL_SHOTGUN = "Items/item_tactical_shotgun";
+  static readonly ITEM_TENNIS_RACKET = "Items/item_tennis_racket";
+  static readonly ITEM_VINTAGE_PISTOL = "Items/item_vintage_pistol";
   static readonly ITEM_TRUNCHEON = "Items/item_truncheon";
   static readonly ITEM_WOODEN_PLANK = "Items/item_wooden_plank";
   static readonly ITEM_ZTRACKER = "Items/item_ztracker";
