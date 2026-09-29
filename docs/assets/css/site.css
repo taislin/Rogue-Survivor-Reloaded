@@ -356,6 +356,44 @@ hr {
   grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr));
 }
 
+/* The original-vs-port comparison, where equal *widths* are the wrong answer.
+ *
+ * The two captures are not the same shape: `screen_original.webp` is 1282x960
+ * (4:3, the original WinForms window) and `screen1.webp` is 1562x867 (16:9, the
+ * port's resized UI). `.shots` gives both cards the same width, so both land on
+ * the same display width but at *different scale factors* -- measured at a 1280px
+ * viewport, 0.398 against 0.327, which is the port drawn at 82% of the original's
+ * size. The sprites, the tiles and the UI text are all physically smaller in the
+ * port shot, and a reader has no way to tell that from the port being worse at
+ * drawing the game. That is the one thing this section is asking to be judged on,
+ * so it is the one thing a layout rule must not quietly colour.
+ *
+ * Columns proportional to the two files' native widths put both at the same scale
+ * (0.366 at a 1280px viewport) instead of the same width. The widescreen card
+ * becomes the wider one, which is also the honest signal: the capture really is
+ * wider, and nothing is cropped or hidden to make the boxes match.
+ *
+ * A side effect worth having: the cards stop being 99px different in height
+ * (382 against 283) and become 34px different (351 against 317), so the row reads
+ * as a pair rather than as one card with something missing.
+ *
+ * The numbers are a coupling to those two files, and only those two. Re-export
+ * either screenshot at a new size and this needs updating -- which is the point of
+ * writing it as `fr` rather than as two hard-coded pixel widths, since the ratio
+ * is the thing that has to be right.
+ */
+.shots--compare {
+  grid-template-columns: 1282fr 1562fr;
+}
+
+/* Stacked, like every other gallery, once there is not room for two columns.
+ * Stated here rather than left to the 900px `.shots` rule below: that rule is
+ * 400 lines further down the file and this one silently depends on losing to it,
+ * which is the kind of coupling a later edit breaks without anyone noticing. */
+@media (max-width: 900px) {
+  .shots--compare { grid-template-columns: 1fr; }
+}
+
 .shot {
   margin: 0;
   background: var(--bg-sunken);

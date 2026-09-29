@@ -95,20 +95,26 @@
           original 2012 C# survival roguelike. Below is a comparison between the original version and the modern browser
           port, preserving the exact layout, mechanics, and gameplay experience.</p>
 
-        <div class="shots" style="margin-top:1.5rem">
+        <div class="shots shots--compare" style="margin-top:1.5rem">
           <figure class="shot">
             <a class="shot__zoom" href="#shot-original" aria-label="Expand the screenshot of the original C# version.">
               <img class="shot__img" src="assets/img/screens/screen_original.webp" width="1282" height="960"
                 alt="Gameplay screenshot of the original C# WinForms version.">
             </a>
-            <figcaption class="shot__cap">The original version by roguedjack (2012).</figcaption>
+            <!-- The native size is in the caption because the two cards are shaped
+                 differently and a reader has no other way to account for it. The
+                 columns are sized so both are shown at the same scale, so the
+                 difference in shape is the capture's, not the layout's. -->
+            <figcaption class="shot__cap">The original version by roguedjack (2012). &middot; 1282 &times; 960
+            </figcaption>
           </figure>
           <figure class="shot">
             <a class="shot__zoom" href="#shot-port" aria-label="Expand the screenshot of the TypeScript browser port.">
               <img class="shot__img" src="assets/img/screens/screen1.webp" width="1562" height="867"
                 alt="Gameplay screenshot of the TypeScript browser port.">
             </a>
-            <figcaption class="shot__cap">The Reloaded browser port in TypeScript &amp; HTML5 Canvas.</figcaption>
+            <figcaption class="shot__cap">The Reloaded browser port in TypeScript &amp; HTML5 Canvas. &middot; 1562
+              &times; 867</figcaption>
           </figure>
         </div>
 
