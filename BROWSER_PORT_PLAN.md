@@ -1375,7 +1375,7 @@ Stages 4 and 5 have not started.
 |---|---|---|
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
-| **3** | merged content pack | **data tables + sprite files done.** `GameImages` constants, `ItemID`/`ActorID`, the 12 image maps and `makeItem*` factories **not started** — the hand-edited remainder |
+| **3** | merged content pack | **data tables, sprite files, and the actors done** (2 of 4). `ItemID` (+~180), the 12 `{id, img}` maps, `makeItem*` factories, `TileID` + 124 tile models, and the 711 `GameImages` constants **not started** |
 | **4** | 37 gated features | **not started** — the bulk of the work |
 | **5** | content, audio, credits | **not started** |
 
@@ -1803,6 +1803,38 @@ files, not payload.) The real cost of adding the constants is not bytes, it is
 on every cold load for sprites no classic code path draws. That is the actual
 argument for deferring them, and it is an argument about request count, not size.
 
+**Actors — 2 of the fork's 4 done, and the other 2 are Stage 4 work, not
+Stage 3.** `Actors.csv` gains four rows: `DERANGED_PATIENT`, `CHAR_SCIENTIST`,
+`RABBIT`, `CHICKEN`. The first two landed because they needed nothing that does
+not already exist:
+
+- `DERANGED_PATIENT` is the fork's replacement for Jason Myers — the C# comments
+  it "was Jason Myers (Release 8-1)" — and it is the same fourteen ability
+  flags, the same `InsaneHumanAI`, and the same RAGE sheet with `HasToEat` and
+  `HasToSleep` false. Both stay in the superset, so the flags are **duplicated
+  rather than shared**: a Still Alive rebalance of one should not silently edit
+  the other, and `ActorID` is append-only because a save names its actors by
+  number. The fork *replaced* Jason Myers; the superset adds him a neighbour.
+- `CHAR_SCIENTIST` is a second `CHARGuardAI` with the same fourteen flags,
+  including the CHAR quirk of no `hasToEat` and no `aiCanUseAIExits`.
+
+Both are passed `null` in the C# ("skinned. // skinned & dressed"), so
+`actorImageMap` maps them to `null` and they are doll-driven like the CHAR guard
+— which is why adding their `GameImages` constants is for parity with
+`ACTOR_JASON_MYERS` rather than to draw them.
+
+**`RABBIT` and `CHICKEN` are deliberately left out of the enum.** They need an
+`IsLivingAnimal` ability the port has no field for, and an
+`UnintelligentAnimalAI` the port has no controller for. Adding the enum members
+without those would bind their CSV rows through a switch with no matching case
+— producing an actor with *no abilities at all* and no error, since
+`abilitiesFor` has no `default`. That is a Stage 4 slice. Their rows are
+already in the merged `Actors.csv` and their sprites are on disk
+(`Actors/Decoration/rabbit_skin_east` and friends), so nothing is lost by
+waiting. Worth noting the failure this avoids is silent: `abilitiesFor` and
+`defaultControllerFor` both `switch` without a `default`, so a forgotten case
+returns a default-constructed object rather than throwing.
+
 **Content ids and maps** — the hand-edited core, and where the real cost is:
 
 | Change | Where | Count |
@@ -1810,7 +1842,7 @@ argument for deferring them, and it is an argument about request count, not size
 | `ItemID` — **append only, never renumber** (saved keybindings are `[commandNumber, key]`) | `GameItems.ts` (`_COUNT = 69` at `:136`) | ~+180 |
 | 12 hand-written `{id, img}` maps — the sprite id is **not in the JSON**, it lives in TypeScript | `GameItems.ts:150-159, 190-194, 230-247, 289-300, 381-389, 415-420, 443-448, 480-483, 510-517, 526-531, 557-560` | ~+180 |
 | `makeItem*` factories | `BaseMapGenerator.ts:780-1064` | 56 → ~110 |
-| `ActorID` + sprite map + the two 27-arm switches | `GameActors.ts:25-54, 72-101, 247-367, 384-430` | +3 actors |
+| `ActorID` + sprite map + the two switches | `GameActors.ts` | **done, 2 of 4** — see below |
 | `TileID` + 124 models | `GameTiles.ts:6-27, 53-81` | 19 → 143 |
 | `GameImages` constants | `GameImages.ts` | ~+711 |
 | `Skills.NAMES`, `Rules.SKILL_*` | `Skills.ts:62-69`, `Rules.ts:277-327` | +1 (`BOWS` → `BOWS_EXPLOSIVES`) |

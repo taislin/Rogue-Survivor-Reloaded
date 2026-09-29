@@ -50,7 +50,19 @@ export enum ActorID {
   BLACKOPS_MAN = 24,
   SEWERS_THING = 25,
   JASON_MYERS = 26,
-  _COUNT = 27,
+  // ── Still Alive additions. Append only: a save names its actors by this
+  // number, so inserting here would resurrect the wrong corpse.
+  //
+  // The fork's other two new rows, RABBIT and CHICKEN, are deliberately *not*
+  // here yet. They need an `IsLivingAnimal` ability the port has no field for
+  // and an `UnintelligentAnimalAI` the port has no controller for; adding the
+  // enum members alone would bind their CSV rows through a switch with no
+  // matching case, which yields an actor with no abilities at all and no
+  // error. That is Stage 4 work — see BROWSER_PORT_PLAN §5.6d. Their rows are
+  // already in the merged `Actors.csv`, ready for it.
+  DERANGED_PATIENT = 27,
+  CHAR_SCIENTIST = 28,
+  _COUNT = 29,
 }
 
 export class GameActors implements ActorModelDB {
@@ -98,6 +110,10 @@ export class GameActors implements ActorModelDB {
       [ActorID.POLICEMAN]: null,
       [ActorID.BLACKOPS_MAN]: null,
       [ActorID.JASON_MYERS]: null, // skinned
+      // Still Alive: both skinned & dressed, so drawn from the doll like
+      // Jason Myers and the CHAR guard rather than from a whole-body sprite.
+      [ActorID.DERANGED_PATIENT]: null,
+      [ActorID.CHAR_SCIENTIST]: null,
     };
 
     // Rows must be bound to models by their ID, not by position. The C# does
@@ -362,6 +378,26 @@ export class GameActors implements ActorModelDB {
             "canTire", "canRun", "canUseItems", "canTalk", "canPush",
             "canBarricade", "aiCanUseAIExits");
         break;
+
+      // ── Still Alive's deranged patient: the same RAGE sheet, verbatim ──
+      // GameActors.cs:1045-1062, commented "was Jason Myers (Release 8-1)",
+      // and it is the same fourteen flags with the same two HasTo* set false.
+      // Forked rather than reimplemented so the two can diverge later: a
+      // Still-Alive rebalance of one should not silently edit the other.
+      case ActorID.DERANGED_PATIENT:
+        set("hasInventory", "canUseMapObjects", "canBreakObjects", "canJump",
+            "canTire", "canRun", "canUseItems", "canTalk", "canPush",
+            "canBarricade", "aiCanUseAIExits");
+        break;
+
+      // ── Still Alive's CHAR scientist: a second CHAR guard (GameActors.cs:766-782) ──
+      // Identical to CHAR_GUARD's fourteen flags, including the CHAR quirk of
+      // no `hasToEat` and no `aiCanUseAIExits`.
+      case ActorID.CHAR_SCIENTIST:
+        set("hasInventory", "canUseMapObjects", "canBreakObjects", "canJump",
+            "canTire", "canRun", "canUseItems", "hasToSleep", "hasSanity",
+            "canTalk", "canPush", "canBarricade", "isIntelligent");
+        break;
     }
     return a;
   }
@@ -413,6 +449,10 @@ export class GameActors implements ActorModelDB {
         return CivilianAI;
       case ActorID.CHAR_GUARD:
         return CHARGuardAI;
+      // Still Alive's CHAR scientist uses the same controller
+      // (GameActors.cs:788).
+      case ActorID.CHAR_SCIENTIST:
+        return CHARGuardAI;
       case ActorID.ARMY_NATIONAL_GUARD:
       case ActorID.BLACKOPS_MAN:
         return SoldierAI;
@@ -422,6 +462,9 @@ export class GameActors implements ActorModelDB {
       case ActorID.FERAL_DOG:
         return FeralDogAI;
       case ActorID.JASON_MYERS:
+        return InsaneHumanAI;
+      // Still Alive's deranged patient, likewise (GameActors.cs:1063).
+      case ActorID.DERANGED_PATIENT:
         return InsaneHumanAI;
 
       default:

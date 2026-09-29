@@ -138,6 +138,21 @@ const EXPECTED: Array<[string, ActorID, string[]]> = [
     "canPush", "canRun", "canTalk", "canTire", "canUseItems",
     "canUseMapObjects", "hasInventory",
   ]],
+  // Still Alive's deranged patient, commented "was Jason Myers" upstream
+  // (GameActors.cs:1045-1062) and given the identical fourteen flags: RAGE
+  // again, so still no eating and no sleeping.
+  ["DERANGED_PATIENT", ActorID.DERANGED_PATIENT, [
+    "aiCanUseAIExits", "canBarricade", "canBreakObjects", "canJump",
+    "canPush", "canRun", "canTalk", "canTire", "canUseItems",
+    "canUseMapObjects", "hasInventory",
+  ]],
+  // Still Alive's CHAR scientist: a second CHAR guard (GameActors.cs:766-782),
+  // so the CHAR quirk of no `hasToEat` comes with it.
+  ["CHAR_SCIENTIST", ActorID.CHAR_SCIENTIST, [
+    "canBarricade", "canBreakObjects", "canJump", "canPush", "canRun",
+    "canTalk", "canTire", "canUseItems", "canUseMapObjects", "hasInventory",
+    "hasSanity", "hasToSleep", "isIntelligent",
+  ]],
 ];
 
 let actors: GameActors;

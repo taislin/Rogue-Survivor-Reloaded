@@ -55,6 +55,10 @@ const DOLL_OWNED: ActorID[] = [
   ActorID.POLICEMAN,
   ActorID.BLACKOPS_MAN,
   ActorID.JASON_MYERS,
+  // Still Alive: both passed `null` in the fork too -- "skinned. // skinned &
+  // dressed" -- so they are doll-driven like Jason Myers and the CHAR guard.
+  ActorID.DERANGED_PATIENT,
+  ActorID.CHAR_SCIENTIST,
   // Zombified: dressed as a civilian, then zombified, so still doll-driven.
   ActorID.UNDEAD_MALE_ZOMBIFIED,
   ActorID.UNDEAD_FEMALE_ZOMBIFIED,

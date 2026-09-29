@@ -204,6 +204,14 @@ export class GameImages {
   static readonly ACTOR_RAT_ZOMBIE = "Actors/rat_zombie";
   static readonly ACTOR_SEWERS_THING = "Actors/sewers_thing";
   static readonly ACTOR_JASON_MYERS = "Actors/jason_myers";
+  // Still Alive's two additions that need no new ability or AI: the deranged
+  // patient is the fork's replacement for Jason Myers ("was Jason Myers",
+  // Release 8-1) and keeps his InsaneHumanAI and RAGE sheet, and the CHAR
+  // scientist is a second CHARGuardAI. Both are skinned and dressed rather than
+  // drawn whole-body, so `actorImageMap` maps them to null and these constants
+  // exist for the same reason `ACTOR_JASON_MYERS` does.
+  static readonly ACTOR_DERANGED_PATIENT = "Actors/deranged_patient";
+  static readonly ACTOR_CHAR_SCIENTIST = "Actors/CHAR_scientist";
   static readonly ACTOR_BIG_BEAR = "Actors/big_bear";
   static readonly ACTOR_FAMU_FATARU = "Actors/famu_fataru";
   static readonly ACTOR_SANTAMAN = "Actors/santaman";
