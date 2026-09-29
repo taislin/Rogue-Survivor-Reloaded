@@ -75,6 +75,7 @@ export enum OptionIDs {
   UI_SPRITE_STYLE, // browser port
   UI_FONT_CHOICE, // browser port
   UI_VIEW_MODE, // browser port
+  GAME_IDLE_AUTO_ADVANCE, // browser port
 }
 
 /**
@@ -132,6 +133,68 @@ export enum ReincMode {
   _COUNT,
 }
 
+/**
+ * How long the player may sit still before the game takes a turn for them.
+ *
+ * A browser port addition with no C# original, so it is a rate rather than a
+ * port of something. `OFF` is the default: a turn-based game that advances
+ * itself is a *different* game, and this should be something a player opts into
+ * rather than something they discover has been happening to them.
+ *
+ * The steps span two regimes. The short ones — 1s and 2s — are the ones a player
+ * turns this on for: the world visibly keeps moving, and they sit either side of
+ * the boundary where a turn stops feeling like a turn. The long ones are for
+ * stepping away from the keyboard without losing the run, and are spaced far
+ * enough apart that stepping through them does not take forever. The binding
+ * constraint on the *bottom* of the range is the ~22ms a district turn actually
+ * costs (`RogueGame.simulateOneBehindDistrictTurn`): a step below a few hundred
+ * milliseconds cannot be honoured, because the redraw and the sim would not fit
+ * inside it. 1s is about 45× that, so the fastest step is still comfortably
+ * affordable — but note that figure is measured on a 1x1 world, and a larger
+ * city costs more, so the fastest step is the one to watch on a big map.
+ *
+ * The values are indices, not milliseconds, because the option screen steps
+ * through them with `+ 1` the way it steps `SimRatio`; the milliseconds live in
+ * `IDLE_AUTO_ADVANCE_MS` so the engine and the display cannot disagree about
+ * which step is which. That also means the saved form is the *ordinal*, so
+ * inserting a step here renumbers the ones after it. That is safe while the
+ * option is unreleased and worth remembering when it is not — the same
+ * append-only constraint `STILL_ALIVE_REFERENCE.md` records for `ItemID` and
+ * `PlayerCommand`.
+ */
+export enum IdleAdvance {
+  _FIRST = 0,
+  OFF = _FIRST,
+  ONE_SECOND,
+  TWO_SECONDS,
+  FIVE_SECONDS,
+  TEN_SECONDS,
+  THIRTY_SECONDS,
+  _LAST = THIRTY_SECONDS,
+  _COUNT,
+}
+
+/**
+ * The wall-clock milliseconds behind each `IdleAdvance` step.
+ *
+ * Indexed by the enum. `_COUNT` is the sentinel the options screen compares
+ * against, so it is present and unused rather than left out.
+ */
+const IDLE_AUTO_ADVANCE_MS: readonly number[] = [
+  0, // OFF
+  1000,
+  2000,
+  5000,
+  10000,
+  30000,
+  0, // _COUNT sentinel
+];
+
+/** The timeout in milliseconds for an `IdleAdvance` value, 0 when off. */
+export function idleAdvanceMs(value: IdleAdvance): number {
+  return IDLE_AUTO_ADVANCE_MS[value] ?? 0;
+}
+
 const MAP_MAX_HEIGHT = 100; // RogueGame.MAP_MAX_HEIGHT
 const MAP_MAX_WIDTH = 100; // RogueGame.MAP_MAX_WIDTH
 
@@ -177,6 +240,7 @@ export class GameOptions {
   static readonly DEFAULT_SPRITE_STYLE: ImageSet = DEFAULT_IMAGE_SET;
   static readonly DEFAULT_FONT_CHOICE: FontChoice = DEFAULT_FONT_CHOICE;
   static readonly DEFAULT_VIEW_MODE: ViewMode = DEFAULT_VIEW_MODE;
+  static readonly DEFAULT_IDLE_AUTO_ADVANCE: IdleAdvance = IdleAdvance.OFF;
 
   // ── Fields ──────────────────────────────────────────────────────────────
   private m_DistrictSize = 0;
@@ -266,6 +330,13 @@ export class GameOptions {
    * reads as load-bearing.
    */
   private m_ViewMode: ViewMode = DEFAULT_VIEW_MODE;
+
+  /**
+   * Whether the game takes a turn for an idle player, and after how long.
+   *
+   * Default off. See `IdleAdvance` for why the steps are what they are.
+   */
+  private m_IdleAutoAdvance: IdleAdvance = GameOptions.DEFAULT_IDLE_AUTO_ADVANCE;
 
   // dev only options (hidden)
   DEV_ShowActorsStats = false;
@@ -699,6 +770,21 @@ export class GameOptions {
   }
 
   /**
+   * Whether an idle player has a turn taken for them, and after how long.
+   *
+   * Plain accessor, no side effect, for the same reason `viewMode` has none: the
+   * engine reads this where it branches, and there is no second copy of the
+   * value for anything else to fall out of step with. `idleAdvanceMs` is where
+   * the enum becomes the number the clock compares against.
+   */
+  get idleAutoAdvance(): IdleAdvance {
+    return this.m_IdleAutoAdvance;
+  }
+  set idleAutoAdvance(value: IdleAdvance) {
+    this.m_IdleAutoAdvance = value;
+  }
+
+  /**
    * Whether `mode` is the first-person view.
    *
    * Every branch that decides how to draw goes through this rather than testing
@@ -766,6 +852,7 @@ export class GameOptions {
     this.m_FontChoice = GameOptions.DEFAULT_FONT_CHOICE;
     void this.applyFontChoice();
     this.m_ViewMode = GameOptions.DEFAULT_VIEW_MODE;
+    this.m_IdleAutoAdvance = GameOptions.DEFAULT_IDLE_AUTO_ADVANCE;
     this.DEV_ShowActorsStats = false;
   }
 
@@ -897,6 +984,8 @@ export class GameOptions {
       return "  (Gfx) Font";
     case OptionIDs.UI_VIEW_MODE:
       return "  (Gfx) View Mode";
+    case OptionIDs.GAME_IDLE_AUTO_ADVANCE:
+      return "  (Play) Idle Auto-Advance";
       default:
         throw new Error("unhandled option");
     }
@@ -1038,6 +1127,13 @@ export class GameOptions {
         "Left and Right turn you an eighth of a circle, costing no turn;\n" +
         "Up and Down walk you forward and back the way you are facing."
       );
+    case OptionIDs.GAME_IDLE_AUTO_ADVANCE:
+      return (
+        "If you do nothing for this long, the game takes a turn for you: you wait in place.\n" +
+        "It stops the moment you press anything, so a deliberate action is never cut short,\n" +
+        "and it never fires while a targeting mode is open, so it cannot pick a tile for you.\n" +
+        "OFF is the default: the game is turn-based, and this is a way to stop standing still being a death sentence."
+      );
       default:
         throw new Error("unhandled option");
     }
@@ -1118,6 +1214,20 @@ export class GameOptions {
       default:
         throw new Error("unhandled simRatio");
     }
+  }
+
+  /**
+   * The display name of an idle auto-advance step: the seconds it waits.
+   *
+   * Seconds rather than the raw milliseconds because that is the unit a player
+   * is choosing in, and because the engine is the one that has to know about
+   * milliseconds. Divided from `IDLE_AUTO_ADVANCE_MS` rather than written out
+   * per case, so the label and the clock cannot drift apart.
+   */
+  static idleAdvanceName(value: IdleAdvance): string {
+    const ms = idleAdvanceMs(value);
+    if (ms === 0) return "OFF";
+    return `${ms / 1000} s`;
   }
 
   static simRatioToFloat(ratio: SimRatio): number {
@@ -1319,6 +1429,10 @@ export class GameOptions {
       return fontChoiceName(this.fontChoice);
     case OptionIDs.UI_VIEW_MODE:
       return GameOptions.viewModeName(this.viewMode);
+    case OptionIDs.GAME_IDLE_AUTO_ADVANCE:
+      return `${GameOptions.idleAdvanceName(this.idleAutoAdvance)}   (default ${GameOptions.idleAdvanceName(
+        GameOptions.DEFAULT_IDLE_AUTO_ADVANCE
+      )})`;
       default:
         return "???";
     }
