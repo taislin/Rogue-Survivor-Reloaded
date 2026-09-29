@@ -1679,7 +1679,7 @@ on almost every table:
 
 | Table | Was | Now | +rows |
 |---|---|---|---|
-| Actors | 27 | 32 | +5 |
+| Actors | 27 | **31** | +4 (was reported as +5 — see below) |
 | Items_Armors | 7 | 9 | +2 |
 | Items_Backpacks | — | 5 | +5 (fork-only table) |
 | Items_Barricading | 1 | 1 | 0 |
@@ -1696,8 +1696,23 @@ on almost every table:
 | Items_Traps | 4 | 4 | 0 |
 | Skills | 29 | 30 | +1 |
 
-Four traps in these tables, all found the hard way, all now handled:
+Five traps in these tables, all found the hard way, all now handled:
 
+- **A renamed *row* duplicated an actor, and it was this merge's own bug.** Row
+  0 of `Actors.csv` is `_FIRST` upstream — a placeholder for "the first undead",
+  never filled in because the C# reads that table by index — and the fork filled
+  it in as `UNDEAD_SKELETON`, also replacing the placeholder `FLAVOR` with a
+  real one. The first version of the merge handled column renames but not row
+  renames, so it appended `UNDEAD_SKELETON` as a *new* row: 32 rows for 31
+  actors, with a duplicate 10 HP skeleton that nothing complained about. The
+  merge now recognises a placeholder id whose NAME matches a fork-only row and
+  adopts the fork's id at the vanilla row's position, keeping our values.
+  It is deliberately narrow, because a bare name collision is a false positive
+  waiting to happen — the fork's `ENT_BOOK_BLUE`/`_GREEN`/`_RED` and four
+  `ENT_MAGAZINE` variants are all *new* items sharing the NAME "book" or
+  "magazine" with an existing row. Only a `_`-prefixed placeholder qualifies.
+  `data-tables.test.ts` pins the one permitted id change explicitly, so an id
+  change nobody decided on still fails.
 - **`Items_Traps.csv` is not valid UTF-8.** A stray `0xA0` sits before a `?` in
   one `FLAVOR` cell. The old pipeline read it as UTF-8 and wrote `U+FFFD` into
   the committed JSON, so a flavour string was silently corrupted. The merge

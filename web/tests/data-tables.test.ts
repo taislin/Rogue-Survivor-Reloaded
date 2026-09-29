@@ -147,6 +147,20 @@ describe("the Still Alive merge did not disturb classic", () => {
     ));
   }
 
+/**
+ * The only row-id changes the merge is allowed to make, keyed by CSV. Each is
+ * the fork filling in an upstream placeholder rather than adding content, and
+ * each keeps the vanilla row's position and values — only the id is corrected.
+ *
+ * `Actors.csv` row 0 is `_FIRST`: the C# reads that table by index, so the id
+ * was never needed and was left as a placeholder. Still Alive gave it a real
+ * name and a real FLAVOR. Note that the *values* still have to match vanilla,
+ * so this map buys the id correction and nothing else.
+ */
+const ID_RENAMES: Record<string, Record<string, string>> = {
+  "Actors.csv": { _FIRST: "UNDEAD_SKELETON" },
+};
+
   const mergedNames = Object.keys(EXPECTED_COLUMNS).map((n) => n.replace(/\.json$/, ".csv"));
 
   it.each(mergedNames.filter((n) => n !== "Items_Backpacks.csv"))(
@@ -163,8 +177,18 @@ describe("the Still Alive merge did not disturb classic", () => {
       expect(merged.length).toBeGreaterThanOrEqual(vanilla.length);
       // Ids are the join key, and the order is the contract: classic rows keep
       // their positions so the numeric enum order stays valid.
+      //
+      // The one permitted id change is the fork filling in a placeholder. Row 0
+      // of `Actors.csv` is `_FIRST` upstream — a stand-in for "the first
+      // undead", never filled in because the C# reads the table positionally —
+      // and Still Alive corrected it to `UNDEAD_SKELETON`, also replacing the
+      // placeholder FLAVOR with a real one. The merge adopts the corrected id
+      // and keeps *our* values. Anything else is listed, so an id change that
+      // nobody decided on still fails.
+      const renames = ID_RENAMES[csvName] ?? {};
       for (let i = 0; i < vanilla.length; i++) {
-        expect(merged[i].ID, `row ${i} of ${csvName}`).toBe(vanilla[i].ID);
+        expect(merged[i].ID, `row ${i} of ${csvName}`)
+          .toBe(renames[vanilla[i].ID] ?? vanilla[i].ID);
       }
 
       // Match vanilla columns to merged ones by name. Four tables gained
@@ -193,6 +217,9 @@ describe("the Still Alive merge did not disturb classic", () => {
         const oursCols = Object.keys(ours);
         for (let c = 0; c < oursCols.length; c++) {
           const col = oursCols[c];
+          // ID is asserted above, against the rename map; comparing it here
+          // would just re-report the same permitted change as a failure.
+          if (col === "ID") continue;
           expect(merged[i][mergedCols[indexFor(col, c)]], `${csvName} ${ours.ID} ${col}`)
             .toBe(ours[col]);
         }

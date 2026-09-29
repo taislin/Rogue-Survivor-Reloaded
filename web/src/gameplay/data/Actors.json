@@ -1,6 +1,6 @@
 [
   {
-    "ID": "_FIRST",
+    "ID": "UNDEAD_SKELETON",
     "NAME": "skeleton",
     "PLURAL": "skeletons",
     "SPD": 100,
@@ -484,24 +484,6 @@
     "SMELL": 100,
     "SCORE": 0,
     "FLAVOR": "GRRRR"
-  },
-  {
-    "ID": "UNDEAD_SKELETON",
-    "NAME": "skeleton",
-    "PLURAL": "skeletons",
-    "SPD": 100,
-    "HP": 10,
-    "STA": 99,
-    "ATK": 16,
-    "DMG": 4,
-    "DEF": 6,
-    "PRO_HIT": 0,
-    "PRO_SHOT": 0,
-    "FOV": 4,
-    "AUDIO": 0,
-    "SMELL": 0,
-    "SCORE": 10,
-    "FLAVOR": "Garden variety."
   },
   {
     "ID": "DERANGED_PATIENT",

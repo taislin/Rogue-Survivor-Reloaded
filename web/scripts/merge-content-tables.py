@@ -161,11 +161,54 @@ def main():
 
         added_rows = [i for i in fork_rows if i not in vanilla_rows]
 
+        # A row the fork *renamed*, which is a different animal from a row it
+        # added. `Actors.csv` row 0 is called `_FIRST` upstream -- a placeholder
+        # standing in for "the first undead", because the C# reads that table
+        # positionally and the id was never filled in -- and the fork filled it
+        # in as `UNDEAD_SKELETON`, also giving it a real FLAVOR instead of the
+        # placeholder's. Without this rule the merge appends `UNDEAD_SKELETON`
+        # as a *new* row and the table carries the same actor twice: 32 rows for
+        # 31 actors, with the duplicate a 1 HP 1 ATK rabbit would not have
+        # caught.
+        #
+        # The rule is deliberately narrow, because a name collision is otherwise
+        # a false positive waiting to happen: the fork's `ENT_BOOK_BLUE`,
+        # `ENT_BOOK_GREEN`, `ENT_BOOK_RED` and four `ENT_MAGAZINE` variants are
+        # all new items that share the NAME "book" or "magazine" with an
+        # existing row. So only a *placeholder* id is a rename candidate, and
+        # the name still has to match. Everything else stays an addition.
+        id_renames = {}
+        for placeholder, prow in vanilla_rows.items():
+            if not placeholder.startswith("_"):
+                continue
+            pname = prow[vanilla_header.index("NAME")] if "NAME" in vanilla_header else None
+            for candidate in added_rows:
+                crow = fork_rows[candidate]
+                if crow[fork_header.index("NAME")] == pname:
+                    id_renames[placeholder] = candidate
+                    break
+        if id_renames and "ID" not in vanilla_header:
+            sys.exit(
+                "%s: found what look like renamed rows but there is no ID "
+                "column to relabel." % name
+            )
+        for old, new in id_renames.items():
+            added_rows.remove(new)
+
         # Each row travels with the header it was read against. A row is a bare
         # list, so without that pairing a new column could be read from the wrong
         # offset: the fork's `WEIGHT` is column 12 and vanilla's `FLAVOR` is
         # column 12, and nothing about the list says which is which.
-        merged = [(vanilla_header, vanilla_rows[i]) for i in vanilla_rows]
+        #
+        # A renamed row keeps its *position* and its *values* -- ours wins, as
+        # everywhere else -- and only takes the fork's id, because the id is the
+        # thing the fork corrected.
+        merged = []
+        for ident in vanilla_rows:
+            row = list(vanilla_rows[ident])
+            if ident in id_renames:
+                row[0] = id_renames[ident]
+            merged.append((vanilla_header, row))
         merged += [(fork_header, fork_rows[i]) for i in added_rows]
 
         with open(os.path.join(OUT, name), "w", newline="", encoding="utf-8") as f:
@@ -185,6 +228,8 @@ def main():
 
         for col, old in sorted(rename.items()):
             print("      renamed column: %r -> %r" % (old, col))
+        for old, new in sorted(id_renames.items()):
+            print("      renamed row id: %r -> %r (kept our values)" % (old, new))
 
         print(
             "%-24s %3d -> %3d rows (+%d)%s"
