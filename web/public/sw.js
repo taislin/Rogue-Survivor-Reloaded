@@ -20,11 +20,22 @@
  */
 
 /**
- * Bump this on every release that changes cached content (the JS bundle, `sw.js`
- * itself, or anything under /assets/). The version namespaces every cache, so a
- * bump is what evicts the previous build: without it, the stale-while-revalidate
- * runtime handler keeps serving the old bundle first and the update only lands
- * on the *next* load — which reads exactly like "the fix didn't work".
+ * The version namespaces every cache below, and the activate handler deletes
+ * every cache that does not start with it. So bumping this is what evicts the
+ * previous build: without a bump, the cache-first /assets/ handler keeps
+ * serving the old sprites and audio to anyone who has played before, and the
+ * update only lands once that handler is bypassed — which reads exactly like
+ * "the fix didn't work".
+ *
+ * This is the committed fallback, used for local `npm run build` and for any
+ * build that does not run the stamping step. Deployment does not edit it by
+ * hand — `scripts/stamp-cache-version.mjs` rewrites this line in the built
+ * output to a hash of the built files, so the version changes exactly when the
+ * cached content does and not when an unrelated file does. See that script for
+ * why the input is the built output rather than the commit SHA.
+ *
+ * If you change this constant, change the committed value and nothing else;
+ * the stamping step overwrites it per build.
  */
 const CACHE_VERSION = "rsr-v3";
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;

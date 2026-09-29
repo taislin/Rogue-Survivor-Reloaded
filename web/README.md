@@ -36,9 +36,17 @@ root.
 ### Offline play
 
 `web/public/sw.js` is a service worker that caches the shell and game assets, so
-the game keeps working with no connection after the first visit. Bump
-`CACHE_VERSION` in that file when releasing a build — it namespaces the caches
-and is what evicts the previous one.
+the game keeps working with no connection after the first visit. Its
+`CACHE_VERSION` namespaces those caches and is what evicts the previous build.
+
+You do not bump it by hand. `scripts/stamp-cache-version.mjs` runs after
+`npm run build` and rewrites that line in `dist/` to a hash of the built files,
+so the version changes exactly when the cached content does. A commit that
+touches no cached content leaves returning players' caches intact, which is the
+point: the `/assets/` handler is cache-first with no revalidation, so a manual
+bump that is too eager costs every returning player a re-download of the shell
+plus every sprite and track they had cached. The committed value in `sw.js` is
+the fallback for local builds and for any build that skips the script.
 
 ---
 
@@ -289,11 +297,17 @@ compare against it before "fixing" the port.
 
 ## Website
 
-[`docs/`](docs/) is a static site — landing page, the complete game manual, the
-control reference, and notes on how the port works. It is the GitHub Pages
-source, using the plain "deploy from a branch" setup: set **Pages → Source →
-Deploy from a branch**, branch `master`, folder `/docs`. No workflow and no
-build step are involved.
+[`docs/`](../docs/) is a static site — landing page, the complete game manual,
+the control reference, and notes on how the port works. It is published at
+**`/docs/`** on the same host as the game, by the deployment below, rather than
+by GitHub Pages.
+
+That is possible because every link in it is relative. `docs/index.html` links
+to `manual.html`, and `docs/assets/css/site.css` reaches its fonts through
+`../fonts/` — nothing is rooted at `/`. So the site works unchanged in any
+directory, and the build just copies it into the game's `dist/`. The game itself
+cannot move, by contrast: `src/engine/AssetPaths.ts` hardcodes `/assets` and
+builds all 1 153 sprite and audio URLs from it, so it has to own the root.
 
 ```bash
 node docs/tools/check-site.mjs      # validate links, assets, tags, CSS coverage
@@ -302,7 +316,35 @@ node docs/tools/build-manual.mjs    # regenerate manual.html from the source tex
 
 `docs/manual.html` is generated from `src/Resources/Manual/RS Manual.txt` — the
 original manual by the game's author, reformatted and not rewritten. See
-[`docs/README.md`](docs/README.md) for the conventions.
+[`docs/README.md`](../docs/README.md) for the conventions.
+
+---
+
+## Deploying
+
+[`render.yaml`](../render.yaml) at the repository root deploys this as a Render
+**static site** — a CDN-served bundle with no server process. That is the right
+service type here: the port has no API, no database and no uploads, so a server
+would do nothing but hand back files, and would cost a 0.1-CPU runtime and a
+15-minute idle spin-down to do it. Static sites do neither.
+
+The build command runs from the repository root, so it does its own `cd`:
+
+```bash
+cd web && npm ci && npm run build
+  && node scripts/stamp-cache-version.mjs
+  && mkdir -p dist/docs && cp -r ../docs/. dist/docs/
+```
+
+`stamp-cache-version.mjs` runs **after** the build and before the `docs/` copy.
+The ordering matters: the website is not part of what the service worker caches,
+so a docs-only change must not evict returning players' game caches.
+
+The root `Dockerfile` and `web/server/` are no longer the deploy path. Both
+still work and CI still builds and smoke-tests the image, which is what proves
+the bundle is shippable; `npm run serve` is still the local way to check a
+production build. Keep the Dockerfile in step with the Blueprint's build command
+— they run the same two npm commands, so the only thing to watch is drift.
 
 ---
 

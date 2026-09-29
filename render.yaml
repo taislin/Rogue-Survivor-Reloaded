@@ -1,0 +1,38 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# The game is a pure static bundle: the port has no API, no database and no
+# uploads, so there is nothing for a server process to do beyond hand back
+# files. A static site is therefore the right service type — it is served from
+# a global CDN, never spins down, and does not bill against the Free web
+# service's 15-minute idle spin-down. The Express server in web/server/ and
+# the root Dockerfile are still useful for local production testing and are
+# still built by CI, but neither is what this deploys.
+#
+# The build command runs from the repository root (rootDir is deliberately
+# unset), so it has to cd into web/ itself.
+#
+# Note there is deliberately no `routes` rewrite. A catch-all /* -> /index.html
+# would also swallow /docs/*, and it is not needed: the game has no client-side
+# router, so nothing deep-links and no fallback is required. Omitting it also
+# means a missing file returns a real 404 instead of being served index.html
+# under a .webp's URL.
+services:
+  - type: web
+    name: rogue-survivor
+    runtime: static
+    # Order matters. The cache version is stamped before docs/ is copied in, so
+    # that a docs-only change does not evict returning players' game caches —
+    # stamp-cache-version.mjs hashes the built output, and the website is not
+    # part of what the service worker caches.
+    buildCommand: >
+      cd web && npm ci && npm run build
+      && node scripts/stamp-cache-version.mjs
+      && mkdir -p dist/docs && cp -r ../docs/. dist/docs/
+    staticPublishPath: ./web/dist
+    envVars:
+      # We run our own `npm ci` in buildCommand. Without this Render also tries
+      # to auto-install dependencies, and there is no package.json at the
+      # repository root for it to find — so this just makes the one install
+      # explicit rather than leaving a second, unaccounted-for attempt.
+      - key: SKIP_INSTALL_DEPS
+        value: "true"
