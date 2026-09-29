@@ -9,6 +9,21 @@ export class ItemBodyArmorModel extends ItemModel {
   readonly protectionShot: number;
   readonly encumbrance: number;
   readonly weight: number;
+  /**
+   * Still Alive's `FIRE_RESIST%` and `INF_RESIST%`, both defaulting to 0.
+   *
+   * **The two percentages mean different things**, which is the trap here. Fire
+   * resistance is a damage *multiplier*: `dmg -= dmg * (fireResist / 100)`, so
+   * 100 is total immunity and 0 is none. Infection resistance is a *chance to
+   * block*: `rollChance(infectionResist)`, so 30 means a 30% chance the bite does
+   * not infect. Both are "percent", neither is the other's formula, and the
+   * fork's own code uses them differently at the two call sites.
+   *
+   * `infectionResistance` has a reader; `fireResistance` does not yet, because
+   * the port has no fire damage to scale — that arrives with `TileFires`.
+   */
+  readonly fireResistance: number;
+  readonly infectionResistance: number;
 
   constructor(
     aName: string,
@@ -17,13 +32,17 @@ export class ItemBodyArmorModel extends ItemModel {
     protectionHit: number,
     protectionShot: number,
     encumbrance: number,
-    weight: number
+    weight: number,
+    fireResistance: number = 0,
+    infectionResistance: number = 0
   ) {
     super(aName, theNames, imageId);
     this.protectionHit = protectionHit;
     this.protectionShot = protectionShot;
     this.encumbrance = encumbrance;
     this.weight = weight;
+    this.fireResistance = fireResistance;
+    this.infectionResistance = infectionResistance;
   }
 
   /** C# `ItemBodyArmorModel.ToDefence` - note the negated encumbrance. */
@@ -37,6 +56,9 @@ export class ItemBodyArmor extends Item {
   readonly protectionShot: number;
   readonly encumbrance: number;
   readonly weight: number;
+  /** Copied from the model, as `ItemBodyArmor.cs:35-36` does. */
+  readonly fireResistance: number;
+  readonly infectionResistance: number;
 
   constructor(model: ItemModel) {
     super(model);
@@ -47,6 +69,8 @@ export class ItemBodyArmor extends Item {
     this.protectionShot = model.protectionShot;
     this.encumbrance = model.encumbrance;
     this.weight = model.weight;
+    this.fireResistance = model.fireResistance;
+    this.infectionResistance = model.infectionResistance;
   }
 
   isHostileForCops(): boolean {

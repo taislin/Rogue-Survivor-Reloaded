@@ -630,7 +630,13 @@ export class GameItems implements ItemModelDB {
         // Column is ENC (Items_Armors.csv). Reading `ENCUMBRANCE` gave every
         // piece of body armor encumbrance 0, so armor weighed nothing.
         d.ENC,
-        d.WEIGHT
+        d.WEIGHT,
+        // Still Alive's two resistance percentages. `?? 0` for the same reason as
+        // the weapons' WEIGHT: the columns exist only because the merge added
+        // them, and an older table would otherwise load `undefined` into a
+        // percentage, which NaNs the damage roll rather than merely doing nothing.
+        d.FIRE_RESIST ?? 0,
+        d.INF_RESIST ?? 0
       );
       model.equipmentPart = meta.slot;
       model.flavorDescription = d.FLAVOR ?? "";

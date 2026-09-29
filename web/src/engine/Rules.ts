@@ -2126,6 +2126,28 @@ export class Rules {
     return Math.max(Math.floor(speed), 0);
   }
 
+  /**
+   * Does `defender`'s body armour stop this bite infecting them?
+   *
+   * Still Alive, Release 7-6, and gated on `Feature.ArmorResist`. The roll is
+   * against the armour's `INF_RESIST%` as a *chance* -- `rollChance`, not a
+   * reduction. That is the opposite of `FIRE_RESIST%`, which scales damage;
+   * the two are both "percent" and use different formulas, and a copy of the
+   * fire one here would halve infection instead of preventing it.
+   *
+   * It lives here rather than inline at the bite site so the gate and the roll
+   * are one thing a test can call. A test that re-implements the roll to check
+   * it is checking its own copy: it passes with the gate deleted and passes
+   * with the formula wrong, which is exactly what the first version of
+   * `armor-resist.test.ts` did.
+   */
+  infectionBlockedByArmor(defender: Actor): boolean {
+    if (!hasFeature(Session.get().ruleset, Feature.ArmorResist)) return false;
+    const torso = defender.getEquippedItem(DollPart.TORSO);
+    if (!(torso instanceof ItemBodyArmor)) return false;
+    return this.rollChance(torso.infectionResistance);
+  }
+
   actorMaxHPs(actor: Actor): number {
     const skillBonus =
       Rules.SKILL_TOUGH_HP_BONUS * actor.sheet.skillTable.getSkillLevel(SkillID.TOUGH) +

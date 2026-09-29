@@ -131,17 +131,24 @@ describe("Feature registry is wired", () => {
     // this is the assertion that says so.
     //
     // `Alcohol` is not read by gameplay code either: it is the harness line in
-    // HeadlessRunner, which sets a field the engine has no reader for yet.
-    // `WeaponWeight` is the first feature with a real reader in `Rules`.
-    // Both call sites are named and located, so a rename or a moved file fails
-    // here rather than silently dropping out of the partition below.
+    // HeadlessRunner, which sets a field the engine has no reader for yet. The
+    // other two are the first features with real readers, and both landed in
+    // `Rules`: a speed term and an infection roll are both rules questions, and
+    // `ArmorResist` moved there from the bite handler in `RogueGame` when its
+    // gate, torso lookup and roll were folded into one function a test could
+    // call. A feature whose reader drifts to another file should be a deliberate
+    // change here, which is why the file is asserted and not just the name.
+    //
+    // Each call site is named *and located*, so a feature that stops being read
+    // fails here rather than quietly leaving the partition below.
     const sites = hasFeatureCallSites();
     expect(sites.length).toBeGreaterThan(0);
-    expect(sites.map((s) => s.feature).sort()).toEqual(["Alcohol", "WeaponWeight"]);
-    expect(sites.find((s) => s.feature === "Alcohol")!.at)
-      .toMatch(/HeadlessRunner\.ts:\d+$/);
-    expect(sites.find((s) => s.feature === "WeaponWeight")!.at)
-      .toMatch(/Rules\.ts:\d+$/);
+    expect(sites.map((s) => s.feature).sort())
+      .toEqual(["Alcohol", "ArmorResist", "WeaponWeight"]);
+    const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
+    expect(at("Alcohol")).toMatch(/HeadlessRunner\.ts:\d+$/);
+    expect(at("WeaponWeight")).toMatch(/Rules\.ts:\d+$/);
+    expect(at("ArmorResist")).toMatch(/Rules\.ts:\d+$/);
   });
 
   it("every Feature member is read, pending, or withheld — and never two of them", () => {

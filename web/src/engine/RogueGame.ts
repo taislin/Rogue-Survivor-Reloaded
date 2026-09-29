@@ -15592,10 +15592,16 @@ export class RogueGame {
 							),
 						);
 					}
-					this.InfectActor(
-						defender,
-						Rules.infectionForDamage(attacker, dmgRoll),
-					);
+					// Still Alive (Release 7-6): infection-resistant body armour can
+					// block the bite outright. The gate, the torso lookup and the roll
+					// are all inside `infectionBlockedByArmor` -- see the comment
+					// there for why that is one function and not three lines here.
+					if (!this.m_Rules.infectionBlockedByArmor(defender)) {
+						this.InfectActor(
+							defender,
+							Rules.infectionForDamage(attacker, dmgRoll),
+						);
+					}
 				}
 
 				// Killed?
