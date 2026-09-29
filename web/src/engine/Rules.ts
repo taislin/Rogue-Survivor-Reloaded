@@ -113,6 +113,14 @@ export class Rules {
   // Stamina
   static readonly STAMINA_INFINITE = 99;
   static readonly STAMINA_MIN_FOR_ACTIVITY = 10;
+
+  // ── Still Alive: food poisoning (Release 7-6) ─────────────────────────
+  /** Percent chance of being poisoned, before the perishing factor. */
+  static readonly BASE_FOOD_POISONING_INFECTION_CHANCE = 20;
+  /** Percent chance per turn of shaking it off. */
+  static readonly BASE_FOOD_POISONING_RECOVERY_CHANCE = 1;
+  /** Per Hardy level, added to the recovery chance. */
+  static readonly SKILL_HARDY_FOOD_POISONING_RECOVERY_CHANCE_BONUS = 1;
   static readonly STAMINA_COST_RUNNING = 4;
   static readonly STAMINA_REGEN_WAIT = 2;
   static readonly STAMINA_REGEN_PER_TURN = 2;
@@ -2146,6 +2154,73 @@ export class Rules {
     const torso = defender.getEquippedItem(DollPart.TORSO);
     if (!(torso instanceof ItemBodyArmor)) return false;
     return this.rollChance(torso.infectionResistance);
+  }
+
+  /**
+   * How much worse a piece of food's spoilage makes it, as a multiplier on the
+   * base poisoning chance: fresh 1, spoiled 3, rotten 5.
+   *
+   * The order of the tests matters and is the C#'s: it asks *still fresh*,
+   * then *expired*, then *spoiled*, and a food that is both expired and spoiled
+   * is rotten for this purpose. Reversing the first two would halve the chance
+   * for food that is merely old.
+   */
+  foodPoisoningPerishingFactor(food: ItemFood, turnCounter: number): number {
+    if (this.isFoodStillFresh(food, turnCounter)) return 1;
+    if (this.isFoodExpired(food, turnCounter)) return 3;
+    if (this.isFoodSpoiled(food, turnCounter)) return 5;
+    return 1;
+  }
+
+  /** C# `ActorRecoverFromFoodPoisoningChanceBonus` (Rules.cs:5059). */
+  actorRecoverFromFoodPoisoningChanceBonus(actor: Actor): number {
+    return Rules.SKILL_HARDY_FOOD_POISONING_RECOVERY_CHANCE_BONUS *
+      actor.sheet.skillTable.getSkillLevel(SkillID.HARDY);
+  }
+
+  /**
+   * Eat this and maybe contract food poisoning. Still Alive, Release 7-6, gated
+   * on `Feature.FoodPoisoning`.
+   *
+   * The chance is `max(base, base * perishingFactor)` less the actor's Hardy
+   * recovery bonus. The `max` is not redundancy: the fork's comment says it
+   * "avoids a case of multiplying by zero", and the bonus is a *subtraction*, so
+   * an actor with a high Hardy bonus would otherwise roll against a negative
+   * chance on a fresh piece of meat -- which `rollChance` would treat as certain.
+   *
+   * Call it after the food is consumed, as the C# does, so the perishing factor
+   * is read from the item that was actually eaten.
+   */
+  contractFoodPoisoning(actor: Actor, food: ItemFood, turnCounter: number): boolean {
+    if (!hasFeature(Session.get().ruleset, Feature.FoodPoisoning)) return false;
+    if (!food.canCauseFoodPoisoning) return false;
+    const base = Rules.BASE_FOOD_POISONING_INFECTION_CHANCE;
+    const factor = this.foodPoisoningPerishingFactor(food, turnCounter);
+    const chance = Math.max(base, base * factor) -
+      this.actorRecoverFromFoodPoisoningChanceBonus(actor);
+    if (!this.rollChance(chance)) return false;
+    actor.isFoodPoisoned = true;
+    return true;
+  }
+
+  /**
+   * The per-turn roll that shakes off food poisoning.
+   *
+   * Returns true when the actor recovered, so the caller can say so. Gated on
+   * the same feature as the contraction: a flag that could be set without the
+   * feature is reachable from a save, and one that could never be cleared would
+   * strand its holder.
+   */
+  recoverFromFoodPoisoning(actor: Actor): boolean {
+    if (!hasFeature(Session.get().ruleset, Feature.FoodPoisoning)) return false;
+    if (!actor.isFoodPoisoned) return false;
+    const chance = Rules.BASE_FOOD_POISONING_RECOVERY_CHANCE +
+      this.actorRecoverFromFoodPoisoningChanceBonus(actor);
+    if (this.rollChance(chance)) {
+      actor.isFoodPoisoned = false;
+      return true;
+    }
+    return false;
   }
 
   actorMaxHPs(actor: Actor): number {

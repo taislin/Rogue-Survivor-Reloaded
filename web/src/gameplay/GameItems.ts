@@ -352,7 +352,12 @@ export class GameItems implements ItemModelDB {
         // POINTS * line[3].ParseFloat())`); without it a 0.25 army ration
         // restores a quarter of one point against a 1440-point meter.
         Math.trunc(Rules.FOOD_BASE_POINTS * d.NUTRITION),
-        d.BESTBEFORE
+        d.BESTBEFORE,
+        // Still Alive's two boolean columns. `=== 1` rather than truthiness: the
+        // converter has already made them numbers, and a `"0"` string would be
+        // truthy.
+        d.CAUSES_POISON === 1,
+        d.CAN_BE_COOKED === 1
       );
       model.stackingLimit = d.STACKINGLIMIT;
       // "canned food"/"canned food" and "groceries"/"groceries" are the same

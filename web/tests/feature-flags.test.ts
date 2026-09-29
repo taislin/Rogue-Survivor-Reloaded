@@ -143,12 +143,27 @@ describe("Feature registry is wired", () => {
     // fails here rather than quietly leaving the partition below.
     const sites = hasFeatureCallSites();
     expect(sites.length).toBeGreaterThan(0);
+    // The list is per *call site*, not per feature. `FoodPoisoning` has four,
+    // which is the interesting one: two in `Rules` (the contraction roll and the
+    // recovery roll, each gated where it lives) and two in the turn loop -- the
+    // per-actor sweep and the antiviral cure. The sweep's gate is not redundant
+    // with the recovery function's, because without it the loop walks every actor
+    // on the map calling a function that immediately returns.
+    //
+    // Asserting the exact multiset means a new reader has to be added here, which
+    // is the point: a reader is a decision, not an accident.
     expect(sites.map((s) => s.feature).sort())
-      .toEqual(["Alcohol", "ArmorResist", "WeaponWeight"]);
+      .toEqual(["Alcohol", "ArmorResist", "FoodPoisoning", "FoodPoisoning",
+                "FoodPoisoning", "FoodPoisoning", "WeaponWeight"]);
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     expect(at("Alcohol")).toMatch(/HeadlessRunner\.ts:\d+$/);
     expect(at("WeaponWeight")).toMatch(/Rules\.ts:\d+$/);
     expect(at("ArmorResist")).toMatch(/Rules\.ts:\d+$/);
+    // The food-poisoning readers are split two-and-two, so the file is asserted
+    // per site rather than per feature.
+    const poison = sites.filter((s) => s.feature === "FoodPoisoning");
+    expect(poison.filter((s) => /Rules\.ts/.test(s.at))).toHaveLength(2);
+    expect(poison.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(2);
   });
 
   it("every Feature member is read, pending, or withheld — and never two of them", () => {

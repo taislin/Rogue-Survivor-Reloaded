@@ -63,6 +63,17 @@ export class Actor {
 
   previousHitPoints: number = 0;
   previousStaminaPoints: number = 0;
+  /**
+   * Still Alive, Release 7-6: contracted from raw meat, cleared by a per-turn
+   * roll or by antiviral pills. A plain own field, so the graph writer carries
+   * it with no spec entry -- which is the plan's "0 lines of serialisation" for
+   * this feature, and the reason to prefer a bool here over anything richer.
+   *
+   * `infection` is the *other* status and is easy to confuse with this one: it
+   * rises from zombie bites and is cured by antivirals too, but it is a level
+   * rather than a flag, and a food-poisoned actor has `infection === 0`.
+   */
+  isFoodPoisoned: boolean = false;
   previousFoodPoints: number = 0;
   previousSleepPoints: number = 0;
   previousSanity: number = 0;

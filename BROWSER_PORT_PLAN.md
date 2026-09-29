@@ -2,7 +2,7 @@
 
 > **Status (2026-09-29):** Phases 1–7 ported and playable. Phase 8 tasks 1–11
 > done; only 12 (optional touch support) remains. `npm run verify` — type-check,
-> coverage gate and build — is **green**: **1520 tests in 67 files**. The coverage
+> coverage gate and build — is **green**: **1530 tests in 68 files**. The coverage
 > gate's branch floor was lowered from 75% to a measured ~47% with the reasoning
 > recorded in `vitest.config.mts`; 75% came from the first 6-file suite and is
 > unreachable now that `RogueGame.ts` alone is 6098 branches. Read
@@ -502,7 +502,7 @@ loudly.
   `5b2dc59`; the side panel, hitbox, popup and minimap fixes `4a6e845` and
   `2ebdddf`; the four typeface families `47c5b64`; and the look-handler and
   typeface-repaint fixes `6977b63`.
-- **Current state (2026-09-29): 1520 tests across 67 files, `npm run verify` green**
+- **Current state (2026-09-29): 1530 tests across 68 files, `npm run verify` green**
   — type-check, coverage gate and build all pass. Coverage is ~59.8% statements /
   49.7% branches / 72.1% functions / 61.0% lines, which clears the measured floor
   in `vitest.config.mts`.
@@ -555,7 +555,7 @@ Full detail in `web/.porting/CONVENTIONS.md`. The ones that matter:
 |---|---|
 | `npm run verify` | type-check + coverage + build — what CI runs, in one command |
 | `npm run type-check` | `tsc --noEmit`; covers `src/`, `sim/` and `tests/` — necessary, **not sufficient** |
-| `npm run test` | Vitest, 1520 tests in 67 files |
+| `npm run test` | Vitest, 1530 tests in 68 files |
 | `npm run test:coverage` | Vitest with coverage thresholds enforced |
 | `npm run build` | Vite production build |
 | `npm run sim` | Headless engine run — the real test |
@@ -577,7 +577,7 @@ Phases 1–7 are ported and building. Historical per-slice detail has been remov
 | 5 — World gen & AI | `BaseAI` (184/184), all 11 AI controllers, 4 generator files (`MapGenerator`, `BaseMapGenerator`, `BaseTownGenerator` 5 814 lines, `StdTownGenerator`) | Done |
 | 6 — Audio | Web Audio SFX + music | Done |
 | 7 — Save / load | localStorage / IndexedDB, `Session` serialisation | Done |
-| 8 — Polish, sim, CI | Headless harness, 1520 tests, CI, PWA, Docker, asset pass, frame-cost pass, desktop wrapper | **In progress** — 11 of 12 tasks done; only 12 (optional touch) remains. See §4.1 |
+| 8 — Polish, sim, CI | Headless harness, 1530 tests, CI, PWA, Docker, asset pass, frame-cost pass, desktop wrapper | **In progress** — 11 of 12 tasks done; only 12 (optional touch) remains. See §4.1 |
 | 9 — Still Alive ruleset | Parallel ruleset on a separate axis from `GameMode`, one superset content pack | **In progress** — Stages 1–2 committed, Stage 3 half done, Stages 4–5 not started. See §5.6 |
 
 Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks, 3 SFX), extracted from the C# embedded resources. **Total 24.9 MB**, down from 51.6 MB before the Phase 8 asset pass — see §4.1c.
@@ -596,7 +596,7 @@ Assets: 1 151 files shipped (1 124 sprites across 3 image sets, 24 music tracks,
 | 2 | Deterministic `--seed` for reproducible runs | **Done** (`Session.useSeed`, `--seed`) |
 | 3 | Drive the sim to a clean full-length run and fix what it finds | **In progress, and the goal changed** — no seed now reaches 1 000 turns, because that is *correct* behaviour (§1.2: the undead bot is shot by survivors). Keep sweeping seeds for crashes, not for turn count |
 | 4 | Responsive canvas scaling (CSS `aspect-ratio` + `object-fit`) | **Done and verified in a browser** — now 1366×768 widescreen, smooth filtering (the old `image-rendering: pixelated` made upscaled text unreadable) |
-| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Harness done, gate passing** — 1520 tests, 67 files, thresholds set and met. The branch floor was once 75% and made `verify` red for most of the port's life; it was lowered to a measured value rather than left unpassable, with the reasoning in `vitest.config.mts`. Actual: ~62.7% statements / 52.0% branches / 73% functions / 63% lines |
+| 5 | Vitest + `@vitest/coverage-v8`, `test` / `test:coverage` scripts, coverage thresholds | **Harness done, gate passing** — 1530 tests, 68 files, thresholds set and met. The branch floor was once 75% and made `verify` red for most of the port's life; it was lowered to a measured value rather than left unpassable, with the reasoning in `vitest.config.mts`. Actual: ~62.7% statements / 52.0% branches / 73% functions / 63% lines |
 | 6 | GitHub Actions CI | **Done** — `.github/workflows/ci.yml`, type-check + coverage + build + seeded sim, plus a docker smoke job |
 | 7 | PWA manifest + service worker (offline play) | **Done** — manifest, drawn icons, runtime-caching `sw.js` |
 | 8 | Docker image for the self-hosted server | **Done but unverified** — docker is not installed locally, so the image has never been built; CI will exercise it first |
@@ -1060,7 +1060,7 @@ renderer and not about the option: the stored value is still `"first-person"`,
 because `isFirstPersonView` compares it exactly and an annotated value would read
 as top-down and silently hand the player the other view.
 
-`npm run verify` is green: **1520 tests, 67 files**. It was red for most of this
+`npm run verify` is green: **1530 tests, 68 files**. It was red for most of this
 work — branch coverage sat at 49.88% against a 75% floor — and the floor was
 later lowered to a measured value, because a gate that cannot be passed is not a
 gate (`vitest.config.mts` records why 75% is unreachable). The earlier figure in
@@ -1403,7 +1403,7 @@ Two things a later session should not have to re-derive:
   all); and the weather/rot sprite collision (it does not exist — `imagePathIn`
   permits subpaths, so the merge just left 14 unreferenced files).
 
-Gate: `cd web && npm run verify` — **1520 tests across 67 files, green** as of
+Gate: `cd web && npm run verify` — **1530 tests across 68 files, green** as of
 the data-merge commit. `BROWSER_PORT_PLAN.md` §5.6d is the only place the data
 decisions are written down.
 
@@ -2068,8 +2068,8 @@ plan for rather than discover:
 
 #### 5.6e Stage 4 — mechanics
 
-> **Status: the first two features are done 2026-09-29** — `WeaponWeight` and
-> `ArmorResist`. These are the *first features with real readers in gameplay
+> **Status: three features are done 2026-09-29** — `WeaponWeight`,
+> `FoodPoisoning`, and half of `ArmorResist`. These are the *first features with real readers in gameplay
 > code*; until now `hasFeature` was called only from `HeadlessRunner`, so
 > `feature-flags.test.ts`'s partition was satisfied by a pending list. Two things
 > in that suite changed as a consequence and are worth knowing: each feature left
@@ -2109,6 +2109,46 @@ plan for rather than discover:
 > has no `equipmentPart` and can never be in hand), and no actor that can hold a
 > weapon goes negative on any weapon in the table. Mutation-checked: removing the
 > gate, and not reading the column, each fail.
+>
+> ### `FoodPoisoning` — done, and the first feature with more than one reader
+>
+> Raw meat can poison, time and antivirals can cure it. Three separate hooks —
+> contraction on eating, a per-turn recovery roll, and the antiviral cure — which
+> makes this the feature where the *shape* starts to matter: the flag has to be
+> set and cleared consistently across all of them, and `feature-flags.test.ts`
+> now asserts four call sites for it (two in `Rules` where the rolls live, two in
+> the turn loop), each located by file.
+>
+> `Actor.isFoodPoisoned` is a plain bool, so the graph writer carries it with no
+> spec entry — the plan's "0 lines of serialisation", and the reason to prefer a
+> flag here over anything richer. Worth knowing because it is confusable with
+> `actor.infection`: that one is a *level* from zombie bites, cured by antivirals
+> too, and a food-poisoned actor has `infection === 0`.
+>
+> **The freshness vocabulary is counter-intuitive and the test pins it.** The
+> port's own helpers are `isFoodStillFresh` = `turn < bestBefore`, `isFoodExpired`
+> = up to `2 * bestBefore`, and `isFoodSpoiled` = past that — so **"spoiled" is
+> the most extreme of the three**, not the mild middle, and the factors are
+> 1 / 3 / 5 in that order. Rotten meat is therefore certain and merely-expired
+> is 60%. The test constructs the item so the *same* row is fresh, expired and
+> spoiled in turn, and says why the other direction is also valid and starts
+> maximally stale — that inversion is an easy way to write a test that looks
+> right and means the opposite.
+>
+> The `Math.max(base, base * factor)` is not redundancy: the Hardy bonus is a
+> *subtraction*, so without it a high-Hardy actor would roll against a negative
+> chance on fresh meat.
+>
+> Five mutations, each caught: contraction gate removed, recovery gate removed,
+> `CAUSES_POISON` not read, the expired/spoiled factors swapped, and the
+> antiviral cure deleted.
+>
+> **Not done, and it is part of the feature:** the fork also has
+> `FOOD_POISONING_AFFECTED_ACTION_CHANCE` (5% chance to vomit), which the plan
+> lists as the "vomit penalty". It is not implemented — vomiting is a player
+> action with its own prompt and penalty, and bolting it on would make the flag
+> do something no test could describe. It belongs with `Cooking`, where the
+> `canBeCooked` column it pairs with also gains a reader.
 >
 > ### `ArmorResist` — half done, and the half is not the one the table implies
 >
@@ -2165,7 +2205,7 @@ zero precisely because of the dump-every-own-field design.
 | `WeaponWeight` | none (model field) | 0 | **DONE** — `ItemWeaponModel.weight`, read from the merged `WEIGHT`, subtracted in `actorSpeed` under the flag |
 | `ArmorResist` | none (model field) | 0 | **infection roll DONE** (gated, in `Rules.infectionBlockedByArmor`). Fire scaling **blocked on `TileFires`** — the port has no fire damage. Both CSV columns merged |
 | `Alcohol` | `Actor.bloodAlcohol`, `previousBloodAlcohol` | 0 (own fields) | `IsDrunk`, 4 accuracy tiers, the 5-step description and colour, BAC decay, nightmare suppression |
-| `FoodPoisoning` | `Actor` flag | 0 | 20% roll on raw meat, 1% recovery, Hardy bonus, antiviral check, vomit penalty |
+| `FoodPoisoning` | `Actor.isFoodPoisoned` | **0** (own field, carried by the writer) | **DONE** — 20% base × perishing factor 1/3/5, 1% per-turn recovery, Hardy bonus, antiviral cure. **Vomit penalty (5%) not done** — pairs with `Cooking` |
 | `Cooking` | `ItemFood._cookedDegree`, `_maxCookedDegree` | 0 | `canActorCookFood`, `ActionCookFood`, campfires/barrels as heat sources |
 | `Fishing` | `Activity.FISHING` | 0 | rod equip gate, `ActionWait(isFishing)` flag, Unsuspicious bonus, `Map.hasFishing` |
 | `Butchering` | `Actor.causeOfDeath` | 0 | bladed-weapon gate, raw vs cooked by cause, `MapObject.canUseForButchering` |

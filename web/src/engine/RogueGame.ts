@@ -129,6 +129,7 @@ import { PlayerCommand } from "@engine/PlayerCommand";
 import { Point } from "@engine/Point";
 import { Rect } from "@engine/Rect";
 import { Rules } from "@engine/Rules";
+import { Feature, hasFeature } from "@engine/FeatureFlags";
 import type { RuleResult } from "@engine/Rules";
 import { AchievementIDs, DifficultySide, Scoring } from "@engine/Scoring";
 import {
@@ -4223,6 +4224,19 @@ export class RogueGame {
 			}
 
 			// 4. Actor gauges & states
+			// Food poisoning clears itself (Still Alive, Release 7-6). Ahead of the
+			// gauge loop because the recovery roll is its own thing and the
+			// message is the only visible effect.
+			if (hasFeature(this.m_Session.ruleset, Feature.FoodPoisoning)) {
+				for (const actor of map.actors) {
+					if (this.m_Rules.recoverFromFoodPoisoning(actor)) {
+						if (actor.isPlayer) {
+							this.AddMessage(this.MakeMessage(actor, "is no longer food poisoned"));
+						}
+					}
+				}
+			}
+
 			let actorsStarvedToDeath: Actor[] | null = null;
 			for (const actor of map.actors) {
 				// hunger && rot.
@@ -17433,6 +17447,16 @@ export class RogueGame {
 		const inv = actor.location.map!.getItemsAt(actor.location.position);
 		inv!.consume(food);
 
+		// raw meat may poison (Still Alive, Release 7-6). After the consume, as
+		// the C# does, so the perishing factor is read from the eaten item.
+		if (this.m_Rules.contractFoodPoisoning(
+			actor,
+			food,
+			actor.location.map!.localTime.turnCounter,
+		)) {
+			this.AddMessage(this.MakeMessage(actor, "contracted food poisoning"));
+		}
+
 		// message.
 		const isVisible = this.IsVisibleToPlayer(actor);
 		if (isVisible)
@@ -17490,6 +17514,15 @@ export class RogueGame {
 
 		// consume it.
 		actor.inventory!.consume(food);
+
+		// raw meat may poison (Still Alive, Release 7-6) -- see the other eat site.
+		if (this.m_Rules.contractFoodPoisoning(
+			actor,
+			food,
+			actor.location.map!.localTime.turnCounter,
+		)) {
+			this.AddMessage(this.MakeMessage(actor, "contracted food poisoning"));
+		}
 
 		// canned food drops empty cans.
 		if (food.model === this.m_GameItems.get(ItemID.FOOD_CANNED_FOOD)) {
@@ -17593,6 +17626,13 @@ export class RogueGame {
 			actor.infection -
 				this.m_Rules.actorMedicineEffect(actor, med.infectionCure),
 		);
+		// Still Alive: antivirals cure food poisoning too (RogueGame.cs:21794-21849).
+		// Gated on the same feature as the contraction, so the flag cannot be set
+		// by one ruleset and left uncured by the other.
+		if (hasFeature(this.m_Session.ruleset, Feature.FoodPoisoning) &&
+		    actor.isFoodPoisoned) {
+			actor.isFoodPoisoned = false;
+		}
 		actor.sanity = Math.min(
 			actor.sanity + this.m_Rules.actorMedicineEffect(actor, med.sanityCure),
 			this.m_Rules.actorMaxSanity(actor),
