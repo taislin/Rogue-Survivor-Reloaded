@@ -2461,6 +2461,19 @@ export abstract class BaseAI extends AIController {
     /////////////////////////////////////
     const map = this.controlledActor.location.map;
     if (!map) return null;
+    // Bail if the actor's tile is indoors, i.e. cannot see the sky. This loop
+    // closes doors and barricades windows, and on a level with no sky -- a
+    // basement, the sewers, the police station jails, the CHAR underground --
+    // there is nothing to secure against, so the only thing it does is ping-pong
+    // the same door: the level's AI fights over one doorway and never does
+    // anything else. Reported as an infinite loop in the animal shelter kennels.
+    // The fork's fix, BaseAI.cs:4209.
+    //
+    // `tile.isInside` is the same test the weather code uses for "outside"
+    // (Rules.decayOdorsAt), so indoors is one meaning in this codebase and not two.
+    const here = this.controlledActor.location.position;
+    const tile = map.getTileAt(here.x, here.y);
+    if (!tile || tile.isInside) return null;
     for (const p of LOS.fovPoints(fov)) {
       const { x, y } = p;
       const mapObj = map.getMapObjectAt(x, y);

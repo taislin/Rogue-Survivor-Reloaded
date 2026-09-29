@@ -3101,7 +3101,33 @@ export class RogueGame {
 		this.m_FirstPersonFacing = Direction.N;
 
 		// generate world.
-		this.GenerateWorld(true, s_Options.citySize);
+		//
+		// Retry on a fresh seed rather than letting a failed roll kill the game.
+		// `GenerateWorld` returns false when a required unique map could not be
+		// placed — the CHAR underground needs a business district with an office in
+		// it, and the office sits behind a `RollChance`, so a quarter with none is
+		// a legal roll. The C# threw out of the factory with an unreachable catch
+		// above it, so the player got a dead game and no explanation. The fork
+		// wrapped this in `do { ... } while (!worldMade)`; the bound is the part it
+		// is missing, and without it a city size too small to hold a business
+		// district spins forever instead of failing once with a usable message.
+		const MAX_WORLD_GEN_ATTEMPTS = 12;
+		let worldMade = false;
+		for (let attempt = 1; !worldMade; attempt++) {
+			if (attempt > 1) {
+				// New seed, and a fresh session, because `GenerateWorld` reuses
+				// whatever the previous attempt left behind. `reset()` covers the
+				// seed and the world; nothing else this loop needs clearing.
+				this.m_Session.reset();
+			}
+			worldMade = this.GenerateWorld(true, s_Options.citySize);
+			if (!worldMade && attempt >= MAX_WORLD_GEN_ATTEMPTS) {
+				throw new Error(
+					`could not generate a world in ${MAX_WORLD_GEN_ATTEMPTS} attempts; ` +
+						`no business district with a CHAR office in a ${s_Options.citySize}x${s_Options.citySize} city`,
+				);
+			}
+		}
 
 		// scoring : hello there.
 		this.m_Session.scoring.addVisit(
@@ -24330,7 +24356,12 @@ export class RogueGame {
 	}
 
 	// C# GenerateWorld — RogueGame.cs:20149
-	GenerateWorld(isVerbose: boolean, size: number): void {
+	//
+	// Returns false when a required unique map could not be placed, so the caller
+	// can roll a new seed and try again. C# returned void and let the failure
+	// escape as an exception from a factory two frames down; the fork changed it to
+	// a bool and wrapped `StartNewGame` in `do { ... } while (!worldMade)`.
+	GenerateWorld(isVerbose: boolean, size: number): boolean {
 		// say so.
 		if (isVerbose) {
 			this.m_UI.UI_Clear(Color.Black);
@@ -24441,8 +24472,16 @@ export class RogueGame {
 			);
 			this.m_UI.UI_Repaint();
 		}
-		this.m_Session.uniqueMaps.charUndergroundFacility =
+		const charUnderground =
 			this.CreateUniqueMap_CHARUndegroundFacility(world);
+		if (charUnderground === null) {
+			// The offices are behind a RollChance, so a business quarter with none in
+			// it is a legal roll. Nothing after this point may assume the map
+			// exists -- twenty-odd sites dereference `charUndergroundFacility.theMap`
+			// -- so bail here rather than build half a world on top of it.
+			return false;
+		}
+		this.m_Session.uniqueMaps.charUndergroundFacility = charUnderground;
 
 		/////////////////
 		// Unique Actors
@@ -24700,6 +24739,7 @@ export class RogueGame {
 			);
 			this.m_UI.UI_Repaint();
 		}
+		return true;
 	}
 
 	// C# CheckIfExitIsGood — RogueGame.cs:20494
@@ -24745,6 +24785,15 @@ export class RogueGame {
 			false,
 			0,
 		);
+		// alpha10 marks every unique NPC `isUnique`, and that is what the
+		// first-sighting check requires before it clears their invincibility
+		// (`HandlePlayerActor`: `if (other.isUnique) { ... isInvincible = false }`).
+		// This spawner is the one that forgot, so the Thing went into
+		// `uniqueActors`, got `isInvincible = true` from the worldgen sweep, and
+		// could never lose it: permanently invincible, with no theme music on the
+		// first sighting either. The other six unique spawners in this file all set
+		// it. Same fix as the fork's RogueGame.cs:4693.
+		actor.isUnique = true;
 
 		// 3. Spawn in sewers map.
 		const roller = new DiceRoller(map.seed);
@@ -25169,7 +25218,7 @@ export class RogueGame {
 	}
 
 	// C# CreateUniqueMap_CHARUndegroundFacility — RogueGame.cs:20887
-	CreateUniqueMap_CHARUndegroundFacility(world: World): UniqueMap {
+	CreateUniqueMap_CHARUndegroundFacility(world: World): UniqueMap | null {
 		////////////////////////////////////////////////
 		// 1. Find all business districts with offices.
 		// 2. Pick one business district at random.
@@ -25194,8 +25243,14 @@ export class RogueGame {
 			}
 
 		// 2. Pick one business district at random.
-		if (goodDistricts.length === 0)
-			throw new Error("world has no business districts with offices");
+		// Returning null rather than throwing is the point: the caller regenerates
+		// the whole world on a fresh seed. A district with no CHAR office is
+		// possible — the office is behind a `RollChance`, so a 5x5 city can roll
+		// a business quarter with none in it — and the C# answered that by throwing
+		// out of a method whose only caller had an unreachable catch, so the game
+		// was dead with no way to continue and nothing in the log. See
+		// `GenerateWorld`'s retry and BROWSER_PORT_PLAN §5.6c item 2.
+		if (goodDistricts.length === 0) return null;
 		const chosenDistrict =
 			goodDistricts[this.m_Rules.roll(0, goodDistricts.length)];
 

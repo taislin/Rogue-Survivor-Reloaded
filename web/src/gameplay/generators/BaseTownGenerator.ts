@@ -4603,6 +4603,14 @@ export class BaseTownGenerator extends BaseMapGenerator {
         // prisoner who should not be
         prisoner = this.createNewCivilian(0, 0, 1);
         prisoner.name = 'The Prisoner Who Should Not Be';
+        // alpha10 marks every unique NPC `isUnique`, and that is what the
+        // first-sighting check requires before it clears their invincibility
+        // (`RogueGame.HandlePlayerActor`: `if (other.isUnique) { ... isInvincible = false }`).
+        // This one forgot, so the prisoner was registered below, picked up
+        // `isInvincible = true` by the worldgen sweep, and could never lose it —
+        // the one actor in the game the player is guaranteed to meet and cannot
+        // kill. Same fix as the fork's BaseTownGenerator.cs:9146.
+        prisoner.isUnique = true;
 
         // plenty of food
         const prisonerInv = prisoner.inventory!;

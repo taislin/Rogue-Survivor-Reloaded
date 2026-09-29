@@ -477,6 +477,18 @@ export class Rules {
       return fail("triggered trap");
     }
 
+    // 4. Forbidden to AI.
+    // The flag is only honoured in the AI's *rating* (BaseAI returns JUNK for
+    // these), which is a preference and not a rule: anything that reaches an NPC
+    // by a path that does not go through `BaseAI` -- a gift, a container it was
+    // told to loot, a trade it agreed to -- still takes the item. Enforcing it
+    // here closes every one of those at the single choke point they share. The
+    // player is exempt, which is the whole point of the flag: these are items
+    // that make no sense for an NPC to carry, not items the player may not use.
+    if (it.isForbiddenToAI && !actor.isPlayer) {
+      return fail("forbidden to AI");
+    }
+
     return OK;
   }
 
@@ -492,6 +504,18 @@ export class Rules {
     // 2. Item not equipable.
     if (!it.model.isEquipable) {
       return fail("this item cannot be equipped");
+    }
+
+    // 3. Forbidden to AI.
+    // The flag is only honoured in the AI's *rating* (BaseAI returns JUNK for
+    // these), which is a preference and not a rule: anything that reaches an NPC
+    // by a path that does not go through `BaseAI` -- a gift, a container it was
+    // told to loot, a trade it agreed to -- still takes the item. Enforcing it
+    // here closes every one of those at the single choke point they share. The
+    // player is exempt, which is the whole point of the flag: these are items
+    // that make no sense for an NPC to carry, not items the player may not use.
+    if (it.isForbiddenToAI && !actor.isPlayer) {
+      return fail("forbidden to AI");
     }
 
     return OK;
@@ -554,6 +578,11 @@ export class Rules {
     }
     if (it instanceof ItemBarricadeMaterial) {
       return fail("to use material, build a barricade");
+    }
+    // 3. Forbidden to AI. See the note in `canActorGetItem`: the flag was only a
+    // rating before, which is a preference and not a rule.
+    if (it.isForbiddenToAI && !actor.isPlayer) {
+      return fail("forbidden to AI");
     }
     if (it instanceof ItemAmmo) {
       // 1. No compatible weapon equipped.
@@ -622,6 +651,17 @@ export class Rules {
     // 3. Not a battery powered item.
     if (!this.isItemBatteryPowered(it)) {
       return fail("not a battery powered item");
+    }
+
+    // 4. Already full.
+    // Without this the AI recharges a *full* light forever: the light is the
+    // first rechargable item it finds, it never drains if nobody is shooting, and
+    // the actor spends the walk to the generator and the walk back on a no-op
+    // that costs a turn each way. The fork fixed this alongside the hand order
+    // above ("Items with batteries no longer recharge automatically when they
+    // run out" — the changelog phrasing is confusing, the exploit is this).
+    if (this.isItemBatteryFull(it)) {
+      return fail("battery is already full");
     }
 
     return OK;
@@ -910,13 +950,21 @@ export class Rules {
         const powGen = mapObj;
         // Recharge battery powered item?
         if (powGen.isOn) {
-          const leftItem = actor.getEquippedItem(DollPart.LEFT_HAND);
-          if (leftItem && this.canActorRechargeItemBattery(actor, leftItem).ok) {
-            return { action: new ActionRechargeItemBattery(actor, game, leftItem), reason: "" };
-          }
+          // **Right hand before left.** A light or a tracker loses charge every
+          // turn, so the first rechargable item found is nearly always a depleted
+          // one in the left hand: the actor recharges the torch, walks away one
+          // turn later with it empty again, and the gun in the right hand never
+          // gets looked at. Testing the weapon first makes the weapon win, which
+          // is what the fork's comment calls "weapons must have priority". The
+          // AI's own item-rating change (JUNK for forbidden items) does not
+          // touch this, because a light is a perfectly good thing to own.
           const rightItem = actor.getEquippedItem(DollPart.RIGHT_HAND);
           if (rightItem && this.canActorRechargeItemBattery(actor, rightItem).ok) {
             return { action: new ActionRechargeItemBattery(actor, game, rightItem), reason: "" };
+          }
+          const leftItem = actor.getEquippedItem(DollPart.LEFT_HAND);
+          if (leftItem && this.canActorRechargeItemBattery(actor, leftItem).ok) {
+            return { action: new ActionRechargeItemBattery(actor, game, leftItem), reason: "" };
           }
         }
 
