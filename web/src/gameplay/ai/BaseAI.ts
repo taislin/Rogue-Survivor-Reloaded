@@ -31,6 +31,7 @@ import { DoorWindow, Fortification } from '@engine/mapobjects/MapObjects';
 import { ItemTrap } from '@engine/items/ItemTrap';
 import { ItemMedicine } from '@engine/items/ItemMedicine';
 import { Session } from '@engine/Session';
+import { Feature, hasFeature } from '@engine/FeatureFlags';
 import { WorldTime } from '@engine/WorldTime';
 import { Corpse } from '@data/Corpse';
 import { ItemGrenade, ItemGrenadeModel, ItemPrimedExplosive, ItemExplosive, ItemExplosiveModel } from '@engine/items/ItemExplosive';
@@ -1316,37 +1317,49 @@ export abstract class BaseAI extends AIController {
     }
     // left-hand items
     if (canUseLeftHand) {
-      // ordered by priority: cellphone -> lights -> spray
+      // Ordered by priority: **lights -> cellphone -> spray**.
+      //
+      // Vanilla is cellphone -> lights -> spray, and swapping the first two is
+      // the entire feature. The C#'s comment is the reason: "lights are now more
+      // important than cellphones now that darkness is revamped" (Release 6-1).
+      // With only one left hand, a survivor who has both will drop the phone --
+      // and under vanilla it is the other way round, so an NPC walks into a
+      // pitch-black basement holding a cell phone it will never switch on. Before
+      // `DarknessFov` that was a cosmetic oddity; now it means the AI is blind,
+      // which is why this was parked at Stage 2 until 2a landed.
       const eqCellphone = this.getEquippedCellPhone();
       const eqLight = this.getEquippedLight();
       const eqStenchKiller = this.getEquippedStenchKiller();
-      // cellphone
-      if (allowCellPhones && this.wantsCellPhoneEquipped(game)) {
-        action = this.behaviorEquipBestCellPhone(game);
-        if (action) {
-          return action;
+
+      // Still Alive, Release 6-1, reorders the first two blocks. Rather than keep
+      // two copies of the same code, the *order* is chosen and each step is a
+      // small method. The comments on each step say why it is the way it is.
+      const lightsFirst = hasFeature(Session.get().ruleset, Feature.LightPriority);
+      const stepLight = (): ActorAction | null => {
+        if (this.needsLight(game)) return this.behaviorEquipBestLight(game);
+        // doesnt need light, unequip if equipped.
+        if (eqLight) return new ActionUnequipItem(this.controlledActor, game, eqLight);
+        return null;
+      };
+      const stepPhone = (): ActorAction | null => {
+        // The `!eqLight` guard is where the fix is felt, and it is the whole
+        // feature: an NPC already holding a light falls into the else and actively
+        // *unequips* the phone to free the hand. So this is not merely "prefer
+        // light" -- it is "prefer light enough to throw the phone away".
+        if (!eqLight && allowCellPhones && this.wantsCellPhoneEquipped(game)) {
+          return this.behaviorEquipBestCellPhone(game);
         }
-      } else {
-        if (eqCellphone) {
-          return new ActionUnequipItem(this.controlledActor, game, eqCellphone);
-        }
+        if (eqCellphone) return new ActionUnequipItem(this.controlledActor, game, eqCellphone);
+        return null;
+      };
+
+      for (const step of lightsFirst ? [stepLight, stepPhone] : [stepPhone, stepLight]) {
+        const a = step();
+        if (a) return a;
       }
-      // lights, if no cellphone equipped
-      if (!eqCellphone) {
-        if (this.needsLight(game)) {
-          action = this.behaviorEquipBestLight(game);
-          if (action) {
-            return action;
-          }
-        } else {
-          // doesnt need light, unequip if equipped.
-          if (eqLight) {
-            return new ActionUnequipItem(this.controlledActor, game, eqLight);
-          }
-        }
-      }
+
       // spray scent, if no cellphone or light equipped
-      if (!eqCellphone && !eqLight) {
+      if (eqCellphone == null && eqLight == null) {
         if (allowStenchKiller) {
           action = this.behaviorEquipBestStenchKiller(game);
           if (action) {

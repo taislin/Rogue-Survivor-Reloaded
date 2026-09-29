@@ -154,10 +154,11 @@ describe("Feature registry is wired", () => {
     // is the point: a reader is a decision, not an accident.
     expect(sites.map((s) => s.feature).sort())
       .toEqual(["Alcohol", "ArmorResist", "Cooking", "Cooking", "DarknessFov",
-                "DarknessFov", "DarknessGating", "FireBarrels", "FireBarrels",
-                "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-                "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-                "ItemDespawn", "ItemDespawn", "WeaponWeight"]);
+                 "DarknessFov", "DarknessGating", "FireBarrels",
+                 "FireBarrels", "FoodPoisoning", "FoodPoisoning",
+                 "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
+                 "FoodPoisoning", "ItemDespawn", "ItemDespawn",
+                 "LightPriority", "WeaponWeight"]);
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     expect(at("Alcohol")).toMatch(/HeadlessRunner\.ts:\d+$/);
     expect(at("WeaponWeight")).toMatch(/Rules\.ts:\d+$/);

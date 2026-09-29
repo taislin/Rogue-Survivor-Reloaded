@@ -1378,7 +1378,7 @@ Stages 4 and 5 have not started.
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
 | **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles, 90 of 95 items and all 123 item factories done.** The 5 backpacks (a new mechanic) and ~420 unused `GameImages` constants are the only content left; nothing *calls* the new factories yet, which is placement and belongs to Stage 4/5 |
-| **4** | 37 gated features | **8 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (part 2a; the light-source scan in 2b is not done), `DarknessGating`. 29 remain |
+| **4** | 37 gated features | **9 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (part 2a; the light-source scan in 2b is not done), `DarknessGating`, `LightPriority`. 28 remain |
 | **5** | content, audio, credits | **not started** |
 
 Two things a later session should not have to re-derive:
@@ -2500,6 +2500,44 @@ plan for rather than discover:
 >
 > Six mutations, each caught, including the tempting "fix" that widens the 3x3
 > scan into a radius.
+
+> ### `LightPriority` — done, and the last of the two Stage 2 holdouts
+>
+> The AI keeps its torch and drops the cell phone. Still Alive, Release 6-1, and
+> the C#'s comment is the whole justification: "lights are now more important than
+> cellphones now that darkness is revamped".
+>
+> The fix is a reordering of the left-hand equipment blocks — vanilla is
+> **cellphone → light → spray**, the fork is **light → cellphone → spray**. With
+> one left hand that ordering is the entire feature, and the second half of it is
+> the `eqLight == null` guard on the phone block, which is not "prefer light" but
+> "prefer light enough to throw the phone away".
+>
+> This is the second of the two features parked at Stage 2, and its dependency on
+> `DarknessFov` was real for a concrete reason: before the rework, an NPC that
+> preferred its phone was only doing something odd. With the player's floor at 0,
+> it is an NPC walking into a basement holding a cell phone it will never switch
+> on.
+>
+> **The two orders are almost entirely behaviourally indistinguishable, and three
+> attempts to write a behavioural test for the order failed before the shape of the
+> problem became clear.** Only one item fits in the left hand, and whenever a light
+> *is* equipped the phone step can only return "unequip phone" or nothing — there
+> is no phone equipped to replace it with — so both orders produce the same action.
+> The orders diverge only when no light is equipped *and* the light step can
+> produce an action, which needs `getBestLight` to select a particular light, and
+> that turns out to depend on taboo state and battery levels deep in the AI.
+>
+> So **the flag and the guard are asserted structurally**, and the plan says so
+> rather than implying behavioural coverage that does not exist. All three
+> mutations (gate removed, order flipped, guard dropped) pass the behavioural
+> tests and are caught by a source assertion; the user-visible consequence —
+> the phone being dropped — *is* covered behaviourally.
+>
+> One implementation serves both rulesets: the steps are small closures and the
+> order is a ternary, rather than two copies of the block. That matters beyond
+> tidiness — adding a third left-hand item would otherwise have to be added twice,
+> and the two rulesets would drift apart silently. A test asserts the shape.
 
 > ### `ArmorResist` — half done, and the half is not the one the table implies
 >
