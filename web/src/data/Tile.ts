@@ -6,6 +6,25 @@ export const enum TileFlags {
   IS_INSIDE = 1 << 0,
   IS_IN_VIEW = 1 << 1,
   IS_VISITED = 1 << 2,
+  /**
+   * A tile fire is burning here. Still Alive, Release 5-2.
+   *
+   * A flag rather than a set of decorations because the spread loop asks the
+   * question hundreds of times per turn and decorates as a side effect of the
+   * answer being yes. `EFFECT_ONFIRE` is added and removed alongside the flag, so
+   * the two must always be changed together -- `setTileOnFire` and
+   * `extinguishOnFireTile` are the only places that do.
+   */
+  IS_ON_FIRE = 1 << 3,
+  /**
+   * This tile has already burnt, so there is no flammable material left.
+   * Still Alive, Release 6-1.
+   *
+   * Separate from `IS_ON_FIRE` and it matters: a burnt tile must not re-ignite by
+   * spreading, or a single fire would creep across a whole building one layer at
+   * a time and never stop.
+   */
+  IS_SCORCHED = 1 << 4,
 }
 
 export class Tile {
@@ -32,6 +51,36 @@ export class Tile {
   set isInside(value: boolean) {
     if (value) this.flags |= TileFlags.IS_INSIDE;
     else this.flags &= ~TileFlags.IS_INSIDE;
+  }
+
+  get isOnFire(): boolean {
+    return (this.flags & TileFlags.IS_ON_FIRE) !== 0;
+  }
+
+  set isOnFire(value: boolean) {
+    if (value) this.flags |= TileFlags.IS_ON_FIRE;
+    else this.flags &= ~TileFlags.IS_ON_FIRE;
+  }
+
+  get isScorched(): boolean {
+    return (this.flags & TileFlags.IS_SCORCHED) !== 0;
+  }
+
+  set isScorched(value: boolean) {
+    if (value) this.flags |= TileFlags.IS_SCORCHED;
+    else this.flags &= ~TileFlags.IS_SCORCHED;
+  }
+
+  /**
+   * Burn this tile out: no flammable material left.
+   *
+   * Kept as a method rather than a bare `isScorched = true` so the flag and its
+   * meaning stay together, and because the scorch decoration the C# adds is not
+   * ported -- the C#'s `ScorchBurntTile` adds `DECO_SCORCHED_FLOOR`, whose
+   * `GameImages` constant is one of the ~420 still deferred.
+   */
+  scorchTile(): void {
+    this.isScorched = true;
   }
 
   get isInView(): boolean {

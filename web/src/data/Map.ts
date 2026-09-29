@@ -606,6 +606,42 @@ export class Map {
     return null;
   }
 
+  /**
+   * Is there a fire on this tile? Still Alive, Release 6-1.
+   *
+   * A property of the *tile*, not a scan of decorations, which is why the flag
+   * exists at all: the spread loop asks this of every tile on the map every turn.
+   */
+  isAnyTileFireThere(pos: Point): boolean {
+    return this.getTileAt(pos.x, pos.y)?.isOnFire ?? false;
+  }
+
+  /**
+   * Can a fire spread to this tile? Still Alive, Release 5-2, with Release 6-1.
+   *
+   * Three ways to be in inflammable, and all three are load-bearing:
+   *
+   * - not a flammable model (5 tiles out of 143, so this is the common case)
+   * - already burnt, when `checkForScorching` -- nothing left to burn
+   * - already alight, when `checkForScorching` -- the caller is asking "could this
+   *   *catch*, not "is this lit"
+   *
+   * The parameter is the C#'s, and it is a parameter because two callers want
+   * different things: the spread loop passes `true`, and a flame weapon's splash
+   * passes `false` so it can deliberately land on an already-burnt tile.
+   */
+  isInflammableTile(pos: Point, checkForScorching: boolean): boolean {
+    const tile = this.getTileAt(pos.x, pos.y);
+    if (tile === null || !tile.model.isFlammable) return true;
+    if (checkForScorching && (tile.isScorched || tile.isOnFire)) return true;
+    return false;
+  }
+
+  /** Is this a water tile? Still Alive, Release 6-1 -- water does not burn. */
+  isAnyTileWaterThere(pos: Point): boolean {
+    return this.getTileAt(pos.x, pos.y)?.model.isWater ?? false;
+  }
+
   getItemsAt(pos: Point): Inventory | null {
     return this.groundItemsMap.get(Map.key(pos.x, pos.y)) ?? null;
   }

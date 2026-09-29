@@ -1378,7 +1378,7 @@ Stages 4 and 5 have not started.
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
 | **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles, 90 of 95 items and all 123 item factories done.** The 5 backpacks (a new mechanic) and ~420 unused `GameImages` constants are the only content left; nothing *calls* the new factories yet, which is placement and belongs to Stage 4/5 |
-| **4** | 37 gated features | **11 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (part 2a; the light-source scan in 2b is not done), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`. 26 remain |
+| **4** | 37 gated features | **12 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (part 2a; the light-source scan in 2b is not done), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`, `TileFires`. 25 remain |
 | **5** | content, audio, credits | **not started** |
 
 Two things a later session should not have to re-derive:
@@ -2645,6 +2645,84 @@ plan for rather than discover:
 > though its only caller already checks — a method that is safe only because of
 > its caller is a method with a precondition nobody wrote down, and it is the
 > method a test (and eventually an AI action) reaches directly.
+
+> ### `TileFires` — done, and the feature that unblocks the most
+>
+> Fire that lives on the floor rather than on an actor. Still Alive, Release 5-2.
+> The highest-value feature in the backlog: it unblocks `DarknessFov` 2b's
+> light-source scan (which needs `isAnyTileFireThere`), the fire half of
+> `ArmorResist` (which needs a `fireCausedIt` damage path), and `FireExtinguishers`
+> — and it is what makes `Cooking` reachable at all, since a barrel with nothing
+> to light it has always been inert.
+>
+> **Only five tiles in the whole 143-model set are flammable** — planted floor,
+> the two carpets, wood plank walls, red curtains — and that is the design, not a
+> shortcut. Fire that spread over bare concrete would consume every building on
+> the map; instead a fire needs *stuff* to burn, so a warehouse is a safe place to
+> stand. A test counts all 143 models and asserts exactly five, because a sixth
+> would silently change how every fire on the map plays.
+>
+> **The one bug here is a transcription error with a long fuse, and it is the
+> third double-negative in the branch.** The C# reads
+> `if (!IsInflammableTile(adj, true)) { ...spread... }` — and that inner block *is*
+> the work. The port's equivalent is a skip-guard, so the obvious transcription
+> `if (!isInflammableTile(adj, true)) continue;` is **inverted**: it makes fire
+> spread onto precisely the tiles that cannot burn. It compiled, it threw nothing,
+> and the test suite's one spread assertion passed — because the fire had spread
+> onto *some* tiles. It took instrumenting the loop to find. Same trap as
+> `ItemDespawn`'s ammo exemption and the `isRecreational` carve-out; the
+> mitigation now is the same, a mutation that re-inverts the guard and must fail.
+>
+> The order of the three per-tile steps is the design and is not interchangeable:
+>
+> 1. **Spread**, one 5% roll per untested flammable neighbour. A tile adjacent to
+>    two fires gets a single roll, tracked in `alreadyTested`.
+> 2. **Burn out**, at a weather-derived chance *halved* outdoors and *quartered*
+>    indoors.
+> 3. **Burn whoever is standing there** — but only if the fire did not *just*
+>    arrive, or a tile that caught this turn would be damaged twice.
+>
+> The C#'s comment on the divisor says indoor fires "aren't affected by weather",
+> which is not what the code does: dividing by 4 rather than 2 makes them roughly
+> **twice as long-lived** in the same weather. Preserved as-is with the
+> discrepancy written down rather than quietly "corrected".
+>
+> **Walls are never set alight**, only scorched, and only by a flame weapon or an
+> explosion (Release 7-6). That is the only thing keeping a building a refuge:
+> without it fire walks through a wall from outside to inside, and with it a
+> burning wall would be a second way through. The scorch flag is also the fire's
+> memory — a burnt tile cannot be re-ignited, or one match consumes a building
+> forever.
+>
+> **Three C# arms are not ported**, each because a prerequisite does not exist:
+>
+> - **An actor *catching* fire** (`CATCH_ONFIRE_FROM_TILE_CHANCE`, 25%) needs
+>   `Actor.isOnFire` and the whole `SetActorOnFire` / per-actor-fire subsystem.
+>   That is Release 5-7 and it is its own feature, not part of "tile fires".
+>   Standing in fire still hurts every turn; the actor does not *become* fire. A
+>   test asserts `Actor` has no on-fire state at all, so the gap is visible.
+> - **Crop loss** needs `FLOOR_PLANTED`, from the alpha10-era farming system that
+>   was never ported — the same gap blocking `ResourcesAvailability`'s fruit
+>   interval. The tile is marked flammable so fire spreads there correctly; only
+>   the harvest loss is missing.
+> - **Fuel-pump explosions** need `Feature.FuelStation`.
+>
+> No renderer change was needed: the port already draws tile decorations, and
+> `EFFECT_ONFIRE` is one.
+>
+> **Two of the tests were wrong in instructive ways.** "Is any tile burning
+> *right now*" cannot show that fire spread, because a carpet fire burns out in a
+> few turns — the permanent evidence is the scorch count. And a single fire's
+> lifetime is a geometric distribution on a 17%-or-40% per-turn roll, so the
+> rain-vs-clear comparison is averaged over 25 fires: the one-sample version got
+> `rain 10 vs clear 6` and "failed" in the wrong direction on nothing but the
+> roller's sequence. **Probabilistic mechanics need trial counts, and this branch
+> now has three such tests.**
+>
+> Seven mutations, each caught: the spread guard re-inverted, `isScorched` dropped
+> from the flammability test (fire never stops spreading), the indoor divisor
+> removed, the weather branch removed, walls allowed to light, a sixth flammable
+> tile, and the feature gate removed.
 
 > ### `ArmorResist` — half done, and the half is not the one the table implies
 >

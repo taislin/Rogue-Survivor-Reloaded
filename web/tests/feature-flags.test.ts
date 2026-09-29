@@ -167,7 +167,7 @@ describe("Feature registry is wired", () => {
                  "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
                  "FoodPoisoning", "FoodPoisoning", "ItemDespawn",
                  "ItemDespawn", "LightPriority", "SiphonFuel", "SiphonFuel",
-                 "WeaponWeight"]);
+                 "TileFires", "WeaponWeight"]);
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     // `Alcohol`'s *first* reader is now in `RogueGame` (the per-turn decay), and
     // the harness line is one of six rather than the only one.
@@ -203,6 +203,13 @@ describe("Feature registry is wired", () => {
     expect(alc.filter((s) => /Rules\.ts/.test(s.at))).toHaveLength(2);
     expect(alc.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(4);
     expect(alc.filter((s) => /HeadlessRunner\.ts/.test(s.at))).toHaveLength(1);
+
+    // TileFires has a single reader, and deliberately so: the spread loop, the
+    // burn damage and the ignite/put-out primitives are one indivisible feature.
+    // Gating `stepTileFires` alone would be enough for CLASSIC (nothing else calls
+    // the primitives), and adding gates to the primitives as well would be three
+    // chances to disagree about whether fire is switched on.
+    expect(sites.filter((s) => s.feature === "TileFires")).toHaveLength(1);
 
     // SiphonFuel has two readers in one file, and the second one is the
     // interesting one: the `use` dispatch and the handler's own guard. The handler

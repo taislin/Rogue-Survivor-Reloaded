@@ -213,8 +213,7 @@ export class GameTiles extends TileModelDB {
     // through 8-2) by scripts/port-tile-models.py, flags copied verbatim.
     // NOT carried across, because the port's TileModel has no such fields and
     // both are tile-fire content with no vanilla equivalent: CanDecay (94
-    // tiles) and IsFlammable (5: FLOOR_PLANTED, FLOOR_RED_CARPET,
-    // FLOOR_BLUE_CARPET, WALL_WOOD_PLANKS, WALL_RED_CURTAINS).
+    // tiles).
     this.setModel(TileID.FLOOR_ARMY, new TileModel(GameImages.TILE_FLOOR_OFFICE, Color.Khaki, true, true));
     this.setModel(TileID.FLOOR_PLANTED, new TileModel(GameImages.TILE_FLOOR_PLANTED, Color.Green, true, true));
     this.setModel(TileID.FLOOR_WHITE_TILE, new TileModel(GameImages.TILE_FLOOR_WHITE_TILE, Color.Cornsilk, true, true));
@@ -369,6 +368,32 @@ export class GameTiles extends TileModelDB {
     this.setModel(TileID.WALL_PILLAR_CONCRETE, new TileModel(GameImages.TILE_WALL_PILLAR_CONCRETE, Color.LightGray, false, false));
     this.setModel(TileID.WALL_MALL, new TileModel(GameImages.TILE_WALL_MALL, Color.BlanchedAlmond, false, false));
     this.setModel(TileID.WALL_RED_CURTAINS, new TileModel(GameImages.TILE_WALL_RED_CURTAINS, DRK_RED, false, false));
+
+    // ── Still Alive: the five flammable tiles. Release 5-2.
+    //
+    // **At the end, after every `setModel` above.** Marking them earlier silently
+    // marked one tile, because the models for four of the five are installed by
+    // the generated table further down and a later `setModel` replaces the object
+    // wholesale -- taking the flag with it. Nothing failed; the count was just 1.
+    //
+    // `isFlammable` is not copied by `scripts/port-tile-models.py`, because the
+    // port's `TileModel` had no such field until now. The generator's fixture
+    // (`still-alive-tiles.json`) records it for all 143 models, so when that table
+    // is regenerated this should hand over to it; until then this is the
+    // authoritative list and the fixture is what says it should match.
+    //
+    // `FLOOR_PLANTED` is included because the C# includes it, even though nothing
+    // in the port can plant anything -- the farming system is alpha10-era and was
+    // never ported. Marking it costs nothing and keeps the list honest.
+    for (const id of [
+      TileID.FLOOR_PLANTED,
+      TileID.FLOOR_RED_CARPET,
+      TileID.FLOOR_BLUE_CARPET,
+      TileID.WALL_WOOD_PLANKS,
+      TileID.WALL_RED_CURTAINS,
+    ] as const) {
+      this.get(id).isFlammable = true;
+    }
   }
 
   private setModel(id: TileID, model: TileModel): void {

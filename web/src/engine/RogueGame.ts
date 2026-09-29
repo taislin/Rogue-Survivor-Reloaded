@@ -120,6 +120,7 @@ import {
 } from "@engine/items/ItemWeapon";
 import { InputTranslator, Keybindings } from "@engine/Keybindings";
 import { LOS, type FOV } from "@engine/LOS";
+import { coordKey } from "@engine/CoordKey";
 import { MessageManager } from "@engine/MessageManager";
 import {
 	Board,
@@ -1357,7 +1358,31 @@ export class RogueGame {
 		return s_KeyBindings;
 	}
 
-	// ── Method stubs (filled in by later slices) ─────────────────────────
+		// ── Still Alive, Release 5-2: tile fire ───────────────────────────────
+	/**
+	 * Damage to anything standing in a burning tile. 1.
+	 *
+	 * Deliberately half of the C#'s `BASE_ISONFIRE_FIRE_DAMAGE` (2): standing in
+	 * fire is worse than being on fire, and the C#'s comment says why -- flame
+	 * weapons deal their own impact damage and the per-turn figure must not
+	 * double-count it.
+	 */
+	private static readonly BASE_TILE_FIRE_DAMAGE = 1;
+	/**
+	 * Percent chance per adjacent flammable tile that a fire spreads.
+	 *
+	 * The C#'s own note: "even tiny increases make fire spread significantly". It
+	 * went 6 -> 5 for that reason. At 5%, with eight neighbours and no memory of
+	 * what has already burnt, a fire eats a carpeted room in a few turns -- which
+	 * is the point, and the reason `isScorched` exists.
+	 */
+	private static readonly TILE_FIRE_SPREAD_CHANCE = 5;
+	/** Rain accelerates a fire's death; clear weather is the slow case. */
+	private static readonly CLEAR_WEATHER_FIRE_EXTINGUISH_CHANCE = 33;
+	private static readonly LIGHT_RAIN_FIRE_EXTINGUISH_CHANCE = 70;
+	private static readonly HEAVY_RAIN_FIRE_EXTINGUISH_CHANCE = 80;
+
+// ── Method stubs (filled in by later slices) ─────────────────────────
 
 	// C# AddMessage — RogueGame.cs:833
 	AddMessage(msg: Message): void {
@@ -4732,6 +4757,13 @@ export class RogueGame {
 			if (hasFeature(this.m_Session.ruleset, Feature.FireBarrels)) {
 				this.BurnFuelOnFires(map);
 			}
+
+			// 7.0b Tile fires spread, burn out, and burn their victims.
+			// Still Alive, Release 5-2. Its own method rather than inlined in the
+			// turn loop because it is the one place in the engine that walks every
+			// tile on the map; see the method for why the order of its three steps
+			// is not interchangeable.
+			await this.stepTileFires(map);
 
 			// 7. Check fires.
 			// 7.1 Rain has a chance to put out fires.
@@ -21089,6 +21121,182 @@ export class RogueGame {
 	/// Put the object on fire : firestate = onfire, jump -1.
 	/// </summary>
 	/// <param name="mapObj"></param>
+	/**
+	 * Set a tile alight. Still Alive, Release 5-2, reshaped in 6-1 and 7-6.
+	 *
+	 * The C#'s comment on `wasFlameWeapon` is the important part: **a spreading
+	 * fire does not scorch or ignite walls, only flame weapons and explosions
+	 * do.** Without that, fire walks straight through a wall from outside to inside
+	 * and the building is no longer a refuge. So `wasFlameWeapon` is not a detail
+	 * -- it is the only thing keeping walls between a fire and the people behind
+	 * them.
+	 *
+	 * The `EFFECT_ONFIRE` decoration is added here and removed only in
+	 * `extinguishOnFireTile`, so the flag and the decoration cannot drift apart.
+	 */
+	private setTileOnFire(map: Map, x: number, y: number, wasFlameWeapon: boolean): void {
+		const tile = map.getTileAt(x, y);
+		if (tile === null || tile.isOnFire) return;
+		// Water does not burn. Still Alive, Release 6-1.
+		if (map.isAnyTileWaterThere(new Point(x, y))) return;
+
+		let scorched = false;
+		if (tile.model.isWalkable) {
+			tile.isOnFire = true;
+			tile.addDecoration(GameImages.EFFECT_ONFIRE);
+			scorched = true;
+		}
+		if (wasFlameWeapon || scorched) this.scorchBurntTile(map, x, y);
+	}
+
+	/**
+	 * Mark a tile as burnt, so nothing can spread onto it again.
+	 * Still Alive, Release 5-2.
+	 *
+	 * This is the fire's memory. Without it the spread loop is happy to re-ignite
+	 * a tile it already burnt, and a single match consumes an entire building
+	 * forever rather than burning out.
+	 */
+	private scorchBurntTile(map: Map, x: number, y: number): void {
+		map.getTileAt(x, y)?.scorchTile();
+	}
+
+	/** Put a burning tile out. Still Alive, Release 6-1. */
+	private extinguishOnFireTile(tile: Tile): void {
+		if (tile === null) return;
+		tile.isOnFire = false;
+		tile.removeDecoration(GameImages.EFFECT_ONFIRE);
+	}
+
+	/**
+	 * Hurt whatever is standing in a burning tile. Still Alive, Release 5-2.
+	 *
+	 * Distinct from "the actor is on fire", which is a different subsystem
+	 * (`Actor.isOnFire`) that the port does not have yet -- see the note on the
+	 * caller. Skeletons are immune, which is the C#'s `IsSkeletonBranch` test.
+	 *
+	 * **The crop arm is not ported.** It converts `FLOOR_PLANTED` back to
+	 * `FLOOR_GRASS`, and the farming system that plants anything is alpha10-era
+	 * and was never ported -- the same gap that blocks `ResourcesAvailability`'s
+	 * fruit interval. `FLOOR_PLANTED` is marked flammable, so the fire spreads
+	 * there correctly; only the harvest loss is missing.
+	 */
+	private async applyBurnDamageFromTileFire(map: Map, point: Point): Promise<void> {
+		const actor = map.getActorAtPoint(point);
+		if (actor !== null && !GameActors.isSkeletonBranch(actor.model) && actor.hitPoints > 0) {
+			await this.InflictDamage(actor, RogueGame.BASE_TILE_FIRE_DAMAGE);
+			if (actor.hitPoints <= 0) {
+				if (this.IsVisibleToPlayer(actor)) {
+					this.AddMessage(
+						new Message(
+							`${actor.theName} died in flames!`,
+							this.m_Session.worldTime.turnCounter,
+							Color.Orange,
+						),
+					);
+				}
+				this.KillActor(null, actor, "died in flames", true);
+			}
+		}
+
+		// Corpses burn too, and a scorched map is full of them.
+		for (const corpse of map.getCorpsesAt(point) ?? []) {
+			this.InflictDamageToCorpse(corpse, RogueGame.BASE_TILE_FIRE_DAMAGE);
+		}
+	}
+
+	/**
+	 * The per-turn tile-fire pass: spread, then burn out, then burn the victim.
+	 *
+	 * Still Alive, Release 5-2 (`RogueGame.cs:6843`). The order within one tile is
+	 * the whole design and is not interchangeable:
+	 *
+	 * 1. **Spread** to adjacent flammable, unburnt, unlit tiles, each on its own
+	 *    5% roll. A tile is only ever *tested* once per turn, tracked in
+	 *    `alreadyTested`, so a tile adjacent to two fires is offered a single roll
+	 *    rather than two.
+	 * 2. **Burn out**, at a chance derived from the weather -- but *halved* outside
+	 *    and *quartered* inside, and the C#'s comment is that indoor fires "aren't
+	 *    affected by weather", which is not quite what the divisor does: it makes
+	 *    them roughly twice as long-lived as an outdoor fire in the same weather.
+	 * 3. **Burn whatever is standing there** -- but only if the fire did *not* just
+	 *    spread to this tile. A fire that arrived this turn has already burned
+	 *    whoever caught it (step 1), so burning again would double-damage.
+	 *
+	 * **Not ported: the "actor catches fire" arm.** The C# rolls
+	 * `CATCH_ONFIRE_FROM_TILE_CHANCE` (25%) to set the *actor* alight, which needs
+	 * `Actor.isOnFire` and the whole `SetActorOnFire` / `ApplyBurnDamageToOnFireActor`
+	 * subsystem -- a per-actor fire with its own damage value and zombie-sprite
+	 * handling. None of that exists in the port; it is Release 5-7 work and it is
+	 * its own feature, not part of "tile fires". Standing in fire still hurts every
+	 * turn; the actor does not *become* fire.
+	 */
+	private async stepTileFires(map: Map): Promise<void> {
+		if (!hasFeature(this.m_Session.ruleset, Feature.TileFires)) return;
+
+		// Weather sets the base rate; indoors divides it down again.
+		let baseExtinguishChance = RogueGame.CLEAR_WEATHER_FIRE_EXTINGUISH_CHANCE;
+		if (this.m_Rules.isWeatherRain(this.m_Session.weather)) {
+			baseExtinguishChance =
+				this.m_Session.weather === Weather.HEAVY_RAIN
+					? RogueGame.HEAVY_RAIN_FIRE_EXTINGUISH_CHANCE
+					: RogueGame.LIGHT_RAIN_FIRE_EXTINGUISH_CHANCE;
+		}
+
+		// Tiles that have already had their spread roll, so a tile between two
+		// fires is offered one roll and not two.
+		const alreadyTested = new Set<number>();
+		// Tiles that caught fire this turn, so they are neither burnt out nor
+		// burnt a second time.
+		const spreadTo = new Set<number>();
+
+		for (let x = 0; x < map.width; x++) {
+			for (let y = 0; y < map.height; y++) {
+				const here = new Point(x, y);
+				if (!map.isAnyTileFireThere(here)) continue;
+				alreadyTested.add(coordKey(x, y));
+
+				// 1. spread
+				for (const d of Direction.COMPASS) {
+					const adj = d.applyTo(here);
+					if (!map.isInBounds(adj.x, adj.y)) continue;
+					// `isInflammableTile` is a *double* negative and the C# leans on
+					// that: its `if (!IsInflammableTile(...)) { spread }` block is
+					// the work itself, and the port's equivalent is a skip-guard on
+					// the un-negated call. Negating it here -- the obvious
+					// transcription -- inverts the whole mechanic and makes fire
+					// spread onto precisely the tiles that cannot burn. Same trap as
+					// `ItemDespawn`'s ammo exemption, and the tests here caught it.
+					if (map.isInflammableTile(adj, true)) continue;
+					const key = coordKey(adj.x, adj.y);
+					if (alreadyTested.has(key)) continue;
+					alreadyTested.add(key);
+					if (!this.m_Rules.rollChance(RogueGame.TILE_FIRE_SPREAD_CHANCE)) continue;
+					spreadTo.add(key);
+					// false: a spreading fire must not scorch walls.
+					this.setTileOnFire(map, adj.x, adj.y, false);
+					await this.applyBurnDamageFromTileFire(map, adj);
+				}
+
+				// 2. burn out
+				if (spreadTo.has(coordKey(x, y))) continue;
+				const tile = map.getTileAt(x, y)!;
+				const divisor = tile.isInside ? 4 : 2;
+				const extinguishChance = Math.max(
+					1,
+					Math.round(baseExtinguishChance / divisor),
+				);
+				if (this.m_Rules.rollChance(extinguishChance)) {
+					this.extinguishOnFireTile(tile);
+					continue;
+				}
+
+				// 3. burn the victim
+				await this.applyBurnDamageFromTileFire(map, here);
+			}
+		}
+	}
+
 	/**
 	 * Siphon fuel out of an adjacent wrecked car.
 	 *
