@@ -1763,8 +1763,30 @@ Two things still outstanding here, and they are the hand-edited part:
 
 | Change | Where | Count |
 |---|---|---|
-| `GameImages` constants for the 711 new sprites | `GameImages.ts` | ~+711, and the preload manifest follows automatically (`allImageIds()` enumerates them reflectively) |
+| `GameImages` constants for the 711 new sprites | `GameImages.ts` | ~+711, **deliberately not done yet** — see below |
 | 12 hand-written `{id, img}` maps — the sprite id is **not** in the JSON, it lives in TypeScript | `GameItems.ts` | ~+180 |
+
+**The 711 constants are deferred on purpose, and the compiler is what makes that
+safe.** §5.6d elsewhere says a sprite with no constant is "never preloaded and
+never drawn" and calls skipping it the cheapest option; checking whether that
+was actually true turned up something better. Every sprite reference in the
+codebase goes through a `GameImages` constant — the 12 hand-written maps are
+written `img: GameImages.ITEM_BANDAGES`, not with string literals — and a
+grep for raw `"Tiles/..."`-style paths across `src/` finds 363 in
+`GameImages.ts` itself (the constant values) and **two in comments**. So a
+sprite with no constant is not merely undrawn, it is *unreferenceable*: naming
+`GameImages.SOME_NEW_SPRITE` is a compile error. Nothing can silently depend on
+a constant that does not exist yet, and the constants belong with the code that
+draws them rather than 711 declarations ahead of it.
+
+**The payload estimate in this section was wrong by roughly 60x.** It said the
+asset payload goes 30 MB → ~50 MB. The 711 new sprites total **324 KB** — they
+are 32×32 pixel art, and `classic` went 397 files / 98 KB to 1 108 files /
+422 KB. (`du` reports 4.5 MB, but that is 4 KB block padding on 1 108 tiny
+files, not payload.) The real cost of adding the constants is not bytes, it is
+**711 extra requests in the preload manifest** — which classic players would pay
+on every cold load for sprites no classic code path draws. That is the actual
+argument for deferring them, and it is an argument about request count, not size.
 
 **Content ids and maps** — the hand-edited core, and where the real cost is:
 
@@ -1818,21 +1840,23 @@ worse case.
 | `save-graph-coverage.test.ts:52, 55, 64, 70, 106-109` | ledger disjointness, subclass-before-base, no pending classes | unaffected — it constrains the *format*, not content |
 | `save-graph-roundtrip.test.ts:195-197, 609-611` | field-by-field isomorphism; constructors identical | unaffected, and stronger in a superset: nothing is remapped |
 
-**Payload and preload.** The image set goes 397 → ~1 108 files, the
-preload manifest 395 → ~1 100 ids (`allImageIds()` at `GameImages.ts:426-439`
-enumerates the constants reflectively, so the manifest follows automatically),
-and the asset payload 30 MB → ~50 MB. Two consequences to plan for rather than
-discover:
+**Payload and preload.** The image set is already 1 108 files; the preload
+manifest is **still 395 ids** (`allImageIds()` at `GameImages.ts` enumerates the
+constants reflectively), because the 711 new constants are deferred — so the
+manifest grows only as the constants are added, not now. The asset payload grew
+by 324 KB, not the ~20 MB this section originally estimated. One consequence to
+plan for rather than discover:
 
 - **`public/sw.js`'s committed `CACHE_VERSION` must be bumped.** The `/assets/*`
   handler is cache-first, so a deploy that adds 711 sprites without a bump keeps
   serving the old set to anyone who has played, and the new ids 404 from cache
   forever. `npm run build:pages` runs `scripts/stamp-cache-version.mjs`; `npm run
   build` and `npm run build:release` do not.
-- **A sprite on disk with no `GameImages` constant is never preloaded and never
-  drawn** — exactly as `classic/blank_texture.webp` is today. That is the
-  cheapest place to save effort and the safest: add the file, skip the constant,
-  and nothing breaks.
+- **A sprite on disk with no `GameImages` constant is unreferenceable, not just
+  undrawn** — as `classic/blank_texture.webp` and `Actors/CHAR_guard` are today.
+  Every reference goes through a constant, so this is the cheapest place to save
+  effort *and* a safe one: the type system is the check. 713 files are currently
+  in this state by design, not by oversight.
 
 #### 5.6e Stage 4 — mechanics
 
