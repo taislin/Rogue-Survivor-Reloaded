@@ -52,6 +52,16 @@ class IdleProbeUI extends NullRogueUI {
   mousePosition: Point = new Point(0, 0);
   mouseButtons: MouseButton | null = null;
   private pendingKey: GameKeyEvent | null = null;
+  /**
+   * Text handed to the two string draw calls, in order.
+   *
+   * Recorded because "the message log is clean" and "the message log is not on
+   * screen" are different claims, and only the second one is the bug. The log is
+   * read by `MessageManager.draw`, so anything still in it is painted on the next
+   * `RedrawPlayScreen` -- which is how a finished simulation ends up still
+   * showing its own progress counter.
+   */
+  readonly drawnText: string[] = [];
 
   postKey(key: string): void {
     this.pendingKey = { key, keyCode: key.charCodeAt(0), shift: false, ctrl: false, alt: false };
@@ -87,7 +97,7 @@ class IdleProbeUI extends NullRogueUI {
   UI_DrawRect(): void {}
   UI_FillRect(): void {}
   UI_DrawString(): void {}
-  UI_DrawStringBold(): void {}
+  UI_DrawStringBold(_c: Color, t: string): void { ui.drawnText.push(t); }
   UI_DrawStringLarge(): void {}
   UI_DrawStringBoldLarge(): void {}
   UI_DrawPopup(): void {}
@@ -463,5 +473,124 @@ describe("a border-stair catch-up must not take a keypress", () => {
     // And it must be handed back, or the player is un-notifiable for the rest of
     // the session — a bug that would be far harder to notice than this one.
     expect(internals.m_SimulatingInIdle, "the flag was left set after the catch-up").toBe(false);
+    // The progress text has to go too. It is the other half of "it says processing
+    // even when done": the loop paints "Simulating district, please wait N/M" as it
+    // goes, and with nothing repainting afterwards the last of those frames is what
+    // the player is left looking at. Asserted on what a redraw *draws*, not on the
+    // log's contents, because the log is not the screen.
+    ui.drawnText.length = 0;
+    game.RedrawPlayScreen();
+    const stale = ui.drawnText.filter((t) => /Simulating district|keep ESC|Turns per second/.test(t));
+    expect(
+      stale,
+      `the finished simulation is still painting its own progress: ${JSON.stringify(stale.slice(0, 3))}`,
+    ).toEqual([]);
   }, SIM_BUDGET_MS);
+});
+
+/**
+ * A district switch must leave the player *looking at* the new district.
+ *
+ * The sibling test above covers the keypress the catch-up must not steal. This
+ * covers the two things that were left on screen afterwards, both of which the
+ * player sees as "it did not work":
+ *
+ *  1. **The progress text stayed.** The catch-up clears the log and paints
+ *     "Simulating district, please wait N/M..." as it goes, and C# removes only
+ *     the trailing "<keep ESC>" line afterwards. Nothing repainted after that, so
+ *     the last progress frame was still on the canvas -- reading as a simulation
+ *     that had stalled rather than one that had finished.
+ *  2. **The map came up black.** `BeforePlayerEnterDistrict` calls `clearView` on
+ *     both the map being left and the one being entered, deliberately, so the
+ *     simulation shows the player nothing. Nothing rebuilt the destination's
+ *     `isInView` afterwards. `setViewAndMarkVisited` is the only thing that sets
+ *     it -- its own comment calls it "what makes actors, items and corpses
+ *     drawable at all" -- and it is reached only from `UpdatePlayerFOV`. So the
+ *     player arrived in a district with nothing on it until a later keypress
+ *     happened to run an FOV update, and needed a second one to see anything.
+ *
+ * Driven through `AfterPlayerEnterDistrict`, which is the hook the move already
+ * calls and the first point at which the player is genuinely *on* the new map.
+ */
+describe("a district switch must leave the player looking at the new district", () => {
+  /** How many tiles of the current map are marked visible. */
+  function visibleTiles(): number {
+    const map = game.session.currentMap!;
+    let n = 0;
+    for (let x = 0; x < map.width; x++) {
+      for (let y = 0; y < map.height; y++) {
+        if (map.getTileAt(x, y)?.isInView === true) n++;
+      }
+    }
+    return n;
+  }
+
+  /** The view torn down exactly as the catch-up tears it down. */
+  function clearedView(): void {
+    game.session.currentMap!.clearView();
+  }
+
+  it("rebuilds the view the catch-up tore down", () => {
+    clearedView();
+    // Guards the fixture: with zero visible tiles before the call, any non-zero
+    // count after can only have come from the FOV rebuild.
+    expect(visibleTiles(), "the fixture did not actually clear the view").toBe(0);
+
+    game.AfterPlayerEnterDistrict();
+
+    expect(visibleTiles(), "the district switch left the map with no visible tiles").toBeGreaterThan(0);
+  });
+
+  it("leaves the visited set alone, so the district is not forgotten", () => {
+    // `clearView` only drops `isInView` and keeps `isVisited`, which is what makes
+    // this safe. If a future change to the catch-up reached for `setAllAsUnvisited`
+    // instead, the player would arrive in a district they had already explored and
+    // it would render as unmapped -- a much worse bug than a black screen, and one
+    // that only shows up after exploring.
+    clearedView();
+    const map = game.session.currentMap!;
+    const at = game.player!.location.position;
+    const tile = map.getTileAt(at.x, at.y);
+    expect(tile, "the player's own tile does not exist").not.toBeNull();
+    tile!.isVisited = true;
+
+    game.AfterPlayerEnterDistrict();
+
+    expect(
+      map.getTileAt(at.x, at.y)!.isVisited,
+      "the district switch forgot a tile the player had already explored",
+    ).toBe(true);
+  });
+
+  it("redraws, so the canvas is not left on the simulation's last frame", () => {
+    // Ordering, and the reason this lives in `AfterPlayerEnterDistrict` rather
+    // than at the end of the catch-up: the catch-up runs *before* the move, so a
+    // redraw there would paint the map the player is leaving.
+    const internal = game as unknown as { RedrawPlayScreen(): void };
+    let redraws = 0;
+    const real = internal.RedrawPlayScreen.bind(game);
+    internal.RedrawPlayScreen = () => {
+      redraws++;
+      real();
+    };
+    try {
+      game.AfterPlayerEnterDistrict();
+    } finally {
+      internal.RedrawPlayScreen = real;
+    }
+    expect(redraws, "the district switch never repainted the screen").toBeGreaterThan(0);
+  });
+
+  it("still restarts the sim thread, which is what it was for", () => {
+    // The original body, guarded. The rebuild was added to a method that already
+    // did something, and a fix that quietly stopped starting background
+    // simulation would be invisible in a short test and very visible in a long game.
+    const original = RogueGame.options.simulateDistricts;
+    RogueGame.options.simulateDistricts = SimRatio.FULL;
+    try {
+      expect(() => game.AfterPlayerEnterDistrict()).not.toThrow();
+    } finally {
+      RogueGame.options.simulateDistricts = original;
+    }
+  });
 });

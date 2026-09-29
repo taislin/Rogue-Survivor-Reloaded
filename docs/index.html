@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Rogue Survivor: Reloaded, a browser port of a brutal zombie survival roguelike</title>
+  <title>Rogue Survivor: Reloaded, a port of a brutal zombie survival roguelike</title>
   <meta name="description"
     content="Rogue Survivor Reloaded is a browser-playable TypeScript port of Rogue Survivor by Jacques Ruiz (roguedjack). A turn-based, real-time survival roguelike: scavenge, build a shelter, survive the nights.">
   <link rel="icon" href="assets/img/icon-192.png">
@@ -27,10 +27,10 @@
       </a>
       <nav class="site-nav" aria-label="Main">
         <a href="index.html" aria-current="page">Home</a>
+        <a href="game/index.html">Play</a>
         <a href="controls.html">Controls</a>
         <a href="guide.html">Guide</a>
         <a href="info.html">About</a>
-        <a href="game/index.html">Play</a>
         <a href="https://github.com/taislin/Rogue-Survivor-Reloaded">GitHub</a>
       </nav>
     </div>
@@ -43,31 +43,45 @@
       <div class="wrap hero__grid">
         <div>
           <span class="hero__title-accent">Rogue Survivor: Reloaded</span>
-          <h1>It is midnight. Something in your bedroom wants your brain.</h1>
-          <p class="lede">You kicked and punched until it stopped moving. Then another came through the window. And
+          <h1>It's midnight. Something in your bedroom wants your brain.</h1>
+          <p class="lede">You kicked and punched until it stopped moving. Then another came through the window, and
             another through the door. <em>Rogue Survivor</em> is a turn-based, real-time survival roguelike set in a
-            city that keeps flooding with the dead, and it is now a static web build you can play in a browser.</p>
+            city that keeps flooding with the dead.</p>
 
           <div class="btn-row" style="margin-top:1.5rem">
+            <a class="btn btn--primary" href="https://taislin.github.io/Rogue-Survivor-Reloaded/game/index.html">Play
+              in Browser</a>
             <a class="btn btn--primary"
               href="https://github.com/taislin/Rogue-Survivor-Reloaded/releases/latest">Download</a>
-            <a class="btn btn--primary" href="https://github.com/taislin/Rogue-Survivor-Reloaded">Source on GitHub</a>
+            <a class="btn" href="https://github.com/taislin/Rogue-Survivor-Reloaded">Source Code</a>
             <a class="btn" href="controls.html">Controls</a>
             <a class="btn" href="guide.html">Guide</a>
           </div>
 
           <ul class="hero__meta">
-            <li>Browser &middot; Canvas 2D</li>
-            <li>Desktop &middot; Neutralino</li>
+            <li>Browser or Desktop</li>
+            <li>Windows, Linux and MacOS</li>
             <li>TypeScript</li>
-            <li>GPLv3</li>
+            <li>Open-Source (GPLv3)</li>
           </ul>
         </div>
         <div class="hero__visual">
-          <figure class="shot" style="margin:0;">
-            <img class="shot__img" src="assets/img/screens/screen2.webp" width="1562" height="867"
-              alt="Gameplay screenshot of Rogue Survivor Reloaded.">
-          </figure>
+          <div class="shots">
+            <figure class="shot">
+              <a class="shot__zoom" href="#shot-zoom" aria-label="Expand the zoomed-in screenshot.">
+                <img class="shot__img" src="assets/img/screens/screen2.webp" width="1562" height="867"
+                  alt="Gameplay screenshot of Rogue Survivor Reloaded, zoomed in, with the stats of an undead shambler open on hover.">
+              </a>
+              <figcaption class="shot__cap">The Reloaded version, zoomed in.</figcaption>
+            </figure>
+            <figure class="shot">
+              <a class="shot__zoom" href="#shot-deon" aria-label="Expand the Deonapocalypse sprite screenshot.">
+                <img class="shot__img" src="assets/img/screens/screen_deon.webp" width="1562" height="867"
+                  alt="The same game rendered with the Deonapocalypse sprite style.">
+              </a>
+              <figcaption class="shot__cap">The game with Deonapocalypse sprites enabled.</figcaption>
+            </figure>
+          </div>
         </div>
       </div>
     </section>
@@ -77,28 +91,50 @@
       <div class="wrap">
         <p class="eyebrow">Port &amp; Comparison</p>
         <h2>From C# WinForms to TypeScript</h2>
-        <p class="lede">Rogue Survivor Reloaded is a faithful TypeScript and HTML5 Canvas port of Jacques Ruiz's original 2012 C# survival roguelike. Below is a comparison between the original version and the modern browser port, preserving the exact layout, mechanics, and gameplay experience.</p>
+        <p class="lede">Rogue Survivor: Reloaded is a faithful TypeScript and HTML5 Canvas port of Jacques Ruiz's
+          original 2012 C# survival roguelike. Below is a comparison between the original version and the modern browser
+          port, preserving the exact layout, mechanics, and gameplay experience.</p>
 
-        <div class="shots" style="margin-top:1.5rem">
+        <div class="shots shots--compare" style="margin-top:1.5rem">
           <figure class="shot">
-            <img class="shot__img" src="assets/img/screens/screen_original.webp" width="1282" height="960"
-              alt="Gameplay screenshot of the original C# WinForms version.">
+            <a class="shot__zoom" href="#shot-original" aria-label="Expand the screenshot of the original C# version.">
+              <img class="shot__img" src="assets/img/screens/screen_original.webp" width="1282" height="960"
+                alt="Gameplay screenshot of the original C# WinForms version.">
+            </a>
+            <!-- The native size is in the caption because the two cards are shaped
+                 differently and a reader has no other way to account for it. The
+                 columns are sized so both are shown at the same scale, so the
+                 difference in shape is the capture's, not the layout's. -->
             <figcaption class="shot__cap">The original version by roguedjack (2012).</figcaption>
           </figure>
           <figure class="shot">
-            <img class="shot__img" src="assets/img/screens/screen1.webp" width="1562" height="867"
-              alt="Gameplay screenshot of the TypeScript browser port.">
+            <a class="shot__zoom" href="#shot-port" aria-label="Expand the screenshot of the TypeScript browser port.">
+              <img class="shot__img" src="assets/img/screens/screen1.webp" width="1562" height="867"
+                alt="Gameplay screenshot of the TypeScript browser port.">
+            </a>
             <figcaption class="shot__cap">The Reloaded browser port in TypeScript &amp; HTML5 Canvas.</figcaption>
           </figure>
         </div>
+
+        <h2 style="margin-top:2.5rem">Main Changes</h2>
+        <ul>
+          <li>Improved resized UI with choosable fonts</li>
+          <li>Choosable sprite styles</li>
+          <li>Choosable game modes: Classic from Alpha 10.1, Still Alive fork, and Reloaded own improvements.</li>
+          <li>Mouse support on menus</li>
+          <li>In-game zoom</li>
+          <li>Improved performance and memory usage</li>
+          <li>Multi-OS + Browser</li>
+          <li>An old-school 3D (!) First-Person mode. VERY experimental!</li>
+        </ul>
       </div>
     </section>
 
     <!-- ================= What it is ================= -->
     <section class="section">
       <div class="wrap">
-        <p class="eyebrow">The pitch</p>
-        <h2>The game is about surviving, not killing</h2>
+        <p class="eyebrow">The game</p>
+        <h2>Surviving, not rampaging</h2>
         <p class="lede">Rogue Survivor handles combat and progression differently from most
           roguelikes. You are just an average human, and you have to be cautious. There is no
           difficulty ramp tied to your level, and no amount of skill turns you into a
@@ -106,22 +142,22 @@
 
         <div class="grid grid--2" style="margin-top:1.75rem">
           <div class="card card--feature">
-            <img class="card__icon" src="assets/img/actors/zombie.webp" alt="">
+            <img class="card__icon" src="assets/img/actors/red_eyed_skeleton.webp" alt="">
             <h3>Time moves whether you act or not</h3>
             <p>One turn is two in-game minutes. Every action costs action points and
               stamina, and stamina only comes back as fast as your speed allows. Standing
-              still is a real tactic - and so is running away.</p>
+              still is a real tactic; and so is running away.</p>
           </div>
           <div class="card card--feature">
-            <img class="card__icon" src="assets/img/scenery/sewer_ladder.webp" alt="">
-            <h3>A city, not a corridor</h3>
+            <img class="card__icon" src="assets/img/scenery/sewers_building.webp" alt="">
+            <h3>A city</h3>
             <p>The map is an N&times;N grid of districts: residential, business,
               shopping, green, all linked by streets, plus a sewer network under each one
               and a subway line across the middle. Leave a district and the game keeps
               simulating it without you.</p>
           </div>
           <div class="card card--feature">
-            <img class="card__icon" src="assets/img/actors/player_follower.webp" alt="">
+            <img class="card__icon" src="assets/img/actors/jason_myers.webp" alt="">
             <h3>You are not alone</h3>
             <p>Survivors panic, trade, murder each other for food, and can be talked into
               following you. Trust builds slowly, orders can send them into rooms they
@@ -131,61 +167,9 @@
             <img class="card__icon" src="assets/img/scenery/char_office.webp" alt="">
             <h3>Something else is going on</h3>
             <p>Your home town is the headquarters of the C.H.A.R. Corporation, and there
-              are persistent rumours about them. There is also a persistent urban legend
-              about something large living in the sewers.</p>
+              are persistent rumours about them. There is also an urban legend
+              about something large living in the sewers...</p>
           </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ================= Modes ================= -->
-    <section class="section section--tight">
-      <div class="wrap">
-        <p class="eyebrow">Character creation</p>
-        <h2>Three game modes</h2>
-        <p class="lede">Each mode enables or disables a layer of the simulation. Start as a
-          living with a gender and a starting skill, or as an undead and pick a race.</p>
-
-        <div class="table-wrap" style="margin-top:1.25rem">
-          <table>
-            <thead>
-              <tr>
-                <th>Mode</th>
-                <th>What it changes</th>
-                <th>Best for</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td><b>STD</b><br><span class="small muted">Standard</span></td>
-                <td>All undead types, and undeads evolve. Livings zombify on death.
-                  No infection, no corpses.</td>
-                <td>The default, and the least chaotic.</td>
-              </tr>
-              <tr>
-                <td><b>C&amp;I</b><br><span class="small muted">Corpses &amp; infection</span></td>
-                <td>Adds infection: bites infect, the infected can die, and their corpses
-                  rise more readily. Adds corpses: they rot, they can rise, the dead eat
-                  them, and the desperate eat them too.</td>
-                <td>Experiencing every feature the game has.</td>
-              </tr>
-              <tr>
-                <td><b>VTG</b><br><span class="small muted">Vintage</span></td>
-                <td>All of C&amp;I, but only zombified men and women rise as undead, with
-                  no evolution. Forces several options off.</td>
-                <td>A more classic, less carnival zombie feel.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="callout callout--warn" style="margin-top:1.5rem">
-          <span class="callout__label">After you die</span>
-          <p>You can <strong>reincarnate</strong> into another actor in the same district
-            &mdash; your killer, a random survivor, a random undead, one of your followers, or
-            your own zombified self. Restrict yourself to one kind of avatar and the game
-            becomes a challenge run: <em>Succession</em>, <em>Killer</em>, <em>Till the Last
-              Survivor</em>, <em>The Equalizer</em>, or <em>Life After Death</em>.</p>
         </div>
       </div>
     </section>
@@ -195,17 +179,25 @@
       <div class="wrap">
         <p class="eyebrow">Running it</p>
         <h2>Running the game</h2>
-        <p class="lede">If you just want to play, you can download the latest release for desktop or play in your browser. For developers, the project can be run and tested locally.</p>
+        <p class="lede">If you just want to play, you can download the latest release for desktop or play in your
+          browser. For developers, the project can be run and tested locally.</p>
         <div class="grid grid--2" style="margin-top:1.5rem">
           <div class="card card--feature">
+            <h3>Play in Browser</h3>
+            <p>Just want to play? You can play directly on your browser!</p>
+            <p class="small muted" style="margin-bottom:0">
+              <a href="https://taislin.github.io/Rogue-Survivor-Reloaded/game">Play Now</a>
+            </p>
+          </div>
+          <div class="card">
             <h3>Download &amp; Play</h3>
-            <p>Just want to play? Grab the latest release from GitHub for desktop or play online without setting up a development environment.</p>
+            <p>You can download the executables to play offline (and with better performance vs the browser version)</p>
             <p class="small muted" style="margin-bottom:0">
               <a href="https://github.com/taislin/Rogue-Survivor-Reloaded/releases/latest">Download latest release</a>
             </p>
           </div>
           <div class="card">
-            <h3>Play locally</h3>
+            <h3>Develop &amp; Play</h3>
             <p>Requires Node 20 or newer.</p>
             <p><code>cd web &amp;&amp; npm install &amp;&amp; npm run dev</code></p>
             <p class="small muted" style="margin-bottom:0">Vite dev server on
@@ -213,32 +205,12 @@
             </p>
           </div>
           <div class="card">
-            <h3>Production build</h3>
-            <p><code>npm run build:all</code> then <code>npm run serve</code></p>
-            <p class="small muted" style="margin-bottom:0">Serves the bundle on port 8080.
-              There is a <code>Dockerfile</code> at the repo root, and the build is plain
-              static files, so any static host will do.</p>
-          </div>
-          <div class="card">
-            <h3>Desktop build</h3>
-            <p><code>npm run build:desktop</code></p>
+            <h3>Desktop Build</h3>
+            <p><code>npm run build:release</code></p>
             <p class="small muted" style="margin-bottom:0">Packages the same static bundle
               as a native app through Neutralino, so it runs without a browser or a local
-              server. <code>npm run neu:dev</code> does the same for development.</p>
+              server.</p>
           </div>
-          <div class="card">
-            <h3>Tests and the simulator</h3>
-            <p><code>npm test</code> &middot; <code>npm run sim</code></p>
-            <p class="small muted" style="margin-bottom:0">501 tests, plus a headless
-              simulator that plays whole games in Node &mdash; same generators, same AI, same
-              turn loop &mdash; so long runs can be swept for crashes.</p>
-          </div>
-        </div>
-
-        <div class="btn-row" style="margin-top:1.5rem">
-          <a class="btn btn--primary" href="https://github.com/taislin/Rogue-Survivor-Reloaded">Source on GitHub</a>
-          <a class="btn" href="info.html">How the port works</a>
-          <a class="btn" href="manual.html">Manual</a>
         </div>
       </div>
     </section>
@@ -286,6 +258,54 @@
       </div>
     </div>
   </footer>
+  <!-- ================= Screenshot lightbox =================
+       Driven by :target, so every screenshot is expandable with scripting off.
+       lightbox.js adds Escape-to-close and focus handling; see the file header. -->
+  <div class="lightbox" id="shot-zoom" role="dialog" aria-modal="true"
+    aria-label="The Reloaded browser port, zoomed in.">
+    <a class="lightbox__backdrop" href="#" aria-label="Close"></a>
+    <a class="lightbox__close" href="#" aria-label="Close">&times;</a>
+    <figure class="lightbox__panel">
+      <img class="lightbox__img" src="assets/img/screens/screen2.webp" width="1562" height="867"
+        alt="Gameplay screenshot of Rogue Survivor Reloaded, zoomed in, with the stats of an undead shambler open on hover.">
+      <figcaption class="lightbox__cap">The Reloaded browser port, zoomed in.</figcaption>
+    </figure>
+  </div>
+
+  <div class="lightbox" id="shot-deon" role="dialog" aria-modal="true"
+    aria-label="The same game, with the Deonapocalypse sprite style.">
+    <a class="lightbox__backdrop" href="#" aria-label="Close"></a>
+    <a class="lightbox__close" href="#" aria-label="Close">&times;</a>
+    <figure class="lightbox__panel">
+      <img class="lightbox__img" src="assets/img/screens/screen_deon.webp" width="1562" height="867"
+        alt="The same game rendered with the Deonapocalypse sprite style.">
+      <figcaption class="lightbox__cap">The same game, with the Deonapocalypse sprite style.</figcaption>
+    </figure>
+  </div>
+
+  <div class="lightbox" id="shot-original" role="dialog" aria-modal="true"
+    aria-label="The original version by roguedjack (2012).">
+    <a class="lightbox__backdrop" href="#" aria-label="Close"></a>
+    <a class="lightbox__close" href="#" aria-label="Close">&times;</a>
+    <figure class="lightbox__panel">
+      <img class="lightbox__img" src="assets/img/screens/screen_original.webp" width="1282" height="960"
+        alt="Gameplay screenshot of the original C# WinForms version.">
+      <figcaption class="lightbox__cap">The original version by roguedjack (2012).</figcaption>
+    </figure>
+  </div>
+
+  <div class="lightbox" id="shot-port" role="dialog" aria-modal="true"
+    aria-label="The Reloaded browser port in TypeScript and HTML5 Canvas.">
+    <a class="lightbox__backdrop" href="#" aria-label="Close"></a>
+    <a class="lightbox__close" href="#" aria-label="Close">&times;</a>
+    <figure class="lightbox__panel">
+      <img class="lightbox__img" src="assets/img/screens/screen1.webp" width="1562" height="867"
+        alt="Gameplay screenshot of the TypeScript browser port.">
+      <figcaption class="lightbox__cap">The Reloaded browser port in TypeScript &amp; HTML5 Canvas.</figcaption>
+    </figure>
+  </div>
+
+  <script src="assets/js/lightbox.js"></script>
 
 </body>
 

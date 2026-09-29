@@ -57,12 +57,19 @@ import {
 	ActionWait,
 	SayFlags,
 } from "@engine/actions/Actions";
-import { MusicPriority, type IMusicManager } from "@engine/audio/IMusicManager";
+import { type IMusicManager, MusicPriority } from "@engine/audio/IMusicManager";
 import { NullMusicManager } from "@engine/audio/NullMusicManager";
 import { Color } from "@engine/Color";
 import { fireAndForget, reportSwallowed } from "@engine/Diagnostics";
 import { DiceRoller } from "@engine/DiceRoller";
 import { Direction } from "@engine/Direction";
+import {
+	remapForView,
+	resolveMoveDirection,
+	turnFacing,
+} from "@engine/firstperson/Controls";
+import { daylightFor, LOS_DISTANCE_FACTOR } from "@engine/firstperson/Daylight";
+import { buildScene } from "@engine/firstperson/SceneBuilder";
 import { AdvisorHint, GameHintsStatus } from "@engine/GameHints";
 import {
 	GameOptions,
@@ -73,9 +80,6 @@ import {
 	ZupDays,
 } from "@engine/GameOptions";
 import { GameSaveManager } from "@engine/GameSave";
-import { remapForView, resolveMoveDirection, turnFacing } from "@engine/firstperson/Controls";
-import { LOS_DISTANCE_FACTOR, daylightFor } from "@engine/firstperson/Daylight";
-import { buildScene } from "@engine/firstperson/SceneBuilder";
 import { HiScore, HiScoreTable } from "@engine/HiScoreTable";
 import {
 	type GameKeyEvent,
@@ -119,7 +123,7 @@ import {
 	ItemWeaponModel,
 } from "@engine/items/ItemWeapon";
 import { InputTranslator, Keybindings } from "@engine/Keybindings";
-import { LOS, type FOV } from "@engine/LOS";
+import { type FOV, LOS } from "@engine/LOS";
 import { coordKey } from "@engine/CoordKey";
 import { MessageManager } from "@engine/MessageManager";
 import {
@@ -131,9 +135,9 @@ import {
 import { PlayerCommand } from "@engine/PlayerCommand";
 import { Point } from "@engine/Point";
 import { Rect } from "@engine/Rect";
-import { Rules } from "@engine/Rules";
 import { Feature, hasFeature } from "@engine/FeatureFlags";
 import type { RuleResult } from "@engine/Rules";
+import { Rules } from "@engine/Rules";
 import { AchievementIDs, DifficultySide, Scoring } from "@engine/Scoring";
 import {
 	GameMode,
@@ -177,7 +181,7 @@ import { OptionsScreen } from "@ui/OptionsScreen";
 type TimeSpan = number;
 
 /** C# `SetupConfig.GAME_VERSION` (also duplicated in `ui/OptionsScreen.ts`). */
-const GAME_VERSION = "0.2.0";
+const GAME_VERSION = "0.3.0";
 
 /** C# numeric/string format alignment: `{0,3}`, `{0,6}` (right aligned). */
 export function padLeft(s: string | number, width: number): string {
@@ -1140,7 +1144,8 @@ export class RogueGame {
 	 */
 	private m_MinimapTagRevision: number = -1;
 	private m_MinimapTagMap: Map | null = null;
-	private m_MinimapTagTiles: Array<{ x: number; y: number; minitag: string }> = [];
+	private m_MinimapTagTiles: Array<{ x: number; y: number; minitag: string }> =
+		[];
 
 	/**
 	 * Every visited tile carrying one of the four player tags, with its minimap
@@ -1935,59 +1940,58 @@ export class RogueGame {
 
 			if (activate)
 				switch (selected) {
-						case 0:
-							if (await this.HandleNewCharacter()) {
-								await this.StartNewGame();
-								loop = false;
-							}
-							break;
-
-						case 1:
-							if (!isLoadEnabled) break;
-							gy += 2 * MENU_BOLD_LINE_SPACING;
-							this.m_UI.UI_DrawStringBoldLarge(
-								Color.Yellow,
-								"Loading game, please wait...",
-								gx,
-								gy,
-							);
-							this.m_UI.UI_Repaint();
-							await this.LoadGame(this.GetUserSave());
+					case 0:
+						if (await this.HandleNewCharacter()) {
+							await this.StartNewGame();
 							loop = false;
-							// alpha10
-							if (s_Options.isSimON && s_Options.simThread)
-								this.StartSimThread();
-							break;
+						}
+						break;
 
-						case 2:
-							await this.HandleRedefineKeys();
-							break;
+					case 1:
+						if (!isLoadEnabled) break;
+						gy += 2 * MENU_BOLD_LINE_SPACING;
+						this.m_UI.UI_DrawStringBoldLarge(
+							Color.Yellow,
+							"Loading game, please wait...",
+							gx,
+							gy,
+						);
+						this.m_UI.UI_Repaint();
+						await this.LoadGame(this.GetUserSave());
+						loop = false;
+						// alpha10
+						if (s_Options.isSimON && s_Options.simThread) this.StartSimThread();
+						break;
 
-						case 3:
-							await this.HandleOptions(false);
-							this.ApplyOptions(false);
-							break;
+					case 2:
+						await this.HandleRedefineKeys();
+						break;
 
-						case 4:
-							await this.HandleHelpMode();
-							break;
+					case 3:
+						await this.HandleOptions(false);
+						this.ApplyOptions(false);
+						break;
 
-						case 5:
-							await this.HandleHintsScreen();
-							break;
+					case 4:
+						await this.HandleHelpMode();
+						break;
 
-						case 6:
-							await this.HandleHiScores(true);
-							break;
+					case 5:
+						await this.HandleHintsScreen();
+						break;
 
-						case 7:
-							await this.HandleCredits();
-							break;
+					case 6:
+						await this.HandleHiScores(true);
+						break;
 
-						case 8:
-							this.m_IsGameRunning = false;
-							loop = false;
-							break;
+					case 7:
+						await this.HandleCredits();
+						break;
+
+					case 8:
+						this.m_IsGameRunning = false;
+						loop = false;
+						break;
 
 					default:
 						break;
@@ -3526,8 +3530,8 @@ export class RogueGame {
 			// draw
 			// Every key, not just the primary: a command can have several, and the
 			// point of the screen is to see what a command answers to.
-			const values: string[] = commands.map(
-				(cmd) => s_KeyBindings.getAll(cmd).join(" / "),
+			const values: string[] = commands.map((cmd) =>
+				s_KeyBindings.getAll(cmd).join(" / "),
 			);
 
 			const gx = 0;
@@ -3569,10 +3573,10 @@ export class RogueGame {
 				);
 				gy += BOLD_LINE_SPACING;
 			}
-		this.DrawFootnote(
-			Color.White,
-			"cursor to move, ENTER to ADD a key, BACKSPACE to drop the last one, ESC to save and leave",
-		);
+			this.DrawFootnote(
+				Color.White,
+				"cursor to move, ENTER to ADD a key, BACKSPACE to drop the last one, ESC to save and leave",
+			);
 			this.m_UI.UI_Repaint();
 
 			// handle
@@ -4089,7 +4093,10 @@ export class RogueGame {
 									// that the id resolved at all — it did not, because only
 									// `musicPath` was consulted and `undead rise` lives in the sound
 									// table. `audioPath` now checks both. See `AssetPaths.audioPath`.
-									this.m_MusicManager.play(GameSounds.UNDEAD_RISE, MusicPriority.EVENT);
+									this.m_MusicManager.play(
+										GameSounds.UNDEAD_RISE,
+										MusicPriority.EVENT,
+									);
 								}
 							}
 						}
@@ -4433,7 +4440,10 @@ export class RogueGame {
 								// because `play()` assigns `src` before the request resolves —
 								// silenced the current track as well. `audioPath` fixes both.
 								this.m_MusicManager.stop();
-								this.m_MusicManager.play(GameSounds.NIGHTMARE, MusicPriority.EVENT);
+								this.m_MusicManager.play(
+									GameSounds.NIGHTMARE,
+									MusicPriority.EVENT,
+								);
 							}
 						}
 					} else {
@@ -4477,7 +4487,10 @@ export class RogueGame {
 								// check music.
 								// C# compared m_MusicManager.Music != GameMusics.SLEEP before PlayLooping(SLEEP);
 								// IMusicManager.play() already ignores the track it is already playing.
-								this.m_MusicManager.playLooping(GameMusics.SLEEP, MusicPriority.EVENT);
+								this.m_MusicManager.playLooping(
+									GameMusics.SLEEP,
+									MusicPriority.EVENT,
+								);
 								// message.
 								this.AddMessage(
 									new Message(
@@ -5832,7 +5845,10 @@ export class RogueGame {
 			// What is *not* acceptable is a bare `void`: the promise is `async` and can
 			// reject, which is silent in a browser and **fatal under Node's default**
 			// `--unhandled-rejections=throw` — that is, in the simulator and in Vitest.
-			fireAndForget("OnActorEnterTile (spawned on map border)", this.OnActorEnterTile(actorToSpawn));
+			fireAndForget(
+				"OnActorEnterTile (spawned on map border)",
+				this.OnActorEnterTile(actorToSpawn),
+			);
 			return true;
 		} while (i <= maxTries);
 
@@ -6244,7 +6260,10 @@ export class RogueGame {
 			this.AddMessage(this.MakeErrorMessage("error while creating bot ai:"));
 			this.AddMessage(this.MakeErrorMessage((e as Error).message));
 			// Already in a `catch`; an escaping rejection here would be lost entirely.
-			fireAndForget("AddMessagePressEnter (bot ai error)", this.AddMessagePressEnter());
+			fireAndForget(
+				"AddMessagePressEnter (bot ai error)",
+				this.AddMessagePressEnter(),
+			);
 		}
 	}
 
@@ -6444,7 +6463,6 @@ export class RogueGame {
 					this.m_AdvisorHintPending = availableHint as AdvisorHint;
 					s_Hints.setAdvisorHintAsGiven(availableHint as AdvisorHint);
 					this.SaveHints();
-
 				} else if (this.m_HintAvailableOverlay != null) {
 					// Two ways to get here, and they need different handling.
 					//
@@ -6922,7 +6940,9 @@ export class RogueGame {
 				// handlers because a double click on a tile that holds an item is
 				// about the tile, and those two are about the panel and the
 				// corpse respectively.
-				if (this.HandleMouseDoubleClick(mousePos, mouseButtons, ev.clickDetail)) {
+				if (
+					this.HandleMouseDoubleClick(mousePos, mouseButtons, ev.clickDetail)
+				) {
 					loop = false;
 					continue;
 				}
@@ -7869,7 +7889,8 @@ export class RogueGame {
 		const player = this.m_Player;
 		const map = player.location.map!;
 		const mapPos = this.MouseToMap(mousePos);
-		if (!map.isInBoundsPoint(mapPos) || !this.IsInViewRect(mapPos)) return false;
+		if (!map.isInBoundsPoint(mapPos) || !this.IsInViewRect(mapPos))
+			return false;
 
 		// A container wins over loose items on the same tile, because that is
 		// what bumping does: `isBumpableFor` checks the map object first and
@@ -7884,7 +7905,9 @@ export class RogueGame {
 				this.RedrawPlayScreen();
 				return true;
 			}
-			this.AddMessage(this.MakeErrorMessage(`Cannot take from there : ${action.failReason}.`));
+			this.AddMessage(
+				this.MakeErrorMessage(`Cannot take from there : ${action.failReason}.`),
+			);
 			this.RedrawPlayScreen();
 			return false;
 		}
@@ -7898,7 +7921,9 @@ export class RogueGame {
 			this.RedrawPlayScreen();
 			return true;
 		}
-		this.AddMessage(this.MakeErrorMessage(`Cannot take that : ${action.failReason}.`));
+		this.AddMessage(
+			this.MakeErrorMessage(`Cannot take that : ${action.failReason}.`),
+		);
 		this.RedrawPlayScreen();
 		return false;
 	}
@@ -8009,7 +8034,11 @@ export class RogueGame {
 		// The last `false` on every overlay here: these are anchored to the side
 		// panel, which is drawn unscaled, so the map zoom must leave them be.
 		this.AddOverlay(
-			new OverlayRect(Color.Cyan, new Rect(itemPos.x, itemPos.y, 32, 32), false),
+			new OverlayRect(
+				Color.Cyan,
+				new Rect(itemPos.x, itemPos.y, 32, 32),
+				false,
+			),
 		);
 		this.AddOverlay(
 			new OverlayRect(
@@ -9257,8 +9286,7 @@ export class RogueGame {
 				}
 			} else {
 				const mapPos = this.MouseToMap(ev.mousePos);
-				const onMap =
-					map.isInBoundsPoint(mapPos) && this.IsInViewRect(mapPos);
+				const onMap = map.isInBoundsPoint(mapPos) && this.IsInViewRect(mapPos);
 				// Track the cursor on every movement, and act on a fresh LMB.
 				// `WaitKeyOrMouse` only reports a button when it is *new*, so a
 				// held button does not re-fire this each pass.
@@ -9332,7 +9360,9 @@ export class RogueGame {
 				this.DoBarricadeDoor(player, mapObj);
 			} else {
 				this.AddMessage(
-					this.MakeErrorMessage(`Cannot barricade ${mapObj.theName} : ${res.reason}.`),
+					this.MakeErrorMessage(
+						`Cannot barricade ${mapObj.theName} : ${res.reason}.`,
+					),
 				);
 			}
 		} else if (mapObj instanceof Fortification) {
@@ -9341,7 +9371,9 @@ export class RogueGame {
 				this.DoRepairFortification(player, mapObj);
 			} else {
 				this.AddMessage(
-					this.MakeErrorMessage(`Cannot repair ${mapObj.theName} : ${res.reason}.`),
+					this.MakeErrorMessage(
+						`Cannot repair ${mapObj.theName} : ${res.reason}.`,
+					),
 				);
 			}
 		} else {
@@ -9450,7 +9482,10 @@ export class RogueGame {
 						hoverOk = true;
 						if (ev.mouseButtons === MouseButton.Left) {
 							hovered = null;
-							await this.DoBreak(player, map.getMapObjectAt(mapPos.x, mapPos.y)!);
+							await this.DoBreak(
+								player,
+								map.getMapObjectAt(mapPos.x, mapPos.y)!,
+							);
 							actionDone = true;
 							loop = false;
 						}
@@ -9482,9 +9517,11 @@ export class RogueGame {
 	/** Breakable at this tile? `reason` explains a no; see `BREAK_NOTHING_THERE`. */
 	BreakLegality(player: Actor, pos: Point): RuleResult {
 		const map = player.location.map!;
-		if (!map.isInBoundsPoint(pos)) return { ok: false, reason: RogueGame.BREAK_NOTHING_THERE };
+		if (!map.isInBoundsPoint(pos))
+			return { ok: false, reason: RogueGame.BREAK_NOTHING_THERE };
 		const mapObj = map.getMapObjectAt(pos.x, pos.y);
-		if (mapObj === null) return { ok: false, reason: RogueGame.BREAK_NOTHING_THERE };
+		if (mapObj === null)
+			return { ok: false, reason: RogueGame.BREAK_NOTHING_THERE };
 		// See `BarricadeLegality` on why this is bound before it is returned.
 		const res = this.m_Rules.isBreakableFor(player, mapObj);
 		return res;
@@ -9495,10 +9532,7 @@ export class RogueGame {
 	 * branches share `BreakLegality`. Kept async because breaking through an
 	 * exit can be a melee attack, which the C# also blocks on.
 	 */
-	async BreakFrom(
-		player: Actor,
-		dir: Direction,
-	): Promise<{ done: boolean }> {
+	async BreakFrom(player: Actor, dir: Direction): Promise<{ done: boolean }> {
 		const map = player.location.map!;
 
 		if (dir === Direction.NEUTRAL) {
@@ -10823,7 +10857,10 @@ export class RogueGame {
 				this.m_Session.world!.weather,
 			);
 			fovs.push(foFov);
-			hasLinkWith.push(this.isActorLinkedToPlayer(foFov, fo, player) || this.AreLinkedByPhone(player, fo));
+			hasLinkWith.push(
+				this.isActorLinkedToPlayer(foFov, fo, player) ||
+					this.AreLinkedByPhone(player, fo),
+			);
 		}
 
 		if (player.countFollowers === 1 && hasLinkWith[0]) {
@@ -13072,7 +13109,7 @@ export class RogueGame {
 				inKey.ctrl,
 				inKey.alt,
 				inKey.shift,
-			inKey.code,
+				inKey.code,
 			);
 			const dir = this.CommandToDirection(command);
 			if (dir != null) return dir;
@@ -14776,7 +14813,9 @@ export class RogueGame {
 							GameImages.ICON_MELEE_DAMAGE,
 						),
 					);
-				} catch (e) { reportSwallowed("DoTriggerTrap", e); }
+				} catch (e) {
+					reportSwallowed("DoTriggerTrap", e);
+				}
 				try {
 					this.AddOverlay(
 						new OverlayText(
@@ -14788,12 +14827,16 @@ export class RogueGame {
 							Color.Black,
 						),
 					);
-				} catch (e) { reportSwallowed("DoTriggerTrap", e); }
+				} catch (e) {
+					reportSwallowed("DoTriggerTrap", e);
+				}
 				this.RedrawPlayScreen();
 				await this.AnimDelay(victim.isPlayer ? DELAY_NORMAL : DELAY_SHORT);
 				try {
 					this.ClearOverlays();
-				} catch (e) { reportSwallowed("DoTriggerTrap", e); }
+				} catch (e) {
+					reportSwallowed("DoTriggerTrap", e);
+				}
 				this.RedrawPlayScreen();
 			}
 		}
@@ -15717,7 +15760,9 @@ export class RogueGame {
 					),
 				);
 				this.AddOverlay(new OverlayImage(attPos, GameImages.ICON_MELEE_ATTACK));
-			} catch (e) { reportSwallowed("DoMeleeAttack", e); }
+			} catch (e) {
+				reportSwallowed("DoMeleeAttack", e);
+			}
 		}
 
 		// The swing, before the outcome is applied. Deliberately *before* the
@@ -15839,7 +15884,9 @@ export class RogueGame {
 									GameImages.ICON_KILLED,
 								),
 							);
-						} catch (e) { reportSwallowed("DoMeleeAttack", e); }
+						} catch (e) {
+							reportSwallowed("DoMeleeAttack", e);
+						}
 						this.RedrawPlayScreen();
 						await this.AnimDelay(DELAY_LONG);
 					}
@@ -15935,7 +15982,9 @@ export class RogueGame {
 									Color.Black,
 								),
 							);
-						} catch (e) { reportSwallowed("DoMeleeAttack", e); }
+						} catch (e) {
+							reportSwallowed("DoMeleeAttack", e);
+						}
 						this.RedrawPlayScreen();
 						await this.AnimDelay(isPlayer ? DELAY_NORMAL : DELAY_SHORT);
 					}
@@ -15957,7 +16006,9 @@ export class RogueGame {
 								GameImages.ICON_MELEE_MISS,
 							),
 						);
-					} catch (e) { reportSwallowed("DoMeleeAttack", e); }
+					} catch (e) {
+						reportSwallowed("DoMeleeAttack", e);
+					}
 					this.RedrawPlayScreen();
 					await this.AnimDelay(isPlayer ? DELAY_NORMAL : DELAY_SHORT);
 				}
@@ -15980,7 +16031,9 @@ export class RogueGame {
 							GameImages.ICON_MELEE_MISS,
 						),
 					);
-				} catch (e) { reportSwallowed("DoMeleeAttack", e); }
+				} catch (e) {
+					reportSwallowed("DoMeleeAttack", e);
+				}
 				this.RedrawPlayScreen();
 				await this.AnimDelay(isPlayer ? DELAY_NORMAL : DELAY_SHORT);
 			}
@@ -16200,7 +16253,9 @@ export class RogueGame {
 				this.AddOverlay(
 					new OverlayImage(attPos, GameImages.ICON_RANGED_ATTACK),
 				);
-			} catch (e) { reportSwallowed("DoSingleRangedAttack", e); }
+			} catch (e) {
+				reportSwallowed("DoSingleRangedAttack", e);
+			}
 		}
 
 		// Hit vs Missed
@@ -16241,7 +16296,9 @@ export class RogueGame {
 									GameImages.ICON_KILLED,
 								),
 							);
-						} catch (e) { reportSwallowed("DoSingleRangedAttack", e); }
+						} catch (e) {
+							reportSwallowed("DoSingleRangedAttack", e);
+						}
 						this.RedrawPlayScreen();
 						await this.AnimDelay(DELAY_LONG);
 					}
@@ -16272,7 +16329,9 @@ export class RogueGame {
 									Color.Black,
 								),
 							);
-						} catch (e) { reportSwallowed("DoSingleRangedAttack", e); }
+						} catch (e) {
+							reportSwallowed("DoSingleRangedAttack", e);
+						}
 						this.RedrawPlayScreen();
 						await this.AnimDelay(isPlayer ? DELAY_NORMAL : DELAY_SHORT);
 					}
@@ -16294,7 +16353,9 @@ export class RogueGame {
 								GameImages.ICON_RANGED_MISS,
 							),
 						);
-					} catch (e) { reportSwallowed("DoSingleRangedAttack", e); }
+					} catch (e) {
+						reportSwallowed("DoSingleRangedAttack", e);
+					}
 					this.RedrawPlayScreen();
 					await this.AnimDelay(isPlayer ? DELAY_NORMAL : DELAY_SHORT);
 				}
@@ -16317,7 +16378,9 @@ export class RogueGame {
 							GameImages.ICON_RANGED_MISS,
 						),
 					);
-				} catch (e) { reportSwallowed("DoSingleRangedAttack", e); }
+				} catch (e) {
+					reportSwallowed("DoSingleRangedAttack", e);
+				}
 				this.RedrawPlayScreen();
 				await this.AnimDelay(isPlayer ? DELAY_NORMAL : DELAY_SHORT);
 			}
@@ -16365,7 +16428,9 @@ export class RogueGame {
 								),
 							);
 						}
-					} catch (e) { reportSwallowed("DoCheckFireThrough", e); }
+					} catch (e) {
+						reportSwallowed("DoCheckFireThrough", e);
+					}
 					await this.AnimDelay(attacker.isPlayer ? DELAY_NORMAL : DELAY_SHORT);
 				}
 
@@ -16423,7 +16488,9 @@ export class RogueGame {
 						new Rect(tgtPos.x, tgtPos.y, TILE_SIZE, TILE_SIZE),
 					),
 				);
-			} catch (e) { reportSwallowed("DoThrowGrenadeUnprimed", e); }
+			} catch (e) {
+				reportSwallowed("DoThrowGrenadeUnprimed", e);
+			}
 			this.AddMessage(
 				this.MakeMessage(
 					actor,
@@ -16476,7 +16543,9 @@ export class RogueGame {
 						new Rect(tgtPos.x, tgtPos.y, TILE_SIZE, TILE_SIZE),
 					),
 				);
-			} catch (e) { reportSwallowed("DoThrowGrenadePrimed", e); }
+			} catch (e) {
+				reportSwallowed("DoThrowGrenadePrimed", e);
+			}
 			this.AddMessage(
 				this.MakeMessage(
 					actor,
@@ -16519,7 +16588,9 @@ export class RogueGame {
 					blastAttack,
 					blastAttack.damage[0],
 				);
-			} catch (e) { reportSwallowed("DoBlast", e); }
+			} catch (e) {
+				reportSwallowed("DoBlast", e);
+			}
 			this.RedrawPlayScreen();
 			await this.AnimDelay(DELAY_LONG);
 			this.RedrawPlayScreen();
@@ -16667,7 +16738,9 @@ export class RogueGame {
 				// now redundant (kept for Phase 8 cleanup).
 				try {
 					this.ShowBlastImage(this.MapToScreen(pt), blast, damage);
-				} catch (e) { reportSwallowed("ApplyExplosionWaveSub", e); }
+				} catch (e) {
+					reportSwallowed("ApplyExplosionWaveSub", e);
+				}
 				return true;
 			} else return false;
 		}
@@ -17200,7 +17273,9 @@ export class RogueGame {
 							new Rect(sp.x, sp.y, TILE_SIZE, TILE_SIZE),
 						),
 					);
-				} catch (e) { reportSwallowed("DoSay", e); }
+				} catch (e) {
+					reportSwallowed("DoSay", e);
+				}
 				await this.AddMessagePressEnter();
 				this.ClearOverlays();
 				this.RemoveLastMessage();
@@ -17241,7 +17316,9 @@ export class RogueGame {
 							new Rect(sp.x, sp.y, TILE_SIZE, TILE_SIZE),
 						),
 					);
-				} catch (e) { reportSwallowed("DoShout", e); }
+				} catch (e) {
+					reportSwallowed("DoShout", e);
+				}
 				this.AddMessage(
 					this.MakeMessage(
 						speaker,
@@ -18509,7 +18586,9 @@ export class RogueGame {
 								Color.Black,
 							),
 						); // alpha10
-					} catch (e) { reportSwallowed("DoBreak", e); }
+					} catch (e) {
+						reportSwallowed("DoBreak", e);
+					}
 					this.AddMessage(
 						this.MakeMessage(
 							actor,
@@ -18591,7 +18670,9 @@ export class RogueGame {
 							),
 						);
 					}
-				} catch (e) { reportSwallowed("DoBreak", e); }
+				} catch (e) {
+					reportSwallowed("DoBreak", e);
+				}
 
 				if (isBroken) {
 					this.AddMessage(
@@ -18616,7 +18697,9 @@ export class RogueGame {
 									GameImages.ICON_KILLED,
 								),
 							);
-					} catch (e2) { reportSwallowed("DoBreak", e2); }
+					} catch (e2) {
+						reportSwallowed("DoBreak", e2);
+					}
 					this.RedrawPlayScreen();
 					await this.AnimDelay(DELAY_LONG);
 				} else {
@@ -18640,7 +18723,9 @@ export class RogueGame {
 									Color.Black,
 								),
 							); // alpha10
-						} catch (e2) { reportSwallowed("DoBreak", e2); }
+						} catch (e2) {
+							reportSwallowed("DoBreak", e2);
+						}
 					} else if (isActorVisible) {
 						this.AddMessage(
 							this.MakeMessage(
@@ -18658,7 +18743,9 @@ export class RogueGame {
 									GameImages.ICON_MELEE_ATTACK,
 								),
 							);
-						} catch (e2) { reportSwallowed("DoBreak", e2); }
+						} catch (e2) {
+							reportSwallowed("DoBreak", e2);
+						}
 					}
 
 					this.RedrawPlayScreen();
@@ -18814,7 +18901,8 @@ export class RogueGame {
 		map.placeActor(target, toPos);
 		if (
 			!this.m_Rules.isAdjacent(toPos, actor.location.position) &&
-			this.m_Rules.isWalkableFor(actor, map, prevTargetPos.x, prevTargetPos.y).ok
+			this.m_Rules.isWalkableFor(actor, map, prevTargetPos.x, prevTargetPos.y)
+				.ok
 		) {
 			// shoving away, need to follow.
 			// Try to leave tile.
@@ -19419,7 +19507,9 @@ export class RogueGame {
 									new Rect(sp.x, sp.y, TILE_SIZE, TILE_SIZE),
 								),
 							);
-						} catch (e) { reportSwallowed("KillActor", e); }
+						} catch (e) {
+							reportSwallowed("KillActor", e);
+						}
 						this.AddMessage(
 							this.MakeMessage(
 								killer,
@@ -19428,7 +19518,9 @@ export class RogueGame {
 						);
 						try {
 							this.RedrawPlayScreen();
-						} catch (e) { reportSwallowed("KillActor", e); }
+						} catch (e) {
+							reportSwallowed("KillActor", e);
+						}
 						await this.AnimDelay(DELAY_LONG);
 						this.ClearOverlays();
 					}
@@ -20900,8 +20992,7 @@ export class RogueGame {
 		let skID: SkillID;
 		const isUndead = actor.model.abilities.isUndead;
 		const isMaxed = (id: SkillID): boolean =>
-			actor.sheet.skillTable.getSkillLevel(id) >=
-			Skills.maxSkillLevel(id);
+			actor.sheet.skillTable.getSkillLevel(id) >= Skills.maxSkillLevel(id);
 
 		do {
 			++attempt;
@@ -22321,11 +22412,12 @@ export class RogueGame {
 			// a seventh. Everything the renderer draws is bounded by this number,
 			// because a cone that ignores it shows the player more than the rules
 			// allow, which is the one failure this whole renderer has to avoid.
-			maxViewDistance: this.m_Rules.actorFOV(
-				this.m_Player,
-				this.m_Session.worldTime,
-				this.m_Session.world!.weather,
-			) / LOS_DISTANCE_FACTOR,
+			maxViewDistance:
+				this.m_Rules.actorFOV(
+					this.m_Player,
+					this.m_Session.worldTime,
+					this.m_Session.world!.weather,
+				) / LOS_DISTANCE_FACTOR,
 			daylight: daylightFor(this.m_Session.worldTime.phase),
 		});
 		this.m_UI.UI_DrawScene(scene);
@@ -25210,9 +25302,7 @@ export class RogueGame {
 	 * the keyboard never getting a turn. The same is already true of
 	 * `UI_PeekKey`, which is why the properties are spelled out in `IRogueUI`.
 	 */
-	async WaitMenuInput(
-		prevMouse: Point,
-	): Promise<{
+	async WaitMenuInput(prevMouse: Point): Promise<{
 		key: GameKeyEvent | null;
 		mousePos: Point;
 		mouseButtons: MouseButton | null;
@@ -25246,7 +25336,13 @@ export class RogueGame {
 				return { key: null, mousePos, mouseButtons, wheel: 0, moved: false };
 			}
 			if (!mousePos.equals(prevMouse)) {
-				return { key: null, mousePos, mouseButtons: null, wheel: 0, moved: true };
+				return {
+					key: null,
+					mousePos,
+					mouseButtons: null,
+					wheel: 0,
+					moved: true,
+				};
 			}
 			await new Promise<void>((r) => setTimeout(r, 0));
 		}
@@ -26584,41 +26680,41 @@ export class RogueGame {
 					!this.IsInCHAROffice(new Location(map, pt)),
 			);
 
-		if (!spawnedInside) {
-			// Could not spawn inside, do it outside. The C# retries with
-			// `int.MaxValue` attempts and an empty loop body
-			// (RogueGame.cs:21167-21172), which has no failure path at all: it can
-			// only exit on success, so a map with no walkable tile outside a CHAR
-			// office would spin at 100% CPU with no message and no way out.
-			//
-			// No trigger is known — `IsInCHAROffice` covers one room and ordinary
-			// floors are always walkable — which is exactly why the bound is worth
-			// adding rather than relying on the assumption holding. One attempt of
-			// 10 000 rolls is the same order as every other spawner in the file
-			// (`spawnActorOnMapBorder` and the sewers spawn use 10 000), so this
-			// costs nothing when the assumption holds, and a map that violates it
-			// now places the player somewhere legal or reports that it could not,
-			// rather than hanging the game.
-			let placedOutside = false;
-			for (let attempt = 0; attempt < 5 && !placedOutside; attempt++) {
-				placedOutside = townGen.actorPlace(
-					roller,
-					10_000,
-					map,
-					player,
-					(pt) => !this.IsInCHAROffice(new Location(map, pt)),
-				);
+			if (!spawnedInside) {
+				// Could not spawn inside, do it outside. The C# retries with
+				// `int.MaxValue` attempts and an empty loop body
+				// (RogueGame.cs:21167-21172), which has no failure path at all: it can
+				// only exit on success, so a map with no walkable tile outside a CHAR
+				// office would spin at 100% CPU with no message and no way out.
+				//
+				// No trigger is known — `IsInCHAROffice` covers one room and ordinary
+				// floors are always walkable — which is exactly why the bound is worth
+				// adding rather than relying on the assumption holding. One attempt of
+				// 10 000 rolls is the same order as every other spawner in the file
+				// (`spawnActorOnMapBorder` and the sewers spawn use 10 000), so this
+				// costs nothing when the assumption holds, and a map that violates it
+				// now places the player somewhere legal or reports that it could not,
+				// rather than hanging the game.
+				let placedOutside = false;
+				for (let attempt = 0; attempt < 5 && !placedOutside; attempt++) {
+					placedOutside = townGen.actorPlace(
+						roller,
+						10_000,
+						map,
+						player,
+						(pt) => !this.IsInCHAROffice(new Location(map, pt)),
+					);
+				}
+				if (!placedOutside) {
+					// A hard throw would take the game down on a world-generation edge
+					// case, so say so and carry on with the player where they are --
+					// visible and diagnosable, rather than a hang.
+					console.warn(
+						"[RogueSurvivor] could not place the player outside a CHAR office; " +
+							"leaving them at their spawn point.",
+					);
+				}
 			}
-			if (!placedOutside) {
-				// A hard throw would take the game down on a world-generation edge
-				// case, so say so and carry on with the player where they are --
-				// visible and diagnosable, rather than a hang.
-				console.warn(
-					"[RogueSurvivor] could not place the player outside a CHAR office; " +
-						"leaving them at their spawn point.",
-				);
-			}
-		}
 		}
 	}
 
@@ -26693,7 +26789,10 @@ export class RogueGame {
 			if (turnsToCatchup > 0) {
 				// music.
 				this.m_MusicManager.stop();
-				this.m_MusicManager.playLooping(GameMusics.INTERLUDE, MusicPriority.EVENT);
+				this.m_MusicManager.playLooping(
+					GameMusics.INTERLUDE,
+					MusicPriority.EVENT,
+				);
 
 				// force player view to darkness (so he gets no messages).
 				if (this.m_Player != null) {
@@ -26826,7 +26925,8 @@ export class RogueGame {
 						if (key != null && key.key === "Escape") {
 							// jump in time for each map.
 							for (const map of district.maps)
-								map.localTime.turnCounter = this.m_Session.worldTime.turnCounter;
+								map.localTime.turnCounter =
+									this.m_Session.worldTime.turnCounter;
 							// abort!
 							aborted = true;
 						}
@@ -26840,8 +26940,22 @@ export class RogueGame {
 
 					// Sim ends - either aborted or normal end.
 
-					// remove "ESC" message.
-					this.RemoveLastMessage();
+				// Drop the whole progress block, not just its last line.
+				//
+				// C# removes the "<keep ESC pressed>" line, and that is all it has to
+				// do: its log is repainted from scratch on the next action. Here the
+				// screen was left on the last progress frame, because nothing redrew
+				// after this method returned, so the player was still looking at
+				// "Simulating district, please wait 143/900..." long after the 900th
+				// turn -- which reads as the simulation still running, and is what made
+				// the district switch look like it had stalled.
+				//
+				// Clearing the log is safe here and not a loss: the loop calls
+				// `ClearMessages` before its first redraw, so by the time it exits the
+				// log holds nothing but simulation output. The caller's "leaves X" and
+				// "enters Y" lines are added after this returns, so they are not
+				// caught by this.
+				this.ClearMessages();
 
 					// since sim arbitrary messes with actor APs, we're not quite sure were they are now.
 					// so force them back to zero to have a clean start.
@@ -26866,6 +26980,34 @@ export class RogueGame {
 	AfterPlayerEnterDistrict(): void {
 		// restart sim thread if on
 		if (s_Options.isSimON && s_Options.simThread) this.StartSimThread();
+
+		// Rebuild the view, and put the new district on screen.
+		//
+		// `BeforePlayerEnterDistrict` calls `clearView` on both the map being
+		// left and the one being entered, so that the simulation shows the player
+		// nothing. That is right for the duration and wrong afterwards: nothing
+		// rebuilt the destination's `isInView`, and `setViewAndMarkVisited` --
+		// which its own comment calls the thing that "makes actors, items and
+		// corpses drawable at all" -- is only reached from `UpdatePlayerFOV`.
+		// So the player arrived in a district with a black map until some later
+		// keypress happened to run an FOV update, which is the second half of the
+		// reported symptom: a keypress to get out of black, then another to see
+		// anything.
+		//
+		// This is the same pair the play loop ends a turn with, and it is here
+		// rather than in the catch-up because the player has to be *on* the new
+		// map: the catch-up runs before the move, so an FOV update there would
+		// compute it for the map being left.
+		if (this.m_Player != null) {
+			this.UpdatePlayerFOV(this.m_Player);
+			this.ComputeViewRect(this.m_Player.location.position);
+			this.RefreshPlayer();
+			// And draw it. Without this the frame on the canvas is still the
+			// simulation's, so the switch ends on a stale progress screen and the
+			// next thing the player does is the repaint that would have happened
+			// here.
+			this.RedrawPlayScreen();
+		}
 	}
 
 	// C# OnPlayerChangeMap — RogueGame.cs:21375
@@ -27039,7 +27181,9 @@ export class RogueGame {
 					new Rect(screenPos.x, screenPos.y, TILE_SIZE, TILE_SIZE),
 				),
 			);
-		} catch (e) { reportSwallowed("ShowSpecialDialogue", e); }
+		} catch (e) {
+			reportSwallowed("ShowSpecialDialogue", e);
+		}
 
 		// message & wait enter.
 		this.ClearMessages();
@@ -27926,7 +28070,10 @@ export class RogueGame {
 						// ENTER), but the aggressor/self-defence links and the emote above
 						// are all applied before its first await, and C# calls this from a
 						// sync action factory - so it is intentionally not awaited here.
-						fireAndForget("DoMakeAggression (self-defence)", this.DoMakeAggression(actor, a));
+						fireAndForget(
+							"DoMakeAggression (self-defence)",
+							this.DoMakeAggression(actor, a),
+						);
 						return new ActionSay(
 							actor,
 							this,
@@ -28265,7 +28412,9 @@ export class RogueGame {
 			let screenPos: Point | null = null;
 			try {
 				screenPos = this.MapToScreen(crushedActor.location.position);
-			} catch (e) { reportSwallowed("CheckForGateClosingCrush", e); }
+			} catch (e) {
+				reportSwallowed("CheckForGateClosingCrush", e);
+			}
 			if (screenPos !== null) {
 				this.AddOverlay(
 					new OverlayImage(screenPos, GameImages.ICON_MELEE_DAMAGE),
@@ -28281,12 +28430,16 @@ export class RogueGame {
 			}
 			try {
 				this.RedrawPlayScreen();
-			} catch (e) { reportSwallowed("CheckForGateClosingCrush", e); }
+			} catch (e) {
+				reportSwallowed("CheckForGateClosingCrush", e);
+			}
 			await this.AnimDelay(crushedActor.isPlayer ? DELAY_NORMAL : DELAY_SHORT);
 			this.ClearOverlays();
 			try {
 				this.RedrawPlayScreen();
-			} catch (e) { reportSwallowed("CheckForGateClosingCrush", e); }
+			} catch (e) {
+				reportSwallowed("CheckForGateClosingCrush", e);
+			}
 		}
 
 		if (crushedActor.hitPoints <= 0) {
