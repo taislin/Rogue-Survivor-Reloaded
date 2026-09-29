@@ -35,6 +35,7 @@ import {
 import { DiceRoller } from "@engine/DiceRoller";
 import { Direction } from "@engine/Direction";
 import { LOS, type FOV } from "@engine/LOS";
+import { Color } from "@engine/Color";
 import { Point } from "@engine/Point";
 import { GameMode } from "@engine/Session";
 import { DayPhase, WorldTime } from "@engine/WorldTime";
@@ -171,6 +172,26 @@ export class Rules {
   static readonly NIGHT_STA_PENALTY = 2;
   static readonly FOV_PENALTY_RAIN = 1;
   static readonly FOV_PENALTY_HEAVY_RAIN = 2;
+
+  // ── Intoxication. Still Alive, Release 7-1 ──────────────────────────────
+  // One standard drink's worth of blood alcohol, in turns. Because BAC decays
+  // one turn per turn, a survivor who downs five of these is out for two and a
+  // half in-game hours -- which is why these are expressed in TURNS_PER_HOUR
+  // rather than as abstract "points".
+  static readonly ALCOHOL_STANDARD_UNIT = WorldTime.TURNS_PER_HOUR;
+  /** Passing out: five standard drinks, and the top of the six display bands. */
+  static readonly BLACKOUT_DRUNK_LEVEL = 5 * WorldTime.TURNS_PER_HOUR;
+  /** Percent chance per action that drunkenness costs the actor control. */
+  static readonly DRUNK_AFFECTED_ACTION_CHANCE = 5;
+
+  // Ranged accuracy multipliers, by band. Note the *names* do not line up with
+  // the numbers: 0.66 is "HAMMERED" for 80-99%, and 0.95 is "TIPSY" for 40-59%.
+  // Both spellings are the C#'s, and the mismatch is a trap for anyone who
+  // assumes the constant names describe the bands.
+  private static readonly FIRING_WHEN_BLACKOUT_DRUNK = 0.5;
+  private static readonly FIRING_WHEN_HAMMERED = 0.66;
+  private static readonly FIRING_WHEN_DRUNK = 0.75;
+  private static readonly FIRING_WHEN_TIPSY = 0.95;
   /**
    * The whole Release 6-2 FOV rebalance, in one place.
    *
@@ -2514,6 +2535,18 @@ export class Rules {
       disarmChance *= 3 / 4;
     }
 
+    // drunk penalty. Still Alive, Release 7-1. Gated, because this changes the
+    // hit value of every swing by any actor who has been drinking -- and unlike
+    // the ranged case there is a *second* effect here (the disarm chance), so a
+    // single missing gate would move two numbers at once.
+    if (
+      hasFeature(Session.get().ruleset, Feature.Alcohol) &&
+      this.isActorDrunk(actor)
+    ) {
+      hit *= Rules.FIRING_WHEN_DRUNK;
+      disarmChance *= 3 / 4;
+    }
+
     // done.
     return Attack.meleeAttack(
       baseAttack.verb,
@@ -2570,6 +2603,37 @@ export class Rules {
       hit *= Rules.FIRING_WHEN_SLP_SLEEPY;
       rapidHit1 *= Rules.FIRING_WHEN_SLP_SLEEPY;
       rapidHit2 *= Rules.FIRING_WHEN_SLP_SLEEPY;
+    }
+
+    // drunk penalty, four bands. Still Alive, Release 7-1.
+    //
+    // The band names are the C#'s and do not match the numbers: the 80-99% band
+    // uses `FIRING_WHEN_HAMMERED` (0.66) and the 40-59% band uses
+    // `FIRING_WHEN_TIPSY` (0.95). Reading the constant names as descriptions of
+    // the bands gives the wrong order, so the comments carry the percentages.
+    if (hasFeature(Session.get().ruleset, Feature.Alcohol)) {
+      const b = Rules.BLACKOUT_DRUNK_LEVEL;
+      if (actor.bloodAlcohol >= b) {
+        // 100%+ "uncon"
+        hit *= Rules.FIRING_WHEN_BLACKOUT_DRUNK;
+        rapidHit1 *= Rules.FIRING_WHEN_BLACKOUT_DRUNK;
+        rapidHit2 *= Rules.FIRING_WHEN_BLACKOUT_DRUNK;
+      } else if (actor.bloodAlcohol >= b * 0.8) {
+        // 80-99% "wasted" -- note: HAMMERED, not DRUNK
+        hit *= Rules.FIRING_WHEN_HAMMERED;
+        rapidHit1 *= Rules.FIRING_WHEN_HAMMERED;
+        rapidHit2 *= Rules.FIRING_WHEN_HAMMERED;
+      } else if (actor.bloodAlcohol >= b * 0.6) {
+        // 60-79% "drunk"
+        hit *= Rules.FIRING_WHEN_DRUNK;
+        rapidHit1 *= Rules.FIRING_WHEN_DRUNK;
+        rapidHit2 *= Rules.FIRING_WHEN_DRUNK;
+      } else if (actor.bloodAlcohol >= b * 0.4) {
+        // 40-59% "tipsy" -- note: TIPSY, at only -5%
+        hit *= Rules.FIRING_WHEN_TIPSY;
+        rapidHit1 *= Rules.FIRING_WHEN_TIPSY;
+        rapidHit2 *= Rules.FIRING_WHEN_TIPSY;
+      }
     }
 
     // stamina penalty.
@@ -2959,6 +3023,49 @@ export class Rules {
     if (actor.model.abilities.isUndead) return actor.sheet.baseViewRange;
     if (actor.isPlayer) return profile.minimalFovPlayer;
     return profile.minimalFovLivingActors;
+  }
+
+  /**
+   * "sober" through "uncon". Still Alive, Release 7-1.
+   *
+   * Six bands at 0/20/40/60/80/100% of `BLACKOUT_DRUNK_LEVEL`, so the wording is
+   * finer than the two thresholds the *mechanics* use -- see `isActorDrunk`, which
+   * cuts at 60%. The mismatch is in the C# and preserved here: an actor can read
+   * "buzzed" on the panel and still miss shots.
+   *
+   * These three live on `Rules` rather than on `Actor` as the C# has them,
+   * because they need `BLACKOUT_DRUNK_LEVEL` and nothing under `src/data/` is
+   * allowed to import `src/engine/`. Every other derived actor property in the
+   * port already lives here.
+   */
+  describeIntoxication(actor: Actor): string {
+    const b = Rules.BLACKOUT_DRUNK_LEVEL;
+    if (actor.bloodAlcohol >= b) return "uncon";
+    if (actor.bloodAlcohol >= b * 0.8) return "wasted";
+    if (actor.bloodAlcohol >= b * 0.6) return "drunk";
+    if (actor.bloodAlcohol >= b * 0.4) return "tipsy";
+    if (actor.bloodAlcohol >= b * 0.2) return "buzzed";
+    return "sober";
+  }
+
+  /** The same six bands, green through red. Still Alive, Release 7-1. */
+  intoxicationColor(actor: Actor): Color {
+    const b = Rules.BLACKOUT_DRUNK_LEVEL;
+    if (actor.bloodAlcohol >= b) return Color.Red;
+    if (actor.bloodAlcohol >= b * 0.8) return Color.Tomato;
+    if (actor.bloodAlcohol >= b * 0.6) return Color.DarkSalmon;
+    if (actor.bloodAlcohol >= b * 0.4) return Color.MediumAquamarine;
+    if (actor.bloodAlcohol >= b * 0.2) return Color.PaleGreen;
+    return Color.Green;
+  }
+
+  /**
+   * "Drunk" for melee accuracy and for losing control of an action.
+   * Still Alive, Release 7-1. Cuts at **60%** of `BLACKOUT_DRUNK_LEVEL` -- the
+   * fourth of the six bands, neither the top nor half.
+   */
+  isActorDrunk(actor: Actor): boolean {
+    return actor.bloodAlcohol >= Rules.BLACKOUT_DRUNK_LEVEL * 0.6;
   }
 
   /**

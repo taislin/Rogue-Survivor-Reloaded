@@ -130,14 +130,21 @@ describe("Feature registry is wired", () => {
     // helper wrapping the call — the tests below pass by finding nothing, and
     // this is the assertion that says so.
     //
-    // `Alcohol` is not read by gameplay code either: it is the harness line in
-    // HeadlessRunner, which sets a field the engine has no reader for yet. The
-    // other two are the first features with real readers, and both landed in
-    // `Rules`: a speed term and an infection roll are both rules questions, and
-    // `ArmorResist` moved there from the bite handler in `RogueGame` when its
-    // gate, torso lookup and roll were folded into one function a test could
-    // call. A feature whose reader drifts to another file should be a deliberate
-    // change here, which is why the file is asserted and not just the name.
+    // `Alcohol` was, for a while, read *only* by the harness line in
+    // HeadlessRunner -- a `step()` that labels a run with the ruleset it played.
+    // That cosmetic call was enough to satisfy the partition below, which is how
+    // the feature came to be marked done while entirely unimplemented. It now has
+    // five gameplay readers and the harness line is the sixth. The lesson is
+    // recorded here because the failure mode is general: **a "has a reader" check
+    // that a log statement satisfies will eventually mark something done that
+    // isn't.** A feature whose reader drifts to another file should be a
+    // deliberate change here, which is why the file is asserted and not just the
+    // name.
+    //
+    // `WeaponWeight` and `ArmorResist` are the two that live purely in `Rules`: a
+    // speed term and an infection roll are both rules questions, and `ArmorResist`
+    // moved there from the bite handler in `RogueGame` when its gate, torso lookup
+    // and roll were folded into one function a test could call.
     //
     // Each call site is named *and located*, so a feature that stops being read
     // fails here rather than quietly leaving the partition below.
@@ -153,14 +160,18 @@ describe("Feature registry is wired", () => {
     // Asserting the exact multiset means a new reader has to be added here, which
     // is the point: a reader is a decision, not an accident.
     expect(sites.map((s) => s.feature).sort())
-      .toEqual(["Alcohol", "ArmorResist", "Cooking", "Cooking", "DarknessFov",
-                 "DarknessFov", "DarknessGating", "FireBarrels",
-                 "FireBarrels", "FoodPoisoning", "FoodPoisoning",
+      .toEqual(["Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol",
+                 "Alcohol", "Alcohol", "ArmorResist", "Cooking", "Cooking",
+                 "DarknessFov", "DarknessFov", "DarknessGating",
+                 "FireBarrels", "FireBarrels", "FoodPoisoning",
                  "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-                 "FoodPoisoning", "ItemDespawn", "ItemDespawn",
-                 "LightPriority", "WeaponWeight"]);
+                 "FoodPoisoning", "FoodPoisoning", "ItemDespawn",
+                 "ItemDespawn", "LightPriority", "WeaponWeight"]);
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
-    expect(at("Alcohol")).toMatch(/HeadlessRunner\.ts:\d+$/);
+    // `Alcohol`'s *first* reader is now in `RogueGame` (the per-turn decay), and
+    // the harness line is one of six rather than the only one.
+    expect(at("Alcohol")).toMatch(/RogueGame\.ts:\d+$/);
+    expect(sites.some((s) => s.feature === "Alcohol" && /HeadlessRunner\.ts/.test(s.at))).toBe(true);
     expect(at("WeaponWeight")).toMatch(/Rules\.ts:\d+$/);
     expect(at("ArmorResist")).toMatch(/Rules\.ts:\d+$/);
     // `Cooking` is two, like `FoodPoisoning`: the predicate in `Rules` beside the
@@ -182,6 +193,15 @@ describe("Feature registry is wired", () => {
     const poison = sites.filter((s) => s.feature === "FoodPoisoning");
     expect(poison.filter((s) => /Rules\.ts/.test(s.at))).toHaveLength(2);
     expect(poison.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(4);
+
+    // Alcohol has six, in three files, which is the most spread-out feature so
+    // far -- the decay, the drink effect, the two accuracy penalties, the control
+    // arm, and the log line in the headless harness that used to be its *only*
+    // reader, which is how it came to be marked done while entirely unwritten.
+    const alc = sites.filter((s) => s.feature === "Alcohol");
+    expect(alc.filter((s) => /Rules\.ts/.test(s.at))).toHaveLength(2);
+    expect(alc.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(4);
+    expect(alc.filter((s) => /HeadlessRunner\.ts/.test(s.at))).toHaveLength(1);
 
     // DarknessGating has exactly one reader, in Rules, and that is the design
     // rather than an accident: five separate behaviours refuse in the dark

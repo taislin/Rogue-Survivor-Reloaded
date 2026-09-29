@@ -79,6 +79,13 @@ export class Color {
   static readonly OrangeRed     = new Color(255, 69, 0);
   static readonly Chocolate     = new Color(210, 105, 30);
   static readonly Beige         = new Color(245, 245, 220);
+  // The four named colours Still Alive's intoxication scale uses (Release 7-1).
+  // .NET's values: Tomato is 255,99,71; DarkSalmon 233,150,122;
+  // MediumAquamarine 102,205,170; PaleGreen 152,251,152.
+  static readonly Tomato             = new Color(255, 99, 71);
+  static readonly DarkSalmon         = new Color(233, 150, 122);
+  static readonly MediumAquamarine   = new Color(102, 205, 170);
+  static readonly PaleGreen          = new Color(152, 251, 152);
   /**
    * `System.Drawing.Color.BurlyWood` (#DEB887), which the C# uses for the
    * `LIT_BROWN` floor colour in GameTiles. The port previously used `Brown`

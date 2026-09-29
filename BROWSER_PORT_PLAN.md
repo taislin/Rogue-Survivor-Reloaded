@@ -1378,7 +1378,7 @@ Stages 4 and 5 have not started.
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
 | **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles, 90 of 95 items and all 123 item factories done.** The 5 backpacks (a new mechanic) and ~420 unused `GameImages` constants are the only content left; nothing *calls* the new factories yet, which is placement and belongs to Stage 4/5 |
-| **4** | 37 gated features | **9 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (part 2a; the light-source scan in 2b is not done), `DarknessGating`, `LightPriority`. 28 remain |
+| **4** | 37 gated features | **10 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (part 2a; the light-source scan in 2b is not done), `DarknessGating`, `LightPriority`, `Alcohol`. 27 remain |
 | **5** | content, audio, credits | **not started** |
 
 Two things a later session should not have to re-derive:
@@ -2538,6 +2538,70 @@ plan for rather than discover:
 > order is a ternary, rather than two copies of the block. That matters beyond
 > tidiness — adding a third left-hand item would otherwise have to be added twice,
 > and the two rulesets would drift apart silently. A test asserts the shape.
+
+> ### `Alcohol` — done, and it was marked done a long time before it was written
+>
+> **The feature the registry has been counting as wired for most of this branch,
+> and was not.** Its only "reader" was a `step()` call in
+> `HeadlessRunner.ts:156` that labels a run with the ruleset it played — a
+> cosmetic line, which satisfied the read-or-pending partition and so let the
+> feature leave `PENDING_WIRING` while nothing in the engine implemented it.
+>
+> That is a general failure mode, and the fix is to say it out loud: **a "has a
+> reader" check that a log statement satisfies will eventually mark something done
+> that is not.** The scanner test now asserts `Alcohol`'s first reader is in
+> `RogueGame` and that the harness line is one of six rather than the only one, so
+> the state cannot silently return.
+>
+> The mechanic is an int rather than a flag, which is what buys four accuracy tiers:
+> one standard drink is `TURNS_PER_HOUR` (30) of blood alcohol, it decays one turn
+> per turn, and passing out is five of them. Expressed in turns rather than points
+> because the decay makes the unit a *duration* — five drinks is two and a half
+> in-game hours on the floor.
+>
+> **The band names do not match the numbers**, and reading them as descriptions of
+> the bands gives the wrong order: `FIRING_WHEN_HAMMERED` (0.66) is the 80–99% band
+> and `FIRING_WHEN_TIPSY` (0.95) is 40–59%. The comments carry the percentages
+> instead, and a test swaps the bands to prove it.
+>
+> `isActorDrunk` cuts at **60%**, the fourth of the six display bands, not the top
+> and not half. So the panel can read "tipsy" while the swing is already degraded.
+>
+> **Both drink effects are threshold *crossings*, not levels.** They compare
+> `previousBloodAlcohol` — snapshotted at the top of the turn — against the
+> previous value, so a survivor at 85% does not vomit on every subsequent can.
+> Reaching 80% vomits; reaching 100% vomits *again* and falls asleep, so a drink
+> that does both is the C#'s behaviour and reads like a bug until you notice the
+> two arms are not mutually exclusive.
+>
+> **`isRecreational` turns out to have a second reader**, and it was needed to make
+> the feature work at all: `DoUseMedicineItem` refuses with "Don't waste medicine!"
+> before reaching the alcohol block, and a beer at full sanity trips that. The C#
+> makes `SanWaste` unconditionally false for a recreational item. **The first cut of
+> this port read that backwards** — `isRecreational && wasted` instead of
+> `isRecreational ? false : wasted` — and the symptom was a full-sanity survivor
+> being told not to drink their beer. Mutation catches it; the manual read did not.
+>
+> `IsActorStandingInLight`'s sibling aside, the one thing **not** ported is the
+> carve-out in the fourth arm of the drunkenness d6: the C# will not drop a box of
+> candles, a flare kit or a box of glowsticks, because those prompt the player to
+> drop one or all. None of the three exists in the port, and the exclusion is
+> dropped rather than faked against the nearest ids (which are single `LIGHT_FLARE`
+> and `LIGHT_GLOWSTICK` items that do not prompt). The site is commented.
+>
+> Six mutations caught. **One clause is provably unobservable and is characterised
+> rather than tested**: the `previous < 80%` guard on the 80% arm. Enumerating
+> every reachable value, the level test and the crossing test disagree only when
+> `previous` is in [120, 150) — where the blackout arm fires anyway, so the outcome
+> is identical — or at/above 150, where the survivor is asleep by construction and
+> cannot drink. The test asserts that characterisation rather than pretending to
+> cover it.
+>
+> Two of the six tests were themselves vacuous at first and are worth recording: the
+> CLASSIC melee comparison used the *same* actor for both sides (because `at(1)`
+> mutates the shared NPC), and the "bandages get nobody drunk" test drove a path
+> that the waste check refused before the alcohol block was reached. Both passed
+> with the corresponding mutation applied.
 
 > ### `ArmorResist` — half done, and the half is not the one the table implies
 >

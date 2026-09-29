@@ -989,6 +989,8 @@ export class RogueGame {
 		"switch place with",
 		"switches place with",
 	);
+	/** Still Alive, Release 7-1: \, used when a drink finishes you. */
+	readonly VERB_BLACK_OUT: Verb = new Verb("black out on");
 	readonly VERB_TAKE: Verb = new Verb("take");
 	readonly VERB_THROW: Verb = new Verb("throw");
 	readonly VERB_TRADE: Verb = new Verb("trade");
@@ -3863,6 +3865,10 @@ export class RogueGame {
 		actor.previousFoodPoints = actor.foodPoints;
 		actor.previousSleepPoints = actor.sleepPoints;
 		actor.previousSanity = actor.sanity;
+		// Still Alive, Release 7-1. Taken at the end of the turn, so during the
+		// *next* one `previousBloodAlcohol` holds the value from before this turn's
+		// decay -- which is what makes the drink effects threshold *crossings*.
+		actor.previousBloodAlcohol = actor.bloodAlcohol;
 	}
 
 	// C# NotifyOrderablesAI — RogueGame.cs:3027
@@ -4297,6 +4303,19 @@ export class RogueGame {
 			this.CookFoodOnFires(map);
 
 			// 4. Actor gauges & states
+			// 3.3.6 Intoxication wears off (Still Alive, Release 7-1).
+			//
+			// One turn of blood alcohol per turn, floored at 0. Gated because this
+			// runs for *every* actor on the map every turn: un-gated it is a no-op
+			// for a survivor who has never drunk, but it is still a write in the
+			// hottest loop in the simulation, and the flag should decide whether
+			// the feature is running at all.
+			if (hasFeature(this.m_Session.ruleset, Feature.Alcohol)) {
+				for (const actor of map.actors) {
+					if (--actor.bloodAlcohol < 0) actor.bloodAlcohol = 0;
+				}
+			}
+
 			// Food poisoning clears itself (Still Alive, Release 7-6). Ahead of the
 			// gauge loop because the recovery roll is its own thing and the
 			// message is the only visible effect.
@@ -7006,6 +7025,7 @@ export class RogueGame {
 	 */
 	async TryPlayerUnwell(): Promise<boolean> {
 		if (await this.TryPlayerInsanity()) return true;
+		if (await this.TryPlayerDrunkenness()) return true;
 		return this.TryPlayerFoodPoisoning();
 	}
 
@@ -17898,7 +17918,28 @@ export class RogueGame {
 			const STAwaste = STAneed <= 0 || med.staminaBoost <= 0;
 			const SLPwaste = SLPneed <= 0 || med.sleepBoost <= 0;
 			const CureWaste = CureNeed <= 0 || med.infectionCure <= 0;
-			const SanWaste = SanNeed <= 0 || med.sanityCure <= 0;
+			// Still Alive, Release 5-7: recreational items are never "wasted
+			// medicine", so a beer can be drunk at full sanity and a cigarette
+			// lit at full everything. The C# writes this as a default-false
+			// `SanWaste` that the recreational case skips over -- the shape is odd
+			// because it lets alcohol through *and* the darkness carve-out in
+			// `DoUseItem`, which is the same three-way "medicine that is not
+			// medicine" distinction.
+			//
+			// Gated: without it, a Still Alive survivor at full sanity is told
+			// "Don't waste medicine!" for a beer, and under CLASSIC nothing should
+			// change at all.
+			// For a recreational item `SanWaste` is *unconditionally* false, not
+			// "recreational and wasteful" -- the C# sets it false and only the
+			// non-recreational branch can turn it on. Reading it the other way round
+			// (as a first draft here did) leaves a full-sanity survivor still being
+			// told "Don't waste medicine!" for a beer, which is the bug the carve-out
+			// exists to remove.
+			const SanWaste = hasFeature(this.m_Session.ruleset, Feature.Alcohol)
+				? med.model.isRecreational
+					? false
+					: SanNeed <= 0 || med.sanityCure <= 0
+				: SanNeed <= 0 || med.sanityCure <= 0;
 
 			if (HPwaste && STAwaste && SLPwaste && CureWaste && SanWaste) {
 				this.AddMessage(this.MakeErrorMessage("Don't waste medicine!"));
@@ -17969,6 +18010,48 @@ export class RogueGame {
 					med,
 				),
 			);
+
+		// Alcohol effects. Still Alive, Release 7-1.
+		//
+		// **Both effects are threshold crossings, not levels.** Each compares
+		// `previousBloodAlcohol` against the *previous* turn's snapshot, so a
+		// survivor who is already at 85% does not vomit on every subsequent can --
+		// without the snapshot, "BAC >= 80%" would fire forever. The snapshot is
+		// taken at the top of the turn in the per-actor loop.
+		//
+		// Note the two thresholds are close together (80% and 100%) and passing
+		// out does *both*: `DoVomit` then `DoStartSleeping`. A survivor who downs
+		// their sixth beer vomits twice, which reads as a bug until you notice the
+		// 80% arm is `else`-free rather than mutually exclusive. That is the C#.
+		if (
+			hasFeature(this.m_Session.ruleset, Feature.Alcohol) &&
+			this.m_Rules.isItemAlcoholForDrinking(med)
+		) {
+			const blackout = Rules.BLACKOUT_DRUNK_LEVEL;
+			actor.bloodAlcohol += Rules.ALCOHOL_STANDARD_UNIT;
+
+			// vomit at 80%
+			if (
+				actor.previousBloodAlcohol < blackout * 0.8 &&
+				actor.bloodAlcohol >= blackout * 0.8
+			) {
+				this.DoVomit(actor);
+			}
+
+			// pass out at 100%
+			if (
+				actor.previousBloodAlcohol < blackout &&
+				actor.bloodAlcohol >= blackout
+			) {
+				this.DoVomit(actor);
+				this.DoStartSleeping(actor);
+				if (this.IsVisibleToPlayer(actor)) {
+					this.AddMessage(
+						this.MakeMessage(actor, this.Conjugate(actor, this.VERB_BLACK_OUT), med),
+					);
+				}
+			}
+		}
 	}
 
 	// C# DoUseAmmoItem — RogueGame.cs:15348
@@ -20998,6 +21081,132 @@ export class RogueGame {
 	/// Put the object on fire : firestate = onfire, jump -1.
 	/// </summary>
 	/// <param name="mapObj"></param>
+	/**
+	 * Whether the player is drunk enough to lose control of an action.
+	 *
+	 * Still Alive, Release 7-1. The third arm of `TryPlayerUnwell`, and the one
+	 * that was missing when the other two landed: insanity, then drunkenness, then
+	 * food poisoning.
+	 *
+	 * Mirrors `TryPlayerInsanity` step for step for the same reason the food
+	 * poisoning arm does -- the C# runs all three as one chain
+	 * (`TryPlayerControlAlteringEffects`) and the early return on an illegal
+	 * action is what keeps a null from being performed.
+	 */
+	async TryPlayerDrunkenness(): Promise<boolean> {
+		if (!hasFeature(this.m_Session.ruleset, Feature.Alcohol)) return false;
+		if (!this.m_Rules.isActorDrunk(this.m_Player)) return false;
+		if (!this.m_Rules.rollChance(Rules.DRUNK_AFFECTED_ACTION_CHANCE))
+			return false;
+
+		const drunkAction = this.GenerateDrunkAction(this.m_Player);
+		if (drunkAction == null) return false;
+		if (!drunkAction.isLegal()) return false;
+
+		this.ClearMessages();
+		this.AddMessage(
+			new Message(
+				"(you're quite drunk. you lost control for a moment)",
+				this.m_Player.location.map!.localTime.turnCounter,
+				Color.Orange,
+			),
+		);
+		await drunkAction.perform();
+		return true;
+	}
+
+	/**
+	 * A random, uncontrolled action, as a manifestation of heavy intoxication.
+	 *
+	 * Still Alive, Release 7-1 (`RogueGame.cs:24984`). One d6:
+	 *
+	 * | roll | what |
+	 * |---|---|
+	 * | 0-1 | vomit, then wait |
+	 * | 2-3 | bump a random direction |
+	 * | 4 | unequip a random item, or drop one |
+	 * | 5 | aggression at a random same-gender bystander |
+	 *
+	 * The d6 is `m_Rules.Roll(0, 6)`, and the port's `DiceRoller.roll(min, max)`
+	 * is exclusive of `max`, so this is `roll(0, 6)` and every case is reachable.
+	 * The weights are lopsided on purpose: vomiting is the commonest outcome at a
+	 * third of the table.
+	 *
+	 * Note the fourth case has a carve-out: a box of candles, flares or glowsticks
+	 * would otherwise be dropped, and those prompt the player to drop one or all
+	 * -- so a drunken survivor shouts instead. The C# carries that as an inline
+	 * list of three item ids.
+	 */
+	GenerateDrunkAction(actor: Actor): ActorAction | null {
+		switch (this.m_Rules.roll(0, 6)) {
+			case 0:
+			case 1:
+				this.DoVomit(actor);
+				return new ActionWait(actor, this);
+
+			case 2:
+			case 3:
+				return new ActionBump(actor, this, this.m_Rules.rollDirection());
+
+			case 4: {
+				const inv = actor.inventory;
+				if (inv === null || inv.isEmpty) return null;
+				const it = inv.items[this.m_Rules.roll(0, inv.items.length)];
+				if (it.equippedPart !== DollPart.NONE) {
+					return new ActionUnequipItem(actor, this, it);
+				}
+				// The C# excludes a box of candles, a flare kit and a box of
+				// glowsticks from being dropped here, because those three prompt the
+				// player to drop one or all -- so a drunken survivor would be asked
+				// a question instead of simply fumbling. **None of the three exists
+				// as an item in the port**, so the exclusion is dropped rather than
+				// faked against the nearest ids (the port has single `LIGHT_FLARE`
+				// and `LIGHT_GLOWSTICK` items, which are different things and do not
+				// prompt). When the boxes arrive, this is the site to revisit.
+				return new ActionDropItem(actor, this, it);
+			}
+
+			case 5: {
+				const map = actor.location.map!;
+				const fov = this.m_Rules.actorFOV(
+					actor,
+					map.localTime,
+					this.m_Session.weather,
+				);
+				for (const other of map.actors) {
+					if (other === actor) continue;
+					if (this.m_Rules.areEnemies(actor, other)) continue;
+					if (
+						!LOS.canTraceViewLine(
+							map,
+							actor.location.position,
+							other.location.position,
+							fov,
+						)
+					)
+						continue;
+					// Must be the same gender. The C#'s comment is just "must be
+					// same gender", and it is worth keeping that visible because it
+					// is a strange rule to encounter without warning.
+					if (actor.doll.body.isMale !== other.doll.body.isMale) continue;
+					if (this.m_Rules.rollChance(50)) {
+						// force leaving of leader.
+						if (actor.hasLeader) {
+							actor.leader!.removeFollower(actor);
+							actor.trustInLeader = Rules.TRUST_NEUTRAL;
+						}
+						this.DoMakeAggression(actor, other);
+						return new ActionSay(actor, this, other, "WHAT ARE YOU LOOKING AT!");
+					}
+				}
+				return null;
+			}
+
+			default:
+				return null;
+		}
+	}
+
 	/**
 	 * Burn one turn of fuel off every fuel-bearing object that is alight.
 	 *

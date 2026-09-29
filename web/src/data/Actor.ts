@@ -74,6 +74,30 @@ export class Actor {
    * rather than a flag, and a food-poisoned actor has `infection === 0`.
    */
   isFoodPoisoned: boolean = false;
+
+  /**
+   * Blood alcohol, in turns' worth of a standard drink. Still Alive, Release 7-1.
+   *
+   * A plain int, not a float, because the C#'s is one: one unit of drink is
+   * `WorldTime.TURNS_PER_HOUR` (30), and passing out is five units (150). It
+   * decays by exactly one per turn, so a survivor who downs five beers is out for
+   * two and a half in-game hours. Modelling it as a level rather than a flag is
+   * what lets the accuracy penalties have four tiers instead of one.
+   *
+   * Plain own fields, so the graph writer carries them with no spec entry -- the
+   * same as `isFoodPoisoned`.
+   */
+  bloodAlcohol: number = 0;
+  /**
+   * Last turn's `bloodAlcohol`, snapshotted at the top of the turn.
+   *
+   * Needed because the drink effects are *thresholds crossings*, not levels:
+   * "vomit if you have just crossed 80%" cannot be expressed as "if BAC >= 80%",
+   * or a survivor who is already at 85% would vomit on every can. The
+   * `previous < T && current >= T` shape is the C#'s.
+   */
+  previousBloodAlcohol: number = 0;
+
   previousFoodPoints: number = 0;
   previousSleepPoints: number = 0;
   previousSanity: number = 0;
