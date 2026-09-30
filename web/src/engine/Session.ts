@@ -84,6 +84,19 @@ export enum RaidType {
    */
   HELICOPTER_RESCUE,
 
+  /**
+   * `Feature.CHARResearchRaid` — C# `Session.cs:60`, Release 8-1.
+   *
+   * "A new raid type, but pretty much the same as band of survivors", per the
+   * C#: same grid slot, same `NotifyOrderablesAI` dispatch, different faction.
+   *
+   * Appended for the same reason `HELICOPTER_RESCUE` above was: the C# also
+   * declares this one after it, so appending keeps every existing member's value —
+   * which is what `Session.m_Event_Raids` is indexed by — and this addition
+   * shifts nothing. `RaidType` is append-only for save compatibility.
+   */
+  CHAR_SCIENTISTS,
+
   _COUNT,
 }
 

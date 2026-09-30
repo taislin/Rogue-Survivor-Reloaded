@@ -170,12 +170,12 @@ describe("Feature registry is wired", () => {
     // Asserting the exact multiset means a new reader has to be added here, which
     // is the point: a reader is a decision, not an accident.
     expect(sites.map((s) => s.feature).sort())
-      .toEqual(["Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AnimalShelter", "AnimalShelter",
-                 "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank", "Bar", "Bar", "Butchering", "Butchering", "Church", "Clinic", "Clinic", "Cooking", "Cooking", "DarknessFov",
-                 "DarknessFov", "DarknessFov", "DarknessGating", "DifficultyAtCreation", "DifficultyAtCreation", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "FireBarrels", "FireBarrels", "FireExtinguishers", "FireStation", "Fishing", "Fishing", "Fishing",
-                 "Fishing", "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FuelStation", "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue",
-                 "HelicopterRescue", "HelicopterRescue", "ItemDespawn", "ItemDespawn", "Junkyard", "Junkyard", "Library", "Library", "LightPriority", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
-                 "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "SiphonFuel", "SiphonFuel", "TileFires", "TileFires", "TileFires", "TileFires", "WeaponWeight"]);
+.toEqual(["Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AnimalShelter", "AnimalShelter",
+                 "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank", "Bar", "Bar", "BlackOpsRaid", "Butchering", "Butchering", "Church", "Clinic", "Clinic", "Cooking", "Cooking",
+                 "DarknessFov", "DarknessFov", "DarknessFov", "DarknessGating", "DifficultyAtCreation", "DifficultyAtCreation", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "FireBarrels", "FireBarrels", "FireExtinguishers", "FireStation", "Fishing", "Fishing",
+                 "Fishing", "Fishing", "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FuelStation", "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue",
+                 "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "ItemDespawn", "ItemDespawn", "Junkyard", "Junkyard", "Library", "Library", "LightPriority", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ShelterBackpacks", "ShelterBackpacks",
+                 "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "SiphonFuel", "SiphonFuel", "TileFires", "TileFires", "TileFires", "TileFires", "WeaponWeight"]);
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     // `Alcohol`'s *first* reader is now in `RogueGame` (the per-turn decay), and
     // the harness line is one of six rather than the only one.
@@ -396,6 +396,18 @@ describe("Feature registry is wired", () => {
     expect(fuelStations[0]!.at).toMatch(
       /buildings\/makeFuelStationBuilding\.ts:\d+$/,
     );
+
+    // BlackOpsRaid is one reader in `RogueGame`, and the location is the point.
+    // This is the reader that was *missing* rather than misplaced: the raid was
+    // fully implemented (`CheckForEvent_BlackOpsRaid` / `FireEvent_BlackOpsRaid`
+    // and both spawners) and firing in every ruleset, which is why the feature sat
+    // in `PENDING_WIRING` with zero call sites. The gate belongs on the *check*
+    // rather than the *fire* -- `FireEvent` is reached from exactly one place and
+    // gating it there would leave the three date/gap/chance dice spent in a
+    // Classic district for a raid that can never happen.
+    const blackOps = sites.filter((s) => s.feature === "BlackOpsRaid");
+    expect(blackOps).toHaveLength(1);
+    expect(blackOps[0]!.at).toMatch(/RogueGame\.ts:\d+$/);
 
     // AmbientAudio is five readers in one file, and the split is the design rather
     // than an accident: **one** that decides what should be audible

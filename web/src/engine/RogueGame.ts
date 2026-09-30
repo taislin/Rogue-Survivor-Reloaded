@@ -27,6 +27,7 @@ import { DollPart } from "@data/Doll";
 import type { Faction } from "@data/Faction";
 import { Inventory } from "@data/Inventory";
 import { Item } from "@data/Item";
+import type { ItemModel } from "@data/ItemModel";
 import { Location } from "@data/Location";
 import { Exit, Lighting, Map } from "@data/Map";
 import { Barrel, Campfire, Car } from "@engine/mapobjects/MapObjects";
@@ -5389,13 +5390,14 @@ export class RogueGame {
 
 								if (it.fuseTimeLeft <= 0) {
 									// boom!
-									map.removeItemAt(it, pos);
-									await this.DoBlast(
-										new Location(map, pos),
-										(it.model as ItemExplosiveModel).blastAttack,
-									);
-									hasExplodedSomething = true;
-									break;
+map.removeItemAt(it, pos);
+								await this.DoBlast(
+									new Location(map, pos),
+									(it.model as ItemExplosiveModel).blastAttack,
+									it.model,
+								);
+								hasExplodedSomething = true;
+								break;
 								}
 							}
 
@@ -5414,11 +5416,12 @@ export class RogueGame {
 
 								if (it.fuseTimeLeft <= 0) {
 									// boom!
-									inv.removeAllQuantity(it);
-									await this.DoBlast(
-										new Location(map, actor.location.position),
-										(it.model as ItemExplosiveModel).blastAttack,
-									);
+inv.removeAllQuantity(it);
+								await this.DoBlast(
+									new Location(map, actor.location.position),
+									(it.model as ItemExplosiveModel).blastAttack,
+									it.model,
+								);
 									hasExplodedSomething = true;
 									break;
 								}
@@ -6298,8 +6301,27 @@ export class RogueGame {
 		}
 	}
 
-	// C# CheckForEvent_BlackOpsRaid — RogueGame.cs:4813
+	// C# CheckForEvent_BlackOpsRaid — RogueGame.cs:28575
+	//
+	// **This was running unconditionally, with no feature gate at all**, which is
+	// why `Feature.BlackOpsRaid` sat in `PENDING_WIRING` while the raid it names
+	// fired in Classic districts. The raid is fork content — Release 6-1 added the
+	// music this plays and rewrote both messages — so CLASSIC should not have it,
+	// and `Feature.BlackOpsRaid` is the port's mechanism for saying so.
+	//
+	// **The C# gates this on an option, not a ruleset**:
+	//
+	// ```csharp
+	// if (s_Options.BlackOpsRaidsEnabled == false) return false;   // :28578, Release 7-5
+	// ```
+	//
+	// `BlackOpsRaidsEnabled` does not exist in the port — no ruleset has it and
+	// `GameOptions` has no such field — so the `hasFeature` below *replaces* that
+	// clause rather than sitting beside it. Nothing else about the method is
+	// affected, and the three date/gap/chance gates below are the C#'s, in the
+	// C#'s order.
 	CheckForEvent_BlackOpsRaid(map: Map): boolean {
+		if (!hasFeature(this.m_Session.ruleset, Feature.BlackOpsRaid)) return false;
 		if (map.localTime.day < BLACKOPS_RAID_DAY) return false;
 
 		if (
@@ -6349,19 +6371,26 @@ export class RogueGame {
 			!this.m_Player.model.abilities.isUndead
 		) {
 			this.m_MusicManager.stop();
-			this.m_MusicManager.play(GameMusics.ARMY, MusicPriority.EVENT);
+			// C# `:28625`. Release 6-1 changed the music from `GameMusics.ARMY` to a
+			// purpose-written `BLACK_OPS`, and this port was still on the Army track
+			// from before that change. The C# calls `StopAll()` here; the port's
+			// `stop()` is the equivalent and is left as it was.
+			this.m_MusicManager.play(GameMusics.BLACK_OPS, MusicPriority.EVENT);
 
 			this.ClearMessages();
+			// Both strings are Release 6-1's, verbatim. The port still had the
+			// pre-6-1 helicopter text, which described the wrong vehicle and the
+			// wrong delivery.
 			this.AddMessage(
 				new Message(
-					"You hear a chopper flying over the city!",
+					"A plane passes quickly over the city!",
 					this.m_Session.worldTime.turnCounter,
 					Color.LightGreen,
 				),
 			);
 			this.AddMessage(
 				this.MakePlayerCentricMessage(
-					"The chopper has dropped something",
+					"Parachutists have dropped",
 					raidLeader.location.position,
 				),
 			);
@@ -17858,7 +17887,26 @@ export class RogueGame {
 
 	// C# DoBlast — RogueGame.cs:14198
 	// async: C# blocks on AnimDelay/ApplyExplosionWave.
-	async DoBlast(location: Location, blastAttack: BlastAttack): Promise<void> {
+	//
+	// **`itemModel` is the C#'s third parameter** (`RogueGame.cs:19567`), added in
+	// Release 4 for the SFX switch and threaded through to `ApplyExplosionDamage`'s
+	// tile-fire seeding at `:20036`. The port had two parameters, so its blast path
+	// could not know *what* had exploded and the seeding was unreachable.
+	//
+	// **Only the tile-fire half of the C#'s `itemModel` use is ported here, and that
+	// is a deliberate narrowing rather than an oversight.** `DoBlast` also reads the
+	// model for a three-way SFX switch on the primed id (`:19580`, `:19636`,
+	// `:19662`), the BFG plasma icon (`:19693`), and the smoke screen and flashbang
+	// deployments (`:19697`, `:19699`); `ApplyExplosionDamage` additionally uses it
+	// for the plasma charge's four special cases (`:19871`, `:19902`, `:19922`,
+	// `:20006`, `:20028`). None of that is reachable in the port today --
+	// `DeploySmokeScreen` and `DetonateFlashbang` do not exist here, the BFG and the
+	// grenade launcher are unported, and no code path primes a plasma charge -- so
+	// porting it would be ~200 lines of unreachable transcription. What *is* ported
+	// is exactly equivalent for every explosive the port can detonate: see the
+	// seeding note in `ApplyExplosionDamage` for why gating on `causesTileFires`
+	// alone matches the C#'s `IsFlameWeapon || CausesTileFires`.
+	async DoBlast(location: Location, blastAttack: BlastAttack, itemModel: ItemModel): Promise<void> {
 		// noise.
 		this.OnLoudNoise(location.map!, location.position, "A loud EXPLOSION");
 
@@ -17890,7 +17938,7 @@ export class RogueGame {
 		}
 
 		// ground zero explosion.
-		await this.ApplyExplosionDamage(location, 0, blastAttack);
+		await this.ApplyExplosionDamage(location, 0, blastAttack, itemModel);
 
 		// explosion wave.
 		for (
@@ -17903,6 +17951,7 @@ export class RogueGame {
 				location,
 				waveDistance,
 				blastAttack,
+				itemModel,
 			);
 
 			// show.
@@ -17923,6 +17972,7 @@ export class RogueGame {
 		center: Location,
 		waveDistance: number,
 		blast: BlastAttack,
+		itemModel: ItemModel,
 	): Promise<boolean> {
 		let anyVisible = false;
 		const map = center.map!;
@@ -17941,6 +17991,7 @@ export class RogueGame {
 						new Point(x, ymin),
 						waveDistance,
 						blast,
+						itemModel,
 					)) || anyVisible;
 			}
 		}
@@ -17954,6 +18005,7 @@ export class RogueGame {
 						new Point(x, ymax),
 						waveDistance,
 						blast,
+						itemModel,
 					)) || anyVisible;
 			}
 		}
@@ -17969,6 +18021,7 @@ export class RogueGame {
 						new Point(xmin, y),
 						waveDistance,
 						blast,
+						itemModel,
 					)) || anyVisible;
 			}
 		}
@@ -17984,6 +18037,7 @@ export class RogueGame {
 						new Point(xmax, y),
 						waveDistance,
 						blast,
+						itemModel,
 					)) || anyVisible;
 			}
 		}
@@ -17999,6 +18053,7 @@ export class RogueGame {
 		pt: Point,
 		waveDistance: number,
 		blast: BlastAttack,
+		itemModel: ItemModel,
 	): Promise<boolean> {
 		if (
 			blastCenter.map!.isInBoundsPoint(pt) &&
@@ -18015,6 +18070,7 @@ export class RogueGame {
 				new Location(blastCenter.map, pt),
 				waveDistance,
 				blast,
+				itemModel,
 			);
 
 			// show if visible.
@@ -18039,6 +18095,7 @@ export class RogueGame {
 		location: Location,
 		distanceFromBlast: number,
 		blast: BlastAttack,
+		itemModel: ItemModel,
 	): Promise<number> {
 		const map = location.map!;
 
@@ -18156,7 +18213,14 @@ export class RogueGame {
 					// then directly damage the object.
 					if (damageToObject >= 0) {
 						obj.hitPoints -= damageToObject;
-						if (obj.hitPoints <= 0) this.DoDestroyObject(obj);
+						// C# `:19991-19994`. `ExplosionChainReactionMapObjects` may have
+						// swapped a BREAKABLE fuel pump for an UNBREAKABLE wreck, in
+						// which case `DoDestroyObject` must *not* also run -- the C#'s
+						// comment says exactly that, and getting it wrong would delete
+						// the wreck the explosion just left behind.
+						if (obj.hitPoints <= 0 && !(await this.ExplosionChainReactionMapObjects(location))) {
+							this.DoDestroyObject(obj);
+						}
 					}
 				}
 			}
@@ -18170,13 +18234,146 @@ export class RogueGame {
 			}
 		}
 
-		// destroy walls?
-		if (blast.canDestroyWalls) {
-			throw new Error("blast.destroyWalls");
+		// destroy walls? C# `:20016-20024`.
+		//
+		// ```csharp
+		// if (blast.CanDestroyWalls)
+		// {
+		//     if (map.IsDestructibleWallAt(this, location) && !map.AnyAdjacentOutOfBounds(location.Position))
+		//     { ReplaceDestroyedWall(location); wallDestroyed = true; }
+		// }
+		// ```
+		//
+		// **This used to be `throw new Error("blast.destroyWalls")`, and removing it
+		// is what made the fuel pump arm possible at all.** Three explosives carry
+		// `canDestroyWalls` (`GameItems.ts`: dynamite, C4, fuel pump) and the fuel
+		// pump's is reached by `ExplodeFuelPump`, so the throw was reachable the moment
+		// a pump detonated — and it had been reachable for dynamite and C4 since
+		// "Port Phase 4 slice 6", where it was left as an honest marker for work that
+		// had not been done.
+		//
+		// The outer guard below is the C#'s, verbatim, so the *decision* to destroy a
+		// wall is now correct. `IsDestructibleWallAt` is inlined rather than kept as a
+		// `Map` method because it asks `GameTiles` about the tile model and `data/` has
+		// no business importing `gameplay/`; the cast is the one `LOS.ts:454` already
+		// uses to reach a `GameTiles`-only method off the base-typed `Models.tiles`.
+		const wallTile = map.getTileAt(location.position.x, location.position.y);
+		const isDestructibleWall =
+			!map.isOnMapBorder(location.position.x, location.position.y) &&
+			wallTile !== null &&
+			(Models.tiles as GameTiles).isDestructibleWallModel(wallTile.model);
+		if (
+			blast.canDestroyWalls &&
+			isDestructibleWall &&
+			!map.anyAdjacentOutOfBounds(location.position)
+		) {
+			// TODO(Still Alive): ReplaceDestroyedWall — `RogueGame.cs:20134-20232`, ~99
+			// lines — is still unported, so a wall that passes the guard is left
+			// standing. Doing nothing here is deliberate and is strictly better than
+			// throwing: the blast still damages actors, items, corpses and objects,
+			// still sets tiles on fire, and still detonates adjacent fuel pumps, which
+			// is the whole of `Feature.TileFires`' arm. What is missing is
+			// visible-but-cosmetic rubble, and all nine `DECO_WALL_*_DAMAGED` sprites
+			// already ship -- so what remains is the `GameImages` constants, the swap to
+			// an adjacent floor model, and the plank drop for `WALL_WOOD_PLANKS`.
+		}
+
+		// Explosion fires. C# `:20035-20037`, the last thing `ApplyExplosionDamage`
+		// does before returning:
+		//
+		// ```csharp
+		// if (itemModel.IsFlameWeapon || itemModel.CausesTileFires)
+		//     SetTileOnFire(map, x, y, true);
+		// ```
+		//
+		// **Gated on `causesTileFires` alone, and that is exactly equivalent for every
+		// explosive this port can detonate.** The C#'s condition also admits
+		// `IsFlameWeapon`, but the only model in the reference carrying that flag
+		// *without* also carrying `CausesTileFires` is the flamethrower
+		// (`GameItems.cs:2084`), a ranged weapon that never reaches this method. Every
+		// explosive with `IsFlameWeapon` -- the molotov pair (`:2315-2316`,
+		// `:2323-2324`) and the fuel can pair (`:2379-2380`, `:2387-2388`) -- also has
+		// `CausesTileFires`. So dropping `IsFlameWeapon` from the disjunction changes
+		// no explosive's behaviour here, and avoids porting a flag that five other
+		// call sites (`RogueGame.cs:18742`, `:18791`, `:18828`, `:18873`, `:18992`)
+		// and `BaseAI.cs:4549` also read. Dropping it is a narrowing of the *flag*, not
+		// of the *behaviour*, and that distinction is the whole reason it is safe.
+		//
+		// `wasFlameWeapon` is `true` unconditionally, as the C# has it: the C# passes
+		// the literal `true` at `:20036` for both branches, because an explosion is
+		// allowed to scorch and ignite walls in a way a spreading fire is not.
+		if (itemModel.causesTileFires) {
+			await this.setTileOnFire(map, location.position.x, location.position.y, true);
 		}
 
 		// return damage done.
 		return modifiedDamage;
+	}
+
+	/**
+	 * C# `ExplosionChainReactionMapObjects` — `RogueGame.cs:20110-20121`, Release 7-3.
+	 * "Convert fuel pumps into explosives to make them explode."
+	 *
+	 * Returns `true` when it consumed the object, which is the caller's signal to
+	 * skip `DoDestroyObject`: a pump that just exploded has already been replaced by
+	 * an unbreakable wreck, and destroying that as well would leave the tile bare.
+	 *
+	 * **The HP arm is unreachable in practice, and that is a fact worth writing down
+	 * rather than a reason to skip this.** A pump has 800 hitpoints
+	 * (`DoorWindow.BASE_HITPOINTS * 20`) and the strongest blast in the game deals
+	 * 200 at ground zero, so a healthy pump cannot be reduced to zero by a
+	 * neighbouring blast and this never fires from the HP path. It is here because
+	 * the C# has it, because a pump at low HP from bashing *can* reach it, and
+	 * because it costs four lines. Pump-to-pump propagation in the reference goes
+	 * through `setTileOnFire`'s adjacency sweep instead.
+	 */
+	private async ExplosionChainReactionMapObjects(location: Location): Promise<boolean> {
+		const mapObj = location.map!.getMapObjectAt(location.position.x, location.position.y);
+		if (mapObj !== null && mapObj.imageId === GameImages.OBJ_FUEL_PUMP) {
+			await this.ExplodeFuelPump(location);
+			return true;
+		}
+		return false;
+	}
+
+	/**
+	 * C# `ExplodeFuelPump` — `RogueGame.cs:20123-20129`, Release 7-3. The only
+	 * implementation; the reference has five call sites and this is all of them.
+	 *
+	 * Three statements, and **the order is the C#'s and it matters**:
+	 *
+	 *  1. Remove the intact pump. Before the blast, not after, so that the blast sees
+	 *     an empty tile — it takes no self-damage, does not re-trigger itself through
+	 *     `ExplosionChainReactionMapObjects`, and is not adjacent to its own fire.
+	 *  2. Blast with the hidden `FUEL_PUMP_PRIMED` model, purely to borrow its blast
+	 *     numbers: radius 2, damage `[200, 100, 50]`, `canDamageObjects` and
+	 *     `canDestroyWalls` both true, `CausesTileFires` true. Those come from
+	 *     `Items_Explosives.csv:7` and are already in the port's model row.
+	 *  3. Place the wreck, *after* the blast has finished.
+	 *
+	 * The C# passes `thrower = null`, so the Explosives-skill damage bonus at
+	 * `:19863-19864` never applies to a pump blast. The port has no `thrower` on
+	 * `Item` at all, so there is nothing to thread and nothing is lost.
+	 */
+	private async ExplodeFuelPump(location: Location): Promise<void> {
+		const map = location.map!;
+		// 1. get rid of the intact pump.
+		const pump = map.getMapObjectAt(location.position.x, location.position.y);
+		if (pump !== null) map.removeMapObject(pump);
+
+		// 2. the hidden explosive, so we can cause a big boom. **Awaited**, which the C#'s
+		// synchronous `DoBlast` gets for free and this port does not: `DoBlast` awaits
+		// `AnimDelay`, so a floating promise here would place the wreck *before* the
+		// blast had finished and turn any failure inside the blast into an unhandled
+		// rejection rather than an error the caller sees.
+		const primedModel = this.m_GameItems.get(ItemID.EXPLOSIVE_FUEL_PUMP_PRIMED) as ItemExplosiveModel;
+		await this.DoBlast(new Location(map, location.position), primedModel.blastAttack, primedModel);
+
+		// 3. what happens to the pump after it goes boom.
+		map.placeMapObject(
+			this.m_TownGenerator.makeObjFuelPumpBroken(GameImages.OBJ_FUEL_PUMP_BROKEN),
+			location.position,
+		);
 	}
 
 	// C# ExplosionChainReaction — RogueGame.cs:14469
@@ -22971,7 +23168,7 @@ export class RogueGame {
 	 * The `EFFECT_ONFIRE` decoration is added here and removed only in
 	 * `extinguishOnFireTile`, so the flag and the decoration cannot drift apart.
 	 */
-	private setTileOnFire(map: Map, x: number, y: number, wasFlameWeapon: boolean): void {
+	private async setTileOnFire(map: Map, x: number, y: number, wasFlameWeapon: boolean): Promise<void> {
 		const tile = map.getTileAt(x, y);
 		if (tile === null || tile.isOnFire) return;
 		// Water does not burn. Still Alive, Release 6-1.
@@ -22984,6 +23181,47 @@ export class RogueGame {
 			scorched = true;
 		}
 		if (wasFlameWeapon || scorched) this.scorchBurntTile(map, x, y);
+
+		// Fires blow up adjacent fuel pumps. C# `:24633-24642`, Release 7-3:
+		//
+		// ```csharp
+		// map.ForEachAdjacentAndCenterInMap(pt, (adj) =>
+		// {
+		//     MapObject mapObj = map.GetMapObjectAt(adj);
+		//     if (mapObj != null && mapObj.ImageID == GameImages.OBJ_FUEL_PUMP)
+		//     { ExplodeFuelPump(mapObj.Location); return; }
+		// });
+		// ```
+		//
+		// **This sweep is the only way one fuel pump detonates another**, and the
+		// recursion it sets up is the C#'s cascade: a pump blasts, its blast sets
+		// tiles on fire (its model carries `CausesTileFires`), each of those ignites
+		// and sweeps its own eight neighbours, so pumps within Chebyshev distance 2
+		// of the first go up too. There is no depth limit and no visited set, exactly
+		// as in the reference.
+		//
+		// Two details transcribed rather than tidied. The sweep runs **after** the
+		// early returns above, so a tile that is already burning, is water, or has no
+		// tile at all never triggers a pump — C# `:24616-24619` returns before the
+		// sweep is reached. And `return` inside the C#'s lambda exits only that one
+		// adjacent tile; it is not a break of the nine-tile walk, so several adjacent
+		// pumps can all go up.
+		//
+		// `ForEachAdjacentAndCenterInMap` is the centre followed by `Direction.COMPASS`,
+		// i.e. eight directions, so this is a 3x3 neighbourhood and not a plus-shape.
+		for (let dx = -1; dx <= 1; dx++) {
+			for (let dy = -1; dy <= 1; dy++) {
+				const adj = new Point(x + dx, y + dy);
+				if (!map.isInBoundsPoint(adj)) continue;
+				const mapObj = map.getMapObjectAt(adj.x, adj.y);
+				if (mapObj !== null && mapObj.imageId === GameImages.OBJ_FUEL_PUMP) {
+					// `mapObj.location` rather than a hand-built `Location`, as the C# has
+					// it at `:24640`. `Map.placeMapObject` sets that back-pointer
+					// (`Map.ts:627`), so it is the pump's own location and not a guess.
+					await this.ExplodeFuelPump(mapObj.location);
+				}
+			}
+		}
 	}
 
 	/**
@@ -23013,11 +23251,23 @@ export class RogueGame {
 	 * immune here, which is the C#'s `IsSkeletonBranch` test -- and they are immune
 	 * in `SetActorOnFire` too, so a skeleton in a fire is simply never hurt.
 	 *
-	 * **The crop arm is not ported.** It converts `FLOOR_PLANTED` back to
-	 * `FLOOR_GRASS`, and the farming system that plants anything is alpha10-era
-	 * and was never ported -- the same gap that blocks `ResourcesAvailability`'s
-	 * fruit interval. `FLOOR_PLANTED` is marked flammable, so the fire spreads
-	 * there correctly; only the harvest loss is missing.
+	 * **The crop arm is here, and it is not the blocked thing this comment used to
+	 * say it was.** C# `:24731-24734` converts a `FLOOR_PLANTED` tile back to
+	 * `FLOOR_GRASS`, and an earlier version of this file recorded it as unportable
+	 * because "the farming system that plants anything is alpha10-era and was never
+	 * ported". That conflated the *planting* half with the *loss* half. Nothing
+	 * about destroying a crop needs a farming system: `TileID.FLOOR_PLANTED` is
+	 * registered (`GameTiles.ts:236`), is flammable (`:407`), and the tile model is
+	 * read and written with the same two calls every other generator uses.
+	 *
+	 * The one producer of `FLOOR_PLANTED` -- `HandlePlayerPlantSeeds`
+	 * (`RogueGame.cs:14208`) -- is still unported, and `ItemID.VEGETABLE_SEEDS` does
+	 * not exist. So in the port today this arm can only fire on a planted tile that
+	 * something else put there, and `Feature.Farm`'s own crops are map objects
+	 * (a berry bush, a peanut plant, a grape vine) rather than planted tiles, so
+	 * they are *not* affected by this. It is landed anyway, and deliberately: it is
+	 * three lines, it is the C#'s behaviour, and leaving the lossy half out while
+	 * shipping the flammable half would mean a planted tile burns forever.
 	 */
 	private async applyBurnDamageFromTileFire(
 		map: Map,
@@ -23052,6 +23302,22 @@ export class RogueGame {
 		// Corpses burn too, and a scorched map is full of them.
 		for (const corpse of map.getCorpsesAt(point) ?? []) {
 			this.InflictDamageToCorpse(corpse, RogueGame.BASE_TILE_FIRE_DAMAGE);
+		}
+
+		// And crops are total: C# `:24731-24734`, the method's last statement, after
+		// the actor and the corpses so that a burning tile loses everything it was
+		// holding in the C#'s order rather than ours.
+		//
+		// `FLOOR_PLANTED` -> `FLOOR_GRASS`, unconditionally, with no roll, no item
+		// and no message. Losing the crop is the whole effect: the tile is no longer
+		// planted, so nothing will harvest it again, and replanting costs the player
+		// another seed and another turn. The C# has no null guard before this read
+		// (`:24732-24733` dereferences `tile` straight after the assignment) because
+		// it has already established the tile exists; the optional chain is the port's
+		// necessary divergence, since `getTileAt` returns `Tile | null`.
+		const tile = map.getTileAt(point.x, point.y);
+		if (tile?.model === Models.tiles.get(TileID.FLOOR_PLANTED)) {
+			map.setTileModelAt(point.x, point.y, Models.tiles.get(TileID.FLOOR_GRASS)!);
 		}
 	}
 
@@ -23316,7 +23582,7 @@ export class RogueGame {
 					if (!this.m_Rules.rollChance(RogueGame.TILE_FIRE_SPREAD_CHANCE)) continue;
 					spreadTo.add(key);
 					// false: a spreading fire must not scorch walls.
-					this.setTileOnFire(map, adj.x, adj.y, false);
+					await this.setTileOnFire(map, adj.x, adj.y, false);
 					await this.applyBurnDamageFromTileFire(map, adj, exempt);
 				}
 

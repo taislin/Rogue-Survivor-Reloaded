@@ -304,7 +304,17 @@ export enum ItemID {
   BACKPACK_DAYPACK = 174,
   BACKPACK_HIKING_PACK = 175,
   BACKPACK_ARMY_RUCKSACK = 176,
-  _COUNT = 177,
+  /**
+   * Still Alive, Release 8-1. `Feature.CHARResearchRaid`'s laptop, appended for
+   * the same reason as everything above.
+   *
+   * The comment at `FISHING_ROD` names this id as one of the ones that insertion
+   * would have renumbered, which is why it sat in the C#'s mid-enum position
+   * (`GameItems.cs:156`) with no port row. Its sprite shipped in the classic
+   * pack all along, so the gap was a missing row rather than a missing asset.
+   */
+  CHAR_LAPTOP = 177,
+  _COUNT = 178,
 }
 
 /**
@@ -389,6 +399,11 @@ const CAN_GO_IN_BACKPACKS: ReadonlySet<ItemID> = new Set<ItemID>([
 
   // The two uniques the C# flags, and the siphon kit.
   ItemID.UNIQUE_SUBWAY_BADGE, ItemID.UNIQUE_BOOK_OF_ARMAMENTS, ItemID.SIPHON_KIT,
+
+  // The CHAR laptop (`GameItems.cs:3072`, Release 8-2). The `CAN_GO_IN_BACKPACKS`
+  // comment above says the laptop is one of the rows with no model here, which is
+  // what kept it out of this set until now.
+  ItemID.CHAR_LAPTOP,
 ]);
 
 export class GameItems implements ItemModelDB {
@@ -706,21 +721,33 @@ export class GameItems implements ItemModelDB {
     // registered under its own id because that is how a thrown explosive finds it.
     const explosiveMap: Record<string, {
       id: ItemID; img: string; canDamageObjects: boolean; canDestroyWalls: boolean;
-      primedId: ItemID; primedImg: string;
+      causesTileFires: boolean; primedId: ItemID; primedImg: string;
     }> = {
-      EXPLOSIVE_GRENADE: { id: ItemID.EXPLOSIVE_GRENADE, img: GameImages.ITEM_GRENADE, canDamageObjects: true, canDestroyWalls: false, primedId: ItemID.EXPLOSIVE_GRENADE_PRIMED, primedImg: GameImages.ITEM_GRENADE_PRIMED },
-      EXPLOSIVE_MOLOTOV: { id: ItemID.EXPLOSIVE_MOLOTOV, img: GameImages.ITEM_MOLOTOV, canDamageObjects: false, canDestroyWalls: false, primedId: ItemID.EXPLOSIVE_MOLOTOV_PRIMED, primedImg: GameImages.ITEM_MOLOTOV_PRIMED },
+      EXPLOSIVE_GRENADE: { id: ItemID.EXPLOSIVE_GRENADE, img: GameImages.ITEM_GRENADE, canDamageObjects: true, canDestroyWalls: false, causesTileFires: false, primedId: ItemID.EXPLOSIVE_GRENADE_PRIMED, primedImg: GameImages.ITEM_GRENADE_PRIMED },
+      // molotov: `CausesTileFires` at `GameItems.cs:2315`. **Landing this flag is a
+      // visible behaviour change**, and a C#-parity fix rather than a regression --
+      // the reference has seeded tile fires from a molotov since Release 5-2, and
+      // the port's blast path never reached the line at all. See
+      // `ApplyExplosionDamage`'s seeding note for why gating on `causesTileFires`
+      // alone is exactly equivalent to the C#'s `IsFlameWeapon || CausesTileFires`.
+      EXPLOSIVE_MOLOTOV: { id: ItemID.EXPLOSIVE_MOLOTOV, img: GameImages.ITEM_MOLOTOV, canDamageObjects: false, canDestroyWalls: false, causesTileFires: true, primedId: ItemID.EXPLOSIVE_MOLOTOV_PRIMED, primedImg: GameImages.ITEM_MOLOTOV_PRIMED },
       // player-only: the C# forbids it to the AI because they are meant to be rare
-      EXPLOSIVE_DYNAMITE: { id: ItemID.EXPLOSIVE_DYNAMITE, img: GameImages.ITEM_DYNAMITE, canDamageObjects: true, canDestroyWalls: true, primedId: ItemID.EXPLOSIVE_DYNAMITE_PRIMED, primedImg: GameImages.ITEM_DYNAMITE_PRIMED },
-      EXPLOSIVE_C4: { id: ItemID.EXPLOSIVE_C4, img: GameImages.ITEM_C4, canDamageObjects: true, canDestroyWalls: true, primedId: ItemID.EXPLOSIVE_C4_PRIMED, primedImg: GameImages.ITEM_C4_PRIMED },
-      // a primed fuel can is drawn as a fuel can -- the C# reuses the sprite
-      EXPLOSIVE_FUEL_CAN: { id: ItemID.EXPLOSIVE_FUEL_CAN, img: GameImages.ITEM_AMMO_FUEL, canDamageObjects: true, canDestroyWalls: false, primedId: ItemID.EXPLOSIVE_FUEL_CAN_PRIMED, primedImg: GameImages.ITEM_AMMO_FUEL },
-      // like the fuel can, and the plasma charge, the primed sprite is the live one
-      EXPLOSIVE_FUEL_PUMP: { id: ItemID.EXPLOSIVE_FUEL_PUMP, img: GameImages.OBJ_FUEL_PUMP, canDamageObjects: true, canDestroyWalls: true, primedId: ItemID.EXPLOSIVE_FUEL_PUMP_PRIMED, primedImg: GameImages.OBJ_FUEL_PUMP },
-      EXPLOSIVE_SMOKE_GRENADE: { id: ItemID.EXPLOSIVE_SMOKE_GRENADE, img: GameImages.ITEM_SMOKE_GRENADE, canDamageObjects: false, canDestroyWalls: false, primedId: ItemID.EXPLOSIVE_SMOKE_GRENADE_PRIMED, primedImg: GameImages.ITEM_SMOKE_GRENADE_PRIMED },
-      EXPLOSIVE_FLASHBANG: { id: ItemID.EXPLOSIVE_FLASHBANG, img: GameImages.ITEM_FLASHBANG, canDamageObjects: false, canDestroyWalls: false, primedId: ItemID.EXPLOSIVE_FLASHBANG_PRIMED, primedImg: GameImages.ITEM_FLASHBANG_PRIMED },
-      EXPLOSIVE_HOLY_HAND_GRENADE: { id: ItemID.EXPLOSIVE_HOLY_HAND_GRENADE, img: GameImages.ITEM_HOLY_HAND_GRENADE, canDamageObjects: true, canDestroyWalls: false, primedId: ItemID.EXPLOSIVE_HOLY_HAND_GRENADE_PRIMED, primedImg: GameImages.ITEM_HOLY_HAND_GRENADE_PRIMED },
-      EXPLOSIVE_PLASMA_CHARGE: { id: ItemID.EXPLOSIVE_PLASMA_CHARGE, img: GameImages.ITEM_PLASMA_BURST_PRIMED, canDamageObjects: false, canDestroyWalls: false, primedId: ItemID.EXPLOSIVE_PLASMA_CHARGE_PRIMED, primedImg: GameImages.ITEM_PLASMA_BURST_PRIMED },
+      EXPLOSIVE_DYNAMITE: { id: ItemID.EXPLOSIVE_DYNAMITE, img: GameImages.ITEM_DYNAMITE, canDamageObjects: true, canDestroyWalls: true, causesTileFires: false, primedId: ItemID.EXPLOSIVE_DYNAMITE_PRIMED, primedImg: GameImages.ITEM_DYNAMITE_PRIMED },
+      EXPLOSIVE_C4: { id: ItemID.EXPLOSIVE_C4, img: GameImages.ITEM_C4, canDamageObjects: true, canDestroyWalls: true, causesTileFires: false, primedId: ItemID.EXPLOSIVE_C4_PRIMED, primedImg: GameImages.ITEM_C4_PRIMED },
+      // a primed fuel can is drawn as a fuel can -- the C# reuses the sprite.
+      // `CausesTileFires` at `GameItems.cs:2379`; inert in the port today because
+      // nothing here primes a fuel can (`DoRangedAttackOnFuelThing` is unported), but
+      // set faithfully so that it is right when that path lands.
+      EXPLOSIVE_FUEL_CAN: { id: ItemID.EXPLOSIVE_FUEL_CAN, img: GameImages.ITEM_AMMO_FUEL, canDamageObjects: true, canDestroyWalls: false, causesTileFires: true, primedId: ItemID.EXPLOSIVE_FUEL_CAN_PRIMED, primedImg: GameImages.ITEM_AMMO_FUEL },
+      // like the fuel can, and the plasma charge, the primed sprite is the live one.
+      // `CausesTileFires` at `GameItems.cs:2403` -- **this is the only flag the fuel
+      // pump arm actually needs**, and the reason `ExplodeFuelPump` can blast
+      // without threading an `IsFlameWeapon` through.
+      EXPLOSIVE_FUEL_PUMP: { id: ItemID.EXPLOSIVE_FUEL_PUMP, img: GameImages.OBJ_FUEL_PUMP, canDamageObjects: true, canDestroyWalls: true, causesTileFires: true, primedId: ItemID.EXPLOSIVE_FUEL_PUMP_PRIMED, primedImg: GameImages.OBJ_FUEL_PUMP },
+      EXPLOSIVE_SMOKE_GRENADE: { id: ItemID.EXPLOSIVE_SMOKE_GRENADE, img: GameImages.ITEM_SMOKE_GRENADE, canDamageObjects: false, canDestroyWalls: false, causesTileFires: false, primedId: ItemID.EXPLOSIVE_SMOKE_GRENADE_PRIMED, primedImg: GameImages.ITEM_SMOKE_GRENADE_PRIMED },
+      EXPLOSIVE_FLASHBANG: { id: ItemID.EXPLOSIVE_FLASHBANG, img: GameImages.ITEM_FLASHBANG, canDamageObjects: false, canDestroyWalls: false, causesTileFires: false, primedId: ItemID.EXPLOSIVE_FLASHBANG_PRIMED, primedImg: GameImages.ITEM_FLASHBANG_PRIMED },
+      EXPLOSIVE_HOLY_HAND_GRENADE: { id: ItemID.EXPLOSIVE_HOLY_HAND_GRENADE, img: GameImages.ITEM_HOLY_HAND_GRENADE, canDamageObjects: true, canDestroyWalls: false, causesTileFires: false, primedId: ItemID.EXPLOSIVE_HOLY_HAND_GRENADE_PRIMED, primedImg: GameImages.ITEM_HOLY_HAND_GRENADE_PRIMED },
+      EXPLOSIVE_PLASMA_CHARGE: { id: ItemID.EXPLOSIVE_PLASMA_CHARGE, img: GameImages.ITEM_PLASMA_BURST_PRIMED, canDamageObjects: false, canDestroyWalls: false, causesTileFires: false, primedId: ItemID.EXPLOSIVE_PLASMA_CHARGE_PRIMED, primedImg: GameImages.ITEM_PLASMA_BURST_PRIMED },
     };
 
     for (const d of explosivesData as any[]) {
@@ -741,6 +768,12 @@ export class GameItems implements ItemModelDB {
       grenade.equipmentPart = DollPart.RIGHT_HAND;
       grenade.stackingLimit = d.STACKINGLIMIT;
       grenade.flavorDescription = d.FLAVOR ?? "";
+      // C# `CausesTileFires` on the six models that carry it: `GameItems.cs:2315`
+      // (molotov), `:2379` (fuel can), `:2403` (fuel pump), and the primed
+      // counterpart of each. It is set here rather than per-row because it is a
+      // property of the *class* of explosive rather than of a CSV value, exactly
+      // as the two `BlastAttack` flags beside it are.
+      if (meta.causesTileFires) grenade.causesTileFires = true;
       this.setModel(meta.id, grenade);
 
       const primedGrenade = new ItemGrenadePrimedModel(
@@ -750,6 +783,14 @@ export class GameItems implements ItemModelDB {
         grenade
       );
       primedGrenade.equipmentPart = DollPart.RIGHT_HAND;
+      // **Set a second time, deliberately.** `ItemGrenadePrimedModel` copies
+      // `fuseDelay`, `blastAttack` and `blastImage` across by hand rather than
+      // inheriting, so `causesTileFires` does not come along for free. The C# has
+      // the same shape and writes the flag out again on each primed model
+      // (`GameItems.cs:2323-2324`, `:2387-2388`, `:2410`) -- a primed explosive
+      // whose explosion seeds no fires is the single easiest thing to get wrong
+      // here, because the unprimed model is visibly correct.
+      if (meta.causesTileFires) primedGrenade.causesTileFires = true;
       this.setModel(meta.primedId, primedGrenade);
     }
 
@@ -954,6 +995,27 @@ export class GameItems implements ItemModelDB {
       "Siphon fuel from cars for chainsaws and flamethrowers.";
     siphonKit.isStackable = false;
     this.setModel(ItemID.SIPHON_KIT, siphonKit);
+
+    // Still Alive, Release 8-1 (`GameItems.cs:3068-3073`). Hand-written like the
+    // siphon kit above: there is no `Items_Misc.csv` row for it in the merged
+    // pack, so there is no CSV to read it from.
+    //
+    // A plain `Item` (the C#'s `new Item(...)`) — it has no behaviour at all. It
+    // exists to be a visible marker on a CHAR scientist and to be the one trade a
+    // survivor makes in the research raid, which is why `BaseAI.rateItemExchange`
+    // refuses it outright rather than scoring it.
+    //
+    // The C#'s `CanGoInBackpacks` (Release 8-2) is applied in `postProcess`, from
+    // the `CAN_GO_IN_BACKPACKS` set, rather than here.
+    const charLaptop = new ItemModel(
+      "CHAR laptop",
+      "CHAR laptops",
+      GameImages.ITEM_CHAR_LAPTOP,
+    );
+    charLaptop.flavorDescription =
+      "It looks like they were doing some sort of research...";
+    charLaptop.isStackable = false;
+    this.setModel(ItemID.CHAR_LAPTOP, charLaptop);
 
     // Still Alive, Release 7-6 (`GameItems.cs:3050`). Hand-written for the same
     // reason as the siphon kit above: no CSV row.

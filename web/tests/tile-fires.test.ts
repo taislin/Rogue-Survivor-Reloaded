@@ -13,10 +13,12 @@
  * on the map, so a fire needs *stuff* to burn and a warehouse is a safe place to
  * stand.
  *
- * Two C# arms are **not** ported and both are noted at the implementation:
- * an actor *catching* fire (needs `Actor.isOnFire`, a separate Release 5-7
- * subsystem) and crop loss (needs the alpha10-era farming system, the same gap
- * that blocks `ResourcesAvailability`'s fruit interval).
+ * Two C# arms were **not** ported when this file was written and one of them
+ * now is: an actor *catching* fire needed `Actor.isOnFire`, a separate Release
+ * 5-7 subsystem that has since landed, and crop loss was recorded as blocked on
+ * "the alpha10-era farming system". That second reason was wrong — the loss arm
+ * only rewrites one tile model, and `TileID.FLOOR_PLANTED` was already in the
+ * port — so both are gone as of this file's crop test and the fuel-pump arm.
  */
 
 import { beforeEach, describe, expect, it } from "vitest";
@@ -49,10 +51,20 @@ let player: Actor;
 const step = (): Promise<void> =>
   (game as unknown as { stepTileFires(m: GameMap): Promise<void> }).stepTileFires(map);
 
-const ignite = (x: number, y: number): void => {
-  (game as unknown as { setTileOnFire(m: GameMap, x: number, y: number, w: boolean): void })
-    .setTileOnFire(map, x, y, true);
-};
+/**
+ * `setTileOnFire` is `async` because its C# counterpart's fuel-pump sweep calls
+ * `ExplodeFuelPump`, which awaits `DoBlast`'s animation delays. The promise is
+ * returned rather than swallowed so a test that places a fuel pump can await the
+ * cascade; the tests below that do not await it are unaffected, because everything
+ * they assert on -- `isOnFire`, the decoration, the scorch -- happens before the
+ * first `await` in the method.
+ */
+const ignite = (x: number, y: number): Promise<void> =>
+  (
+    game as unknown as {
+      setTileOnFire(m: GameMap, x: number, y: number, w: boolean): Promise<void>;
+    }
+  ).setTileOnFire(map, x, y, true);
 
 const burning = (x: number, y: number): boolean => map.isAnyTileFireThere(new Point(x, y));
 const scorched = (x: number, y: number): boolean =>

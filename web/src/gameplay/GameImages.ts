@@ -447,6 +447,13 @@ export class GameImages {
   static readonly GANGSTA_SHIRT = "Actors/Decoration/gangsta_shirt";
   static readonly CHARGUARD_HAIR = "Actors/Decoration/charguard_hair";
   static readonly CHARGUARD_PANTS = "Actors/Decoration/charguard_pants";
+  // Still Alive, Release 8-1 (GameImages.cs:981-983). The CHAR research raid's
+  // scientists. Unlike CHARGUARD_* these are single fixed decorations, not an
+  // alternatives array — `BaseMapGenerator.dressCHARScientist` has one sprite per
+  // doll part, so there is nothing to roll between.
+  static readonly CHARSCIENTIST_HEAD = "Actors/Decoration/charscientist_head";
+  static readonly CHARSCIENTIST_SHIRT = "Actors/Decoration/charscientist_shirt";
+  static readonly CHARSCIENTIST_PANTS = "Actors/Decoration/charscientist_pants";
   static readonly POLICE_HAT = "Actors/Decoration/police_hat";
   static readonly POLICE_UNIFORM = "Actors/Decoration/police_uniform";
   static readonly POLICE_PANTS = "Actors/Decoration/police_pants";
@@ -601,6 +608,10 @@ export class GameImages {
   // Still Alive, Release 7-6. The sprite shipped with the classic pack, so this
   // is only the id: the fork's `GameImages.cs:1062` has the same path.
   static readonly ITEM_FISHING_ROD = "Items/item_fishing_rod";
+  // Still Alive, Release 8-1 (GameImages.cs:1041). `Feature.CHARResearchRaid`'s
+  // laptop — the sprite the scientists are carrying, and the only thing an NPC
+  // will refuse to trade for.
+  static readonly ITEM_CHAR_LAPTOP = "Items/item_CHAR_laptop";
   // ── Feature.ShelterBackpacks: the five `Items_Backpacks.csv` rows. Still Alive,
   // Release 8-2 (`GameImages.cs:1013, 1053, 1080, 1135, 1168`). All five ship in
   // the *classic* sprite pack, so every path here already resolves to a file on

@@ -168,6 +168,31 @@ export class Map {
   }
 
   /**
+   * C# `Map.AnyAdjacentOutOfBounds` — `Map.cs:1607-1620`, Release 7-3.
+   * "Used when checking if we'll allow a wall to be destructed (don't if OOB eg
+   * basement)": true when any of the eight compass neighbours is off the map.
+   *
+   * Distinct from `isOnMapBorder`, which asks about the tile itself. `AnyAdjacent…`
+   * asks about its ring, which is what stops a blast replacing a district's
+   * *boundary* wall with walkable floor and punching a hole out of the world.
+   *
+   * Pure geometry, and it stays that way: the C#'s other half,
+   * `IsDestructibleWallAt` (`:1622-1640`), asks `GameTiles` about the tile *model*,
+   * and `data/` has no business importing `gameplay/`. That half is done at the call
+   * site in `ApplyExplosionDamage`, with the same `Models.tiles as GameTiles` cast
+   * `LOS.ts:454` uses to reach a `GameTiles`-only method off the base-typed registry.
+   */
+  anyAdjacentOutOfBounds(p: Point): boolean {
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        if (dx === 0 && dy === 0) continue;
+        if (!this.isInBounds(p.x + dx, p.y + dy)) return true;
+      }
+    }
+    return false;
+  }
+
+  /**
    * C# `Map.IsMapBoundary(int, int)` — the ring immediately *outside* the map.
    *
    * Distinct from `isOnMapBorder` above, and the two names in the C# are close

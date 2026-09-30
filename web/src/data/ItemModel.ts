@@ -60,6 +60,35 @@ export class ItemModel {
    */
   canGoInBackpacks: boolean = false;
 
+  /**
+   * C# `ItemModel.m_CausesTileFires` (`Data/ItemModel.cs:127-129`), Release 7-3.
+   * "Chance to set tile on fire with explosions (eg fuel pumps), ie. not the direct
+   * attack but a secondary effect."
+   *
+   * **On `ItemModel` and not on `ItemExplosiveModel`, and that placement is
+   * load-bearing.** The C# puts it on the base class, and its sibling
+   * `IsFlameWeapon` has to be there for the same reason: `RogueGame.cs:18742`,
+   * `:18791`, `:18828`, `:18873` and `:18992` read `IsFlameWeapon` off a *ranged
+   * weapon* model, and `BaseAI.cs:4549` reads it too. Putting either on the
+   * explosive subclass would leave the flamethrower unable to carry it.
+   *
+   * Read once in the port, by `ApplyExplosionDamage`'s tile-fire seeding, which
+   * mirrors `RogueGame.cs:20036`:
+   *
+   * ```csharp
+   * if (itemModel.IsFlameWeapon || itemModel.CausesTileFires)
+   *     SetTileOnFire(map, x, y, true);
+   * ```
+   *
+   * Only `Feature.FuelStation` reads it so far, and only via
+   * `ExplosionChainReactionInventory`/`ExplodeFuelPump` priming a fuel pump. Note
+   * `ItemGrenadePrimedModel` copies its fields from the unprimed model *by hand*
+   * rather than inheriting, so a primed explosive has to be given this flag a second
+   * time or its explosions seed no fires — the C# does exactly that, at
+   * `GameItems.cs:2323-2324` and `:2410`.
+   */
+  causesTileFires: boolean = false;
+
   constructor(aName: string, theNames: string, imageId: string) {
     this.singleName = aName;
     this.pluralName = theNames;

@@ -148,6 +148,16 @@ export abstract class BaseMapGenerator extends MapGenerator {
   private static readonly CHARGUARD_HEADS = [GameImages.CHARGUARD_HAIR];
   private static readonly CHARGUARD_LEGS = [GameImages.CHARGUARD_PANTS];
 
+  // Still Alive, Release 8-1 (`BaseMapGenerator.cs:47-49`). Single-element arrays
+  // like the CHARGUARD ones above, but they exist for a different reason: the C#'s
+  // `DressCHARScientist` does not read them (it names `GameImages.CHARSCIENTIST_*`
+  // directly, `:175-177`). They are kept here anyway so the two files describe the
+  // same set of decorations, and so `dressCHARScientist` has one spelling per part
+  // rather than reaching past its own file's constants.
+  private static readonly CHARSCIENTIST_HEAD = [GameImages.CHARSCIENTIST_HEAD];
+  private static readonly CHARSCIENTIST_TORSO = [GameImages.CHARSCIENTIST_SHIRT];
+  private static readonly CHARSCIENTIST_LEGS = [GameImages.CHARSCIENTIST_PANTS];
+
   private static readonly DOG_SKINS = [GameImages.DOG_SKIN1, GameImages.DOG_SKIN2, GameImages.DOG_SKIN3];
 
   dressCivilian(
@@ -252,6 +262,18 @@ export abstract class BaseMapGenerator extends MapGenerator {
     actor.doll.addDecoration(DollPart.SKIN, BaseMapGenerator.MALE_SKINS[roller.roll(0, BaseMapGenerator.MALE_SKINS.length)]);
     actor.doll.addDecoration(DollPart.HEAD, BaseMapGenerator.CHARGUARD_HEADS[roller.roll(0, BaseMapGenerator.CHARGUARD_HEADS.length)]);
     actor.doll.addDecoration(DollPart.LEGS, BaseMapGenerator.CHARGUARD_LEGS[roller.roll(0, BaseMapGenerator.CHARGUARD_LEGS.length)]);
+  }
+
+  dressCHARScientist(roller: DiceRoller, actor: Actor): void {
+    // Still Alive, Release 8-1 (`BaseMapGenerator.cs:171-178`).
+    //
+    // No EYES decoration, unlike `dressCHARGuard` above: the C# adds SKIN, TORSO,
+    // HEAD and LEGS only, so the doll is left without eyes. Ported as written.
+    actor.doll.removeAllDecorations();
+    actor.doll.addDecoration(DollPart.SKIN, BaseMapGenerator.MALE_SKINS[roller.roll(0, BaseMapGenerator.MALE_SKINS.length)]);
+    actor.doll.addDecoration(DollPart.TORSO, BaseMapGenerator.CHARSCIENTIST_TORSO[0]);
+    actor.doll.addDecoration(DollPart.HEAD, BaseMapGenerator.CHARSCIENTIST_HEAD[0]);
+    actor.doll.addDecoration(DollPart.LEGS, BaseMapGenerator.CHARSCIENTIST_LEGS[0]);
   }
 
   dressBlackOps(roller: DiceRoller, actor: Actor): void {
@@ -1161,6 +1183,13 @@ export abstract class BaseMapGenerator extends MapGenerator {
     return new ItemTracker(Models.items.get(ItemID.TRACKER_ZTRACKER));
   }
 
+  // Still Alive, Release 8-1 (`BaseMapGenerator.cs:2370-2373`). A bare `Item`:
+  // the laptop has no behaviour of its own, so there is no subclass to construct
+  // the way the factories above have one.
+  makeItemCHARLaptop(): Item {
+    return new Item(Models.items.get(ItemID.CHAR_LAPTOP));
+  }
+
   makeItemBlackOpsGPS(): Item {
     return new ItemTracker(Models.items.get(ItemID.TRACKER_BLACKOPS));
   }
@@ -1645,9 +1674,9 @@ export abstract class BaseMapGenerator extends MapGenerator {
   //
   // Absent, because the item does not exist in the port yet: the 6 Ammo ids
   // and the 5 backpacks (Stage 4), plus the still-Alive-only items with no
-  // merged CSV row -- matches, fishing rod, siphon kit, sleeping bag,
-  // flares kit, glowstick box, candle box, vegetable seeds, CHAR laptop,
-  // unique book of armaments, police riot shield. Also the four
+  // merged CSV row -- matches, sleeping bag,
+  // flares kit, glowstick box, candle box, vegetable seeds,
+  // police riot shield. Also the four
   // roll-and-branch bodies (beer, alcohol, liquor-for-molotov and the two
   // random-weapon pickers), which are content decisions about what a
   // "random antique weapon" is rather than transliterations.

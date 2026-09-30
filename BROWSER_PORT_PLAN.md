@@ -2709,22 +2709,61 @@ plan for rather than discover:
 >   That is Release 5-7 and it is its own feature, not part of "tile fires".
 >   Standing in fire still hurts every turn; the actor does not *become* fire. A
 >   test asserts `Actor` has no on-fire state at all, so the gap is visible.
-> - **Crop loss** needs `FLOOR_PLANTED`, from the alpha10-era farming system that
->   was never ported — the same gap blocking `ResourcesAvailability`'s fruit
->   interval. The tile is marked flammable so fire spreads there correctly; only
->   the harvest loss is missing.
-> - **Fuel-pump explosions** needed `Feature.FuelStation`, which has now landed —
->   the pump model (`makeObjFuelPump`, 800 HP, `BREAKABLE`, `UNINFLAMMABLE`,
->   `isMetal`) and its wreck (`makeObjFuelPumpBroken`, `UNBREAKABLE` at 0 HP and so
->   permanent) are on `BaseMapGenerator` and on the seam. **The arm itself is still
->   unwired**: `ExplodeFuelPump` (`RogueGame.cs:20123`) and the `SetTileOnFire`
->   adjacency check (`:24634-24642`) that detonates a pump on or beside any tile
->   that catches fire. That check is the *only* way one pump sets another off —
->   a pump's 800 HP is more than the 100 a neighbouring blast deals, so
->   `ExplosionChainReactionMapObjects` (`:20110`) never fires for a healthy pump.
->   `Feature.SiphonFuel`'s player half already recognises `OBJ_FUEL_PUMP`
->   (`RogueGame.ts:23475`) and is unaffected; what is missing is everything that
->   makes a pump go boom.
+> - **Crop loss — LANDED, and it was never blocked.** This entry used to say it
+>   needed `FLOOR_PLANTED` "from the alpha10-era farming system that was never
+>   ported". That conflated *planting* with *loss*. The arm at
+>   `RogueGame.cs:24731-24734` is `FLOOR_PLANTED` -> `FLOOR_GRASS`, unconditional,
+>   no roll and no message, and `TileID.FLOOR_PLANTED` has been in the port all
+>   along (`GameTiles.ts:32`, model `:236`, flammable `:407`). Three lines.
+>   `HandlePlayerPlantSeeds` (`:14208`) and `ItemID.VEGETABLE_SEEDS` are still
+>   unported, so in the port today only something else could have planted the tile
+>   — but the lossy half no longer needs the farming system to exist.
+> - **Fuel-pump explosions — LANDED.** `ExplosionChainReactionMapObjects`
+>   (`RogueGame.cs:20110`), `ExplodeFuelPump` (`:20123`) and the `SetTileOnFire`
+>   adjacency sweep (`:24634-24642`) are all wired. The sweep is the *only* way one
+>   pump sets another off — a pump's 800 HP is more than any blast in the game deals,
+>   so the HP arm can never fire for a healthy pump.
+>
+>   **The cascade is unbounded in depth, not in reach.** A blast of radius 2 ignites
+>   two rings; each ignited tile runs its own sweep and so reaches one ring further;
+>   each of *those* blasts ignites two more. A pump three tiles from the first goes
+>   up even though the blast never reached it, and the chain continues as long as it
+>   keeps finding pumps. There is no depth limit and no visited set in the reference
+>   either — this is transcribed, not introduced.
+>
+>   **Two things this forced, both worth recording separately.** (1) `DoBlast`
+>   gained the C#'s third `itemModel` parameter and threads it to
+>   `ApplyExplosionDamage`, because the tile-fire seeding at `:20036` is gated on a
+>   model flag; `causesTileFires` (`ItemModel`, Release 7-3) is set on the six
+>   models the C# sets it on, *twice each* since `ItemGrenadePrimedModel` copies by
+>   hand. (2) `ApplyExplosionDamage`'s `throw new Error("blast.destroyWalls")` —
+>   present since "Port Phase 4 slice 6" and reachable for dynamite and C4 the whole
+>   time — had to go, because the fuel pump's blast carries `canDestroyWalls` and the
+>   arm could not run at all. Its C# guard (`:20016-20024`) is now ported verbatim,
+>   so the *decision* to destroy a wall is correct, but `ReplaceDestroyedWall`
+>   (`:20134-20232`, ~99 lines) is still unported and a wall that passes the guard is
+>   left standing. Doing nothing beats throwing: the blast still damages actors,
+>   items, corpses and objects, still ignites tiles, and still cascades the pumps.
+>   All nine `DECO_WALL_*_DAMAGED` sprites already ship, so what remains is the
+>   constants, the swap to an adjacent floor model, and the plank drop.
+>
+>   `Feature.SiphonFuel`'s player half was already wired (`RogueGame.ts:23475`) and
+>   is unaffected.
+>
+>   **The blast path's other `itemModel` uses are still unported** — the three SFX
+>   switches, the BFG plasma icon, smoke and flashbang, and the plasma charge's four
+>   special cases. None is reachable in the port (no `DeploySmokeScreen`, no
+>   `DetonateFlashbang`, no grenade launcher, no BFG), so porting them would be
+>   ~200 lines of unreachable transcription. Gating the seeding on
+>   `causesTileFires` *alone* is nonetheless exactly equivalent to the C#'s
+>   `IsFlameWeapon || CausesTileFires` for every explosive the port can detonate,
+>   because the only model with `IsFlameWeapon` and no `CausesTileFires` is the
+>   flamethrower, a ranged weapon that never reaches `ApplyExplosionDamage`.
+>
+> - **Molotov explosions now seed tile fires.** A visible behaviour change and a
+>   C#-parity fix: the reference has done this since Release 5-2 and the port's blast
+>   path never reached the line at all. It is the reason the seeding condition is
+>   pinned by an exhaustive per-model assertion rather than by a spot check.
 >
 > No renderer change was needed: the port already draws tile decorations, and
 > `EFFECT_ONFIRE` is one.

@@ -190,6 +190,28 @@ const WALL_MODEL_IDS: readonly TileID[] = [
   TileID.WALL_MALL,
 ];
 
+/**
+ * `WALL_MODEL_IDS` less the three indestructible walls. C#
+ * `GameTiles.cs:572-577` spells its own list out longhand rather than deriving it,
+ * and the difference is the whole content of the predicate, so this is spelled out
+ * longhand too instead of being computed as a set difference -- a subtraction would
+ * quietly re-include a wall the moment a fifteenth model is added to the list above.
+ */
+const DESTRUCTIBLE_WALL_MODEL_IDS: readonly TileID[] = [
+  TileID.WALL_BRICK,
+  TileID.WALL_CHAR_OFFICE,
+  TileID.WALL_HOSPITAL,
+  TileID.WALL_LIGHT_BROWN,
+  TileID.WALL_POLICE_STATION,
+  TileID.WALL_STONE,
+  TileID.WALL_SUBWAY,
+  TileID.WALL_ARMY_BASE,
+  TileID.WALL_FUEL_STATION,
+  TileID.WALL_WOOD_PLANKS,
+  TileID.WALL_MALL,
+  TileID.WALL_RED_CURTAINS,
+];
+
 export class GameTiles extends TileModelDB {
   private readonly models: TileModel[] = new Array(TileID._COUNT);
 
@@ -440,5 +462,26 @@ export class GameTiles extends TileModelDB {
 
   isRoadModel(model: TileModel): boolean {
     return model === this.models[TileID.ROAD_ASPHALT_EW] || model === this.models[TileID.ROAD_ASPHALT_NS];
+  }
+
+  /**
+   * C# `IsDestructibleWallModel` -- `GameTiles.cs:572-577`, Release 6-3.
+   *
+   * Twelve of the fifteen wall models, and the three it leaves out are the point:
+   * `WALL_SEWER`, `WALL_CONCRETE` and `WALL_PILLAR_CONCRETE` survive an explosion
+   * while everything else does not. That is a hand-written `==` chain in the C#,
+   * not a flag on `TileModel`, so it is a list here too -- there is no `canDecay`-style
+   * field to hang it off and adding one would be inventing a mechanism the reference
+   * does not have.
+   *
+   * Read by `ApplyExplosionDamage`'s wall branch. **The consequence inside is still
+   * unported**: the C# replaces the wall with a floor tile plus one of nine
+   * `DECO_WALL_*_DAMAGED` decorations (`ReplaceDestroyedWall`,
+   * `RogueGame.cs:20134-20232`). All nine sprites already ship, so what is missing is
+   * the `GameImages` constants, the model swap, and the adjacent-floor lookup.
+   */
+  isDestructibleWallModel(model: TileModel): boolean {
+    for (const id of DESTRUCTIBLE_WALL_MODEL_IDS) if (this.models[id] === model) return true;
+    return false;
   }
 }

@@ -435,6 +435,15 @@ export class GameMusics {
   static readonly BIKER = "biker";
   static readonly BIKER_FILE = `${GameMusics.PATH}RS - Biker`;
 
+  // Still Alive, Release 8-1. `Feature.CHARResearchRaid`'s two raid tracks.
+  // Unlike every other entry, these file names carry no "RS - " prefix: the fork
+  // ships them under their bare names and they are copied in as-is.
+  static readonly BLACK_OPS = "black ops";
+  static readonly BLACK_OPS_FILE = `${GameMusics.PATH}Black Ops`;
+
+  static readonly CHAR_RESEARCHERS = "char researchers";
+  static readonly CHAR_RESEARCHERS_FILE = `${GameMusics.PATH}RS - CHAR researchers`;
+
   static readonly CHAR_UNDERGROUND_FACILITY = "char underground facility";
   static readonly CHAR_UNDERGROUND_FACILITY_FILE = `${GameMusics.PATH}RS - CUF`;
 
@@ -487,6 +496,11 @@ export class GameMusics {
   static readonly SEWERS = "sewers";
   static readonly SEWERS_FILE = `${GameMusics.PATH}RS - Sewers`;
 
+  // Still Alive, Release 8-1. The mall the CHAR research raid lands in, alongside
+  // `BLACK_OPS`. No "RS - " prefix here either.
+  static readonly SHOPPING_MALL = "shopping mall";
+  static readonly SHOPPING_MALL_FILE = `${GameMusics.PATH}Shopping Mall`;
+
   static readonly SLEEP = "sleep";
   static readonly SLEEP_FILE = `${GameMusics.PATH}RS - Sleep - Loop`;
 
@@ -510,6 +524,8 @@ export const MUSIC_FILES: Readonly<Record<string, string>> = {
   [GameMusics.ARMY]: "RS - Army",
   [GameMusics.BIGBEAR_THEME_SONG]: "RS - Big Bear Theme Song",
   [GameMusics.BIKER]: "RS - Biker",
+  [GameMusics.BLACK_OPS]: "Black Ops",
+  [GameMusics.CHAR_RESEARCHERS]: "RS - CHAR researchers",
   [GameMusics.CHAR_UNDERGROUND_FACILITY]: "RS - CUF",
   [GameMusics.DUCKMAN_THEME_SONG]: "RS - Duckman Theme Song",
   [GameMusics.FAMU_FATARU_THEME_SONG]: "RS - Famu Fataru Theme Song",
@@ -527,6 +543,7 @@ export const MUSIC_FILES: Readonly<Record<string, string>> = {
   [GameMusics.ROGUEDJACK_THEME_SONG]: "RS - Roguedjack Theme Song",
   [GameMusics.SANTAMAN_THEME_SONG]: "RS - Santaman Theme Song",
   [GameMusics.SEWERS]: "RS - Sewers",
+  [GameMusics.SHOPPING_MALL]: "Shopping Mall",
   [GameMusics.SLEEP]: "RS - Sleep - Loop",
   [GameMusics.SUBWAY]: "RS - Subway",
   [GameMusics.SURVIVORS]: "RS - Survivors",

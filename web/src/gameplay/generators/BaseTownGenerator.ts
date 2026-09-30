@@ -21,7 +21,7 @@ import { Options } from '@engine/GameOptions';
 import { Point } from '@engine/Point';
 import { Rect } from '@engine/Rect';
 import { Rules } from '@engine/Rules';
-import { Session, UniqueActor, UniqueMap } from '@engine/Session';
+import { Session, GameMode, UniqueActor, UniqueMap } from '@engine/Session';
 import { WorldTime } from '@engine/WorldTime';
 import { Feature, hasFeature } from '@engine/FeatureFlags';
 import { DoorWindow } from '@engine/mapobjects/MapObjects';
@@ -4846,15 +4846,23 @@ export class BaseTownGenerator extends BaseMapGenerator {
       );
     }
 
-    // CHAR Guards.
-    const nbGuards = Math.floor(underground.width / 10); // 10 for 100.
-    for (let i = 0; i < nbGuards; i++) {
-      const guard = this.createNewCHARGuard(0);
+    // CHAR scientists.
+    //
+    // Standing divergence, now fixed. This block was placing
+    // `createNewCHARGuard` because `createNewCHARScientist` did not exist; the C# has
+    // placed scientists here since Release 8-1 (`BaseTownGenerator.cs:8430-8436`).
+    // Everything else in the block already matched the C# exactly — the same
+    // `width / 10` count (10 for a 100-wide map), the same `underground` rect, the
+    // same `width * height` placement area and the same "not on an exit" predicate
+    // — so only the factory call changes.
+    const nbScientists = Math.floor(underground.width / 10); // 10 for 100.
+    for (let i = 0; i < nbScientists; i++) {
+      const scientist = this.createNewCHARScientist(0);
       this.actorPlace(
         this.m_DiceRoller,
         underground.width * underground.height,
         underground,
-        guard,
+        scientist,
         (pt) => underground.getExitAt(pt) === null
       );
     }
@@ -6402,6 +6410,70 @@ export class BaseTownGenerator extends BaseMapGenerator {
 
     // done.
     return newGuard;
+  }
+
+  /**
+   * Still Alive, Release 8-1 (`BaseTownGenerator.cs:11754-11796`).
+   *
+   * One member of `Feature.CHARResearchRaid`'s landing team. The raid spawns this
+   * once as the leader and three more times as colleagues, all on the same factory
+   * — the C# has no separate "colleague" variant, only the `"Dr. "` name prefix to
+   * tell the ranks apart, and it is this factory's output that decides which is
+   * which.
+   */
+  createNewCHARScientist(spawnTime: number): Actor {
+    // model.
+    const model = Models.actors.get(ActorID.CHAR_SCIENTIST)!;
+
+    // create.
+    const newScientist = model.createNumberedName(Models.factions.get(FactionID.TheCHARCorporation)!, spawnTime);
+
+    // setup.
+    this.dressCHARScientist(this.m_DiceRoller, newScientist);
+    this.giveNameToActor(this.m_DiceRoller, newScientist);
+    newScientist.name = 'Dr. ' + newScientist.name;
+
+    // starting skills. Each of the three is called once per point, so HAULER is at
+    // level 3, NECROLOGY at 5 and STRONG_PSYCHE at 2 -- the C# spells this out as
+    // repeated calls rather than a count, and so does this.
+    this.giveStartingSkillToActor(newScientist, SkillID.HAULER);
+    this.giveStartingSkillToActor(newScientist, SkillID.HAULER);
+    this.giveStartingSkillToActor(newScientist, SkillID.HAULER);
+    this.giveStartingSkillToActor(newScientist, SkillID.NECROLOGY);
+    this.giveStartingSkillToActor(newScientist, SkillID.NECROLOGY);
+    this.giveStartingSkillToActor(newScientist, SkillID.NECROLOGY);
+    this.giveStartingSkillToActor(newScientist, SkillID.NECROLOGY);
+    this.giveStartingSkillToActor(newScientist, SkillID.NECROLOGY);
+    this.giveStartingSkillToActor(newScientist, SkillID.STRONG_PSYCHE);
+    this.giveStartingSkillToActor(newScientist, SkillID.STRONG_PSYCHE);
+
+    // give items.
+    newScientist.inventory!.addAll(this.makeItemCHARLaptop());
+    newScientist.inventory!.addAll(this.makeItemZTracker());
+    newScientist.inventory!.addAll(this.makeItemPistol());
+    newScientist.inventory!.addAll(this.makeItemLightPistolAmmo());
+    newScientist.inventory!.addAll(this.makeItemArmyRation());
+    newScientist.inventory!.addAll(this.makeItemArmyRation());
+    newScientist.inventory!.addAll(this.makeItemArmyRation());
+    newScientist.inventory!.addAll(this.makeItemBiohazardSuit());
+    newScientist.inventory!.addAll(this.makeItemBigFlashlight());
+
+    // Antiviral pills exist in the corpses/infection ruleset and, in Vintage, when
+    // the player option is on; elsewhere a large medikit stands in. The C# asks
+    // `Rules.HasAntiviralPills(mode)` (`Rules.cs:5760-5769`); that helper is not in
+    // the port yet and `Rules` is not this slice's file, so the test is inlined
+    // rather than duplicating a `Rules` method that will land with the rest of
+    // Release 7-6. The second clause — `GM_VINTAGE && RogueGame.Options.AntiviralPills`
+    // — is dropped because the port has no `AntiviralPills` option, so Vintage takes
+    // the medikit branch too. Once the helper exists this collapses back to it.
+    if (Session.get().gameMode === GameMode.GM_CORPSES_INFECTION) {
+      newScientist.inventory!.addAll(this.makeItemPillsAntiviral());
+    } else {
+      newScientist.inventory!.addAll(this.makeItemLargeMedikit());
+    }
+
+    // done.
+    return newScientist;
   }
 
   createNewArmyNationalGuard(spawnTime: number, rankName: string): Actor {

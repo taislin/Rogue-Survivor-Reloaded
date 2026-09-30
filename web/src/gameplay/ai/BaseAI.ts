@@ -3815,6 +3815,18 @@ export abstract class BaseAI extends AIController {
         nScore < oScore ? TradeRating.REFUSE :
         TradeRating.MAYBE;
     }
+    // Still Alive, Release 8-1 (`BaseAI.cs:6981-6985`). Sits between the C#'s
+    // fishing-rod and shield branches and its `ItemPrimedExplosive` branch, so it
+    // lands immediately before the primed-explosive check below.
+    //
+    // The `EquipmentPart == LEFT_ARM` branch the C# has directly above this
+    // (`BaseAI.cs:6970-6979`, the shield) is deliberately NOT ported: the port has
+    // no LEFT_ARM doll decoration or shield item, so the condition would match
+    // nothing and could only ever fall through. Porting it as a literal
+    // translation would add an unreachable branch ahead of a rule that does work.
+    if (oIt.model === game.GameItems.SIPHON_KIT || oIt.model === game.GameItems.CHAR_LAPTOP) {
+      return TradeRating.REFUSE;
+    }
     if (oIt instanceof ItemPrimedExplosive) { // also ItemGrenadePrimed
       // refuse any primed explosive
       return TradeRating.REFUSE;
