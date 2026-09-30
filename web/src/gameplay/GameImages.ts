@@ -784,6 +784,17 @@ export class GameImages {
   static readonly OBJ_FIRE_TRUCK_NS_BACK = "MapObjects/fire_truck_NS_back";
   static readonly OBJ_FIRE_TRUCK_NS_FRONT = "MapObjects/fire_truck_NS_front";
 
+  // ── Actor on fire (Still Alive, Release 5-7) ───────────────────────────
+  //
+  // Torso decorations, not actor graphics: the body sheet is unchanged and the
+  // alight look is layered over it. `ExtinguishOnFireActor` removes whichever one
+  // it finds, so the four have to be mutually distinguishable -- two actors
+  // sharing a decoration would leave the second one burning with nothing drawn.
+  static readonly MALE_ON_FIRE = "Actors/Decoration/male_on_fire";
+  static readonly FEMALE_ON_FIRE = "Actors/Decoration/female_on_fire";
+  static readonly ZOMBIE_ON_FIRE = "Actors/Decoration/zombie_on_fire";
+  static readonly OTHER_UNDEAD_ON_FIRE = "Actors/Decoration/other_undead_on_fire";
+
   // ── Feature.Graveyard ───────────────────────────────────────────────────
   //
   // A graveyard is not its own generator: the C# passes `isgraveyard` into
@@ -795,6 +806,33 @@ export class GameImages {
   static readonly OBJ_TREE2 = "MapObjects/tree2";
   static readonly OBJ_TREE3 = "MapObjects/tree3";
   static readonly OBJ_TREE4 = "MapObjects/tree4";
+
+  // ── Feature.AnimalShelter: the animal shelter building generator
+  // (`BaseTownGenerator.cs:3945`).
+  //
+  // The six ids `makeAnimalShelterBuilding` draws that no earlier building wanted.
+  // `OBJ_CHAINWIRE_FENCE` and the four `OBJ_TREE*` are *not* here: the junkyard
+  // block above and the graveyard block below already added both for the same C#
+  // factories (`BaseMapGenerator.cs:444` and `:535`), so they are only listed in
+  // the shelter's own factory table.
+  //
+  // The chain link gate is `MakeObjChainFenceGate` (`BaseMapGenerator.cs:1176`) --
+  // a three-state door of its own, like the junkyard's roller door and not a
+  // recoloured iron door -- and the shelter is its first reader: one closed gate
+  // at the yard's pedestrian entrance, one *open* gate where the office driveway
+  // reaches the walkway, and one closed gate per kennel cell.
+  //
+  // `DECO_ANIMAL_SHELTER` is `animal_shelter_sign`, not `animal_shelter`: the C#'
+  // `GameImages.cs:318` is the only place either spelling appears, and the sprite
+  // on disk is `animal_shelter_sign.webp`. All six ship in the *classic* pack, so
+  // every path here resolves to a file on disk -- `tests/sprite-assets.test.ts` is
+  // what keeps that true.
+  static readonly OBJ_CHAINWIRE_GATE_CLOSED = "MapObjects/chainwire_gate_closed";
+  static readonly OBJ_CHAINWIRE_GATE_OPEN = "MapObjects/chainwire_gate_open";
+  static readonly OBJ_CHAINWIRE_GATE_BROKEN = "MapObjects/chainwire_gate_broken";
+  static readonly OBJ_VAN_PHASE0 = "MapObjects/van_phase0";
+  static readonly DECO_ANIMAL_SHELTER = "Tiles/Decoration/animal_shelter_sign";
+  static readonly DECO_KENNEL = "Tiles/Decoration/kennel";
 
   // ── Effects & Misc ────────────────────────────────────────────────────────
   static readonly EFFECT_BARRICADED = "Effects/barricaded";

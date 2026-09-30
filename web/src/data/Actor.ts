@@ -24,6 +24,18 @@ export const enum ActorFlags {
   IS_DEAD = 1 << 3,
   IS_RUNNING = 1 << 4,
   IS_SLEEPING = 1 << 5,
+  /**
+   * Still Alive, Release 5-7. The actor is alight.
+   *
+   * **Distinct from standing in a tile fire.** `Feature.TileFires` deals
+   * `BASE_TILE_FIRE_DAMAGE` to anyone standing on a burning tile; this bit is a
+   * separate state that follows the actor, is extinguished by rain or by
+   * stop-drop-and-roll, and is drawn as a torso decoration. Conflating the two is
+   * how a walker ends up on fire and shrugs it off by stepping off the tile.
+   */
+  IS_ON_FIRE = 1 << 6,
+  /** Still Alive, Release 6-1. Standing in water; a hard block on ignition. */
+  IS_IN_WATER = 1 << 7,
 }
 
 export interface TrustRecord {
@@ -287,6 +299,22 @@ export class Actor {
 
   get isPluralName(): boolean { return (this.flags & ActorFlags.IS_PLURAL_NAME) !== 0; }
   set isPluralName(v: boolean) { this.setFlag(ActorFlags.IS_PLURAL_NAME, v); }
+
+  /**
+   * Is this actor on fire? See `ActorFlags.IS_ON_FIRE`.
+   *
+   * Set and cleared only by `RogueGame.SetActorOnFire` and
+   * `RogueGame.ExtinguishOnFireActor` -- the C# keeps the same discipline
+   * (`RogueGame.cs:24737` and `:24819`), and it matters: ignition is where fire
+   * resistance is consulted, so a bare assignment would let an actor walk through
+   * a fire-resistant suit and end up alight anyway.
+   */
+  get isOnFire(): boolean { return (this.flags & ActorFlags.IS_ON_FIRE) !== 0; }
+  set isOnFire(v: boolean) { this.setFlag(ActorFlags.IS_ON_FIRE, v); }
+
+  /** Still Alive, Release 6-1. Water is a hard block on being set alight. */
+  get isInWater(): boolean { return (this.flags & ActorFlags.IS_IN_WATER) !== 0; }
+  set isInWater(v: boolean) { this.setFlag(ActorFlags.IS_IN_WATER, v); }
 
   get isDead(): boolean { return (this.flags & ActorFlags.IS_DEAD) !== 0; }
   set isDead(v: boolean) { this.setFlag(ActorFlags.IS_DEAD, v); }

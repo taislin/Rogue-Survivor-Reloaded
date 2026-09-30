@@ -163,26 +163,25 @@ describe("Feature.ArmorResist: the gated roll", () => {
     expect(most).toBeLessThan(half);
   });
 
-  it("the fire half has no reader yet, because the port has no fire damage", () => {
-    // Recorded as an assertion so the gap cannot quietly become a stale comment.
+  it("the fire half is a roll on ignition, not a damage multiplier", () => {
+    // This test existed to record the gap, and it said it would be the thing to
+    // delete when the reader landed. It landed, and the reader is not what the
+    // comment guessed: the C# does **not** use `FIRE_RESIST%` as
+    // `dmg -= dmg * (fire / 100)`. There is one use, at `RogueGame.cs:24772`,
+    // inside `SetActorOnFire`, and it is a plain `RollChance` deciding whether
+    // ignition sticks. A 30% suit leaves you out of the fire seven times in ten.
     //
-    // `fireResistance` is loaded from the merged table and carried on the item,
-    // and nothing reads it. The fork's use is `dmg -= dmg * (fire / 100)` inside
-    // a damage path keyed on "this damage was fire-caused" -- a flag the port has
-    // no concept of, because fire is Still Alive content (`TileFires`,
-    // `FireBarrels`). So today the fire hazard suit is only a slow suit.
-    //
-    // Asserted by scanning the engine for a reader rather than by counting
-    // nothing: the declaration sites are excluded, and what remains must be empty.
-    // If `TileFires` lands and wires this up, this test is the thing that has to
-    // be deleted, and it will say so rather than being quietly tightened.
+    // So the port's `ItemBodyArmor` comment claiming a damage multiplier was wrong,
+    // and is corrected at the reader.
     const engine = readFileSync(
       resolve(__dirname, "../src/engine/RogueGame.ts"), "utf-8");
     const readers = engine
       .split("\n")
       .filter((line) => /fireResistance/.test(line))
       .filter((line) => !/^\s*(\/\/|\*)/.test(line));
-    expect(readers, "a reader for fireResistance exists -- update this test")
-      .toEqual([]);
+    expect(readers, "the reader exists, and it is a rollChance").toHaveLength(1);
+    expect(readers[0]).toMatch(/rollChance/);
+    // And not a reduction, which is the specific wrong thing the old comment said.
+    expect(readers[0], "no damage subtraction anywhere").not.toMatch(/\*=|\/ 100|-= *dmg/);
   });
 });

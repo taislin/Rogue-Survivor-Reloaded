@@ -2359,9 +2359,15 @@ export class Rules {
    *
    * Still Alive, Release 7-6, and gated on `Feature.ArmorResist`. The roll is
    * against the armour's `INF_RESIST%` as a *chance* -- `rollChance`, not a
-   * reduction. That is the opposite of `FIRE_RESIST%`, which scales damage;
-   * the two are both "percent" and use different formulas, and a copy of the
-   * fire one here would halve infection instead of preventing it.
+   * reduction.
+   *
+   * `FIRE_RESIST%` is *also* a `rollChance`, and **both** are chances -- the port's
+   * `ItemBodyArmor` comment claims fire resistance scales damage, and that is
+   * wrong. The C# uses it exactly one way, at `RogueGame.cs:24772`, to decide
+   * whether ignition sticks at all: a 30% suit lets you walk into a fire seven
+   * times out of ten and keeps you out of it the eleventh. It never appears as a
+   * damage multiplier anywhere in the reference, and a copy that read it as one
+   * here would quietly halve every burn instead of preventing ignition.
    *
    * It lives here rather than inline at the bite site so the gate and the roll
    * are one thing a test can call. A test that re-implements the roll to check

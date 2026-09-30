@@ -33,6 +33,8 @@ import { Feature, hasFeature } from "@engine/FeatureFlags";
 import { GameImages } from "@gameplay/GameImages";
 import { GameTiles, TileID } from "@gameplay/GameTiles";
 import { ActorID, GameActors } from "@gameplay/GameActors";
+import { ItemBodyArmor, type ItemBodyArmorModel } from "@engine/items/ItemBodyArmor";
+import { ItemID } from "@gameplay/GameItems";
 import { NullRogueUI } from "@ui/NullRogueUI";
 import { PlayerController } from "@data/PlayerController";
 import { RogueGame } from "@engine/RogueGame";
@@ -394,17 +396,127 @@ describe("Feature.TileFires: the victims", () => {
     expect(corpse.hitPoints, "corpses burn too").toBeLessThan(hp);
   });
 
-  it("does not set the *actor* alight -- that arm is not ported", async () => {
-    // Deliberate. The C# rolls CATCH_ONFIRE_FROM_TILE_CHANCE to set the actor
-    // burning, which needs `Actor.isOnFire` -- a whole per-actor fire subsystem
-    // (Release 5-7) that the port does not have. Standing in fire still hurts
-    // every turn; the actor does not *become* fire.
+  it("sets the *actor* alight 25% of the time they stand in it", async () => {
+    // Was "that arm is not ported" until `Actor.isOnFire` landed. The C# rolls
+    // CATCH_ONFIRE_FROM_TILE_CHANCE (25%) per victim, and the roll is on the
+    // district roller, so sweeping many victims at one seed finds the arm without
+    // needing to control the dice.
+    carpet();
+    let lit = 0;
+    const trials = 40;
+    for (let i = 0; i < trials; i++) {
+      const victim = new Actor(Models.actors.get(ActorID.MALE_CIVILIAN), survivors, "vic");
+      map.placeActor(victim, new Point(11, 11));
+      ignite(11, 11);
+      await step();
+      if (victim.isOnFire) lit++;
+      map.removeActor(victim);
+    }
+    expect(lit, "somebody caught fire over 40 sweeps").toBeGreaterThan(0);
+    expect(lit, "and not everybody -- 25%, not 100%").toBeLessThan(trials);
+  });
+
+  it("an actor already burning is exempt from the tile burn, and is not re-lit", async () => {
+    // Release 6-6's exemption list. Standing in a fire would otherwise cost 1 (the
+    // tile) + 2 (being alight) every turn; 3.1 of the turn marks them exempt first.
     carpet();
     const victim = new Actor(Models.actors.get(ActorID.MALE_CIVILIAN), survivors, "vic");
     map.placeActor(victim, new Point(11, 11));
-    ignite(11, 11);
-    await step();
-    expect("isOnFire" in victim, "Actor has no on-fire state at all").toBe(false);
+    game.SetActorOnFire(victim);
+    expect(victim.isOnFire).toBe(true);
+    const exempt = await game.stepActorsOnFire(map);
+    expect(exempt.has(victim), "burned as an alight actor, so the tile fire skips it").toBe(true);
+  });
+});
+
+describe("Feature.TileFires: ignition is what armour resists", () => {
+  it("the column is a chance, and the two suits bracket it", () => {
+    // The behavioural half of `armor-resist.test.ts`'s structural claim. The C# uses
+    // `FIRE_RESIST%` in exactly one place, `RogueGame.cs:24772`, as a `RollChance`
+    // on whether ignition sticks -- **not** as a damage multiplier, which is what
+    // the port's `ItemBodyArmor` comment claimed and was wrong about.
+    //
+    // The merged table happens to bracket the range perfectly, which makes this a
+    // three-point test rather than one: the fire hazard suit is 100% and the
+    // biohazard suit 5%, with the seven ordinary armours at 0. If the reader were
+    // inverted -- or a reduction rather than a gate -- the strong suit would burn
+    // *more* than the weak one, and this ordering fails.
+    const ignitionRate = (id: ItemID | null, trials = 60): number => {
+      let lit = 0;
+      for (let i = 0; i < trials; i++) {
+        const a = new Actor(Models.actors.get(ActorID.MALE_CIVILIAN), survivors, "worn");
+        // On the map, because a successful ignition screams: `SetActorOnFire`
+        // raises a loud noise at the actor's position, and an actor with no map
+        // makes that a null dereference. That is a real robustness gap in the
+        // method -- a unit test found it, not a play session.
+        map.placeActor(a, new Point(3 + (i % 5), 3 + (i % 7)));
+        if (id !== null) {
+          const worn = new ItemBodyArmor(Models.items.get(id) as ItemBodyArmorModel);
+          a.inventory!.addAll(worn);
+          worn.equippedPart = worn.model.equipmentPart;
+        }
+        game.SetActorOnFire(a);
+        if (a.isOnFire) lit++;
+        map.removeActor(a);
+      }
+      return lit;
+    };
+    const trials = 60;
+    const none = ignitionRate(null, trials);
+    const hazard = ignitionRate(ItemID.ARMOR_FIRE_HAZARD_SUIT, trials);
+    const bio = ignitionRate(ItemID.ARMOR_BIOHAZARD_SUIT, trials);
+
+    // 0% ignites every time, 100% never, and 5% sits between them -- which is the
+    // only ordering that distinguishes a `rollChance` gate from a damage
+    // multiplier, from an inverted sign, and from a constant.
+    expect(none, "0%: always alight").toBe(trials);
+    expect(hazard, "100%: never alight").toBe(0);
+    expect(bio, "5%: usually alight").toBeGreaterThan(hazard);
+    expect(bio, "5%: and usually not saved").toBeLessThan(none);
+  });
+
+  it("water is a hard block, tested before the armour roll", () => {
+    const a = new Actor(Models.actors.get(ActorID.MALE_CIVILIAN), survivors, "wet");
+    a.isInWater = true;
+    game.SetActorOnFire(a);
+    expect(a.isOnFire, "Release 6-1: standing in water cannot be ignited").toBe(false);
+  });
+
+  it("a skeleton cannot burn at all", () => {
+    const bones = new Actor(Models.actors.get(ActorID.UNDEAD_SKELETON), survivors, "bones");
+    game.SetActorOnFire(bones);
+    expect(bones.isOnFire, "IsSkeletonBranch -- the same test the tile burn uses").toBe(false);
+  });
+
+  it("under CLASSIC an alight actor is never burned and the pass spends no die", async () => {
+    // The behavioural half of the gate. The reader partition catches "somebody
+    // deleted a gate"; this catches "the gate is present but does nothing", which
+    // is the failure a partition test cannot see.
+    //
+    // The actor is set alight *by hand* rather than by a tile fire, because
+    // `stepTileFires` is gated separately and would hide the thing under test
+    // behind the other gate.
+    const victim = new Actor(Models.actors.get(ActorID.MALE_CIVILIAN), survivors, "vic");
+    map.placeActor(victim, new Point(11, 11));
+    victim.isOnFire = true;
+    const hpBefore = victim.hitPoints;
+
+    Session.get().ruleset = Ruleset.STILL_ALIVE;
+    const stillAliveExempt = await game.stepActorsOnFire(map);
+    expect(stillAliveExempt.has(victim), "sanity: still alive burns the actor").toBe(true);
+    expect(victim.hitPoints, "and the burn lands").toBeLessThan(hpBefore);
+
+    // Two resets, not one: the still-alive pass may have extinguished the victim,
+    // and re-asserting `isOnFire` afterwards would be asserting what the previous
+    // call left behind rather than what the classic call does.
+    victim.hitPoints = hpBefore;
+    victim.isOnFire = true;
+    Session.get().ruleset = Ruleset.CLASSIC;
+    const classicExempt = await game.stepActorsOnFire(map);
+    expect(classicExempt.size, "classic: nobody burns, so nobody is exempt").toBe(0);
+    expect(victim.hitPoints, "and the burn never lands").toBe(hpBefore);
+
+    Session.get().ruleset = Ruleset.STILL_ALIVE;
   });
 });
 

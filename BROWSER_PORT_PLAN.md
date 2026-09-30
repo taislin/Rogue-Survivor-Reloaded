@@ -3194,7 +3194,7 @@ zero precisely because of the dump-every-own-field design.
 | Feature | New state | Serialisation | Engine work |
 |---|---|---|---|
 | `WeaponWeight` | none (model field) | 0 | **DONE** — `ItemWeaponModel.weight`, read from the merged `WEIGHT`, subtracted in `actorSpeed` under the flag |
-| `ArmorResist` | none (model field) | 0 | **infection roll DONE** (gated, in `Rules.infectionBlockedByArmor`). Fire scaling **blocked on `TileFires`** — the port has no fire damage. Both CSV columns merged |
+| `ArmorResist` | none (model field) | 0 | **BOTH halves DONE.** The infection roll is gated in `Rules.infectionBlockedByArmor`; the fire column is consulted in `RogueGame.SetActorOnFire` as a **`rollChance` on whether ignition sticks**, which is the C#'s only use of it (`RogueGame.cs:24772`). It is *not* a damage multiplier, and the port's `ItemBodyArmor` comment saying so was wrong until this. Note the coupling: the fire half rides on `Feature.TileFires`, so fire resistance only functions under it |
 | `Alcohol` | `Actor.bloodAlcohol`, `previousBloodAlcohol` | 0 (own fields) | `IsDrunk`, 4 accuracy tiers, the 5-step description and colour, BAC decay, nightmare suppression |
 | `FoodPoisoning` | `Actor.isFoodPoisoned` | **0** (own field, carried by the writer) | **DONE** — 20% base × perishing factor 1/3/5, 1% per-turn recovery, Hardy bonus, medkit/antiviral cure on the C#'s exact model list, and the 5% vomit action (stamina/sleep/food cost, two-day decoration timer) |
 | `Cooking` | `ItemFood._cookedDegree`, `_maxCookedDegree` | 0 | `canActorCookFood`, `ActionCookFood`, campfires/barrels as heat sources |
@@ -3212,6 +3212,7 @@ zero precisely because of the dump-every-own-field design.
 | 7 new `PlayerCommand`s | enum — **append only** | 0 | bury, cook, destroy item, make fire, unload ammo, inspection mode, swap inventory |
 | `ExtendedAudio` | none (constants + a `Record` per id) | 0 | **table DONE** — 180 pairs in `GameSounds`/`SOUND_FILES`, 182 `.ogg` copied into `assets/sfx/`, generated from `GameSounds.cs` by `scripts/port-game-sounds.py` rather than transcribed. **3 call sites wired** (the two `Fishing` sounds §5.6e deferred, and `DoEatCorpse`'s id choice). The other 177 need the distance model — see its section |
 | `Graveyard` | none — a `bool isgraveyard` on `makeParkBuilding` | ~0 new lines | **DONE** — three in-method branches (graves vs trees/benches, the `Graveyard` zone name, "only add stuff to parks") and a new band in the green cascade. No new method, because the C# added none |
+| `TileFires` (actor arm) | `ActorFlags.IS_ON_FIRE`, `ActorFlags.IS_IN_WATER` | 0 | **DONE** — `SetActorOnFire` / `ExtinguishOnFireActor` / `ApplyBurnDamageToOnFireActor` / `stepActorsOnFire`, the 25% catch-fire roll, the per-turn burn, the rain and stop-drop-and-roll extinguishments, and the Release 6-6 exemption list so a burning actor is not burned twice |
 | `Clinic` | new `makeClinicBuilding` | ~178 C# lines | **DONE** — `case 2` of the shared `roll(0, 4)`. Twelve factories re-declared privately, the largest set of the seven |
 | `Library` | new `makeLibraryBuilding` | ~278 C# lines | **DONE** — its own pass *before* the cascade (the C#'s `if` sits above the `switch`, not in it), so it takes no dispatch roll. The C#'s `IsSanityEnabled` gate is not ported: the port has no such option, and the option's default is the only representable state |
 | `Junkyard` | new `makeJunkyard` | ~147 C# lines | **DONE** — the trailing arm of the C#'s parks `Roll(0, 99)` green cascade, so it takes that die as a parameter. Two C# quirks transliterated rather than fixed: its three roller doors are always refused (the perimeter is already chain-wire fence) and its `DECO_JUNKYARD` is unreachable |
@@ -3276,6 +3277,55 @@ cycle the other mode never had.
 > rod it drops, and the fire barrel. All of that is one `makeParkBuilding`
 > conformance job, and it is not this feature.
 >
+> ### `Actor.isOnFire` — the subsystem three features were waiting on
+>
+> Not a `Feature`, but the highest fan-out item on the board: `Feature.ArmorResist`'s
+> fire half, `Feature.TileFires`' catch-fire arm and `Feature.FireExtinguishers`' actor
+> target were all blocked on one missing field. Still Alive, Release 5-7.
+>
+> **The decision worth arguing about: which feature owns it.** The C# gates nothing —
+> it is core fork content — but this port gates everything, and every ignition source
+> is the fork's fire (tile fires, molotovs, flamethrowers). So it rides on
+> `Feature.TileFires`. The consequence is a **coupling**: `ArmorResist`'s fire half only
+> functions under `TileFires`. That is defensible — fire resistance is only meaningful
+> if fire can set you alight, and in this port fire *is* `TileFires` — but it is a
+> coupling and not a fact of the C#, so it is recorded here rather than buried.
+>
+> Three things the C# does that are easy to get wrong:
+>
+> 1. **`FIRE_RESIST%` is a `rollChance`, not a damage multiplier.** The port's
+>    `ItemBodyArmor` comment said it scaled damage. There is exactly one use in the
+>    whole reference — `RogueGame.cs:24772`, deciding whether ignition *sticks* — and a
+>    copy that read it as a reduction would quietly halve every burn instead of
+>    preventing ignition. The test now uses the merged table's own distribution to
+>    prove the shape: the fire hazard suit is 100% and the biohazard suit 5%, with the
+>    seven ordinary armours at 0, so the three cases bracket the range and an
+>    inverted sign or a swapped formula fails the ordering.
+> 2. **Release 6-6's exemption list.** A burning actor takes 2 from being alight and
+>    would take another 1 from the tile they are standing in, every turn. The C# records
+>    them in `NextMapTurn` 3.1 and hands the set to the tile-fire sweep. Without it a
+>    fire costs 3 a turn instead of 2, and the fix is invisible because the fire
+>    "works".
+> 3. **Water is a hard block, tested before the armour roll** (Release 6-1), and so are
+>    skeletons. Order matters: a fire-resistant skeleton in water is unignitable for
+>    two independent reasons, and a reader that rolled first would spend a die on it.
+>
+> The clear-weather extinguishment applies to **livings only** at 33% — "undead aren't
+> smart enough to extinguish themselves" — while the deliberate stop-drop-and-roll on
+> Wait is 50% and applies to everyone, because it is an action rather than a change in
+> the environment. That asymmetry is the C#'s and is easy to flatten by accident.
+>
+> **Not ported: `DoScream`.** A successful ignition calls it, which draws the speaker's
+> mouth open and plays a gendered sound. The port has no `DoScream`; the loud-noise half
+> is ported because it has consequences, the sound is `Feature.ExtendedAudio`, and the
+> animation is a renderer job.
+>
+> Three mutations, all caught: each gate removed, and `100 - fireResistance` for the
+> reader. The gate mutations are caught by the reader partition *and* by a behavioural
+> test, which took a second attempt — the first version of that test called a method
+> that was separately gated, so it passed with the gate deleted. A gate that is only
+> covered structurally is a gate nobody notices breaking.
+
 > ### Two foundations, no features — the noise-distance model and the fork's animals
 >
 > Two subsystems landed that are **not** `Feature`s and carry no gate, because both

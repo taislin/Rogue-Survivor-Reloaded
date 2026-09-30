@@ -20,6 +20,7 @@ import { Faction } from "@data/Faction";
 import { Map as GameMap } from "@data/Map";
 import { MapObjectBreak, MapObjectFire } from "@data/MapObject";
 import { Models } from "@data/Models";
+import { DollPart } from "@data/Doll";
 import { Point } from "@engine/Point";
 import { Ruleset, Session } from "@engine/Session";
 import { Direction } from "@engine/Direction";
@@ -269,14 +270,37 @@ describe("Feature.FireExtinguishers: the mode", () => {
   });
 });
 
-describe("Feature.FireExtinguishers: the actor arm is not here", () => {
-  it("has no per-actor fire state to put out", () => {
-    // The C#'s third target is an actor who is on fire. That needs
-    // `Actor.isOnFire` and `ExtinguishOnFireActor`, and the port has neither --
-    // the same gap `TileFires` documents, since the "actor catches fire" arm is
-    // Release 5-7 work that was not ported. Nothing can set a survivor alight, so
-    // there is nothing to extinguish, and the call site says so.
+describe("Feature.FireExtinguishers: the actor arm", () => {
+  it("puts out a burning actor, and only a burning one", () => {
+    // The C#'s third target (`RogueGame.cs:23450`), and the reason the C# sprays at
+    // a *position* rather than at a map object: a person can be alight with nothing
+    // alight around them. This arm existed to be written as "not here yet" until
+    // `Actor.isOnFire` landed.
     const victim = new Actor(Models.actors.get(ActorID.MALE_CIVILIAN), survivors, "vic");
-    expect("isOnFire" in victim, "Actor has no on-fire state at all").toBe(false);
+    const at = new Point(5, 5);
+    map.placeActor(victim, at);
+
+    game.SetActorOnFire(victim);
+    expect(victim.isOnFire, "ignited").toBe(true);
+    game.DoUseFireExtinguisher(player, extinguisher(), at);
+    expect(victim.isOnFire, "extinguished").toBe(false);
+
+    // And the negative: a bystander standing in the spray is unaffected, which is
+    // what stops the extinguisher being a free de-ignition of a crowd.
+    const bystander = new Actor(Models.actors.get(ActorID.MALE_CIVILIAN), survivors, "by");
+    map.placeActor(bystander, new Point(6, 6));
+    game.DoUseFireExtinguisher(player, extinguisher(), at);
+    expect(bystander.isOnFire, "was never alight, so nothing to do").toBe(false);
+  });
+
+  it("removes the fire decoration with the flag", () => {
+    const victim = new Actor(Models.actors.get(ActorID.MALE_CIVILIAN), survivors, "vic");
+    map.placeActor(victim, new Point(5, 5));
+    game.SetActorOnFire(victim);
+    const dressed = victim.doll.getDecorations(DollPart.TORSO) ?? [];
+    expect(dressed.some((d) => d.includes("on_fire")), "drawn alight").toBe(true);
+    game.DoUseFireExtinguisher(player, extinguisher(), new Point(5, 5));
+    const after = victim.doll.getDecorations(DollPart.TORSO) ?? [];
+    expect(after.some((d) => d.includes("on_fire")), "and no longer").toBe(false);
   });
 });

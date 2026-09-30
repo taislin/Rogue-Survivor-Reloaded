@@ -1420,6 +1420,20 @@ export class RogueGame {
 	 */
 	private static readonly TILE_FIRE_SPREAD_CHANCE = 5;
 	/** Rain accelerates a fire's death; clear weather is the slow case. */
+	/** C# `:378`, Release 5-7. Per-turn damage to an actor that is *on fire*. */
+	private static readonly BASE_ISONFIRE_FIRE_DAMAGE = 2;
+	/**
+	 * C# `:380`, Release 6-6. Standing in a burning tile gives the actor a small
+	 * chance of *becoming* fire, which is a different and much longer-lived state
+	 * than the tile fire it came from. This is `Feature.TileFires`'s last arm.
+	 */
+	private static readonly CATCH_ONFIRE_FROM_TILE_CHANCE = 25;
+	/**
+	 * C# `:385`, Release 7-6. Stop-drop-and-roll on Wait. 50% -- and unlike the
+	 * weather extinguishments this one applies to *everyone*, undeads included, since
+	 * it is a deliberate action rather than a change in the environment.
+	 */
+	private static readonly ON_WAIT_EXTINGUISH_FIRE_CHANCE = 50;
 	private static readonly CLEAR_WEATHER_FIRE_EXTINGUISH_CHANCE = 33;
 	private static readonly LIGHT_RAIN_FIRE_EXTINGUISH_CHANCE = 70;
 	private static readonly HEAVY_RAIN_FIRE_EXTINGUISH_CHANCE = 80;
@@ -5137,7 +5151,14 @@ export class RogueGame {
 			// turn loop because it is the one place in the engine that walks every
 			// tile on the map; see the method for why the order of its three steps
 			// is not interchangeable.
-			await this.stepTileFires(map);
+			//
+		// The alight-actor pass runs *before* the tile-fire pass and hands it the
+		// exemption list. The C#'s order is the same (`NextMapTurn` 3.1 then the
+		// tile-fire sweep) and it is not interchangeable: a burning actor takes 2
+		// from being alight, and would take another 1 from the tile they are standing
+		// in unless 3.1 marks them exempt.
+		const exempt = await this.stepActorsOnFire(map);
+		await this.stepTileFires(map, exempt);
 
 			// 7. Check fires.
 			// 7.1 Rain has a chance to put out fires.
@@ -11201,13 +11222,11 @@ export class RogueGame {
 						const map = player.location.map!;
 						const mapObj = map.getMapObjectAtPoint(pos);
 						const tile = map.getTileAt(pos.x, pos.y);
+						const actor = map.getActorAtPoint(pos);
 						const burning =
 							(mapObj !== null && mapObj.isOnFire) ||
 							(tile !== null && tile.isOnFire) ||
-							// `Actor.isOnFire` does not exist in the port -- see
-							// `DoUseFireExtinguisher`. Nothing can set a survivor alight
-							// yet, so there is nothing to put out here either.
-							false;
+							(actor !== null && actor.isOnFire);
 						if (burning) {
 							this.DoUseFireExtinguisher(player, sprayPaint, pos);
 							loop = false;
@@ -15997,8 +16016,25 @@ export class RogueGame {
 		}
 
 		// message.
+		//
+		// Alight actors get the fire message *instead of* the breath one. That
+		// ordering is the C#'s (`:23060`) and it is load-bearing for the same reason
+		// the fishing one is: the C# re-derives the state here rather than trusting
+		// the caller, so a long wait cannot quietly skip the "you are on fire" line.
 		if (this.IsVisibleToPlayer(actor)) {
-			if (isFishing)
+			if (hasFeature(this.m_Session.ruleset, Feature.TileFires) && actor.isOnFire) {
+				this.AddMessage(
+					actor.isPlayer
+						? this.MakePlayerCentricMessage(
+								"You stop-drop-and-roll to try to extinguish yourself.",
+								actor.location.position,
+							)
+						: this.MakeMessage(
+								actor,
+								`stop-drops-and-rolls to try to extinguish ${this.HimselfOrHerself(actor)}.`,
+							),
+				);
+			} else if (isFishing)
 				this.AddMessage(
 					this.MakeMessage(actor, "is waiting for a fish to bite."),
 				);
@@ -16015,8 +16051,19 @@ export class RogueGame {
 				);
 		}
 
-		// regen STA.
-		this.RegenActorStaminaPoints(actor, Rules.STAMINA_REGEN_WAIT);
+		// regen STA -- but only if not alight, and otherwise try to roll it out.
+		// C# `:23076-23080`, Release 7-6. The stamina suppression is the interesting
+		// half: you cannot catch your breath while you are burning.
+		if (
+			hasFeature(this.m_Session.ruleset, Feature.TileFires) &&
+			actor.isOnFire
+		) {
+			if (this.m_Rules.rollChance(RogueGame.ON_WAIT_EXTINGUISH_FIRE_CHANCE)) {
+				this.ExtinguishOnFireActor(actor);
+			}
+		} else {
+			this.RegenActorStaminaPoints(actor, Rules.STAMINA_REGEN_WAIT);
+		}
 
 		// caught a fish?  (C# RogueGame.cs:23085)
 		if (isFishing) {
@@ -19874,14 +19921,11 @@ export class RogueGame {
 	 * Put out everything burning on one adjacent tile. Still Alive, Release 7-6
 	 * (`RogueGame.cs:23439`).
 	 *
-	 * Two of the C#'s three targets are handled: a burning map object (a barrel,
-	 * campfire or car) and a burning tile. **The third is not, and the reason is
-	 * the same gap `TileFires` documents**: extinguishing an *actor* needs
-	 * `Actor.isOnFire` and `ExtinguishOnFireActor`, and the port has no per-actor
-	 * fire state at all. Nothing can set a survivor alight yet either — the
-	 * "actor catches fire" arm of `TileFires` is Release 5-7 work that was not
-	 * ported — so there is nothing to put out, and the call site says so rather
-	 * than pretending the third case is handled.
+	 * All three of the C#'s targets are handled: a burning map object (a barrel,
+	 * campfire or car), a burning tile, and a burning *actor*. The third is why
+	 * the C# sprays at a position rather than at an object — a person can be alight
+	 * with nothing alight around them — and it was the arm that waited on
+	 * `Actor.isOnFire`.
 	 *
 	 * The empty-can discard (Release 7-5) is kept: an extinguisher is 20 sprays,
 	 * and the C# throws the can away when it runs out.
@@ -19903,6 +19947,11 @@ export class RogueGame {
 		if (mapObj !== null && mapObj.isOnFire) this.UnapplyOnFire(mapObj);
 		const tile = map.getTileAt(pos.x, pos.y);
 		if (tile !== null && tile.isOnFire) this.extinguishOnFireTile(tile);
+		// The third target, and the reason the C# sprays at a *position* rather than
+		// a map object: a person can be alight without anything on that tile being
+		// alight. `RogueGame.cs:23450-23452`.
+		const target = map.getActorAtPoint(pos);
+		if (target !== null && target.isOnFire) this.ExtinguishOnFireActor(target);
 
 		// message.
 		if (this.IsVisibleToPlayer(sprayer)) {
@@ -22267,9 +22316,10 @@ export class RogueGame {
 	/**
 	 * Hurt whatever is standing in a burning tile. Still Alive, Release 5-2.
 	 *
-	 * Distinct from "the actor is on fire", which is a different subsystem
-	 * (`Actor.isOnFire`) that the port does not have yet -- see the note on the
-	 * caller. Skeletons are immune, which is the C#'s `IsSkeletonBranch` test.
+	 * Distinct from `ApplyBurnDamageToOnFireActor`: that is 2 damage and follows
+	 * the actor, this is 1 and hits whoever is standing in the flames. Skeletons are
+	 * immune here, which is the C#'s `IsSkeletonBranch` test -- and they are immune
+	 * in `SetActorOnFire` too, so a skeleton in a fire is simply never hurt.
 	 *
 	 * **The crop arm is not ported.** It converts `FLOOR_PLANTED` back to
 	 * `FLOOR_GRASS`, and the farming system that plants anything is alpha10-era
@@ -22277,10 +22327,22 @@ export class RogueGame {
 	 * fruit interval. `FLOOR_PLANTED` is marked flammable, so the fire spreads
 	 * there correctly; only the harvest loss is missing.
 	 */
-	private async applyBurnDamageFromTileFire(map: Map, point: Point): Promise<void> {
+	private async applyBurnDamageFromTileFire(
+		map: Map,
+		point: Point,
+		exemptFromTileFireDMGThisTurn: ReadonlySet<Actor> = new Set<Actor>(),
+	): Promise<void> {
 		const actor = map.getActorAtPoint(point);
 		if (actor !== null && !GameActors.isSkeletonBranch(actor.model) && actor.hitPoints > 0) {
 			await this.InflictDamage(actor, RogueGame.BASE_TILE_FIRE_DAMAGE);
+			// Release 6-6: an actor that already burned as an *alight* actor this
+			// turn is exempt. Without this, standing in a fire costs 1 + 2 damage
+			// every turn instead of 2.
+			if (!exemptFromTileFireDMGThisTurn.has(actor)) {
+				if (this.m_Rules.rollChance(RogueGame.CATCH_ONFIRE_FROM_TILE_CHANCE)) {
+					this.SetActorOnFire(actor);
+				}
+			}
 			if (actor.hitPoints <= 0) {
 				if (this.IsVisibleToPlayer(actor)) {
 					this.AddMessage(
@@ -22301,6 +22363,201 @@ export class RogueGame {
 		}
 	}
 
+	// ── Actor on fire (Still Alive, Release 5-7) ─────────────────────────────────
+	//
+	// A *per-actor* fire, distinct from standing in a tile fire. It follows the
+	// actor, draws a torso decoration, is put out by rain or by stop-drop-and-
+	// roll, and is where `Feature.ArmorResist`'s fire column is finally consulted.
+	//
+	// **Gated on `Feature.TileFires`, and that is a decision worth stating.** The
+	// C# gates nothing — this is core fork content from Release 5-7 — but this port
+	// gates everything, and the ignition sources are the fork's fire: tile fires,
+	// molotovs, flamethrowers. So it rides on the fork's fire feature.
+	//
+	// The consequence is a coupling: `Feature.ArmorResist`'s fire half only
+	// functions under `Feature.TileFires` as well. That is defensible — fire
+	// resistance is only meaningful if fire can set you alight, and in this port
+	// fire *is* `TileFires` — but it is a coupling, not a fact of the C#, and it
+	// is recorded in BROWSER_PORT_PLAN rather than buried.
+
+	/**
+	 * C# `SetActorOnFire` — `RogueGame.cs:24737`.
+	 *
+	 * Three refusals before anything happens, and the order is the C#'s:
+	 *  1. **Skeletons cannot burn.** `GameActors.isSkeletonBranch` — the same test
+	 *     the tile-fire pass uses, and for the same reason.
+	 *  2. **Water is a hard block** (Release 6-1). `Actor.isInWater`, set by the
+	 *     movement code; a wading actor is not ignited by a burning tile beside it.
+	 *  3. **Fire-resistant armour wins** (Release 7-1) -- and this is the whole of
+	 *     `Feature.ArmorResist`'s fire half. `fireResistance` is a *percentage
+	 *     roll*, not a damage multiplier here: a 30% suit fails the roll seven
+	 *     times in ten. Note the same column is read as a multiplier in
+	 *     `ItemBodyArmor`; the C# uses it both ways and so does this.
+	 *
+	 * `wasOnFire` exists for one message: the C# only tells the player "You are
+	 * literally on fire!" on the *transition*, so standing in a fire for six turns
+	 * says it once.
+	 */
+	SetActorOnFire(actor: Actor): void {
+		if (actor === null || GameActors.isSkeletonBranch(actor.model) || actor.isInWater) return;
+
+		const wasOnFire = actor.isOnFire;
+		actor.isOnFire = true;
+
+		const torso = () => actor.doll.getDecorations(DollPart.TORSO);
+		/** C#'s repeated `GetDecorations(...) == null || !Contains(...)` guard. */
+		const addIfAbsent = (imageId: string): void => {
+			const d = torso();
+			if (d === null || !d.includes(imageId)) actor.doll.addDecoration(DollPart.TORSO, imageId);
+		};
+
+		// undead: two sprites, and rat zombies get neither (the C#'s `else if
+		// (model != RatZombie)` falls through to the living branch's decoration
+		// code, which for a rat is the male/female one -- so a rat zombie is drawn
+		// with a living's fire).
+		if (actor.model.abilities.isUndead) {
+			if (
+				actor.model === Models.actors.get(ActorID.UNDEAD_ZOMBIE) ||
+				actor.model === Models.actors.get(ActorID.UNDEAD_DARK_ZOMBIE) ||
+				actor.model === Models.actors.get(ActorID.UNDEAD_DARK_EYED_ZOMBIE)
+			) {
+				addIfAbsent(GameImages.ZOMBIE_ON_FIRE);
+			} else if (actor.model !== Models.actors.get(ActorID.UNDEAD_RAT_ZOMBIE)) {
+				addIfAbsent(GameImages.OTHER_UNDEAD_ON_FIRE);
+			}
+			return;
+		}
+
+		// living: the armour roll, and the two living sprites.
+		const torsoItem = actor.getEquippedItem(DollPart.TORSO);
+		if (torsoItem !== null && torsoItem instanceof ItemBodyArmor) {
+			if (this.m_Rules.rollChance((torsoItem.model as ItemBodyArmorModel).fireResistance)) {
+				actor.isOnFire = false;
+				return;
+			}
+		}
+		addIfAbsent(actor.model.dollBody.isMale ? GameImages.MALE_ON_FIRE : GameImages.FEMALE_ON_FIRE);
+
+		// A scream is a loud noise, and it is the only way fire announces itself
+		// without a message. The C# also calls `DoScream`, which draws the speaker's
+		// mouth open and plays a gendered sound; the port has no `DoScream`, and
+		// inventing one is a renderer job, so only the noise is ported -- which is
+		// the part that has consequences. The sound is `Feature.ExtendedAudio`.
+		this.OnLoudNoise(actor.location.map!, actor.location.position, "A loud SCREAM");
+
+		if (actor.isPlayer && !wasOnFire) {
+			this.AddMessage(
+				new Message(
+					"You are literally on fire! You should try to extinguish yourself.",
+					this.m_Session.worldTime.turnCounter,
+					Color.Red,
+				),
+			);
+		}
+	}
+
+	/**
+	 * C# `ExtinguishOnFireActor` — `RogueGame.cs:24819`.
+	 *
+	 * Clears the bit and removes whichever fire decoration is present. The C#'s
+	 * `else if` chain means it removes at most one, which is correct only because
+	 * `SetActorOnFire` adds at most one; removing *all four* defensively would
+	 * paper over a bug where two were added, so the chain is kept.
+	 */
+	ExtinguishOnFireActor(actor: Actor): void {
+		if (actor === null) return;
+		actor.isOnFire = false;
+		const d = actor.doll.getDecorations(DollPart.TORSO);
+		if (d === null) return;
+		if (d.includes(GameImages.ZOMBIE_ON_FIRE)) actor.doll.removeDecoration(GameImages.ZOMBIE_ON_FIRE);
+		else if (d.includes(GameImages.OTHER_UNDEAD_ON_FIRE))
+			actor.doll.removeDecoration(GameImages.OTHER_UNDEAD_ON_FIRE);
+		else if (d.includes(GameImages.MALE_ON_FIRE)) actor.doll.removeDecoration(GameImages.MALE_ON_FIRE);
+		else if (d.includes(GameImages.FEMALE_ON_FIRE)) actor.doll.removeDecoration(GameImages.FEMALE_ON_FIRE);
+	}
+
+	/**
+	 * C# `ApplyBurnDamageToOnFireActor` — `RogueGame.cs:24659`.
+	 *
+	 * Distinct from `applyBurnDamageFromTileFire`, which is 1 damage and hits
+	 * whoever is standing in the flames. This is 2 damage and hits the burning
+	 * actor wherever they are -- which is why a fire you walk out of keeps hurting.
+	 */
+	private async ApplyBurnDamageToOnFireActor(actor: Actor): Promise<void> {
+		if (actor.hitPoints > 0) {
+			await this.InflictDamage(actor, RogueGame.BASE_ISONFIRE_FIRE_DAMAGE);
+		}
+		if (actor.hitPoints <= 0) {
+			if (this.IsVisibleToPlayer(actor)) {
+				this.AddMessage(
+					new Message(
+						`${actor.theName} died in flames!`,
+						this.m_Session.worldTime.turnCounter,
+						Color.Orange,
+					),
+				);
+			}
+			this.KillActor(null, actor, "burned alive", true);
+			if (!actor.model.abilities.isUndead) {
+				this.SeeingCauseInsanity(
+					actor,
+					actor.location,
+					Rules.SANITY_HIT_EATEN_ALIVE,
+					`${actor.theName} burnt alive`,
+				);
+			}
+		}
+	}
+
+	/**
+	 * The per-turn pass for alight actors — C# `RogueGame.cs:6199-6231`.
+	 *
+	 * Rain puts you out **only if you are not indoors** (Release 6-1), and clear
+	 * weather puts a *living* out at 33%: "undead aren't smart enough to
+	 * extinguish themselves", which is why the C#'s comment sits on the constant
+	 * rather than on the branch.
+	 *
+	 * The survivors are recorded in `exemptFromTileFireDMGThisTurn` and handed to
+	 * the tile-fire pass, so an actor standing in a fire is burned once and not
+	 * twice. That list is the whole subtlety of this function.
+	 *
+	 * @returns the actors that burned, for the tile-fire pass's exemption list.
+	 */
+	async stepActorsOnFire(map: Map): Promise<Set<Actor>> {
+		const exemptFromTileFireDMGThisTurn = new Set<Actor>();
+		if (!hasFeature(this.m_Session.ruleset, Feature.TileFires)) return exemptFromTileFireDMGThisTurn;
+
+		let baseExtinguishChance = RogueGame.CLEAR_WEATHER_FIRE_EXTINGUISH_CHANCE;
+		if (this.m_Rules.isWeatherRain(this.m_Session.weather)) {
+			baseExtinguishChance =
+				this.m_Session.weather === Weather.HEAVY_RAIN
+					? RogueGame.HEAVY_RAIN_FIRE_EXTINGUISH_CHANCE
+					: RogueGame.LIGHT_RAIN_FIRE_EXTINGUISH_CHANCE;
+		}
+		const raining = this.m_Rules.isWeatherRain(this.m_Session.weather);
+
+		// `ToList` in the C#, because `KillActor` mutates the collection mid-loop.
+		for (const actor of [...map.actors]) {
+			if (!actor.isOnFire) continue;
+			const tile = map.getTileAt(actor.location.position.x, actor.location.position.y);
+			if (raining && tile !== null && !tile.isInside) {
+				if (this.m_Rules.rollChance(baseExtinguishChance)) {
+					this.ExtinguishOnFireActor(actor);
+					continue;
+				}
+			} else if (!actor.model.abilities.isUndead) {
+				if (this.m_Rules.rollChance(RogueGame.CLEAR_WEATHER_FIRE_EXTINGUISH_CHANCE)) {
+					this.ExtinguishOnFireActor(actor);
+					continue;
+				}
+			}
+			// still alight: burn, and do not burn again for the tile fire.
+			await this.ApplyBurnDamageToOnFireActor(actor);
+			exemptFromTileFireDMGThisTurn.add(actor);
+		}
+		return exemptFromTileFireDMGThisTurn;
+	}
+
 	/**
 	 * The per-turn tile-fire pass: spread, then burn out, then burn the victim.
 	 *
@@ -22319,15 +22576,12 @@ export class RogueGame {
 	 *    spread to this tile. A fire that arrived this turn has already burned
 	 *    whoever caught it (step 1), so burning again would double-damage.
 	 *
-	 * **Not ported: the "actor catches fire" arm.** The C# rolls
-	 * `CATCH_ONFIRE_FROM_TILE_CHANCE` (25%) to set the *actor* alight, which needs
-	 * `Actor.isOnFire` and the whole `SetActorOnFire` / `ApplyBurnDamageToOnFireActor`
-	 * subsystem -- a per-actor fire with its own damage value and zombie-sprite
-	 * handling. None of that exists in the port; it is Release 5-7 work and it is
-	 * its own feature, not part of "tile fires". Standing in fire still hurts every
-	 * turn; the actor does not *become* fire.
+	 * **The "actor catches fire" arm is ported**, via `SetActorOnFire` and the
+	 * per-turn `stepActorsOnFire`. It is gated on this same feature, and the
+	 * coupling is recorded: `Feature.ArmorResist`'s fire half only functions under
+	 * `Feature.TileFires`, because in this port fire *is* `TileFires`.
 	 */
-	private async stepTileFires(map: Map): Promise<void> {
+	private async stepTileFires(map: Map, exempt: ReadonlySet<Actor> = new Set<Actor>()): Promise<void> {
 		if (!hasFeature(this.m_Session.ruleset, Feature.TileFires)) return;
 
 		// Weather sets the base rate; indoors divides it down again.
@@ -22371,7 +22625,7 @@ export class RogueGame {
 					spreadTo.add(key);
 					// false: a spreading fire must not scorch walls.
 					this.setTileOnFire(map, adj.x, adj.y, false);
-					await this.applyBurnDamageFromTileFire(map, adj);
+					await this.applyBurnDamageFromTileFire(map, adj, exempt);
 				}
 
 				// 2. burn out
@@ -22388,7 +22642,7 @@ export class RogueGame {
 				}
 
 				// 3. burn the victim
-				await this.applyBurnDamageFromTileFire(map, here);
+				await this.applyBurnDamageFromTileFire(map, here, exempt);
 			}
 		}
 	}

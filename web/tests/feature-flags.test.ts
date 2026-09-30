@@ -177,7 +177,8 @@ describe("Feature registry is wired", () => {
                  "Library", "Library", "LightPriority",
                  "ResourcesAvailability", "ResourcesAvailability",
                  "ResourcesAvailability", "SiphonFuel", "SiphonFuel",
-                 "TileFires", "WeaponWeight"]);
+                 "TileFires", "TileFires", "TileFires", "TileFires",
+                 "WeaponWeight"]);
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     // `Alcohol`'s *first* reader is now in `RogueGame` (the per-turn decay), and
     // the harness line is one of six rather than the only one.
@@ -279,12 +280,30 @@ describe("Feature registry is wired", () => {
     // that could not change anything.
     expect(fishing.find((s) => /Rules\.ts/.test(s.at))!.at).toMatch(/Rules\.ts:\d+$/);
 
-    // TileFires has a single reader, and deliberately so: the spread loop, the
-    // burn damage and the ignite/put-out primitives are one indivisible feature.
-    // Gating `stepTileFires` alone would be enough for CLASSIC (nothing else calls
-    // the primitives), and adding gates to the primitives as well would be three
-    // chances to disagree about whether fire is switched on.
-    expect(sites.filter((s) => s.feature === "TileFires")).toHaveLength(1);
+    // TileFires has two readers, and the second is `Actor.isOnFire` arriving.
+    //
+    // It was deliberately ONE until the per-actor fire subsystem landed: the spread
+    // loop, the burn damage and the ignite/put-out primitives were one indivisible
+    // feature, and gating `stepTileFires` alone was enough for CLASSIC because
+    // nothing else called the primitives. That reasoning no longer holds — the
+    // primitives are now reachable from three places that are not `stepTileFires`
+    // (the per-turn alight pass, `DoWait`'s stop-drop-and-roll, and the fire
+    // extinguisher's actor target), so the count is 2 *methods* rather than 1.
+    //
+    // The four *sites* below are two early returns plus two `&&` guards in `DoWait`.
+    // The `&&` guards are not extra independent switches — they guard a public
+    // entry point, exactly as `stepTileFires`'s early return guards its own — so
+    // they are counted here rather than collapsed, because a gate nobody counts is
+    // a gate nobody notices deleting.
+    expect(sites.filter((s) => s.feature === "TileFires")).toHaveLength(4);
+    const tileFires = sites.filter((s) => s.feature === "TileFires");
+    expect(tileFires.every((s) => /RogueGame\.ts/.test(s.at))).toBe(true);
+    // Two of the four are inside `DoWait` (the message guard and the
+    // stop-drop-and-roll guard); the other two are the early returns in
+    // `stepActorsOnFire` and `stepTileFires`. Pinned so that "somebody added a
+    // fifth gate" is a deliberate edit to this file rather than a silent one.
+    expect(tileFires.filter((s) => Number(/RogueGame\.ts:(\d+)/.exec(s.at)![1]) < 17000).length)
+      .toBe(2);
 
     // SiphonFuel has two readers in one file, and the second one is the
     // interesting one: the `use` dispatch and the handler's own guard. The handler
