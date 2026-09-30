@@ -13,6 +13,7 @@ import { CHARGuardAI } from "@gameplay/ai/CHARGuardAI";
 import { SoldierAI } from "@gameplay/ai/SoldierAI";
 import { GangAI } from "@gameplay/ai/GangAI";
 import { FeralDogAI } from "@gameplay/ai/FeralDogAI";
+import { UnintelligentAnimalAI } from "@gameplay/ai/UnintelligentAnimalAI";
 import { InsaneHumanAI } from "@gameplay/ai/InsaneHumanAI";
 import { Attack } from "@data/Attack";
 import { Defence } from "@data/Defence";
@@ -52,17 +53,20 @@ export enum ActorID {
   JASON_MYERS = 26,
   // ── Still Alive additions. Append only: a save names its actors by this
   // number, so inserting here would resurrect the wrong corpse.
-  //
-  // The fork's other two new rows, RABBIT and CHICKEN, are deliberately *not*
-  // here yet. They need an `IsLivingAnimal` ability the port has no field for
-  // and an `UnintelligentAnimalAI` the port has no controller for; adding the
-  // enum members alone would bind their CSV rows through a switch with no
-  // matching case, which yields an actor with no abilities at all and no
-  // error. That is Stage 4 work — see BROWSER_PORT_PLAN §5.6d. Their rows are
-  // already in the merged `Actors.csv`, ready for it.
   DERANGED_PATIENT = 27,
   CHAR_SCIENTIST = 28,
-  _COUNT = 29,
+  // RABBIT and CHICKEN (GameActors.cs:988-1039, Release 7-6) are appended
+  // rather than placed beside FERAL_DOG as the C# has them, and the C#'s own
+  // enum order cannot be reproduced here for the reason above: the C# was free
+  // to insert `RABBIT, CHICKEN` after `FERAL_DOG` because nothing in the C#
+  // stores an `ActorModel` across versions either, whereas the port's
+  // `SessionGraph` writes the model id of every actor on the map. At 29 and 30
+  // the ids of the 29 actors that already existed are untouched; a save that
+  // says `27` still means the deranged patient and a save that says `28` still
+  // means the CHAR scientist.
+  RABBIT = 29,
+  CHICKEN = 30,
+  _COUNT = 31,
 }
 
 export class GameActors implements ActorModelDB {
@@ -114,6 +118,12 @@ export class GameActors implements ActorModelDB {
       // Jason Myers and the CHAR guard rather than from a whole-body sprite.
       [ActorID.DERANGED_PATIENT]: null,
       [ActorID.CHAR_SCIENTIST]: null,
+      // The two food animals are `null` for a stronger reason: their *whole
+      // body* is the skin decoration (BaseTownGenerator.cs:11981/11996 adds
+      // `RABBIT_SKIN_EAST` and nothing else), so a whole-body sprite would be
+      // drawn under a doll that has no other layer to draw.
+      [ActorID.RABBIT]: null,
+      [ActorID.CHICKEN]: null,
     };
 
     // Rows must be bound to models by their ID, not by position. The C# does
@@ -142,6 +152,11 @@ export class GameActors implements ActorModelDB {
       if (!d) throw new Error(`Actors.csv has no row for ${ActorID[i]}`);
       const isUndead = i <= ActorID.UNDEAD_RAT_ZOMBIE || i === ActorID.SEWERS_THING;
       const isLiving = !isUndead;
+      // The two food animals share a sheet shape -- food and sleep at the dog
+      // constants, no sanity, no inventory -- that no other living actor has,
+      // so they are named here rather than inferred from `isLiving`.
+      const isUnintelligentAnimal =
+        i === ActorID.RABBIT || i === ActorID.CHICKEN;
 
       // The C# fills each sheet from named constants (GameActors.cs 66-69,
       // 175, 204-212) rather than literals, and the split is not simply
@@ -149,7 +164,10 @@ export class GameActors implements ActorModelDB {
       //   - only the rotting branch of the undead decays on ROT_BASE_POINTS;
       //     the three skeletons, the rat zombie and the sewers thing get
       //     NO_FOOD and never rot,
-      //   - the feral dog and Jason Myers get food and sleep but NO_SANITY.
+      //   - the feral dog and Jason Myers get food and sleep but NO_SANITY,
+      //   - and so do the two food animals, which take the dog's food and sleep
+      //     constants but no sanity and no inventory (GameActors.cs:1005-1008,
+      //     1032-1035).
       // Flattening all of that to `isLiving ? 100 : 0` capped every meter at
       // 100 while the thresholds stayed at 720/900/1440, so actors spawned
       // already "Hungry", "Sleepy" and "Disturbed" and every
@@ -157,15 +175,18 @@ export class GameActors implements ActorModelDB {
       const rots =
         i >= ActorID.UNDEAD_ZOMBIE && i <= ActorID.UNDEAD_FEMALE_DISCIPLE;
       const hasSanity =
-        isLiving && i !== ActorID.FERAL_DOG && i !== ActorID.JASON_MYERS;
+        isLiving && !isUnintelligentAnimal &&
+        i !== ActorID.FERAL_DOG && i !== ActorID.JASON_MYERS;
 
       const abilities = GameActors.abilitiesFor(i);
 
       // C# per-actor verb: every living uses the shared VERB_PUNCH except the
-      // feral dog, which bites (GameActors.cs:939). The ternary could not
-      // express that one exception, so the dog punched.
+      // feral dog, which bites (GameActors.cs:939) and the two food animals,
+      // where a rabbit bites like the dog (:1006) and a chicken pecks (:1033).
+      // The ternary could not express that one exception, so the dog punched.
       const verb =
-        i === ActorID.FERAL_DOG ? "bite"
+        i === ActorID.CHICKEN ? "peck"
+        : i === ActorID.FERAL_DOG || i === ActorID.RABBIT ? "bite"
         : isUndead ? (i < ActorID.UNDEAD_ZOMBIE ? "claw" : "bite")
         : "punch";
       const attack = Attack.meleeAttack(new Verb(verb), d.ATK, d.DMG);
@@ -180,10 +201,18 @@ export class GameActors implements ActorModelDB {
       const sanity = hasSanity ? Rules.SANITY_BASE_POINTS : 0;
       // C# sizes these per actor too: HUMAN_INVENTORY = 7 for every living
       // actor, DOG_INVENTORY = 1 for the feral dog, NO_INVENTORY = 0 for the
-      // undead (GameActors.cs 66, 207, 212). A flat 6 for the living is one
-      // slot short of the original, which the status panel draws as
-      // "Inventory 1-7".
-      const invCapacity = i === ActorID.FERAL_DOG ? 1 : isLiving ? 7 : 0;
+      // undead and for the two food animals (GameActors.cs 66, 207, 212, 1008,
+      // 1035). A flat 6 for the living is one slot short of the original, which
+      // the status panel draws as "Inventory 1-7".
+      //
+      // The animals' 0 is redundant with `hasInventory = false` -- `Actor` only
+      // builds an `Inventory` when that flag is set -- but it is the number the
+      // C# passes and it is what a save round-trips, so it is passed here too.
+      const invCapacity =
+        i === ActorID.FERAL_DOG ? 1
+        : isUnintelligentAnimal ? 0
+        : isLiving ? 7
+        : 0;
 
       const sheet = new ActorSheet(
         d.HP,
@@ -367,9 +396,27 @@ export class GameActors implements ActorModelDB {
         break;
 
       // ── Feral dog: no sanity, no talking, no trading (921-946) ──
+      // `isLivingAnimal` is Release 7-5 and it is *not* specific to the two
+      // rabbits-and-chickens models: the C# sets it on the dog as well
+      // (GameActors.cs:970), and `RogueGame.ButcherMeat`'s meat switch has a
+      // `feral dog` case waiting to match it. Without the flag the third of the
+      // switch's three branches was unreachable and a butchered dog gave human
+      // flesh.
       case ActorID.FERAL_DOG:
-        set("hasInventory", "hasToEat", "hasToSleep", "canBreakObjects",
-            "canJump", "canTire", "canRun", "aiCanUseAIExits");
+        set("isLivingAnimal", "hasInventory", "hasToEat", "hasToSleep",
+            "canBreakObjects", "canJump", "canTire", "canRun", "aiCanUseAIExits");
+        break;
+
+      // ── Still Alive's two food animals, RABBIT and CHICKEN ──
+      // GameActors.cs:992-1004 and 1019-1031; the two blocks are identical, so
+      // the two ids fall through to the same four flags. What is *off* is the
+      // interesting half: no inventory, nothing to eat or sleep for, no jump, no
+      // AI exits, not intelligent -- and `isSmall`, which is the flag that
+      // actually reaches the world, through the trap-avoid bonus and through
+      // `Rules.canActorSwitchPlaceWith`.
+      case ActorID.RABBIT:
+      case ActorID.CHICKEN:
+        set("isLivingAnimal", "canTire", "canRun", "isSmall");
         break;
 
       // ── Jason Myers: RAGE, so no eating and no sleeping (949-978) ──
@@ -461,6 +508,12 @@ export class GameActors implements ActorModelDB {
         return GangAI;
       case ActorID.FERAL_DOG:
         return FeralDogAI;
+      // Still Alive's two food animals share one controller (GameActors.cs:1009
+      // and 1036), which is the whole of the "unintelligent" in the name: it
+      // flees, it rests, it wanders, and it has no third verb to speak.
+      case ActorID.RABBIT:
+      case ActorID.CHICKEN:
+        return UnintelligentAnimalAI;
       case ActorID.JASON_MYERS:
         return InsaneHumanAI;
       // Still Alive's deranged patient, likewise (GameActors.cs:1063).
@@ -486,5 +539,18 @@ export class GameActors implements ActorModelDB {
 
   static isRatBranch(m: ActorModel): boolean {
     return m.id === ActorID.UNDEAD_RAT_ZOMBIE;
+  }
+
+  /**
+   * C# `GameActors.IsUnintelligentAnimal` (GameActors.cs:1252-1255), Release 7-6.
+   *
+   * An identity test on the two models, deliberately *not* the
+   * `abilities.isLivingAnimal` flag: that flag is also on the feral dog, which
+   * is not unintelligent, and the C#'s own distinction is "rabbit or chicken".
+   * `Feature.AnimalShelter` is the consumer -- the C# tests this before letting
+   * an actor in, which is how a shelter refuses a dog.
+   */
+  static isUnintelligentAnimal(m: ActorModel): boolean {
+    return m.id === ActorID.RABBIT || m.id === ActorID.CHICKEN;
   }
 }

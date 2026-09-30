@@ -8867,16 +8867,17 @@ export class RogueGame {
 	 *
 	 * **The C# throws on an unrecognised animal name, and that is not ported.**
 	 * Its switch has three cases — rabbit, chicken, feral dog — and a `default`
-	 * that throws. The port has no `RABBIT` or `CHICKEN` model yet (they need
-	 * `Abilities.isLivingAnimal`, which this feature added, *and* an
-	 * `UnintelligentAnimalAI` the port has no controller for), so any living
-	 * animal that did exist would crash the butcher. A missing model must not be
-	 * able to take the game down, so the default arms fall through to "no meat",
-	 * and a test says so.
+	 * that throws. `RABBIT` and `CHICKEN` arrived with `UnintelligentAnimalAI`, so
+	 * every animal the C# names now reaches a case, and the throw is unreachable
+	 * by construction rather than by luck. It stays unported anyway: the models are
+	 * process-wide statics, and a hand-edited one that claimed the flag without
+	 * being a name the switch knows must not be able to take the game down. The
+	 * default arm falls through to "no meat" and a test says so.
 	 *
-	 * The meat *quantity* is the C#'s `default: 2` case. It is really
-	 * `GameOptions.ResourcesAvailability` (3/2/1), which is its own pending
-	 * feature, so the default is hardcoded and the site is commented.
+	 * The meat *quantity* is the C#'s `ResourcesAvailability` switch — 3 / 2 / 1.
+	 * `Feature.ResourcesAvailability` has since landed, so this reads the real
+	 * option rather than the hardcoded MED default it started as. It is inside
+	 * the C#'s *animal* arm only; a human body is never scaled and stays at 1.
 	 */
 	private ButcherMeat(a: Actor, c: Corpse): void {
 		const map = a.location.map!;

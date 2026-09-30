@@ -448,6 +448,15 @@ export class GameImages {
   static readonly DOG_SKIN1 = "Actors/Decoration/dog_skin1";
   static readonly DOG_SKIN2 = "Actors/Decoration/dog_skin2";
   static readonly DOG_SKIN3 = "Actors/Decoration/dog_skin3";
+  // Still Alive's two food animals, Release 7-6 (GameImages.cs:971-975). East and
+  // west pairs rather than a single sprite, because
+  // `UnintelligentAnimalAI.faceSpriteForDirection` swaps the SKIN decoration as
+  // the animal turns. There is no north/south pair: a head-on or rear view is the
+  // same drawing either way, so the C# keeps the current skin for those headings.
+  static readonly RABBIT_SKIN_EAST = "Actors/Decoration/rabbit_skin_east";
+  static readonly RABBIT_SKIN_WEST = "Actors/Decoration/rabbit_skin_west";
+  static readonly CHICKEN_SKIN_EAST = "Actors/Decoration/chicken_skin_east";
+  static readonly CHICKEN_SKIN_WEST = "Actors/Decoration/chicken_skin_west";
 
   // ── Items ─────────────────────────────────────────────────────────────────
   static readonly ITEM_SLOT = "Items/itemslot";

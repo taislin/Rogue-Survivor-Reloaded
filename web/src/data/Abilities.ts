@@ -2,7 +2,7 @@ export class Abilities {
   static readonly NONE = new Abilities();
 
   /**
-   * A live animal rather than a person. Still Alive, Release 7-6.
+   * A live animal rather than a person. Still Alive, Release 7-5.
    *
    * The distinction that matters is *insanity*: butchering a human costs sanity,
    * butchering a dead rabbit does not, because a rabbit was food anyway. The
@@ -10,9 +10,11 @@ export class Abilities {
    * animal ids, which is the right call -- the AI, the butcher and the sanity
    * rule all need to ask the same question and none of them should own the list.
    *
-   * Set on `RABBIT` and `CHICKEN`, which are the only two models in the port that
-   * set it. `FERAL_DOG` is a third in the C#'s meat switch but the port has no
-   * such model yet, so the switch's `default` arm is what covers it.
+   * Set on `FERAL_DOG`, `RABBIT` and `CHICKEN` -- the C# sets it on all three
+   * (GameActors.cs:970, 994, 1021) and all three are now shipped models, so
+   * `RogueGame.ButcherMeat`'s meat switch resolves all three of its cases. Note
+   * it is *not* the same set as `GameActors.isUnintelligentAnimal`, which is
+   * rabbits and chickens only: the dog is intelligent, just edible.
    */
   isLivingAnimal: boolean = false;
   isUndead: boolean = false;

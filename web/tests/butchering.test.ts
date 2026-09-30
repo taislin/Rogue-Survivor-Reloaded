@@ -332,20 +332,50 @@ describe("Feature.Butchering: animals", () => {
   });
 
   it("gives NO meat for an unrecognised animal, where the C# throws", () => {
-    // The C#'s switch has three cases and a `default` that throws
-    // `ArgumentException`. Not ported: the port has no `RABBIT` or `CHICKEN`
-    // model -- they need an `UnintelligentAnimalAI` the port has no controller for
-    // -- so a live animal that did exist would crash the butcher. A missing model
-    // must not be able to take the game down.
-    asAnimal(ActorID.MALE_CIVILIAN, "unrecognised animal");
-    const corpse = kill();
-    expect(() =>
+    // The C#'s switch has three cases -- rabbit, chicken, feral dog -- and a
+    // `default` that throws `ArgumentException`. The throw is still not ported,
+    // and the reason has not changed: a missing content row must not be able to
+    // take the game down. `RABBIT` and `CHICKEN` arrived with the animal AI, so
+    // every *shipped* living animal now matches a case and this arm is reachable
+    // only by hand-mutating a model that does not carry the flag in the C# --
+    // which is the point: it is a real safety net, not a live branch.
+    const model = Models.actors.get(ActorID.MALE_CIVILIAN);
+    const wasLiving = model.abilities.isLivingAnimal;
+    try {
+      model.abilities.isLivingAnimal = true;
+      const corpse = kill();
+      expect(() =>
+        (game as unknown as { ButcherMeat(a: Actor, c: Corpse): void }).ButcherMeat(
+          player,
+          corpse,
+        ),
+      ).not.toThrow();
+      expect(foods(), "and no meat at all").toHaveLength(0);
+    } finally {
+      // The models are process-wide statics; leaving one mutated poisons every
+      // later test in this file and every other file that shares the process.
+      model.abilities.isLivingAnimal = wasLiving;
+    }
+  });
+
+  it("every shipped living animal now reaches a real meat case", () => {
+    // The three ids the C#'s switch names, asserted through the real models rather
+    // than by renaming a civilian. Before the animal AI landed, the rabbit and
+    // chicken rows were unreachable and the test above was passing on a fiction.
+    const meatFor = (id: ActorID, cause: string): ItemID | undefined => {
+      const corpse = kill(id, cause);
       (game as unknown as { ButcherMeat(a: Actor, c: Corpse): void }).ButcherMeat(
         player,
         corpse,
-      ),
-    ).not.toThrow();
-    expect(foods(), "and no meat at all").toHaveLength(0);
+      );
+      return foods().pop()?.model.id;
+    };
+    expect(meatFor(ActorID.RABBIT, "zombie bite")).toBe(ItemID.FOOD_RAW_RABBIT);
+    expect(meatFor(ActorID.RABBIT, "fire")).toBe(ItemID.FOOD_COOKED_RABBIT);
+    expect(meatFor(ActorID.CHICKEN, "zombie bite")).toBe(ItemID.FOOD_RAW_CHICKEN);
+    expect(meatFor(ActorID.CHICKEN, "fire")).toBe(ItemID.FOOD_COOKED_CHICKEN);
+    expect(meatFor(ActorID.FERAL_DOG, "zombie bite")).toBe(ItemID.FOOD_RAW_DOG_MEAT);
+    expect(meatFor(ActorID.FERAL_DOG, "fire")).toBe(ItemID.FOOD_COOKED_DOG_MEAT);
   });
 });
 

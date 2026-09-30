@@ -13,7 +13,10 @@ export enum FactionID {
   ThePsychopaths = 8,
   TheSurvivors = 9,
   TheFerals = 10,
-  _COUNT = 11,
+  // Still Alive, Release 7-6 (GameFactions.cs:29). Appended, and it lands on the
+  // same number the C# gives it, because the C# also has it last.
+  TheUnintelligentAnimals = 11,
+  _COUNT = 12,
 }
 
 export class GameFactions implements FactionDB {
@@ -61,6 +64,9 @@ export class GameFactions implements FactionDB {
     this.setFaction(FactionID.TheFerals, new Faction("Ferals", "feral"));
     this.factions[FactionID.TheFerals].leadOnlyBySameFaction = true;
 
+    this.setFaction(FactionID.TheUnintelligentAnimals, new Faction("animals", "animal"));
+    this.factions[FactionID.TheUnintelligentAnimals].leadOnlyBySameFaction = true;
+
     // Relations
     const army = this.factions[FactionID.TheArmy];
     const bikers = this.factions[FactionID.TheBikers];
@@ -73,6 +79,7 @@ export class GameFactions implements FactionDB {
     const psychos = this.factions[FactionID.ThePsychopaths];
     const survivors = this.factions[FactionID.TheSurvivors];
     const ferals = this.factions[FactionID.TheFerals];
+    const animals = this.factions[FactionID.TheUnintelligentAnimals];
 
     army.addEnemy(bikers);
     army.addEnemy(blackOps);
@@ -150,8 +157,34 @@ export class GameFactions implements FactionDB {
 
     ferals.addEnemy(undeads);
 
-    // Ensure symmetry
+    // Release 7-6 (GameFactions.cs:174-184). Every faction is an enemy of the
+    // animals, and none of them is an enemy of the animals -- see the symmetry
+    // loop below, which is where the second half is enforced.
+    animals.addEnemy(army);
+    animals.addEnemy(bikers);
+    animals.addEnemy(blackOps);
+    animals.addEnemy(charCorp);
+    animals.addEnemy(civilians);
+    animals.addEnemy(gangstas);
+    animals.addEnemy(police);
+    animals.addEnemy(psychos);
+    animals.addEnemy(survivors);
+    animals.addEnemy(ferals);
+    animals.addEnemy(undeads);
+
+    // Ensure symmetry -- except for the animals.
+    //
+    // C# GameFactions.cs:191-194, and its reasoning is the whole reason the
+    // animals exist as a faction at all: "TheUnintelligentAnimals aren't enemies
+    // with any faction, they exist just as a source of food ... they have enemies
+    // only so that they can run away from anyone and everyone". So
+    // `areEnemies(rabbit, human)` is true -- which is what makes
+    // `UnintelligentAnimalAI`'s flee-from-enemy arm reachable at all -- while
+    // `areEnemies(human, rabbit)` stays false, because without the skip the loop
+    // below would add the reverse edge and every civilian in town would start
+    // hunting every rabbit in town.
     for (const f of this.factions) {
+      if (f === animals) continue;
       for (const enemy of f.enemyList) {
         if (!enemy.isEnemyOf(f)) {
           enemy.addEnemy(f);

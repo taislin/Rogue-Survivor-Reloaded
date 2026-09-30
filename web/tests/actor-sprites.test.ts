@@ -59,6 +59,12 @@ const DOLL_OWNED: ActorID[] = [
   // dressed" -- so they are doll-driven like Jason Myers and the CHAR guard.
   ActorID.DERANGED_PATIENT,
   ActorID.CHAR_SCIENTIST,
+  // Still Alive's two food animals. Both are doll-drawn: the body is the sheet,
+  // and the east/west facing comes from a decoration pair the AI picks
+  // (`UnintelligentAnimalAI.faceSpriteForDirection`). Neither has a single actor
+  // graphic, which is why they belong in this list and not in the sprite map.
+  ActorID.RABBIT,
+  ActorID.CHICKEN,
   // Zombified: dressed as a civilian, then zombified, so still doll-driven.
   ActorID.UNDEAD_MALE_ZOMBIFIED,
   ActorID.UNDEAD_FEMALE_ZOMBIFIED,

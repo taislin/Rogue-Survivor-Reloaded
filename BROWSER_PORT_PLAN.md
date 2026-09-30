@@ -3237,6 +3237,68 @@ runs per seed, one per ruleset, both required to terminate (§4.3's harness) —
 likely to upset, because turning mechanics on for one mode can produce an AI
 cycle the other mode never had.
 
+> ### Two foundations, no features — the noise-distance model and the fork's animals
+>
+> Two subsystems landed that are **not** `Feature`s and carry no gate, because both
+> are shared machinery that Classic already has a use for and the fork merely needs
+> more of.
+>
+> **`engine/NoiseDistance.ts`** — the fork splits sound into four bands (23 / 14 / 8 /
+> 5 tiles) and the port had no way to ask which band a listener is in. It is 255
+> lines with **zero imports**: pure geometry, no audio state, no clock, no RNG. Every
+> radius is an inclusive upper bound, as the C# has it, and the tests transcribe the
+> C#'s `else if` chain longhand and compare at every distance from 0 to 40.
+>
+> It changes nothing yet, and the reason is the finding: **the port has no
+> `IsAudibleToPlayer` at all.** What it has is `AddMessageIfAudibleForPlayer`, which
+> is a faithful port of the C# method of the same name — and *that* takes no radius
+> parameter in the C# either. So there was no single-radius call site to widen, which
+> is a much better outcome than a plausible-looking rewrite of one.
+>
+> Two things it surfaced that are **not fixed**, deliberately:
+>
+> - `Rules.LOUD_NOISE_RADIUS` is 5 here and 14 in the C#. The port's value is
+>   load-bearing (`OnLoudNoise` bounds its sleeper scan by it), so gunfire wakes
+>   sleepers on a 5-tile radius. That is a real divergence, it belongs to `Rules`,
+>   and it is not the distance model. The trap is that the C#'s *quiet* radius is
+>   also 5, so anyone assuming the two constants correspond gets the quiet radius for
+>   every gunshot tier. A test now asserts the coincidence exists.
+> - The C#'s helicopter **stop** ladder is not the complement of its start ladder —
+>   walking from 7 tiles to 3 leaves two tracks playing. Six distances differ. The
+>   model asks the question the stop ladder meant to ask; making the two agree is the
+>   caller's decision, and a test pins the exact set.
+>
+> **`RABBIT` and `CHICKEN`** (`ActorID` 29 and 30, appended, `_COUNT` 31) plus
+> `UnintelligentAnimalAI` and two `BaseAI` behaviours the port lacked entirely
+> (`behaviorSimpleAnimalWander`, `behaviorFleeFromFires`). Appended rather than placed
+> beside `FERAL_DOG` as the C# has them, which would have renumbered 13 actors under
+> every existing save.
+>
+> Three consequences worth recording:
+>
+> 1. **It found a bug in `Butchering`.** The C# sets `IsLivingAnimal` on the *feral
+>    dog* (Release 7-5) and the port did not, so a dog corpse took the human branch
+>    and yielded **human flesh**. The switch is keyed on that flag precisely so that
+>    this cannot happen, and the flag was simply missing from the model that needed
+>    it most.
+> 2. **It revived `Butchering`'s three dead branches.** `FOOD_RAW_RABBIT`,
+>    `FOOD_RAW_CHICKEN` and `FOOD_RAW_DOG_MEAT` are now reachable. The test that had
+>    been guarding the C#'s un-ported `default: throw` was passing on a fiction — it
+>    faked an animal name because no real one existed. It now hand-mutates a model
+>    (and restores it in a `finally`, because the models are process-wide statics), and
+>    a companion test asserts all three real animals reach a real case.
+> 3. **Nothing spawns them yet.** No code path creates a rabbit, so they are inert —
+>    the same position `DERANGED_PATIENT` and `CHAR_SCIENTIST` are in. The gate
+>    decision therefore belongs on the *spawner* in `BaseMapGenerator`, not on the
+>    models: `hasFeature` cannot gate a model without either breaking the
+>    `ActorID` ↔ index identity that saves depend on, or nulling the model. Leaving
+>    them ungated is byte-equivalent to Classic for as long as they are unreachable.
+>
+> The AI's flee-from-fire arm turned out **not** to need `Actor.isOnFire`: it reads
+> `Map.isAnyTileFireThere`, which `Feature.TileFires` already provides. What it would
+> eventually want is a sibling arm that triggers on the actor itself being alight —
+> one guard in `BaseAI.behaviorFleeFromFires`, entirely local to that method.
+
 > ### The Classic fingerprint is the real test of all seven buildings
 >
 > Six of the seven building tests commit the *same* constant for a 40x40 Classic

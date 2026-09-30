@@ -21,6 +21,7 @@ import { Inventory } from '@data/Inventory';
 import { Attack, FireMode } from '@data/Attack';
 import { DollPart } from '@data/Doll';
 import { SkillID } from '@gameplay/Skills';
+import { TileID } from '@gameplay/GameTiles';
 import { LOS } from '@engine/LOS';
 import { ItemTracker } from '@engine/items/ItemTracker';
 import { ItemMeleeWeapon, ItemRangedWeapon, ItemRangedWeaponModel, ItemAmmo, ItemWeapon } from '@engine/items/ItemWeapon';
@@ -97,6 +98,19 @@ export const enum TradeRating {
   REFUSE = 0,
   MAYBE = 1,  // will need a charisma roll, accept if success refuse if failed.
   ACCEPT = 3,
+}
+
+/**
+ * The three tiles the fork calls "grass", for the animals' benefit.
+ *
+ * C# spells the triple out twice, inline and in the same order: `BaseAI.cs:682`
+ * (where an animal wanders) and `UnintelligentAnimalAI.cs:97` (where one flees).
+ * `FLOOR_PLANTED` is in the list although nothing in the port can plant anything
+ * -- the farming system is alpha10-era and was never ported -- because including
+ * it costs nothing and keeps the list honest against the original.
+ */
+export function isGrassLikeTile(tileId: number): boolean {
+  return tileId === TileID.FLOOR_GRASS || tileId === TileID.FLOOR_PLANTED || tileId === TileID.FLOOR_DIRT;
 }
 
 
@@ -460,6 +474,110 @@ export abstract class BaseAI extends AIController {
     );
 
     return chooseDir ? new ActionBump(this.controlledActor, game, chooseDir.choice) : null;
+  }
+
+  /**
+   * C# `BaseAI.BehaviorSimpleAnimalWander` (BaseAI.cs:650-709), added Release
+   * 7-6. "Designed for unintelligent animals (rabbits, chickens)".
+   *
+   * It is not `behaviorWander` under another name. That one chases unexplored
+   * ground and prefers doorways, and its `UNEXPLORED_LOC` bonus of 1000 would
+   * send a rabbit marching off down the map; this one is a stay-put shuffle
+   * carried entirely by one term -- `+200` for grass against `-1000` for
+   * anything else, which the `Roll(0, 50)` can never out-vote.
+   */
+  protected behaviorSimpleAnimalWander(
+    game: Game,
+    goodWanderLocFn: ((l: Location) => boolean) | null = null
+  ): ActorAction | null {
+    const actor = this.controlledActor;
+    const map = actor.location.map;
+    if (!map) return null;
+
+    const chooseRandomDir = this.choose<Direction>(
+      game,
+      Direction.COMPASS,
+      dir => {
+        const next = actor.location.addDirection(dir);
+        if (goodWanderLocFn && !goodWanderLocFn(next)) return false;
+        const bumpAction = game.rules.isBumpableFor(actor, game, next.map!, next.position.x, next.position.y).action;
+        return this.isValidWanderAction(game, bumpAction);
+      },
+      dir => {
+        const next = actor.location.addDirection(dir);
+        // The whole base score is a roll, so every legal direction is a
+        // candidate and the tie-break in `choose` decides -- the C# is identical,
+        // and deliberately so: a rabbit's walk is not meant to be predictable.
+        let score = game.rules.roll(0, 50);
+        // discourage backtracking, based on alpha10.1
+        if (next.equals(this.m_prevLocation)) score -= 50;
+        if (map.isAnyTileWaterThere(next.position)) score -= 100;
+        else if (map.isAnyTileFireThere(next.position)) score -= 2000;
+        // keep them on grass, which is where they were originally spawned
+        const tile = map.getTileAt(next.position.x, next.position.y);
+        // The C# dereferences `GetTileAt` unguarded, which is a null reference
+        // for the animal standing on the last row of the map; the `tile &&` is
+        // what keeps the off-map neighbour on the -1000 branch instead.
+        if (tile && isGrassLikeTile(tile.model.id)) score += 200;
+        else score -= 1000;
+        return score;
+      },
+      (a, b) => a > b
+    );
+
+    // Unconditional in the C# too (BaseAI.cs:691), and it stays unconditional
+    // here: a wandering animal is not running away from anything.
+    actor.isRunning = false;
+    return chooseRandomDir ? new ActionBump(actor, game, chooseRandomDir.choice) : null;
+  }
+
+  /**
+   * C# `BaseAI.BehaviorFleeFromFires` (BaseAI.cs:4441-4485), Release 4.
+   *
+   * **Tile** fire only. A burning map object and a burning *actor* both leave
+   * this behaviour cold, and that is upstream's design rather than an omission:
+   * the C# asks `Map.IsAnyTileFireThere`, which since Release 6-1 is a flag on
+   * the `Tile` itself rather than a scan for scorch decorations. Nothing here
+   * needs `Actor.isOnFire`, which the port does not have and another subsystem
+   * owns; if it ever gets one, this is the method that would grow a second arm.
+   */
+  protected behaviorFleeFromFires(game: Game, location: Location): ActorAction | null {
+    const map = location.map;
+    if (!map) return null;
+
+    // if no fire, no need
+    if (!map.isAnyTileFireThere(location.position)) return null;
+
+    const bestAwayDir = this.choose<Direction>(
+      game,
+      Direction.COMPASS,
+      dir => {
+        const next = this.controlledActor.location.addDirection(dir);
+        const bumpAction = game.rules.isBumpableFor(this.controlledActor, game, next.map!, next.position.x, next.position.y).action;
+        return this.isValidFleeingAction(bumpAction);
+      },
+      dir => {
+        const next = this.controlledActor.location.addDirection(dir);
+        // check that the next dir isn't also fire
+        let safetyValue = 1;
+        // water is a good place to flee from fires (Release 6-1)
+        if (map.isAnyTileWaterThere(next.position)) safetyValue += 6;
+        // -2, not -1 (Release 5-2). At -1 a burning tile and a trapped tile both
+        // scored 0, so the two cancelled and the animal could pick either; the
+        // extra point is what makes it prefer the *possible* pain of a snare to
+        // the *guaranteed* pain of standing in flames.
+        else if (map.isAnyTileFireThere(next.position)) safetyValue -= 2;
+        if (this.isAnyUnsafeDamagingTrapThere(game, map, next.position)) safetyValue -= 1;
+        return safetyValue;
+      },
+      (a, b) => a > b
+    );
+
+    // moving is always better than not moving -- the C# drops its
+    // "bestAwayDir.Value > notMovingValue" guard and says so (BaseAI.cs:4474)
+    if (!bestAwayDir) return null;
+    this.runIfPossible(game.rules);
+    return new ActionBump(this.controlledActor, game, bestAwayDir.choice);
   }
 
   protected behaviorBumpToward(
