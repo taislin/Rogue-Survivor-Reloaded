@@ -1378,7 +1378,7 @@ Stages 4 and 5 have not started.
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
 | **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles, 90 of 95 items and all 123 item factories done.** The 5 backpacks (a new mechanic) and ~420 unused `GameImages` constants are the only content left; nothing *calls* the new factories yet, which is placement and belongs to Stage 4/5 |
-| **4** | 37 gated features | **30 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (both halves), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`, `TileFires`, `FireExtinguishers`, `Butchering`, `ResourcesAvailability`, `DifficultyAtCreation`, `Fishing` (player path only — the NPC arm is still pending, see its section), `ExtendedAudio` (the 180-pair table; 3 of 180 call sites wired, see its section), `AmbientAudio` (**5 of its 13 tracks** — the channel and the table are done; the 5 helicopter / 2 church / 1 debug tracks are not, see its section). 18 remain |
+| **4** | 37 gated features | **31 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (both halves), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`, `TileFires`, `FireExtinguishers`, `Butchering`, `ResourcesAvailability`, `DifficultyAtCreation`, `Fishing` (player path only — the NPC arm is still pending, see its section), `ExtendedAudio` (the 180-pair table; 3 of 180 call sites wired, see its section), `AmbientAudio` (**5 of its 13 tracks** — the channel and the table are done; the 5 helicopter / 2 church / 1 debug tracks are not, see its section), `ArmyBase` (the underground office and its eight National Guards). 17 remain |
 | **5** | content, audio, credits | **started** — `ExtendedAudio`'s table and assets are in; the ambients channel, the 15 building generators and the credits page are not |
 
 Two things a later session should not have to re-derive:
@@ -3145,7 +3145,10 @@ plan for rather than discover:
 > **Two divergences inside the wired part, both recorded at the code rather than
 > smoothed over.** The underground list gains `hospital_Admissions`, which the C#
 > silences the other four hospital levels *not*; and drops `ArmyBase`, which the
-> port's `UniqueMaps` does not have (`Feature.ArmyBase`, pending). The test asserts
+> port's `UniqueMaps` does not have. (`Feature.ArmyBase` is now wired, but it is a
+> *town* building generator with no underground level of its own, so the port still
+> has no `armyBase` band to silence. The omission is unchanged; only the reason is.)
+> The test asserts
 > all eight surviving levels — five hospital, two police station, the CHAR
 > underground — so the list cannot quietly shrink.
 >
@@ -3214,6 +3217,7 @@ zero precisely because of the dump-every-own-field design.
 | `Graveyard` | none — a `bool isgraveyard` on `makeParkBuilding` | ~0 new lines | **DONE** — three in-method branches (graves vs trees/benches, the `Graveyard` zone name, "only add stuff to parks") and a new band in the green cascade. No new method, because the C# added none |
 | `TileFires` (actor arm) | `ActorFlags.IS_ON_FIRE`, `ActorFlags.IS_IN_WATER` | 0 | **DONE** — `SetActorOnFire` / `ExtinguishOnFireActor` / `ApplyBurnDamageToOnFireActor` / `stepActorsOnFire`, the 25% catch-fire roll, the per-turn burn, the rain and stop-drop-and-roll extinguishments, and the Release 6-6 exemption list so a burning actor is not burned twice |
 | `ShelterBackpacks` | nested `Inventory` on an `Item` | new `ClassSpec` + a 7-call-site engine wiring | **DONE** — 5 models, `canGoInBackpacks` (a curated 100-model list, not a rule), the one-bag and Hauler-tier gates, a save codec with a `finish` hook for a bag record missing its inventory, a nested panel on the ground row, and `SWAP_INVENTORY` on `Y` |
+| `ArmyBase` | `makeArmyOffice` + `makeArmyOffices` + `populateArmyOfficeBuilding` in `BaseTownGenerator` | ~281 C# lines | **DONE** — its own pass *ahead of* the business cascade, `DistrictKind.GREEN` only, one per district. A sibling of `makeCHAROffice` rather than a new shape: same corridor, wings and `makeRoomsPlan(4,4)` plan, five differences (iron doors, army tiles, army furniture, the `"Army Office"` zone + `IS_ARMY_OFFICE`, the garrison). **Size gate is 8x8, not the offices' 5x5** — the one thing a near-copy port gets wrong. `GENERAL` stays excluded because the C# has it commented out at `:430` | 
 | `AnimalShelter` | new `makeAnimalShelterBuilding` | ~98 C# lines | **DONE** — band `20..29` of the green cascade. Placed **no animals**: the C#'s spawner would need a decision on whether fork content is gated, and that belongs to whoever writes the spawner |
 | `Clinic` | new `makeClinicBuilding` | ~178 C# lines | **DONE** — `case 2` of the shared `roll(0, 4)`. Twelve factories re-declared privately, the largest set of the seven |
 | `Library` | new `makeLibraryBuilding` | ~278 C# lines | **DONE** — its own pass *before* the cascade (the C#'s `if` sits above the `switch`, not in it), so it takes no dispatch roll. The C#'s `IsSanityEnabled` gate is not ported: the port has no such option, and the option's default is the only representable state |

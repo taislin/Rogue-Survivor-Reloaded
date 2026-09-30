@@ -359,7 +359,23 @@ export class BaseTownGenerator extends BaseMapGenerator {
     // `buildings/makeLibraryBuilding.ts` for the rest of that argument.
     this.makeLibraryBuildings(map, emptyBlocks);
 
-    // The C#'s business-type cascade, `BaseTownGenerator.cs:498-535`. Bar, bank,
+    // Army base. C# `:429-452`, and it is a **separate pass ahead of the business
+    // cascade**, not an arm of it. Two conditions, both of which matter:
+    //
+    //  * `DistrictKind.GREEN` only. The C# has the `|| DistrictKind.GENERAL`
+    //   commented out at `:430`, so a general district does *not* get one -- and the
+    //   port follows the comment rather than the ambition, because enabling it would
+    //   put a guaranteed eight-zombie garrison in most districts.
+    //  * **One per district.** `armyOfficesCount == 0` gates the attempt and the
+    //   increment happens only when one was actually built, so a district whose
+    //   blocks are all too small gets none rather than retrying forever.
+    //
+    // The C#'s `foreach` has no `break` and relies on that counter, which is why
+    // the loop below can look wasteful and is not: after the first success the
+    // `if` is false for every later block.
+    this.makeArmyOffices(map, emptyBlocks);
+
+    // The C#'s business-type cascade, `BaseTownGenerator.cs:498-535`.    // The C#'s business-type cascade, `BaseTownGenerator.cs:498-535`. Bar, bank,
     // clinic and mechanic workshop are four arms of ONE `Roll(0, 4)`:
     //
     //   int roll2 = m_DiceRoller.Roll(0, 4);
@@ -2234,6 +2250,247 @@ export class BaseTownGenerator extends BaseMapGenerator {
 
     // Done
     return true;
+  }
+
+  /**
+   * C# `MakeArmyOffice(Map, Block)` -- `BaseTownGenerator.cs:5271`, Release 6-3.
+   *
+   * **A sibling of `makeCHAROffice`, not a new shape.** The two methods are the
+   * same generator with different tiles: same walkway, same wall rect, same
+   * `horizontalCorridor` test, the same `midX`/`midY` door ladder, the same
+   * `hallDepth = 3` corridor, the same two wings, and the same `makeRoomsPlan`
+   * subdivision into 4x4 rooms. Reading the two side by side is the fastest way to
+   * see exactly what the army variant changes, and that is worth recording because
+   * the alternative -- 281 lines of fresh code -- would hide the fact that this is
+   * five differences and not a second design.
+   *
+   * The differences, all of them:
+   *  1. **Locked iron doors** where the CHAR office has glass ones. The C#'s outer
+   *     doors are `MakeObjIronDoor(STATE_LOCKED)`, so the building is shut until
+   *     something opens it. There is no locked state in the port's `DoorWindow` --
+   *     CLOSED/OPEN/BROKEN, and `setState` ignores an unknown value -- so the door
+   *     is placed CLOSED. Recorded rather than guessed at.
+   *  2. `WALL_ARMY_BASE` and `FLOOR_ARMY` in place of the CHAR office's.
+   *  3. Army table and computer station instead of the CHAR desk and chair.
+   *  4. A `"Army Office"` zone carrying `IS_ARMY_OFFICE`.
+   *  5. `PopulateArmyOfficeBuilding`'s eight National Guard zombies, which the
+   *     caller does -- see `makeArmyOffices`.
+   *
+   * Note the C# returns an `ArmyBuildingType` rather than a bool, because it once
+   * had a second type. Only `OFFICE` and `NONE` exist (`:248-252`), so a boolean is
+   * the whole of it and the port says so rather than carrying an enum with one
+   * reachable value.
+   */
+  makeArmyOffice(map: GameMap, b: Block): boolean {
+    // C# `:5274-5275`. 8x8 is the floor, unlike every other office's 5x5.
+    if (b.insideRect.width < 8 || b.insideRect.height < 8) return false;
+
+    /////////////////////////////
+    // 1. Walkway, floor & walls
+    /////////////////////////////
+    this.tileRectangle(map, Models.tiles.get(TileID.FLOOR_WALKWAY)!, b.rectangle);
+    this.tileRectangle(map, Models.tiles.get(TileID.WALL_ARMY_BASE)!, b.buildingRect);
+    this.tileFill(map, Models.tiles.get(TileID.FLOOR_ARMY)!, b.insideRect, (tile) => {
+      tile.isInside = true;
+    });
+
+    //////////////////////////
+    // 2. Decide orientation.
+    //////////////////////////
+    const horizontalCorridor = b.insideRect.width >= b.insideRect.height;
+
+    /////////////////
+    // 3. Entry door
+    /////////////////
+    const midX = b.rectangle.left + Math.floor(b.rectangle.width / 2);
+    const midY = b.rectangle.top + Math.floor(b.rectangle.height / 2);
+    const inside = b.insideRect.height;
+
+    // C# `:5301-5360`: one to three doors on a rolled side, each one row further
+    // from the middle, each gated on the inside rect being deep enough. The side
+    // ladder is the C#'s `case 3` is north and `default` is south, inherited from
+    // `MakeParkBuilding` rather than tidied.
+    const outerDoor = (): void => {
+      const west = this.m_DiceRoller.rollChance(50);
+      if (horizontalCorridor) {
+        if (west) {
+          this.placeDoor(map, b.buildingRect.left, midY, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjIronDoor());
+          if (inside >= 8) {
+            this.placeDoor(map, b.buildingRect.left, midY - 1, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjIronDoor());
+            if (inside >= 12) {
+              this.placeDoor(map, b.buildingRect.left, midY + 1, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjIronDoor());
+            }
+          }
+        } else {
+          this.placeDoor(map, b.buildingRect.right - 1, midY, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjIronDoor());
+          if (inside >= 8) {
+            this.placeDoor(map, b.buildingRect.right - 1, midY - 1, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjIronDoor());
+            if (inside >= 12) {
+              this.placeDoor(map, b.buildingRect.right - 1, midY + 1, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjIronDoor());
+            }
+          }
+        }
+      } else {
+        const north = this.m_DiceRoller.rollChance(50);
+        if (north) {
+          this.placeDoor(map, midX, b.buildingRect.top, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjIronDoor());
+          if (b.insideRect.width >= 8) {
+            this.placeDoor(map, midX - 1, b.buildingRect.top, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjIronDoor());
+            if (b.insideRect.width >= 12) {
+              this.placeDoor(map, midX + 1, b.buildingRect.top, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjIronDoor());
+            }
+          }
+        } else {
+          this.placeDoor(map, midX, b.buildingRect.bottom - 1, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjIronDoor());
+          if (b.insideRect.width >= 8) {
+            this.placeDoor(map, midX - 1, b.buildingRect.bottom - 1, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjIronDoor());
+            if (b.insideRect.width >= 12) {
+              this.placeDoor(map, midX + 1, b.buildingRect.bottom - 1, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjIronDoor());
+            }
+          }
+        }
+      }
+    };
+    outerDoor();
+
+    //////////////////////////////
+    // 4. Corridor
+    //////////////////////////////
+    const hallDepth = 3;
+    let corridorRect: Rect;
+    let corridorDoor: Point;
+    if (horizontalCorridor) {
+      this.tileHLine(map, Models.tiles.get(TileID.WALL_ARMY_BASE)!, b.insideRect.left, b.insideRect.top + hallDepth, b.insideRect.width);
+      this.tileVLine(map, Models.tiles.get(TileID.WALL_ARMY_BASE)!, b.insideRect.right - 1 - hallDepth, b.insideRect.top, b.insideRect.height);
+      corridorRect = new Rect(midX - 1, b.insideRect.top + hallDepth, 3, b.buildingRect.height - 1 - hallDepth);
+      corridorDoor = new Point(corridorRect.left, corridorRect.top + 1);
+    } else {
+      this.tileHLine(map, Models.tiles.get(TileID.WALL_ARMY_BASE)!, b.insideRect.left, b.buildingRect.bottom - 1 - hallDepth, b.insideRect.width);
+      this.tileVLine(map, Models.tiles.get(TileID.WALL_ARMY_BASE)!, b.insideRect.left + hallDepth, b.insideRect.top, b.insideRect.height);
+      corridorRect = new Rect(midX - 1, b.buildingRect.top, 3, b.buildingRect.height - 1 - hallDepth);
+      corridorDoor = new Point(corridorRect.left, corridorRect.top + 1);
+    }
+    this.tileRectangle(map, Models.tiles.get(TileID.WALL_ARMY_BASE)!, corridorRect);
+    this.placeDoor(map, corridorDoor.x, corridorDoor.y, Models.tiles.get(TileID.FLOOR_ARMY)!, this.makeObjIronDoor());
+
+    ///////////////////////
+    // 5. Rooms in two wings
+    ///////////////////////
+    const wingOne = horizontalCorridor
+      ? new Rect(corridorRect.left, b.buildingRect.top, corridorRect.width, 1 + corridorRect.top - b.buildingRect.top)
+      : new Rect(b.buildingRect.left, corridorRect.top, 1 + corridorRect.left - b.buildingRect.left, corridorRect.height);
+    const wingTwo = horizontalCorridor
+      ? new Rect(corridorRect.left, corridorRect.bottom - 1, corridorRect.width, 1 + b.buildingRect.bottom - corridorRect.bottom)
+      : new Rect(corridorRect.right - 1, corridorRect.top, 1 + b.buildingRect.right - corridorRect.right, corridorRect.height);
+
+    const officeRoomsSize = 4;
+    const officesOne: Rect[] = [];
+    this.makeRoomsPlan(map, officesOne, wingOne, officeRoomsSize, officeRoomsSize);
+    const officesTwo: Rect[] = [];
+    this.makeRoomsPlan(map, officesTwo, wingTwo, officeRoomsSize, officeRoomsSize);
+    const allOffices = [...officesOne, ...officesTwo];
+
+    for (const roomRect of allOffices) {
+      this.tileRectangle(map, Models.tiles.get(TileID.WALL_ARMY_BASE)!, roomRect);
+      map.addZone(this.makeUniqueZone('Office room', roomRect));
+    }
+
+    // One door per room, on the corridor side. Same four arms as the CHAR office,
+    // with `makeObjCharDoor` swapped for the army's iron one.
+    for (const roomRect of officesOne) {
+      if (horizontalCorridor) {
+        this.placeDoor(map, roomRect.left + Math.floor(roomRect.width / 2), roomRect.bottom - 1, Models.tiles.get(TileID.FLOOR_ARMY)!, this.makeObjIronDoor());
+      } else {
+        this.placeDoor(map, roomRect.right - 1, roomRect.top + Math.floor(roomRect.height / 2), Models.tiles.get(TileID.FLOOR_ARMY)!, this.makeObjIronDoor());
+      }
+    }
+    for (const roomRect of officesTwo) {
+      if (horizontalCorridor) {
+        this.placeDoor(map, roomRect.left + Math.floor(roomRect.width / 2), roomRect.top, Models.tiles.get(TileID.FLOOR_ARMY)!, this.makeObjIronDoor());
+      } else {
+        this.placeDoor(map, roomRect.left, roomRect.top + Math.floor(roomRect.height / 2), Models.tiles.get(TileID.FLOOR_ARMY)!, this.makeObjIronDoor());
+      }
+    }
+
+    // Furniture: an army table, a chair, and -- per the C# `:5514` -- a computer
+    // station in the rooms that get one. `nbChairs` is 1 here against the CHAR
+    // office's 2, and `nbTables` decides which rooms get the station.
+    for (const roomRect of allOffices) {
+      const tablePos = new Point(
+        roomRect.left + Math.floor(roomRect.width / 2),
+        roomRect.top + Math.floor(roomRect.height / 2),
+      );
+      this.mapObjectPlace(map, tablePos.x, tablePos.y, this.makeObjTable(GameImages.OBJ_ARMY_TABLE));
+
+      const nbChairs = 1;
+      const insideRoom = new Rect(roomRect.left + 1, roomRect.top + 1, roomRect.width - 2, roomRect.height - 2);
+      if (!this.isRectEmpty(insideRoom)) {
+        for (let i = 0; i < nbChairs; i++) {
+          const adjTableRect = this.intersectRect(
+            new Rect(tablePos.x - 1, tablePos.y - 1, 3, 3),
+            insideRoom,
+          );
+          this.mapObjectPlaceInGoodPosition(map, adjTableRect, (pt) => !pt.equals(tablePos), this.m_DiceRoller, () =>
+            this.makeObjChair(GameImages.OBJ_HOSPITAL_CHAIR),
+          );
+        }
+      }
+    }
+
+    ///////////
+    // 8. Zone
+    ///////////
+    const zone = this.makeUniqueZone('Army Office', b.buildingRect);
+    zone.setGameAttribute<boolean>(ZoneAttributes.IS_ARMY_OFFICE, true);
+    map.addZone(zone);
+    this.makeWalkwayZones(map, b);
+
+    return true;
+  }
+
+  /**
+   * The army-office pass -- the C#'s `foreach` over `emptyBlocks` at `:430-452`.
+   *
+   * `protected` so a test can override it away, which is what makes the CLASSIC
+   * byte-identity assertion a measurement rather than a tautology about a gate.
+   */
+  protected makeArmyOffices(map: GameMap, emptyBlocks: Block[]): void {
+    if (!hasFeature(Session.get().ruleset, Feature.ArmyBase)) return;
+    if (this.m_Params.district?.kind !== DistrictKind.GREEN) return;
+
+    // Collect, then splice, like every other stage in this file -- so the pool a
+    // later stage sees is the C#'s `completedBlocks`-adjusted one.
+    for (const b of emptyBlocks) {
+      if (!this.makeArmyOffice(map, b)) continue;
+      this.populateArmyOfficeBuilding(map, b);
+      // One per district: the C#'s `armyOfficesCount == 0` guard at `:431`, with
+      // the count bumped only on a successful build. The `break` is that guard --
+      // a district whose first blocks are all too small to build in falls through
+      // to the next one, and gets none at all rather than retrying forever.
+      const index = emptyBlocks.indexOf(b);
+      if (index !== -1) emptyBlocks.splice(index, 1);
+      break;
+    }
+  }
+
+  /**
+   * C# `PopulateArmyOfficeBuilding` -- `BaseTownGenerator.cs:5560`, Release 6-3.
+   *
+   * Eight National Guards, zombified. This is the *reason* the army office exists
+   * in a Still Alive world: it is the district's one guaranteed source of them,
+   * which is what the helicopter site picker is looking for when it needs a
+   * district worth landing in.
+   *
+   * A `for` loop with a literal 8, as in the C#. Not a constant because a constant
+   * implies it was ever tuned, and nothing in the reference tunes it.
+   */
+  protected populateArmyOfficeBuilding(map: GameMap, b: Block): void {
+    if (!hasFeature(Session.get().ruleset, Feature.ArmyBase)) return;
+    for (let i = 0; i < 8; i++) {
+      const guard = this.createNewArmyNationalGuard(0, 'Private');
+      const zombified = this.makeZombified(null, guard, 0);
+      this.actorPlace(this.m_DiceRoller, 100, map, zombified, b.insideRect.left, b.insideRect.top, b.insideRect.width, b.insideRect.height);
+    }
   }
 
   /** C# `Map.HasAnExitIn(Rectangle)`. */

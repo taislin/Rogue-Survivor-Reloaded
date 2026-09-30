@@ -201,7 +201,6 @@ const PENDING_WIRING: Readonly<Partial<Record<string, Stage>>> = {
   FuelStation: 5,
   SportsCourts: 5,
   ShoppingMall: 5,
-  ArmyBase: 5,
 };
 
 /**

@@ -972,17 +972,31 @@ describe("Feature.HelicopterRescue: CivilianAI step 7", () => {
 		at: Point;
 	} {
 		let spot: Point | null = null;
-		for (let radius = 0; radius <= 4 && spot === null; radius++) {
+		// The helper has to *guarantee* the property it is named for, because the
+		// distance is the whole point of every caller: `act(4)` is "too near to
+		// bother", `act(audioRange + 6)` is "out of earshot". A search that just
+		// found some walkable tile near the target was quietly not testing that.
+		//
+		// It could not, in fact. The window used to be a fixed ±4, which worked only
+		// while the site happened to sit where the fixed seed put it; `Feature.ArmyBase`
+		// takes a block earlier in the pipeline than the site picker runs, so the
+		// site moved and the ±4 window fell off the edge of the map. And a merely
+		// *wider* window is not the fix either, because the window is centred on
+		// `site.x + distance`: widen it past `distance` and the actor lands back on
+		// top of the site, at which point "out of earshot" is measured at 0 tiles.
+		// Hence the explicit check, and hence scanning outward until it holds.
+		outer: for (let radius = 0; radius <= 40 && spot === null; radius++) {
 			for (let dx = -radius; dx <= radius && spot === null; dx++) {
 				for (let dy = -radius; dy <= radius; dy++) {
 					if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
 					const candidate = new Point(site.x + distance + dx, site.y + dy);
+					if (euclideanDistance(candidate, site) < distance) continue;
 					if (
 						map.isWalkablePoint(candidate) &&
 						map.getActorAtPoint(candidate) === null
 					) {
 						spot = candidate;
-						break;
+						break outer;
 					}
 				}
 			}

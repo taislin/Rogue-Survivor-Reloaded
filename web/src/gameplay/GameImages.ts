@@ -817,6 +817,14 @@ export class GameImages {
   static readonly ZOMBIE_ON_FIRE = "Actors/Decoration/zombie_on_fire";
   static readonly OTHER_UNDEAD_ON_FIRE = "Actors/Decoration/other_undead_on_fire";
 
+  // ── Feature.ArmyBase ────────────────────────────────────────────────────
+  //
+  // The army underground office's two furniture pieces. Both sprites already ship
+  // in the classic pack; these are the ids the C# hands to `MakeObjTable` and
+  // `MakeObjWorkstation` (`BaseTownGenerator.cs:5493`, `:5514`).
+  static readonly OBJ_ARMY_TABLE = "MapObjects/army_table";
+  static readonly OBJ_ARMY_COMPUTER_STATION = "MapObjects/army_computer_station";
+
   // ── Feature.Graveyard ───────────────────────────────────────────────────
   //
   // A graveyard is not its own generator: the C# passes `isgraveyard` into
