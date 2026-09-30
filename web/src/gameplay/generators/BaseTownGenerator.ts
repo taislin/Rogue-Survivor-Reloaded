@@ -40,6 +40,7 @@ import { makeBarBuilding } from './BarBuilding';
 import { makeBankBuilding } from './buildings/makeBankBuilding';
 import { makeFireStationBuilding } from './buildings/makeFireStationBuilding';
 import { makeJunkyard } from './buildings/makeJunkyard';
+import { makeAnimalShelterBuilding } from './buildings/makeAnimalShelterBuilding';
 import { makeClinicBuilding } from './buildings/makeClinicBuilding';
 import { TOWN_BUILDING_PASSES, runTownBuildingPasses } from './TownBuilding';
 import { makeChurchBuilding } from './buildings/makeChurchBuilding';
@@ -588,9 +589,11 @@ export class BaseTownGenerator extends BaseMapGenerator {
    *
    * **The generator takes the cascade's die as a parameter** for the reason
    * `makeBankBuilding` does: `rolled < 10` is the trailing `else` of a five-way
-   * cascade, so the farm, the shelter and the graveyard (all `Feature.*`, none
-   * ported) want the same die and rolling inside the generator would let two of
-   * them claim the same block. See the header in `./buildings/makeJunkyard`.
+   * cascade, so the farm, the shelter and the graveyard all want the same die and
+   * rolling inside a generator would let two of them claim the same block. See the
+   * header in `./buildings/makeJunkyard` and, for the third arm, in
+   * `./buildings/makeAnimalShelterBuilding`. The farm is still pending, which is
+   * why the band table in `tests/graveyard.test.ts` still leaves 64 unclaimed.
    */
   protected makeJunkyards(map: GameMap, emptyBlocks: Block[]): void {
     //
@@ -615,10 +618,14 @@ export class BaseTownGenerator extends BaseMapGenerator {
     // its gate there: a roll that is taken and thrown away still moves every roll
     // after it. `Feature.Graveyard` is not a separate pass and does not roll
     // anything — it is `isgraveyard = true` on the park arm, which is what the
-    // C# does, and why this feature needed no new method.
+    // C# does, and why this feature needed no new method. `Feature.AnimalShelter`
+    // and `Feature.Junkyard` each have a generator that gates itself as well; the
+    // check here is the one that keeps a ruleset with neither of them off the
+    // roller entirely.
     if (
       !hasFeature(Session.get().ruleset, Feature.Junkyard) &&
-      !hasFeature(Session.get().ruleset, Feature.Graveyard)
+      !hasFeature(Session.get().ruleset, Feature.Graveyard) &&
+      !hasFeature(Session.get().ruleset, Feature.AnimalShelter)
     ) {
       return;
     }
@@ -630,8 +637,17 @@ export class BaseTownGenerator extends BaseMapGenerator {
       if (!this.m_DiceRoller.rollChance(this.m_Params.parkBuildingChance)) continue;
       // C# `:570` — the one die the five green buildings share.
       const rolled = this.m_DiceRoller.roll(0, 99);
+      // The arms are spelled as the C# spells them, in the C#'s order, so a reader
+      // checking against `:572-581` is checking against the same list. Disjoint
+      // bands are what make the order irrelevant: the graveyard sits *above* the
+      // shelter here and *below* it at `:576`, and the two answers are the same.
       if (rolled >= 10 && rolled < 20 && hasFeature(Session.get().ruleset, Feature.Graveyard)) {
         if (this.makeParkBuilding(map, b, true)) built.push(b);
+      } else if (makeAnimalShelterBuilding(this.buildingContext(map, b), rolled)) {
+        // C# `:577`, band `20..29`. The generator declines every other band itself,
+        // for the reason `makeJunkyard` does — one shared die, five mutually
+        // exclusive arms — so this arm carries no gate and no bound of its own.
+        built.push(b);
       } else if (makeJunkyard(this.buildingContext(map, b), rolled)) {
         built.push(b);
       }
