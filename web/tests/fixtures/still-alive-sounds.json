@@ -1,0 +1,1454 @@
+{
+  "source": "Rogue Survivor Still Alive/Gameplay/GameSounds.cs",
+  "note": "The C#'s own id/file pairs, in declaration order. Committed rather than read from _refs/ because that directory is gitignored, so a test that opened GameSounds.cs would pass locally and fail in CI. Regenerate with scripts/port-game-sounds.py --fixture.",
+  "entries": [
+    {
+      "name": "UNDEAD_EAT_PLAYER",
+      "id": "player undead eats",
+      "file": "sfx - undead eat player",
+      "line": 15,
+      "release": null,
+      "note": "vanilla SFX"
+    },
+    {
+      "name": "NIGHTMARE",
+      "id": "nightmare",
+      "file": "sfx - nightmare",
+      "line": 17,
+      "release": null,
+      "note": null
+    },
+    {
+      "name": "PISTOL_SINGLE_SHOT_PLAYER",
+      "id": "player fires pistol",
+      "file": "pistol_single-shot_player",
+      "line": 23,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "PISTOL_RAPID_FIRE_PLAYER",
+      "id": "player fires pistol burst",
+      "file": "pistol_rapid-fire_player",
+      "line": 25,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "HUNTING_RIFLE_FIRE_PLAYER",
+      "id": "player fires hunting rifle",
+      "file": "huntingrifle_player",
+      "line": 27,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "SHOTGUN_FIRE_PLAYER",
+      "id": "player fires shotgun",
+      "file": "shotgun-a2_player",
+      "line": 29,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "CROSSBOW_FIRE_PLAYER",
+      "id": "player fires crossbow",
+      "file": "crossbow_player",
+      "line": 31,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "REVOLVER_SINGLE_SHOT_PLAYER",
+      "id": "player fires revolver",
+      "file": "revolver_single-shot_player",
+      "line": 33,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "REVOLVER_RAPID_FIRE_PLAYER",
+      "id": "player fires revolver rounds",
+      "file": "revolver_rapid-fire_player",
+      "line": 35,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "PRECISION_RIFLE_FIRE_PLAYER",
+      "id": "player fires precision rifle",
+      "file": "precision_rifle_player",
+      "line": 37,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "ARMY_RIFLE_SINGLE_SHOT_PLAYER",
+      "id": "player fires army rifle",
+      "file": "army_rifle_single-shot_player",
+      "line": 39,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "ARMY_RIFLE_RAPID_FIRE_PLAYER",
+      "id": "player fires army rifle burst",
+      "file": "army_rifle_rapid-fire_player",
+      "line": 41,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "SMG_SINGLE_SHOT_PLAYER",
+      "id": "player fires SMG",
+      "file": "SMG_single-shot_player",
+      "line": 43,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "SMG_RAPID_FIRE_PLAYER",
+      "id": "player fires SMG burst",
+      "file": "SMG_rapid-fire_player",
+      "line": 45,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "MINIGUN_RAPID_FIRE_PLAYER",
+      "id": "player fires minigun burst",
+      "file": "minigun_rapid-fire_player",
+      "line": 47,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "GRENADE_LAUNCHER_SINGLE_SHOT_PLAYER",
+      "id": "player fires grenade launcher",
+      "file": "grenade_launcher_single-shot_player",
+      "line": 49,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "BIO_FORCE_GUN_PLAYER",
+      "id": "player fires bio force gun",
+      "file": "bio_force_gun_player",
+      "line": 51,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "PISTOL_SINGLE_SHOT_NEARBY",
+      "id": "pistol firing nearby",
+      "file": "pistol_single-shot_nearby",
+      "line": 56,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "PISTOL_RAPID_FIRE_NEARBY",
+      "id": "pistol shots nearby",
+      "file": "pistol_rapid-fire_nearby",
+      "line": 58,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "HUNTING_RIFLE_FIRE_NEARBY",
+      "id": "hunting rifle firing nearby",
+      "file": "huntingrifle_nearby",
+      "line": 60,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "SHOTGUN_FIRE_NEARBY",
+      "id": "shotgun firing nearby",
+      "file": "shotgun-a2_nearby",
+      "line": 62,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "CROSSBOW_FIRE_NEARBY",
+      "id": "crossbow firing nearby",
+      "file": "crossbow_nearby",
+      "line": 64,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "REVOLVER_SINGLE_SHOT_NEARBY",
+      "id": "revolver firing nearby",
+      "file": "revolver_single-shot_nearby",
+      "line": 66,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "REVOLVER_RAPID_FIRE_NEARBY",
+      "id": "revolver shots nearby",
+      "file": "revolver_rapid-fire_nearby",
+      "line": 68,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "PRECISION_RIFLE_FIRE_NEARBY",
+      "id": "precision rifle firing nearby",
+      "file": "precision_rifle_nearby",
+      "line": 70,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "ARMY_RIFLE_SINGLE_SHOT_NEARBY",
+      "id": "army rifle firing nearby",
+      "file": "army_rifle_single-shot_nearby",
+      "line": 72,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "ARMY_RIFLE_RAPID_FIRE_NEARBY",
+      "id": "army rifle burst nearby",
+      "file": "army_rifle_rapid-fire_nearby",
+      "line": 74,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "SMG_SINGLE_SHOT_NEARBY",
+      "id": "SMG firing nearby",
+      "file": "SMG_single-shot_nearby",
+      "line": 76,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "SMG_RAPID_FIRE_NEARBY",
+      "id": "SMG burst nearby",
+      "file": "SMG_rapid-fire_nearby",
+      "line": 78,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "MINIGUN_RAPID_FIRE_NEARBY",
+      "id": "minigun burst nearby",
+      "file": "minigun_rapid-fire_nearby",
+      "line": 80,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "GRENADE_LAUNCHER_SINGLE_SHOT_NEARBY",
+      "id": "grenade launcher firing nearby",
+      "file": "grenade_launcher_single-shot_nearby",
+      "line": 82,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "PISTOL_SINGLE_SHOT_FAR",
+      "id": "pistol firing somewhere",
+      "file": "pistol_single-shot_far",
+      "line": 87,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "PISTOL_RAPID_FIRE_FAR",
+      "id": "pistol shots somewhere",
+      "file": "pistol_rapid-fire_far",
+      "line": 89,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "HUNTING_RIFLE_FIRE_FAR",
+      "id": "hunting rifle firing somewhere",
+      "file": "huntingrifle_far",
+      "line": 91,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "SHOTGUN_FIRE_FAR",
+      "id": "shotgun firing somewhere",
+      "file": "shotgun-a2_far",
+      "line": 93,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "REVOLVER_SINGLE_SHOT_FAR",
+      "id": "revolver firing somewhere",
+      "file": "revolver_single-shot_far",
+      "line": 95,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "REVOLVER_RAPID_FIRE_FAR",
+      "id": "revolver shots somewhere",
+      "file": "revolver_rapid-fire_far",
+      "line": 97,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "PRECISION_RIFLE_FIRE_FAR",
+      "id": "precision rifle firing somewhere",
+      "file": "precision_rifle_far",
+      "line": 99,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "ARMY_RIFLE_SINGLE_SHOT_FAR",
+      "id": "army rifle firing somewhere",
+      "file": "army_rifle_single-shot_far",
+      "line": 101,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "ARMY_RIFLE_RAPID_FIRE_FAR",
+      "id": "army rifle burst somewhere",
+      "file": "army_rifle_rapid-fire_far",
+      "line": 103,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "SMG_SINGLE_SHOT_FAR",
+      "id": "SMG firing somewhere",
+      "file": "SMG_single-shot_far",
+      "line": 105,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "SMG_RAPID_FIRE_FAR",
+      "id": "SMG burst somewhere",
+      "file": "SMG_rapid-fire_far",
+      "line": 107,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "MINIGUN_RAPID_FIRE_FAR",
+      "id": "minigun burst somewhere",
+      "file": "minigun_rapid-fire_far",
+      "line": 109,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "MELEE_ATTACK_PLAYER",
+      "id": "player does melee attack",
+      "file": "melee_attack_player",
+      "line": 114,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "MELEE_ATTACK_NEARBY",
+      "id": "melee attack nearby",
+      "file": "melee_attack_nearby",
+      "line": 116,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "MELEE_ATTACK_MISS_PLAYER",
+      "id": "player misses melee attack",
+      "file": "melee_attack_miss_player",
+      "line": 119,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "MELEE_ATTACK_MISS_NEARBY",
+      "id": "missed melee attack nearby",
+      "file": "melee_attack_miss_nearby",
+      "line": 121,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "ARMOR_ZIPPER",
+      "id": "zips armor",
+      "file": "zipper",
+      "line": 124,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "EQUIP_GUN_PLAYER",
+      "id": "equips gun",
+      "file": "equip_gun_player",
+      "line": 126,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "TORCH_CLICK_PLAYER",
+      "id": "clicks torch",
+      "file": "torch_click_player",
+      "line": 128,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "CLIMB_FENCE_PLAYER",
+      "id": "climbing fence",
+      "file": "climb_fence_player",
+      "line": 131,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "CLIMB_FENCE_NEARBY",
+      "id": "climbing fence nearby",
+      "file": "climb_fence_nearby",
+      "line": 133,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "CLIMB_CAR_PLAYER",
+      "id": "climbing on car",
+      "file": "jump_on_car_player",
+      "line": 136,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "CLIMB_CAR_NEARBY",
+      "id": "climbing on car nearby",
+      "file": "jump_on_car_nearby",
+      "line": 138,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "SPRAY_SCENT",
+      "id": "sprays scent",
+      "file": "spray_scent",
+      "line": 141,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "SPRAY_TAG",
+      "id": "sprays tag",
+      "file": "spray_tag",
+      "line": 143,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "EAT_FOOD",
+      "id": "eats food",
+      "file": "eat_food",
+      "line": 145,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "VOMIT_PLAYER",
+      "id": "vomits",
+      "file": "vomit_player",
+      "line": 147,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "GLASS_DOOR",
+      "id": "opening glass door",
+      "file": "glass_door",
+      "line": 150,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "WOODEN_DOOR_OPEN",
+      "id": "opening wooden door",
+      "file": "wooden_door_open",
+      "line": 152,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "WOODEN_DOOR_CLOSE",
+      "id": "closing wooden door",
+      "file": "wooden_door_close",
+      "line": 154,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "USE_MEDICINE",
+      "id": "uses medicine",
+      "file": "medicine",
+      "line": 157,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "USE_PILLS",
+      "id": "uses pills",
+      "file": "pills",
+      "line": 159,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "SCREAM_NEARBY_01",
+      "id": "scream nearby 01",
+      "file": "scream_nearby_01",
+      "line": 162,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "SCREAM_NEARBY_02",
+      "id": "scream nearby 02",
+      "file": "scream_nearby_02",
+      "line": 164,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "SCREAM_NEARBY_03",
+      "id": "scream nearby 03",
+      "file": "scream_nearby_03",
+      "line": 166,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "SCREAM_NEARBY_04",
+      "id": "scream nearby 04",
+      "file": "scream_nearby_04",
+      "line": 168,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "SCREAM_NEARBY_05",
+      "id": "scream nearby 05",
+      "file": "scream_nearby_05",
+      "line": 170,
+      "release": "(Release 2), added rapid-fire (Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "SCREAM_NEARBY_07",
+      "id": "scream nearby 07",
+      "file": "scream_nearby_07",
+      "line": 173,
+      "release": "(Release 7-4)",
+      "note": "06 was removed. too low quality"
+    },
+    {
+      "name": "SCREAM_NEARBY_08",
+      "id": "scream nearby 08",
+      "file": "scream_nearby_08",
+      "line": 175,
+      "release": "(Release 7-4)",
+      "note": null
+    },
+    {
+      "name": "SCREAM_NEARBY_09",
+      "id": "scream nearby 09",
+      "file": "scream_nearby_09",
+      "line": 177,
+      "release": "(Release 7-4)",
+      "note": null
+    },
+    {
+      "name": "SCREAM_FAR_01",
+      "id": "scream far 01",
+      "file": "scream_far_01",
+      "line": 180,
+      "release": "(Release 7-4)",
+      "note": null
+    },
+    {
+      "name": "SCREAM_FAR_02",
+      "id": "scream far 02",
+      "file": "scream_far_02",
+      "line": 182,
+      "release": "(Release 7-4)",
+      "note": null
+    },
+    {
+      "name": "SCREAM_FAR_03",
+      "id": "scream far 03",
+      "file": "scream_far_03",
+      "line": 184,
+      "release": "(Release 7-4)",
+      "note": null
+    },
+    {
+      "name": "SCREAM_FAR_04",
+      "id": "scream far 04",
+      "file": "scream_far_04",
+      "line": 186,
+      "release": "(Release 7-4)",
+      "note": null
+    },
+    {
+      "name": "SCREAM_FAR_05",
+      "id": "scream far 05",
+      "file": "scream_far_05",
+      "line": 188,
+      "release": "(Release 7-4)",
+      "note": null
+    },
+    {
+      "name": "SCREAM_FAR_07",
+      "id": "scream far 07",
+      "file": "scream_far_07",
+      "line": 191,
+      "release": "(Release 7-4)",
+      "note": "06 was removed. too low quality"
+    },
+    {
+      "name": "SCREAM_FAR_08",
+      "id": "scream far 08",
+      "file": "scream_far_08",
+      "line": 193,
+      "release": "(Release 7-4)",
+      "note": null
+    },
+    {
+      "name": "SCREAM_FAR_09",
+      "id": "scream far 09",
+      "file": "scream_far_09",
+      "line": 195,
+      "release": "(Release 7-4)",
+      "note": null
+    },
+    {
+      "name": "BASH_WOOD_PLAYER",
+      "id": "bash something wooden",
+      "file": "bash_wood_player",
+      "line": 199,
+      "release": "(Release 3)",
+      "note": null
+    },
+    {
+      "name": "BASH_WOOD_NEARBY",
+      "id": "something wooden bashed nearby",
+      "file": "bash_wood_nearby",
+      "line": 201,
+      "release": "(Release 3)",
+      "note": null
+    },
+    {
+      "name": "TURN_PAGE",
+      "id": "turns page",
+      "file": "turn_page",
+      "line": 204,
+      "release": "(Release 3)",
+      "note": null
+    },
+    {
+      "name": "UNDEAD_EAT_NEARBY",
+      "id": "nearby undead eats",
+      "file": "sfx - undead eat nearby",
+      "line": 207,
+      "release": "(Release 3)",
+      "note": null
+    },
+    {
+      "name": "VOMIT_NEARBY",
+      "id": "vomits nearby",
+      "file": "vomit_nearby",
+      "line": 210,
+      "release": "(Release 3)",
+      "note": null
+    },
+    {
+      "name": "SHOVE_PLAYER",
+      "id": "shoves actor",
+      "file": "shove_player",
+      "line": 213,
+      "release": "(Release 3)",
+      "note": null
+    },
+    {
+      "name": "SHOVE_NEARBY",
+      "id": "actor shoved nearby",
+      "file": "shove_nearby",
+      "line": 215,
+      "release": "(Release 3)",
+      "note": null
+    },
+    {
+      "name": "PUSH_METAL_OBJECT_VISIBLE",
+      "id": "pushes visible metal object",
+      "file": "push_metal_object_visible",
+      "line": 218,
+      "release": "(Release 3)",
+      "note": null
+    },
+    {
+      "name": "PUSH_METAL_OBJECT_AUDIBLE",
+      "id": "pushes audible metal object",
+      "file": "push_metal_object_audible",
+      "line": 220,
+      "release": "(Release 3)",
+      "note": null
+    },
+    {
+      "name": "BUILDING_PLAYER",
+      "id": "player constructs something",
+      "file": "building_player",
+      "line": 223,
+      "release": "(Release 3)",
+      "note": null
+    },
+    {
+      "name": "BUILDING_NEARBY",
+      "id": "nearby construction",
+      "file": "building_nearby",
+      "line": 225,
+      "release": "(Release 3)",
+      "note": null
+    },
+    {
+      "name": "CAN_TRAP_PLAYER",
+      "id": "player steps on can",
+      "file": "can_trap_player",
+      "line": 228,
+      "release": "(Release 3)",
+      "note": null
+    },
+    {
+      "name": "BEAR_TRAP_PLAYER",
+      "id": "player triggers bear trap",
+      "file": "bear_trap_player",
+      "line": 230,
+      "release": "(Release 3)",
+      "note": null
+    },
+    {
+      "name": "SPIKE_TRAP",
+      "id": "player steps on spikes",
+      "file": "spike_trap",
+      "line": 232,
+      "release": "(Release 3)",
+      "note": null
+    },
+    {
+      "name": "BARBED_WIRE_TRAP_PLAYER",
+      "id": "player in barbed wire",
+      "file": "barbed_wire_player",
+      "line": 234,
+      "release": "(Release 3)",
+      "note": null
+    },
+    {
+      "name": "CAN_TRAP_NEARBY",
+      "id": "can trap nearby",
+      "file": "can_trap_nearby",
+      "line": 237,
+      "release": "(Release 3)",
+      "note": null
+    },
+    {
+      "name": "BEAR_TRAP_NEARBY",
+      "id": "bear trap nearby",
+      "file": "bear_trap_nearby",
+      "line": 239,
+      "release": "(Release 3)",
+      "note": null
+    },
+    {
+      "name": "CAN_TRAP_FAR",
+      "id": "can trap somewhere",
+      "file": "can_trap_far",
+      "line": 242,
+      "release": "(Release 3)",
+      "note": null
+    },
+    {
+      "name": "BEAR_TRAP_FAR",
+      "id": "bear trap somewhere",
+      "file": "bear_trap_far",
+      "line": 244,
+      "release": "(Release 3)",
+      "note": null
+    },
+    {
+      "name": "DYNAMITE_VISIBLE",
+      "id": "dynamite explosion",
+      "file": "dynamite_visible",
+      "line": 248,
+      "release": "(Release 4)",
+      "note": null
+    },
+    {
+      "name": "DYNAMITE_AUDIBLE",
+      "id": "dynamite explosion nearby",
+      "file": "dynamite_audible",
+      "line": 250,
+      "release": "(Release 4)",
+      "note": null
+    },
+    {
+      "name": "GRENADE_VISIBLE",
+      "id": "grenade explosion",
+      "file": "grenade_visible",
+      "line": 253,
+      "release": "(Release 4)",
+      "note": null
+    },
+    {
+      "name": "GRENADE_AUDIBLE",
+      "id": "grenade explosion nearby",
+      "file": "grenade_audible",
+      "line": 255,
+      "release": "(Release 4)",
+      "note": null
+    },
+    {
+      "name": "MOLOTOV_VISIBLE",
+      "id": "molotov explosion",
+      "file": "molotov_visible",
+      "line": 258,
+      "release": "(Release 4)",
+      "note": null
+    },
+    {
+      "name": "MOLOTOV_AUDIBLE",
+      "id": "molotov explosion nearby",
+      "file": "molotov_audible",
+      "line": 260,
+      "release": "(Release 4)",
+      "note": null
+    },
+    {
+      "name": "SMOKING",
+      "id": "player smokes",
+      "file": "smoking",
+      "line": 263,
+      "release": "(Release 4)",
+      "note": null
+    },
+    {
+      "name": "ROLLER_DOOR",
+      "id": "roller door",
+      "file": "roller_door",
+      "line": 266,
+      "release": "(Release 4)",
+      "note": null
+    },
+    {
+      "name": "NAIL_GUN",
+      "id": "player fires nail gun",
+      "file": "nail_gun",
+      "line": 270,
+      "release": "(Release 5-1)",
+      "note": null
+    },
+    {
+      "name": "BREAK_WOODENDOOR_PLAYER",
+      "id": "break wooden door",
+      "file": "break_woodendoor_player",
+      "line": 274,
+      "release": "(Release 5-3)",
+      "note": null
+    },
+    {
+      "name": "BREAK_WOODENDOOR_NEARBY",
+      "id": "wooden door breaks nearby",
+      "file": "break_woodendoor_nearby",
+      "line": 276,
+      "release": "(Release 5-3)",
+      "note": null
+    },
+    {
+      "name": "BREAK_GLASSDOOR_PLAYER",
+      "id": "break glass door",
+      "file": "break_glassdoor_player",
+      "line": 278,
+      "release": "(Release 5-3)",
+      "note": null
+    },
+    {
+      "name": "BREAK_GLASSDOOR_NEARBY",
+      "id": "glass door breaks nearby",
+      "file": "break_glassdoor_nearby",
+      "line": 280,
+      "release": "(Release 5-3)",
+      "note": null
+    },
+    {
+      "name": "BREAK_METALDOOR_PLAYER",
+      "id": "break metal door",
+      "file": "break_metaldoor_player",
+      "line": 284,
+      "release": "(Release 5-4)",
+      "note": null
+    },
+    {
+      "name": "BREAK_METALDOOR_NEARBY",
+      "id": "metal door breaks nearby",
+      "file": "break_metaldoor_nearby",
+      "line": 286,
+      "release": "(Release 5-4)",
+      "note": null
+    },
+    {
+      "name": "BREAK_CERAMIC_VISIBLE",
+      "id": "something ceramic breaks",
+      "file": "break_ceramic_visible",
+      "line": 288,
+      "release": "(Release 5-4)",
+      "note": null
+    },
+    {
+      "name": "BASH_OTHER_OBJECTS_PLAYER",
+      "id": "player bashes other object",
+      "file": "bash_other_objects_player",
+      "line": 290,
+      "release": "(Release 5-4)",
+      "note": null
+    },
+    {
+      "name": "BASH_OTHER_OBJECTS_NEARBY",
+      "id": "bash other objects nearby",
+      "file": "bash_other_objects_nearby",
+      "line": 292,
+      "release": "(Release 5-4)",
+      "note": null
+    },
+    {
+      "name": "BASH_CERAMIC_VISIBLE",
+      "id": "something ceramic is bashed",
+      "file": "bash_ceramic_visible",
+      "line": 294,
+      "release": "(Release 5-4)",
+      "note": null
+    },
+    {
+      "name": "BASH_METALDOOR_PLAYER",
+      "id": "bash metal door",
+      "file": "bash_metaldoor_player",
+      "line": 296,
+      "release": "(Release 5-4)",
+      "note": null
+    },
+    {
+      "name": "BASH_METALDOOR_NEARBY",
+      "id": "metal door bashed nearby",
+      "file": "bash_metaldoor_nearby",
+      "line": 298,
+      "release": "(Release 5-4)",
+      "note": null
+    },
+    {
+      "name": "PUSH_WOODEN_OBJECT_VISIBLE",
+      "id": "pushes visible wooden object",
+      "file": "push_wooden_object_visible",
+      "line": 300,
+      "release": "(Release 5-4)",
+      "note": null
+    },
+    {
+      "name": "PUSH_WOODEN_OBJECT_AUDIBLE",
+      "id": "pushes audible wooden object",
+      "file": "push_wooden_object_audible",
+      "line": 302,
+      "release": "(Release 5-4)",
+      "note": null
+    },
+    {
+      "name": "REINCARNATE",
+      "id": "reincarnate",
+      "file": "RS - Reincarnate",
+      "line": 306,
+      "release": "relocated from music to sfx (Release 6-1)",
+      "note": null
+    },
+    {
+      "name": "NIGHT_VISION",
+      "id": "night vision",
+      "file": "night_vision",
+      "line": 310,
+      "release": "(Release 6-2)",
+      "note": null
+    },
+    {
+      "name": "ACCESS_DENIED",
+      "id": "access denied",
+      "file": "access_denied",
+      "line": 314,
+      "release": "(Release 6-3)",
+      "note": null
+    },
+    {
+      "name": "ACCESS_GRANTED",
+      "id": "access granted",
+      "file": "access_granted",
+      "line": 316,
+      "release": "(Release 6-3)",
+      "note": null
+    },
+    {
+      "name": "ACHIEVEMENT",
+      "id": "achievement",
+      "file": "achievement",
+      "line": 320,
+      "release": "(Release 6-4)",
+      "note": null
+    },
+    {
+      "name": "FLASHBANG_VISIBLE",
+      "id": "flashbang explosion",
+      "file": "flashbang_visible",
+      "line": 324,
+      "release": "(Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "FLASHBANG_AUDIBLE",
+      "id": "flashbang explosion nearby",
+      "file": "flashbang_audible",
+      "line": 326,
+      "release": "(Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "DRINK",
+      "id": "drinks",
+      "file": "drink",
+      "line": 329,
+      "release": "(Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "DIG_GROUND",
+      "id": "dig ground",
+      "file": "dig_ground",
+      "line": 331,
+      "release": "(Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "PLACE_TRAP",
+      "id": "places trap",
+      "file": "place_trap",
+      "line": 333,
+      "release": "(Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "MAKE_MOLOTOV",
+      "id": "makes molotov",
+      "file": "make_molotov",
+      "line": 335,
+      "release": "(Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "MALE_HURT",
+      "id": "male hurt",
+      "file": "male_hurt",
+      "line": 337,
+      "release": "(Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "FEMALE_HURT",
+      "id": "female hurt",
+      "file": "female_hurt",
+      "line": 339,
+      "release": "(Release 6-6)",
+      "note": null
+    },
+    {
+      "name": "CHAINSAW_PLAYER",
+      "id": "player uses chainsaw",
+      "file": "chainsaw_player",
+      "line": 343,
+      "release": "(Release 7-1)",
+      "note": null
+    },
+    {
+      "name": "CHAINSAW_NEARBY",
+      "id": "chainsaw used nearby",
+      "file": "chainsaw_nearby",
+      "line": 345,
+      "release": "(Release 7-1)",
+      "note": null
+    },
+    {
+      "name": "CHAINSAW_FAR",
+      "id": "chainsaw used somewhere",
+      "file": "chainsaw_far",
+      "line": 347,
+      "release": "(Release 7-1)",
+      "note": null
+    },
+    {
+      "name": "FLAMETHROWER_VISIBLE",
+      "id": "flamethrower burst",
+      "file": "flamethrower_visible",
+      "line": 350,
+      "release": "(Release 7-1)",
+      "note": null
+    },
+    {
+      "name": "FLAMETHROWER_AUDIBLE",
+      "id": "flamethrower burst nearby",
+      "file": "flamethrower_audible",
+      "line": 352,
+      "release": "(Release 7-1)",
+      "note": null
+    },
+    {
+      "name": "FUEL_CAN_VISIBLE",
+      "id": "fuel can explosion",
+      "file": "fuel_can_visible",
+      "line": 355,
+      "release": "(Release 7-1)",
+      "note": null
+    },
+    {
+      "name": "FUEL_CAN_AUDIBLE",
+      "id": "fuel can explosion nearby",
+      "file": "fuel_can_audible",
+      "line": 357,
+      "release": "(Release 7-1)",
+      "note": null
+    },
+    {
+      "name": "FUEL_PUMP_VISIBLE",
+      "id": "fuel pump explosion",
+      "file": "fuel_pump_visible",
+      "line": 360,
+      "release": "(Release 7-1)",
+      "note": null
+    },
+    {
+      "name": "FUEL_PUMP_AUDIBLE",
+      "id": "fuel pump explosion nearby",
+      "file": "fuel_pump_audible",
+      "line": 362,
+      "release": "(Release 7-1)",
+      "note": null
+    },
+    {
+      "name": "GLOWSTICK",
+      "id": "lights glowstick",
+      "file": "glowstick",
+      "line": 365,
+      "release": "(Release 7-1)",
+      "note": null
+    },
+    {
+      "name": "FLARE",
+      "id": "lights flare",
+      "file": "flare",
+      "line": 367,
+      "release": "(Release 7-1)",
+      "note": null
+    },
+    {
+      "name": "EQUIP",
+      "id": "equips",
+      "file": "equip",
+      "line": 370,
+      "release": "(Release 7-1)",
+      "note": null
+    },
+    {
+      "name": "SHIELD_BLOCK_PLAYER",
+      "id": "player uses shield",
+      "file": "shield_block_player",
+      "line": 374,
+      "release": "(Release 7-2)",
+      "note": null
+    },
+    {
+      "name": "SHIELD_BLOCK_NEARBY",
+      "id": "shield used nearby",
+      "file": "shield_block_nearby",
+      "line": 376,
+      "release": "(Release 7-2)",
+      "note": null
+    },
+    {
+      "name": "SMOKE_GRENADE",
+      "id": "smoke grenade burst",
+      "file": "smoke_grenade",
+      "line": 378,
+      "release": "(Release 7-2)",
+      "note": null
+    },
+    {
+      "name": "STUN_GUN_PLAYER",
+      "id": "player fires stun gun",
+      "file": "stun_gun_player",
+      "line": 380,
+      "release": "(Release 7-2)",
+      "note": null
+    },
+    {
+      "name": "STUN_GUN_NEARBY",
+      "id": "stun gun fired nearby",
+      "file": "stun_gun_nearby",
+      "line": 382,
+      "release": "(Release 7-2)",
+      "note": null
+    },
+    {
+      "name": "DOG_BARK_NEARBY",
+      "id": "dog barks nearby",
+      "file": "dog_bark_nearby",
+      "line": 386,
+      "release": "(Release 7-2)",
+      "note": null
+    },
+    {
+      "name": "DOG_BARK_FAR",
+      "id": "dog barks somewhere",
+      "file": "dog_bark_far",
+      "line": 388,
+      "release": "(Release 7-2)",
+      "note": null
+    },
+    {
+      "name": "DOG_FLEE",
+      "id": "dog flees",
+      "file": "dog_yips",
+      "line": 390,
+      "release": "(Release 7-2)",
+      "note": null
+    },
+    {
+      "name": "DOG_GROWL",
+      "id": "dog growls",
+      "file": "dog_growl",
+      "line": 392,
+      "release": "(Release 7-2)",
+      "note": null
+    },
+    {
+      "name": "RAT_SCREECH",
+      "id": "rat screeches",
+      "file": "rat_screech",
+      "line": 394,
+      "release": "(Release 7-2)",
+      "note": null
+    },
+    {
+      "name": "SEWERS_THING_GROWL",
+      "id": "sewers thing growl",
+      "file": "sewers_thing_growl",
+      "line": 396,
+      "release": "(Release 7-2)",
+      "note": null
+    },
+    {
+      "name": "SKELETON_GROWL",
+      "id": "skeleton growls",
+      "file": "skeleton_growl",
+      "line": 398,
+      "release": "(Release 7-2)",
+      "note": null
+    },
+    {
+      "name": "SHAMBLER_GROWL",
+      "id": "shambler growls",
+      "file": "shambler_growl",
+      "line": 400,
+      "release": "(Release 7-2)",
+      "note": null
+    },
+    {
+      "name": "ZOMBIE_MASTER_GROWL",
+      "id": "zombie master growls",
+      "file": "zombie_master_growl",
+      "line": 402,
+      "release": "(Release 7-2)",
+      "note": null
+    },
+    {
+      "name": "ZOMBIFIED_GROAN",
+      "id": "zombified groans",
+      "file": "zombified_groan",
+      "line": 404,
+      "release": "(Release 7-2)",
+      "note": null
+    },
+    {
+      "name": "PSST_WHISPER",
+      "id": "whisper",
+      "file": "psst2",
+      "line": 406,
+      "release": "(Release 7-2)",
+      "note": null
+    },
+    {
+      "name": "MALE_SHOUT_PLAYER",
+      "id": "male player shouts",
+      "file": "male_shout_player",
+      "line": 408,
+      "release": "(Release 7-2)",
+      "note": null
+    },
+    {
+      "name": "MALE_SHOUT_NEARBY",
+      "id": "man nearby shouts",
+      "file": "male_shout_nearby",
+      "line": 410,
+      "release": "(Release 7-2)",
+      "note": null
+    },
+    {
+      "name": "FEMALE_SHOUT_PLAYER",
+      "id": "female player shouts",
+      "file": "female_shout_player",
+      "line": 412,
+      "release": "(Release 7-2)",
+      "note": null
+    },
+    {
+      "name": "FEMALE_SHOUT_NEARBY",
+      "id": "woman nearby shouts",
+      "file": "female_shout_nearby",
+      "line": 414,
+      "release": "(Release 7-2)",
+      "note": null
+    },
+    {
+      "name": "METAL_DOOR_OPEN",
+      "id": "opening metal door",
+      "file": "metal_door_open",
+      "line": 418,
+      "release": "(Release 7-4)",
+      "note": null
+    },
+    {
+      "name": "METAL_DOOR_CLOSE",
+      "id": "closing metal door",
+      "file": "metal_door_close",
+      "line": 420,
+      "release": "(Release 7-4)",
+      "note": null
+    },
+    {
+      "name": "FISHING_CAST_PLAYER",
+      "id": "fishing cast",
+      "file": "fishing_cast_player",
+      "line": 424,
+      "release": "(Release 7-6)",
+      "note": null
+    },
+    {
+      "name": "FISHING_CAST_NEARBY",
+      "id": "fishing cast nearby",
+      "file": "fishing_cast_nearby",
+      "line": 426,
+      "release": "(Release 7-6)",
+      "note": null
+    },
+    {
+      "name": "FISHING_REEL_PLAYER",
+      "id": "fishing reel",
+      "file": "fishing_reel_player",
+      "line": 428,
+      "release": "(Release 7-6)",
+      "note": null
+    },
+    {
+      "name": "FISHING_REEL_NEARBY",
+      "id": "fishing reel nearby",
+      "file": "fishing_reel_nearby",
+      "line": 430,
+      "release": "(Release 7-6)",
+      "note": null
+    },
+    {
+      "name": "COOKING_SIZZLE_PLAYER",
+      "id": "cooking sizzle",
+      "file": "cooking_sizzle_player",
+      "line": 432,
+      "release": "(Release 7-6)",
+      "note": null
+    },
+    {
+      "name": "COOKING_SIZZLE_NEARBY",
+      "id": "cooking sizzle nearby",
+      "file": "cooking_sizzle_nearby",
+      "line": 434,
+      "release": "(Release 7-6)",
+      "note": null
+    },
+    {
+      "name": "FIRE_EXTINGUISHER_PLAYER",
+      "id": "fire extinguisher",
+      "file": "fire_extinguisher_player",
+      "line": 436,
+      "release": "(Release 7-6)",
+      "note": null
+    },
+    {
+      "name": "FIRE_EXTINGUISHER_NEARBY",
+      "id": "fire extinguisher nearby",
+      "file": "fire_extinguisher_nearby",
+      "line": 438,
+      "release": "(Release 7-6)",
+      "note": null
+    },
+    {
+      "name": "MATCH_STRIKE_START_FIRE_PLAYER",
+      "id": "matches start fire",
+      "file": "match_strike_start_fire_player",
+      "line": 440,
+      "release": "(Release 7-6)",
+      "note": null
+    },
+    {
+      "name": "EQUIP_BFG_PLAYER",
+      "id": "equips BFG",
+      "file": "equip_BFG_player",
+      "line": 442,
+      "release": "(Release 7-6)",
+      "note": null
+    },
+    {
+      "name": "PLASMA_BURST_VISIBLE",
+      "id": "plasma burst",
+      "file": "plasma_burst_visible",
+      "line": 444,
+      "release": "(Release 7-6)",
+      "note": null
+    },
+    {
+      "name": "PLASMA_BURST_AUDIBLE",
+      "id": "plasma burst nearby",
+      "file": "plasma_burst_audible",
+      "line": 446,
+      "release": "(Release 7-6)",
+      "note": null
+    },
+    {
+      "name": "OPEN_BACKPACK",
+      "id": "opens backpack",
+      "file": "open_backpack",
+      "line": 450,
+      "release": "(Release 8-2)",
+      "note": null
+    }
+  ]
+}

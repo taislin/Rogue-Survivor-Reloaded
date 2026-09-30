@@ -57,7 +57,9 @@ import {
 	ActionWait,
 	SayFlags,
 } from "@engine/actions/Actions";
+import { AMBIENT_SFX_VOLUME, type IAmbientManager } from "@engine/audio/IAmbientManager";
 import { type IMusicManager, MusicPriority } from "@engine/audio/IMusicManager";
+import { NullAmbientManager } from "@engine/audio/NullAmbientManager";
 import { NullMusicManager } from "@engine/audio/NullMusicManager";
 import { Color } from "@engine/Color";
 import { fireAndForget, reportSwallowed } from "@engine/Diagnostics";
@@ -172,6 +174,7 @@ import { OrderableAI } from "@gameplay/ai/OrderableAI";
 import { ActorID, GameActors } from "@gameplay/GameActors";
 import { FactionID, GameFactions } from "@gameplay/GameFactions";
 import { GameGangs, type GangID } from "@gameplay/GameGangs";
+import { GameAmbients } from "@gameplay/GameAmbients";
 import { allImageIds, GameImages } from "@gameplay/GameImages";
 import { GameItems, ItemID } from "@gameplay/GameItems";
 import { GameMusics, GameSounds } from "@gameplay/GameSounds";
@@ -1194,6 +1197,13 @@ export class RogueGame {
 	m_TownGenerator!: BaseTownGenerator;
 	m_PlayedIntro!: boolean;
 	m_MusicManager!: IMusicManager;
+	/**
+	 * C# `m_AmbientSFXManager` — the *second* sound-manager instance the fork
+	 * builds for ambient beds (`RogueGame.cs:734`, assigned at `:861`). A separate
+	 * player with a separate volume, so a rain loop sits under the map's theme
+	 * rather than replacing it.
+	 */
+	m_AmbientSFXManager!: IAmbientManager;
 	/** C# `struct CharGen` — a struct is zero-initialized, so the field starts out filled. */
 	m_CharGen: CharGen = new CharGen();
 	m_Manual: TextFile | null = null;
@@ -1316,7 +1326,11 @@ export class RogueGame {
 
 	// ── C# `#region Init` (RogueGame.cs:781) ──────────────────────────────────
 
-	constructor(UI: IRogueUI, music: IMusicManager = new NullMusicManager()) {
+	constructor(
+		UI: IRogueUI,
+		music: IMusicManager = new NullMusicManager(),
+		ambients: IAmbientManager = new NullAmbientManager(),
+	) {
 		logInit("RogueGame()");
 
 		this.m_UI = UI;
@@ -1324,6 +1338,19 @@ export class RogueGame {
 		// C# picks MDX/SFML/NullSoundManager (the C# Null implements both sound+music).
 		// The browser passes `WebAudioMusicManager` from main.ts.
 		this.m_MusicManager = music;
+
+		logInit("creating Ambient Sound Manager");
+		// C# `RogueGame.cs:857-868` builds a *second* manager here, not a third kind
+		// of one — the same sentence in the C# says why ("the music manager is good
+		// for long tracks, as they are streamed from disk rather than kept in
+		// memory"). In the port it is a distinct interface, because the C#'s ambients
+		// are per-track (`StopAllAmbientsExcept`) where the port's one-element music
+		// manager cannot be; see `engine/audio/IAmbientManager.ts`.
+		this.m_AmbientSFXManager = ambients;
+		// The mix. The C# reads it from `Options.AmbientSFXVolume` in `ApplyOptions`
+		// (`RogueGame.cs:2703`); the port has no such option row yet (see
+		// BROWSER_PORT_PLAN §5.6f), so the C#'s own default is the level.
+		this.m_AmbientSFXManager.setVolume(AMBIENT_SFX_VOLUME);
 
 		logInit("creating MessageManager");
 		this.m_MessageManager = new MessageManager(
@@ -3490,6 +3517,10 @@ export class RogueGame {
 				);
 			}
 		}
+
+		// C# `CheckAmbientSFX(m_Player.Location.Map)` — RogueGame.cs:4060, right
+		// after world generation. A new game in the rain is audible from turn 0.
+		this.CheckAmbientAudio(this.m_Player.location.map!);
 
 		this.GiveStartingKitForResources();
 
@@ -8963,7 +8994,24 @@ export class RogueGame {
 				),
 			);
 			this.m_MusicManager.stop();
-			this.m_MusicManager.play(GameSounds.UNDEAD_EAT, MusicPriority.EVENT);
+			// The third `Feature.ExtendedAudio` reader, and the one that is a
+			// *choice* rather than an addition. The fork replaced the vanilla
+			// `UNDEAD_EAT` with a distance-tiered pair and plays the player tier
+			// here (`RogueGame.cs:21582`); the port still plays the vanilla id. So
+			// the gate is over the id, not over whether to make a noise: under
+			// CLASSIC a feast is exactly as loud as it has always been, and under
+			// STILL_ALIVE it is the file the fork shipped for it.
+			//
+			// **Not ported: the NPC arm** (`RogueGame.cs:21584`,
+			// `UNDEAD_EAT_NEARBY` at `QUIET_NOISE_RADIUS`) for the same reason as
+			// the fishing cast's: the port has no radius-bearing audibility
+			// predicate to test.
+			this.m_MusicManager.play(
+				hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio)
+					? GameSounds.UNDEAD_EAT_PLAYER
+					: GameSounds.UNDEAD_EAT,
+				MusicPriority.EVENT,
+			);
 		}
 
 		this.InflictDamageToCorpse(c, dmg);
@@ -10508,6 +10556,10 @@ export class RogueGame {
 		this.DoStartSleeping(player);
 		this.RedrawPlayScreen();
 		this.m_MusicManager.stop();
+		// C# `m_AmbientSFXManager.StopAll()` — RogueGame.cs:13845. A separate manager
+		// is why this is its own line: the music stop above would not touch the rain.
+		if (hasFeature(this.m_Session.ruleset, Feature.AmbientAudio))
+			this.m_AmbientSFXManager.stopAll();
 		this.m_MusicManager.playLooping(GameMusics.SLEEP, MusicPriority.EVENT);
 		return true;
 	}
@@ -15166,9 +15218,22 @@ export class RogueGame {
 
 	// C# OnActorEnterTile — RogueGame.cs:12804
 	async OnActorEnterTile(actor: Actor): Promise<void> {
-		void actor;
 		const map = actor.location.map!;
 		const pos = actor.location.position;
+
+		// C# `if (actor.IsPlayer) { CheckAmbientSFX(map); CheckLandedHelicopterSFX(map); }`
+		// — RogueGame.cs:17393-17399, the first thing the method does. Moving is the
+		// event that changes what is audible: crossing a doorway swaps the rain bed
+		// for the inside one, and it has to happen on the step, not on the next
+		// weather roll.
+		//
+		// The player only, as in the C#: an NPC walking past a door must not re-decide
+		// what the player's ears are hearing, and `CheckAmbientAudio` reads
+		// `m_Player`'s tile.
+		//
+		// The C#'s second call, `CheckLandedHelicopterSFX`, is absent: it needs
+		// `Feature.HelicopterRescue`. See `CheckAmbientAudio`.
+		if (actor.isPlayer) this.CheckAmbientAudio(map);
 
 		// Check traps.
 		// Don't check if there is a covering mobj there.
@@ -15967,6 +16032,24 @@ export class RogueGame {
 
 			if (caughtFish) {
 				if (actor.isPlayer) {
+					// The reel, and the second `Feature.ExtendedAudio` reader
+					// (`RogueGame.cs:23107-23109`). A separate gate from the cast's
+					// because it is a separate file and a separate moment: the C#
+					// plays it inside the catch, not on every wait, so a survivor
+					// casting repeatedly hears one reel per fish and not one per cast.
+					//
+					// **Not ported: the C#'s `Stop(FISHING_CAST_PLAYER)`** immediately
+					// before it. That is one line whose whole purpose is to cut the
+					// cast off because the two overlap when the player reels quickly,
+					// and `IMusicManager` has no per-id `stop()` -- `stop()` is global,
+					// so using it would silence the soundtrack. The overlap is audible
+					// and harmless; silencing the music is neither.
+					if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+						this.m_MusicManager.play(
+							GameSounds.FISHING_REEL_PLAYER,
+							MusicPriority.EVENT,
+						);
+
 					// `AddMessageIfAudibleForPlayer` rather than `AddMessage`: the C# says
 					// this particular message is what interrupts a long wait, so a bite
 					// during one is the intended way to be interrupted.
@@ -19774,8 +19857,16 @@ export class RogueGame {
 		if (
 			actor.isPlayer &&
 			this.m_MusicManager.getCurrentMusicId() === GameMusics.SLEEP
-		)
+		) {
 			this.m_MusicManager.stop();
+			// C# `CheckAmbientSFX(actor.Location.Map)` — RogueGame.cs:22962, and the
+			// C#'s comment on it is the whole reason: "restart the rain sound if
+			// required". Waking is the other moment the audible world has to be
+			// re-decided, because the beds were stopped on the way in and nothing
+			// else between then and now would put them back — a survivor could wake
+			// up in a thunderstorm and stand there in silence.
+			this.CheckAmbientAudio(actor.location.map!);
+		}
 	}
 
 	/**
@@ -20651,6 +20742,11 @@ export class RogueGame {
 
 		// music.
 		this.m_MusicManager.stop();
+		// C# `m_AmbientSFXManager.StopAll()` — RogueGame.cs:7290, ahead of the music
+		// line. The post-mortem is a still screen with one cue on it, and a rain bed
+		// under it is not that.
+		if (hasFeature(this.m_Session.ruleset, Feature.AmbientAudio))
+			this.m_AmbientSFXManager.stopAll();
 		this.m_MusicManager.play(GameMusics.PLAYER_DEATH, MusicPriority.EVENT);
 
 		///////////
@@ -21857,6 +21953,159 @@ export class RogueGame {
 			this.m_Session.worldTime.turnCounter,
 			`The weather changed to ${this.DescribeWeather(this.m_Session.weather)}.`,
 		);
+
+		// C# `CheckAmbientSFX(m_Player.Location.Map)` — RogueGame.cs:10398, the last
+		// line of the same method. Rain has to start on the turn the weather turns,
+		// not on the next step the player happens to take.
+		this.CheckAmbientAudio(this.m_Player.location.map!);
+	}
+
+	/**
+	 * C# `CheckAmbientSFX` (`RogueGame.cs:10417`) — play the ambient the weather,
+	 * the clock and the player's own indoors-ness call for.
+	 *
+	 * The port renames it `CheckAmbientAudio` because what it drives is not sound
+	 * effects: the C# hands the id to `m_AmbientSFXManager`, which is a *second
+	 * `SFMLMusicManager` instance* (`RogueGame.cs:861`), so "SFX" in the C#'s name is
+	 * a misnomer the fork itself half-acknowledges in `GameAmbients.cs:5` ("these
+	 * may be played in conjunction with background music"). Naming it after the
+	 * channel keeps the next reader out of `WebAudioSoundManager`.
+	 *
+	 * **One gate, and it is the feature's whole behaviour.** Every arm below is
+	 * Still Alive content; under CLASSIC there is no ambient channel at all, and a
+	 * single `if` here means there is no version of "rain in a basement" that
+	 * classic can half-receive. The five `stopAll()` sites are gated separately for
+	 * the same reason, and `tests/ambient-audio.test.ts` asserts the split.
+	 *
+	 * **Only the five rain/nature tracks are reachable.** The C#'s thirteen split
+	 * three ways, and only one way has its prerequisites in the port:
+	 *
+	 * - **Rain, thundering rain, night animals — wired.** The port has `Weather`
+	 *   (`data/Weather.ts`), `WorldTime.isNight`, and `Tile.isInside`; all three are
+	 *   the C#'s inputs. The `StopAllAmbientsExcept` structure is the C#'s verbatim,
+	 *   including the start-before-stop ordering (`:10445-10448`), which is there
+	 *   so the swap has no silent gap.
+	 * - **The five helicopter tracks — not wired, pending `Feature.HelicopterRescue`.**
+	 *   `CheckLandedHelicopterSFX` (`:10524`) reads
+	 *   `m_Session.ArmyHelicopterRescue_Map` and `_Coordinates`, neither of which
+	 *   the port has — it has the *day* (`Session.armyHelicopterRescueDay`, set by
+	 *   `DifficultyAtCreation`) and no map to put a helicopter on. It also needs
+	 *   `Rules.QUIET/MODERATE/BOOMING_NOISE_RADIUS` for the four distance tiers;
+	 *   the port has only `LOUD_NOISE_RADIUS` (`Rules.ts:310`). There is nothing to
+	 *   stub: a stationary helicopter the player is not rescued by would be a new
+	 *   endgame, not this feature.
+	 * - **The two church bells — not wired, pending `Feature.Church`.** The C#'s
+	 *   trigger is `m_Player.Location.Map.HasChurch` at sunset (`:5637`), and the
+	 *   port's `Map` has no `hasChurch` at all. A `true` there would have to be
+	 *   invented, and "wherever the church building generator will eventually put a
+	 *   church" is a guess with a sound attached to it.
+	 * - **`TEST_AMBIENT` — shipped, never triggered.** Its only C# caller is the
+	 *   options screen's ambient-volume preview (`RogueGame.cs:2244`), and the port
+	 *   has no ambient-volume row. See `GameAmbients.TEST_AMBIENT`.
+	 */
+	CheckAmbientAudio(map: Map): void {
+		if (!hasFeature(this.m_Session.ruleset, Feature.AmbientAudio)) return;
+
+		// C#: the player is asleep, so the beds were stopped on the way in and
+		// restarting one here would be rain over a sleep screen. `:10419-10422`.
+		if (this.m_Player.isSleeping) return;
+
+		// C#: a level with no sky. The whole of the underground is named here,
+		// because on those maps the *weather* is still the session's and would
+		// otherwise put an outside rain bed under a survivor in a tunnel.
+		//
+		// Two differences from the C# list, both recorded rather than smoothed over:
+		// `hospital_Admissions` is added (the C# silences the other four hospital
+		// levels and leaves the ground floor audible), and `armyBase` is absent
+		// because the C#'s `UniqueMaps.ArmyBase` does not exist in the port — that
+		// is `Feature.ArmyBase`, still pending, and its absence is silent rather
+		// than wrong. The police-station and CHAR levels are both present in the
+		// port's `UniqueMaps`, so they are here.
+		//
+		// The C# reads the *session's* map name here (`m_Session.CurrentMap.Name`,
+		// `:10425`) and the map it was handed for everything else. Every one of its
+		// five call sites passes the player's map, which is the current map, so the
+		// port reads `map.name` throughout and does not have a second notion of
+		// "where the player is" to disagree with.
+		if (
+			map.name.includes("basement") ||
+			map.district?.sewersMap === map ||
+			map.district?.subwayMap === map ||
+			this.m_Session.uniqueMaps.charUndergroundFacility.theMap === map ||
+			this.m_Session.uniqueMaps.policeStation_OfficesLevel.theMap === map ||
+			this.m_Session.uniqueMaps.policeStation_JailsLevel.theMap === map ||
+			this.m_Session.uniqueMaps.hospital_Admissions.theMap === map ||
+			this.m_Session.uniqueMaps.hospital_Offices.theMap === map ||
+			this.m_Session.uniqueMaps.hospital_Patients.theMap === map ||
+			this.m_Session.uniqueMaps.hospital_Power.theMap === map ||
+			this.m_Session.uniqueMaps.hospital_Storage.theMap === map
+		) {
+			this.StopAllAmbientsExcept("all");
+			return;
+		}
+
+		// C#: `map.GetTileAt(Player.Location.Position)`, on the *map*, not on the
+		// session's current one — the two differ on a district change, and the C# is
+		// explicit that the tile comes from the map it was handed.
+		const here = this.m_Player.location.position;
+		const tile = map.getTileAt(here.x, here.y);
+		if (tile === null) return;
+
+		// The inside/outside split is the only thing the four rain tracks have over
+		// two names each, so it is decided once here rather than four times.
+		let wanted: string | null = null;
+		if (this.m_Session.weather === Weather.RAIN) {
+			wanted = tile.isInside ? GameAmbients.RAIN_INSIDE : GameAmbients.RAIN_OUTSIDE;
+		} else if (this.m_Session.weather === Weather.HEAVY_RAIN) {
+			wanted = tile.isInside
+				? GameAmbients.THUNDERING_RAIN_INSIDE
+				: GameAmbients.THUNDERING_RAIN_OUTSIDE;
+		} else if (this.m_Session.worldTime.isNight) {
+			// C#: no inside/outside split for the animals (`:10476-10478`).
+			wanted = GameAmbients.NIGHT_ANIMALS;
+		}
+
+		if (wanted === null) {
+			this.StopAllAmbientsExcept("all");
+			return;
+		}
+
+		// C# order: start the incoming bed *first*, then stop the others
+		// (`:10445-10448`). The other way round leaves a gap of however long the
+		// outgoing track takes to release, and rain-to-night is the transition a
+		// player actually hears.
+		//
+		// `playIfNotAlreadyPlaying`, not the C#'s hand-written `if (!IsPlaying(...))`
+		// guard: same condition, and a survivor standing still in the rain would
+		// otherwise have the bed restarted from the top under them.
+		this.m_AmbientSFXManager.playIfNotAlreadyPlaying(wanted, true);
+		this.StopAllAmbientsExcept(wanted);
+	}
+
+	/**
+	 * C# `StopAllAmbientsExcept` (`RogueGame.cs:10490`) — silence every ambient in the
+	 * weather/night family except `exceptId`. `"all"` silences all of them.
+	 *
+	 * A named list of five in the C#, transcribed as one, because the C# writes the
+	 * same `if (IsPlaying(x)) Stop(x)` five times by hand and a fifth member would
+	 * be a fifth place to forget. The helicopter and bell tracks are deliberately
+	 * **not** in it: the C#'s list does not contain them either
+	 * (`CheckLandedHelicopterSFX` stops its own four, and nothing stops the bells
+	 * because they are one-shots), and adding them here would silence a helicopter
+	 * every time the player walked indoors — a behaviour the C# does not have.
+	 */
+	StopAllAmbientsExcept(exceptId: string): void {
+		const keep = new Set([exceptId, "all"]);
+		for (const id of [
+			GameAmbients.RAIN_INSIDE,
+			GameAmbients.RAIN_OUTSIDE,
+			GameAmbients.THUNDERING_RAIN_INSIDE,
+			GameAmbients.THUNDERING_RAIN_OUTSIDE,
+			GameAmbients.NIGHT_ANIMALS,
+		]) {
+			if (keep.has(id)) continue;
+			if (this.m_AmbientSFXManager.isPlaying(id)) this.m_AmbientSFXManager.stop(id);
+		}
 	}
 
 	/// <summary>
@@ -22180,6 +22429,25 @@ export class RogueGame {
 	 */
 	DoUseFishingRodItem(actor: Actor): void {
 		if (actor.isPlayer) {
+			// The cast sound, and the first of the four `Feature.ExtendedAudio`
+			// readers. Gated because the file is the fork's: `fishing_cast_player`
+			// is not in the port's `GameSounds` and is not a Classic asset, so
+			// playing it unconditionally would be the fork's audio leaking into
+			// classic rather than a ruleset difference.
+			//
+			// `PlayIfNotAlreadyPlaying` in the C# (`RogueGame.cs:21962`); the port's
+			// `IMusicManager.play` already returns early when the same id is
+			// playing (`WebAudioMusicManager.start`, `:107`), so the two agree.
+			//
+			// **Not ported: the NPC arm** (`RogueGame.cs:21964`), which plays
+			// `FISHING_CAST_NEARBY` when `IsAudibleToPlayer(loc, QUIET_NOISE_RADIUS)`.
+			// The port has no `QUIET_NOISE_RADIUS` and no audibility predicate that
+			// takes a radius, and inventing one would be guessing a number the C#
+			// does not define here. Recorded rather than faked, like `isOneHanded`
+			// below.
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_MusicManager.play(GameSounds.FISHING_CAST_PLAYER, MusicPriority.EVENT);
+
 			this.AddMessage(
 				new Message(
 					`Now press Wait <${s_KeyBindings.get(PlayerCommand.WAIT_OR_SELF) ?? "?"}>` +
@@ -25787,6 +26055,19 @@ export class RogueGame {
 
 	// C# LoadGame — RogueGame.cs:19819
 	async LoadGame(saveName: string): Promise<boolean> {
+		// C# `m_MusicManager.StopAll(); m_AmbientSFXManager.StopAll();` —
+		// RogueGame.cs:2394-2395, before the save is even read. The beds belong to
+		// the *old* world's weather and the old player's tile, and neither survives
+		// the load; the C# does not restart them here either, so the loaded game's
+		// first step brings its own.
+		//
+		// The gate reads the *outgoing* `m_Session`, before `Session.load()` swaps it,
+		// and that is the question being asked: the beds that might be playing are
+		// the ones the outgoing session's ruleset allowed, so a CLASSIC load out of
+		// a Still Alive game stops them and the reverse is a no-op.
+		if (hasFeature(this.m_Session.ruleset, Feature.AmbientAudio))
+			this.m_AmbientSFXManager.stopAll();
+
 		// C# loads the save file named `saveName`; the browser keeps the same
 		// JSON in localStorage (session) and in one IndexedDB slot (see DoSaveGame).
 		const saveFile = await GameSaveManager.loadGame(Number(saveName));
@@ -28362,6 +28643,14 @@ export class RogueGame {
 	// C# HandleReincarnation — RogueGame.cs:22001
 	// async: C# blocks on the avatar menu and on WaitEnter/WaitYesOrNo.
 	async HandleReincarnation(): Promise<void> {
+		// C# `m_MusicManager.StopAll(); m_SFXManager.StopAll(); m_AmbientSFXManager.StopAll();`
+		// — RogueGame.cs:5501-5504, the first three lines of the method and *before*
+		// the "do we even reincarnate" question. The port's `m_MusicManager.stop()`
+		// for that case is further down, so the ambient stop is here rather than
+		// folded into it: a declined reincarnation still has to leave the rain.
+		if (hasFeature(this.m_Session.ruleset, Feature.AmbientAudio))
+			this.m_AmbientSFXManager.stopAll();
+
 		// Reincarnate?
 		// don't bother if option set to zero.
 		if (

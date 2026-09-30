@@ -1,4 +1,5 @@
 import { SOUND_FILES, MUSIC_FILES } from "@gameplay/GameSounds";
+import { AMBIENT_FILES } from "@gameplay/GameAmbients";
 import { BASE_URL } from "@engine/BaseUrl";
 
 /**
@@ -9,6 +10,7 @@ import { BASE_URL } from "@engine/BaseUrl";
  *   <base>assets/images/<imageSet>/<Category>/<name>.webp  sprites
  *   <base>assets/music/RS - <Title>.ogg                     music
  *   <base>assets/sfx/sfx - <name>.ogg                       sound effects
+ *   <base>assets/ambients/<name>.ogg                        ambient beds
  *
  * The base is `import.meta.env.BASE_URL` rather than a literal, which is what
  * lets the same build serve from a domain root and from a subdirectory. See
@@ -22,7 +24,11 @@ import { BASE_URL } from "@engine/BaseUrl";
  * The C# original kept the same three `Resources/` subtrees and resolved them by
  * id, with a `*_FILE` companion constant per id (see `GameSounds.cs`). The web
  * port keeps the ids as the single source of truth and derives the URL here, so
- * no call site builds a path by hand.
+ * no call site builds a path by hand. `Ambients/` is the fork's fourth subtree
+ * (`GameAmbients.cs:9`), added with `Feature.AmbientAudio`; its file names carry
+ * no `sfx - `/`RS - ` decoration, which is why it is a third root and not three
+ * more entries in the two existing tables.
+
  *
  * Sprites are WebP, not PNG. The set is 1 124 32x32 pixel-art images; lossless
  * WebP is 13% of the PNG size for byte-identical visible pixels (see
@@ -36,6 +42,7 @@ export const ASSETS_ROOT = `${BASE_URL}assets`;
 export const IMAGES_ROOT = `${ASSETS_ROOT}/images`;
 export const MUSIC_ROOT = `${ASSETS_ROOT}/music`;
 export const SFX_ROOT = `${ASSETS_ROOT}/sfx`;
+export const AMBIENTS_ROOT = `${ASSETS_ROOT}/ambients`;
 
 /** Sprite file extension. Kept here so no call site hardcodes it. */
 export const IMAGE_EXTENSION = "webp";
@@ -124,6 +131,23 @@ export function soundPath(soundId: string): string {
 }
 
 /**
+ * `wild animals` -> `<base>assets/ambients/night_animals.ogg`; already-resolved
+ * `*_FILE` values pass through.
+ *
+ * The third channel's resolver, and the reason it does not consult `MUSIC_FILES`
+ * or `SOUND_FILES`: an ambient id that is in neither table is a *bug in the
+ * caller*, and guessing a directory for it here would turn that into a wrong file
+ * playing. The C# has the same discipline by construction — `m_AmbientSFXManager`
+ * is a separate player and only ever gets ids from `GameAmbients`.
+ */
+export function ambientPath(ambientId: string): string {
+  const file = AMBIENT_FILES[ambientId];
+  if (file != null) return `${AMBIENTS_ROOT}/${file}.ogg`;
+  if (ambientId.startsWith(ASSETS_ROOT)) return asOgg(ambientId);
+  return `${AMBIENTS_ROOT}/${ambientId}.ogg`;
+}
+
+/**
  * Resolve an id the music manager was handed, whether it is music **or** a
  * sound effect.
  *
@@ -160,6 +184,20 @@ export function isKnownAudioId(id: string): boolean {
 
 function withOgg(path: string): string {
   return path.replace(/\.(mp3|ogg|wav)$/i, ".ogg");
+}
+
+/**
+ * `withOgg`, but it also *adds* the extension.
+ *
+ * The difference is not cosmetic, and it is why this is not `withOgg`. The C#'s
+ * `*_FILE` constants carry no extension — `GameAmbients.cs:13` is
+ * `Resources\Ambients\rain_outside_looped`, and the C# loader appends one — so
+ * every `*_FILE` in `GameAmbients` arrives here without a suffix, and `withOgg`
+ * (which only *replaces* one) hands back a URL the browser will 404. A music id
+ * never arrives that way, which is why the sibling helpers have been fine.
+ */
+function asOgg(path: string): string {
+  return `${path.replace(/\.(mp3|ogg|wav)$/i, "")}.ogg`;
 }
 
 /** Drops the `RS - ` / `sfx - ` file-name decorations, for logging. */

@@ -2,6 +2,7 @@ import { CanvasUI }             from "@ui/CanvasUI";
 import { InputHandler }         from "@ui/InputHandler";
 import { Color }                from "@engine/Color";
 import { RogueGame }            from "@engine/RogueGame";
+import { WebAudioAmbientManager } from "@engine/audio/WebAudioAmbientManager";
 import { WebAudioMusicManager } from "@engine/audio/WebAudioMusicManager";
 import { loadGameFonts }        from "@ui/fonts";
 import { InputTranslator }      from "@engine/Keybindings";
@@ -69,7 +70,12 @@ async function main(): Promise<void> {
 
   // Phase 4: real game boot — loads data/options/keys/hints/manual/hiscores,
   // then runs the main menu → character creation → game loop.
-  const game = new RogueGame(ui, new WebAudioMusicManager());
+  // The third channel, built here for the same reason the second is: `RogueGame`
+  // defaults both managers to their null implementations so the headless harness
+  // and the tests never touch a browser audio API, and the browser passes the
+  // real ones. C# does the same at `RogueGame.cs:861` — a *second* manager
+  // instance, not a second kind of manager.
+  const game = new RogueGame(ui, new WebAudioMusicManager(), new WebAudioAmbientManager());
   try {
     await game.Run();
   } catch (e) {

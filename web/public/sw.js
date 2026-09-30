@@ -8,9 +8,13 @@
  *                is only there so the game still opens with no connection.
  *   /assets/*    cache-first. These are content-addressed by name and never
  *                change without a new build, and they are the bulk of the
- *                download (1 124 sprites + 54 audio tracks, ~55 MB). Fetching
- *                55 MB on install to precache would make the first load
- *                unusably slow, so they are cached as they are requested.
+ *                download (1 124 sprites plus the audio trees -- music, sound
+ *                effects, and the 14 MB ambient beds -- for ~55 MB). Fetching
+ *                that much on install to precache would make the first load
+ *                unusably slow, so they are cached as they are requested. The
+ *                ambients are 13 long looped tracks, which is why they do not
+ *                make the first-load cost any worse: nothing fetches an ambient
+ *                until the weather asks for one.
  *   same-origin  stale-while-revalidate.
  *
  * The precache list is deliberately tiny and contains only unhashed, stable

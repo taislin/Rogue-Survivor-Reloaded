@@ -160,19 +160,12 @@ describe("Feature registry is wired", () => {
     // Asserting the exact multiset means a new reader has to be added here, which
     // is the point: a reader is a decision, not an accident.
     expect(sites.map((s) => s.feature).sort())
-      .toEqual(["Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol",
-                 "Alcohol", "Alcohol", "ArmorResist", "Butchering",
-                 "Butchering", "Cooking", "Cooking", "DarknessFov",
-                 "DarknessFov", "DarknessFov", "DarknessGating",
-                 "DifficultyAtCreation", "DifficultyAtCreation",
-                 "FireBarrels", "FireBarrels", "FireExtinguishers", "Fishing",
-                 "Fishing", "Fishing", "Fishing", "Fishing", "Fishing",
-                 "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-                 "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-                 "ItemDespawn", "ItemDespawn", "LightPriority",
-                 "ResourcesAvailability", "ResourcesAvailability",
-                 "ResourcesAvailability", "SiphonFuel", "SiphonFuel",
-                 "TileFires", "WeaponWeight"]);
+      .toEqual(["Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "AmbientAudio","AmbientAudio", "AmbientAudio", "AmbientAudio", "AmbientAudio", "ArmorResist", "Butchering", "Butchering", "Cooking",
+                "Cooking", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessGating", "DifficultyAtCreation", "DifficultyAtCreation", "ExtendedAudio",
+                "ExtendedAudio", "ExtendedAudio", "FireBarrels", "FireBarrels", "FireExtinguishers", "Fishing", "Fishing", "Fishing",
+                "Fishing", "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
+                "FoodPoisoning", "ItemDespawn", "ItemDespawn", "LightPriority", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "SiphonFuel",
+                "SiphonFuel", "TileFires", "WeaponWeight",]);
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     // `Alcohol`'s *first* reader is now in `RogueGame` (the per-turn decay), and
     // the harness line is one of six rather than the only one.
@@ -325,6 +318,53 @@ describe("Feature registry is wired", () => {
     const barrels = sites.filter((s) => s.feature === "FireBarrels");
     expect(barrels.filter((s) => /BaseMapGenerator\.ts/.test(s.at))).toHaveLength(1);
     expect(barrels.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(1);
+
+    // AmbientAudio is five readers in one file, and the split is the design rather
+    // than an accident: **one** that decides what should be audible
+    // (`CheckAmbientAudio`, the port of the C#'s `CheckAmbientSFX`) and **four** that
+    // only ever silence the channel -- going to sleep, dying, reincarnating, and
+    // loading a save.
+    //
+    // The four are gated individually on purpose. Under CLASSIC nothing can have
+    // started, so `stopAll()` is a no-op and one ungated call would be invisible --
+    // except that a gate which is unnecessary today is a gate nobody has to think
+    // about tomorrow, when something else in the engine learns to start a bed. The
+    // count is asserted so that adding a sixth site is a decision.
+    //
+    // The one reader is the whole behaviour: rain, thundering rain and night
+    // animals are five of the C#'s thirteen tracks, and the other eight (five
+    // helicopter, two church bells, one debug) are *unwired* because the features
+    // they belong to are. `tests/ambient-audio.test.ts` asserts those eight are
+    // still unwired; this asserts the gates, not the tracks.
+    const ambient = sites.filter((s) => s.feature === "AmbientAudio");
+    expect(ambient).toHaveLength(5);
+    expect(ambient.every((s) => /RogueGame\.ts/.test(s.at))).toBe(true);
+
+    // ExtendedAudio is three readers in one file, and the count is the *opposite*
+    // of the usual story. Every other feature here is a behaviour and its gate
+    // count is the number of places the behaviour could differ; this one is 180
+    // pairs of asset data with three call sites, and the data cannot leak into
+    // CLASSIC no matter how many entries it has -- a sound id that nothing plays
+    // is inert. So three is the number that has to be argued for rather than
+    // the number that has to be grown.
+    //
+    // The three are not one behaviour either. Two are additions (the fishing
+    // cast and the fishing reel, the four sounds BROWSER_PORT_PLAN 5.6f hands
+    // here from `Feature.Fishing`) and one is a *choice*: `DoEatCorpse` plays
+    // the vanilla `UNDEAD_EAT` under CLASSIC and the fork's `UNDEAD_EAT_PLAYER`
+    // above it, because the fork split that one effect per distance tier. Gating
+    // the id rather than the call is the only way to keep a Classic corpse feast
+    // on the file it has always used, and it is the reason this feature is not
+    // zero readers.
+    //
+    // The other 176 pairs have no reader yet, and that is not a hole in the gate:
+    // the C#'s `_nearby` / `_far` / `_visible` suffixes need the distance model
+    // 5.6f item 4 says does not exist, and building it is a separate piece of
+    // work. `tests/extended-audio.test.ts` asserts that none of them is named
+    // anywhere ungated, so the count can only rise through a decision.
+    const extended = sites.filter((s) => s.feature === "ExtendedAudio");
+    expect(extended).toHaveLength(3);
+    expect(extended.every((s) => /RogueGame\.ts/.test(s.at))).toBe(true);
   });
 
   it("every Feature member is read, pending, or withheld — and never two of them", () => {
