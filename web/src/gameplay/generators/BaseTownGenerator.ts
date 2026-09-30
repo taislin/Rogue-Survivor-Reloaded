@@ -75,6 +75,22 @@ const NAME_SUBWAY_RAILS = 'rails';
 // ── Constants ──────────────────────────────────────────────────────────────
 const PARK_TREE_CHANCE = 25;
 const PARK_BENCH_CHANCE = 5;
+/**
+ * Still Alive, Release 4: inside a *graveyard*, the tree roll is reused as a
+ * "grave or tree" roll and then a tombstone is drawn from it. The C# says so:
+ * "use the original tree chance, but within that a higher chance to be a grave
+ * instead" -- the comment is slightly wrong, 33 is not 25, but the reuse is the
+ * point and the number is the C#'s.
+ */
+const PARK_GRAVE_OR_TREE_CHANCE = 33;
+
+/** C# `BaseMapGenerator.cs:528`, Release 7-3. */
+const PARK_TREES: readonly string[] = [
+  GameImages.OBJ_TREE1,
+  GameImages.OBJ_TREE2,
+  GameImages.OBJ_TREE3,
+  GameImages.OBJ_TREE4,
+];
 const PARK_ITEM_CHANCE = 5;
 const PARK_SHED_CHANCE = 75; // alpha10.1
 const PARK_SHED_WIDTH = 5; // alpha10
@@ -577,20 +593,48 @@ export class BaseTownGenerator extends BaseMapGenerator {
    * them claim the same block. See the header in `./buildings/makeJunkyard`.
    */
   protected makeJunkyards(map: GameMap, emptyBlocks: Block[]): void {
-    // Ahead of the roll, for the reason `makeChurchBuildings` puts its gate
-    // there: a roll that is taken and thrown away still moves every roll after it.
-    if (!hasFeature(Session.get().ruleset, Feature.Junkyard)) return;
+    //
+    // **This is the C#'s green region**, `BaseTownGenerator.cs:570-582`, and it is
+    // five buildings sharing one die:
+    //
+    //   int rolled = m_DiceRoller.Roll(0, 99);
+    //   if (rolled >= 65)                          MakeParkBuilding(map, b, false);  // park, 35%
+    //   else if (rolled >= 30 && rolled < 64)       MakeFarmBuilding(map, b);        // farm, 35%
+    //   else if (rolled >= 20 && rolled < 29)       MakeAnimalShelterBuilding(map, b); // 10%
+    //   else if (rolled >= 10 && rolled < 19)       MakeParkBuilding(map, b, true);   // graveyard, 10%
+    //   else                                       MakeJunkyard(map, b);             // 10%
+    //
+    // **The 64 is a C# bug and it is ported as written.** The farm's upper bound
+    // should be 65; at 64 the value 64 falls through every arm and lands in the
+    // junkyard, so the junkyard gets 11% and the farm 34% against the comments'
+    // "35% / 10%". Transcribed rather than corrected: the bands are a hand-tuned
+    // distribution and a one-point "fix" is invisible in a test and unarguable in a
+    // diff. Farm is still pending, so this is where it gets decided.
+    //
+    // The gate is ahead of both rolls, for the reason `makeChurchBuildings` puts
+    // its gate there: a roll that is taken and thrown away still moves every roll
+    // after it. `Feature.Graveyard` is not a separate pass and does not roll
+    // anything — it is `isgraveyard = true` on the park arm, which is what the
+    // C# does, and why this feature needed no new method.
+    if (
+      !hasFeature(Session.get().ruleset, Feature.Junkyard) &&
+      !hasFeature(Session.get().ruleset, Feature.Graveyard)
+    ) {
+      return;
+    }
 
     const built: Block[] = [];
     for (const b of emptyBlocks) {
       // C# `:547` — the green region's own per-block gate. See the note above on
       // why this pass spends a second one.
       if (!this.m_DiceRoller.rollChance(this.m_Params.parkBuildingChance)) continue;
-      // C# `:570` — the one die the five green buildings share. The other four are
-      // `Feature.*` and none is ported, so the junkyard is the only arm that can be
-      // entered, and it is entered by being the last one.
+      // C# `:570` — the one die the five green buildings share.
       const rolled = this.m_DiceRoller.roll(0, 99);
-      if (makeJunkyard(this.buildingContext(map, b), rolled)) built.push(b);
+      if (rolled >= 10 && rolled < 20 && hasFeature(Session.get().ruleset, Feature.Graveyard)) {
+        if (this.makeParkBuilding(map, b, true)) built.push(b);
+      } else if (makeJunkyard(this.buildingContext(map, b), rolled)) {
+        built.push(b);
+      }
     }
     // C# `:584-585`: the region's completed blocks come out after the whole loop,
     // not inside it, so the pool a later stage sees is the C#'s.
@@ -2208,7 +2252,29 @@ export class BaseTownGenerator extends BaseMapGenerator {
     return hash;
   }
 
-  makeParkBuilding(map: GameMap, b: Block): boolean {
+  /**
+   * C# `MakeParkBuilding(Map, Block, bool isgraveyard)` — `BaseTownGenerator.cs:5553`.
+   *
+   * **A graveyard is not a generator.** The fork (Release 4) did not add one: it
+   * added a flag to this method and branched inside it three times. That is why
+   * `Feature.Graveyard` is nearly free, and it is also why it is easy to
+   * under-do — the three branches are the *whole* feature.
+   *
+   * What `isgraveyard` changes, and nothing else:
+   *  1. the fill is graves and park trees instead of trees and benches;
+   *  2. the zone is `Graveyard` rather than `Park`;
+   *  3. the park-only items and shed are skipped ("only add stuff to parks").
+   *
+   * Two C# branches in this method are *commented out* upstream and the port
+   * still runs them, and that divergence is pre-existing and deliberately not
+   * touched here: the perimeter fence (the C# removed park fences in Release 7-3
+   * and left the graveyard's iron railing inside the dead block) and the
+   * entrance face (the C# has it under `if (isgraveyard)`, the port runs it for
+   * both). Fixing those is a `makeParkBuilding` conformance job, not a
+   * `Feature.Graveyard` one, and doing it here would change every park in every
+   * Classic world.
+   */
+  makeParkBuilding(map: GameMap, b: Block, isgraveyard = false): boolean {
     ////////////////////////
     // 0. Check suitability
     ////////////////////////
@@ -2232,17 +2298,46 @@ export class BaseTownGenerator extends BaseMapGenerator {
     ///////////////////////////////
     // 2. Random trees and benches
     ///////////////////////////////
-    this.mapObjectFill(map, b.insideRect, () => {
-      const placeTree = this.m_DiceRoller.rollChance(PARK_TREE_CHANCE);
-      if (placeTree) return this.makeObjTree(GameImages.OBJ_TREE);
-      else return null;
-    });
+    if (isgraveyard) {
+      // C# `:5589-5615`. The tree roll is *reused* as a grave-or-tree roll and a
+      // second roll picks the stone, which is why a graveyard has far more
+      // tombstones than a park has trees. `roll(0, 10)` is half-open, so `case 0`
+      // is 10%, cases 1-6 are 60% plain and 7-9 are 30% cross, and the `default`
+      // is unreachable -- kept because the C# has it and because a future `roll`
+      // that gains an arm should fail loudly rather than silently place nothing.
+      this.mapObjectFill(map, b.insideRect, () => {
+        if (!this.m_DiceRoller.rollChance(PARK_GRAVE_OR_TREE_CHANCE)) return null;
+        switch (this.m_DiceRoller.roll(0, 10)) {
+          case 0:
+            return this.makeObjParkTree(this.m_DiceRoller);
+          case 1:
+          case 2:
+          case 3:
+          case 4:
+          case 5:
+          case 6:
+            return this.makeObjTombstone(GameImages.OBJ_PLAIN_TOMBSTONE);
+          case 7:
+          case 8:
+          case 9:
+            return this.makeObjTombstone(GameImages.OBJ_CROSS_TOMBSTONE);
+          default:
+            return null;
+        }
+      });
+    } else {
+      this.mapObjectFill(map, b.insideRect, () => {
+        const placeTree = this.m_DiceRoller.rollChance(PARK_TREE_CHANCE);
+        if (placeTree) return this.makeObjTree(GameImages.OBJ_TREE);
+        else return null;
+      });
 
-    this.mapObjectFill(map, b.insideRect, () => {
-      const placeBench = this.m_DiceRoller.rollChance(PARK_BENCH_CHANCE);
-      if (placeBench) return this.makeObjBench(GameImages.OBJ_BENCH);
-      else return null;
-    });
+      this.mapObjectFill(map, b.insideRect, () => {
+        const placeBench = this.m_DiceRoller.rollChance(PARK_BENCH_CHANCE);
+        if (placeBench) return this.makeObjBench(GameImages.OBJ_BENCH);
+        else return null;
+      });
+    }
 
     ///////////////
     // 3. Entrance
@@ -2275,17 +2370,28 @@ export class BaseTownGenerator extends BaseMapGenerator {
     ////////////
     // 4. Items
     ////////////
-    this.itemsDrop(
-      map,
-      b.insideRect,
-      (pt) => map.getMapObjectAt(pt.x, pt.y) === null && this.m_DiceRoller.rollChance(PARK_ITEM_CHANCE),
-      () => this.makeRandomParkItem()
-    );
+    //
+    // C# `:5642` wraps this and the shed in `if (!isgraveyard)` with the comment
+    // "only add stuff to parks". A playground full of softballs and a garden shed
+    // are not what a graveyard is for.
+    //
+    // The gate is on the *calls*, not inside them, and that is load-bearing: the
+    // C#'s `RollChance(PARK_ITEM_CHANCE)` is not taken at all for a graveyard, and
+    // a taken-and-discarded die moves every roll after it. Skip the call and the
+    // stream is right; enter the call and throw the result away and it is not.
+    if (!isgraveyard) {
+      this.itemsDrop(
+        map,
+        b.insideRect,
+        (pt) => map.getMapObjectAt(pt.x, pt.y) === null && this.m_DiceRoller.rollChance(PARK_ITEM_CHANCE),
+        () => this.makeRandomParkItem()
+      );
+    }
 
     ///////////
     // 5. Zone
     ///////////
-    const parkZone = this.makeUniqueZone('Park', b.buildingRect);
+    const parkZone = this.makeUniqueZone(isgraveyard ? 'Graveyard' : 'Park', b.buildingRect);
     map.addZone(parkZone);
     this.makeWalkwayZones(map, b);
 
@@ -2293,7 +2399,7 @@ export class BaseTownGenerator extends BaseMapGenerator {
     ////////////
     // 5. Shed?
     ////////////
-    if (b.insideRect.width > PARK_SHED_WIDTH + 2 && b.insideRect.height > PARK_SHED_HEIGHT + 2) {
+    if (!isgraveyard && b.insideRect.width > PARK_SHED_WIDTH + 2 && b.insideRect.height > PARK_SHED_HEIGHT + 2) {
       if (this.m_DiceRoller.rollChance(PARK_SHED_CHANCE)) {
         // roll shed pos - dont put next to park fences!
         const shedX = this.m_DiceRoller.roll(b.insideRect.left + 1, b.insideRect.right - PARK_SHED_WIDTH);
@@ -2310,6 +2416,31 @@ export class BaseTownGenerator extends BaseMapGenerator {
 
     // Done.
     return true;
+  }
+
+  /**
+   * C# `MakeObjParkTree(DiceRoller)` — `BaseMapGenerator.cs:530`, Release 7-3.
+   *
+   * Four tree sprites where the old `makeObjTree` had one. The roll is on the
+   * district's `DiceRoller`, not a fresh one, so it moves the stream exactly where
+   * the C#'s does.
+   */
+  protected makeObjParkTree(roller: DiceRoller): MapObject {
+    return this.makeObjTree(PARK_TREES[roller.roll(0, PARK_TREES.length)]!);
+  }
+
+  /**
+   * C# `MakeObjTombstone(string)` — `BaseMapGenerator.cs:979`, made static in
+   * Release 5-7. `IsMaterialTransparent` and `JumpLevel = 1` are the two that
+   * matter: a body should not stop at a headstone, and a headstone should be see-
+   * and shoot-over.
+   */
+  protected makeObjTombstone(imageId: string): MapObject {
+    const grave = new MapObject('tombstone', imageId);
+    grave.isMaterialTransparent = true;
+    grave.jumpLevel = 1;
+    grave.standOnFovBonus = true;
+    return grave;
   }
 
   makeParkShedBuilding(map: GameMap, baseZoneName: string, shedBuildingRect: Rect): void {

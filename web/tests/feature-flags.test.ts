@@ -172,11 +172,12 @@ describe("Feature registry is wired", () => {
                  "FireExtinguishers", "FireStation", "Fishing", "Fishing",
                  "Fishing", "Fishing", "Fishing", "Fishing", "FoodPoisoning",
                  "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-                 "FoodPoisoning", "FoodPoisoning", "ItemDespawn",
-                 "ItemDespawn", "Junkyard", "Junkyard", "Library", "Library",
-                 "LightPriority", "ResourcesAvailability",
+                 "FoodPoisoning", "FoodPoisoning", "Graveyard", "Graveyard",
+                 "ItemDespawn", "ItemDespawn", "Junkyard", "Junkyard",
+                 "Library", "Library", "LightPriority",
                  "ResourcesAvailability", "ResourcesAvailability",
-                 "SiphonFuel", "SiphonFuel", "TileFires", "WeaponWeight"]);
+                 "ResourcesAvailability", "SiphonFuel", "SiphonFuel",
+                 "TileFires", "WeaponWeight"]);
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     // `Alcohol`'s *first* reader is now in `RogueGame` (the per-turn decay), and
     // the harness line is one of six rather than the only one.

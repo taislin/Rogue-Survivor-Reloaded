@@ -1378,7 +1378,7 @@ Stages 4 and 5 have not started.
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
 | **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles, 90 of 95 items and all 123 item factories done.** The 5 backpacks (a new mechanic) and ~420 unused `GameImages` constants are the only content left; nothing *calls* the new factories yet, which is placement and belongs to Stage 4/5 |
-| **4** | 37 gated features | **26 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (both halves), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`, `TileFires`, `FireExtinguishers`, `Butchering`, `ResourcesAvailability`, `DifficultyAtCreation`, `Fishing` (player path only — the NPC arm is still pending, see its section), `ExtendedAudio` (the 180-pair table; 3 of 180 call sites wired, see its section), `AmbientAudio` (**5 of its 13 tracks** — the channel and the table are done; the 5 helicopter / 2 church / 1 debug tracks are not, see its section). 18 remain |
+| **4** | 37 gated features | **27 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (both halves), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`, `TileFires`, `FireExtinguishers`, `Butchering`, `ResourcesAvailability`, `DifficultyAtCreation`, `Fishing` (player path only — the NPC arm is still pending, see its section), `ExtendedAudio` (the 180-pair table; 3 of 180 call sites wired, see its section), `AmbientAudio` (**5 of its 13 tracks** — the channel and the table are done; the 5 helicopter / 2 church / 1 debug tracks are not, see its section). 18 remain |
 | **5** | content, audio, credits | **started** — `ExtendedAudio`'s table and assets are in; the ambients channel, the 15 building generators and the credits page are not |
 
 Two things a later session should not have to re-derive:
@@ -3211,6 +3211,7 @@ zero precisely because of the dump-every-own-field design.
 | `Activity` +19 | enum | 0 | cosmetic labels, but they become load-bearing: `CivilianAI` filters trade partners on `isFightingOrFleeing` |
 | 7 new `PlayerCommand`s | enum — **append only** | 0 | bury, cook, destroy item, make fire, unload ammo, inspection mode, swap inventory |
 | `ExtendedAudio` | none (constants + a `Record` per id) | 0 | **table DONE** — 180 pairs in `GameSounds`/`SOUND_FILES`, 182 `.ogg` copied into `assets/sfx/`, generated from `GameSounds.cs` by `scripts/port-game-sounds.py` rather than transcribed. **3 call sites wired** (the two `Fishing` sounds §5.6e deferred, and `DoEatCorpse`'s id choice). The other 177 need the distance model — see its section |
+| `Graveyard` | none — a `bool isgraveyard` on `makeParkBuilding` | ~0 new lines | **DONE** — three in-method branches (graves vs trees/benches, the `Graveyard` zone name, "only add stuff to parks") and a new band in the green cascade. No new method, because the C# added none |
 | `Clinic` | new `makeClinicBuilding` | ~178 C# lines | **DONE** — `case 2` of the shared `roll(0, 4)`. Twelve factories re-declared privately, the largest set of the seven |
 | `Library` | new `makeLibraryBuilding` | ~278 C# lines | **DONE** — its own pass *before* the cascade (the C#'s `if` sits above the `switch`, not in it), so it takes no dispatch roll. The C#'s `IsSanityEnabled` gate is not ported: the port has no such option, and the option's default is the only representable state |
 | `Junkyard` | new `makeJunkyard` | ~147 C# lines | **DONE** — the trailing arm of the C#'s parks `Roll(0, 99)` green cascade, so it takes that die as a parameter. Two C# quirks transliterated rather than fixed: its three roller doors are always refused (the perimeter is already chain-wire fence) and its `DECO_JUNKYARD` is unreachable |
@@ -3237,6 +3238,44 @@ runs per seed, one per ruleset, both required to terminate (§4.3's harness) —
 likely to upset, because turning mechanics on for one mode can produce an AI
 cycle the other mode never had.
 
+> ### `Graveyard` — the cheapest feature on the board, and not for the reason expected
+>
+> Still Alive, Release 4. The fork did not add a graveyard *building*. It added a
+> `bool isgraveyard` to `MakeParkBuilding` and branched inside it three times. So
+> there is no new method, no new roll and no new pass — the whole feature is three
+> conditionals and six `GameImages` constants, and the only reason it took any work
+> at all is that "three conditionals" is exactly the kind of thing that gets
+> half-done.
+>
+> The three branches: the fill is graves and park trees instead of trees and
+> benches; the zone is `Graveyard` rather than `Park`; and the park-only items and
+> shed are skipped ("only add stuff to parks"). The last one is gated on the
+> *calls*, not inside them, because the C#'s `RollChance(PARK_ITEM_CHANCE)` is not
+> taken at all for a graveyard — a taken-and-discarded die moves every roll after it.
+>
+> The graveyard band is `10..19` of the green region's one `Roll(0, 99)`, and it
+> shares that die with the park, the farm, the animal shelter and the junkyard. The
+> test pins the band table and asserts the bands are disjoint, which is the only
+> reason the port may test the graveyard band *before* handing the roll to the
+> junkyard and still agree with the C#'s ordered `if/else` chain.
+>
+> **A C# off-by-one, ported as written.** The farm's upper bound is `rolled < 64`,
+> not `< 65`, so the value 64 satisfies no arm and falls to the junkyard: the
+> junkyard gets 11% and the farm 34% against the comments' "35% / 10%". Transcribed
+> rather than corrected, because the bands are a hand-tuned distribution and a
+> one-point "fix" is invisible in a test and unarguable in a diff. Farm is still
+> pending, so this is where it gets decided.
+>
+> Two pre-existing divergences in `makeParkBuilding` are deliberately **not**
+> touched, because they are conformance debt rather than graveyard work and fixing
+> them would change every park in every Classic world: the port still runs the
+> perimeter fence (the C# removed park fences in Release 7-3 and left the
+> graveyard's iron railing inside a commented-out block) and the entrance face (the
+> C# has it under `if (isgraveyard)`, the port runs it for both). The port is also
+> behind on the C#'s Release 7-3 changes to the same method — the pond, the fishing
+> rod it drops, and the fire barrel. All of that is one `makeParkBuilding`
+> conformance job, and it is not this feature.
+>
 > ### Two foundations, no features — the noise-distance model and the fork's animals
 >
 > Two subsystems landed that are **not** `Feature`s and carry no gate, because both

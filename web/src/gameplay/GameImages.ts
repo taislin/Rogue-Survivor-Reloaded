@@ -784,6 +784,18 @@ export class GameImages {
   static readonly OBJ_FIRE_TRUCK_NS_BACK = "MapObjects/fire_truck_NS_back";
   static readonly OBJ_FIRE_TRUCK_NS_FRONT = "MapObjects/fire_truck_NS_front";
 
+  // ── Feature.Graveyard ───────────────────────────────────────────────────
+  //
+  // A graveyard is not its own generator: the C# passes `isgraveyard` into
+  // `MakeParkBuilding` and branches three times inside it. Only the tombstones
+  // are new art; the trees it reuses are the four park trees below.
+  static readonly OBJ_PLAIN_TOMBSTONE = "MapObjects/plain_tombstone";
+  static readonly OBJ_CROSS_TOMBSTONE = "MapObjects/cross_tombstone";
+  static readonly OBJ_TREE1 = "MapObjects/tree1";
+  static readonly OBJ_TREE2 = "MapObjects/tree2";
+  static readonly OBJ_TREE3 = "MapObjects/tree3";
+  static readonly OBJ_TREE4 = "MapObjects/tree4";
+
   // ── Effects & Misc ────────────────────────────────────────────────────────
   static readonly EFFECT_BARRICADED = "Effects/barricaded";
   static readonly EFFECT_ONFIRE = "Effects/onFire";

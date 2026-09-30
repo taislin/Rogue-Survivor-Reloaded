@@ -199,7 +199,6 @@ const PENDING_WIRING: Readonly<Partial<Record<string, Stage>>> = {
   HelicopterRescue: 4,
   BlackOpsRaid: 4,
   CHARResearchRaid: 4,
-  Graveyard: 5,
   Farm: 5,
   FuelStation: 5,
   AnimalShelter: 5,
