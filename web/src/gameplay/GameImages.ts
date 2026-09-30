@@ -239,6 +239,8 @@ export class GameImages {
   static readonly DECO_SHOP_PHARMACY = "Tiles/Decoration/shop_pharmacy";
   static readonly DECO_SHOP_SPORTSWEAR = "Tiles/Decoration/shop_sportswear";
   static readonly DECO_SHOP_HUNTING = "Tiles/Decoration/shop_hunting";
+  /** `Feature.FuelStation`. C# `GameImages.cs`, the two `midX +/- 2` signboards. */
+  static readonly DECO_SHOP_FUEL_STATION = "Tiles/Decoration/shop_fuel_station";
   static readonly DECO_CHAR_OFFICE = "Tiles/Decoration/char_office";
   static readonly DECO_CHAR_FLOOR_LOGO = "Tiles/Decoration/char_floor_logo";
   static readonly DECO_CHAR_POSTER1 = "Tiles/Decoration/char_poster1";
@@ -632,6 +634,13 @@ export class GameImages {
   static readonly ITEM_SMALL_MEDIKIT = "Items/item_small_medikit";
   static readonly ITEM_SMOKE_GRENADE = "Items/item_smoke_grenade";
   static readonly OBJ_FUEL_PUMP = "MapObjects/fuel_pump";
+  /**
+   * `Feature.FuelStation`. C# `GameImages.cs` `OBJ_FUEL_PUMP_BROKEN`, the wreck
+   * `ExplodeFuelPump` (`RogueGame.cs:20128`) drops where the intact pump stood.
+   */
+  static readonly OBJ_FUEL_PUMP_BROKEN = "MapObjects/fuel_pump_broken";
+  /** `Feature.FuelStation`. The `Super: 1.17, Regular: 1.14` board, C# `:2851`. */
+  static readonly OBJ_FUEL_PRICE_BOARD = "MapObjects/fuel_price_board";
   static readonly ITEM_HOCKEY_STICK = "Items/item_hockey_stick";
   static readonly ITEM_KATANA = "Items/item_katana";
   static readonly ITEM_KEYBOARD = "Items/item_keyboard";

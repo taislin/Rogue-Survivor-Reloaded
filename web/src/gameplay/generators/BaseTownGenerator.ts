@@ -39,6 +39,7 @@ import { BaseMapGenerator } from './BaseMapGenerator';
 import { makeBarBuilding } from './BarBuilding';
 import { makeBankBuilding } from './buildings/makeBankBuilding';
 import { makeFireStationBuilding } from './buildings/makeFireStationBuilding';
+import { makeFuelStationBuilding } from './buildings/makeFuelStationBuilding';
 import { makeJunkyard } from './buildings/makeJunkyard';
 import { makeAnimalShelterBuilding } from './buildings/makeAnimalShelterBuilding';
 import { makeClinicBuilding } from './buildings/makeClinicBuilding';
@@ -228,6 +229,7 @@ export class BaseTownGenerator extends BaseMapGenerator {
 
       mapObjectPlace: (map, x, y, mapObj) => this.mapObjectPlace(map, x, y, mapObj),
       mapObjectFill: (map, rect, createFn) => this.mapObjectFill(map, rect, createFn),
+      makeObjFuelPump: (fuelPumpImageID) => this.makeObjFuelPump(fuelPumpImageID),
       mapObjectPlaceInGoodPosition: (map, rect, isGoodPosFn, roller, createFn) =>
         this.mapObjectPlaceInGoodPosition(map, rect, isGoodPosFn, roller, createFn),
       decorateOutsideWalls: (map, rect, decoFn) => this.decorateOutsideWalls(map, rect, decoFn),
@@ -246,6 +248,7 @@ export class BaseTownGenerator extends BaseMapGenerator {
 
       makeUniqueZone: (basename, rect) => this.makeUniqueZone(basename, rect),
       makeWalkwayZones: (map, b) => this.makeWalkwayZones(map, b),
+      makeShopGeneralItem: () => this.makeShopGeneralItem(),
       addExit: (from, fromPosition, to, toPosition, exitImageID, isAnAIExit) =>
         this.addExit(from, fromPosition, to, toPosition, exitImageID, isAnAIExit),
       barricadeDoors: (map, rect, barricadeLevel) => this.barricadeDoors(map, rect, barricadeLevel),
@@ -432,27 +435,32 @@ export class BaseTownGenerator extends BaseMapGenerator {
 
     // parks.
     //
-    // The C#'s parks region (`BaseTownGenerator.cs:546-591`) is a `foreach` whose
+// The C#'s parks region (`BaseTownGenerator.cs:546-591`) is a `foreach` whose
     // *one* `RollChance(m_Params.ParkBuildingChance)` per block gates four things
     // in order: the two sports courts, the fuel station, the fire station, and
     // then a `Roll(0, 99)` cascade over park/farm/shelter/graveyard/junkyard.
-    // The courts are `Feature.SportsCourts` and the fuel station is
-    // `Feature.FuelStation`, both still pending, so `makeParkBuilding` is the
-    // only arm the port can run — and the fire station is folded in here, *ahead*
-    // of it, so a block the C# would have given a fire station is not given to a
-    // park first.
+    // The courts are `Feature.SportsCourts` and still pending, so the fuel station
+    // is the first arm that exists, then the fire station -- folded in *ahead* of
+    // the cascade, so a block the C# would have given a fire station is not given
+    // to a park first.
     //
-    // **It is folded in rather than given a pass of its own at the seam, and the
-    // reason is the shared die.** A pass that rolled `parkBuildingChance` for
+    // **They are folded in rather than given passes of their own at the seam, and
+    // the reason is the shared die.** A pass that rolled `parkBuildingChance` for
     // itself would spend a second one per block, and would be offered the blocks
-    // that *lost* the first one — the C# never offers it those. The rewrite below
+    // that *lost* the first one -- the C# never offers it those. The rewrite below
     // is the same number of `rollChance` calls in the same order as the `&&` it
     // replaces, so the district's dice stream is untouched; see
     // `makeFireStationBuilding`'s header for the C# side of this.
     completedBlocks.length = 0;
     for (const b of emptyBlocks) {
       if (!this.m_DiceRoller.rollChance(this.m_Params.parkBuildingChance)) continue;
-      if (this.makeFireStation(map, b)) completedBlocks.push(b);
+      // The fuel station is the second arm of the C#'s `&&` chain and the first
+      // thing in it that exists in the port. It is here, between the courts (not
+      // yet ported) and the fire station, rather than in a pass of its own for the
+      // reason in `makeFireStation`'s header: it shares this loop's single
+      // `RollChance` and must not be offered a block that lost it.
+      if (this.makeFuelStation(map, b)) completedBlocks.push(b);
+      else if (this.makeFireStation(map, b)) completedBlocks.push(b);
       else if (this.makeParkBuilding(map, b)) completedBlocks.push(b);
     }
     for (const b of completedBlocks) {
@@ -553,6 +561,48 @@ export class BaseTownGenerator extends BaseMapGenerator {
    */
   protected makeFireStation(map: GameMap, b: Block): boolean {
     return makeFireStationBuilding(this.buildingContext(map, b));
+  }
+
+  // ── Fuel station ──────────────────────────────────────────────────────────
+
+  /**
+   * One fuel station per district while the district is under the map-wide cap.
+   * C# `BaseTownGenerator.cs:557` and `:2811` `MakeFuelStation`:
+   *
+   * ```csharp
+   * int fuelStationsPlaced = 0;                                        // :548
+   * …
+   *     if (!MakeTennisCourt(map, b) && !MakeBasketballCourt(map, b))
+   *     {
+   *         if (MakeFuelStation(map, b, fuelStationsPlaced))            // :557
+   *         {
+   *             ++fuelStationsPlaced;
+   *             goto Completed;
+   *         }
+   * ```
+   *
+   * A `protected` method and not an inline `if` in `generate()` for the reason
+   * `makeFireStation` is one: the gate has to be *testable as a no-op*. Overriding
+   * it away is a generator with the building genuinely removed, and a Classic
+   * district from one has to be byte-identical to a Classic district from the real
+   * class -- which can only happen if nothing here, rolls included, runs under
+   * Classic. See `tests/fuel-station-building.test.ts`.
+   *
+   * **It takes the parks region's die, not one of its own.** Like the fire station
+   * it is a bare `if` inside the `&&` chain that `RollChance(ParkBuildingChance)`
+   * gates, and it is reached for every block that got past the two sports courts.
+   * The only roll it spends is its own door side (`:2839`), and that comes after
+   * the suitability return, so a block the C# declines costs the district nothing
+   * here either.
+   *
+   * The counter is *not* in this class. The C#'s `fuelStationsPlaced` resets per
+   * district (`:548` is inside the parks region, inside the district loop) while
+   * its cap comes from the whole map's `Width`, and the two halves only make sense
+   * together; `./makeFuelStationBuilding` keeps both, keyed on the district's
+   * roller, which is the lifetime the C#'s local had.
+   */
+  protected makeFuelStation(map: GameMap, b: Block): boolean {
+    return makeFuelStationBuilding(this.buildingContext(map, b));
   }
 
   // ── Junkyard ──────────────────────────────────────────────────────────────

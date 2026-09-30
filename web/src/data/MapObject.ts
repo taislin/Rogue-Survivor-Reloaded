@@ -25,6 +25,8 @@ export const enum MapObjectFlags {
   IS_MOVABLE = 1 << 7,
   BREAKS_WHEN_FIRED_THROUGH = 1 << 8,
   STANDON_FOV_BONUS = 1 << 9,
+  /** C# `Data/MapObject.cs:47`, Release 5-4. Bit 10, the next the C# uses. */
+  IS_METAL = 1 << 10,
 }
 
 export class MapObject {
@@ -113,6 +115,30 @@ export class MapObject {
 
   get standOnFovBonus(): boolean { return (this.flags & MapObjectFlags.STANDON_FOV_BONUS) !== 0; }
   set standOnFovBonus(v: boolean) { this.setFlag(MapObjectFlags.STANDON_FOV_BONUS, v); }
+
+  /**
+   * C# `Data/MapObject.cs:173-177`, Release 5-4.
+   *
+   * The port had no such field until `Feature.FuelStation`, which is the first
+   * generator to place an object whose C# factory sets it and whose *behaviour*
+   * reads it: `RogueGame.cs:22607` picks the metal break SFX, `:22739`/`:22754`
+   * the metal push/pull SFX, `:22209`/`:22238` the metal door SFX, and
+   * `Rules.cs:2612` refuses to barricade an intact metal door.
+   *
+   * **It does not affect fire spread or damage**, which is the thing worth writing
+   * down: the map-object fire loop at `RogueGame.cs:6739-6748` iterates only
+   * `Campfire`, `Barrel` and `Car`, and the blast path at `:19975` gates on
+   * `IsBreakable`. A fuel pump is `UNINFLAMMABLE` and 800 HP, so it is invisible
+   * to both. What a pump's `isMetal` buys is sound. The remaining two readers are
+   * `DoorWindow`-only and a pump never reaches them.
+   *
+   * The four building generators that had a reason to want this and left it off
+   * pending FuelStation -- `makeBankBuilding`'s safes, `makeClinicBuilding`,
+   * `makeFireStationBuilding`, `makeAnimalShelterBuilding` -- all documented the
+   * omission as belonging here, so this is that field landing.
+   */
+  get isMetal(): boolean { return (this.flags & MapObjectFlags.IS_METAL) !== 0; }
+  set isMetal(v: boolean) { this.setFlag(MapObjectFlags.IS_METAL, v); }
 
   get weight(): number { return this._weight; }
   set weight(v: number) { this._weight = Math.max(1, v); }

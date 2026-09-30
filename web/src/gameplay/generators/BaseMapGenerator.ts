@@ -525,18 +525,77 @@ export abstract class BaseMapGenerator extends MapGenerator {
    * for a 3x1 patch, and the C#'s own comments calling it 4x2 are stale from
    * before Release 7-3 shrank it.
    *
-   * **`IsMetal` is not set.** The port's `MapObject` has no such property: it
-   * arrived in Release 5-4 to pick a push/break sound effect
-   * (`RogueGame.cs:22607`, `:22739`), neither of which the port has. It is also
-   * unreachable for this object — a helicopter is neither movable nor breakable,
-   * so nothing ever asks what it is made of.
+   * **`IsMetal` is set**, since `Feature.FuelStation` brought the field to the
+   * port (`Data/MapObject.ts`, Release 5-4). C# `BaseMapGenerator.cs:1101` does
+   * set it here; the omission was the field's absence and not a reading of the
+   * C#. It only reaches the push/break sound effects (`RogueGame.cs:22607`,
+   * `:22739`), and it is not fire or damage: the helicopter is UNBREAKABLE and
+   * not walkable, so nothing ever asks what it is made of.
    *
    * Nothing else: UNBREAKABLE and not walkable, so the three tiles are walls the
    * player bumps into rather than floors they step onto, which is what puts them
    * inside `DoPlayerBump`'s special cases where the C# asks to board.
    */
   public makeObjHelicopter(heliImageID: string): MapObject {
-    return new MapObject('helicopter', heliImageID);
+    const heli = new MapObject('helicopter', heliImageID);
+    heli.isMetal = true;
+    return heli;
+  }
+
+  /**
+   * C# `MakeObjFuelPump(string)` — `BaseMapGenerator.cs:1105`, Release 7-1.
+   *
+   * The 800 hitpoints are `DoorWindow.BASE_HITPOINTS * 20` (40 * 20). The
+   * multiplication is the C#'s own way of writing "twenty doors' worth of
+   * scenery", and it is load-bearing rather than decorative: a neighbouring
+   * fuel pump's blast does at most 100 (`RogueGame.cs:19990`), so **no pump can
+   * ever break another pump by hitpoints.** Pump-to-pump propagation in the
+   * reference is entirely the tile-fire adjacency arm at `RogueGame.cs:24634`,
+   * which is the arm `Feature.TileFires` still owes.
+   *
+   * `Fire.UNINFLAMMABLE` with a pump that explodes looks contradictory and is not:
+   * nothing sets a map object alight and waits, `ExplodeFuelPump`
+   * (`RogueGame.cs:20123`) fires on sight of a trigger, and the C# detects a pump
+   * by `ImageID == GameImages.OBJ_FUEL_PUMP` in six places rather than by any fire
+   * state. There is no `Fire.EXPLOSIVE`; the enum has four members
+   * (`Data/MapObject.cs:24-31`) and this is the default one.
+   *
+   * `IsMetal` is sound only — see the header on `MapObject.isMetal`.
+   */
+  public makeObjFuelPump(fuelPumpImageID: string): MapObject {
+    const pump = new MapObject(
+      'fuel pump',
+      fuelPumpImageID,
+      MapObjectBreak.BREAKABLE,
+      MapObjectFire.UNINFLAMMABLE,
+      DoorWindow.BASE_HITPOINTS * 20
+    );
+    pump.isMetal = true;
+    return pump;
+  }
+
+  /**
+   * C# `MakeObjFuelPumpBroken(string)` — `BaseMapGenerator.cs:1113`, Release 7-3.
+   *
+   * `public` in the C# and in here, because `ExplodeFuelPump`
+   * (`RogueGame.cs:20128`) reaches it through `m_TownGenerator` rather than
+   * through the base class, and that is the only caller in the reference.
+   *
+   * The two-argument constructor leaves `HitPoints` at 0: `MapObject`'s guard
+   * (`MapObject.ts:58`, mirroring `Data/MapObject.cs:279`) only assigns the
+   * hitpoints when the object is breakable or burnable, and this is neither.
+   *
+   * **So the wreck is permanent, and that is the C#, not an oversight.** 0 HP
+   * would make it destructible if anything damaged it, but the blast path gates
+   * on `obj.IsBreakable` at `RogueGame.cs:19975` and this is UNBREAKABLE, so it
+   * is skipped there; and `DoBreak` needs something to walk it into. It also
+   * keeps `isWalkable` false and `isTransparent` false, so a detonated pump is
+   * opaque, solid map furniture for the rest of the game. The C# never clears it.
+   */
+  public makeObjFuelPumpBroken(fuelPumpBrokenImageID: string): MapObject {
+    const wreck = new MapObject('exploded fuel pump', fuelPumpBrokenImageID);
+    wreck.isMetal = true;
+    return wreck;
   }
 
   protected makeObjIronGate(gateImageID: string, isBreakable: boolean = true): MapObject {

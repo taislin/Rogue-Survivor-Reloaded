@@ -2713,7 +2713,18 @@ plan for rather than discover:
 >   was never ported — the same gap blocking `ResourcesAvailability`'s fruit
 >   interval. The tile is marked flammable so fire spreads there correctly; only
 >   the harvest loss is missing.
-> - **Fuel-pump explosions** need `Feature.FuelStation`.
+> - **Fuel-pump explosions** needed `Feature.FuelStation`, which has now landed —
+>   the pump model (`makeObjFuelPump`, 800 HP, `BREAKABLE`, `UNINFLAMMABLE`,
+>   `isMetal`) and its wreck (`makeObjFuelPumpBroken`, `UNBREAKABLE` at 0 HP and so
+>   permanent) are on `BaseMapGenerator` and on the seam. **The arm itself is still
+>   unwired**: `ExplodeFuelPump` (`RogueGame.cs:20123`) and the `SetTileOnFire`
+>   adjacency check (`:24634-24642`) that detonates a pump on or beside any tile
+>   that catches fire. That check is the *only* way one pump sets another off —
+>   a pump's 800 HP is more than the 100 a neighbouring blast deals, so
+>   `ExplosionChainReactionMapObjects` (`:20110`) never fires for a healthy pump.
+>   `Feature.SiphonFuel`'s player half already recognises `OBJ_FUEL_PUMP`
+>   (`RogueGame.ts:23475`) and is unaffected; what is missing is everything that
+>   makes a pump go boom.
 >
 > No renderer change was needed: the port already draws tile decorations, and
 > `EFFECT_ONFIRE` is one.
@@ -3223,6 +3234,7 @@ zero precisely because of the dump-every-own-field design.
 | `Library` | new `makeLibraryBuilding` | ~278 C# lines | **DONE** — its own pass *before* the cascade (the C#'s `if` sits above the `switch`, not in it), so it takes no dispatch roll. The C#'s `IsSanityEnabled` gate is not ported: the port has no such option, and the option's default is the only representable state |
 | `Junkyard` | new `makeJunkyard` | ~147 C# lines | **DONE** — the trailing arm of the C#'s parks `Roll(0, 99)` green cascade, so it takes that die as a parameter. Two C# quirks transliterated rather than fixed: its three roller doors are always refused (the perimeter is already chain-wire fence) and its `DECO_JUNKYARD` is unreachable |
 | `FireStation` | new `makeFireStationBuilding` | ~176 C# lines | **DONE** — folded into the parks loop, because the C# offers it only to blocks that already passed `RollChance(parkBuildingChance)`. **C# bug ported as fixed:** `:547` initialises `fireStationPlaced = true`, which makes `MakeFireStation` unreachable in the reference; the `//only one per district` comment says the intent, and the intent needs `false`. Placing no fuel pump — that belongs to `Feature.FuelStation` |
+| `FuelStation` | new `makeFuelStationBuilding` + `MapObject.isMetal` + `makeObjFuelPump`/`makeObjFuelPumpBroken` | ~369 C# lines (`:2811-3179`) + `BaseMapGenerator.cs:1105-1119` | **DONE** — second arm of the parks `&&` chain (`:557`), between the two sports courts and the fire station, folded into the parks loop for the shared-die reason the fire station is. 3 `GameImages` constants. **`isMetal` landed with it**, which is what `makeBankBuilding`'s safes, `makeClinicBuilding`, `makeFireStationBuilding` and `makeAnimalShelterBuilding` had each documented as waiting on; the helicopter (`:1101`) sets it too and now can. Three quirks preserved: `:2820`'s `Math.Round(((double)(map.Width / 10)) / 2.5)` is **integer** division before the cast (width 115 caps at 4, not 5); the counter resets per district while the cap reads whole-map width; and **both `doorside` switches have no `case 4` and no default, which is unreachable rather than a fifth side** — `DiceRoller.Roll` is `Random.Next(min, max)` and exclusive of max, so `Roll(0, 4)` is `[0, 4)`. Two seam additions (`makeObjFuelPump`, `makeShopGeneralItem`). **TileFires' fuel-pump arm is still owed** — `ExplodeFuelPump` (`RogueGame.cs:20123`) and the `SetTileOnFire` adjacency check (`:24634`) that is the *only* way one pump detonates another, since a pump's 800 HP survives any blast |
 | `Church` | new `makeChurchBuilding` | ~200 C# lines | **DONE** — a `rollChance(10)` pass at the C#'s stage, 9 `GameImages` constants, `UNIQUE_BOOK_OF_ARMAMENTS = 171` appended, `Map.hasChurch` |
 | `Bank` | new `makeBankBuilding` | ~238 C# lines | **DONE** — `case 1` of the shared `roll(0, 4)` cascade, 5 `GameImages` constants |
 | `Bar` | new `BarBuilding` | ~282 C# lines | **DONE** — `case 0` of the same cascade, 5 `GameImages` constants. The C#'s alcohol drops are **not** ported: they roll `m_Game.Rules`, not the district roller, and need `LIQUOR_AMBER`/`LIQUOR_CLEAR`, which the port has never appended |

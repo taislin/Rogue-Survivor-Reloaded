@@ -170,30 +170,12 @@ describe("Feature registry is wired", () => {
     // Asserting the exact multiset means a new reader has to be added here, which
     // is the point: a reader is a decision, not an accident.
     expect(sites.map((s) => s.feature).sort())
-      .toEqual(["Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol",
-                 "Alcohol", "Alcohol", "AmbientAudio", "AmbientAudio",
-                 "AmbientAudio", "AmbientAudio", "AmbientAudio",
-                 "AmbientAudio", "AnimalShelter", "AnimalShelter",
-                 "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank", "Bar",
-                 "Bar", "Butchering", "Butchering", "Church", "Clinic",
-                 "Clinic", "Cooking", "Cooking", "DarknessFov", "DarknessFov",
-                 "DarknessFov", "DarknessGating", "DifficultyAtCreation",
-                 "DifficultyAtCreation", "ExtendedAudio", "ExtendedAudio",
-                 "ExtendedAudio", "FireBarrels", "FireBarrels",
-                 "FireExtinguishers", "FireStation", "Fishing", "Fishing",
-                 "Fishing", "Fishing", "Fishing", "Fishing", "FoodPoisoning",
-                 "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-                 "FoodPoisoning", "FoodPoisoning", "Graveyard", "Graveyard",
-                 "HelicopterRescue", "HelicopterRescue", "HelicopterRescue",
-                 "HelicopterRescue", "HelicopterRescue", "ItemDespawn",
-                 "ItemDespawn", "Junkyard", "Junkyard", "Library", "Library",
-                 "LightPriority", "ResourcesAvailability",
-                 "ResourcesAvailability", "ResourcesAvailability",
-                 "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
-                 "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
-                 "ShelterBackpacks", "ShelterBackpacks", "SiphonFuel",
-                 "SiphonFuel", "TileFires", "TileFires", "TileFires",
-                 "TileFires", "WeaponWeight"]);
+      .toEqual(["Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AnimalShelter", "AnimalShelter",
+                 "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank", "Bar", "Bar", "Butchering", "Butchering", "Church", "Clinic", "Clinic", "Cooking", "Cooking", "DarknessFov",
+                 "DarknessFov", "DarknessFov", "DarknessGating", "DifficultyAtCreation", "DifficultyAtCreation", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "FireBarrels", "FireBarrels", "FireExtinguishers", "FireStation", "Fishing", "Fishing", "Fishing",
+                 "Fishing", "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FuelStation", "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue",
+                 "HelicopterRescue", "HelicopterRescue", "ItemDespawn", "ItemDespawn", "Junkyard", "Junkyard", "Library", "Library", "LightPriority", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
+                 "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "SiphonFuel", "SiphonFuel", "TileFires", "TileFires", "TileFires", "TileFires", "WeaponWeight"]);
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     // `Alcohol`'s *first* reader is now in `RogueGame` (the per-turn decay), and
     // the harness line is one of six rather than the only one.
@@ -400,6 +382,20 @@ describe("Feature registry is wired", () => {
     const barrels = sites.filter((s) => s.feature === "FireBarrels");
     expect(barrels.filter((s) => /BaseMapGenerator\.ts/.test(s.at))).toHaveLength(1);
     expect(barrels.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(1);
+
+    // FuelStation is one reader, in the building file, and the location is the
+    // point rather than the count. The gate cannot live at the call site in
+    // `BaseTownGenerator` because the call site is the parks loop's `&&` chain
+    // (`BaseTownGenerator.ts:452-462`) -- gating there would have to wrap the
+    // `if`, and the C#'s fuel station spends a `Roll(0, 4)` of its own. Putting it
+    // as the building's first statement keeps one place to get right, and it is
+    // free to come first because the C#'s first roll is after the suitability
+    // return. Same shape as FireStation's single reader.
+    const fuelStations = sites.filter((s) => s.feature === "FuelStation");
+    expect(fuelStations).toHaveLength(1);
+    expect(fuelStations[0]!.at).toMatch(
+      /buildings\/makeFuelStationBuilding\.ts:\d+$/,
+    );
 
     // AmbientAudio is five readers in one file, and the split is the design rather
     // than an accident: **one** that decides what should be audible

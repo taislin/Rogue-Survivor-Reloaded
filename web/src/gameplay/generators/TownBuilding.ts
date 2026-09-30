@@ -285,6 +285,18 @@ export interface TownBuildingContext {
   mapObjectPlace(map: GameMap, x: number, y: number, mapObj: MapObject): void;
   /** 14 call sites; 25 in the C# buildings. */
   mapObjectFill(map: GameMap, rect: Rect, createFn: (p: Point) => MapObject | null): void;
+  /**
+   * `MakeObjFuelPump` `BaseMapGenerator.cs:1105`; 3 port call sites, the nine in
+   * the C# fuel station.
+   *
+   * On the seam rather than transcribed into the building file, unlike the
+   * factories `makeFireStationBuilding` had to copy, because this one is not
+   * only a building's: `ExplodeFuelPump` needs its broken sibling
+   * (`RogueGame.cs:20128`) and `Feature.TileFires` will need both. A second copy
+   * in a building file would be a second place for the two to disagree about
+   * 800 hitpoints.
+   */
+  makeObjFuelPump(fuelPumpImageID: string): MapObject;
   /** 17 call sites; 20 in the C# buildings. Consumes one roll when it places. */
   mapObjectPlaceInGoodPosition(
     map: GameMap,
@@ -325,6 +337,18 @@ export interface TownBuildingContext {
   makeUniqueZone(basename: string, rect: Rect): Zone;
   /** 8 call sites; 18 in the C# buildings, and every one of the 14 needs it. */
   makeWalkwayZones(map: GameMap, b: Block): void;
+  /**
+   * `MakeShopGeneralItem` `BaseTownGenerator.cs:7607`; 2 port call sites, the
+   * fuel station and the gunshop (`:3972`).
+   *
+   * Seamed rather than transcribed, and the reason is the shape of it: a
+   * `roll(0, 6)` over `makeShopPharmacyItem`, `makeShopSportsWearItem`,
+   * `makeShopConstructionItem`, `makeShopGroceryItem`, `makeHuntingShopItem` and
+   * `makeRandomBedroomItem`, all six of which are `protected` on the generator
+   * and reach its own roller. A building file has a context and no `this`, so
+   * copying it would mean copying six more factories with it.
+   */
+  makeShopGeneralItem(): Item;
   /** 20 call sites; 2 in the C# buildings (the animal shelter's stairs). */
   addExit(
     from: GameMap,
