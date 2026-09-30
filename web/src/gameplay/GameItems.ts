@@ -280,7 +280,13 @@ export enum ItemID {
    * price of not corrupting saves.
    */
   FISHING_ROD = 170,
-  _COUNT = 171,
+  /**
+   * Still Alive, Release 7-6. One of the nine `MakeItemRandomAntiqueWeapon`
+   * rolls (`BaseMapGenerator.cs:2161`), and the only one of the nine the port
+   * had no row for. Appended for the same reason as the three above.
+   */
+  UNIQUE_BOOK_OF_ARMAMENTS = 171,
+  _COUNT = 172,
 }
 
 export class GameItems implements ItemModelDB {
@@ -869,6 +875,27 @@ export class GameItems implements ItemModelDB {
     fishingRod.equipmentPart = DollPart.LEFT_HAND;
     fishingRod.dontAutoEquip = true;
     this.setModel(ItemID.FISHING_ROD, fishingRod);
+
+    // Still Alive, Release 7-6 (`GameItems.cs:2927`). Hand-written like the
+    // fishing rod: no CSV row.
+    //
+    // The one antique weapon in `MakeItemRandomAntiqueWeapon` that is not a
+    // melee weapon -- case 7 of a `Roll(0, 9)`, so a tenth of the weapons
+    // `Feature.Church` puts in a church's display cases. A plain `Item` (the
+    // C#'s `new Item(...)`), forbidden to the AI so no survivor hoards the
+    // only flavour text in the game into a backpack.
+    //
+    // The C#'s `CanGoInBackpacks` (Release 8-2) is not carried: the port's
+    // `ItemModel` has no such flag, because `Feature.ShelterBackpacks` has not
+    // built the nested inventory it would gate.
+    const bookOfArmaments = new ItemModel(
+      "Book of Armaments",
+      "Books of Armaments",
+      GameImages.ITEM_UNIQUE_BOOK,
+    );
+    bookOfArmaments.flavorDescription =
+      "It's open at chapter 2, verses 9 through 21.";
+    this.setModel(ItemID.UNIQUE_BOOK_OF_ARMAMENTS, bookOfArmaments);
 
     // Traps
     const trapMap: Record<string, { id: ItemID; img: string }> = {

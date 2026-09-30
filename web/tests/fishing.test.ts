@@ -189,7 +189,7 @@ describe("Feature.Fishing: the rod", () => {
     // to a *different item* rather than to a renamed one.
     expect(ItemID.FISHING_ROD).toBe(170);
     expect(ItemID.SIPHON_KIT, "the id before it is unmoved").toBe(169);
-    expect(ItemID._COUNT).toBe(171);
+    expect(ItemID._COUNT).toBe(172);
   });
 
   it("is held in the LEFT hand, which is not where a weapon goes", () => {

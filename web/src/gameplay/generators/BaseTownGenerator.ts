@@ -23,6 +23,7 @@ import { Rect } from '@engine/Rect';
 import { Rules } from '@engine/Rules';
 import { Session, UniqueActor, UniqueMap } from '@engine/Session';
 import { WorldTime } from '@engine/WorldTime';
+import { Feature, hasFeature } from '@engine/FeatureFlags';
 import { DoorWindow } from '@engine/mapobjects/MapObjects';
 import { GangAI } from '@gameplay/ai/GangAI';
 import { ActorID } from '@gameplay/GameActors';
@@ -35,13 +36,15 @@ import { GameTiles, TileID } from '@gameplay/GameTiles';
 import { SkillID } from '@gameplay/Skills';
 import { ZoneAttributes } from '@gameplay/ZoneAttributes';
 import { BaseMapGenerator } from './BaseMapGenerator';
+import { makeBarBuilding } from './BarBuilding';
+import { makeBankBuilding } from './buildings/makeBankBuilding';
+import { TOWN_BUILDING_PASSES, runTownBuildingPasses } from './TownBuilding';
+import { makeChurchBuilding } from './buildings/makeChurchBuilding';
 import {
   Block,
   Parameters,
-  TOWN_BUILDING_PASSES,
   makeWalkwayZones as makeWalkwayZonesOn,
   placeDoor as placeDoorOn,
-  runTownBuildingPasses,
 } from './TownBuilding';
 import type { TownBuildingContext, TownPlacement } from './TownBuilding';
 
@@ -103,6 +106,18 @@ const SHOP_BASEMENT_SHELF_CHANCE_PER_TILE = 5;
 const SHOP_BASEMENT_ITEM_CHANCE_PER_SHELF = 33;
 const SHOP_WINDOW_CHANCE = 30;
 const SHOP_BASEMENT_ZOMBIE_RAT_CHANCE = 5; // per tile.
+
+/**
+ * One church per ten still-empty blocks. C# `BaseTownGenerator.cs:600`, a `//10%`
+ * comment against `if (rolled >= 89)` on a `Roll(0, 99)`.
+ *
+ * Not a `Parameters` field, unlike `shopBuildingChance` and
+ * `parkBuildingChance`. Those two have a `m_Params` member in the C# to mirror
+ * (`:92-207`); the church chance is a bare literal in the dispatch, and putting
+ * it in `Parameters` would mean widening the shared seam for a number the
+ * reference does not make configurable.
+ */
+const CHURCH_BUILDING_CHANCE = 10;
 
 // ── Types ──────────────────────────────────────────────────────────────────
 export enum ShopType {
@@ -313,6 +328,56 @@ export class BaseTownGenerator extends BaseMapGenerator {
       if (index !== -1) emptyBlocks.splice(index, 1);
     }
 
+    // The C#'s business-type cascade, `BaseTownGenerator.cs:498-535`. Bar, bank,
+    // clinic and mechanic workshop are four arms of ONE `Roll(0, 4)`:
+    //
+    //   int roll2 = m_DiceRoller.Roll(0, 4);
+    //   switch (roll2) {
+    //     case 0: placed = MakeBarBuilding(...);   break;   // :511
+    //     case 1: placed = MakeBankBuilding(...);  break;   // :512
+    //     case 2: placed = MakeClinicBuilding(...);break;   // :513
+    //     case 3: placed = MakeMechanicWorkshop(...); break; // :514
+    //   }
+    //
+    // **One die, four arms.** Rolling per generator instead spends four where the
+    // C# spends one, and lets two of them claim the same block -- the exclusivity
+    // is the whole point of the switch, not a detail. Cases 2 and 3 are Clinic and
+    // the mechanic workshop; the mechanic is not a fork feature and the clinic is
+    // `Feature.Clinic`, so both arms are currently empty and fall through to the
+    // general store and then the ordinary office, exactly as an unbuilt arm does.
+    //
+    // The cascade is reached from inside the C#'s per-block business loop, which
+    // this port has no branch for: `makeCHARBuilding` always returns a type, so no
+    // block is ever *declined* and the "else" arm is empty. Hence a dedicated pass
+    // over what the CHAR loop left, at the same stage -- still ahead of the parks
+    // at `:546`.
+    //
+    // **The whole arm is gated, not just the generators inside it.** The roll is
+    // necessarily outside each gate -- that is what makes the four arms mutually
+    // exclusive -- so a gate on the arms alone would still spend one die per block
+    // under CLASSIC and change every classic world. Adding `Feature.Clinic` here
+    // is the one line its own port has to touch.
+    const cascadeEnabled =
+      hasFeature(Session.get().ruleset, Feature.Bar) ||
+      hasFeature(Session.get().ruleset, Feature.Bank);
+    if (cascadeEnabled) {
+      completedBlocks.length = 0;
+      for (const b of emptyBlocks) {
+        const roll2 = this.m_DiceRoller.roll(0, 4);
+        let placed = false;
+        if (roll2 === 0) placed = makeBarBuilding(this.buildingContext(map, b), roll2);
+        else if (roll2 === 1) placed = makeBankBuilding(this.buildingContext(map, b), roll2);
+        // case 2 is `Feature.Clinic` -- not written yet.
+        // case 3 is the mechanic workshop: vanilla, and not part of this port's
+        // `roll2` set, so it is left empty rather than transliterated. See the plan.
+        if (placed) completedBlocks.push(b);
+      }
+      for (const b of completedBlocks) {
+        const index = emptyBlocks.indexOf(b);
+        if (index !== -1) emptyBlocks.splice(index, 1);
+      }
+    }
+
     // parks.
     completedBlocks.length = 0;
     for (const b of emptyBlocks) {
@@ -325,10 +390,16 @@ export class BaseTownGenerator extends BaseMapGenerator {
       if (index !== -1) emptyBlocks.splice(index, 1);
     }
 
-    // Building generators registered in `./TownBuilding` (currently none --
-    // see TOWN_BUILDING_PASSES). Sits between the parks and the housings,
-    // which is where the C# has its "green" and "housing" stages.
+    // Building generators registered in `./TownBuilding` (currently none shipped --
+    // see TOWN_BUILDING_PASSES). Sits between the parks and the churches, which is
+    // where the C# has its "green" and "housing" stages. **Not** where the bar goes:
+    // the C# builds the bar inside the business cascade at `:511`, before the parks,
+    // so it is dispatched by the shared `roll(0, 4)` pass above instead.
     runTownBuildingPasses(TOWN_BUILDING_PASSES, emptyBlocks, (b) => this.buildingContext(map, b));
+
+    // churches. C# `BaseTownGenerator.cs:598-600` rolls for one per still-empty
+    // block and falls through to a house when the roll misses.
+    this.makeChurchBuildings(map, emptyBlocks);
 
     // all the rest is housings.
     completedBlocks.length = 0;
@@ -358,6 +429,46 @@ export class BaseTownGenerator extends BaseMapGenerator {
     // Done
     ////////
     return map;
+  }
+
+  // ── Church ────────────────────────────────────────────────────────────────
+
+  /**
+   * One church per ten still-empty blocks, and a rolled attempt for every block.
+   * C# `BaseTownGenerator.cs:598-604`.
+   *
+   * A `protected` method and not an inline `if` in `generate()` for one reason:
+   * the gate has to be *testable as a no-op*. A test that only asserts "classic
+   * produced no church" passes just as happily if the church stage ran and every
+   * roll and every block happened to decline, so it proves nothing about the
+   * dice. Overriding this method to do nothing at all is a generator with the
+   * feature genuinely removed, and a classic district generated by one is
+   * byte-identical to a classic district generated by the real class only if
+   * nothing here -- roll included -- runs under Classic. See
+   * `tests/church-building.test.ts`.
+   *
+   * The roll is inside the gate for the reason `makeObjWreckedCar` puts its fuel
+   * roll inside one (`BaseMapGenerator.ts:565-572`): a roll that is taken and
+   * discarded still moves every roll after it, and a Classic world has to stay
+   * the world it has always been.
+   */
+  protected makeChurchBuildings(map: GameMap, emptyBlocks: Block[]): void {
+    if (!hasFeature(Session.get().ruleset, Feature.Church)) return;
+
+    const built: Block[] = [];
+    for (const b of emptyBlocks) {
+      // `churchBuildingChance` is a module constant rather than a `Parameters`
+      // field: `Parameters` lives in `./TownBuilding`, which a building may not
+      // widen, and this is the one chance in the C# that has no `m_Params`
+      // behind it anyway -- `:600` is a literal `10` against a `Roll(0, 99)`.
+      if (this.m_DiceRoller.rollChance(CHURCH_BUILDING_CHANCE) && makeChurchBuilding(this.buildingContext(map, b))) {
+        built.push(b);
+      }
+    }
+    for (const b of built) {
+      const index = emptyBlocks.indexOf(b);
+      if (index !== -1) emptyBlocks.splice(index, 1);
+    }
   }
 
   // ── Sewers Map ───────────────────────────────────────────────────────────

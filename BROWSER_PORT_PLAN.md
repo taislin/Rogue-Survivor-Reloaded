@@ -1378,7 +1378,7 @@ Stages 4 and 5 have not started.
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
 | **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles, 90 of 95 items and all 123 item factories done.** The 5 backpacks (a new mechanic) and ~420 unused `GameImages` constants are the only content left; nothing *calls* the new factories yet, which is placement and belongs to Stage 4/5 |
-| **4** | 37 gated features | **19 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (both halves), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`, `TileFires`, `FireExtinguishers`, `Butchering`, `ResourcesAvailability`, `DifficultyAtCreation`, `Fishing` (player path only — the NPC arm is still pending, see its section), `ExtendedAudio` (the 180-pair table; 3 of 180 call sites wired, see its section), `AmbientAudio` (**5 of its 13 tracks** — the channel and the table are done; the 5 helicopter / 2 church / 1 debug tracks are not, see its section). 18 remain |
+| **4** | 37 gated features | **22 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (both halves), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`, `TileFires`, `FireExtinguishers`, `Butchering`, `ResourcesAvailability`, `DifficultyAtCreation`, `Fishing` (player path only — the NPC arm is still pending, see its section), `ExtendedAudio` (the 180-pair table; 3 of 180 call sites wired, see its section), `AmbientAudio` (**5 of its 13 tracks** — the channel and the table are done; the 5 helicopter / 2 church / 1 debug tracks are not, see its section). 18 remain |
 | **5** | content, audio, credits | **started** — `ExtendedAudio`'s table and assets are in; the ambients channel, the 15 building generators and the credits page are not |
 
 Two things a later session should not have to re-derive:
@@ -3211,6 +3211,9 @@ zero precisely because of the dump-every-own-field design.
 | `Activity` +19 | enum | 0 | cosmetic labels, but they become load-bearing: `CivilianAI` filters trade partners on `isFightingOrFleeing` |
 | 7 new `PlayerCommand`s | enum — **append only** | 0 | bury, cook, destroy item, make fire, unload ammo, inspection mode, swap inventory |
 | `ExtendedAudio` | none (constants + a `Record` per id) | 0 | **table DONE** — 180 pairs in `GameSounds`/`SOUND_FILES`, 182 `.ogg` copied into `assets/sfx/`, generated from `GameSounds.cs` by `scripts/port-game-sounds.py` rather than transcribed. **3 call sites wired** (the two `Fishing` sounds §5.6e deferred, and `DoEatCorpse`'s id choice). The other 177 need the distance model — see its section |
+| `Church` | new `makeChurchBuilding` | ~200 C# lines | **DONE** — a `rollChance(10)` pass at the C#'s stage, 9 `GameImages` constants, `UNIQUE_BOOK_OF_ARMAMENTS = 171` appended, `Map.hasChurch` |
+| `Bank` | new `makeBankBuilding` | ~238 C# lines | **DONE** — `case 1` of the shared `roll(0, 4)` cascade, 5 `GameImages` constants |
+| `Bar` | new `BarBuilding` | ~282 C# lines | **DONE** — `case 0` of the same cascade, 5 `GameImages` constants. The C#'s alcohol drops are **not** ported: they roll `m_Game.Rules`, not the district roller, and need `LIQUOR_AMBER`/`LIQUOR_CLEAR`, which the port has never appended |
 
 `AmmoType` +7 and `AttackKind.OTHER` and `FireMode.FLAMING` are enum growth on
 mechanic axes that are already shared — no per-pack variant needed.
@@ -3230,6 +3233,40 @@ runs per seed, one per ruleset, both required to terminate (§4.3's harness) —
 likely to upset, because turning mechanics on for one mode can produce an AI
 cycle the other mode never had.
 
+> ### The business cascade — one die, four arms
+>
+> The C# reaches the bar, the bank, the clinic and the mechanic workshop from a
+> single `Roll(0, 4)` at `BaseTownGenerator.cs:510`:
+>
+> ```
+> int roll2 = m_DiceRoller.Roll(0, 4);
+> switch (roll2) {
+>   case 0: placed = MakeBarBuilding(map, b, ref barsCount);     break;
+>   case 1: placed = MakeBankBuilding(map, b, ref banksCount);   break;
+>   case 2: placed = MakeClinicBuilding(map, b, ref clinicsCount); break;
+>   case 3: placed = MakeMechanicWorkshop(map, b, ref mechanicsCount); break;
+> }
+> ```
+>
+> Three agents ported the bar and the bank independently, each rolling its own
+> dispatch. That was a real bug and not a cosmetic one: two rolls per block where
+> the C# spends one, and — worse — the mutual exclusivity the `switch` exists to
+> provide was simply gone, so a block could be offered to both. The integration
+> now spends one die and passes it down, and `makeClinicBuilding` will be
+> `case 2` of the same switch rather than a new roll.
+>
+> Two things about the gate, both of which were got wrong first:
+>
+> - The roll has to be *outside* each generator's gate, because that is what makes
+>   the arms exclusive. Which means a gate on the arms alone is not enough: CLASSIC
+>   would still spend one die per block and every classic world would change. The
+>   whole arm is gated instead. Caught by the bank test's committed CLASSIC
+>   fingerprint, which went from `e097b9d976ffac15` to `436f2b15e06ff29d` and back.
+> - A flat `TOWN_BUILDING_PASSES` registry cannot express a stage-ordered cascade.
+>   The C# places the bar and bank *before* the parks, the church after them, and
+>   the housings last; a flat list loses that. Each building therefore gets its own
+>   pass at the C#'s stage, and the registry stays empty.
+>
 > ### Mapgen seam (`TownBuilding.ts`) — a pure move, proved rather than argued
 >
 > The 13 unported C# building generators would each add 150-300 lines to

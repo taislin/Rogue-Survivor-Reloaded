@@ -66,6 +66,30 @@ export class Map {
     this._hasFishing = value;
   }
 
+  /**
+   * Does this map have a church on it? Still Alive, Release 6-6.
+   *
+   * C# `Data/Map.cs:138` over `m_HasChurch`, and shaped exactly like
+   * {@link hasFishing} above for the same reason: the graph reader builds maps
+   * with `Object.create(Map.prototype)`, so a save written before this flag
+   * existed has no `_hasChurch` key and the getter has to supply the default.
+   *
+   * The only writer is `MakeChurchBuilding` (`BaseTownGenerator.cs:2379`), so
+   * unlike the fishing flag this one is only ever true on a surface map the
+   * town generator put a church on. The only reader -- the C#'s two church-bell
+   * ambients at sunset (`RogueGame.cs:5637`) -- is not wired yet; see
+   * `RogueGame.CheckAmbientAudio`.
+   */
+  private _hasChurch: boolean = false;
+
+  get hasChurch(): boolean {
+    return this._hasChurch ?? false;
+  }
+
+  set hasChurch(value: boolean) {
+    this._hasChurch = value;
+  }
+
   readonly localTime: WorldTime;
 
   readonly width: number;

@@ -258,6 +258,8 @@ export class GameImages {
   static readonly DECO_POWER_SIGN_BIG = "Tiles/Decoration/power_sign_big";
   static readonly DECO_POLICE_STATION = "Tiles/Decoration/police_station";
   static readonly DECO_HOSPITAL = "Tiles/Decoration/hospital";
+  // Still Alive Release 4, first reader `Feature.Bank`.
+  static readonly DECO_BANK_SIGN = "Tiles/Decoration/bank_sign";
 
   // ── Map Objects ───────────────────────────────────────────────────────────
   static readonly OBJ_TREE = "MapObjects/tree";
@@ -312,6 +314,11 @@ export class GameImages {
   static readonly OBJ_HOSPITAL_DOOR_BROKEN = "MapObjects/hospital_door_broken";
   static readonly OBJ_GARDEN_FENCE = "MapObjects/garden_fence";
   static readonly OBJ_WIRE_FENCE = "MapObjects/wire_fence";
+  static readonly OBJ_COUCH = "MapObjects/couch";
+  // Still Alive Release 4/6-5, the bank's three. `Feature.Bank` is the reader.
+  static readonly OBJ_BANK_TELLER = "MapObjects/bank_teller";
+  static readonly OBJ_BANK_SAFE_CLOSED = "MapObjects/bank_safe_closed";
+  static readonly OBJ_BANK_SAFE_OPEN = "MapObjects/bank_safe_open";
 
   // ── Actors ────────────────────────────────────────────────────────────────
   static readonly PLAYER_FOLLOWER = "Actors/player_follower";
@@ -632,6 +639,43 @@ export class GameImages {
   static readonly ITEM_SMOKE_GRENADE_PRIMED = "Items/item_smoke_grenade_primed";
   static readonly ITEM_FLASHBANG_PRIMED = "Items/item_flashbang_primed";
   static readonly ITEM_HOLY_HAND_GRENADE_PRIMED = "Items/item_Holy_Hand_Grenade_primed";
+
+  // ── Feature.Church: the church building generator.
+  //
+  // The eight ids `MakeChurchBuilding` (`BaseTownGenerator.cs:2187`) draws, and
+  // the one item sprite its antique-weapon roll needs. All nine are Release 7-6
+  // additions the sprite commit left as bare constants, and all nine ship in the
+  // *classic* pack, so every path here already resolves to a file on disk --
+  // `tests/sprite-assets.test.ts` is what keeps that true.
+  //
+  // Kept in one block rather than filed next to the `DECO_`/`OBJ_` rows they
+  // resemble, so a reader can see the whole of one building's art at once.
+  static readonly DECO_CHURCH_HANGING1 = "Tiles/Decoration/hanging_purple";
+  static readonly DECO_CHURCH_HANGING2 = "Tiles/Decoration/hanging_red";
+  static readonly DECO_CHURCH_HANGING3 = "Tiles/Decoration/hanging_green";
+  static readonly DECO_CHURCH_HANGING4 = "Tiles/Decoration/hanging_blue";
+  static readonly DECO_CHURCH = "Tiles/Decoration/church_sign";
+  static readonly OBJ_CHURCH_PEW = "MapObjects/church_pew";
+  static readonly OBJ_LECTERN = "MapObjects/lectern";
+  static readonly OBJ_DISPLAY_CASE = "MapObjects/display_case";
+  static readonly ITEM_UNIQUE_BOOK = "Items/item_unique_book";
+
+  // ── Feature.Bar: the bar building generator (`BaseTownGenerator.cs:2387`).
+  //
+  // The five ids `makeBarBuilding` draws. `DECO_BAR` and `DECO_VELVET_ROPE` are
+  // Release 4 additions, the three map objects are vanilla furniture the port
+  // had no reader for until this building, and all five ship in the *classic*
+  // pack, so every path here already resolves to a file on disk --
+  // `tests/sprite-assets.test.ts` is what keeps that true.
+  //
+  // Note the spelling: the C# calls the doorway art `DECO_BAR` and points it at
+  // `shop_bar` (`GameImages.cs:327`); it is the bar sign, named after the shop
+  // series it was drawn for.
+  static readonly DECO_BAR = "Tiles/Decoration/shop_bar";
+  static readonly DECO_VELVET_ROPE = "Tiles/Decoration/velvet_rope";
+  static readonly OBJ_BAR_SHELVES = "MapObjects/bar_shelves";
+  static readonly OBJ_KITCHEN_SINK = "MapObjects/kitchen_sink";
+  static readonly OBJ_KITCHEN_COUNTER = "MapObjects/kitchen_counter";
 
   // ── Effects & Misc ────────────────────────────────────────────────────────
   static readonly EFFECT_BARRICADED = "Effects/barricaded";
