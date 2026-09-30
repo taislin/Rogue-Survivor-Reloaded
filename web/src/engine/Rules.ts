@@ -41,6 +41,7 @@ import { Point } from "@engine/Point";
 import { GameMode } from "@engine/Session";
 import { DayPhase, WorldTime } from "@engine/WorldTime";
 import { ItemBodyArmor } from "@engine/items/ItemBodyArmor";
+import { ItemBackpack } from "@engine/items/ItemBackpack";
 import { Feature, hasFeature } from "@engine/FeatureFlags";
 import { Session } from "@engine/Session";
 import {
@@ -702,6 +703,122 @@ export class Rules {
     }
 
     return fail("not next to a body of water");
+  }
+
+  /**
+   * May this actor pick up this backpack? Still Alive, Release 8-2.
+   *
+   * C# `CanActorTakeBackpack` (`Rules.cs:1251-1280`). Two *independent* gates, and
+   * the second one is the one with the arithmetic in it:
+   *
+   *  1. Already carrying one. The C#'s reason string is `"can only carry one
+   *     backpack at a time"` -- without the "you", which is the other string the
+   *     fork uses for the same rule at the *container* end (`Rules.cs:657-662`,
+   *     `"you can only carry one backpack at a time"`, player-only because the
+   *     bags are `IsForbiddenToAI`). Two different messages for two different
+   *     refusals, and the port keeps this one verbatim because a player who greps
+   *     the manual for it finds the other.
+   *
+   *  2. A Hauler tier on the *slot count*, in three bands rather than one per
+   *     pack: `5..6` needs 1, `7..8` needs 2, `9+` needs 3. The bands are why the
+   *     four-slot satchel needs nothing and the six-slot daypack needs one -- a
+   *     per-model table would put the satchel behind the first band for no reason,
+   *     and the C# has the satchel below it deliberately.
+   *
+   * Gated on the feature, and it answers "not available in this ruleset" rather
+   * than skipping the checks, for the reason `canActorEquipFishingRod` sets out:
+   * a predicate a UI asks has to have a *false* to return. Under CLASSIC no
+   * backpack model is reachable (`Backpacks.makeBackpack` returns null), so the
+   * answer is never read either way.
+   */
+  canActorTakeBackpack(actor: Actor, backPack: ItemBackpack): RuleResult {
+    if (!actor) throw new Error("actor");
+    if (!backPack) throw new Error("backPack");
+
+    if (!hasFeature(Session.get().ruleset, Feature.ShelterBackpacks)) {
+      return fail("not available in this ruleset");
+    }
+
+    if (actor.inventory?.hasItemOfType(ItemBackpack)) {
+      return fail("can only carry one backpack at a time");
+    }
+
+    const levelsOfHauler = actor.sheet.skillTable.getSkillLevel(SkillID.HAULER);
+    const slots = backPack.inventorySlots;
+    // The C#'s three `if`/`else if` bands, kept as three comparisons rather than
+    // collapsed into `Math.floor((slots - 3) / 2)`: the arithmetic is a guess
+    // about a table the C# spells out, and the boundary cases (4, 5, 7, 9) are
+    // exactly what a reader will check.
+    if (slots >= 5 && slots < 7 && levelsOfHauler < 1) {
+      return fail("need Hauler skill level 1 for that type of pack");
+    }
+    if (slots >= 7 && slots < 9 && levelsOfHauler < 2) {
+      return fail("need Hauler skill level 2 for that type of pack");
+    }
+    if (slots >= 9 && levelsOfHauler < 3) {
+      return fail("need Hauler skill level 3 for that type of pack");
+    }
+
+    return OK;
+  }
+
+  /**
+   * May this item move between an actor's pack and a backpack? Still Alive, Release
+   * 8-2.
+   *
+   * C# `CanActorMoveItemToBackpack` (`Rules.cs:1508-1557`). Four gates, in the
+   * C#'s order, and the order is load-bearing twice over: gate 2 is
+   * `ItemModel.canGoInBackpacks`, so an item that may not be packed is refused
+   * even against an empty bag, and gate 3 is `backPack.IsEquipped`, so the C#'s
+   * inverted convention ("equipped" means *closed*) is a refusal rather than a
+   * permission.
+   *
+   * `checkIsFull` is the C#'s parameter and it means the same here: the caller has
+   * already established there is room and does not want the capacity check repeated
+   * for a UI that only wants to know whether the key is worth offering. **All three
+   * of the C#'s call sites pass `false`** (`RogueGame.cs:13878`, `:13978`, `:14011`)
+   * because each is inside the same `IsFull || CanAddAtLeastOne` guard, so the
+   * parameter is dead weight in the C# too. The port keeps it for the same reason
+   * the C# has it: gate 4 is a question with two answers, and a caller asking
+   * "is this key worth offering?" wants the one without the capacity clause.
+   */
+  canActorMoveItemToBackpack(
+    actor: Actor,
+    it: Item,
+    backPack: ItemBackpack,
+    checkIsFull: boolean,
+  ): RuleResult {
+    if (!actor) throw new Error("actor");
+    if (!it) throw new Error("item");
+    if (!backPack) throw new Error("backPack");
+
+    if (!hasFeature(Session.get().ruleset, Feature.ShelterBackpacks)) {
+      return fail("not available in this ruleset");
+    }
+
+    // 1. Item is equipped.
+    if (it.isEquipped) {
+      return fail("item is equipped");
+    }
+
+    // 2. Item can't go in backpacks.
+    if (!it.model.canGoInBackpacks) {
+      return fail("cannot go in backpacks");
+    }
+
+    // 3. Backpack is equipped, i.e. *not* open. The C# comment says so in as many
+    // words; see `ItemBackpack.isOpen` for why that is the confusing way round.
+    if (backPack.isEquipped) {
+      return fail("backpack isn't open");
+    }
+
+    // 4. Inventory is full and cannot stack item.
+    const pack = backPack.backpackInventory;
+    if (checkIsFull && pack.isFull && !pack.canAddAtLeastOne(it)) {
+      return fail("backpack is full");
+    }
+
+    return OK;
   }
 
   canActorUnequipItem(actor: Actor, it: Item): RuleResult {

@@ -210,6 +210,18 @@ export class Keybindings {
      * so there is one place the change takes effect rather than two.
      */
     this.set(PlayerCommand.VIEW_MODE_TOGGLE, 'F');
+
+    /*
+     * Still Alive, Release 8-2. C# `Keybindings.cs:88` binds
+     * `SWAP_INVENTORY` to `Keys.Y`, and the port takes the letter rather than a
+     * physical key code because `Keybindings` is a browser table throughout.
+     *
+     * `Y` is unclaimed, which is the only reason this is safe: the C# picked it
+     * for the same reason. The command is *not* dispatched here -- nothing under
+     * `PlayerCommand.SWAP_INVENTORY` is wired into `RogueGame` yet, and a binding
+     * with no handler is inert rather than wrong.
+     */
+    this.set(PlayerCommand.SWAP_INVENTORY, 'Y');
   }
 
   /**

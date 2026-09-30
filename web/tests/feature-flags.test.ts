@@ -163,22 +163,27 @@ describe("Feature registry is wired", () => {
       .toEqual(["Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol",
                  "Alcohol", "Alcohol", "AmbientAudio", "AmbientAudio",
                  "AmbientAudio", "AmbientAudio", "AmbientAudio",
-                 "AnimalShelter", "AnimalShelter", "ArmorResist", "Bank",
-                 "Bank", "Bar", "Bar", "Butchering", "Butchering", "Church",
-                 "Clinic", "Clinic", "Cooking", "Cooking", "DarknessFov",
-                 "DarknessFov", "DarknessFov", "DarknessGating",
-                 "DifficultyAtCreation", "DifficultyAtCreation",
-                 "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",
-                 "FireBarrels", "FireBarrels", "FireExtinguishers",
-                 "FireStation", "Fishing", "Fishing", "Fishing", "Fishing",
-                 "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning",
+                 "AmbientAudio", "AnimalShelter", "AnimalShelter",
+                 "ArmorResist", "Bank", "Bank", "Bar", "Bar", "Butchering",
+                 "Butchering", "Church", "Clinic", "Clinic", "Cooking",
+                 "Cooking", "DarknessFov", "DarknessFov", "DarknessFov",
+                 "DarknessGating", "DifficultyAtCreation",
+                 "DifficultyAtCreation", "ExtendedAudio", "ExtendedAudio",
+                 "ExtendedAudio", "FireBarrels", "FireBarrels",
+                 "FireExtinguishers", "FireStation", "Fishing", "Fishing",
+                 "Fishing", "Fishing", "Fishing", "Fishing", "FoodPoisoning",
                  "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-                 "FoodPoisoning", "Graveyard", "Graveyard", "ItemDespawn",
+                 "FoodPoisoning", "FoodPoisoning", "Graveyard", "Graveyard",
+                 "HelicopterRescue", "HelicopterRescue", "HelicopterRescue",
+                 "HelicopterRescue", "HelicopterRescue", "ItemDespawn",
                  "ItemDespawn", "Junkyard", "Junkyard", "Library", "Library",
                  "LightPriority", "ResourcesAvailability",
                  "ResourcesAvailability", "ResourcesAvailability",
-                 "SiphonFuel", "SiphonFuel", "TileFires", "TileFires",
-                 "TileFires", "TileFires", "WeaponWeight"]);
+                 "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
+                 "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
+                 "ShelterBackpacks", "ShelterBackpacks", "SiphonFuel",
+                 "SiphonFuel", "TileFires", "TileFires", "TileFires",
+                 "TileFires", "WeaponWeight"]);
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     // `Alcohol`'s *first* reader is now in `RogueGame` (the per-turn decay), and
     // the harness line is one of six rather than the only one.
@@ -315,6 +320,42 @@ describe("Feature registry is wired", () => {
     expect(siphon).toHaveLength(2);
     expect(siphon.every((s) => /RogueGame\.ts/.test(s.at))).toBe(true);
 
+    // ShelterBackpacks is seven, split two-and-five, and the split is the
+    // feature rather than bookkeeping.
+    //
+    // The two in `Rules` are the *questions*: may this actor pick this bag up, and
+    // may this item cross into one. Both are gates somebody has to get wrong, and
+    // both answer a definite "not available in this ruleset" under CLASSIC rather
+    // than falling through -- a rule a UI asks has to have a `false` to return.
+    //
+    // The five in `Backpacks.ts` are the *public entry points* of the mechanic:
+    // the factory that is the only thing in the project that can produce an
+    // `ItemBackpack`, the open, the auto-close that `BlockAction` does, and the
+    // two directions of the move. They are gated separately because under CLASSIC
+    // the ones that *emit a message* would otherwise say "You aren't carrying a
+    // backpack." to a survivor who has never heard of one.
+    //
+    // `firstBackpack` and `isBackpackOpen` in the same file are deliberately NOT
+    // readers. They are queries with no CLASSIC behaviour -- they answer `null` /
+    // `false` because the gated factory is the only producer -- and a gate there
+    // would be a second answer to a question that already has one.
+    //
+    // Eight, not seven: the subagent's seven are `Rules` (2) and `gameplay/Backpacks`
+    // (5), and the eighth is the one *this* file's integration added -- the
+    // "to move to backpack" line in `DescribeItemLong`, which decides whether the
+    // description mentions `Y`. It is here rather than in `Backpacks.ts` because it
+    // is a string in a HUD description, not a rule, and moving it would mean the
+    // description module knew about item models.
+    //
+    // `Y` has no `PlayerCommand` binding under CLASSIC, so a description that
+    // mentioned it would be naming a key the player cannot press. That is why this
+    // gate exists at all rather than being cosmetic.
+    const packs = sites.filter((s) => s.feature === "ShelterBackpacks");
+    expect(packs).toHaveLength(8);
+    expect(packs.filter((s) => /Rules\.ts/.test(s.at))).toHaveLength(2);
+    expect(packs.filter((s) => /gameplay\/Backpacks\.ts/.test(s.at))).toHaveLength(5);
+    expect(packs.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(1);
+
     // DarknessGating has exactly one reader, in Rules, and that is the design
     // rather than an accident: five separate behaviours refuse in the dark
     // (medicine, reading, barricading a door, building a fortification, repairing
@@ -367,9 +408,43 @@ describe("Feature registry is wired", () => {
     // helicopter, two church bells, one debug) are *unwired* because the features
     // they belong to are. `tests/ambient-audio.test.ts` asserts those eight are
     // still unwired; this asserts the gates, not the tracks.
+    //
+    // Six, not five. The five were rain, thundering rain, night animals and the two
+    // entry/exit guards; the sixth is `stopAll` in the death path, added with
+    // `Feature.HelicopterRescue` because a landed helicopter is an *ambient* -- the
+    // C#'s `m_AmbientSFXManager.StopAll()` at `RogueGame.cs:7290` -- and a rescue
+    // bed that outlives the player is a bed the corpse is lying in.
     const ambient = sites.filter((s) => s.feature === "AmbientAudio");
-    expect(ambient).toHaveLength(5);
+    expect(ambient).toHaveLength(6);
     expect(ambient.every((s) => /RogueGame\.ts/.test(s.at))).toBe(true);
+
+    // HelicopterRescue is five readers in two files, and the split is the
+    // *endgame's* shape rather than bookkeeping: three of the five are the days a
+    // survivor could meet it — the de-spawn at dusk, the spawn at dawn, and the
+    // bump that ends the run — and they are separately gated because a CLASSIC
+    // build that de-spawned without ever spawning would be removing map objects
+    // that were never there, and one that spawned without de-spawning would leave
+    // a permanent rescue square.
+    //
+    // The fourth is the site picker itself, and the fifth is the AI's decision to
+    // run for the chopper. The picker is gated *inside*
+    // `PickHelicopterRescueSite` rather than at the `GenerateWorld` call site on
+    // purpose: it is the only reader that runs during world generation, it is the
+    // one that spends a die, and a CLASSIC world must be byte-identical to one
+    // generated before this feature existed.
+    const heli = sites.filter((s) => s.feature === "HelicopterRescue");
+    expect(heli).toHaveLength(5);
+    expect(heli.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(4);
+    expect(heli.filter((s) => /CivilianAI\.ts/.test(s.at))).toHaveLength(1);
+    // The AI gate is in `CivilianAI` and the picker gate is in `RogueGame`, named
+    // here so that moving either is a decision somebody edits rather than a diff
+    // that happens to still pass.
+    expect(
+      heli.find((s) => /CivilianAI\.ts/.test(s.at))!.at,
+    ).toMatch(/CivilianAI\.ts:\d+$/);
+    expect(
+      heli.filter((s) => /RogueGame\.ts/.test(s.at)).map((s) => s.at).sort(),
+    ).toHaveLength(4);
 
     // ExtendedAudio is three readers in one file, and the count is the *opposite*
     // of the usual story. Every other feature here is a behaviour and its gate

@@ -12,6 +12,7 @@ import { Item } from "@data/Item";
 import { Inventory } from "@data/Inventory";
 import { District } from "@data/District";
 import { Map as GameMap } from "@data/Map";
+import { Point } from "@engine/Point";
 import { World } from "@data/World";
 import { WorldTime } from "@engine/WorldTime";
 import { Weather } from "@data/Weather";
@@ -67,6 +68,21 @@ export enum RaidType {
 
   /** "Fake" raid for AIs. */
   ARMY_SUPLLIES,
+
+  /**
+   * "Fake" raid for AIs — C# `Session.cs:53-55`, Release 7-4.
+   *
+   * "Fake" in the same sense as the two above: nothing is rolled against the
+   * `eventRaids` grid for it, `NotifyOrderablesAI` just tells every orderable AI
+   * on the map that a chopper is landing. See `OrderableAI.onRaid`.
+   *
+   * Appended rather than inserted where the C# has it, because the C# also has
+   * `CHAR_SCIENTISTS` after it (`Session.cs:57`, Release 8-1) which belongs to
+   * `Feature.CHARResearchRaid`, still pending. Appending keeps every existing
+   * member's value — which is what `Session.m_Event_Raids` is indexed by — so
+   * this addition shifts nothing.
+   */
+  HELICOPTER_RESCUE,
 
   _COUNT,
 }
@@ -216,6 +232,24 @@ export class Session {
    */
   private m_ArmyHelicopterRescueDay = GameOptions.DEFAULT_RESCUE_DAY;
 
+  /**
+   * The rescue landing site: `World.CoordToString` of the district the helicopter
+   * lands in, and the top-left tile of the 3x1 patch it occupies on that
+   * district's entry map.
+   *
+   * C# `ArmyHelicopterRescue_DistrictRef` / `_Coordinates`
+   * (`Session.cs:604-607`), written by the site picker at `RogueGame.cs:4551-4552`
+   * — which is `Feature.HelicopterRescue`, and is why the pair lives here next to
+   * the day rather than next to the other uniques.
+   *
+   * The empty string and the null are the C#'s own defaults (`""` and
+   * `Point(0,0)`), except that the port cannot use `(0,0)` for "no site": `(0,0)`
+   * is a real tile — the top-left corner of the first district — so "not chosen
+   * yet" is null and the C#'s `Point.Empty` sentinel has no meaning here.
+   */
+  private m_ArmyHelicopterRescueDistrictRef = "";
+  private m_ArmyHelicopterRescueCoordinates: Point | null = null;
+
   // ── Properties ──────────────────────────────────────────────────────────
   /** Gets the current Session (singleton). */
   static get(): Session {
@@ -263,6 +297,63 @@ export class Session {
   }
   set armyHelicopterRescueDay(value: number) {
     this.m_ArmyHelicopterRescueDay = value;
+  }
+
+  /** See `m_ArmyHelicopterRescueDistrictRef`. `""` until a site is picked. */
+  get armyHelicopterRescueDistrictRef(): string {
+    return this.m_ArmyHelicopterRescueDistrictRef;
+  }
+
+  /** See `m_ArmyHelicopterRescueCoordinates`. Null until a site is picked. */
+  get armyHelicopterRescueCoordinates(): Point | null {
+    return this.m_ArmyHelicopterRescueCoordinates;
+  }
+
+  /**
+   * Records the landing site, in the C#'s three assignments at once.
+   *
+   * C# sets `DistrictRef`, `Coordinates` and `Map` as three fields
+   * (`RogueGame.cs:4551-4553`) and a caller that set two of them would leave the
+   * endgame half-wired. There is no setter for the map here at all: see
+   * {@link armyHelicopterRescueMap}.
+   */
+  setHelicopterRescueSite(districtRef: string, position: Point): void {
+    this.m_ArmyHelicopterRescueDistrictRef = districtRef;
+    this.m_ArmyHelicopterRescueCoordinates = position;
+  }
+
+  /**
+   * The map the helicopter lands on, or null before a site is picked.
+   *
+   * C# stores the `Map` itself (`ArmyHelicopterRescue_Map`, `Session.cs:614`)
+   * and gets it back for free out of a `BinaryFormatter`. The port writes the
+   * district reference the C# *also* writes and resolves the map from it, for
+   * two reasons.
+   *
+   * First, it is the same information: the C# only ever assigns
+   * `chosenDistrict.EntryMap` (`:4553`), so the map is fully determined by the
+   * district the reference already names. Second, a `Map` in the save root would
+   * need a new entry in the hand-written graph spec and a `GRAPH_VERSION` bump
+   * to refuse older saves, and the pair below rides in the root's plain JSON
+   * where an absent key is simply a default — an old save restores with no
+   * rescue site, which is what it had.
+   *
+   * Derived rather than cached so it cannot go stale: the world is reassigned on
+   * every `GenerateWorld` and restored wholesale on load, and a cached `Map`
+   * reference across either of those would be a reference into a dead world.
+   */
+  get armyHelicopterRescueMap(): GameMap | null {
+    const ref = this.m_ArmyHelicopterRescueDistrictRef;
+    if (ref === "") return null;
+    const world = this.m_World;
+    if (world == null) return null;
+    // `CoordToString` is `[A-Z][0-9]` (`World.ts:26`), so the first character is
+    // the grid x and the rest is the y.
+    const x = ref.charCodeAt(0) - 65;
+    const y = Number.parseInt(ref.slice(1), 10);
+    if (!Number.isInteger(x) || x < 0 || x >= world.size) return null;
+    if (!Number.isInteger(y) || y < 0 || y >= world.size) return null;
+    return world.getDistrict(x, y)?.entryMap ?? null;
   }
 
   get worldTime(): WorldTime {
@@ -345,6 +436,13 @@ export class Session {
     // third: a *cancelled* difficulty screen, where the field must still be a
     // day rather than a zero that a future endgame would compare against day 1.
     this.m_ArmyHelicopterRescueDay = GameOptions.DEFAULT_RESCUE_DAY;
+    // The landing site, on the other hand, is genuinely nothing until world
+    // generation picks one — `GenerateWorld` is the only writer, and it runs
+    // after every `reset()`. C# `Session.Reset()` leaves the `Map` reference to
+    // the reloader (`Session.cs:661` resets the bool, not the map), which the
+    // port's derived getter makes unnecessary.
+    this.m_ArmyHelicopterRescueDistrictRef = "";
+    this.m_ArmyHelicopterRescueCoordinates = null;
     this.uniqueActors = new UniqueActors();
     this.uniqueItems = new UniqueItems();
     this.uniqueMaps = new UniqueMaps();
@@ -357,6 +455,35 @@ export class Session {
   }
 
   // ── Events ──────────────────────────────────────────────────────────────
+
+  /**
+   * Fits a saved raid grid to the current `RaidType` list.
+   *
+   * `m_Event_Raids` is indexed `[raid][x][y]` and its outer length is
+   * `RaidType._COUNT`, so adding a `RaidType` member — `HELICOPTER_RESCUE`,
+   * Release 7-4 — makes every save written before it one row short.
+   * `hasRaidHappened` would then index `undefined` and read `.length` off it.
+   *
+   * Truncating rather than rejecting is the same call `ruleset` makes above: a
+   * save is a real game and the missing row is a raid that never happened, so
+   * the honest value is "no". The extra rows a *newer* save carries are dropped
+   * for the same reason — this build has no reader for them.
+   */
+  private static normalizeEventRaids(saved: number[][][]): number[][][] {
+    const citySize = Options.citySize;
+    const empty = (): number[][] => {
+      const grid: number[][] = [];
+      for (let x = 0; x < citySize; x++) grid.push(new Array<number>(citySize).fill(-1));
+      return grid;
+    };
+    const out: number[][][] = [];
+    for (let raid = RaidType._FIRST; raid < RaidType._COUNT; raid++) {
+      const row = saved?.[raid];
+      out.push(Array.isArray(row) && row.length === citySize ? row : empty());
+    }
+    return out;
+  }
+
   hasRaidHappened(raid: RaidType, district: District): boolean {
     if (!district) throw new Error("district");
     return this.m_Event_Raids[raid][district.worldPosition.x][district.worldPosition.y] > -1;
@@ -412,6 +539,16 @@ export class Session {
       player_CurrentFireMode: session.player_CurrentFireMode,
       player_TurnCharismaRoll: session.player_TurnCharismaRoll,
       armyHelicopterRescueDay: session.m_ArmyHelicopterRescueDay,
+      // See `armyHelicopterRescueMap` for why the site is a district reference
+      // and a coordinate pair rather than a `Map` in the graph.
+      armyHelicopterRescueDistrictRef: session.m_ArmyHelicopterRescueDistrictRef,
+      armyHelicopterRescueCoordinates:
+        session.m_ArmyHelicopterRescueCoordinates === null
+          ? null
+          : {
+              x: session.m_ArmyHelicopterRescueCoordinates.x,
+              y: session.m_ArmyHelicopterRescueCoordinates.y,
+            },
       weather: session.m_Weather,
       worldTime: session.m_WorldTime ? session.m_WorldTime.turnCounter : 0,
       graphVersion: GRAPH_VERSION,
@@ -590,7 +727,7 @@ export class Session {
       session.m_Ruleset = (data.ruleset as Ruleset) ?? Ruleset.CLASSIC;
       session.seed = data.seed as number;
       session.lastTurnPlayerActed = data.lastTurnPlayerActed as number;
-      session.m_Event_Raids = data.eventRaids as number[][][];
+      session.m_Event_Raids = Session.normalizeEventRaids(data.eventRaids as number[][][]);
       session.m_NextAutoSaveTime = data.nextAutoSaveTime as number;
       session.playerKnows_CHARUndergroundFacilityLocation =
         data.playerKnows_CHARUndergroundFacilityLocation as boolean;
@@ -605,6 +742,30 @@ export class Session {
       // day the helicopter can arrive on.
       session.m_ArmyHelicopterRescueDay =
         (data.armyHelicopterRescueDay as number) ?? GameOptions.DEFAULT_RESCUE_DAY;
+      // Absent in a save from before the site picker existed, which is every save
+      // written before `Feature.HelicopterRescue`. Both default to "no site yet",
+      // so such a run reaches its rescue day with nowhere for the helicopter to
+      // land and `SpawnArmyHelicopterOnMap` has nothing to do — the same nothing
+      // the C# would do with a null `ArmyHelicopterRescue_Map`.
+      //
+      // The coordinate pair is checked rather than cast: a save carrying half of
+      // one, or a ref with no coordinates, would otherwise yield a district with
+      // no tile, and `DistrictRef` alone is what the map getter resolves.
+      const ref = data.armyHelicopterRescueDistrictRef as string | undefined;
+      const coords = data.armyHelicopterRescueCoordinates as
+        | { x: number; y: number }
+        | null
+        | undefined;
+      if (
+        typeof ref === "string" &&
+        ref !== "" &&
+        coords != null &&
+        Number.isInteger(coords.x) &&
+        Number.isInteger(coords.y)
+      ) {
+        session.m_ArmyHelicopterRescueDistrictRef = ref;
+        session.m_ArmyHelicopterRescueCoordinates = new Point(coords.x, coords.y);
+      }
       session.m_Weather = (data.weather as Weather) ?? Weather.CLEAR;
 
       /*

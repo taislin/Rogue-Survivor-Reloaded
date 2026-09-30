@@ -26,6 +26,17 @@ export enum AchievementIDs {
 
   KILLED_THE_SEWERS_THING,
 
+  /**
+   * C# `Achievement.IDs.RESCUED_BY_HELICOPTER` — `Scoring.cs:34`, Release 6-4.
+   *
+   * Appended rather than placed where the C# has it (before the killing-uniques
+   * region, `Scoring.cs:352-359`), for the same reason as `RaidType`: the enum is
+   * written into the save and into the post-mortem text file as a *count*
+   * (`MAX_ACHIEVEMENTS`), but the members are also persisted by position in
+   * `serialization/specs.ts`, so inserting would move every achievement after it.
+   */
+  RESCUED_BY_HELICOPTER,
+
   _COUNT,
 }
 
@@ -258,6 +269,34 @@ export class Scoring {
         ["One less Thing to worry about!"],
         GameMusics.HEYTHERE,
         1000
+      )
+    );
+
+    //@@MP (Release 6-4)
+    this.initAchievement(
+      AchievementIDs.RESCUED_BY_HELICOPTER,
+      new Achievement(
+        AchievementIDs.RESCUED_BY_HELICOPTER,
+        "Escaped the city by army rescue helicopter",
+        "Did not escape the city",
+        ["So long, it's been a blast"],
+        // `ACHIEVEMENT` is a **fork-only** sound id, and the port's rule is that a
+        // fork-only id is never named ungated -- `tests/extended-audio.test.ts`
+        // scans for exactly that, and it caught this line. The C# plays it
+        // **The C# plays `GameSounds.ACHIEVEMENT` here** -- `Scoring.cs:358`, the
+        // `SFXID` parameter of `Achievement`'s constructor, and it does so for all
+        // nine of its achievements. The port does not: that field is `musicId`, and
+        // every other row in this file fills it with a `GameMusics.*` id, so the
+        // port plays a cue where the C# plays an effect.
+        //
+        // That is a pre-existing port-wide divergence rather than something this
+        // feature introduces, and following the C# *here* would mean putting a sound
+        // id in a music field. It typechecks -- both are strings -- and it is
+        // precisely the mistake the type system cannot catch. `HEYTHERE` is what the
+        // other two generic achievements use, so this matches the port rather than
+        // introducing a second convention for one row.
+        GameMusics.HEYTHERE,
+        3000
       )
     );
 

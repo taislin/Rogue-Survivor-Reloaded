@@ -49,6 +49,7 @@ import { UniqueActors, UniqueItems, UniqueMaps } from "@engine/Session";
 import { WorldTime } from "@engine/WorldTime";
 import { TaskRemoveDecoration } from "@engine/tasks/TaskRemoveDecoration";
 import { ItemAmmo, ItemMeleeWeapon, ItemRangedWeapon, ItemWeapon } from "@engine/items/ItemWeapon";
+import { ItemBackpack } from "@engine/items/ItemBackpack";
 import { ItemBodyArmor } from "@engine/items/ItemBodyArmor";
 import { ItemExplosive, ItemGrenade, ItemGrenadePrimed, ItemPrimedExplosive } from "@engine/items/ItemExplosive";
 import { ItemFood } from "@engine/items/ItemFood";
@@ -650,6 +651,43 @@ const itemFields: Record<string, FieldCodec> = {
   bestBefore: nullableWorldTime,
 };
 
+/**
+ * `ItemBackpack`, and the one place the nested inventory is written.
+ *
+ * The nested `Inventory` is a full graph record rather than an inline encoding,
+ * which is the same choice every other container makes and the same reason: it has
+ * identity (a save names it, and two references to one bag's contents must be one
+ * inventory), and it holds `Item` records, which `encodePlain` refuses outright --
+ * an inline `Item` would have to be a `refList` inside an array, which the format
+ * has no way to express.
+ *
+ * **`backpackInventory` is a `ref` and therefore a key that can be absent.** A save
+ * written before `Feature.ShelterBackpacks` contains no `ItemBackpack` record at
+ * all, so the field is never even looked at. The case that *does* need a
+ * `finish` is a record that is an `ItemBackpack` with no `backpackInventory` key:
+ * `assignFields` only assigns the keys the record carries, and a shell made with
+ * `Object.create` has no field initialisers, so without the hook below the field
+ * would be `undefined` and the first `backPack.backpackInventory.isFull` would throw
+ * on a save that loaded perfectly well. The hook reads as "no contents", which is
+ * the truth: an absent key cannot mean anything else.
+ */
+const backpackItemSpec: ClassSpec = {
+  name: "ItemBackpack",
+  base: "Item",
+  matches: (v) => v instanceof ItemBackpack,
+  create: () => Object.create(ItemBackpack.prototype),
+  fields: { ...itemFields, backpackInventory: { kind: "ref" } },
+  finish: (pack) => {
+    const self = pack as ItemBackpack;
+    if (self.backpackInventory === undefined) {
+      // The capacity is the model's, so this is not an arbitrary empty bag: it is
+      // the same slots the constructor would have built, and an item moved into it
+      // afterwards behaves identically to one moved into a fresh bag.
+      self.backpackInventory = new Inventory(self.inventorySlots);
+    }
+  },
+};
+
 const itemSpecs: ClassSpec[] = [
   // Subclasses before their bases: the writer takes the first match.
   itemSpec("ItemGrenadePrimed", ItemGrenadePrimed, (v) => v instanceof ItemGrenadePrimed),
@@ -662,6 +700,7 @@ const itemSpecs: ClassSpec[] = [
   itemSpec("ItemAmmo", ItemAmmo, (v) => v instanceof ItemAmmo),
   itemSpec("ItemBarricadeMaterial", ItemBarricadeMaterial, (v) => v instanceof ItemBarricadeMaterial),
   itemSpec("ItemBodyArmor", ItemBodyArmor, (v) => v instanceof ItemBodyArmor),
+  backpackItemSpec,
   itemSpec("ItemEntertainment", ItemEntertainment, (v) => v instanceof ItemEntertainment),
   itemSpec("ItemFood", ItemFood, (v) => v instanceof ItemFood),
   itemSpec("ItemLight", ItemLight, (v) => v instanceof ItemLight),

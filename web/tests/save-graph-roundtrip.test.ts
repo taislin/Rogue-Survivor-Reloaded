@@ -10,7 +10,9 @@ import { GameImages } from "@gameplay/GameImages";
 import { MapObjectBreak } from "@data/MapObject";
 import { Barrel, Campfire, Car } from "@engine/mapobjects/MapObjects";
 import { GRAPH_VERSION, type GraphData } from "@engine/serialization/SessionGraph";
-import { Exit, Map as GameMap } from "@data/Map";import { CLASS_SPECS, encodeScoring } from "@engine/serialization/specs";
+import { Exit, Map as GameMap } from "@data/Map";
+import { AchievementIDs } from "@engine/Scoring";
+import { CLASS_SPECS, encodeScoring } from "@engine/serialization/specs";
 import {
   findPlayerActor,
   readSessionGraph,
@@ -417,9 +419,14 @@ describe("the scoring survives", () => {
     expect(afterJson).toBe(beforeJson);
   });
 
-  it("keeps the eight achievements, which are indexed without a guard", () => {
+  it("keeps every achievement, which are indexed without a guard", () => {
     const { loaded } = roundTrip();
-    expect(loaded.scoring.achievements.length).toBe(8);
+    // Nine, not eight: `RESCUED_BY_HELICOPTER` came with
+    // `Feature.HelicopterRescue`. Asserted against the enum rather than a literal
+    // so the next achievement is a one-line edit here — the point of the test is
+    // that the array has no *hole*, and a literal count only tests that until
+    // somebody adds one.
+    expect(loaded.scoring.achievements.length).toBe(AchievementIDs._COUNT);
     // `hasCompletedAchievement` would throw on a hole in that array.
     expect(() => loaded.scoring.hasCompletedAchievement(0)).not.toThrow();
   });

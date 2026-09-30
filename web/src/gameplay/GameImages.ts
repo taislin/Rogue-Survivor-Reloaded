@@ -277,6 +277,16 @@ export class GameImages {
   static readonly OBJ_WINDOW_BROKEN = "MapObjects/window_broken";
   static readonly OBJ_BENCH = "MapObjects/bench";
   static readonly OBJ_FENCE = "MapObjects/fence";
+  /**
+   * The rescue helicopter, in the three pieces the C# dissects it into.
+   *
+   * C# `GameImages.cs:639-641`. The C# then arranges them as 1-2-3 (see
+   * `BaseMapGenerator.MakeObjHelicopter`), so the landing site is a 3x1 patch and
+   * not the 4x2 one the C#'s own comments still claim in three places.
+   */
+  static readonly OBJ_HELICOPTER1 = "MapObjects/helicopter1";
+  static readonly OBJ_HELICOPTER2 = "MapObjects/helicopter2";
+  static readonly OBJ_HELICOPTER3 = "MapObjects/helicopter3";
   static readonly OBJ_CAR1 = "MapObjects/car1";
   static readonly OBJ_CAR2 = "MapObjects/car2";
   static readonly OBJ_CAR3 = "MapObjects/car3";
@@ -589,6 +599,18 @@ export class GameImages {
   // Still Alive, Release 7-6. The sprite shipped with the classic pack, so this
   // is only the id: the fork's `GameImages.cs:1062` has the same path.
   static readonly ITEM_FISHING_ROD = "Items/item_fishing_rod";
+  // ── Feature.ShelterBackpacks: the five `Items_Backpacks.csv` rows. Still Alive,
+  // Release 8-2 (`GameImages.cs:1013, 1053, 1080, 1135, 1168`). All five ship in
+  // the *classic* sprite pack, so every path here already resolves to a file on
+  // disk -- `tests/sprite-assets.test.ts` is what keeps that true.
+  static readonly ITEM_WAIST_POUCH = "Items/item_waist_pouch";
+  static readonly ITEM_SATCHEL = "Items/item_satchel";
+  static readonly ITEM_DAYPACK = "Items/item_daypack";
+  static readonly ITEM_HIKING_PACK = "Items/item_hiking_pack";
+  static readonly ITEM_ARMY_RUCKSACK = "Items/item_army_rucksack";
+  // `ITEM_BACKPACK_SLOT` (`GameImages.cs:990`) is the C#'s *inventory slot
+  // chrome* for the open bag panel, not an item sprite, so it has no port id and
+  // no file: the nested panel is drawn from slots, like every other panel.
   // Still Alive, Release 7-1. One of the ~420 constants the sprite commit
   // deferred; added here because `DarknessFov` 2b reads it.
   static readonly DECO_LIT_CANDLE = "Tiles/Decoration/lit_candle";

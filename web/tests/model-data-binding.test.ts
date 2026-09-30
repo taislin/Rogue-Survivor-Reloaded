@@ -225,20 +225,15 @@ describe("every ItemID resolves to a model", () => {
  * Adding a row to a merged table is a one-line data change with no compiler
  * anywhere near it, so this is the only place it can be caught.
  *
- * The exception list is the honest part: five backpacks, and only those. They
- * are `ShelterBackpacks` (BROWSER_PORT_PLAN §5.6d) — a nested `Inventory` on an
- * `Item`, a `DollPart.BACK`, slot tiers gated on the Hauler skill, and a
- * nested-inventory UI. Giving them a model now would produce five items that
- * exist, cannot be equipped, and raise on a `PLAYER_COMMAND` slot if they were.
- * When that feature lands, delete the line; the test then fails on anything new.
+ * The exception list used to hold the five backpacks, and it is now empty: they
+ * were `ShelterBackpacks` (BROWSER_PORT_PLAN §5.6d) — a nested `Inventory` on an
+ * `Item`, a `DollPart.BACK`, slot tiers gated on the Hauler skill — and that
+ * feature landed, so they have models like everything else. An empty list is kept
+ * rather than deleted because "this list is empty *and it is supposed to be*"
+ * is a different claim from "this list does not exist", and only the first one
+ * fails when a new row binds to nothing.
  */
-const ROWS_WITHOUT_MODELS_YET = [
-  "BACKPACK_ARMY_RUCKSACK",
-  "BACKPACK_DAYPACK",
-  "BACKPACK_HIKING_PACK",
-  "BACKPACK_SATCHEL",
-  "BACKPACK_WAIST_POUCH",
-];
+const ROWS_WITHOUT_MODELS_YET: string[] = [];
 
 describe("every item CSV row binds to a model", () => {
   const rows: Array<{ table: string; id: string }> = [];

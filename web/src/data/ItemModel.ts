@@ -38,6 +38,27 @@ export class ItemModel {
    * a model field would mean the flag could not be trusted by a future reader.
    */
   isRecreational: boolean = false;
+  /**
+   * May this item be stowed in a backpack? Still Alive, Release 8-2.
+   *
+   * C# `ItemModel.m_CanGoInBackpacks` (`Data/ItemModel.cs:26`). It is a field on
+   * the base model rather than on `ItemBackpackModel` for the same reason
+   * `isThrowable` is: the reader is `Rules.CanActorMoveItemToBackpack`
+   * (`Rules.cs:1534`), which is handed a plain `Item` and would otherwise have to
+   * downcast before it could ask the question at all.
+   *
+   * Default false, and the C# sets it on 121 of its 187 models by hand rather than
+   * by any rule -- a combat knife may go in a bag and a crowbar may not, a pistol
+   * may and a hunting rifle may not. So this is a curated list and the port carries
+   * it as one (`GameItems.CAN_GO_IN_BACKPACKS`), not as a derivation from
+   * `isEquipable`: deriving it would "fix" the knife and silently un-fix the rifle.
+   *
+   * Set unconditionally rather than behind `Feature.ShelterBackpacks`, for the
+   * same reason as `isRecreational`: it is data with no CLASSIC reader, and a
+   * model field that could be wrong for want of a flag is not a field a later
+   * reader can trust.
+   */
+  canGoInBackpacks: boolean = false;
 
   constructor(aName: string, theNames: string, imageId: string) {
     this.singleName = aName;

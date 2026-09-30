@@ -189,7 +189,15 @@ describe("Feature.Fishing: the rod", () => {
     // to a *different item* rather than to a renamed one.
     expect(ItemID.FISHING_ROD).toBe(170);
     expect(ItemID.SIPHON_KIT, "the id before it is unmoved").toBe(169);
-    expect(ItemID._COUNT).toBe(172);
+    // A relationship, not the total. `_COUNT` is the one number here that
+    // legitimately grows, and it has grown three times since this assertion was
+    // written -- `Feature.Church` appended `UNIQUE_BOOK_OF_ARMAMENTS` and
+    // `Feature.ShelterBackpacks` appended five backpacks. Pinning the total would
+    // mean every later feature's test has to edit *this* file to say nothing about
+    // fishing, and the number that actually matters is the one above: the rod is
+    // still at 170 and the id under it is still 169. "The enum is big enough for
+    // it", the same shape `tests/siphon-fuel.test.ts:98` uses.
+    expect(ItemID._COUNT).toBeGreaterThan(ItemID.FISHING_ROD);
   });
 
   it("is held in the LEFT hand, which is not where a weapon goes", () => {

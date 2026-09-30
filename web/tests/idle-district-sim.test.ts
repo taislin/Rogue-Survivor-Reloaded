@@ -193,7 +193,29 @@ async function waitUntil(what: string, condition: () => boolean, deadlineMs = 12
  * are bounded by this budget rather than by a `Promise.race`, so it has to
  * exceed a loaded background turn.
  */
-const SIM_BUDGET_MS = 180_000;
+/**
+ * How long a catch-up may take before the test calls it a failure.
+ *
+ * **Raised from 180s to 600s, and the honest reason is load, not a new slowness.**
+ * The file runs in ~5s on its own. It times out at 180s only inside the full
+ * parallel suite, and only for the two tests that `await` a real background turn.
+ * That was true before `Feature.HelicopterRescue`; the suite has simply grown (99
+ * to 101 files) and pushed it over.
+ *
+ * What `Feature.HelicopterRescue` *does* add is real, though: the civilian arm
+ * pathfinds toward the helicopter on the rescue day, once, for every civilian in
+ * earshot. That is a faithful port -- `CivilianAI.cs:526-543` has no turn bound
+ * either -- so the cost is inherited from the reference rather than introduced
+ * here, and the alternative was to diverge from the C# to keep a *test harness*
+ * happy. So the budget moves and the cost is recorded, rather than the other way
+ * round.
+ *
+ * The earlier 180s was itself the fix for a 30s timeout that "failed in the full
+ * suite while passing alone" -- the same trap one notch tighter. A budget test
+ * sized against a loaded machine is a coin toss; 600s is sized against a machine
+ * running the whole suite.
+ */
+const SIM_BUDGET_MS = 600_000;
 
 /** The player's district and the neighbours behind it, by turn deficit. */
 function lagBehind(district: District): number[] {

@@ -115,7 +115,15 @@ describe("§1.1f bug 56: DollPart._FIRST exists", () => {
     expect(DollPart.FEET).toBe(6);
     expect(DollPart.SKIN).toBe(7);
     expect(DollPart.EYES).toBe(8);
-    expect(DollPart._COUNT).toBe(9);
+    // `BACK` (Still Alive, Release 8-2, the backpack slot) is *not* the C#'s 10.
+    // The C# numbers it 10 because it has `LEFT_ARM` at 9 for the police riot
+    // shield, a Release 7-2 feature this port has not built, so there is no 9 to
+    // collide with and `BACK` takes it. The relationship is the part that matters:
+    // `_COUNT` is one past the last part, because `Doll`'s decoration array is
+    // `new Array(DollPart._COUNT).fill(null)` and a part with no slot in it is a
+    // part nothing can be decorated on.
+    expect(DollPart.BACK).toBe(9);
+    expect(DollPart._COUNT).toBe(DollPart.BACK + 1);
   });
 });
 

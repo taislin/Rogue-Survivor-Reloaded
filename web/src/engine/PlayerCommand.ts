@@ -50,6 +50,23 @@ export enum PlayerCommand {
   USE_EXIT,
   USE_SPRAY,
 
+  /*
+   * Still Alive, Release 8-2. C# `PlayerCommand.SWAP_INVENTORY`
+   * (`Engine/PlayerCommand.cs:57`).
+   *
+   * The C# has it in the middle, alphabetically among the mode commands. It is
+   * appended here instead, at the end of the C#-declared block and before the
+   * browser-port additions, because a stored `Keybindings` pair is
+   * `[commandNumber, key]`: a command's number is part of the save format, so
+   * inserting one silently re-points every binding above it. It is *not* in the
+   * additions block below, which is for commands the C# does not have at all.
+   *
+   * "Swap" is the C#'s word for both directions -- into the bag and out of it --
+   * and it is the key `RogueGame.HandlePlayerSwapItemInventory` dispatches on
+   * (`RogueGame.cs:11083`).
+   */
+  SWAP_INVENTORY,
+
   CITY_INFO,
   MESSAGE_LOG,
 

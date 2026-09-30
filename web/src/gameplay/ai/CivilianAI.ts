@@ -11,6 +11,8 @@ import type { ActorAction } from '@data/ActorAction';
 import { Percept } from '@engine/ai/Sensors';
 import { ActionSleep, ActionTrade, ActionUnequipItem, ActionWait, SayFlags } from '@engine/actions/Actions';
 import { Options } from '@engine/GameOptions';
+import { Feature, hasFeature } from '@engine/FeatureFlags';
+import { euclideanDistance } from '@engine/NoiseDistance';
 import { Session } from '@engine/Session';
 import { WorldTime } from '@engine/WorldTime';
 import { ItemFood } from '@engine/items/ItemFood';
@@ -344,6 +346,12 @@ export class CivilianAI extends OrderableAI {
     if (restAction) {
       actor.activity = Activity.IDLE;
       return new ActionWait(actor, game);
+    }
+
+    // 7 head towards the rescue helicopter  //@@MP (Release 7-3)
+    const chopperAction = this.behaviorGoToRescueHelicopter(game);
+    if (chopperAction) {
+      return chopperAction;
     }
 
     // 8 eat when hungry (also eat corpses)
@@ -796,5 +804,65 @@ export class CivilianAI extends OrderableAI {
     // 31 wander.
     actor.activity = Activity.IDLE;
     return this.behaviorWander(game, null, this.m_Exploration);
+  }
+
+  /**
+   * Step 7 — "head towards the rescue helicopter".
+   *
+   * C# `CivilianAI.cs:522-542`, Release 7-3, inserted between "rest if tired" and
+   * "eat when hungry" and called from there. Four conditions, all of them
+   * narrowing, and the order is load-bearing:
+   *
+   * 1. it is the rescue day, this is the rescue map, and it is daytime — the
+   *    helicopter is only on the ground for one day, and `DespawnArmyHelicopter`
+   *    takes it away at dusk;
+   * 2. the actor is at least `8` tiles away, because the C# wants them close
+   *    enough to *defend* the chopper rather than orbiting it, and "close enough"
+   *    is measured to the rescue square rather than to the player's position;
+   * 3. the actor can hear it — `AudioRange`, and `euclideanDistance`, which is the
+   *    metric of an actor's hearing and **not** the Chebyshev a noise radius uses.
+   *    The port gets both from `NoiseDistance` rather than computing them again,
+   *    which is also why this reader is on the same feature as the spawn.
+   *
+   * Everything else is the C#'s own state-setting: run, and mark the activity as
+   * EXPLORING, which is what makes the HUD show them as moving under their own
+   * steam rather than acting on an order. `EXPLORING` (sic, the C#'s spelling)
+   * is the one thing here the port cannot write: `Activity` stops at
+   * `FLEEING_FROM_EXPLOSIVE = 8` plus the `FISHING = 9` `Feature.Fishing` added,
+   * and every ported AI that needed `RESTING`, `WANDERING` or `EXPLORING` wrote
+   * `IDLE` rather than renumber an enum the graph writer stores in every save —
+   * see `UnintelligentAnimalAI.ts:136-142` for the argument. `IDLE` is that
+   * established port spelling, and the icon switch in `RogueGame` that reads it
+   * throws on values it does not know, so inventing the member here to save one
+   * label would break every existing save.
+   */
+  private behaviorGoToRescueHelicopter(game: Game): ActorAction | null {
+    if (!hasFeature(Session.get().ruleset, Feature.HelicopterRescue)) return null;
+
+    const actor = this.controlledActor;
+    const map = actor.location.map;
+    if (map == null) return null;
+
+    const session = Session.get();
+    const coordinates = session.armyHelicopterRescueCoordinates;
+    // Check if the heli is here first.
+    if (map.localTime.day !== session.armyHelicopterRescueDay) return null;
+    if (map !== session.armyHelicopterRescueMap) return null;
+    if (map.localTime.isNight) return null;
+    if (coordinates == null) return null;
+
+    // Do something else if near it already. Hopefully they will help defend it
+    // from undead.
+    if (euclideanDistance(actor.location.position, coordinates) < 8) return null;
+
+    // Only move to it if they can hear it.
+    if (euclideanDistance(actor.location.position, coordinates) > actor.audioRange) return null;
+
+    const getToTheChopper = this.behaviorIntelligentBumpToward(game, coordinates, true, false);
+    if (getToTheChopper == null) return null;
+
+    actor.isRunning = true;
+    actor.activity = Activity.IDLE; // C# Activity.EXPLORING, see above.
+    return getToTheChopper;
   }
 }

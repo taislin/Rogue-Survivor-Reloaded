@@ -516,6 +516,29 @@ export abstract class BaseMapGenerator extends MapGenerator {
     return fence;
   }
 
+  /**
+   * C# `MakeObjHelicopter(string)` — `BaseMapGenerator.cs:1097`.
+   *
+   * One tile of a three-tile sprite: the C# loads a 96x32 image and this method
+   * is handed each third of it, so the three objects placed side by side read as
+   * one helicopter (`RogueGame.cs:28864-28866`). The site picker therefore looks
+   * for a 3x1 patch, and the C#'s own comments calling it 4x2 are stale from
+   * before Release 7-3 shrank it.
+   *
+   * **`IsMetal` is not set.** The port's `MapObject` has no such property: it
+   * arrived in Release 5-4 to pick a push/break sound effect
+   * (`RogueGame.cs:22607`, `:22739`), neither of which the port has. It is also
+   * unreachable for this object — a helicopter is neither movable nor breakable,
+   * so nothing ever asks what it is made of.
+   *
+   * Nothing else: UNBREAKABLE and not walkable, so the three tiles are walls the
+   * player bumps into rather than floors they step onto, which is what puts them
+   * inside `DoPlayerBump`'s special cases where the C# asks to board.
+   */
+  public makeObjHelicopter(heliImageID: string): MapObject {
+    return new MapObject('helicopter', heliImageID);
+  }
+
   protected makeObjIronGate(gateImageID: string, isBreakable: boolean = true): MapObject {
     // alpha10.1 added param isBreakable
     const gate = new MapObject(

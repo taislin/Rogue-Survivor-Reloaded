@@ -22,6 +22,7 @@ import {
   ItemSprayScentModel,
 } from "@engine/items/ItemMisc";
 import { ItemBodyArmorModel } from "@engine/items/ItemBodyArmor";
+import { ItemBackpackModel } from "@engine/items/ItemBackpack";
 import { ItemTrackerModel, TrackingFlags } from "@engine/items/ItemTracker";
 import { ItemLightModel } from "@engine/items/ItemLight";
 import { ItemTrapModel } from "@engine/items/ItemTrap";
@@ -35,6 +36,7 @@ import { WorldTime } from "@engine/WorldTime";
 import { Rules } from "@engine/Rules";
 
 import armorsData from "./data/Items_Armors.json";
+import backpacksData from "./data/Items_Backpacks.json";
 import barricadingData from "./data/Items_Barricading.json";
 import entData from "./data/Items_Entertainment.json";
 import explosivesData from "./data/Items_Explosives.json";
@@ -213,9 +215,10 @@ export enum ItemID {
   LIGHT_FLARE = 138,
   LIGHT_GLOWSTICK = 139,
   // ── Still Alive items, part 3 (scripts/port-item-models.py): medicine, spray
-  // paint and explosives. The 5 backpacks are deliberately absent -- they are
-  // the ShelterBackpacks mechanic (a nested Inventory on an Item, a BACK doll
-  // part, Hauler-gated slot tiers), not a data row. See BROWSER_PORT_PLAN 5.6d.
+  // paint and explosives. The 5 backpacks were left out here on purpose -- they
+  // are the ShelterBackpacks mechanic (a nested Inventory on an Item, a BACK doll
+  // part, Hauler-gated slot tiers), not a data row -- and land at the end of the
+  // enum instead, once that mechanic existed. See BROWSER_PORT_PLAN 5.6d.
   MEDICINE_SMALL_MEDIKIT = 140,
   MEDICINE_LARGE_MEDIKIT = 141,
   MEDICINE_ALCOHOL_BEER_BOTTLE_BROWN = 142,
@@ -286,8 +289,107 @@ export enum ItemID {
    * had no row for. Appended for the same reason as the three above.
    */
   UNIQUE_BOOK_OF_ARMAMENTS = 171,
-  _COUNT = 172,
+  /**
+   * Still Alive, Release 8-2. The five rows of `Items_Backpacks.csv`, appended for
+   * the same reason as everything above: a save stores an `ItemID` as a bare
+   * number, so a new item goes at the end or it renumbers a different one.
+   *
+   * The comment at `MEDICINE_SMALL_MEDIKIT` said these five were "deliberately
+   * absent -- they are the ShelterBackpacks mechanic, a nested Inventory on an
+   * Item, a BACK doll part, Hauler-gated slot tiers". All five of those now
+   * exist, so the rows land.
+   */
+  BACKPACK_WAIST_POUCH = 172,
+  BACKPACK_SATCHEL = 173,
+  BACKPACK_DAYPACK = 174,
+  BACKPACK_HIKING_PACK = 175,
+  BACKPACK_ARMY_RUCKSACK = 176,
+  _COUNT = 177,
 }
+
+/**
+ * The models the C# marks `CanGoInBackpacks = true`. Still Alive, Release 8-2.
+ *
+ * Transcribed from the fork's `GameItems.cs` one `this[IDs.X] = new … { … }` block
+ * at a time: 121 of its 187 models carry the flag, 100 of those 121 exist in this
+ * port, and the other 21 (five ammo rows the C# added and the port has not, the six
+ * CHAR documents, the army access badge, vegetable seeds, the candle/glowstick/flare
+ * kits, two liquors, the sleeping bag, matches and the laptop) have no model here,
+ * so they stay at the default `false` and are named rather than faked.
+ *
+ * **This is a curated list and the curation does not reduce to a rule.** The
+ * C# author walked the list and picked: a combat knife packs and a crowbar does
+ * not, an army pistol packs and a hunting rifle does not, a stun gun packs and a
+ * minigun does not, raw dog meat is the one food left out. Most of the "no" entries
+ * are explained by the flag being added to items that were already *being* edited
+ * for another reason in the same pass, and by the 7-6 additions having arrived
+ * after the sweep -- but the exceptions are real, so deriving this from
+ * `isEquipable` or from any other property would "fix" the knife and un-fix the
+ * rifle. It is a list because in the C# it is a list.
+ *
+ * Applied in `postProcess` rather than at each construction site, because the C#
+ * writes it in 121 separate object initialisers and the port's table-driven
+ * construction has no such hook; one pass over the finished models is the same
+ * answer with 121 fewer edits to keep in step with a CSV rename.
+ */
+const CAN_GO_IN_BACKPACKS: ReadonlySet<ItemID> = new Set<ItemID>([
+  // Medicine — every one of them, including the beer and the cigarettes.
+  ItemID.MEDICINE_SMALL_MEDIKIT, ItemID.MEDICINE_LARGE_MEDIKIT, ItemID.MEDICINE_PILLS_STA,
+  ItemID.MEDICINE_PILLS_SLP, ItemID.MEDICINE_PILLS_SAN, ItemID.MEDICINE_PILLS_ANTIVIRAL,
+  ItemID.MEDICINE_ALCOHOL_BEER_BOTTLE_BROWN, ItemID.MEDICINE_ALCOHOL_BEER_BOTTLE_GREEN,
+  ItemID.MEDICINE_ALCOHOL_BEER_CAN_BLUE, ItemID.MEDICINE_ALCOHOL_BEER_CAN_RED,
+  ItemID.MEDICINE_CIGARETTES, ItemID.MEDICINE_ENERGY_DRINK,
+
+  // Food — everything the C# flags except raw dog meat, which Release 7-6 added
+  // and the 8-2 sweep never revisited (`GameItems.cs`, the `//@MP (Release 7-6)`
+  // block on FOOD_RAW_DOG_MEAT is the only Still Alive food without the flag).
+  ItemID.FOOD_ARMY_RATION, ItemID.FOOD_GROCERIES, ItemID.FOOD_CANNED_FOOD,
+  ItemID.FOOD_WILD_BERRIES, ItemID.FOOD_VEGETABLES, ItemID.FOOD_SNACK_BAR,
+  ItemID.FOOD_PEANUTS, ItemID.FOOD_GRAPES, ItemID.FOOD_RAW_FISH, ItemID.FOOD_COOKED_FISH,
+  ItemID.FOOD_RAW_RABBIT, ItemID.FOOD_COOKED_RABBIT, ItemID.FOOD_RAW_CHICKEN,
+  ItemID.FOOD_COOKED_CHICKEN, ItemID.FOOD_COOKED_DOG_MEAT, ItemID.FOOD_RAW_HUMAN_FLESH,
+  ItemID.FOOD_COOKED_HUMAN_FLESH, ItemID.FOOD_CHICKEN_EGG,
+
+  // Weapons — the curated half, and the half that proves the list is a list.
+  ItemID.MELEE_COMBAT_KNIFE, ItemID.MELEE_BONESAW, ItemID.MELEE_SHORT_SHOVEL,
+  ItemID.MELEE_TRUNCHEON, ItemID.MELEE_IMPROVISED_CLUB, ItemID.MELEE_SMALL_HAMMER,
+  ItemID.MELEE_KEYBOARD, ItemID.MELEE_MACHETE, ItemID.MELEE_PIPE_WRENCH,
+  ItemID.MELEE_CLEAVER, ItemID.MELEE_BRASS_KNUCKLES, ItemID.MELEE_KITCHEN_KNIFE,
+  ItemID.MELEE_NUNCHAKU, ItemID.MELEE_FRYING_PAN, ItemID.MELEE_SICKLE,
+  ItemID.RANGED_ARMY_PISTOL, ItemID.RANGED_PISTOL, ItemID.RANGED_REVOLVER,
+  ItemID.RANGED_SHOTGUN, ItemID.RANGED_VINTAGE_PISTOL, ItemID.RANGED_NAIL_GUN,
+  ItemID.RANGED_STUN_GUN, ItemID.RANGED_SMG,
+
+  // Ammo, explosives, trackers, paint, scent spray, the fire extinguisher. Every
+  // *primed* explosive is absent, and cannot be otherwise: it exists only in the
+  // half-second between a throw and a landing, so there is never a primed model
+  // in a pack.
+  ItemID.AMMO_LIGHT_PISTOL, ItemID.AMMO_HEAVY_PISTOL, ItemID.AMMO_LIGHT_RIFLE,
+  ItemID.AMMO_HEAVY_RIFLE, ItemID.AMMO_SHOTGUN, ItemID.AMMO_BOLTS, ItemID.AMMO_FUEL,
+  ItemID.EXPLOSIVE_GRENADE, ItemID.EXPLOSIVE_MOLOTOV, ItemID.EXPLOSIVE_DYNAMITE,
+  ItemID.EXPLOSIVE_C4, ItemID.EXPLOSIVE_FUEL_CAN, ItemID.EXPLOSIVE_FUEL_PUMP,
+  ItemID.EXPLOSIVE_SMOKE_GRENADE, ItemID.EXPLOSIVE_FLASHBANG,
+  ItemID.EXPLOSIVE_HOLY_HAND_GRENADE, ItemID.EXPLOSIVE_PLASMA_CHARGE,
+  ItemID.TRACKER_CELL_PHONE, ItemID.TRACKER_ZTRACKER, ItemID.TRACKER_BLACKOPS,
+  ItemID.TRACKER_POLICE_RADIO, ItemID.SPRAY_PAINT1, ItemID.SPRAY_PAINT2,
+  ItemID.SPRAY_PAINT3, ItemID.SPRAY_PAINT4, ItemID.PAINT_THINNER,
+  ItemID.FIRE_EXTINGUISHER, ItemID.SCENT_SPRAY_STENCH_KILLER,
+
+  // Lights — all five, night vision and binoculars included.
+  ItemID.LIGHT_FLASHLIGHT, ItemID.LIGHT_BIG_FLASHLIGHT, ItemID.LIGHT_NIGHT_VISION,
+  ItemID.LIGHT_BINOCULARS, ItemID.LIGHT_FLARE, ItemID.LIGHT_GLOWSTICK,
+
+  // Traps — the empty can and the spikes, but not the bear trap or the barbed wire.
+  ItemID.TRAP_EMPTY_CAN, ItemID.TRAP_SPIKES,
+
+  // Books and magazines. `ENT_BOOK` and `ENT_MAGAZINE` themselves are absent: the
+  // C#'s vanilla pair sits outside the swept region, like the vanilla crowbar.
+  ItemID.ENT_BOOK_CHAR, ItemID.ENT_BOOK_BLUE, ItemID.ENT_BOOK_GREEN, ItemID.ENT_BOOK_RED,
+  ItemID.ENT_MAGAZINE1, ItemID.ENT_MAGAZINE2, ItemID.ENT_MAGAZINE3, ItemID.ENT_MAGAZINE4,
+
+  // The two uniques the C# flags, and the siphon kit.
+  ItemID.UNIQUE_SUBWAY_BADGE, ItemID.UNIQUE_BOOK_OF_ARMAMENTS, ItemID.SIPHON_KIT,
+]);
 
 export class GameItems implements ItemModelDB {
   private readonly models: ItemModel[] = new Array(ItemID._COUNT);
@@ -885,9 +987,9 @@ export class GameItems implements ItemModelDB {
     // C#'s `new Item(...)`), forbidden to the AI so no survivor hoards the
     // only flavour text in the game into a backpack.
     //
-    // The C#'s `CanGoInBackpacks` (Release 8-2) is not carried: the port's
-    // `ItemModel` has no such flag, because `Feature.ShelterBackpacks` has not
-    // built the nested inventory it would gate.
+    // The C#'s `CanGoInBackpacks` (Release 8-2) is one of the 100 ids in
+    // `CAN_GO_IN_BACKPACKS`; it is not set here because the port's construction is
+    // table-driven and that flag is applied in `postProcess` instead.
     const bookOfArmaments = new ItemModel(
       "Book of Armaments",
       "Books of Armaments",
@@ -896,6 +998,46 @@ export class GameItems implements ItemModelDB {
     bookOfArmaments.flavorDescription =
       "It's open at chapter 2, verses 9 through 21.";
     this.setModel(ItemID.UNIQUE_BOOK_OF_ARMAMENTS, bookOfArmaments);
+
+    // Backpacks. Still Alive, Release 8-2 (`GameItems.cs:1006-1060`).
+    //
+    // The one item table the C# reads from a CSV the *port* has but never bound,
+    // so unlike the ten `if (!meta) continue;` tables above, an unknown row here
+    // throws. That is deliberate: `Items_Backpacks.csv` has exactly five rows and
+    // all five are in the map, so a sixth is a decision somebody forgot to make
+    // an `ItemID` for -- and the failure is a load-time throw rather than an item
+    // that silently does not exist.
+    //
+    // `EquipmentPart = BACK` is set per row because "is a backpack" is not the
+    // question the C# asks: it names the doll part in each of the five object
+    // initialisers (`GameItems.cs:1031-1052`), and that is the declaration of
+    // intent. Its `IsAn = StartsWithVowel(...)` on the same rows is *not*
+    // reproduced, because `postProcess` overwrites it — and a per-row assignment
+    // that is unconditionally overwritten is a second place to forget to update.
+    const backpackMap: Record<string, { id: ItemID; img: string }> = {
+      BACKPACK_WAIST_POUCH: { id: ItemID.BACKPACK_WAIST_POUCH, img: GameImages.ITEM_WAIST_POUCH },
+      BACKPACK_SATCHEL: { id: ItemID.BACKPACK_SATCHEL, img: GameImages.ITEM_SATCHEL },
+      BACKPACK_DAYPACK: { id: ItemID.BACKPACK_DAYPACK, img: GameImages.ITEM_DAYPACK },
+      BACKPACK_HIKING_PACK: { id: ItemID.BACKPACK_HIKING_PACK, img: GameImages.ITEM_HIKING_PACK },
+      BACKPACK_ARMY_RUCKSACK: { id: ItemID.BACKPACK_ARMY_RUCKSACK, img: GameImages.ITEM_ARMY_RUCKSACK },
+    };
+    for (const d of backpacksData as any[]) {
+      const meta = backpackMap[d.ID];
+      if (!meta) {
+        throw new Error(`Items_Backpacks.csv has a row (${d.ID}) with no ItemID`);
+      }
+      const model = new ItemBackpackModel(
+        d.NAME,
+        d.PLURAL,
+        meta.img,
+        d.INV_SLOTS,
+        d.ENC,
+        d.WEIGHT,
+      );
+      model.equipmentPart = DollPart.BACK;
+      model.flavorDescription = d.FLAVOR ?? "";
+      this.setModel(meta.id, model);
+    }
 
     // Traps
     const trapMap: Record<string, { id: ItemID; img: string }> = {
@@ -977,6 +1119,12 @@ export class GameItems implements ItemModelDB {
    * `> 0`, a stack limit of 1 (every food but canned food, the plank, both
    * uniques) marked the item stackable, so the inventory offered to merge
    * two army rations into one slot and then capped the pile at one.
+   *
+   * `canGoInBackpacks` is the third assignment and is *not* one of the C#'s: the
+   * C# writes it in 121 separate object initialisers and has no post-pass for it
+   * (the flag is not derivable -- see `CAN_GO_IN_BACKPACKS`). It is applied here
+   * because this is the one pass that already walks every model, so a model added
+   * to a table below is covered without remembering a second place.
    */
   private postProcess(): void {
     for (let i = 0; i < ItemID._COUNT; i++) {
@@ -984,6 +1132,7 @@ export class GameItems implements ItemModelDB {
       if (!model) continue;
       model.isAn = GameItems.startsWithVowel(model.singleName);
       model.isStackable = model.stackingLimit > 1;
+      model.canGoInBackpacks = CAN_GO_IN_BACKPACKS.has(i as ItemID);
     }
   }
 

@@ -14,7 +14,23 @@ export enum DollPart {
   FEET = 6,
   SKIN = 7,
   EYES = 8,
-  _COUNT = 9
+  /**
+   * The back, for backpacks. Still Alive, Release 8-2.
+   *
+   * The C# numbers this 10, because `LEFT_ARM` (the police riot shield, Release
+   * 7-2) is 9 there and the port has no shields at all. So 9 is free here and
+   * 10 would leave a hole: a `DollPart` enum with a gap in it is a trap for the
+   * next person who adds a part, and the number is unobservable anyway — nothing
+   * in the project persists or transmits a `DollPart` as a number (the graph writer
+   * carries an equipped part as the field's own value, and the equipment lookup is
+   * a comparison).
+   *
+   * Which means a future `LEFT_ARM` has to be numbered deliberately rather than
+   * inherited by accident, and the comment on `tests/tile-palette.test.ts` records
+   * the same thing from the test side.
+   */
+  BACK = 9,
+  _COUNT = 10
 }
 
 export class DollBody {

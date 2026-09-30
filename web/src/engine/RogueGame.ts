@@ -90,6 +90,21 @@ import {
 	ZupDays,
 } from "@engine/GameOptions";
 import { GameSaveManager } from "@engine/GameSave";
+import {
+	autoCloseBackpack,
+	firstBackpack,
+	moveItemToBackpack,
+	moveItemToInventory,
+	moveRefusalMessage,
+	openBackpack,
+} from "@gameplay/Backpacks";
+import { ItemBackpack } from "@engine/items/ItemBackpack";
+import {
+	BACKPACK_PANEL_TITLE,
+	BACKPACK_PANEL_Y as backpackPanelY,
+	backpackHidesGroundPanel,
+	describeItemInBackpack,
+} from "@ui/BackpackPanel";
 import { HiScore, HiScoreTable } from "@engine/HiScoreTable";
 import {
 	type GameKeyEvent,
@@ -199,6 +214,29 @@ export function padLeft(s: string | number, width: number): string {
 	return String(s).padStart(width, " ");
 }
 
+/**
+ * The three zone-name tokens a helicopter is allowed to land in.
+ *
+ * C# `RogueGame.cs:4533`: `z.Name.Contains("Park") || z.Name.Contains("Graveyard")
+ * || z.Name.Contains("court")`. Exported and shared so the test can state the
+ * exclusion against the same list the picker uses rather than restating it — the
+ * whole exclusion *is* these three strings, and a fourth one added here would
+ * silently widen what a rescue square can be.
+ *
+ * Case-sensitive, as the C# is: `"Tennis court"` and `"Basketball court"` match
+ * on `court`, `"Park"` and `"Graveyard"` on themselves (`BaseTownGenerator`'s
+ * `makeParkBuilding`, `BaseTownGenerator.ts:2410`).
+ */
+export const HELICOPTER_LANDING_ZONE_TOKENS = ["Park", "Graveyard", "court"] as const;
+
+/** See {@link HELICOPTER_LANDING_ZONE_TOKENS}. */
+export function isHelicopterLandingZoneName(zoneName: string): boolean {
+	for (const token of HELICOPTER_LANDING_ZONE_TOKENS) {
+		if (zoneName.includes(token)) return true;
+	}
+	return false;
+}
+
 /** C# numeric/string format alignment: `{0,-25}` (left aligned). */
 export function padRight(s: string | number, width: number): string {
 	return String(s).padEnd(width, " ");
@@ -243,23 +281,6 @@ export const TILE_VIEW_HEIGHT: number = 21;
  */
 export const HALF_VIEW_WIDTH: number = 13;
 export const HALF_VIEW_HEIGHT: number = 10;
-/**
- * The map panel in pixels — the fixed viewport the map is drawn into, at any
- * zoom. The zoom changes how many tiles fill it, never its size: that is what
- * lets the side panel, message area and minimap keep their C# positions.
- */
-export const MAP_PANEL_WIDTH: number = TILE_SIZE * TILE_VIEW_WIDTH;
-export const MAP_PANEL_HEIGHT: number = TILE_SIZE * TILE_VIEW_HEIGHT;
-export const CANVAS_WIDTH: number = 1366;
-export const CANVAS_HEIGHT: number = 768;
-export const DAMAGE_DX: number = 10;
-export const DAMAGE_DY: number = 10;
-export const RIGHTPANEL_X: number = TILE_SIZE * TILE_VIEW_WIDTH + 4;
-export const RIGHTPANEL_Y: number = 0;
-export const RIGHTPANEL_TEXT_X: number = RIGHTPANEL_X + 4;
-export const RIGHTPANEL_TEXT_Y: number = RIGHTPANEL_Y + 4;
-export const INVENTORYPANEL_X: number = RIGHTPANEL_TEXT_X;
-export const INVENTORYPANEL_Y: number = RIGHTPANEL_TEXT_Y + 170;
 /**
  * Side-panel leading, raised from C#'s 12/14 to match the 10 pt HUD font.
  *
@@ -306,6 +327,25 @@ export const SIDEPANEL_TITLE_LEADING: number = LINE_SPACING;
  * the panel below. The test `hud-layout.test.ts` encoded the same incomplete
  * arithmetic, which is why it passed.
  */
+/** Side panel left edge, from the C#'s `RIGHTPANEL_X`. */
+/**
+ * The map panel in pixels -- the fixed viewport the map is drawn into, at any
+ * zoom. The zoom changes how many tiles fill it, never its size: that is what
+ * lets the side panel, message area and minimap keep their C# positions.
+ */
+export const MAP_PANEL_WIDTH: number = TILE_SIZE * TILE_VIEW_WIDTH;
+export const MAP_PANEL_HEIGHT: number = TILE_SIZE * TILE_VIEW_HEIGHT;
+export const CANVAS_WIDTH: number = 1366;
+export const CANVAS_HEIGHT: number = 768;
+export const DAMAGE_DX: number = 10;
+export const DAMAGE_DY: number = 10;
+export const RIGHTPANEL_X: number = TILE_SIZE * TILE_VIEW_WIDTH + 4;
+export const RIGHTPANEL_Y: number = 0;
+export const RIGHTPANEL_TEXT_X: number = RIGHTPANEL_X + 4;
+export const RIGHTPANEL_TEXT_Y: number = RIGHTPANEL_Y + 4;
+export const INVENTORYPANEL_X: number = RIGHTPANEL_TEXT_X;
+export const INVENTORYPANEL_Y: number = RIGHTPANEL_TEXT_Y + 170;
+
 export const SIDEPANEL_SECTION_HEIGHT: number = 60;
 export const GROUNDINVENTORYPANEL_Y: number =
 	INVENTORYPANEL_Y + SIDEPANEL_SECTION_HEIGHT;
@@ -1027,6 +1067,19 @@ export class RogueGame {
 	m_MessageManager!: MessageManager;
 	m_IsGameRunning: boolean = true;
 	m_HasLoadedGame: boolean = false;
+	/**
+	 * C# `m_PlayerWasRescued` — `RogueGame.cs:716`, Release 6-4.
+	 *
+	 * A separate flag from "the player is dead" because the C# needs both: it
+	 * removes the player from the map when they are rescued
+	 * (`RogueGame.cs:7449`), and removing the player does not stop the world —
+	 * `GameLoop`'s condition is `!m_Player.IsDead && ... && !m_PlayerWasRescued`
+	 * (`:5517`). The port's condition is the same shape.
+	 *
+	 * False in every run that has no rescue site, so the loop behaves exactly as
+	 * before for CLASSIC and for a Still Alive run that never got a helicopter.
+	 */
+	m_PlayerWasRescued: boolean = false;
 	m_Overlays: Overlay[] = [];
 	m_Player!: Actor;
 	/**
@@ -1804,7 +1857,8 @@ export class RogueGame {
 		while (
 			this.m_Player != null &&
 			!this.m_Player.isDead &&
-			this.m_IsGameRunning
+			this.m_IsGameRunning &&
+			!this.m_PlayerWasRescued //@@MP (Release 6-4)
 		) {
 			// timer.
 			const timeBefore = Date.now();
@@ -3514,6 +3568,13 @@ export class RogueGame {
 		// wrapped this in `do { ... } while (!worldMade)`; the bound is the part it
 		// is missing, and without it a city size too small to hold a business
 		// district spins forever instead of failing once with a usable message.
+		//
+		// There are now *two* ways an attempt can fail: that one, and
+		// `PickHelicopterRescueSite` finding no green district with a park in it, or
+		// no three clear tiles in any of them (`Feature.HelicopterRescue`). The
+		// bound covers both, and so does the message below — naming only the CHAR
+		// office when the helicopter was the site that could not be placed would
+		// send whoever reads it looking in the wrong place.
 		const MAX_WORLD_GEN_ATTEMPTS = 12;
 		let worldMade = false;
 		for (let attempt = 1; !worldMade; attempt++) {
@@ -3521,13 +3582,26 @@ export class RogueGame {
 				// New seed, and a fresh session, because `GenerateWorld` reuses
 				// whatever the previous attempt left behind. `reset()` covers the
 				// seed and the world; nothing else this loop needs clearing.
+				//
+				// Except the rescue day, which `reset()` does cover and which must
+				// not: `HandleNewCharacterDifficulty` committed the player's choice
+				// to it before this method was entered, so a failed first attempt
+				// would silently hand back the option's default — a player who chose
+				// day 14 to escape on day 21, because the world rolled a city with
+				// no park in it. It is preserved explicitly rather than by exempting
+				// the whole field from `reset()` (`load()` restores it from the save
+				// over the top, and a run that has not chosen one must still get the
+				// default).
+				const rescueDay = this.m_Session.armyHelicopterRescueDay;
 				this.m_Session.reset();
+				this.m_Session.armyHelicopterRescueDay = rescueDay;
 			}
 			worldMade = this.GenerateWorld(true, s_Options.citySize);
 			if (!worldMade && attempt >= MAX_WORLD_GEN_ATTEMPTS) {
 				throw new Error(
 					`could not generate a world in ${MAX_WORLD_GEN_ATTEMPTS} attempts; ` +
-						`no business district with a CHAR office in a ${s_Options.citySize}x${s_Options.citySize} city`,
+						`no business district with a CHAR office, and no green district with a ` +
+						`park to land a helicopter in, in a ${s_Options.citySize}x${s_Options.citySize} city`,
 				);
 			}
 		}
@@ -4284,6 +4358,225 @@ export class RogueGame {
 				new Location(map, position),
 				map.localTime.turnCounter,
 			);
+		}
+	}
+
+	// ── Army rescue helicopter ───────────────────────────────────────────────
+	//@@MP - methods supporting the end-goal helicopter rescue (Release 6-4)
+	//
+	// The whole region is `Feature.HelicopterRescue`, and the gate is on the two
+	// day-change call sites (`OnNewDay` / `OnNewNight`) rather than on each method
+	// here: they are the only callers, they are the only ones that know whether
+	// it is the rescue day, and a gate inside a method whose every caller already
+	// decided would be a second answer to a question that has one.
+
+	/**
+	 * C# `SpawnArmyHelicopterOnMap` — `RogueGame.cs:28807-28880`, Release 6-4.
+	 *
+	 * async: the C# blocks on `OnActorEnterTile`, which awaits a trap roll and a
+	 * possible `KillActor`; see `OnActorEnterTile`.
+	 *
+	 * The order is the C#'s and each step depends on the one before it: clear the
+	 * three tiles, *then* place the helicopter on them, *then* tell the AI. Placing
+	 * first and clearing after would delete the helicopter, and notifying first
+	 * would have orderables path to a tile that is then occupied.
+	 *
+	 * ## What is NOT here
+	 *
+	 * - **`CheckLandedHelicopterSFX` and the flyover** (`RogueGame.cs:28869-28877`)
+	 *   are the `Feature.AmbientAudio` follow-up's, not this feature's: they read
+	 *   `m_AmbientSFXManager`, and the five helicopter tracks are gated on that
+	 *   feature so the gates stay separate. `NoiseDistance` now has the four radii
+	 *   those calls need, and `armyHelicopterRescueMap` /
+	 *   `armyHelicopterRescueCoordinates` now exist for them, so that work is
+	 *   unblocked — but it is not done here.
+	 * - **`FireEvent_RescueWave`** (`RogueGame.cs:28132-28158`) is not ported. It
+	 *   tops the district back up to `MaxCivilians` / `MaxAnimals` / `MaxUndeads`,
+	 *   and the port has no `GAME_MAX_ANIMALS` option (`Options.maxAnimals`) and
+	 *   no `SpawnNewFeralDog`, so its middle leg — the feral dogs — cannot be
+	 *   written at all. Two thirds of a wave is not a wave, and the two messages it
+	 *   announces ("The number of undead seems to be increasing!") would be
+	 *   announcing nothing.
+	 */
+	async SpawnArmyHelicopterOnMap(map: Map): Promise<void> {
+		// The heli is a 3x1 tile, so clear its designated space of actors and
+		// objects. C# `:28811-28858`.
+		const heli1 = this.m_Session.armyHelicopterRescueCoordinates!;
+		const heliPoints = [
+			heli1,
+			heli1.add(new Point(1, 0)),
+			heli1.add(new Point(2, 0)),
+		];
+
+		for (const heliPoint of heliPoints) {
+			// Remove objects in the way.
+			const obj = map.getMapObjectAtPoint(heliPoint);
+			if (obj !== null) map.removeMapObject(obj);
+
+			// Remove items in the way. C# `RemoveAllItemsAt`, which the port's
+			// `Map` does not have — `Inventory` is the other agent's file and this is
+			// the one operation of the four that it does not already expose. Done
+			// through the primitives instead, in the same order (the C# iterates
+			// its own copy because it removes while iterating).
+			this.RemoveAllItemsAt(map, heliPoint);
+
+			// Move actors in the way.
+			const actor = map.getActorAtPoint(heliPoint);
+			if (actor === null) continue;
+			if (!actor.isPlayer) {
+				// Kill AI actors. C# `:28829-28833`, Release 7-5: they used to be
+				// removed outright and now are killed *by themselves*, which is what
+				// gives the rescue square its pile of corpses.
+				await this.KillActor(actor, actor, "crushed by a helicopter");
+				this.RemoveAllItemsAt(map, heliPoint); // get rid of their stuff.
+			} else {
+				// Find a suitable location to move the player to.
+				let winningSpot = this.FindNonHelicopterSpotToMovePlayer(map, heliPoint, heliPoints);
+				// If we found absolutely no good spot, widen the search: the
+				// player is on a helicopter tile, so their own neighbours are all
+				// either heli tiles or wherever they were standing a moment ago.
+				if (winningSpot === null) {
+					for (const d of Direction.COMPASS) {
+						const widened = this.FindNonHelicopterSpotToMovePlayer(
+							map,
+							d.applyTo(heliPoint),
+							heliPoints,
+						);
+						if (widened !== null) {
+							winningSpot = widened;
+							break;
+						}
+					}
+					if (winningSpot === null)
+						throw new Error(
+							"Could not find clear point to relocate player to (away from helicopter). " +
+								"Please reload your last save",
+						);
+				}
+
+				// Now move them.
+				map.removeActor(actor);
+				map.placeActor(actor, winningSpot);
+				await this.OnActorEnterTile(actor);
+			}
+		}
+
+		// Now place the helicopter down. C# `:28863-28866`: three objects, one per
+		// third of the sprite, in order.
+		map.placeMapObject(this.m_TownGenerator.makeObjHelicopter(GameImages.OBJ_HELICOPTER1), heli1);
+		map.placeMapObject(
+			this.m_TownGenerator.makeObjHelicopter(GameImages.OBJ_HELICOPTER2),
+			heliPoints[1],
+		);
+		map.placeMapObject(
+			this.m_TownGenerator.makeObjHelicopter(GameImages.OBJ_HELICOPTER3),
+			heliPoints[2],
+		);
+
+		// Notify AI. //@@MP (Release 7-5)
+		this.NotifyOrderablesAI(
+			map,
+			RaidType.HELICOPTER_RESCUE,
+			heli1,
+		);
+	}
+
+	/**
+	 * `Map.RemoveAllItemsAt(Point)` — C# `RogueGame.cs:28824`.
+	 *
+	 * Exists as a method here rather than on `Map` because `Map` is not this
+	 * feature's file to change, and `Inventory` is another agent's. It is the C#'s
+	 * semantics exactly: every ground item on the tile goes, and the tile's
+	 * inventory is dropped rather than emptied so it does not linger as an empty
+	 * container — which is what `removeItemsAtIfEmpty` would leave behind anyway.
+	 */
+	private RemoveAllItemsAt(map: Map, pos: Point): void {
+		const inv = map.getItemsAt(pos);
+		if (inv === null) return;
+		for (const it of inv.items.slice()) {
+			if (inv.contains(it)) map.removeItemAt(it, pos);
+		}
+		map.removeItemsAtIfEmpty(pos);
+	}
+
+	/**
+	 * C# `FindNonHelicopterSpotToMovePlayer` — `RogueGame.cs:28884-28925`.
+	 *
+	 * **Returns null where the C# returns `Point.Empty`.** `(0, 0)` is a real tile
+	 * — the top-left corner of the map — so the C#'s "no spot" sentinel cannot be
+	 * told from "the top-left corner", and a caller testing `!= Point.Empty` would
+	 * treat the corner as a failure and keep looking. Null is the port's
+	 * `Point.Empty`, and every comparison is spelled on it.
+	 *
+	 * **`winningScore` is never assigned in the C#,** so `thisPtScore >
+	 * winningScore` is really `> 0` and the winner is the *last* acceptable
+	 * candidate rather than the best one. Kept, for the reason the rest of this
+	 * port keeps upstream quirks: both readings pick a legal spot, and silently
+	 * choosing a different tile than the C# would moves the player somewhere the
+	 * fork would not have put them. The scoring itself is kept because it is what
+	 * decides "legal" at all — 50 for clear, 25 for jumpable-over, and -30/+100
+	 * for fire, whose net effect is that a burning tile scores negative and can
+	 * never win, because `winningScore` never rises above 0.
+	 */
+	private FindNonHelicopterSpotToMovePlayer(
+		map: Map,
+		source: Point,
+		heliPoints: readonly Point[],
+	): Point | null {
+		let winningPoint: Point | null = null;
+		let winningScore = 0;
+		for (const d of Direction.COMPASS) {
+			const pt = d.applyTo(source);
+			const thisPtScore = (() => {
+				let score = 0;
+
+				// Can't be out of bounds.
+				if (!map.isInBoundsPoint(pt)) return null;
+
+				// Rule out any other points that are also heli spots.
+				if (heliPoints.some((heliPt) => heliPt.equals(pt))) return null;
+
+				// Check if there is already an actor there.
+				if (map.getActorAtPoint(pt) !== null) return null;
+
+				const mapObj = map.getMapObjectAtPoint(pt);
+				if (mapObj === null) score += 50;
+				else if (mapObj.isJumpable) score += 25;
+				else return null;
+
+				// If the spot is on fire it's possible but not ideal for humans, so
+				// score lower.
+				if (map.isAnyTileFireThere(pt)) score -= 30;
+				else score += 100; // passed all the checks so it must be a good spot.
+
+				return score;
+			})();
+			if (thisPtScore === null) continue;
+			if (thisPtScore > winningScore) winningPoint = pt;
+		}
+		return winningPoint;
+	}
+
+	/**
+	 * C# `DespawnArmyHelicopter` — `RogueGame.cs:28926-28938`, Release 6-4.
+	 *
+	 * "the heli is a 4x2 tile, so we need to clear it in pieces" — the comment is
+	 * stale (Release 7-3 made it 3x1) but the three points are what the code walks
+	 * and what `SpawnArmyHelicopterOnMap` placed, so the port clears three.
+	 *
+	 * Objects only. The C# does not clear items or actors here, which means an
+	 * item dropped on the rescue square survives the chopper and a survivor who
+	 * dropped something on it and came back the next night finds it; kept.
+	 */
+	DespawnArmyHelicopter(map: Map): void {
+		const heli1 = this.m_Session.armyHelicopterRescueCoordinates!;
+		for (const heliPoint of [
+			heli1,
+			heli1.add(new Point(1, 0)),
+			heli1.add(new Point(2, 0)),
+		]) {
+			const obj = map.getMapObjectAtPoint(heliPoint);
+			if (obj !== null) map.removeMapObject(obj);
 		}
 	}
 
@@ -7300,6 +7593,14 @@ export class RogueGame {
 							loop = !(await this.HandlePlayerUseSpray(player));
 							break;
 
+						case PlayerCommand.SWAP_INVENTORY: //@@MP (Release 8-2)
+							if (await this.TryPlayerUnwell()) {
+								loop = false;
+								break;
+							}
+							loop = !this.HandlePlayerSwapItemInventory(player, mousePos);
+							break;
+
 						case PlayerCommand.LEAD_MODE:
 							if (await this.TryPlayerUnwell()) {
 								loop = false;
@@ -7504,6 +7805,13 @@ export class RogueGame {
 	 * seven.
 	 */
 	async TryPlayerUnwell(): Promise<boolean> {
+		// C# `BlockAction(checkBackpack: true)` -- `RogueGame.cs:33122-33141`, one
+		// arm of the chain every command site funnels through.
+		//
+		// The auto-close itself is ungated and lives in `@gameplay/Backpacks`, which
+		// answers "no backpack" rather than "not in this ruleset"; the *command* is
+		// gated below, because under CLASSIC there is no `Y` binding to press.
+		autoCloseBackpack(this.m_Player);
 		if (await this.TryPlayerInsanity()) return true;
 		if (await this.TryPlayerDrunkenness()) return true;
 		return this.TryPlayerFoodPoisoning();
@@ -8477,7 +8785,22 @@ export class RogueGame {
 		);
 		const it = hit.result;
 		if (it != null) {
-			const lines = this.DescribeItemLong(it, isPlayerInventory, hit.iSlot);
+			//
+			// An item *in the open backpack* is described by the panel, not by
+			// `DescribeItemLong`: it is not in the player's inventory, so the generic
+			// path would offer "to equip" and "to give" for something that is two
+			// rows away in a bag. `destroy` is passed as "" because
+			// `PlayerCommand.DESTROY_ITEM` is Release 7-6 and not ported, and a
+			// description that names a key the player cannot press is worse than one
+			// that omits it.
+			const packInv = firstBackpack(this.m_Player)?.backpackInventory;
+			const inBackpack = packInv != null && inv === packInv;
+			const lines = inBackpack
+				? describeItemInBackpack(it, "", {
+						destroy: "",
+						moveToInventory: `<${s_KeyBindings.get(PlayerCommand.SWAP_INVENTORY) ?? ""}>`,
+					})
+				: this.DescribeItemLong(it, isPlayerInventory, hit.iSlot);
 			const longestLine = 1 + this.FindLongestLine(lines);
 			const ovX = itemPos.x - 7 * longestLine;
 			const ovY = itemPos.y + 32;
@@ -8505,6 +8828,41 @@ export class RogueGame {
 	}
 
 	// C# MouseToInventoryItem — RogueGame.cs:6698
+	/**
+	 * C# `HandlePlayerSwapItemInventory` -- `RogueGame.cs:13851-13930`.
+	 *
+	 * Moves an item between the player and the open backpack. Everything with a
+	 * teeth is in `@gameplay/Backpacks` and `Rules`; this is the wiring, and the
+	 * only judgement in it is *which* of the two directions to move in, which is
+	 * "where did the click land" rather than anything the C# decides for us.
+	 *
+	 * The C# follows a refusal with a modal prompt offering to swap into a free
+	 * slot instead. That prompt is **not** ported -- see `moveItemToBackpack` for
+	 * why nothing is silently dropped without it. The guard around it is ported
+	 * verbatim, so a move into a full bag is refused with the C#'s own string.
+	 */
+	HandlePlayerSwapItemInventory(player: Actor, mousePos: Point): boolean {
+		const hit = this.MouseToInventoryItem(mousePos);
+		const it = hit.result;
+		if (hit.inv == null || it == null) return false;
+
+		const pack = firstBackpack(player);
+		const inBackpack = pack != null && hit.inv === pack.backpackInventory;
+		if (!inBackpack && hit.inv !== player.inventory) return false;
+
+		const verdict = inBackpack
+			? moveItemToInventory(player, it)
+			: moveItemToBackpack(this.m_Rules, player, it);
+		if (verdict.ok) return true;
+
+		this.AddMessage(
+			this.MakeErrorMessage(
+				pack != null ? moveRefusalMessage(it, pack, verdict.reason) : verdict.reason,
+			),
+		);
+		return false;
+	}
+
 	MouseToInventoryItem(screen: Point): {
 		result: Item | null;
 		inv: Inventory | null;
@@ -8542,6 +8900,33 @@ export class RogueGame {
 			};
 		}
 
+		// The backpack panel takes the ground panel's row (`BACKPACK_PANEL_Y` is
+		// `GROUNDINVENTORYPANEL_Y`), so the bag is tested *first* and the ground
+		// panel is only reached when there is no open bag to intercept the click.
+		// C# `MouseToInventoryItem` -- `RogueGame.cs:13930`.
+		const pack = firstBackpack(this.m_Player);
+		if (pack != null && pack.isOpen) {
+			const packInv = pack.backpackInventory;
+			const packSlot = this.PanelSlotAtMouse(
+				INVENTORYPANEL_X,
+				backpackPanelY(),
+				packInv.maxCapacity,
+				screen.x,
+				screen.y,
+			);
+			if (packSlot != null) {
+				inv = packInv;
+				itemPos = this.InventorySlotToScreen(
+					INVENTORYPANEL_X,
+					backpackPanelY(),
+					packSlot.x,
+					packSlot.y,
+				);
+				iSlot = packSlot.index;
+				return { result: packInv.getItem(packSlot.index), inv, itemPos, iSlot };
+			}
+		}
+
 		const groundInv =
 			this.m_Player.location.map?.getItemsAt(this.m_Player.location.position) ??
 			null;
@@ -8575,6 +8960,19 @@ export class RogueGame {
 
 	// C# OnLMBItem — RogueGame.cs:6734
 	OnLMBItem(inv: Inventory, it: Item): boolean {
+		// The bag is not the player's inventory, so it needs its own arm. C#
+		// `RogueGame.cs:11364-11380` plus `:21118` (the `OPEN_BACKPACK` sfx on
+		// unequip, which `Feature.ExtendedAudio` does not wire).
+		if (inv === firstBackpack(this.m_Player)?.backpackInventory) {
+			const opened = openBackpack(this.m_Player);
+			if (!opened.ok) {
+				this.AddMessage(this.MakeErrorMessage(opened.reason));
+				return false;
+			}
+			this.AddMessage(this.MakeMessage(this.m_Player, "opens the backpack."));
+			return false;
+		}
+
 		if (inv === this.m_Player.inventory) {
 			if (it.isEquipped) {
 				const res = this.m_Rules.canActorUnequipItem(this.m_Player, it);
@@ -14419,6 +14817,19 @@ export class RogueGame {
 		if (isPlayerInventory) {
 			lines.push(" ");
 			lines.push("----");
+			// C# `RogueGame.cs:32126-32127`: the move-to-backpack line, and only for
+			// an item the fork says may go in one. `canGoInBackpacks` is a curated
+			// 100-model list, not a rule derivable from `isEquipable` -- a combat
+			// knife qualifies and a hunting rifle does not.
+			if (
+				hasFeature(this.m_Session.ruleset, Feature.ShelterBackpacks) &&
+				it.model.canGoInBackpacks &&
+				firstBackpack(this.m_Player) != null
+			) {
+				lines.push(
+					`to move to backpack : <${key(PlayerCommand.SWAP_INVENTORY)}>`,
+				);
+			}
 			if (it.model.isEquipable)
 				lines.push(
 					`to ${it.isEquipped ? "unequip" : "equip"} : <LMB> or <Ctrl-${iSlot + 1}>`,
@@ -16192,6 +16603,69 @@ export class RogueGame {
 			);
 			this.RedrawPlayScreen();
 			return false;
+		}
+
+		// 5. army rescue helicopter (endgame) //@@MP (Release 6-4)
+		//
+		// C# `:23298-23327`, the fifth of its "MapObject special cases". The port
+		// deleted that whole region when it made bumping non-destructive — the
+		// clothes/hair/shoes cases are `Feature`-less C# content the port never
+		// ported, and this one came back because without it the rescue endgame has
+		// no way to be *finished*: the C# has no key for it, a bump is the only
+		// interaction with an unbreakable, unwalkable object, and the three
+		// helicopter tiles are exactly that.
+		//
+		// `aName` rather than an image id, because that is the C#'s test
+		// (`:23298`) and it survives the three-piece sprite: the three objects are
+		// all named "helicopter" and any one of them boards.
+		//
+		// The gate is on the feature *and* on the site, because under CLASSIC no
+		// helicopter is ever placed — so the branch is unreachable there — and
+		// because a save written before this feature would otherwise offer a
+		// rescue it cannot have.
+		if (hasFeature(this.m_Session.ruleset, Feature.HelicopterRescue)) {
+			const heliMap = this.m_Session.armyHelicopterRescueMap;
+			if (
+				heliMap !== null &&
+				heliMap === player.location.map &&
+				this.m_Session.armyHelicopterRescueCoordinates !== null
+			) {
+				const target = direction.applyTo(player.location.position);
+				if (heliMap.getMapObjectAtPoint(target)?.aName === "a helicopter") {
+					// Ask for confirmation.
+					this.AddMessage(
+						this.MakeYesNoMessage(
+							"Really escape on the helicopter and finish the game",
+						),
+					);
+					this.RedrawPlayScreen();
+					const confirm = await this.WaitYesOrNo();
+
+					if (confirm) {
+						// Completed achievement!
+						this.m_Session.scoring.setCompletedAchievement(
+							AchievementIDs.RESCUED_BY_HELICOPTER,
+						);
+						await this.ShowNewAchievement(AchievementIDs.RESCUED_BY_HELICOPTER);
+
+						// Now rescue.
+						this.ClearMessages();
+						this.RedrawPlayScreen();
+						await this.PlayerWasRescued();
+						return true;
+					}
+					this.ClearMessages();
+					this.AddMessage(
+						new Message(
+							"Ok, but remember, it won't wait for long...",
+							this.m_Session.worldTime.turnCounter,
+							Color.Yellow,
+						),
+					);
+					this.RedrawPlayScreen();
+					return false;
+				}
+			}
 		}
 
 		this.AddMessage(
@@ -18186,6 +18660,20 @@ export class RogueGame {
 	// C# DoTakeItem — RogueGame.cs:14887
 	DoTakeItem(actor: Actor, position: Point, it: Item): void {
 		const map = actor.location.map!;
+
+		// C# `RogueGame.cs:12062-12068`: the backpack gates, in the C#'s order --
+		// one-bag first, then the Hauler tier on its slot count. **Above** the AP
+		// spend, because the C# checks before spending and a refused take must not
+		// cost a turn.
+		if (it instanceof ItemBackpack) {
+			const res = this.m_Rules.canActorTakeBackpack(actor, it);
+			if (!res.ok) {
+				this.AddMessage(
+					this.MakeErrorMessage(`Cannot take ${it.theName} : ${res.reason}.`),
+				);
+				return;
+			}
+		}
 
 		// spend APs.
 		this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
@@ -20912,6 +21400,121 @@ export class RogueGame {
 		this.m_MusicManager.stop();
 	}
 
+	/**
+	 * C# `PlayerWasRescued` — `RogueGame.cs:7377-7458`, Release 6-4.
+	 *
+	 * The ending half of `Feature.HelicopterRescue`, and the reason the C# has a
+	 * `m_PlayerWasRescued` flag as well as an `IsDead` one: the player is removed
+	 * from the map here, and removing a player does not stop the world — only
+	 * `GameLoop`'s extra condition does.
+	 *
+	 * async: the C# blocks on `WaitYesOrNo` (in `DoPlayerBump`, its caller),
+	 * `AddMessagePressEnter` and the whole of `HandlePostRescue`.
+	 *
+	 * ## Two things are missing, and both are deliberate
+	 *
+	 * - **`GameMusics.POST_RESCUE`.** The C# plays a dedicated rescue cue here
+	 *   (`:7389`) and the track exists in `_refs`, but it is not among the files in
+	 *   `public/assets/music`, and `MUSIC_GAINS` is *generated* from the shipped
+	 *   files by `scripts/measure-audio-levels.mjs` — so the id cannot be added
+	 *   without an audio-assets pass that re-encodes the music folder. The music is
+	 *   stopped and nothing is played in its place, which is the honest half
+	 *   rather than the wrong cue.
+	 * - **The death screenshot.** `s_Options.isDeathScreenshotOn` is checked by
+	 *   `PlayerDied` and by the C#'s `PlayerWasRescued` (`:7437`); it is not
+	 *   checked here, so a rescued run takes no screenshot.
+	 */
+	async PlayerWasRescued(): Promise<void> {
+		// Stop sim thread.
+		this.StopSimThread(true);
+
+		// audio. The C# also plays `GameMusics.POST_RESCUE` here — see above.
+		this.m_MusicManager.stop();
+		if (hasFeature(this.m_Session.ruleset, Feature.AmbientAudio))
+			this.m_AmbientSFXManager.stopAll();
+
+		/////////////
+		// Scoring
+		/////////////
+		this.m_Session.scoring.turnsSurvived = this.m_Session.worldTime.turnCounter;
+		// No `setKiller`: the C# does not call it either, and a rescued survivor has
+		// no killer.
+		if (this.m_Player.countFollowers > 0) {
+			for (const fo of this.m_Player.followers ?? [])
+				this.m_Session.scoring.addFollowerWhenDied(fo);
+		}
+
+		const zones = this.m_Player.location.map!.getZonesAt(
+			this.m_Player.location.position.x,
+			this.m_Player.location.position.y,
+		);
+		if (zones.length === 0) {
+			this.m_Session.scoring.deathPlace = this.m_Player.location.map!.name;
+		} else {
+			const zoneName = zones[0].name;
+			this.m_Session.scoring.deathPlace = `${this.m_Player.location.map!.name} at ${zoneName}`;
+		}
+		// The two fields keep their C# names (`DeathReason` / `DeathPlace`) and the
+		// C# keeps writing them from here — `RogueGame.cs:7411-7412` — because
+		// `HandlePostRescue`'s `> RESCUE` section reads them.
+		this.m_Session.scoring.deathReason = "Rescued to Murdoch air force base";
+		this.m_Session.scoring.addEvent(
+			this.m_Session.worldTime.turnCounter,
+			"Rescued.",
+		);
+
+		/////////////////////////////////////////
+		// Tip, Message & screenshot.
+		/////////////////////////////////////////
+		const iTip = this.m_Rules.roll(0, GameTips.TIPS.length);
+		this.AddOverlay(
+			new OverlayPopup(
+				["TIP OF THE DEAD", "Did you know that...", GameTips.TIPS[iTip]],
+				Color.White,
+				Color.White,
+				this.POPUP_FILLCOLOR,
+				new Point(0, 0),
+			),
+		);
+
+		this.ClearMessages();
+		this.AddMessage(
+			new Message(
+				"**** YOU WERE RESCUED! ****",
+				this.m_Session.worldTime.turnCounter,
+				Color.Red,
+			),
+		);
+		this.AddMessage(
+			new Message(
+				"Congratulations. Survivng that dead city was no small feat.",
+				this.m_Session.worldTime.turnCounter,
+				Color.Red,
+			),
+		);
+		this.AddMessage(
+			new Message(
+				"But could you have survived even longer...?",
+				this.m_Session.worldTime.turnCounter,
+				Color.Red,
+			),
+		);
+
+		await this.AddMessagePressEnter();
+
+		// post-rescue.
+		await this.HandlePostMortem(true);
+
+		// Remove player to end the game.
+		// C# `:7449`: "removing isn't enough, we must use this to stop the world".
+		this.m_PlayerWasRescued = true;
+		this.m_Player.location.map!.removeActor(this.m_Player);
+
+		// audio.
+		this.m_AmbientSFXManager.stopAll();
+		this.m_MusicManager.stop();
+	}
+
 	// C# TimeSpanToString — RogueGame.cs:16878
 	// `TimeSpan` here is seconds (`Scoring.RealLifePlayingTime` → `realLifePlayingTimeSeconds`).
 	TimeSpanToString(rt: TimeSpan): string {
@@ -20930,8 +21533,26 @@ export class RogueGame {
 		return `${timeDays}${timeHours}${timeMinutes}${timeSeconds}`;
 	}
 
-	// C# HandlePostMortem — RogueGame.cs:16888
-	async HandlePostMortem(): Promise<void> {
+	/**
+	 * C# `HandlePostMortem` (`RogueGame.cs:16888`) and, with `rescued`, its
+	 * twin `HandlePostRescue` (`RogueGame.cs:7835`, Release 6-4).
+	 *
+	 * The C# wrote those two out as two ~300-line methods that differ in six
+	 * places, all of them strings and section headings. They are one method here
+	 * with a flag, because a second copy of the options block and the follower
+	 * block would be a second copy to forget to update, and the C#'s two copies
+	 * have *already* drifted from each other — the rescue variant's "he had no
+	 * particular skills" is a sentence the port replaced on the death side years
+	 * ago and could not be kept on both. Six branches are cheaper than that.
+	 *
+	 * With `rescued = false` this is byte-for-byte the post-mortem it always was.
+	 *
+	 * The only place the port keeps one wording where the C# had two is the three
+	 * "nothing here" lines (skills / inventory / followers): the port already
+	 * rewrote those on the death side, and a fifth and sixth variant of "was a jack
+	 * of all trades" is not worth the duplication.
+	 */
+	async HandlePostMortem(rescued = false): Promise<void> {
 		////////////////
 		// Prepare data.
 		////////////////
@@ -20958,16 +21579,30 @@ export class RogueGame {
 		const graveyard = new TextFile();
 
 		graveyard.append(`ROGUE SURVIVOR ${GAME_VERSION}`);
-		graveyard.append("POST MORTEM");
+		// C# `:7859`: the rescue summary names the game mode, which the post mortem
+		// does not — a rescued run is the one that was played in a mode, and the C#
+		// wanted that on the record.
+		graveyard.append(
+			rescued
+				? `POST-RESCUE SUMMARY - ${GameMode[this.m_Session.gameMode]}`
+				: "POST MORTEM",
+		);
 
 		// Summary
 		graveyard.append(
 			`${name} was ${this.AorAn(this.m_Player.model.name)} and ${this.AorAn(this.m_Player.faction.memberName)}.`,
 		);
-		graveyard.append(`${heOrShe} survived to see ${deathTime.toString()}.`);
-		graveyard.append(
-			`${name}'s spirit guided ${himOrHer} for ${realTimeString}.`,
-		);
+		// C# `:7864-7866`: the rescue variant drops the second line entirely and has
+		// no "spirit guided" line at all — a rescued survivor has not been a spirit.
+		if (rescued) {
+			graveyard.append(`${heOrShe} was rescued on ${deathTime.toString()}.`);
+			graveyard.append(`${name}'s run took ${realTimeString}.`);
+		} else {
+			graveyard.append(`${heOrShe} survived to see ${deathTime.toString()}.`);
+			graveyard.append(
+				`${name}'s spirit guided ${himOrHer} for ${realTimeString}.`,
+			);
+		}
 		if (this.m_Session.scoring.reincarnationNumber > 0)
 			graveyard.append(
 				`${heOrShe} was reincarnation ${this.m_Session.scoring.reincarnationNumber}.`,
@@ -20998,7 +21633,11 @@ export class RogueGame {
 				graveyard.append(`- ${ach.name} for ${ach.scoreValue} points!`);
 			else graveyard.append(`- Fail : ${ach.teaseName}.`);
 		}
-		if (this.m_Session.scoring.completedAchievementsCount === 0) {
+		// C# `:7881-7889`: the rescue variant has no "achieved nothing" arm at all —
+		// it prints the total unconditionally — and its all-done line is a different
+		// sentence. Both would otherwise say "And then died." about a survivor who
+		// flew out of the city.
+		if (!rescued && this.m_Session.scoring.completedAchievementsCount === 0) {
 			graveyard.append("Didn't achieve anything notable. And then died.");
 			graveyard.append(
 				`(unlock all the ${Scoring.MAX_ACHIEVEMENTS} achievements to win this game version)`,
@@ -21012,22 +21651,35 @@ export class RogueGame {
 				Scoring.MAX_ACHIEVEMENTS
 			)
 				graveyard.append(
-					"*** You achieved everything! You can consider having won this version of the game! CONGRATULATIONS! ***",
+					rescued
+						? "You achieved everything and managed to escape the city! Very impressive!"
+						: "*** You achieved everything! You can consider having won this version of the game! CONGRATULATIONS! ***",
 				);
 			else
 				graveyard.append(
 					"(unlock all the achievements to win this game version)",
 				);
-			graveyard.append(
-				"(later versions of the game will feature real winning conditions and multiple endings...)",
-			);
+			// C# `:7888`: the "later versions" tease is death-side only — a run that
+			// escaped has found the ending the tease is promising does not exist yet.
+			if (!rescued)
+				graveyard.append(
+					"(later versions of the game will feature real winning conditions and multiple endings...)",
+				);
 		}
 		graveyard.append(" ");
 
-		graveyard.append("> DEATH");
-		graveyard.append(
-			`${this.m_Session.scoring.deathReason} in ${this.m_Session.scoring.deathPlace}.`,
-		);
+		// C# `:7890-7891` writes "> RESCUE" and joins the two halves with "from".
+		if (rescued) {
+			graveyard.append("> RESCUE");
+			graveyard.append(
+				`${this.m_Session.scoring.deathReason} from ${this.m_Session.scoring.deathPlace}.`,
+			);
+		} else {
+			graveyard.append("> DEATH");
+			graveyard.append(
+				`${this.m_Session.scoring.deathReason} in ${this.m_Session.scoring.deathPlace}.`,
+			);
+		}
 		graveyard.append(" ");
 
 		graveyard.append("> KILLS");
@@ -21052,7 +21704,12 @@ export class RogueGame {
 		graveyard.append(" ");
 
 		graveyard.append("> FUN FACTS!");
-		graveyard.append(`While ${name} has died, others are still having fun!`);
+		// C# `:7925`.
+		graveyard.append(
+			rescued
+				? `While ${name} has escaped the city, others are still surviving`
+				: `While ${name} has died, others are still having fun!`,
+		);
 		const funFacts = this.CompileDistrictFunFacts(
 			this.m_Player.location.map!.district!,
 		);
@@ -21213,12 +21870,19 @@ export class RogueGame {
 			);
 		graveyard.append(" ");
 
-		graveyard.append("> R.I.P");
-		graveyard.append(`May ${this.HisOrHer(this.m_Player)} soul rest in peace.`);
-		graveyard.append(
-			`For ${this.HisOrHer(this.m_Player)} body is now a meal for evil.`,
-		);
-		graveyard.append("The End.");
+		// C# `:8091-8096`: the rescue variant replaces all four lines with one, and
+		// has the player on the chopper rather than in the ground.
+		if (rescued) {
+			graveyard.append("> Farewell");
+			graveyard.append(`May Murdoch base prove to be a haven for ${name}.`);
+		} else {
+			graveyard.append("> R.I.P");
+			graveyard.append(`May ${this.HisOrHer(this.m_Player)} soul rest in peace.`);
+			graveyard.append(
+				`For ${this.HisOrHer(this.m_Player)} body is now a meal for evil.`,
+			);
+			graveyard.append("The End.");
+		}
 
 		/////////////////////
 		// Save to graveyard
@@ -21228,7 +21892,7 @@ export class RogueGame {
 		this.m_UI.UI_Clear(Color.Black);
 		this.m_UI.UI_DrawStringBoldLarge(
 			Color.Yellow,
-			"Saving post mortem to graveyard...",
+			rescued ? "Saving rescue to graveyard..." : "Saving post mortem to graveyard...",
 			0,
 			0,
 		);
@@ -21330,6 +21994,22 @@ export class RogueGame {
 
 	// C# OnNewNight — RogueGame.cs:17240
 	async OnNewNight(): Promise<void> {
+		//----- De-spawn helicopter if it's end of rescue day  //@@MP (Release 6-4)
+		// C# `:8910-8914`, the first statement in the method, before `UpdatePlayerFOV`.
+		//
+		// The C# has no gate: it reads `m_Session.ArmyHelicopterRescue_Map` and
+		// would throw on a save with no site. The port gates on the feature and
+		// then on the site existing, because `armyHelicopterRescueMap` is null both
+		// before a site is picked and in a save written before this feature — and
+		// "the rescue day arrived and nothing was there" is the correct answer for
+		// both, not a crash.
+		if (hasFeature(this.m_Session.ruleset, Feature.HelicopterRescue)) {
+			if (this.m_Session.worldTime.day === this.m_Session.armyHelicopterRescueDay) {
+				const helicopterMap = this.m_Session.armyHelicopterRescueMap;
+				if (helicopterMap !== null) this.DespawnArmyHelicopter(helicopterMap);
+			}
+		}
+
 		this.UpdatePlayerFOV(this.m_Player);
 
 		//----- Upgrade Player (undead only once every 2 nights)
@@ -21478,6 +22158,18 @@ export class RogueGame {
 					AchievementIDs.REACHED_DAY_28,
 				);
 				await this.ShowNewAchievement(AchievementIDs.REACHED_DAY_28);
+			}
+		}
+
+		//----- Spawn helicopter if it's rescue day  //@@MP (Release 6-4)
+		// C# `:9050-9054`, the last statement of `OnNewDay` — after the day
+		// achievements, so a survivor who is still alive on the rescue day sees the
+		// achievement popup before the chopper lands.
+		if (hasFeature(this.m_Session.ruleset, Feature.HelicopterRescue)) {
+			if (this.m_Session.worldTime.day === this.m_Session.armyHelicopterRescueDay) {
+				const helicopterMap = this.m_Session.armyHelicopterRescueMap;
+				if (helicopterMap !== null)
+					await this.SpawnArmyHelicopterOnMap(helicopterMap);
 			}
 		}
 	}
@@ -23575,6 +24267,23 @@ export class RogueGame {
 					INVENTORYPANEL_Y,
 				);
 			}
+			// C# `RogueGame.cs:25393-25400`: the backpack takes the ground panel's
+			// row and hides it, rather than the two being stacked. `BACKPACK_PANEL_Y`
+			// is `GROUNDINVENTORYPANEL_Y`, so drawing both would be one on top of
+			// the other -- and `backpackHidesGroundPanel` is the C#'s `hideGroundInv`
+			// test, which is about capacity rather than visibility.
+			const pack = firstBackpack(this.m_Player);
+			if (pack != null && backpackHidesGroundPanel(pack)) {
+				this.DrawInventory(
+					pack.backpackInventory,
+					BACKPACK_PANEL_TITLE,
+					true,
+					INVENTORY_SLOTS_PER_LINE,
+					pack.backpackInventory.maxCapacity,
+					INVENTORYPANEL_X,
+					backpackPanelY(),
+				);
+			} else
 			this.DrawInventory(
 				this.m_Player.location.map!.getItemsAt(
 					this.m_Player.location.position,
@@ -27190,6 +27899,25 @@ export class RogueGame {
 		tagTile.removeAllDecorations();
 		tagTile.addDecoration(GameImages.DECO_ROGUEDJACK_TAG);
 
+		////////////////////////////////////////////////////
+		// Pick the helicopter rescue landing site. //@@MP (Release 6-3)
+		////////////////////////////////////////////////////
+		//
+		// Third worldgen stage that can fail, and it sits exactly where the C# has
+		// it: after the easter-egg tag, before the player is spawned. The C# cannot
+		// fail here at all — its own comment says "if the heli can't be generated
+		// for some reason, it's off for this run" — because its earlier
+		// `CreateUniqueMap_ArmyUndegroundBase` already returned false on the
+		// absence of a green district with an army office, and a green district with
+		// an army office is not necessarily one with a park.
+		//
+		// The gate is inside the method rather than here, so the caller reads as the
+		// C# does and there is exactly one place that decides whether the feature
+		// runs. Under CLASSIC this is a no-op that returns true, which is what keeps
+		// a Classic world byte-identical to one generated before this feature
+		// existed: no dice is taken and no field is written.
+		if (!this.PickHelicopterRescueSite(world)) return false;
+
 		//////////////////////////////
 		// Spawn player on center map
 		//////////////////////////////
@@ -27254,6 +27982,156 @@ export class RogueGame {
 			this.m_UI.UI_Repaint();
 		}
 		return true;
+	}
+
+	/**
+	 * C# `GenerateWorld`'s "Pick location for helicopter rescue" region —
+	 * `RogueGame.cs:4470-4574`, Release 6-3.
+	 *
+	 * Three steps, in the C#'s order, and the order is the whole content: the
+	 * eligible districts are collected first, the roll happens second, and only
+	 * then is a tile scanned for. Getting it wrong would not shift a single die —
+	 * it would change which district the one roll that *is* taken picks from.
+	 *
+	 * **Returns false when there is nowhere to land**, which is the C#'s
+	 * behaviour: it `return false`s on both "no green district spot" and "no clear
+	 * spot in one", and `StartNewGame`'s `do { ... } while (!worldMade)` is the
+	 * machinery that handles it. Two sites it can fail on, and the bound on that
+	 * loop is 12 attempts — see there for why the error message names the *other*
+	 * failure too.
+	 *
+	 * ## The roll
+	 *
+	 * The C# shuffles `goodDistricts` with `OrderBy(x => r.Next())` on an
+	 * **unseeded** `new Random()` (`:4526-4528`). That is a C# bug for a game with
+	 * `--seed` and a save format: the same save reloaded picks a different landing
+	 * site every time, and no world can be reproduced from its seed. The port
+	 * spends one die from the injected roller instead — `this.m_Rules.roll`, the
+	 * same call `CreateUniqueMap_ArmyUndegroundBase` uses to pick *its* green
+	 * district (`RogueGame.cs:4903`), so this feature costs worldgen exactly one
+	 * roll and it is a roll the fork's own generator would have taken.
+	 *
+	 * The C# then tries every district in the shuffled order until one has a spot.
+	 * A single roll cannot express a permutation, so the roll picks a *starting
+	 * index* and the remaining districts are walked cyclically from it. Same
+	 * "try them all" semantics, same one die, and the walk is a pure function of
+	 * the roll — which is the property the unseeded shuffle destroyed.
+	 */
+	PickHelicopterRescueSite(world: World): boolean {
+		if (!hasFeature(this.m_Session.ruleset, Feature.HelicopterRescue)) return true;
+
+		// 1. All green districts with a park in them.
+		//    The C# names this `hasPark` and tests only "Park" here, adding
+		//    "Graveyard" and "court" two steps later — so a district whose only
+		//    open space is a graveyard is still not a candidate. That asymmetry is
+		//    the C#'s and is kept: `Feature.Graveyard` made the graveyard zone exist
+		//    (Release 4) and the fork did not notice that its own picker needed it.
+		const goodDistricts: District[] = [];
+		for (let x = 0; x < world.size; x++) {
+			for (let y = 0; y < world.size; y++) {
+				const district = world.getDistrict(x, y);
+				if (district === null || district.kind !== DistrictKind.GREEN)
+					continue;
+				const entryMap = district.entryMap;
+				if (entryMap === null) continue;
+				if (!entryMap.zones.some((z) => z.name.includes("Park"))) continue;
+				goodDistricts.push(district);
+			}
+		}
+
+		// 2. Pick one green district at random.
+		if (goodDistricts.length === 0) return false;
+		const first = this.m_Rules.roll(0, goodDistricts.length);
+
+		// 3. First of them with three consecutive object-free tiles in a
+		//    park-ish zone.
+		for (let i = 0; i < goodDistricts.length; i++) {
+			const chosenDistrict = goodDistricts[(first + i) % goodDistricts.length];
+			const landing = this.FindHelicopterLandingSpot(chosenDistrict);
+			if (landing === null) continue;
+
+			// C# `:4551-4553`, in the C#'s order.
+			this.m_Session.setHelicopterRescueSite(
+				World.CoordToString(
+					chosenDistrict.worldPosition.x,
+					chosenDistrict.worldPosition.y,
+				),
+				landing,
+			);
+			return true;
+		}
+
+		// C# `:4572`: "Could not find suitable location for helicopter landing".
+		return false;
+	}
+
+	/**
+	 * The three-tile scan, C# `RogueGame.cs:4530-4559`.
+	 *
+	 * A zone qualifies by *name* — "Park", "Graveyard" or "court" (`:4533`) — so
+	 * the exclusion is a substring test on three tokens rather than a zone
+	 * attribute, and the port keeps it as a substring test. Anything a future
+	 * building names "Sport court" or "Court House" joins the set by being
+	 * spelled that way, which is exactly as fragile as the C# and for the same
+	 * reason: the C# has no `ZoneAttributes.IS_HELICOPTER_PARK` to key on.
+	 *
+	 * The scan is x-major (`for x { for y { } }`), so the first hit is the
+	 * leftmost column, topmost row — kept, because which tile a run's rescue
+	 * square is on is not something to change silently.
+	 */
+	private FindHelicopterLandingSpot(district: District): Point | null {
+		const map = district.entryMap;
+		if (map === null) return null;
+
+		for (const zone of map.zones) {
+			if (!isHelicopterLandingZoneName(zone.name)) continue;
+
+			for (let x = zone.bounds.left; x < zone.bounds.right; x++) {
+				for (let y = zone.bounds.top; y < zone.bounds.bottom; y++) {
+					if (!this.TileIsGoodForHelicopter(map, new Point(x, y)))
+						continue;
+					if (map.getMapObjectAt(x, y) !== null) continue;
+					if (!this.TileIsGoodForHelicopter(map, new Point(x + 1, y)))
+						continue;
+					if (map.getMapObjectAt(x + 1, y) !== null) continue;
+					if (!this.TileIsGoodForHelicopter(map, new Point(x + 2, y)))
+						continue;
+					if (map.getMapObjectAt(x + 2, y) !== null) continue;
+
+					return new Point(x, y);
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * C# `TileIsGoodForHelicopter` — `RogueGame.cs:4649-4658`.
+	 *
+	 * **Every tile that exists is good.** That is the C#'s own answer, and it is
+	 * reproduced rather than repaired: both of its arms `return true`, so the
+	 * grass / sports-court test on the first line gates nothing and the
+	 * `// bad spot.` arm is a no-op. The consequence is that the *only* real
+	 * constraint on a landing site is the three-consecutive-object-free test in
+	 * `FindHelicopterLandingSpot`, which is why that test is what the suite
+	 * asserts.
+	 *
+	 * Repairing it was considered and rejected on the same grounds the rest of
+	 * this port keeps upstream quirks: the dead arm is the whole of what the site
+	 * picker chooses on, so "fixing" it would reject most parks (a park's
+	 * perimeter is walkway and fenced, its interior grass with trees on it) and
+	 * turn a second worldgen failure mode into a common one. It is also not
+	 * writable as written: the port has no `GameTiles.isSportsCourtTile`
+	 * (`Feature.SportsCourts` is pending), so the intended predicate would have
+	 * to be invented rather than ported.
+	 *
+	 * The one difference: the C# indexes the tile grid unguarded and throws
+	 * `IndexOutOfRangeException` one tile past the map edge, and the scan reads
+	 * `x + 2` with no bounds check of its own. The port's `getTileAt` returns
+	 * null there, and a tile that is not there is not a place to land.
+	 */
+	TileIsGoodForHelicopter(map: Map, pt: Point): boolean {
+		return map.getTileAt(pt.x, pt.y) !== null;
 	}
 
 	// C# CheckIfExitIsGood — RogueGame.cs:20494
