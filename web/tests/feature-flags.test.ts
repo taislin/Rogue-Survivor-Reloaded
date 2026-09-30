@@ -70,7 +70,17 @@ function enumMembers(): Set<string> {
 function sourceFilesExcludingRegistry(): { path: string; text: string }[] {
   return walk(SRC)
     .filter((p) => p !== REGISTRY)
-    .map((p) => ({ path: relative(SRC, p), text: readFileSync(p, "utf-8") }));
+    // `relative` is platform-native, so it hands back `gameplay\Backpacks.ts` on
+    // Windows and `gameplay/Backpacks.ts` on Linux. The assertions below match on
+    // paths -- `/gameplay\/Backpacks\.ts/` and friends -- so the native form makes
+    // them separator-dependent: they hold on the Linux reference box and silently
+    // match nothing anywhere else, which is the vacuous pass this file exists to
+    // prevent. Normalising to `/` here keeps every downstream pattern written
+    // once and reading the same on both platforms.
+    .map((p) => ({
+      path: relative(SRC, p).split(/[\\/]/).join("/"),
+      text: readFileSync(p, "utf-8"),
+    }));
 }
 
 /** Feature names used as the second argument of a `hasFeature(...)` call. */
