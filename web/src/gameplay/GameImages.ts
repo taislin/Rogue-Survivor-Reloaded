@@ -677,6 +677,104 @@ export class GameImages {
   static readonly OBJ_KITCHEN_SINK = "MapObjects/kitchen_sink";
   static readonly OBJ_KITCHEN_COUNTER = "MapObjects/kitchen_counter";
 
+  // ── Feature.Clinic: the clinic building generator (`BaseTownGenerator.cs:3358`).
+  //
+  // The six ids `makeClinicBuilding` draws. `DECO_CLINIC_SIGN` and the five
+  // `clinic_*` objects are Release 4 additions the port had no reader for until
+  // this building, and all six ship in the *classic* pack, so every path here
+  // already resolves to a file on disk -- `tests/sprite-assets.test.ts` is what
+  // keeps that true.
+  //
+  // `OBJ_POWERGEN_OFF` / `_ON` are *not* here: the port already had both for the
+  // sewers and the CHAR offices, so they sit in the `OBJ_` rows above
+  // (`GameImages.ts:301-302`) and are only listed in the clinic's own factory
+  // table. `OBJ_CLINIC_DESK` is shared with the shopping mall, which the C# draws
+  // from `MakeObjCheckout` (`BaseTownGenerator.cs:9978`) and not from the
+  // reception desk -- one sprite, two names, as `MakeObjCounter` /
+  // `MakeObjKitchenCounter` are.
+  static readonly DECO_CLINIC_SIGN = "Tiles/Decoration/clinic_sign";
+  static readonly OBJ_CLINIC_BED = "MapObjects/clinic_bed";
+  static readonly OBJ_CLINIC_CUPBOARD = "MapObjects/clinic_cupboard";
+  static readonly OBJ_CLINIC_CURTAIN = "MapObjects/clinic_curtain";
+  static readonly OBJ_CLINIC_DESK = "MapObjects/clinic_desk";
+  static readonly OBJ_CLINIC_MACHINERY = "MapObjects/clinic_machinery";
+
+  // ── Feature.Library: the library building generator
+  // (`BaseTownGenerator.cs:1908`).
+  //
+  // The three ids `makeLibraryBuilding` draws. `DECO_LIBRARY` is a Release 4
+  // addition and the two map objects are vanilla furniture the port had no
+  // reader for until this building; all three ship in the *classic* pack, so
+  // every path here already resolves to a file on disk --
+  // `tests/sprite-assets.test.ts` is what keeps that true.
+  //
+  // Note the spelling: the C# calls the doorway art `DECO_LIBRARY` and points it
+  // at `shop_library` (`GameImages.cs:322`), like `DECO_BAR` above. The books
+  // the shelves drop are `ITEM_BOOK_BLUE` / `_GREEN` / `_RED` at `:526-529`,
+  // already present for the item models' sake.
+  static readonly DECO_LIBRARY = "Tiles/Decoration/shop_library";
+  static readonly OBJ_BOOK_SHELVES = "MapObjects/bookshelves";
+  static readonly OBJ_CASH_REGISTER = "MapObjects/cash_register";
+
+  // ── Feature.Junkyard: the junkyard building generator
+  // (`BaseTownGenerator.cs:3537`).
+  //
+  // The eight ids `makeJunkyard` draws. `OBJ_BARRELS` and `OBJ_JUNK` are *not*
+  // here: the port already had both for the sewers and the park, so they sit in
+  // the `OBJ_` rows above (`GameImages.ts:299-300`) and are only listed in the
+  // junkyard's own factory table. The other six are Release 4 additions the port
+  // had no reader for until this building, and all six ship in the *classic*
+  // pack, so every path here already resolves to a file on disk --
+  // `tests/sprite-assets.test.ts` is what keeps that true.
+  //
+  // `DECO_JUNKYARD` is kept even though nothing ever draws it: the C#'s
+  // `DecorateOutsideWalls` at `:3628` skips walkable tiles, and `:3557` has
+  // already made the whole perimeter walkable dirt, so the sign is unreachable
+  // in the reference. See the note in `makeJunkyard.ts`.
+  static readonly DECO_JUNKYARD = "Tiles/Decoration/junkyard";
+  static readonly OBJ_CHAINWIRE_FENCE = "MapObjects/chainwire_fence";
+  static readonly OBJ_EMPTY_BARREL = "MapObjects/empty_barrel";
+  // The roller door is `MakeObjRollerDoor` (`BaseMapGenerator.cs:421`), a
+  // three-state metal door of its own, not a recoloured `MakeObjIronDoor`.
+  static readonly OBJ_ROLLER_DOOR_CLOSED = "MapObjects/roller_door_closed";
+  static readonly OBJ_ROLLER_DOOR_OPEN = "MapObjects/roller_door_open";
+  static readonly OBJ_ROLLER_DOOR_BROKEN = "MapObjects/roller_door_broken";
+  // C# `BaseMapGenerator.cs:552`, the `CARS` row `MakeObjWreckedCar` picks from:
+  // four coloured cars plus the police car the fork added in Release 7-6. The
+  // port's own protected `makeObjWreckedCar` uses the *vanilla* `car1..car4`
+  // instead, which is why these five had no ids until now.
+  static readonly OBJ_CAR_BLUE_PHASE0 = "MapObjects/car_blue_phase0";
+  static readonly OBJ_CAR_GREEN_PHASE0 = "MapObjects/car_green_phase0";
+  static readonly OBJ_CAR_RED_PHASE0 = "MapObjects/car_red_phase0";
+  static readonly OBJ_CAR_WHITE_PHASE0 = "MapObjects/car_white_phase0";
+  static readonly OBJ_POLICE_CAR_PHASE0 = "MapObjects/police_car_phase0";
+
+  // ── Feature.FireStation: the fire station building generator
+  // (`BaseTownGenerator.cs:3181`).
+  //
+  // The six ids `makeFireStationBuilding` draws that the port had no reader for.
+  // `OBJ_EMPTY_BARREL` and the three `OBJ_ROLLER_DOOR_*` are *not* here: the
+  // junkyard above already added both for the same C# factories
+  // (`BaseMapGenerator.cs:758` and `:421`), so they are only listed in the fire
+  // station's own factory table. `OBJ_POWERGEN_OFF` / `_ON` were in the `OBJ_`
+  // rows from the sewers onwards. That leaves the sign and the truck.
+  //
+  // The truck is four sprites because the C# cuts one 32x64 (east-west) or 64x32
+  // (north-south) image in half and lays the pieces down back-to-front
+  // (`BaseMapGenerator.cs:1133`), which is also why there are four rather than
+  // one. Only `DECO_FIRE_STATION` carries a `//@@MP` marker in the reference
+  // (`GameImages.cs:317`, Release 7-3); the four trucks and the workbench are
+  // vanilla art the port had no reader for until this building, added in the same
+  // fork release without the marker. All six ship in the *classic* pack, so every
+  // path here resolves to a file on disk -- `tests/sprite-assets.test.ts` is what
+  // keeps that true.
+  static readonly DECO_FIRE_STATION = "Tiles/Decoration/fire_station";
+  static readonly OBJ_WORKBENCH = "MapObjects/workbench";
+  static readonly OBJ_FIRE_TRUCK_EW_BACK = "MapObjects/fire_truck_EW_back";
+  static readonly OBJ_FIRE_TRUCK_EW_FRONT = "MapObjects/fire_truck_EW_front";
+  static readonly OBJ_FIRE_TRUCK_NS_BACK = "MapObjects/fire_truck_NS_back";
+  static readonly OBJ_FIRE_TRUCK_NS_FRONT = "MapObjects/fire_truck_NS_front";
+
   // ── Effects & Misc ────────────────────────────────────────────────────────
   static readonly EFFECT_BARRICADED = "Effects/barricaded";
   static readonly EFFECT_ONFIRE = "Effects/onFire";

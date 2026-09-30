@@ -126,13 +126,20 @@ const TWO_BAR_MAP_WIDTH = 50;
 /**
  * The 40x40 district seed that produces two bars; found by scanning `generate()`.
  *
- * It changed from 6 when the bar moved out of the flat `TOWN_BUILDING_PASSES`
- * list and into the C#'s shared `roll(0, 4)` business cascade, because that
- * changed which blocks are offered and therefore every roll after it. The test
- * below re-derives it rather than hardcoding a stale number, so the failure mode
- * is a clear assertion rather than a mysteriously wrong count.
+ * **It keeps moving, and that is a property of the cascade rather than a bug.**
+ * It was 6 until the bar moved out of the flat `TOWN_BUILDING_PASSES` list into
+ * the C#'s shared `roll(0, 4)` business cascade; it was re-derived to 2 for that,
+ * and to 3 again when the library and clinic landed. Each of those changed which
+ * blocks the cascade is offered, and therefore every roll after it.
+ *
+ * So this constant is re-derived by scanning `generate()` rather than asserted as
+ * a fixed number, and the failure mode is a clear assertion instead of a
+ * mysteriously wrong count. Do not treat a change here as a regression on its own:
+ * check whether a building pass moved, and re-derive. The invariant that actually
+ * matters is the one in the "CLASSIC" block below -- `e097b9d976ffac15`, which no
+ * Stage 5 building is allowed to move.
  */
-const DISTRICT_SEED = 2;
+const DISTRICT_SEED = 3;
 const DISTRICT_WIDTH = 40;
 
 function newParams(width = DISTRICT_WIDTH): Parameters {

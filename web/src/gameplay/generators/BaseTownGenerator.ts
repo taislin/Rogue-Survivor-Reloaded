@@ -38,8 +38,12 @@ import { ZoneAttributes } from '@gameplay/ZoneAttributes';
 import { BaseMapGenerator } from './BaseMapGenerator';
 import { makeBarBuilding } from './BarBuilding';
 import { makeBankBuilding } from './buildings/makeBankBuilding';
+import { makeFireStationBuilding } from './buildings/makeFireStationBuilding';
+import { makeJunkyard } from './buildings/makeJunkyard';
+import { makeClinicBuilding } from './buildings/makeClinicBuilding';
 import { TOWN_BUILDING_PASSES, runTownBuildingPasses } from './TownBuilding';
 import { makeChurchBuilding } from './buildings/makeChurchBuilding';
+import { makeLibraryBuilding } from './buildings/makeLibraryBuilding';
 import {
   Block,
   Parameters,
@@ -328,6 +332,16 @@ export class BaseTownGenerator extends BaseMapGenerator {
       if (index !== -1) emptyBlocks.splice(index, 1);
     }
 
+    // The C#'s library, `BaseTownGenerator.cs:499-509`. It is the `if` *above*
+    // the business cascade's `switch (roll2)`, not a case in it, and it is tried
+    // first -- so it spends no dispatch die of its own, and a block it takes is a
+    // block the cascade never charges a `roll(0, 4)`. That second half is why this
+    // pass runs here, immediately before the cascade: the cascade iterates the
+    // blocks this one left behind, so the C#'s control flow is reproduced by pool
+    // membership instead of by a nested `if`. See
+    // `buildings/makeLibraryBuilding.ts` for the rest of that argument.
+    this.makeLibraryBuildings(map, emptyBlocks);
+
     // The C#'s business-type cascade, `BaseTownGenerator.cs:498-535`. Bar, bank,
     // clinic and mechanic workshop are four arms of ONE `Roll(0, 4)`:
     //
@@ -341,10 +355,11 @@ export class BaseTownGenerator extends BaseMapGenerator {
     //
     // **One die, four arms.** Rolling per generator instead spends four where the
     // C# spends one, and lets two of them claim the same block -- the exclusivity
-    // is the whole point of the switch, not a detail. Cases 2 and 3 are Clinic and
-    // the mechanic workshop; the mechanic is not a fork feature and the clinic is
-    // `Feature.Clinic`, so both arms are currently empty and fall through to the
-    // general store and then the ordinary office, exactly as an unbuilt arm does.
+    // is the whole point of the switch, not a detail. Cases 0, 1 and 2 are
+    // `Feature.Bar`, `Feature.Bank` and `Feature.Clinic`; case 3 is the mechanic
+    // workshop, which is not a fork feature, so that arm stays empty and falls
+    // through to the general store and then the ordinary office, exactly as an
+    // unbuilt arm does.
     //
     // The cascade is reached from inside the C#'s per-block business loop, which
     // this port has no branch for: `makeCHARBuilding` always returns a type, so no
@@ -359,7 +374,8 @@ export class BaseTownGenerator extends BaseMapGenerator {
     // is the one line its own port has to touch.
     const cascadeEnabled =
       hasFeature(Session.get().ruleset, Feature.Bar) ||
-      hasFeature(Session.get().ruleset, Feature.Bank);
+      hasFeature(Session.get().ruleset, Feature.Bank) ||
+      hasFeature(Session.get().ruleset, Feature.Clinic);
     if (cascadeEnabled) {
       completedBlocks.length = 0;
       for (const b of emptyBlocks) {
@@ -367,7 +383,10 @@ export class BaseTownGenerator extends BaseMapGenerator {
         let placed = false;
         if (roll2 === 0) placed = makeBarBuilding(this.buildingContext(map, b), roll2);
         else if (roll2 === 1) placed = makeBankBuilding(this.buildingContext(map, b), roll2);
-        // case 2 is `Feature.Clinic` -- not written yet.
+        // case 2 is `Feature.Clinic`, `BaseTownGenerator.cs:513`. It takes the
+        // *same* `roll2` the bar and the bank took, which is the point: one die,
+        // one arm, one block.
+        else if (roll2 === 2) placed = makeClinicBuilding(this.buildingContext(map, b), roll2);
         // case 3 is the mechanic workshop: vanilla, and not part of this port's
         // `roll2` set, so it is left empty rather than transliterated. See the plan.
         if (placed) completedBlocks.push(b);
@@ -379,16 +398,41 @@ export class BaseTownGenerator extends BaseMapGenerator {
     }
 
     // parks.
+    //
+    // The C#'s parks region (`BaseTownGenerator.cs:546-591`) is a `foreach` whose
+    // *one* `RollChance(m_Params.ParkBuildingChance)` per block gates four things
+    // in order: the two sports courts, the fuel station, the fire station, and
+    // then a `Roll(0, 99)` cascade over park/farm/shelter/graveyard/junkyard.
+    // The courts are `Feature.SportsCourts` and the fuel station is
+    // `Feature.FuelStation`, both still pending, so `makeParkBuilding` is the
+    // only arm the port can run — and the fire station is folded in here, *ahead*
+    // of it, so a block the C# would have given a fire station is not given to a
+    // park first.
+    //
+    // **It is folded in rather than given a pass of its own at the seam, and the
+    // reason is the shared die.** A pass that rolled `parkBuildingChance` for
+    // itself would spend a second one per block, and would be offered the blocks
+    // that *lost* the first one — the C# never offers it those. The rewrite below
+    // is the same number of `rollChance` calls in the same order as the `&&` it
+    // replaces, so the district's dice stream is untouched; see
+    // `makeFireStationBuilding`'s header for the C# side of this.
     completedBlocks.length = 0;
     for (const b of emptyBlocks) {
-      if (this.m_DiceRoller.rollChance(this.m_Params.parkBuildingChance) && this.makeParkBuilding(map, b)) {
-        completedBlocks.push(b);
-      }
+      if (!this.m_DiceRoller.rollChance(this.m_Params.parkBuildingChance)) continue;
+      if (this.makeFireStation(map, b)) completedBlocks.push(b);
+      else if (this.makeParkBuilding(map, b)) completedBlocks.push(b);
     }
     for (const b of completedBlocks) {
       const index = emptyBlocks.indexOf(b);
       if (index !== -1) emptyBlocks.splice(index, 1);
     }
+
+    // The junkyard, `BaseTownGenerator.cs:580` -- the tail of the same parks
+    // region, the arm below the `roll(0, 99)` cascade the other four green
+    // buildings share. Its own pass, and not a line in the loop above, because it
+    // is a *content* arm (`Feature.Junkyard`) and the loop above is the C#'s
+    // unrolled `&&`; see the header on `makeJunkyards`.
+    this.makeJunkyards(map, emptyBlocks);
 
     // Building generators registered in `./TownBuilding` (currently none shipped --
     // see TOWN_BUILDING_PASSES). Sits between the parks and the churches, which is
@@ -429,6 +473,166 @@ export class BaseTownGenerator extends BaseMapGenerator {
     // Done
     ////////
     return map;
+  }
+
+  // ── Fire station ──────────────────────────────────────────────────────────
+
+  /**
+   * One fire station per district, on the first block the parks stage is rolling
+   * for that is small enough. C# `BaseTownGenerator.cs:547` and `:563-568`:
+   *
+   * ```csharp
+   * bool fireStationPlaced = true;      // :547
+   * …
+   *     if (m_DiceRoller.RollChance(m_Params.ParkBuildingChance))
+   *     {
+   *         if (!MakeTennisCourt(map, b) && !MakeBasketballCourt(map, b))
+   *         {
+   *             if (MakeFuelStation(map, b, fuelStationsPlaced)) { … goto Completed; }
+   *             if (!fireStationPlaced && MakeFireStation(map, b))
+   *             {
+   *                 fireStationPlaced = true;
+   *                 greenSuccess = true;
+   *                 goto Completed;
+   *             }
+   * ```
+   *
+   * A `protected` method and not an inline `if` in `generate()` for the reason
+   * `makeChurchBuildings` is one: the stage has to be *testable as a no-op*.
+   * Overriding this away is a generator with the building genuinely removed, and
+   * a Classic district from one has to be byte-identical to a Classic district
+   * from the real class — which can only happen if nothing here runs under
+   * Classic. See `tests/fire-station-building.test.ts`.
+   *
+   * **It takes no roll of its own, and that is the whole wiring.** The fire
+   * station is not a case of a `switch` like the bar and the bank, and it has no
+   * chance roll of its own like the church: it shares the parks region's single
+   * `RollChance(m_Params.ParkBuildingChance)`, which the loop above has already
+   * spent by the time this is called. A pass at the seam that rolled for itself
+   * would spend a second die per block and be offered the blocks that lost the
+   * first one, which the C# never does. The C#'s own `fireStationPlaced` flag
+   * lives in the generator file keyed on the roller, for the same lifetime the
+   * C#'s local had.
+   *
+   * `:547` initialises that flag to `true`, which makes `:563` unreachable and
+   * `MakeFireStation` dead code in the reference; the port starts from `false`.
+   * See the header in `./buildings/makeFireStationBuilding`.
+   */
+  protected makeFireStation(map: GameMap, b: Block): boolean {
+    return makeFireStationBuilding(this.buildingContext(map, b));
+  }
+
+  // ── Junkyard ──────────────────────────────────────────────────────────────
+
+  /**
+   * One junkyard per ten blocks the parks stage rolls for, and a rolled attempt
+   * for every one of them. C# `BaseTownGenerator.cs:546-591`, the tail of the
+   * parks region:
+   *
+   * ```csharp
+   * foreach (Block b in emptyBlocks)
+   * {
+   *     if (m_DiceRoller.RollChance(m_Params.ParkBuildingChance))   // :547
+   *     {
+   *         if (!MakeTennisCourt(map, b) && !MakeBasketballCourt(map, b))
+   *         {
+   *             if (MakeFuelStation(map, b, fuelStationsPlaced)) goto Completed;
+   *             if (!fireStationPlaced && MakeFireStation(map, b)) goto Completed;
+   *             int rolled = m_DiceRoller.Roll(0, 99);              // :570
+   *             if (rolled >= 65)      greenSuccess = MakeParkBuilding(map, b, false);
+   *             else if (rolled < 64)  greenSuccess = MakeFarmBuilding(map, b);
+   *             else if (rolled < 29)  greenSuccess = MakeAnimalShelterBuilding(map, b);
+   *             else if (rolled < 19)  greenSuccess = MakeParkBuilding(map, b, true);
+   *             else                   greenSuccess = MakeJunkyard(map, b);  // :581
+   *         }
+   *         Completed: …
+   *     }
+   * }
+   * ```
+   *
+   * A `protected` method and not an inline `if` in `generate()` for the reason
+   * `makeChurchBuildings` is one: the gate has to be *testable as a no-op*.
+   * Overriding this method away is a generator with the building genuinely
+   * removed, and a Classic district generated by one has to be byte-identical to
+   * a Classic district from the real class -- which can only happen if nothing
+   * here, rolls included, runs under Classic. See `tests/junkyard-building.test.ts`.
+   *
+   * **Both rolls are inside the gate, and that is why the pass re-rolls
+   * `parkBuildingChance`.** The C# spends one `RollChance(ParkBuildingChance)` per
+   * block for the *whole* green region, and the loop above is that roll. A pass
+   * that did not spend a second one would offer the junkyard every block the park
+   * declined and roll 10% of them, so junkyards would be roughly nine times more
+   * common than in the reference (1% of blocks there, 9% here). The second roll
+   * is a deliberate divergence and it costs the C#'s arithmetic rather than its
+   * dice order: a junkyard here is 0.9% of blocks, against 1% in the reference.
+   * The alternative is the C#'s own shape -- a fifth arm inside that loop -- and
+   * taking it would leave the park reachable only for `rolled >= 65`, i.e. it would
+   * change the still-alive park frequency for a reason that has nothing to do with
+   * junkyards.
+   *
+   * **The generator takes the cascade's die as a parameter** for the reason
+   * `makeBankBuilding` does: `rolled < 10` is the trailing `else` of a five-way
+   * cascade, so the farm, the shelter and the graveyard (all `Feature.*`, none
+   * ported) want the same die and rolling inside the generator would let two of
+   * them claim the same block. See the header in `./buildings/makeJunkyard`.
+   */
+  protected makeJunkyards(map: GameMap, emptyBlocks: Block[]): void {
+    // Ahead of the roll, for the reason `makeChurchBuildings` puts its gate
+    // there: a roll that is taken and thrown away still moves every roll after it.
+    if (!hasFeature(Session.get().ruleset, Feature.Junkyard)) return;
+
+    const built: Block[] = [];
+    for (const b of emptyBlocks) {
+      // C# `:547` — the green region's own per-block gate. See the note above on
+      // why this pass spends a second one.
+      if (!this.m_DiceRoller.rollChance(this.m_Params.parkBuildingChance)) continue;
+      // C# `:570` — the one die the five green buildings share. The other four are
+      // `Feature.*` and none is ported, so the junkyard is the only arm that can be
+      // entered, and it is entered by being the last one.
+      const rolled = this.m_DiceRoller.roll(0, 99);
+      if (makeJunkyard(this.buildingContext(map, b), rolled)) built.push(b);
+    }
+    // C# `:584-585`: the region's completed blocks come out after the whole loop,
+    // not inside it, so the pool a later stage sees is the C#'s.
+    for (const b of built) {
+      const index = emptyBlocks.indexOf(b);
+      if (index !== -1) emptyBlocks.splice(index, 1);
+    }
+  }
+
+  // ── Library ───────────────────────────────────────────────────────────────
+
+  /**
+   * One library per district, on the first block big enough for one. C#
+   * `BaseTownGenerator.cs:501-508`, the `if (!hasLibrary && MakeLibraryBuilding
+   * (map, b))` that precedes the business cascade's `switch (roll2)`.
+   *
+   * A `protected` method and not an inline `if` in `generate()` for the reason
+   * `makeChurchBuildings` is one: the gate has to be *testable as a no-op*.
+   * Overriding this method away is a generator with the feature genuinely
+   * removed, and a Classic district generated by one has to be byte-identical to
+   * a Classic district from the real class -- which can only happen if nothing
+   * here runs under Classic. See `tests/library-building.test.ts`.
+   *
+   * Unlike the church, this stage takes **no** roll of its own: the C# has no
+   * dispatch die for the library (it is the `if` above the switch, not a case in
+   * it), so there is nothing to gate, and a Classic district pays nothing for a
+   * building neither ruleset has. The one-per-district cap is a `ref bool` the
+   * C# declares at `:469`, which `TownBuildingContext` has nowhere to put, so it
+   * lives in the generator keyed on the roller -- the same lifetime the C#'s
+   * local had, for the same reason the bar's and the bank's counters do.
+   */
+  protected makeLibraryBuildings(map: GameMap, emptyBlocks: Block[]): void {
+    if (!hasFeature(Session.get().ruleset, Feature.Library)) return;
+
+    const built: Block[] = [];
+    for (const b of emptyBlocks) {
+      if (makeLibraryBuilding(this.buildingContext(map, b))) built.push(b);
+    }
+    for (const b of built) {
+      const index = emptyBlocks.indexOf(b);
+      if (index !== -1) emptyBlocks.splice(index, 1);
+    }
   }
 
   // ── Church ────────────────────────────────────────────────────────────────

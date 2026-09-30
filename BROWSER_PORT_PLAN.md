@@ -1378,7 +1378,7 @@ Stages 4 and 5 have not started.
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
 | **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles, 90 of 95 items and all 123 item factories done.** The 5 backpacks (a new mechanic) and ~420 unused `GameImages` constants are the only content left; nothing *calls* the new factories yet, which is placement and belongs to Stage 4/5 |
-| **4** | 37 gated features | **22 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (both halves), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`, `TileFires`, `FireExtinguishers`, `Butchering`, `ResourcesAvailability`, `DifficultyAtCreation`, `Fishing` (player path only — the NPC arm is still pending, see its section), `ExtendedAudio` (the 180-pair table; 3 of 180 call sites wired, see its section), `AmbientAudio` (**5 of its 13 tracks** — the channel and the table are done; the 5 helicopter / 2 church / 1 debug tracks are not, see its section). 18 remain |
+| **4** | 37 gated features | **26 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (both halves), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`, `TileFires`, `FireExtinguishers`, `Butchering`, `ResourcesAvailability`, `DifficultyAtCreation`, `Fishing` (player path only — the NPC arm is still pending, see its section), `ExtendedAudio` (the 180-pair table; 3 of 180 call sites wired, see its section), `AmbientAudio` (**5 of its 13 tracks** — the channel and the table are done; the 5 helicopter / 2 church / 1 debug tracks are not, see its section). 18 remain |
 | **5** | content, audio, credits | **started** — `ExtendedAudio`'s table and assets are in; the ambients channel, the 15 building generators and the credits page are not |
 
 Two things a later session should not have to re-derive:
@@ -3211,6 +3211,10 @@ zero precisely because of the dump-every-own-field design.
 | `Activity` +19 | enum | 0 | cosmetic labels, but they become load-bearing: `CivilianAI` filters trade partners on `isFightingOrFleeing` |
 | 7 new `PlayerCommand`s | enum — **append only** | 0 | bury, cook, destroy item, make fire, unload ammo, inspection mode, swap inventory |
 | `ExtendedAudio` | none (constants + a `Record` per id) | 0 | **table DONE** — 180 pairs in `GameSounds`/`SOUND_FILES`, 182 `.ogg` copied into `assets/sfx/`, generated from `GameSounds.cs` by `scripts/port-game-sounds.py` rather than transcribed. **3 call sites wired** (the two `Fishing` sounds §5.6e deferred, and `DoEatCorpse`'s id choice). The other 177 need the distance model — see its section |
+| `Clinic` | new `makeClinicBuilding` | ~178 C# lines | **DONE** — `case 2` of the shared `roll(0, 4)`. Twelve factories re-declared privately, the largest set of the seven |
+| `Library` | new `makeLibraryBuilding` | ~278 C# lines | **DONE** — its own pass *before* the cascade (the C#'s `if` sits above the `switch`, not in it), so it takes no dispatch roll. The C#'s `IsSanityEnabled` gate is not ported: the port has no such option, and the option's default is the only representable state |
+| `Junkyard` | new `makeJunkyard` | ~147 C# lines | **DONE** — the trailing arm of the C#'s parks `Roll(0, 99)` green cascade, so it takes that die as a parameter. Two C# quirks transliterated rather than fixed: its three roller doors are always refused (the perimeter is already chain-wire fence) and its `DECO_JUNKYARD` is unreachable |
+| `FireStation` | new `makeFireStationBuilding` | ~176 C# lines | **DONE** — folded into the parks loop, because the C# offers it only to blocks that already passed `RollChance(parkBuildingChance)`. **C# bug ported as fixed:** `:547` initialises `fireStationPlaced = true`, which makes `MakeFireStation` unreachable in the reference; the `//only one per district` comment says the intent, and the intent needs `false`. Placing no fuel pump — that belongs to `Feature.FuelStation` |
 | `Church` | new `makeChurchBuilding` | ~200 C# lines | **DONE** — a `rollChance(10)` pass at the C#'s stage, 9 `GameImages` constants, `UNIQUE_BOOK_OF_ARMAMENTS = 171` appended, `Map.hasChurch` |
 | `Bank` | new `makeBankBuilding` | ~238 C# lines | **DONE** — `case 1` of the shared `roll(0, 4)` cascade, 5 `GameImages` constants |
 | `Bar` | new `BarBuilding` | ~282 C# lines | **DONE** — `case 0` of the same cascade, 5 `GameImages` constants. The C#'s alcohol drops are **not** ported: they roll `m_Game.Rules`, not the district roller, and need `LIQUOR_AMBER`/`LIQUOR_CLEAR`, which the port has never appended |
@@ -3233,6 +3237,33 @@ runs per seed, one per ruleset, both required to terminate (§4.3's harness) —
 likely to upset, because turning mechanics on for one mode can produce an AI
 cycle the other mode never had.
 
+> ### The Classic fingerprint is the real test of all seven buildings
+>
+> Six of the seven building tests commit the *same* constant for a 40x40 Classic
+> district at seed 1: `e097b9d976ffac15`. That is deliberate and it is the only
+> assertion in the set that actually constrains anything. Each agent verified its
+> own district was unchanged and reported the number; agreeing on one number across
+> six independently written files is the evidence that none of them moved a
+> classic world.
+>
+> It caught two real bugs, both of which would have been invisible otherwise:
+>
+> - The business cascade's roll sat *outside* the per-generator gates, so CLASSIC
+>   spent one die per block. Fingerprint went `e097b9d976ffac15` ->
+>   `436f2b15e06ff29d` -> back.
+> - A "per-district cap" test for the bar began failing as each new building
+>   landed. That one is *not* a bug: the constant is a Still-Alive district whose
+>   bar count depends on which blocks the cascade is offered, so every new pass in
+>   that region moves it. It is now re-derived by scanning rather than asserted,
+>   and says so, because "re-derive this" is the correct response and "pin it
+>   harder" would have hidden the cascade's behaviour.
+>
+> The stage-ordered cascade also cost one honest divergence. The library's rolls
+> land at the library block's index in the C# but ahead of the whole cascade in
+> the port, because a separate pass runs the pool first. Reproducing the C#'s
+> interleaving needs the building to be a branch *inside* the block loop rather
+> than a pass over it, which is a different shape from the seam's. Recorded rather
+> than hidden.
 > ### The business cascade — one die, four arms
 >
 > The C# reaches the bar, the bank, the clinic and the mechanic workshop from a

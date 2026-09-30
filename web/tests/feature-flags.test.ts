@@ -164,18 +164,19 @@ describe("Feature registry is wired", () => {
                  "Alcohol", "Alcohol", "AmbientAudio", "AmbientAudio",
                  "AmbientAudio", "AmbientAudio", "AmbientAudio",
                  "ArmorResist", "Bank", "Bank", "Bar", "Bar", "Butchering",
-                 "Butchering", "Church", "Cooking", "Cooking", "DarknessFov",
-                 "DarknessFov", "DarknessFov", "DarknessGating",
-                 "DifficultyAtCreation", "DifficultyAtCreation",
-                 "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",
-                 "FireBarrels", "FireBarrels", "FireExtinguishers", "Fishing",
-                 "Fishing", "Fishing", "Fishing", "Fishing", "Fishing",
+                 "Butchering", "Church", "Clinic", "Clinic", "Cooking",
+                 "Cooking", "DarknessFov", "DarknessFov", "DarknessFov",
+                 "DarknessGating", "DifficultyAtCreation",
+                 "DifficultyAtCreation", "ExtendedAudio", "ExtendedAudio",
+                 "ExtendedAudio", "FireBarrels", "FireBarrels",
+                 "FireExtinguishers", "FireStation", "Fishing", "Fishing",
+                 "Fishing", "Fishing", "Fishing", "Fishing", "FoodPoisoning",
                  "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-                 "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-                 "ItemDespawn", "ItemDespawn", "LightPriority",
+                 "FoodPoisoning", "FoodPoisoning", "ItemDespawn",
+                 "ItemDespawn", "Junkyard", "Junkyard", "Library", "Library",
+                 "LightPriority", "ResourcesAvailability",
                  "ResourcesAvailability", "ResourcesAvailability",
-                 "ResourcesAvailability", "SiphonFuel", "SiphonFuel",
-                 "TileFires", "WeaponWeight"]);
+                 "SiphonFuel", "SiphonFuel", "TileFires", "WeaponWeight"]);
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     // `Alcohol`'s *first* reader is now in `RogueGame` (the per-turn decay), and
     // the harness line is one of six rather than the only one.
