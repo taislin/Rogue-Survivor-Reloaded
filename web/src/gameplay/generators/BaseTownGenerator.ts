@@ -35,6 +35,22 @@ import { GameTiles, TileID } from '@gameplay/GameTiles';
 import { SkillID } from '@gameplay/Skills';
 import { ZoneAttributes } from '@gameplay/ZoneAttributes';
 import { BaseMapGenerator } from './BaseMapGenerator';
+import {
+  Block,
+  Parameters,
+  TOWN_BUILDING_PASSES,
+  makeWalkwayZones as makeWalkwayZonesOn,
+  placeDoor as placeDoorOn,
+  runTownBuildingPasses,
+} from './TownBuilding';
+import type { TownBuildingContext, TownPlacement } from './TownBuilding';
+
+// `Block` and `Parameters` moved to `./TownBuilding` so a building generator
+// written as its own file can import them without pulling this 5 800-line
+// class in behind it. Re-exported here because they have been part of this
+// module's public surface since before that file existed, and the tests
+// (`stage2-fixes.test.ts`, `item-factories.test.ts`) import them from here.
+export { Block, Parameters };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Game = any;
@@ -89,144 +105,6 @@ const SHOP_WINDOW_CHANCE = 30;
 const SHOP_BASEMENT_ZOMBIE_RAT_CHANCE = 5; // per tile.
 
 // ── Types ──────────────────────────────────────────────────────────────────
-export class Parameters {
-  district: District | null = null;
-  generatePoliceStation: boolean = false;
-  generateHospital: boolean = false;
-
-  private m_MapWidth: number = MAP_MAX_WIDTH;
-  private m_MapHeight: number = MAP_MAX_HEIGHT;
-  private m_MinBlockSize: number = 11;
-  private m_WreckedCarChance: number = 10;
-  private m_ShopBuildingChance: number = 10;
-  private m_ParkBuildingChance: number = 10;
-  private m_CHARBuildingChance: number = 10;
-  private m_PostersChance: number = 2;
-  private m_TagsChance: number = 2;
-  private m_ItemInShopShelfChance: number = 100;
-  private m_PolicemanChance: number = 15;
-
-  get mapWidth(): number {
-    return this.m_MapWidth;
-  }
-
-  set mapWidth(value: number) {
-    if (value <= 0 || value > MAP_MAX_WIDTH) throw new RangeError('MapWidth');
-    this.m_MapWidth = value;
-  }
-
-  get mapHeight(): number {
-    return this.m_MapHeight;
-  }
-
-  set mapHeight(value: number) {
-    if (value <= 0 || value > MAP_MAX_HEIGHT) throw new RangeError('MapHeight');
-    this.m_MapHeight = value;
-  }
-
-  get minBlockSize(): number {
-    return this.m_MinBlockSize;
-  }
-
-  set minBlockSize(value: number) {
-    if (value < 4 || value > 32) throw new RangeError('MinBlockSize must be [4..32]');
-    this.m_MinBlockSize = value;
-  }
-
-  get wreckedCarChance(): number {
-    return this.m_WreckedCarChance;
-  }
-
-  set wreckedCarChance(value: number) {
-    if (value < 0 || value > 100) throw new RangeError('WreckedCarChance must be [0..100]');
-    this.m_WreckedCarChance = value;
-  }
-
-  get shopBuildingChance(): number {
-    return this.m_ShopBuildingChance;
-  }
-
-  set shopBuildingChance(value: number) {
-    if (value < 0 || value > 100) throw new RangeError('ShopBuildingChance must be [0..100]');
-    this.m_ShopBuildingChance = value;
-  }
-
-  get parkBuildingChance(): number {
-    return this.m_ParkBuildingChance;
-  }
-
-  set parkBuildingChance(value: number) {
-    if (value < 0 || value > 100) throw new RangeError('ParkBuildingChance must be [0..100]');
-    this.m_ParkBuildingChance = value;
-  }
-
-  get charBuildingChance(): number {
-    return this.m_CHARBuildingChance;
-  }
-
-  set charBuildingChance(value: number) {
-    if (value < 0 || value > 100) throw new RangeError('CHARBuildingChance must be [0..100]');
-    this.m_CHARBuildingChance = value;
-  }
-
-  get postersChance(): number {
-    return this.m_PostersChance;
-  }
-
-  set postersChance(value: number) {
-    if (value < 0 || value > 100) throw new RangeError('PostersChance must be [0..100]');
-    this.m_PostersChance = value;
-  }
-
-  get tagsChance(): number {
-    return this.m_TagsChance;
-  }
-
-  set tagsChance(value: number) {
-    if (value < 0 || value > 100) throw new RangeError('TagsChance must be [0..100]');
-    this.m_TagsChance = value;
-  }
-
-  get itemInShopShelfChance(): number {
-    return this.m_ItemInShopShelfChance;
-  }
-
-  set itemInShopShelfChance(value: number) {
-    if (value < 0 || value > 100) throw new RangeError('ItemInShopShelfChance must be [0..100]');
-    this.m_ItemInShopShelfChance = value;
-  }
-
-  get policemanChance(): number {
-    return this.m_PolicemanChance;
-  }
-
-  set policemanChance(value: number) {
-    if (value < 0 || value > 100) throw new RangeError('PolicemanChance must be [0..100]');
-    this.m_PolicemanChance = value;
-  }
-}
-
-export class Block {
-  rectangle!: Rect;
-  buildingRect!: Rect;
-  insideRect!: Rect;
-
-  constructor(rect: Rect) {
-    this.resetRectangle(rect);
-  }
-
-  resetRectangle(rect: Rect): void {
-    this.rectangle = rect;
-    this.buildingRect = new Rect(rect.left + 1, rect.top + 1, rect.width - 2, rect.height - 2);
-    this.insideRect = new Rect(
-      this.buildingRect.left + 1,
-      this.buildingRect.top + 1,
-      this.buildingRect.width - 2,
-      this.buildingRect.height - 2
-    );
-  }
-}
-
 export enum ShopType {
   GENERAL_STORE = 0,
   GROCERY,
@@ -260,6 +138,25 @@ export class BaseTownGenerator extends BaseMapGenerator {
    */
   private m_SurfaceBlocks: Block[] | null = null;
 
+  /**
+   * The placement primitives as a plain object, built once per generator.
+   *
+   * Most of what a building generator needs is already a public method on
+   * `MapGenerator`, but `placeDoor`, `makeWalkwayZones`, `makeUniqueZone`,
+   * `barricadeDoors`, `clearRectangle` and the six door factories are
+   * `protected`, so they cannot be reached from a building in its own file.
+   * Rather than widen their visibility one at a time, every delegate a building
+   * is allowed to have is written out here, once: the set becomes the
+   * `TownBuildingContext` interface in `./TownBuilding`, so "what a building may
+   * touch" is one list instead of a set of `protected` keywords scattered over
+   * two base classes.
+   *
+   * Cached rather than rebuilt per block: the delegates read `this.m_DiceRoller`
+   * and `this.m_Params` at call time, so a cached object still follows the
+   * per-district reseed in `generate()`.
+   */
+  private m_Placement: TownPlacement | null = null;
+
   get params(): Parameters {
     return this.m_Params;
   }
@@ -272,6 +169,74 @@ export class BaseTownGenerator extends BaseMapGenerator {
     super(game);
     this.m_Params = parameters;
     this.m_DiceRoller = new DiceRoller();
+  }
+
+  /** The cached placement primitives. See `m_Placement`. */
+  private placement(): TownPlacement {
+    if (this.m_Placement) return this.m_Placement;
+    this.m_Placement = {
+      tileFill: (map, model, rect, decoratorFn) =>
+        decoratorFn ? this.tileFill(map, model, rect, decoratorFn) : this.tileFill(map, model, rect),
+      tileRectangle: (map, model, rect, decoratorFn) =>
+        decoratorFn
+          ? this.tileRectangle(map, model, rect, decoratorFn)
+          : this.tileRectangle(map, model, rect),
+      tileHLine: (map, model, left, top, width, decoratorFn) =>
+        decoratorFn
+          ? this.tileHLine(map, model, left, top, width, decoratorFn)
+          : this.tileHLine(map, model, left, top, width),
+      tileVLine: (map, model, left, top, height, decoratorFn) =>
+        decoratorFn
+          ? this.tileVLine(map, model, left, top, height, decoratorFn)
+          : this.tileVLine(map, model, left, top, height),
+
+      mapObjectPlace: (map, x, y, mapObj) => this.mapObjectPlace(map, x, y, mapObj),
+      mapObjectFill: (map, rect, createFn) => this.mapObjectFill(map, rect, createFn),
+      mapObjectPlaceInGoodPosition: (map, rect, isGoodPosFn, roller, createFn) =>
+        this.mapObjectPlaceInGoodPosition(map, rect, isGoodPosFn, roller, createFn),
+      decorateOutsideWalls: (map, rect, decoFn) => this.decorateOutsideWalls(map, rect, decoFn),
+
+      placeDoor: (map, x, y, floor, door) => this.placeDoor(map, x, y, floor, door),
+      makeObjWoodenDoor: () => this.makeObjWoodenDoor(),
+      makeObjHospitalDoor: () => this.makeObjHospitalDoor(),
+      makeObjCharDoor: () => this.makeObjCharDoor(),
+      makeObjGlassDoor: () => this.makeObjGlassDoor(),
+      makeObjIronDoor: () => this.makeObjIronDoor(),
+      makeObjWindow: () => this.makeObjWindow(),
+
+      countAdjDoors: (map, x, y) => this.countAdjDoors(map, x, y),
+      countAdjWalls: (map, x, y) => this.countAdjWalls(map, x, y),
+      countAdjWalkables: (map, x, y) => this.countAdjWalkables(map, x, y),
+
+      makeUniqueZone: (basename, rect) => this.makeUniqueZone(basename, rect),
+      makeWalkwayZones: (map, b) => this.makeWalkwayZones(map, b),
+      addExit: (from, fromPosition, to, toPosition, exitImageID, isAnAIExit) =>
+        this.addExit(from, fromPosition, to, toPosition, exitImageID, isAnAIExit),
+      barricadeDoors: (map, rect, barricadeLevel) => this.barricadeDoors(map, rect, barricadeLevel),
+
+      itemsDrop: (map, rect, isGoodPositionFn, createFn) =>
+        this.itemsDrop(map, rect, isGoodPositionFn, createFn),
+      doForEachTile: (map, rect, doFn) => this.doForEachTile(map, rect, doFn),
+      clearRectangle: (map, rect, clearZones) => this.clearRectangle(map, rect, clearZones),
+      actorPlace: (roller, maxTries, map, actor, goodPositionFn) =>
+        this.actorPlace(roller, maxTries, map, actor, goodPositionFn),
+    };
+    return this.m_Placement;
+  }
+
+  /**
+   * The context handed to a building generator registered in
+   * `TOWN_BUILDING_PASSES`. One per block, per pass.
+   */
+  private buildingContext(map: GameMap, b: Block): TownBuildingContext {
+    return {
+      map,
+      block: b,
+      params: this.m_Params,
+      roller: this.m_DiceRoller,
+      game: this.m_Game,
+      ...this.placement(),
+    };
   }
 
   // ── Entry Map (Surface) ──────────────────────────────────────────────────
@@ -359,6 +324,11 @@ export class BaseTownGenerator extends BaseMapGenerator {
       const index = emptyBlocks.indexOf(b);
       if (index !== -1) emptyBlocks.splice(index, 1);
     }
+
+    // Building generators registered in `./TownBuilding` (currently none --
+    // see TOWN_BUILDING_PASSES). Sits between the parks and the housings,
+    // which is where the C# has its "green" and "housing" stages.
+    runTownBuildingPasses(TOWN_BUILDING_PASSES, emptyBlocks, (b) => this.buildingContext(map, b));
 
     // all the rest is housings.
     completedBlocks.length = 0;
@@ -913,8 +883,7 @@ export class BaseTownGenerator extends BaseMapGenerator {
   // ── Door/Window placement ────────────────────────────────────────────────
 
   protected placeDoor(map: GameMap, x: number, y: number, floor: TileModel, door: DoorWindow): void {
-    map.setTileModelAt(x, y, floor);
-    this.mapObjectPlace(map, x, y, door);
+    placeDoorOn(this.placement(), map, x, y, floor, door);
   }
 
   protected placeDoorIfNoObject(map: GameMap, x: number, y: number, floor: TileModel, door: DoorWindow): void {
@@ -5792,22 +5761,6 @@ export class BaseTownGenerator extends BaseMapGenerator {
   }
 
   makeWalkwayZones(map: GameMap, b: Block): void {
-    /*
-     *  NNNE
-     *  W  E
-     *  W  E
-     *  WSSS
-     *
-     */
-    const r = b.rectangle;
-
-    // N
-    map.addZone(this.makeUniqueZone('walkway', new Rect(r.left, r.top, r.width - 1, 1)));
-    // S
-    map.addZone(this.makeUniqueZone('walkway', new Rect(r.left + 1, r.bottom - 1, r.width - 1, 1)));
-    // E
-    map.addZone(this.makeUniqueZone('walkway', new Rect(r.right - 1, r.top, 1, r.height - 1)));
-    // W
-    map.addZone(this.makeUniqueZone('walkway', new Rect(r.left, r.top + 1, 1, r.height - 1)));
+    makeWalkwayZonesOn(this.placement(), map, b);
   }
 }

@@ -42,6 +42,7 @@ import { GameImages } from '@gameplay/GameImages';
 import { GangID } from '@gameplay/GameGangs';
 import { ItemID } from '@gameplay/GameItems';
 import { SkillID, Skills } from '@gameplay/Skills';
+import { decorateOutsideWalls as decorateOutsideWallsOn } from './TownBuilding';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Game = any;
@@ -824,17 +825,10 @@ export abstract class BaseMapGenerator extends MapGenerator {
   // ── Common tile decorations ───────────────────────────────────────────────
 
   decorateOutsideWalls(map: GameMap, rect: Rect, decoFn: (x: number, y: number) => string | null): void {
-    for (let x = rect.left; x < rect.right; x++) {
-      for (let y = rect.top; y < rect.bottom; y++) {
-        const tile = map.getTileAt(x, y);
-        if (!tile) continue;
-        if (tile.model.isWalkable) continue;
-        if (tile.isInside) continue;
-
-        const deco = decoFn(x, y);
-        if (deco) tile.addDecoration(deco);
-      }
-    }
+    // Moved to `./TownBuilding` so a building generator in its own file can use
+    // it. Every one of the fourteen C# building generators calls it, and it was
+    // the only wall-decoration helper the town had.
+    decorateOutsideWallsOn(map, rect, decoFn);
   }
 
   // ── Common items ──────────────────────────────────────────────────────────

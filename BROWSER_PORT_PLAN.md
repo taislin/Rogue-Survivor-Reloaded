@@ -1378,8 +1378,8 @@ Stages 4 and 5 have not started.
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
 | **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles, 90 of 95 items and all 123 item factories done.** The 5 backpacks (a new mechanic) and ~420 unused `GameImages` constants are the only content left; nothing *calls* the new factories yet, which is placement and belongs to Stage 4/5 |
-| **4** | 37 gated features | **17 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (both halves), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`, `TileFires`, `FireExtinguishers`, `Butchering`, `ResourcesAvailability`, `DifficultyAtCreation`, `Fishing` (player path only — the NPC arm is still pending, see its section). 20 remain |
-| **5** | content, audio, credits | **not started** |
+| **4** | 37 gated features | **19 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (model and burn loop only; nothing can light them), `ItemDespawn`, `DarknessFov` (both halves), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`, `TileFires`, `FireExtinguishers`, `Butchering`, `ResourcesAvailability`, `DifficultyAtCreation`, `Fishing` (player path only — the NPC arm is still pending, see its section), `ExtendedAudio` (the 180-pair table; 3 of 180 call sites wired, see its section), `AmbientAudio` (**5 of its 13 tracks** — the channel and the table are done; the 5 helicopter / 2 church / 1 debug tracks are not, see its section). 18 remain |
+| **5** | content, audio, credits | **started** — `ExtendedAudio`'s table and assets are in; the ambients channel, the 15 building generators and the credits page are not |
 
 Two things a later session should not have to re-derive:
 
@@ -3040,9 +3040,12 @@ plan for rather than discover:
 >   weapons — so a survivor who equips a rod over a two-hander keeps both, which is
 >   the C#'s behaviour for a one-hander and a divergence for the rest.
 > - **The four sounds** (`GameSounds.cs:424-431`: cast and reel, player and
->   nearby). They arrive with `Feature.ExtendedAudio`, still pending. The C# stops
->   the cast sound before the reel precisely because the two overlap, which is not
->   worth reproducing without either.
+>   nearby). **Arrived** with `Feature.ExtendedAudio`: the two player ones are
+>   wired and gated, and the `_NEARBY` pair is still not, because both of its arms
+>   are `IsAudibleToPlayer(loc, Rules.QUIET_NOISE_RADIUS)` and the port has no
+>   such radius. The C# stops the cast sound before the reel precisely because the
+>   two overlap; that is not ported either, because the port's only `stop()` is
+>   global. See `ExtendedAudio` below.
 >
 > `Map.hasFishing` is a **property over a backing field**, not a plain boolean,
 > and the reason is the save graph rather than taste. `GraphReader` makes every
@@ -3065,6 +3068,125 @@ plan for rather than discover:
 > behaviour — recorded here because a suite that has an equivalent mutation and one
 > that has a missing test should not look the same.
 
+> ### `AmbientAudio` — a third channel, and five of thirteen tracks
+>
+> Still Alive, Release 5-3 (rain), 6-4 (helicopter), 6-6 (thunder, animals, bells),
+> 7-3 (the debug cue). `Feature.AmbientAudio` is off `PENDING_WIRING`, and the
+> honest headline is: **the table and the channel are done, and five of the
+> thirteen tracks play.** The other eight are unwired and each is waiting on a
+> named pending feature.
+>
+> **The C# has no ambient manager class, and that is the whole design.** The fork
+> builds a *second instance of its music manager* — `m_AmbientSFXManager = new
+> SFMLMusicManager()` at `RogueGame.cs:861`, on the sentence "music manager is good
+> for long tracks, as they are streamed from disk rather than kept in memory" —
+> and gives it its own `Volume` and its own `IsAudioEnabled`
+> (`RogueGame.cs:2703-2704`). So "mixing an ambient with the music" is not a mixer
+> at all: it is **two players writing to the same speakers at two independent
+> levels**, the second at `AmbientSFXVolume = 75` against a `MusicVolume` of 100
+> (`GameOptions.cs:1389`). `GameAmbients.cs:5` states the intent — "these may be
+> played in conjunction with background music".
+>
+> **What that forced the port to be, which is not what it would have been from the
+> name.** The music channel is one `<audio>` element for one track, and it can be
+> because the C#'s music manager is per-track and the *game* only ever plays one
+> music at a time. Ambients are not in that position:
+> `StopAllAmbientsExcept` (`RogueGame.cs:10490`) stops a **named list of five**, and
+> `CheckLandedHelicopterSFX` (`:10545`) asks `IsPlaying` about four separate ids to
+> choose a distance tier. A one-element channel would make the second of those
+> calls silently stop the first. So `IAmbientManager` is **per-id** —
+> `playIfNotAlreadyPlaying(id, looping)`, `stop(id)`, `isPlaying(id)`,
+> `getPlayingAmbients()` — and `WebAudioAmbientManager` keeps one element and one
+> `GainNode` per voice, summed into a shared master. The C#'s bells add a second
+> reason: they are played at sunset with `looping` defaulting to `false`
+> (`ISoundManager.cs:52`), so a one-shot, and a looping bell would ring over every
+> sunset for the rest of the session.
+>
+> **The mix is a gain stage, and deliberately has no per-track correction.** The
+> master is the channel volume — a `GainNode`, because two voices each at 0.75 must
+> sum to 0.75 rather than clip at 1.5. There is no `AMBIENT_GAINS` table, and the
+> reason is the C#: `SFMLMusicManager.OnVolumeChange` (`SFMLMusicManager.cs:82-85`)
+> sets **one** `Volume` on every sound it holds, so an ambient's loudness relative
+> to another's is whatever the recording is. `measure-audio-levels.mjs` reads
+> `assets/{music,sfx}` flat and would not see a third directory anyway, so adding
+> per-ambient numbers would be a mixing decision the fork did not make.
+>
+> **What is wired: rain, thundering rain, night animals.** Five tracks, and all
+> three of their C# inputs exist in the port — `Weather`
+> (`data/Weather.ts`), `WorldTime.isNight`, `Tile.isInside`. The port's
+> `CheckAmbientAudio` is the C#'s `CheckAmbientSFX` (`RogueGame.cs:10417`) whole,
+> including the decision structure the C# depends on: the weather is tested
+> **before** the clock, so a night in the rain is rain and not animals; the
+> incoming bed is started **before** the others are stopped, so the swap has no
+> silent gap; and there is **no inside/outside split** for the animals, which the
+> C# also does not have.
+>
+> **What is not wired, and on what:**
+>
+> - **The five helicopter tracks — `Feature.HelicopterRescue`, still pending.**
+>   `CheckLandedHelicopterSFX` (`RogueGame.cs:10524`) reads
+>   `m_Session.ArmyHelicopterRescue_Map` and `_Coordinates`. The port has the rescue
+>   *day* (`Session.armyHelicopterRescueDay`, written by `DifficultyAtCreation`) and
+>   no map to put a helicopter on. The four distance tiers also need
+>   `Rules.QUIET/MODERATE/BOOMING_NOISE_RADIUS`; the port has only
+>   `LOUD_NOISE_RADIUS` (`Rules.ts:310`). **There is nothing to stub here** — a
+>   stationary helicopter the player is not rescued by would be a new endgame, not
+>   this feature, and the `StopAllAmbientsExcept` list would have to grow by four
+>   the moment it landed.
+> - **The two church bells — `Feature.Church`, still pending.** The C#'s trigger is
+>   `m_Player.Location.Map.HasChurch` at sunset (`:5637`). The port's `Map` has no
+>   `hasChurch` at all, and inventing one is a guess with a sound attached to it.
+> - **`TEST_AMBIENT` — shipped, deliberately unreachable.** Its only C# caller is
+>   `OptionsMenuAudioAdjustment` (`:2244`), a preview cue for the ambient-volume
+>   row in the options screen, and the port has no such row (below). The file is
+>   copied anyway so the table is the C#'s thirteen in full and the asset test is
+>   total.
+>
+> **Two divergences inside the wired part, both recorded at the code rather than
+> smoothed over.** The underground list gains `hospital_Admissions`, which the C#
+> silences the other four hospital levels *not*; and drops `ArmyBase`, which the
+> port's `UniqueMaps` does not have (`Feature.ArmyBase`, pending). The test asserts
+> all eight surviving levels — five hospital, two police station, the CHAR
+> underground — so the list cannot quietly shrink.
+>
+> **The two option rows are not here, and that is the one thing a player would
+> notice.** The C# has `UI_AMBIENTSFXS` (an on/off) and `UI_AMBIENTSFXS_VOLUME`
+> ("Ambient sounds volume (rain, church bells, distant animals, etc)",
+> `GameOptions.cs:1038`). The port has neither, so the channel level is the
+> constant `AMBIENT_SFX_VOLUME = 0.75` applied in the `RogueGame` constructor —
+> the C#'s own default, but not player-movable. Adding the two rows is a
+> `GameOptions`/`OptionsScreen` change and nothing about the channel blocks it;
+> it is left out here because it is options work rather than audio work, and
+> because §5.6g's "QA doubles" is worse served by a half-done options screen.
+>
+> **The load-time answer is that there is none, and that is a property of the port
+> rather than luck.** 14.0 MB of `.ogg` went into `public/assets/ambients/`, and
+> `Run()`'s boot path is unchanged: the port **does not preload audio at all** —
+> `RogueGame.Run` prints "Loading music..." and "Loading sfxs..." and then fetches
+> nothing (`RogueGame.ts:1683-1686`: "C# preloaded every GameMusics/GameSounds file
+> here; the Web Audio manager fetches tracks by id on demand"). Only *images* are
+> preloaded, because a browser cannot draw one it has not fetched. So an ambient
+> costs a first-play fetch of one file, on the turn the weather turns, and the
+> worst case is the thundering-rain-outside bed at 6.1 MB — fetched once, then
+> held by the service worker's `cache-first` `/assets/` handler for the rest of the
+> session. The regression is in **dist size and the offline cache footprint**
+> (+14 MB on ~55 MB), not in time-to-first-frame. Had audio been preloaded the way
+> the C# did it, this feature would have been a ~25% increase in the boot fetch and
+> that is the argument for keeping it on demand.
+>
+> **Five `hasFeature` gates, all in `RogueGame.ts`:** one in
+> `CheckAmbientAudio` (the whole behaviour, and the reason there is no version of
+> "rain in a basement" that CLASSIC can half-receive) and four on `stopAll()` —
+> sleeping, dying, reincarnating, loading a save. The four are gated even though
+> under CLASSIC they are no-ops, because a gate that is unnecessary today is a
+> gate nobody has to think about tomorrow, when something else in the engine learns
+> to start a bed. The split is asserted in `feature-flags.test.ts`.
+>
+> **Six mutations, six caught:** removing the reader's gate, swapping the
+> start/stops order, dropping `playIfNotAlreadyPlaying`'s guard, pointing
+> `NIGHT_ANIMALS` at the wrong file, playing a bed one-shot instead of looped, and
+> dropping the basement arm.
+
 The largest stage, and the one that puts branches in the god file. Everything is
 gated on a `Feature` from §5.6a, and the per-item serialisation cost is close to
 zero precisely because of the dump-every-own-field design.
@@ -3084,9 +3206,11 @@ zero precisely because of the dump-every-own-field design.
 | `DarknessFov` | none | 0 | `MINIMAL_FOV_PLAYER 0` vs `MINIMAL_FOV_LIVINGACTORS 1`; night penalties; the FOV-0 gates from Stage 2 |
 | `FireExtinguishers`, `SiphonFuel` | `Barrel`/`Campfire`/`Car` fuel units | new class specs | 3 new map-object classes, siphon flow, extinguisher targeting mode |
 | `ShelterBackpacks` | nested `Inventory` on an `Item` | new codec + 1 class spec | slot tiers gated on Hauler, transfer rules, nested-inventory UI |
+| `AmbientAudio` | none | 0 | **5 of 13 tracks DONE** — the third audio channel (`IAmbientManager`/`NullAmbientManager`/`WebAudioAmbientManager`, one voice per id so the C#'s `StopAllAmbientsExcept` list is expressible), `AMBIENTS_ROOT` + `AMBIENT_FILES` for the fork's fourth `Resources/` subtree (14 MB, **not** on the preload path — the port fetches audio on demand), all 13 `.ogg` copied, and `CheckAmbientAudio` with rain / thundering rain / night animals behind **5 gates**. **8 tracks NOT done** — 5 helicopter on `HelicopterRescue` (no rescue map or coordinates, and no `QUIET/MODERATE/BOOMING_NOISE_RADIUS`), 2 church bells on `Church` (no `Map.hasChurch`), 1 `TEST_AMBIENT` with no options row to preview it from. The `UI_AMBIENTSFXS` + `UI_AMBIENTSFXS_VOLUME` **option rows are not ported**: the level is the constant `AMBIENT_SFX_VOLUME = 0.75`, the C#'s own default. See its section above |
 | Item model flags | `ItemModel` +6 bools | 0 | `isFlameWeapon`, `isThrowable`, `isForbiddenToAI`, `isBatteryPowered`, `causesTileFires`, `canGoInBackpacks` |
 | `Activity` +19 | enum | 0 | cosmetic labels, but they become load-bearing: `CivilianAI` filters trade partners on `isFightingOrFleeing` |
 | 7 new `PlayerCommand`s | enum — **append only** | 0 | bury, cook, destroy item, make fire, unload ammo, inspection mode, swap inventory |
+| `ExtendedAudio` | none (constants + a `Record` per id) | 0 | **table DONE** — 180 pairs in `GameSounds`/`SOUND_FILES`, 182 `.ogg` copied into `assets/sfx/`, generated from `GameSounds.cs` by `scripts/port-game-sounds.py` rather than transcribed. **3 call sites wired** (the two `Fishing` sounds §5.6e deferred, and `DoEatCorpse`'s id choice). The other 177 need the distance model — see its section |
 
 `AmmoType` +7 and `AttackKind.OTHER` and `FireMode.FLAMING` are enum growth on
 mechanic axes that are already shared — no per-pack variant needed.
@@ -3105,6 +3229,155 @@ runs per seed, one per ruleset, both required to terminate (§4.3's harness) —
 `headless-no-hang.test.ts` and the loop detectors are what a ruleset flag is most
 likely to upset, because turning mechanics on for one mode can produce an AI
 cycle the other mode never had.
+
+> ### Mapgen seam (`TownBuilding.ts`) — a pure move, proved rather than argued
+>
+> The 13 unported C# building generators would each add 150-300 lines to
+> `BaseTownGenerator.ts`, which is 5,813 and does not have a reviewable seam
+> inside it. That file now delegates the shared placement primitives
+> (`decorateOutsideWalls`, `tileRectangle`, `tileHLine`, `tileVLine`,
+> `tileFill`, `placeDoor`, zone helpers) to `gameplay/generators/TownBuilding.ts`,
+> and a building is a *new file* returning one function plus one line in
+> `TOWN_BUILDING_PASSES`. `Block` moved there too, because the context hands it
+> out.
+>
+> **The determinism claim is measured, not asserted.** A generator refactor that
+> shifts one dice roll is invisible to every test in the suite and invalidates
+> every saved world, so it was checked by hashing the generated district —
+> every tile, map object and actor, plus the object/actor/corpse counts — for a
+> fixed seed, run through the bundled CLI on `9b32247` and again on the refactored
+> tree. The two fingerprints are byte-identical (`c2b1c2f875d10ecb5422540f978e5203`).
+>
+> Note what that does and does not cover: one seed, one district, CLASSIC. It
+> is strong evidence the extraction is a pure move, which is the actual claim
+> being made — it is not a proof over all seeds, and the per-building work that
+> follows is where broader coverage belongs.
+
+> ### `ExtendedAudio` — the table and the assets are in; the distance model is not
+>
+> **180 pairs, 182 files, 3 gates.** The gate count is the interesting number and
+> it is the opposite of every other feature in this section: the work is *data*,
+> and data cannot leak into `CLASSIC` no matter how many entries it has — a sound
+> id nothing plays is inert. So three is the count that has to be argued for, not
+> the one that has to be grown.
+>
+> **The transcription is generated, not typed.** `scripts/port-game-sounds.py`
+> parses `GameSounds.cs` and emits the `GameSounds.ts` block, the `SOUND_FILES`
+> rows and `tests/fixtures/still-alive-sounds.json` from one parse, so the table
+> and the contract cannot disagree; the test compares all three against the
+> fixture. That is the whole risk of this feature. A hand transcription of 181
+> pairs type-checks, builds, ships and is *silent* — `soundPath` hands the manager
+> a URL, the fetch 404s, `WebAudioMusicManager` warns into a console nobody opens.
+> The C# cannot have this bug: `m_SFXManager.Load(id, id_FILE)` is handed an
+> **open file handle** at `RogueGame.cs:5278-5448`, so a missing file is a crash
+> on the first frame. The web port's equivalent obligation is a test, and
+> `tests/extended-audio.test.ts` is it — all 183 ids are stat'd through
+> `soundPath`, the way the managers resolve them.
+>
+> **§5.6f item 1 is wrong about the file names, and the plan should say so.** It
+> warns that "the fork's 180 new files use a different convention
+> (`bash_wood_nearby.ogg` against our `sfx - ` prefix)". They do not: the fork
+> already names its effects the way the port's `soundPath` expects, because
+> `AssetPaths` derived the port's convention *from* the C#'s `*_FILE` constants
+> and the fork kept them — `sfx - nightmare.ogg` and `sfx - undead eat nearby.ogg`
+> are name-for-name matches across both versions. There was **no rename to do**;
+> the convention is "the name the C#'s `*_FILE` constant spells", and the copy
+> preserves it.
+>
+> **Item 2 is right, and it is the one real Classic/Still Alive difference.** The
+> vanilla `sfx - undead eat.ogg` is a *single* effect the fork split per distance
+> tier into `UNDEAD_EAT_PLAYER` / `UNDEAD_EAT_NEARBY`; `sfx - undead rise.ogg` is
+> not in `GameSounds.cs` at all. Both vanilla files are kept untouched, and
+> `DoEatCorpse` is the one gate in the feature that is a *choice* rather than an
+> addition: it plays `UNDEAD_EAT` under `CLASSIC` and `UNDEAD_EAT_PLAYER` above
+> it, so a Classic corpse feast stays on the file it has always used. The gate is
+> over the id because there is nothing else to gate.
+>
+> **Three gates, and they are not one behaviour.** Two are the `Fishing` sounds
+> this section's own `Fishing` block deferred — the cast in
+> `DoUseFishingRodItem` and the reel in the `DoWait` catch. Two of the C#'s four
+> are still absent, the `_NEARBY` pair, because both arms are
+> `IsAudibleToPlayer(loc, Rules.QUIET_NOISE_RADIUS)` and **the port has no
+> `QUIET_NOISE_RADIUS` and no audibility predicate that takes a radius**.
+> Inventing a constant to reach a sound would be guessing a number the C# does
+> not define here, so it is recorded at the site instead. The C#'s
+> `Stop(FISHING_CAST_PLAYER)` before the reel is also not ported: its whole
+> purpose is to cut the cast off because the two overlap, and `IMusicManager`'s
+> `stop()` is *global*, so using it would silence the soundtrack over an
+> inaudible overlap.
+>
+> **Item 4 — the distance model — is the rest of the feature, and it is the
+> expensive part.** 177 of the 180 ids are still unwired. The `_nearby` / `_far` /
+> `_visible` suffixes are 3 spatial tiers × 15 weapon classes, and the port has no
+> distance-to-volume rule to select between them, so wiring them means building
+> that first. `tests/extended-audio.test.ts` asserts that no fork-only id is
+> *named* anywhere without a gate three lines away, so the count can only rise
+> through a decision — and the test names the three that exist.
+>
+> **The loudness table is deliberately NOT regenerated, and this is the one
+> decision here a later session is most likely to undo by accident.**
+> `measure-audio-levels.mjs` peak-normalises sfx, which is right for the three
+> vanilla effects — they are all player-perspective, and `sfx - undead eat` peaks
+> at 0.39 against `nightmare`'s 1.0 — and wrong for the other 180, because their
+> *relative* level is the design. Measured: `scream_far_01` peaks at 0.030 and
+> `scream_nearby_01` at 0.141, and **112 of the 185 shipped effects sit below the
+> 0.317** that the generator's 3.0x ceiling can lift to its 0.95 target. Running
+> the script would give every tier of a scream the same peak — a scream across
+> town as loud as one beside you — which is the single thing the `_far` / `_nearby`
+> naming exists to prevent. So the fork's ids are left out of `SFX_GAINS`,
+> `sfxGain` finds no entry and returns 1.0, and the levels are the C#'s. The test
+> `leaves every fork effect at its source gain` is the tripwire: **re-running the
+> generator fails it**, which is the only thing between a routine regeneration and
+> a flattened distance matrix, since the file it writes says "GENERATED, do not
+> edit by hand" and would not otherwise be questioned.
+>
+> **Load time: 7.2 MB and nothing at boot.** The port preloads every sprite before
+> the first frame because a browser cannot draw one it has not fetched
+> (`AssetPaths.ts:16-20`), but audio is fetched per play —
+> `WebAudioSoundManager` has a `preload()` and **no caller**, and `Run()`'s
+> "Loading sfxs..." block is two `UI_Repaint`s around nothing
+> (`RogueGame.ts:1679-1706`). So the merge costs the boot path nothing, a
+> `STILL_ALIVE` player nothing at boot, and a `CLASSIC` player nothing at all:
+> they fetch an effect the first time they hear it and never fetch the other 181.
+> What it does cost is 7.2 MB in the *build artifact* — `vite` copies `public/`
+> verbatim — which is a download-budget question (§5.6g's "payload is paid by
+> classic players" is real here and nowhere else in audio), not a frame-time one.
+> Splitting `assets/sfx/` per ruleset is the only fix and it is not free:
+> `soundPath` reads that directory flat, `measure-audio-levels.mjs` reads it flat
+> and `.ogg`-only, and the ambients channel lands in the same tree. Deferred to a
+> decision about the download budget, with the cost written down here rather than
+> spent.
+>
+> **Three things found on the way, none of them fixed, because none of them are
+> this feature's files:**
+>
+> - **`musicGain` is the wrong lookup for a sound effect.** The port plays every
+>   effect through the *music* manager (`m_MusicManager.play(GameSounds.X,
+>   MusicPriority.EVENT)`), and `WebAudioMusicManager.start` applies
+>   `musicGain(id)` — which looks the id up in `MUSIC_FILES` and returns **1.0**
+>   for every sfx id. So the three vanilla effects have been playing uncorrected
+>   (`sfx - undead eat` at 1.0 rather than its measured 2.446) and the 180 new
+>   ones would too. `WebAudioSoundManager` gets this right through `sfxGain`, and
+>   nothing instantiates it: the port has no `m_SoundManager` at all. It is a
+>   one-line change at the call site, but `WebAudioMusicManager` is where the
+>   ambients channel is being built, so it is reported rather than touched.
+> - **Two files ship with no constant.** `barbed_wire_nearby.ogg` and
+>   `trip_mine_trigger_visible.ogg` are in the fork's `Resources/Sfx/` and named by
+>   no `GameSounds` constant. The directory was copied verbatim rather than
+>   filtered, so a constant that names one of them later already has its file;
+>   the test registers both so a *third* orphan is deliberate, and asserts that no
+>   orphan is a file the C# *does* name — which is what a misspelling looks like
+>   from this side.
+> - **`RS - Reincarnate.ogg` now exists in both `assets/music/` and
+>   `assets/sfx/`.** The fork moved that track from music to sfx in Release 6-1
+>   and has no `GameMusics.REINCARNATE`; the port still does, so `reincarnate` is a
+>   key in both tables and `audioPath` (music first) sends it to the music encode.
+>   Both files exist, so nothing is broken — but the sfx copy is unreachable, and
+>   removing either would be a Classic change, so it is recorded.
+>
+> Four mutations, four caught: a mistyped file name in `SOUND_FILES`, a deleted
+> `SOUND_FILES` row, a removed `ExtendedAudio` gate, and the `DoEatCorpse` ternary
+> collapsed to the vanilla id.
 
 #### 5.6f Stage 5 — content and audio
 
@@ -3126,26 +3399,40 @@ mall, not after.
 
 **Audio is the one place "mechanical" is false.** The sprite pipeline handles
 711 files unchanged; the sound pipeline does not, because
-`measure-audio-levels.mjs` measures *filenames* and the fork's 180 new files use
-a different convention (`bash_wood_nearby.ogg` against our `sfx - ` prefix):
+`measure-audio-levels.mjs` measures *filenames* and so does `soundPath` — so the
+merge is a naming and loudness question rather than a copy. (This paragraph
+originally claimed the fork's 180 files "use a different convention
+(`bash_wood_nearby.ogg` against our `sfx - ` prefix)". That was wrong and item 1
+below now says so: the convention came *from* the C#.)
 
-1. **Rename on copy** to whatever `GameSounds`/`SOUND_FILES` adopt.
-   `AssetPaths.ts:118-124` and `measure-audio-levels.mjs:112` both key off the
-   basename, so the filename *is* the id.
+1. ~~**Rename on copy** to whatever `GameSounds`/`SOUND_FILES` adopt.~~ **Not
+   needed — the premise was wrong.** The port's convention is *derived from* the
+   C#'s `*_FILE` constants and the fork kept them: `sfx - nightmare.ogg` and
+   `sfx - undead eat nearby.ogg` are name-for-name matches across both versions,
+   and all 181 of the fork's `*_FILE` values have a file whose basename is that
+   value. `AssetPaths.ts:118-124` and `measure-audio-levels.mjs:112` both key off
+   the basename, so the filename *is* the id — and the id was already right.
+   **DONE**, by `scripts/port-game-sounds.py --emit` rather than by hand.
 2. `sfx - undead eat.ogg` splits into `nearby` + `player` variants, and
    `sfx - undead rise.ogg` **does not exist in the fork at all**, though
-   `GameSounds.ts:7-11` references both. Keep ours, re-source, or add ids.
+   `GameSounds.ts:7-11` references both. **Ours kept**, and `DoEatCorpse` is gated
+   on the id so the vanilla file stays the Classic one. See `ExtendedAudio`.
 3. **180 `GameSounds` constants + 180 `SOUND_FILES` entries are mandatory**, not
-   optional: `audio-levels.test.ts:76-80` fails without them.
+   optional: `audio-levels.test.ts:76-80` fails without them. **DONE** — 180 new
+   pairs (the 181st is `NIGHTMARE`, which both versions declare verbatim) and 183
+   `SOUND_FILES` rows.
 4. The `_nearby`/`_player`/`_far`/`_visible` suffixes imply a distance model
    that does not exist in the port, and the fork's matrix is 3 spatial tiers ×
-   15 weapon classes. That model has to be built.
+   15 weapon classes. That model has to be built. **Not built** — it is the
+   remaining 177 ids, and the reason the feature is table-first.
 5. **13 ambients need a new audio channel.** `AssetPaths.ts:35-38` has music and
    sfx only.
 6. `node scripts/measure-audio-levels.mjs` needs `sox` on `PATH` (present at
    `/usr/bin/sox`) and reads `public/assets/{music,sfx}` **flat and `.ogg`-only**
    via `readdirSync` (`:104, 112`) — a subdirectory or a `.wav` is invisible to
-   both the script and `soundPath()`.
+   both the script and `soundPath()`. **Do not run it on the merged sfx tree**:
+   the fork's 180 are a distance matrix and peak-normalising them destroys it.
+   See `ExtendedAudio`; a test fails if somebody does.
 
 Music is a smaller merge: 22 fork tracks against our 24, with different names
 (`RS - CHAR researchers.ogg`, `Shopping Mall.ogg`, `Post-rescue.ogg`).
