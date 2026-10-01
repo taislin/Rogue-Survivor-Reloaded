@@ -171,11 +171,11 @@ describe("Feature registry is wired", () => {
     // is the point: a reader is a decision, not an accident.
     expect(sites.map((s) => s.feature).sort())
 .toEqual(["Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AnimalShelter", "AnimalShelter",
-                 "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank", "Bar", "Bar", "BlackOpsRaid", "Butchering", "Butchering", "Church", "Clinic", "Clinic", "Cooking", "Cooking",
-                 "DarknessFov", "DarknessFov", "DarknessFov", "DarknessGating", "DifficultyAtCreation", "DifficultyAtCreation", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "FireBarrels", "FireBarrels", "FireExtinguishers", "FireStation", "Fishing", "Fishing",
-                 "Fishing", "Fishing", "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FuelStation", "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue",
-                 "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "ItemDespawn", "ItemDespawn", "Junkyard", "Junkyard", "Library", "Library", "LightPriority", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ShelterBackpacks", "ShelterBackpacks",
-                 "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "SiphonFuel", "SiphonFuel", "TileFires", "TileFires", "TileFires", "TileFires", "WeaponWeight"]);
+                 "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank", "Bar", "Bar", "BlackOpsRaid", "Butchering", "Butchering", "CHARResearchRaid", "Church", "Clinic", "Clinic", "Cooking",
+                 "Cooking", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessGating", "DifficultyAtCreation", "DifficultyAtCreation", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "FireBarrels", "FireBarrels", "FireExtinguishers", "FireStation", "Fishing",
+                 "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FuelStation", "Graveyard", "Graveyard", "HelicopterRescue",
+                 "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "ItemDespawn", "ItemDespawn", "Junkyard", "Junkyard", "Library", "Library", "LightPriority", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ShelterBackpacks",
+                 "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "SiphonFuel", "SiphonFuel", "TileFires", "TileFires", "TileFires", "TileFires", "WeaponWeight"]);
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     // `Alcohol`'s *first* reader is now in `RogueGame` (the per-turn decay), and
     // the harness line is one of six rather than the only one.
@@ -408,6 +408,16 @@ describe("Feature registry is wired", () => {
     const blackOps = sites.filter((s) => s.feature === "BlackOpsRaid");
     expect(blackOps).toHaveLength(1);
     expect(blackOps[0]!.at).toMatch(/RogueGame\.ts:\d+$/);
+
+    // CHARResearchRaid is one reader for the same reason, and it is worth pairing
+    // with the assertion above because the two features differ in *how* they are
+    // gated. BlackOps replaces a missing `GameOptions` option; CHAR replaces
+    // nothing -- the C# gates it on no condition at all (`RogueGame.cs:28715`), so
+    // the `hasFeature` here is purely the port's addition, and it is the only thing
+    // keeping a shotgun-carrying team out of a Classic district.
+    const charRaid = sites.filter((s) => s.feature === "CHARResearchRaid");
+    expect(charRaid).toHaveLength(1);
+    expect(charRaid[0]!.at).toMatch(/RogueGame\.ts:\d+$/);
 
     // AmbientAudio is five readers in one file, and the split is the design rather
     // than an accident: **one** that decides what should be audible

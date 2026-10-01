@@ -544,6 +544,17 @@ export const SURVIVORS_BAND_DAY: number = 21;
 export const SURVIVORS_BAND_SIZE: number = 5;
 export const SURVIVORS_BAND_CHANCE_PER_TURN: number = 1;
 export const SURVIVORS_BAND_DAY_GAP: number = 5;
+// C# `RogueGame.cs:339-343`, Release 8-1. The CHAR research team. `SCIENTISTS` is
+// the *total* squad and `GUARDS` is the total guard count, and both are used as
+// `SIZE - 1` in `FireEvent_CHARScientists` because the leader is spawned separately
+// -- which is why the raid fields one leader plus three colleagues but only *two*
+// guards. The subtraction is the reference's asymmetry and is transcribed as-is; see
+// the note on the guard loop.
+export const SCIENTISTS_TEAM_DAY: number = 21;
+export const SCIENTISTS_TEAM_SCIENTISTS: number = 4;
+export const SCIENTISTS_TEAM_GUARDS: number = 3;
+export const SCIENTISTS_TEAM_CHANCE_PER_TURN: number = 1;
+export const SCIENTISTS_TEAM_DAY_GAP: number = 5;
 export const ZOMBIE_LORD_EVOLUTION_MIN_DAY: number = 7;
 export const DISCIPLE_EVOLUTION_MIN_DAY: number = 7;
 export const PLAYER_HEAR_FIGHT_CHANCE: number = 25;
@@ -4240,6 +4251,12 @@ export class RogueGame {
 			// 8 Band of Survivors?
 			if (this.CheckForEvent_BandOfSurvivors(entryMap))
 				await this.FireEvent_BandOfSurvivors(entryMap);
+			// 9 CHAR scientists research team?
+			// C# `:5710-5714`, the ninth and last of the nine. **Order is load-bearing**:
+			// each `CheckForEvent` spends a `RollChance`, so swapping two arms changes
+			// the dice stream and every district's event sequence after it.
+			if (this.CheckForEvent_CHARScientists(entryMap))
+				await this.FireEvent_CHARScientists(entryMap);
 		}
 
 		// Sewers
@@ -6484,6 +6501,127 @@ inv.removeAllQuantity(it);
 		}
 	}
 
+	// ── CHAR research team (Release 8-1) ──────────────────────────────────────
+
+	/**
+	 * C# `CheckForEvent_CHARScientists` — `RogueGame.cs:28715`.
+	 *
+	 * **This is the whole feature for Classic purposes.** The C# gates it on
+	 * nothing at all — no `hasFeature`, no option, unlike `CheckForEvent_BlackOpsRaid`
+	 * which tests `s_Options.BlackOpsRaidsEnabled` at `:28578`. So the gate below
+	 * *is* the port's addition, and it is the reason `Feature.CHARResearchRaid`
+	 * exists as a flag rather than as a free-standing event: without it a Classic
+	 * district would field a four-strong CHAR team with shotguns.
+	 *
+	 * It is the first statement, ahead of the day test, so a Classic district pays
+	 * nothing — the `1%`-per-turn roll is not spent either, which is asserted.
+	 * The three gates after it are the C#'s, in the C#'s order.
+	 */
+	CheckForEvent_CHARScientists(map: Map): boolean {
+		if (!hasFeature(this.m_Session.ruleset, Feature.CHARResearchRaid)) return false;
+		if (map.localTime.day < SCIENTISTS_TEAM_DAY) return false;
+
+		if (
+			this.HasRaidHappenedSince(
+				RaidType.CHAR_SCIENTISTS,
+				map.district!,
+				map.localTime,
+				SCIENTISTS_TEAM_DAY_GAP * WorldTime.TURNS_PER_DAY,
+			)
+		)
+			return false;
+
+		if (!this.m_Rules.rollChance(SCIENTISTS_TEAM_CHANCE_PER_TURN)) return false;
+
+		return true;
+	}
+
+	/**
+	 * C# `FireEvent_CHARScientists` — `RogueGame.cs:28733`.
+	 *
+	 * **The two loops subtract one from different totals and that asymmetry is the
+	 * C#'s, not a transcription slip.** `SCIENTISTS_TEAM_SCIENTISTS` is the size of
+	 * the *whole* team including the leader, so `4 - 1` gives three colleagues and
+	 * four scientists in all. `SCIENTISTS_TEAM_GUARDS` is read as if it were the
+	 * same thing, so `3 - 1` gives **two** guards for a raid the constants
+	 * describe as three. Both loops are transcribed as written; "fixing" the guard
+	 * loop would make this raid one actor stronger than the reference and would
+	 * shift the district's dice stream, since each spawn spends rolls.
+	 *
+	 * `FireEvent` also differs structurally from the other raids: the C# guards
+	 * every body on `teamLeader != null` rather than early-returning first, so a
+	 * failed leader spawn still returns early at `:28760` before the AI notice and
+	 * the announcement. Kept in the C#'s order.
+	 */
+	async FireEvent_CHARScientists(map: Map): Promise<void> {
+		this.m_Session.setLastRaidTime(
+			RaidType.CHAR_SCIENTISTS,
+			map.district!,
+			map.localTime.turnCounter,
+		);
+
+		const teamLeader = this.SpawnNewCHARScientistLeader(map);
+		if (teamLeader != null) {
+			for (let i = 0; i < SCIENTISTS_TEAM_SCIENTISTS - 1; i++) {
+				const colleague = this.SpawnNewCHARScientist(
+					map,
+					teamLeader.location.position,
+				);
+				if (colleague != null) teamLeader.addFollower(colleague);
+			}
+			// Two guards, not three. See the method header.
+			for (let i = 0; i < SCIENTISTS_TEAM_GUARDS - 1; i++) {
+				const guard = this.SpawnNewCHARGuard(map, teamLeader.location.position);
+				if (guard != null) teamLeader.addFollower(guard);
+			}
+		}
+		if (teamLeader == null) return;
+
+		this.NotifyOrderablesAI(
+			map,
+			RaidType.CHAR_SCIENTISTS,
+			teamLeader.location.position,
+		);
+
+		if (
+			map === this.m_Player.location.map &&
+			!this.m_Player.isSleeping &&
+			!this.m_Player.model.abilities.isUndead
+		) {
+			this.m_MusicManager.stop();
+			this.m_MusicManager.play(
+				GameMusics.CHAR_RESEARCHERS,
+				MusicPriority.EVENT,
+			);
+
+			this.ClearMessages();
+			this.AddMessage(
+				new Message(
+					"You hear a strange, electronic whirring in the distance.",
+					this.m_Session.worldTime.turnCounter,
+					Color.LightGreen,
+				),
+			);
+			this.AddMessage(
+				this.MakePlayerCentricMessage(
+					"A vehicle has stopped",
+					teamLeader.location.position,
+				),
+			);
+			if (!this.m_Player.isBotPlayer) {
+				await this.AddMessagePressEnter();
+				this.ClearMessages();
+			}
+		}
+
+		if (map === this.m_Player.location.map) {
+			this.m_Session.scoring.addEvent(
+				this.m_Session.worldTime.turnCounter,
+				"A CHAR research team entered the district.",
+			);
+		}
+	}
+
 	// C# DistanceToPlayer — RogueGame.cs:4951
 	DistanceToPlayer(map: Map, posOrX: number | Point, y?: number): number {
 		if (this.m_Player == null || this.m_Player.location.map !== map)
@@ -6918,6 +7056,59 @@ inv.removeAllQuantity(it);
 			3,
 		);
 		return spawned ? newBO : null;
+	}
+
+	// ── CHAR research team spawners (Release 8-1) ─────────────────────────────
+
+	/**
+	 * C# `SpawnNewCHARScientistLeader` — `RogueGame.cs:29368`.
+	 *
+	 * The leader is the only one of the six placed on the *map border* rather than
+	 * near the team, so the player sees the vehicle arrive; everyone else is placed
+	 * relative to the leader. `LEADERSHIP` is given once here and once per colleague,
+	 * which is the C#'s shape — three separate one-skill calls rather than a loop,
+	 * because each is a distinct roll.
+	 */
+	SpawnNewCHARScientistLeader(map: Map): Actor | null {
+		const leader = this.m_TownGenerator.createNewCHARScientist(map.localTime.turnCounter);
+		this.m_TownGenerator.giveStartingSkillToActor(leader, SkillID.LEADERSHIP);
+
+		const spawned = this.SpawnActorOnMapBorder(map, leader, SPAWN_DISTANCE_TO_PLAYER, true);
+		return spawned ? leader : null;
+	}
+
+	/** C# `SpawnNewCHARScientist` — `RogueGame.cs:29387`. */
+	SpawnNewCHARScientist(map: Map, leaderPos: Point): Actor | null {
+		const scientist = this.m_TownGenerator.createNewCHARScientist(map.localTime.turnCounter);
+		this.m_TownGenerator.giveStartingSkillToActor(scientist, SkillID.LEADERSHIP);
+
+		// The `4` is `SpawnActorNear`'s `maxTries`, not a roll range.
+		const spawned = this.SpawnActorNear(map, scientist, SPAWN_DISTANCE_TO_PLAYER, leaderPos, 4);
+		return spawned ? scientist : null;
+	}
+
+	/**
+	 * C# `SpawnNewCHARGuard` — `RogueGame.cs:29406`.
+	 *
+	 * **A second `SpawnNewCHARGuard`, with the same name as the one that serves the
+	 * CHAR underground's garrison.** They are distinct in the C# too, and both are
+	 * transcribed here because both are reached from this file. The raid one is the
+	 * only one that hands out a tactical shotgun and three shells, and the only one
+	 * that gives `AGILE`/`FIREARMS`/`TOUGH` a single point each.
+	 */
+	SpawnNewCHARGuard(map: Map, leaderPos: Point): Actor | null {
+		const guard = this.m_TownGenerator.createNewCHARGuard(map.localTime.turnCounter);
+		guard.inventory!.addAll(this.m_TownGenerator.makeItemTacticalShotgun());
+		guard.inventory!.addAll(this.m_TownGenerator.makeItemShotgunAmmo());
+		guard.inventory!.addAll(this.m_TownGenerator.makeItemShotgunAmmo());
+		guard.inventory!.addAll(this.m_TownGenerator.makeItemShotgunAmmo());
+
+		this.m_TownGenerator.giveStartingSkillToActor(guard, SkillID.AGILE);
+		this.m_TownGenerator.giveStartingSkillToActor(guard, SkillID.FIREARMS);
+		this.m_TownGenerator.giveStartingSkillToActor(guard, SkillID.TOUGH);
+
+		const spawned = this.SpawnActorNear(map, guard, SPAWN_DISTANCE_TO_PLAYER, leaderPos, 4);
+		return spawned ? guard : null;
 	}
 
 	// C# BotToggleControl — RogueGame.cs:5385
