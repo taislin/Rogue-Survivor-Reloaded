@@ -4,6 +4,7 @@ Port the fork's tile models into the TypeScript `GameTiles`.
 
     python3 scripts/port-tile-models.py            # report only
     python3 scripts/port-tile-models.py --emit     # print the TS
+    python3 scripts/port-tile-models.py --fixture tests/fixtures/still-alive-tiles.json
 
 WHY A SCRIPT AND NOT 125 HAND EDITS
 
@@ -20,15 +21,27 @@ it does not appear at all.
 
 WHAT IS PORTED AND WHAT IS NOT
 
-Ported: image, minimap colour, `isWalkable`, `isTransparent`, and
-`isWater` / `waterCoverImageId` — the last two already exist on the port's
-`TileModel`, and the port already uses that two-step form for FLOOR_SEWER_WATER.
+Ported, and emitted by `--emit`: image, minimap colour, `isWalkable`,
+`isTransparent`, and `isWater` / `waterCoverImageId` — the last two already exist
+on the port's `TileModel`, and the port already uses that two-step form for
+FLOOR_SEWER_WATER.
 
-Not ported, and counted on stdout instead: `CanDecay` and `IsFlammable`. The
-port's `TileModel` has no such fields, because tile fire is Still Alive content
-with no vanilla equivalent (BROWSER_PORT_PLAN §5.6e's `TileFires` row) and decay
-is part of the same pass. Dropping a flag silently is the failure mode this
-script exists to prevent, so every dropped one is reported by name.
+Also ported, in its own emit section: `CanDecay`, which the port's `TileModel`
+grew a `canDecay` field for. **108 of the 142 models carry it**, and `--emit`
+writes them as a loop at the end of the `GameTiles` constructor for the same
+reason the five flammable tiles are hand-listed at the end there: a flag marked
+before the model table is installed is silently overwritten by a later
+`setModel`, and nothing fails — the count is just wrong.
+
+Not emitted, and counted on stdout instead: `IsFlammable`. It is a fifth
+constructor argument in the C# rather than an object initialiser, so it is not
+this script's shape at all, and the port already sets `isFlammable` from a
+hand-written block that exists for the ordering reason above. Adding a second,
+generated copy would be a second thing to keep in step with the first. It is
+still reported by name: dropping a flag silently is the failure mode this script
+exists to prevent. Note that the port's list is **short by two** — the fork also
+marks `FLOOR_GRASS` and `FLOOR_PLANKS` — so this report is the record of what the
+C# says, not a check that the port agrees with it.
 
 Ids are **appended**. Saves store tile model ids and the generators index
 `TileID` numerically, so the port's 19 keep their values even though the fork
@@ -147,14 +160,26 @@ def port_enum():
     """The ids the port already has, in order.
 
     The port writes explicit `NAME = 0` values; the C# writes bare names. So the
-    `= 0` has to come off before the name is usable, which is why this is not
-    the same expression as the C# side.
+    `= 0` has to come off before the name is usable, which is why this is not the
+    same expression as the C# side.
+
+    **Line-wise, and the comment is stripped first, and both matter.** The port's
+    enum carries a five-line comment above the Still Alive block, and that comment
+    contains both a comma ("Still Alive tiles, 124 of them") and an `=`
+    ("the old `id <= TileID.RAIL_EW` floor test"). Splitting the body on commas
+    first cuts inside the comment and glues the rest of it onto the next real
+    name, which then fails the `[A-Z_0-9]+` test that is supposed to drop a
+    comment — so `FLOOR_ARMY` disappeared, the report said "1 new to append" for a
+    tile the port has had all along, and `--emit` would have appended a duplicate.
+    This is the same trap `enum_names` documents for the C# side, with the comma
+    in the port's comment rather than a comment with no trailing comma.
     """
     with open(PORT_TILES, encoding="utf-8") as f:
         body = re.search(r"export enum TileID \{(?P<b>[^}]*)\}", f.read()).group("b")
     out = []
-    for entry in body.split(","):
-        name = entry.strip().split("=")[0].strip()
+    for line in body.splitlines():
+        line = line.split("//", 1)[0].strip()
+        name = line.rstrip(",").split("=", 1)[0].strip()
         if name and name != "_COUNT" and re.fullmatch(r"[A-Z_0-9]+", name):
             out.append(name)
     return out
@@ -194,11 +219,33 @@ def main():
     if no_model:
         print("\n!! enum entries with no model line: %s" % no_model)
 
-    flam = [i for i in ported if models[i]["flam"]]
-    decay = [i for i in ported if models[i]["decay"]]
-    print("\ndropped (Stage 4 -- TileFires / decay, no port field yet):")
-    print("  IsFlammable=true on %d: %s" % (len(flam), ", ".join(flam)))
-    print("  CanDecay=true on %d tile(s)" % len(decay))
+    # `CanDecay` and `IsFlammable` are both counted over *every* model the C#
+    # builds, not over the ones still to append. The append list is nearly empty
+    # now that the table is in, so counting over it answers a different and much
+    # smaller question — how many such tiles arrived since the last run — which is
+    # why a report of 1 sat under a comment in the port claiming 94.
+    #
+    # 143 enum entries less UNDEF is 142 models: `UNDEF = _FIRST` is assigned
+    # `TileModel.UNDEF`, a shared static with no `new TileModel(...)` line for
+    # `MODEL_RE` to match, so it is in `order` and not in `models`.
+    all_models = [i for i in order if i in models]
+    decay_all = [i for i in all_models if models[i]["decay"]]
+    decay_new = [i for i in ported if models[i]["decay"]]
+    flam_all = [i for i in all_models if models[i]["flam"]]
+
+    print("\nisFlammable=true on %d of the %d model(s): %s"
+          % (len(flam_all), len(all_models), ", ".join(flam_all) or "(none)"))
+    print("  hand-set in GameTiles.ts and not emitted. The port's block is not parsed")
+    print("  here, so this line is the C#'s list and not a check that the port matches")
+    print("  it -- compare by eye; it is currently short of two of these.")
+    print("\nCanDecay, over every model the C# builds:")
+    print("  true  %d" % len(decay_all))
+    print("  false %d" % (len(all_models) - len(decay_all)))
+    print("  total %d  (%d enum entries less UNDEF)" % (len(all_models), len(order)))
+    print("  of the %d still to append, %d are decayable" % (len(ported), len(decay_new)))
+    if len(all_models) != len(models):
+        print("!! %d models parsed but only %d enum entries reach them"
+              % (len(models), len(all_models)))
 
     needed = {models[i]["img"] for i in ported} | {
         models[i]["cover"] for i in ported if models[i]["cover"]}
@@ -230,8 +277,17 @@ def main():
                 # whether the flag is right.
                 "waterCover": (consts.get(models[name]["cover"])
                                if models[name]["cover"] else None),
-                # Recorded but not ported, so the debt is visible in the diff
-                # when Stage 4 adds the fields.
+                # `canDecay` is what `--emit` writes into `GameTiles`, so the fixture
+                # and the table are two copies of the same 108 entries and comparing
+                # them is what stops them drifting.
+                #
+                # `flammableInFork` is recorded for the opposite reason: the port
+                # hand-lists the flammable tiles, so this is the only place the
+                # count is written down. It is **not** the same set -- the C# marks
+                # seven and `GameTiles.ts` lists five, missing `FLOOR_GRASS` and
+                # `FLOOR_PLANKS`, which the fork also passes `true` for. That gap
+                # predates this flag and is not fixed here; `isFlammable` is the
+                # port's to own. Read this line as the debt, not as the truth.
                 "flammableInFork": models[name]["flam"],
                 "canDecayInFork": models[name]["decay"],
             }
@@ -271,6 +327,26 @@ def main():
         else:
             print("    this.setModel(TileID.%s, new TileModel(GameImages.%s, %s, %s, %s));"
                   % (ident, d["img"], d["color"], str(d["walk"]).lower(), str(d["trans"]).lower()))
+
+    # Over `all_models`, not `ported`, for the same reason the report counts that
+    # way: `CanDecay` is set on tiles the port has had for several releases, so the
+    # append-only list would emit one name out of 108.
+    #
+    # A loop at the end of the constructor rather than a fifth constructor
+    # argument, because `CanDecay` is an object initialiser in the C# and the port
+    # has no way to say "and this one property" in the argument list. It also has
+    # to be *after* every `setModel` above, or a later `setModel` replaces the
+    # model object and the flag goes with it — the trap the `isFlammable` block in
+    # `GameTiles.ts` documents, and the reason this is a separate trailing block
+    # and not a line among the models.
+    print("\n/* ---- canDecay: %d of the %d models, at the END of the constructor ---- */"
+          % (len(decay_all), len(all_models)))
+    print("    for (const id of [")
+    for ident in decay_all:
+        print("      TileID.%s," % ident)
+    print("    ] as const) {")
+    print("      this.get(id).canDecay = true;")
+    print("    }")
 
 
 if __name__ == "__main__":

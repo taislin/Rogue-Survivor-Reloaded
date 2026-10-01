@@ -91,6 +91,19 @@ export enum OptionIDs {
    * `DIFFICULTY_RESCUE_DAY`.
    */
   GAME_RESCUE_DAY,
+  /**
+   * Still Alive, Release 7-6. Appended for the same reason as the three above it:
+   * the numeric id is what a stored options blob carries, so this goes at the end
+   * rather than beside the Still Alive rows it belongs with. It is the fork's
+   * `GAME_WORLD_DECAY`.
+   */
+  GAME_WORLD_DECAY,
+  /**
+   * Still Alive, Release 7-6. Appended, per the numeric-id rule. The fork's
+   * `GAME_DAYS_BEFORE_WORLD_DECAYS`, which gates `GAME_WORLD_DECAY` — with decay
+   * off the day count is never consulted, exactly as the C#'s help text says.
+   */
+  GAME_DAYS_BEFORE_WORLD_DECAYS,
 }
 
 /**
@@ -328,6 +341,29 @@ export class GameOptions {
    * real one lands in the session — see `visibleRescueDay`.
    */
   static readonly DEFAULT_RESCUE_DAY = 21;
+  /**
+   * Still Alive, Release 7-6. ON.
+   *
+   * A hardcoded `true` in the C#'s reset (`GameOptions.cs:830`) rather than a
+   * `DEFAULT_` constant — there is no constant to point at, and the reset is the
+   * only place the value is written. Named like the others here so the reset line
+   * reads as a reset rather than as a literal.
+   */
+  static readonly DEFAULT_WORLD_DECAY = true;
+  /**
+   * Still Alive, Release 7-6. Seven days, and **that is also the release build's
+   * floor**, so this option cannot be set below its own default: the C#'s setter
+   * clamps `value < 7` to 7 in a release build and only lowers it to 1 under
+   * `DEBUG` (`GameOptions.cs:775-779`). The port takes the release arm; see the
+   * setter for why the debug one is not reachable.
+   *
+   * Seven means the world is clean for a week and then decays in three steps: the
+   * C# applies a phase when `day / this` is exactly 1, 2 or 3 and does nothing
+   * after that (`RogueGame.cs:9251-9260`), so 7 gives phase 1 on day 7, phase 2 on
+   * day 14 and phase 3 on day 21, and a run that outlives three weeks never gets a
+   * fourth.
+   */
+  static readonly DEFAULT_DAYS_BEFORE_WORLD_DECAYS = 7;
   static readonly DEFAULT_ZOMBIFIEDS_UPGRADE_DAYS: ZupDays = ZupDays.THREE;
   static readonly DEFAULT_AUTOSAVE_PERIOD = 24; // alpha10.1
   static readonly DEFAULT_SPRITE_STYLE: ImageSet = DEFAULT_IMAGE_SET;
@@ -379,6 +415,10 @@ export class GameOptions {
   private m_SuppliesDropFactor = 0;
   private m_DaysBeforeDiscardedItemDespawns = 0;
   private m_ReducedMapObjectLighting = false;
+  /** Still Alive, Release 7-6. See `DEFAULT_WORLD_DECAY`. */
+  private m_WorldDecay = false;
+  /** Still Alive, Release 7-6. See `DEFAULT_DAYS_BEFORE_WORLD_DECAYS`. */
+  private m_DaysBeforeWorldDecays = 0;
   private m_ResourcesAvailability: Resources = Resources.MED;
   private m_VisibleRescueDay = 0;
   private m_HiddenRescueDay = 0;
@@ -745,6 +785,55 @@ export class GameOptions {
     this.m_ReducedMapObjectLighting = value;
   }
 
+  /**
+   * Whether the world decays at all as the clock runs down. Still Alive,
+   * Release 7-6, C# `IsWorldDecayOn` over `m_WorldDecay`.
+   *
+   * Named for the C#'s property rather than its field, as the other boolean
+   * options here are (`isPermadeathOn`, `isMinimapOn`). The two are not
+   * interchangeable for this pair: the option below would want the bare noun
+   * `worldDecay` for what is really a day count, so the boolean keeps the
+   * `is...On` form that says what it is.
+   *
+   * Default ON. A master switch rather than a difficulty knob — the C#'s help text
+   * is explicit that it is "a thematic choice only; it doesn't affect gameplay" —
+   * and it gates the other one absolutely: with this off, `daysBeforeWorldDecays`
+   * is never read, because the pass that would consult it is never called
+   * (`RogueGame.cs:5618` short-circuits on this before the comparison).
+   */
+  get isWorldDecayOn(): boolean {
+    return this.m_WorldDecay;
+  }
+  set isWorldDecayOn(value: boolean) {
+    this.m_WorldDecay = value;
+  }
+
+  /**
+   * How many in-game days pass before the world starts to look decayed. Still
+   * Alive, Release 7-6, C# `DaysBeforeWorldDecays`.
+   *
+   * **Clamped to 7..28, so the floor is the default and the ceiling is 4× it.**
+   * The C#'s setter has a `#if DEBUG` arm that allows 1 ("can start from the
+   * get-go for testing purposes") and a release arm that allows 7 ("minimum of 7
+   * days") (`GameOptions.cs:775-779`); this takes the release arm, because a
+   * browser build has no DEBUG configuration and the number a player can see is
+   * the number the C# ships.
+   *
+   * A *period* rather than an offset, which is not obvious from the name: the C#
+   * divides the day by this and applies a phase when the quotient is exactly 1, 2
+   * or 3 (`RogueGame.cs:9251`), so 14 does not mean "decay starts a fortnight in
+   * and then never again" — it means phase 1 on day 14, phase 2 on day 28, phase 3
+   * on day 42, and nothing after that.
+   */
+  get daysBeforeWorldDecays(): number {
+    return this.m_DaysBeforeWorldDecays;
+  }
+  set daysBeforeWorldDecays(value: number) {
+    if (value < 7) value = 7;
+    if (value > 28) value = 28;
+    this.m_DaysBeforeWorldDecays = value;
+  }
+
   /** Still Alive, Release 7-4. See `DEFAULT_RESOURCES_AVAILABILITY`. */
   get resourcesAvailability(): Resources {
     return this.m_ResourcesAvailability;
@@ -978,6 +1067,13 @@ export class GameOptions {
       this.m_DaysBeforeDiscardedItemDespawns =
         GameOptions.DEFAULT_DAYS_BEFORE_ITEM_DESPAWNS;
       this.m_ReducedMapObjectLighting = GameOptions.DEFAULT_REDUCED_MAPOBJECT_LIGHTING;
+      // Release 7-6, both straight to the field rather than through the setters, as
+      // every other row in this arm does and as the C# does (`GameOptions.cs:826,830`).
+      // It matters for the day count in particular: its setter clamps to 7..28 and
+      // the default is already 7, so routing the reset through it is a no-op today
+      // and a silent clamp tomorrow if the default ever moves.
+      this.m_WorldDecay = GameOptions.DEFAULT_WORLD_DECAY;
+      this.m_DaysBeforeWorldDecays = GameOptions.DEFAULT_DAYS_BEFORE_WORLD_DECAYS;
       this.m_AutoSavePeriodInHours = GameOptions.DEFAULT_AUTOSAVE_PERIOD; // alpha10.1
       this.m_SpriteStyle = GameOptions.DEFAULT_SPRITE_STYLE;
       this.applySpriteStyle();
@@ -1147,6 +1243,10 @@ export class GameOptions {
       return "   (Map) Days before a junk item despawns";
     case OptionIDs.GAME_REDUCED_MAPOBJECT_LIGHTING: // Still Alive, Release 7-6
       return "   (Map) Fires have a smaller light radius";
+    case OptionIDs.GAME_WORLD_DECAY: // Still Alive, Release 7-6
+      return "   (Map) World decays as time passes";
+    case OptionIDs.GAME_DAYS_BEFORE_WORLD_DECAYS: // Still Alive, Release 7-6
+      return "   (Map) Days before the world looks decayed";
     case OptionIDs.UI_SPRITE_STYLE:
       return "  (Gfx) Sprite Style";
     case OptionIDs.UI_FONT_CHOICE:
@@ -1287,6 +1387,19 @@ export class GameOptions {
       return "The number of in-game days at which point an item that a non-follower NPC discarded get despawned.\n" +
         "Only applies to common, low-value items. Doesn't affect items dropped by the player or their followers.\n" +
         "Does not apply to items in the player or an NPCs's inventory or bank safe.";
+    case OptionIDs.GAME_WORLD_DECAY: // Still Alive, Release 7-6
+      return (
+        "After a configurable number of days the world starts to look decayed.\n" +
+        "Buildings and roads begin to crumble, and plants begin to reclaim the city.\n" +
+        "If this is Off, the 'Days before the world looks decayed' setting is ignored.\n" +
+        "This is a thematic choice only; it doesn't affect gameplay."
+      );
+    case OptionIDs.GAME_DAYS_BEFORE_WORLD_DECAYS: // Still Alive, Release 7-6
+      return (
+        "The number of in-game days at which point the world begins to appear apocalyptically decayed.\n" +
+        "The later it starts, the longer the decay process is drawn out over time from then on.\n" +
+        "This is a thematic choice only; it doesn't affect gameplay."
+      );
     case OptionIDs.GAME_AUTOSAVE_PERIOD: // alpha10.1
       return "Will autosave at regular intervals when you start sleeping, start a long wait or change map.\nManually saving the game will reschedule the next autosave.";
     case OptionIDs.UI_SPRITE_STYLE:
@@ -1600,6 +1713,16 @@ export class GameOptions {
       return this.reducedMapObjectLighting ? "ON    (default OFF)" : "OFF   (default OFF)";
     case OptionIDs.GAME_DAYS_BEFORE_ITEM_DESPAWNS: // Still Alive, Release 7-6
       return `${this.daysBeforeDiscardedItemDespawns.toString().padStart(3)}  (default ${GameOptions.DEFAULT_DAYS_BEFORE_ITEM_DESPAWNS})`;
+    case OptionIDs.GAME_WORLD_DECAY: // Still Alive, Release 7-6
+      return this.isWorldDecayOn ? "ON    (default ON)" : "OFF   (default ON)";
+    case OptionIDs.GAME_DAYS_BEFORE_WORLD_DECAYS: // Still Alive, Release 7-6
+      // `{0:D3}` in the C#: a zero-padded day count, so the row does not change
+      // width as it is stepped. The default is read through the same padding so
+      // the two columns line up.
+      return `${pad(this.daysBeforeWorldDecays, 3)}   (default ${pad(
+        GameOptions.DEFAULT_DAYS_BEFORE_WORLD_DECAYS,
+        3
+      )})`;
     case OptionIDs.GAME_AUTOSAVE_PERIOD: // alpha10.1
       return `${(this.autoSavePeriodInHours === 0 ? "OFF" : `${this.autoSavePeriodInHours}h`).padEnd(4)}  (default ${GameOptions.DEFAULT_AUTOSAVE_PERIOD}h)`;
     case OptionIDs.UI_SPRITE_STYLE:
