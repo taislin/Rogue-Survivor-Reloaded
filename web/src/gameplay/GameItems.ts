@@ -326,18 +326,59 @@ export enum ItemID {
    * save stores an `ItemID` as a bare number.
    */
   MATCHES = 178,
-  _COUNT = 179,
+  /**
+   * Still Alive, Release 5-3 and 5-5 (`GameItems.cs:147`). The farm shed's item:
+   * six of `MakeFarmShedItem`'s twelve arms (`BaseTownGenerator.cs:7877-7887`) and
+   * `case 11`'s else, so half of every farm's shed contents.
+   *
+   * Appended for the same reason as everything above it. The C# has it at `:147`,
+   * mid-enum and well below the fork's other additions.
+   */
+  VEGETABLE_SEEDS = 179,
+  /**
+   * Still Alive, Release 7-1 (`GameItems.cs:152`, `:153`). The two items
+   * `MakeItemLiquorForMolotov` (`BaseMapGenerator.cs:1946`) rolls between on a
+   * third of the alcohol `MakeItemAlcohol` drops on every bar shelf and counter.
+   *
+   * Appended for the same reason as everything above it.
+   */
+  LIQUOR_AMBER = 180,
+  LIQUOR_CLEAR = 181,
+  /**
+   * Still Alive, Release 3 (`GameItems.cs:223-228`). **One sprite, six items.**
+   *
+   * All six are named `"CHAR document"` with the plural `"CHAR documents"` and all
+   * six draw `ITEM_CHAR_DOCUMENT`; the only thing that distinguishes one from
+   * another is its `FlavorDescription`, and each is a different page of the same
+   * experiment log. So they are six models and six ids here rather than one model
+   * with six names: `MakeCHARStorageRoom` (`BaseTownGenerator.cs:8609-8632`) picks
+   * one of the six on a `Roll(0, 5)` and the roll is only half the story -- a save
+   * has to be able to say *which page* a survivor is carrying.
+   *
+   * `IsUnique = true` is set per drop rather than on the model, because the C#
+   * sets it on the six `new Item(...)` calls and not on the six models, and a
+   * unique item is one that will not spawn twice rather than a kind of item.
+   *
+   * Appended for the same reason as everything above it.
+   */
+  UNIQUE_CHAR_DOCUMENT1 = 182,
+  UNIQUE_CHAR_DOCUMENT2 = 183,
+  UNIQUE_CHAR_DOCUMENT3 = 184,
+  UNIQUE_CHAR_DOCUMENT4 = 185,
+  UNIQUE_CHAR_DOCUMENT5 = 186,
+  UNIQUE_CHAR_DOCUMENT6 = 187,
+  _COUNT = 188,
 }
 
 /**
  * The models the C# marks `CanGoInBackpacks = true`. Still Alive, Release 8-2.
  *
  * Transcribed from the fork's `GameItems.cs` one `this[IDs.X] = new … { … }` block
- * at a time: 121 of its 187 models carry the flag, 100 of those 121 exist in this
- * port, and the other 21 (five ammo rows the C# added and the port has not, the six
- * CHAR documents, the army access badge, vegetable seeds, the candle/glowstick/flare
- * kits, two liquors, the sleeping bag, matches and the laptop) have no model here,
- * so they stay at the default `false` and are named rather than faked.
+ * at a time: 121 of its 187 registrations carry the flag, 111 of those 121 have an
+ * `ItemID` here, and the other 10 (five ammo rows the C# added and the port has
+ * not, the army access badge, the candle/glowstick/flare kits and the sleeping bag)
+ * have no model, so they stay at the default `false` and are named rather than
+ * faked.
  *
  * **This is a curated list and the curation does not reduce to a rule.** The
  * C# author walked the list and picked: a combat knife packs and a crowbar does
@@ -412,11 +453,21 @@ const CAN_GO_IN_BACKPACKS: ReadonlySet<ItemID> = new Set<ItemID>([
   // The two uniques the C# flags, and the siphon kit.
   ItemID.UNIQUE_SUBWAY_BADGE, ItemID.UNIQUE_BOOK_OF_ARMAMENTS, ItemID.SIPHON_KIT,
 
-  // The CHAR laptop (`GameItems.cs:3072`, Release 8-2). The `CAN_GO_IN_BACKPACKS`
-  // comment above says the laptop is one of the rows with no model here, which is
-  // what kept it out of this set until now.
+  // The CHAR laptop (`GameItems.cs:3072`) and the matchbox (`:3058`), Release 8-2.
+  // The `CAN_GO_IN_BACKPACKS` comment above once named both as rows with no model
+  // here, which is what kept them out of this set until they landed.
   ItemID.CHAR_LAPTOP,
   ItemID.MATCHES,
+
+  // The six CHAR documents (`GameItems.cs:2886-2916`, Release 3) — all six, and
+  // `CanGoInBackpacks` on all six, which is why they are six entries and not one.
+  ItemID.UNIQUE_CHAR_DOCUMENT1, ItemID.UNIQUE_CHAR_DOCUMENT2, ItemID.UNIQUE_CHAR_DOCUMENT3,
+  ItemID.UNIQUE_CHAR_DOCUMENT4, ItemID.UNIQUE_CHAR_DOCUMENT5, ItemID.UNIQUE_CHAR_DOCUMENT6,
+
+  // The farm shed's seeds and the bar's two liquors (`GameItems.cs:2985`, `:3025`,
+  // `:3033`). All three are hand-written models rather than CSV rows, so there was
+  // no `ItemID` to hang the flag on until they landed.
+  ItemID.VEGETABLE_SEEDS, ItemID.LIQUOR_AMBER, ItemID.LIQUOR_CLEAR,
 ]);
 
 export class GameItems implements ItemModelDB {
@@ -1068,6 +1119,62 @@ export class GameItems implements ItemModelDB {
     matches.dontAutoEquip = true;
     this.setModel(ItemID.MATCHES, matches);
 
+    // Still Alive, Release 5-3 and 5-5 (`GameItems.cs:2980-2986`). Hand-written like
+    // the matchbox and the siphon kit: there is no `Items_Misc.csv` row for it.
+    //
+    // **The name is the C#'s typo and it is kept verbatim.** Both fields say
+    // `"bunch of vegie seeds"` -- `vegie`, not `veg` and not `veggie` -- and a save
+    // stores the id, not the string, so nothing downstream depends on the spelling
+    // except a player's eyes. Correcting it here would make the port disagree with
+    // the reference for a reason that cannot be observed from a test, which is the
+    // one kind of "fix" this port does not make. See `makeItemVegetableSeeds` in
+    // `generators/buildings/makeFarmBuilding.ts` for the drop that reaches this.
+    //
+    // `stackingLimit = 9` is the whole reason it is a stack: the shed hands the item
+    // out at `model.stackingLimit` (`BaseTownGenerator.cs:3939-3940`), so a shed
+    // that rolled seeds puts nine of them on the floor, not one.
+    const vegetableSeeds = new ItemModel(
+      "bunch of vegie seeds",
+      "bunch of vegie seeds",
+      GameImages.ITEM_VEGETABLE_SEEDS,
+    );
+    vegetableSeeds.flavorDescription =
+      "Use a shovel or pickaxe to plant seeds. Return later to harvest.";
+    vegetableSeeds.isStackable = true;
+    vegetableSeeds.stackingLimit = 9;
+    this.setModel(ItemID.VEGETABLE_SEEDS, vegetableSeeds);
+
+    // Still Alive, Release 7-1 (`GameItems.cs:3020-3034`). Hand-written for the same
+    // reason as the seeds above: no CSV row.
+    //
+    // **Two models, one name, two sprites.** The C# gives both bottles the same
+    // singular *and* plural -- `"liquor"`, `"liquor"` -- so `Item.ts` reads a
+    // quantity-1 bottle as "a liquor" and a stack as "liquor" either way, and the
+    // only thing that tells an amber bottle from a clear one is the sprite. That is
+    // also why they cannot be one model with two ids: `MakeItemLiquorForMolotov`
+    // (`BaseMapGenerator.cs:1950-1957`) draws a `Roll(0, 2)` and hands back the
+    // model it drew, so a survivor holding the "wrong" one is a real state the save
+    // has to be able to record.
+    //
+    // `stackingLimit = 3` against the `Quantity = 6` the C#'s factory sets is *not*
+    // a contradiction to be tidied up -- see `makeItemLiquorForMolotov` in
+    // `generators/BarBuilding.ts`. The initialiser's `StackingLimit` is 3 and the
+    // factory's quantity is 6, and both are the C#'s.
+    //
+    // The C#'s `CanGoInBackpacks` (Release 8-2) is applied in `postProcess`, from
+    // the `CAN_GO_IN_BACKPACKS` set, rather than here.
+    const liquorAmber = new ItemModel("liquor", "liquor", GameImages.ITEM_LIQUOR_BOTTLE_AMBER);
+    liquorAmber.flavorDescription = "Use them to make molotovs.";
+    liquorAmber.isStackable = true;
+    liquorAmber.stackingLimit = 3;
+    this.setModel(ItemID.LIQUOR_AMBER, liquorAmber);
+
+    const liquorClear = new ItemModel("liquor", "liquor", GameImages.ITEM_LIQUOR_BOTTLE_CLEAR);
+    liquorClear.flavorDescription = "Use them to make molotovs.";
+    liquorClear.isStackable = true;
+    liquorClear.stackingLimit = 3;
+    this.setModel(ItemID.LIQUOR_CLEAR, liquorClear);
+
     // Still Alive, Release 7-6 (`GameItems.cs:2927`). Hand-written like the
     // fishing rod: no CSV row.
     //
@@ -1077,7 +1184,7 @@ export class GameItems implements ItemModelDB {
     // C#'s `new Item(...)`), forbidden to the AI so no survivor hoards the
     // only flavour text in the game into a backpack.
     //
-    // The C#'s `CanGoInBackpacks` (Release 8-2) is one of the 100 ids in
+    // The C#'s `CanGoInBackpacks` (Release 8-2) is one of the 111 ids in
     // `CAN_GO_IN_BACKPACKS`; it is not set here because the port's construction is
     // table-driven and that flag is applied in `postProcess` instead.
     const bookOfArmaments = new ItemModel(
@@ -1088,6 +1195,45 @@ export class GameItems implements ItemModelDB {
     bookOfArmaments.flavorDescription =
       "It's open at chapter 2, verses 9 through 21.";
     this.setModel(ItemID.UNIQUE_BOOK_OF_ARMAMENTS, bookOfArmaments);
+
+    // The six CHAR documents. Still Alive, Release 3 (`GameItems.cs:2886-2916`).
+    // Hand-written for the same reason as every other row in this region: there is
+    // no CSV for them, the C# spells all six out.
+    //
+    // **Six models and not one, because the flavour text is the item.** All six are
+    // `new ItemModel("CHAR document", "CHAR documents", GameImages.ITEM_CHAR_DOCUMENT)`
+    // -- same name, same plural, same sprite -- and they differ in exactly one
+    // field each. A shared model with a `FlavorDescription` chosen at drop time
+    // would be a seventh thing to keep in step, and it would make
+    // `MakeCHARStorageRoom`'s `Roll(0, 5)` choose between six identical items.
+    //
+    // The four quoted flavours keep the C#'s quotation marks and nothing else: the
+    // source spells them `@"""TEST #240 …"""`, so the string value starts and ends
+    // with a literal `"`. The C# quotes four of the six (documents 2 to 5) and
+    // leaves the other two bare, which is preserved rather than regularised.
+    // `#241` also spells it `stength`, which is the reference's typo in the same way
+    // `"vegie"` is above; neither is corrected, and neither is data anything reads.
+    //
+    // Nothing else is set on any of the six: no `EquipmentPart`, no
+    // `IsStackable`, no `StackingLimit`, no `IsPlural`. They are paper. `IsUnique`
+    // and `IsForbiddenToAI` are set per *drop* in the C# (`BaseTownGenerator.cs:8613`)
+    // and not on the model, which is why they are not here either.
+    //
+    // The C#'s `CanGoInBackpacks` (Release 8-2) is on all six and is applied in
+    // `postProcess`, from the `CAN_GO_IN_BACKPACKS` set.
+    const charDocumentFlavours: [ItemID, string][] = [
+      [ItemID.UNIQUE_CHAR_DOCUMENT1, "Notes that suggest CHAR were trying mutation experiments on rats."],
+      [ItemID.UNIQUE_CHAR_DOCUMENT2, '"TEST #240 subjects showing violent tendencies yet decreased vital signs."'],
+      [ItemID.UNIQUE_CHAR_DOCUMENT3, '"Skin decay greatly accelerated in many but not all cases."'],
+      [ItemID.UNIQUE_CHAR_DOCUMENT4, '"Effects vary by subject; speculate genetic differences manifest in patterns."'],
+      [ItemID.UNIQUE_CHAR_DOCUMENT5, '"TEST #241 should alter marker 17 for enhanced stength and smell."'],
+      [ItemID.UNIQUE_CHAR_DOCUMENT6, "A memo regarding using generators to power to the facility in an emergency."],
+    ];
+    for (const [id, flavour] of charDocumentFlavours) {
+      const document = new ItemModel("CHAR document", "CHAR documents", GameImages.ITEM_CHAR_DOCUMENT);
+      document.flavorDescription = flavour;
+      this.setModel(id, document);
+    }
 
     // Backpacks. Still Alive, Release 8-2 (`GameItems.cs:1006-1060`).
     //

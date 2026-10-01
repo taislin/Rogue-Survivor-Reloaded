@@ -67,31 +67,37 @@
  * copying — it asks about the four compass neighbours and nothing else, which is
  * `CountAdjDoors(map, x, y) > 0` exactly, and `countAdjDoors` is on the context.
  *
- * ## The one thing not ported: the alcohol
+ * ## The alcohol: three factories and a second roller
  *
  * C# drops `MakeItemAlcohol()` on every bottle shelf and again on every counter
- * (`:2453`, `:2462`, and the same pair in each of the other three arms). That
- * factory (`BaseMapGenerator.cs:1965`) is not in the port, and cannot be without
- * more than a generator:
+ * (`:2453`, `:2462`, and the same pair in each of the other three arms). That is
+ * now ported, in full, by {@link makeItemAlcohol} and its two children.
  *
- * - it rolls `m_Game.Rules.RollChance(66)` and then calls `MakeItemBeer` or
- *   `MakeItemLiquorForMolotov` — a *second* roller, the session's `Rules`, not the
- *   district's `m_DiceRoller` this pass owns;
- * - `MakeItemBeer` (`:1764`) could be transcribed: all four of its models exist,
- *   as `ItemID.MEDICINE_ALCOHOL_BEER_*`;
- * - `MakeItemLiquorForMolotov` (`:1946`) could not: `LIQUOR_AMBER` and
- *   `LIQUOR_CLEAR` are `GameItems.cs:152-153` rows the port has never appended,
- *   and appending them means two new `ItemID`s in a file six other agents are
- *   editing.
+ * **Every roll in those three factories is off `m_Game.Rules`, and that is the
+ * point of them being here rather than on `ctx.roller`.** `Rules` owns its own
+ * `DiceRoller` (`RogueGame` seeds it from `Session.get().seed`), distinct from the
+ * district's `m_DiceRoller` this pass owns, so a bar's shelves cost the district's
+ * dice stream nothing and the C# relies on that: the district's stream is what every
+ * building *after* the bar reads, and the alcohol would move all of them. The port
+ * does spend those rolls on `ctx.game.rules`, which is the C#'s roller, and it does
+ * *not* fold them into `ctx.roller` the way `makeChurchBuilding`'s antique weapons
+ * and `makeJunkyard`'s crowbar are forced to. Two `Rules` draws per bottle —
+ * `RollChance(66)`, then the child's own `Roll(0, 4)` or `Roll(0, 2)` — and no more.
  *
- * So the shelves and counters are `isContainer` and empty. A beer-only factory
- * invented here instead would spend the *district's* dice on rolls the C# spends
- * on `Rules`, and would put beer where the fork puts liquor on a third of its
- * drops — a divergence in both the dice stream and the content, bought for one
- * missing pair of item rows. Restoring it is three steps: append the two models,
- * add `makeItemAlcohol` to `BaseMapGenerator`, hand it to the context.
+ * The `m_Game.Rules` → `ctx.game.rules` reach past the seam is therefore deliberate
+ * and is called out here rather than left to be found: the other two building files
+ * that touch a `Rules` roll both do so by *moving the roll onto the district roller*
+ * and saying so, and this one does not, because a bar is Still-Alive-only and its
+ * district stream is not a Classic invariant.
+ *
+ * The factories themselves are transcribed below rather than added to
+ * `BaseMapGenerator`, because `MakeItemBeer` and `MakeItemLiquorForMolotov` are
+ * `public` on the port's generator but only `MakeItemAlcohol`'s two call sites
+ * exist in the port, and hoisting all three onto `TownBuildingContext` for one reader
+ * is the speculative abstraction the seam's header refuses.
  */
 
+import { Item } from '@data/Item';
 import { MapObject, MapObjectBreak, MapObjectFire } from '@data/MapObject';
 import { Models } from '@data/Models';
 import type { DiceRoller } from '@engine/DiceRoller';
@@ -100,7 +106,9 @@ import { Point } from '@engine/Point';
 import { Rect } from '@engine/Rect';
 import { Session } from '@engine/Session';
 import { DoorWindow } from '@engine/mapobjects/MapObjects';
+import { ItemMedicine } from '@engine/items/ItemMedicine';
 import { GameImages } from '@gameplay/GameImages';
+import { ItemID } from '@gameplay/GameItems';
 import { TileID } from '@gameplay/GameTiles';
 import type { TownBuildingContext } from './TownBuilding';
 
@@ -314,15 +322,23 @@ export function makeBarBuilding(ctx: TownBuildingContext, dispatchRoll: number):
 		const counter = side.sweepsX ? new Point(sweep, counterLine) : new Point(counterLine, sweep);
 
 		// "place a shelf with alcohol, but not the middle as we put the sink there"
-		// — the alcohol is the one thing not ported; see the module header. The
-		// middle cell is skipped because the sink is already on it.
+		// — the middle cell is skipped because the sink is already on it.
 		if (map.isWalkable(shelf.x, shelf.y) && sweep !== side.centre) {
 			map.placeMapObject(makeObjShelf(GameImages.OBJ_BAR_SHELVES), shelf);
+			map.dropItemAt(makeItemAlcohol(ctx.game.rules), shelf);
 		}
 
 		// place a bar counter another 2 tiles in from the shelves
 		if (map.isWalkable(counter.x, counter.y)) {
 			map.placeMapObject(makeObjCounter(GameImages.OBJ_KITCHEN_COUNTER), counter);
+			// **On `shelf`, not on `counter`, in all four of the C#'s arms**
+			// (`:2462`, `:2502`, `:2542`, `:2582`). The counter's bottle joins the
+			// shelf's rather than sitting on the counter, so a bar's bottles are all
+			// on the shelf line and a counter is an empty container. Read twice and
+			// written the same way here: a bar counter that got its own bottle would
+			// be a divergence in content the C# never had, and "drop it where the
+			// counter is" is exactly the reading a line-by-line port invites.
+			map.dropItemAt(makeItemAlcohol(ctx.game.rules), shelf);
 		}
 	}
 
@@ -518,4 +534,90 @@ function makeObjCounter(imageId: string): MapObject {
 	counter.givesWood = true;
 	counter.standOnFovBonus = true;
 	return counter;
+}
+
+// ── Factories the alcohol needs ──────────────────────────────────────────────
+//
+// `rules` is `m_Game.Rules` — the *session's* roller, not the district's. See the
+// module header for why these three spend `ctx.game.rules` and not `ctx.roller`,
+// and why that is deliberate rather than a seam leak.
+
+/**
+ * C# `BaseMapGenerator.cs:1965-1984` `MakeItemAlcohol`.
+ *
+ * `RollChance(66)` is the C#'s, and the split is two thirds beer to one third
+ * liquor. The C# then unwraps its child's return and rebuilds it: `MakeItemBeer`
+ * hands back an `ItemMedicine`, and the `else` hands back a bare `Item`, so a bar's
+ * liquor really is a different *class* from its beer and not just a different model.
+ * That is reproduced rather than collapsed, because `Item.ts`'s `describe()` and the
+ * inventory both ask what kind of thing they are holding.
+ *
+ * Two rules draws per bottle and no district draw at all: `rollChance(66)` here, and
+ * then the child's own `roll(0, 4)` or `roll(0, 2)`.
+ */
+function makeItemAlcohol(rules: DiceRoller): Item {
+	if (rules.rollChance(66)) {
+		const beer = makeItemBeer(rules);
+		const copy = new ItemMedicine(beer.model);
+		copy.quantity = beer.quantity;
+		return copy;
+	}
+	const liquor = makeItemLiquorForMolotov(rules);
+	const copy = new Item(liquor.model);
+	copy.quantity = liquor.quantity;
+	return copy;
+}
+
+/**
+ * C# `BaseMapGenerator.cs:1764-1783` `MakeItemBeer`.
+ *
+ * Four models and `Quantity = 6` whatever the draw, and the draw is a `Rules` roll
+ * of its own — the C#'s `int quantity` is assigned in every case rather than after
+ * the switch precisely because it is the same every time.
+ *
+ * `roll(0, 4)` returns 0..3, so the C#'s `default: throw new InvalidOperationException`
+ * is unreachable and has no counterpart here.
+ */
+function makeItemBeer(rules: DiceRoller): Item {
+	const BEER_QUANTITY = 6;
+	const beers = [
+		ItemID.MEDICINE_ALCOHOL_BEER_BOTTLE_BROWN,
+		ItemID.MEDICINE_ALCOHOL_BEER_BOTTLE_GREEN,
+		ItemID.MEDICINE_ALCOHOL_BEER_CAN_BLUE,
+		ItemID.MEDICINE_ALCOHOL_BEER_CAN_RED,
+	];
+	const model = Models.items.get(beers[rules.roll(0, 4)]);
+	const beer = new ItemMedicine(model);
+	beer.quantity = BEER_QUANTITY;
+	return beer;
+}
+
+/**
+ * C# `BaseMapGenerator.cs:1946-1963` `MakeItemLiquorForMolotov` — "for molotov",
+ * which is the only reader of either item: the fork never *built* one, it only ever
+ * handed the player a bottle and let them make one.
+ *
+ * **A bare `Item`, not an `ItemMedicine`, even though a liquor heals a point of
+ * sanity the way a beer does.** The C#'s model is `ItemModel` rather than
+ * `ItemMedicineModel`, so `ItemMedicine`'s constructor would throw on it; the
+ * medicine-ness is the *sprite's* business upstream and is not modelled here either.
+ *
+ * **`Quantity = 6` against `StackingLimit = 3`, and both are the C#'s.** The
+ * initialiser sets the limit to three (`GameItems.cs:3024`) and the factory sets the
+ * quantity to six, so a bar's bottle is an over-stacked `Item` from the moment it is
+ * dropped. The port does not clamp it, because clamping it here would make a bar
+ * differ from a reference bar by two bottles and the reader would have no way to
+ * tell why. `postProcess` sets `isStackable = stackingLimit > 1`, so the item is
+ * stackable and the pile is over the limit; that is the C#'s state.
+ *
+ * `roll(0, 2)` returns 0..1, so the C#'s `default: throw` arm is unreachable and has
+ * no counterpart here.
+ */
+function makeItemLiquorForMolotov(rules: DiceRoller): Item {
+	const LIQUOR_QUANTITY = 6;
+	const liquors = [ItemID.LIQUOR_AMBER, ItemID.LIQUOR_CLEAR];
+	const model = Models.items.get(liquors[rules.roll(0, 2)]);
+	const liquor = new Item(model);
+	liquor.quantity = LIQUOR_QUANTITY;
+	return liquor;
 }

@@ -85,18 +85,40 @@ import { NullRogueUI } from "@ui/NullRogueUI";
 // ── The seam under test ──────────────────────────────────────────────────────
 
 /**
- * The world-generation stage with the helicopter stage removed.
+ * The world-generation stage with the helicopter stage's *writes* removed.
  *
  * The mapgen seam proved this trick already (`town-building-seam.test.ts`): a
  * subclass that overrides a new stage away *is* the pre-change program, so "did
  * my change move anything?" becomes a comparison of two runs rather than an
- * argument. It returns `true` rather than a falsy value so the caller sees
- * success and `GenerateWorld` runs to completion — the stage is skipped exactly
- * as it was when the call did not exist.
+ * argument.
+ *
+ * **It calls `super` and undoes the three field writes, rather than returning
+ * `true` outright.** Both halves of that matter, and the second is the reason the
+ * test can be trusted at all:
+ *
+ * - The *returns* stay in step. `PickHelicopterRescueSite` returning false sends
+ *   `StartNewGame` round its retry loop with `Session.reset()` and a **new seed**,
+ *   so a real run and a stage-skipped run only compare like with like if they took
+ *   the same number of attempts. Returning `true` unconditionally guaranteed they
+ *   did not: the override could never retry, and a seed whose first attempt found
+ *   no place to land made the two runs two different cities. That is not a
+ *   hypothetical -- porting `MakeItemAlcohol` (`BarBuilding.ts`) made `m_Rules`
+ *   move, the parks moved with it, `RESCUE_SEED`'s first attempt stopped finding a
+ *   landing spot, and this comparison started failing on a difference that had
+ *   nothing to do with the stage.
+ * - The *writes* do not survive. Calling `super` spends the C#'s `m_Rules` roll
+ *   and then the three `Session` assignments of `RogueGame.cs:4551-4553` are put
+ *   back, so the two runs differ in nothing a map can see. `armyHelicopterRescueMap`
+ *   is derived from the district ref (`Session.ts:358`), so restoring the ref and
+ *   the coordinates restores all three.
  */
 class NoRescueGame extends RogueGame {
-	override PickHelicopterRescueSite(_world: unknown): boolean {
-		return true;
+	override PickHelicopterRescueSite(world: World): boolean {
+		const savedRef = this.m_Session.armyHelicopterRescueDistrictRef;
+		const savedCoords = this.m_Session.armyHelicopterRescueCoordinates;
+		const picked = super.PickHelicopterRescueSite(world);
+		this.m_Session.setHelicopterRescueSite(savedRef, savedCoords!);
+		return picked;
 	}
 }
 

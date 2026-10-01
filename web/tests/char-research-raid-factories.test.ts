@@ -352,7 +352,15 @@ describe("ItemID.CHAR_LAPTOP", () => {
     // about the discipline.
     expect(ItemID.CHAR_LAPTOP).toBe(177);
     expect(ItemID.MATCHES, "and 178 was free for the matchbox").toBe(178);
-    expect(ItemID.MATCHES, "the newest row is last").toBe(ItemID._COUNT - 1);
+    // Was `toBe(ItemID._COUNT - 1)`, which is the "happens to be last" claim this
+    // comment says not to keep. It is now nine rows further on: the vegetable
+    // seeds, the two liquors and the six CHAR documents were appended at 179-187
+    // after the matchbox, which is the discipline working rather than breaking.
+    // What is asserted instead is that every id the enum gained since 178 sits
+    // *after* the matchbox, so nothing was inserted between 177 and it.
+    expect(ItemID._COUNT).toBe(188);
+    expect(ItemID.MATCHES).toBeLessThan(ItemID._COUNT - 1);
+    expect(ItemID.UNIQUE_CHAR_DOCUMENT6, "the newest row is last").toBe(ItemID._COUNT - 1);
   });
 
   it("did not renumber the backpack rows above it", () => {
@@ -364,10 +372,12 @@ describe("ItemID.CHAR_LAPTOP", () => {
     expect(ItemID.BACKPACK_HIKING_PACK).toBe(175);
     expect(ItemID.BACKPACK_ARMY_RUCKSACK).toBe(176);
     expect(ItemID.CHAR_LAPTOP).toBe(177);
-    // Was 178, and is now 179 because `ItemID.MATCHES` took 178 for
-    // `Feature.Cooking`. The sentinel moving *up* is the append-only discipline
-    // working; the rows above it are what would have moved had it been inserted.
-    expect(ItemID._COUNT).toBe(179);
+    // Was 178, then 179 because `ItemID.MATCHES` took 178 for `Feature.Cooking`,
+    // and is now 188: nine more rows have been appended above the sentinel since
+    // (the vegetable seeds, the two liquors and the six CHAR documents). The
+    // sentinel moving *up* is the append-only discipline working; the rows above it
+    // are what would have moved had the laptop been inserted.
+    expect(ItemID._COUNT).toBe(188);
   });
 
   it("did not renumber the siphon kit, fishing rod or book either", () => {

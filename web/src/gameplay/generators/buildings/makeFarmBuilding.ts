@@ -30,9 +30,9 @@
  * planting verb and no seed item. `FLOOR_PLANTED` is reachable in the reference only
  * from `HandlePlayerPlantSeeds` (`RogueGame.cs:14208`), which is unported, and from
  * the burn handler (`RogueGame.cs:24731`), which *is* ported and does not care where
- * the tile came from. `ItemID.VEGETABLE_SEEDS` does not exist in the port; see
- * {@link makeItemVegetableSeeds} for the one place that costs us, and it is the shed's
- * loose change, not the farm itself.
+ * the tile came from. `ItemID.VEGETABLE_SEEDS` does exist, so the shed can now put
+ * seeds on the floor — see {@link makeItemVegetableSeeds} — but planting them is still
+ * unreachable, and that half of the farming system is the part a player would notice.
  *
  * ## The dispatch is a *band* of the green cascade, not a seam pass
  *
@@ -718,7 +718,6 @@ function makeFarmShedBuilding(
     // object was placed, and it goes *under* the workbench and the barrels, which
     // are containers — that is the point, same as the junkyard's salvage.
     const it = makeFarmShedItem(ctx);
-    if (it === null) return;
     if (it.model.isStackable) it.quantity = it.model.stackingLimit;
     map.dropItemAt(it, pt);
   });
@@ -734,11 +733,13 @@ function makeFarmShedBuilding(
  * `default: throw new InvalidOperationException("unhandled roll")` is unreachable and
  * has no counterpart here.
  *
- * **Arms 5..9 and arm 11's else are vegetable seeds, and this port cannot make them.**
- * See {@link makeItemVegetableSeeds}; the roll is preserved and the drop is skipped,
- * so the *dice* is the C#'s and the *contents* are not.
+ * **Arms 5..9 and arm 11's else are vegetable seeds, and all six now build.** They
+ * used to return `null` and leave the tile bare while still spending the die; see
+ * {@link makeItemVegetableSeeds}. The return type is `Item` and not `Item | null`
+ * because every arm of the roll is now a real item, which is what makes the drop
+ * below unconditional.
  */
-function makeFarmShedItem(ctx: TownBuildingContext): Item | null {
+function makeFarmShedItem(ctx: TownBuildingContext): Item {
   switch (ctx.roller.roll(0, SHED_ITEM_ROLLS)) {
     case 0:
       return makeItemShovel();
@@ -971,28 +972,24 @@ function makeItemFishingRod(): Item {
 }
 
 /**
- * C# `BaseMapGenerator.cs:1825-1831` `MakeItemVegetableSeeds` — **`null`, deliberately.
- * This is the one thing in this building the port cannot make.**
+ * C# `BaseMapGenerator.cs:1825-1831` `MakeItemVegetableSeeds` — a plain `Item`, and
+ * `IsForbiddenToAI` is the whole of it.
  *
- * `MakeItemVegetableSeeds` is `new Item(GameItems.VEGETABLE_SEEDS) { IsForbiddenToAI =
- * true }`, and **`ItemID.VEGETABLE_SEEDS` does not exist in the port**: it is named by
- * name and left un-ported in the "absent" list at `BaseMapGenerator.ts:1675-1679`, in
- * `GameItems`'s backpack sweep note (`:326`) and in the crop-burn handler
- * (`RogueGame.ts:23454-23456`, which names this very factory as the reason the *loss*
- * half of the farming system can only fire on a tile something else planted). Adding
- * the row is a `GameItems.ts` change and a CSV one, and neither is this file's to make.
+ * **The C#'s spelling of the item is `"bunch of vegie seeds"` and the port keeps it
+ * verbatim**, typo and all; see `GameItems.ts` where the model is built. There is
+ * nothing to substitute and nothing to normalise here either: `Models.items.get`
+ * resolves the id, and the id is what the shed's dice stream was already paying for
+ * whether or not this function could build anything.
  *
- * It matters more here than it does anywhere else, because these arms are **six of the
- * twelve** outcomes of `MakeFarmShedItem`'s roll (`:7877-7887`: `case 5..9`, and
- * `case 11`'s else). So six times in twelve, a shed tile gets no item at all.
+ * `IsForbiddenToAI` because the seeds are only meaningful with a shovel or a pickaxe
+ * in hand and `HandlePlayerPlantSeeds` (`RogueGame.cs:14208`) is still unported, so a
+ * survivor holding one has nothing it can do with them.
  *
- * **The roll is preserved and the drop is skipped**, rather than substituting the
- * port's `FOOD_VEGETABLES`: the dice stream is the thing a farm's arrival moves in
- * every other building behind it, and a wrong item is a quieter lie than an absent
- * one. When `ItemID.VEGETABLE_SEEDS` lands, the two `return makeItemVegetableSeeds()`
- * sites above become real and the return type narrows from `Item | null` to `Item` —
- * nothing else in this file changes.
+ * This used to be `null` -- the one thing in this building the port could not make --
+ * and its being real now is what turns `MakeFarmShedItem` back into a total function.
  */
-function makeItemVegetableSeeds(): Item | null {
-  return null;
+function makeItemVegetableSeeds(): Item {
+  const seeds = new Item(Models.items.get(ItemID.VEGETABLE_SEEDS));
+  seeds.isForbiddenToAI = true;
+  return seeds;
 }

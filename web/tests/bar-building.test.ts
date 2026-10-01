@@ -325,7 +325,18 @@ function buildBar(
 ): { map: GameMap; block: Block; built: boolean } {
   const map = new GameMap(seed, "bar", mapWidth, mapWidth);
   const block = new Block(blockRect);
-  const built = makeBarBuilding({ ...ctx, map, block, roller: new DiceRoller(seed) }, 0);
+  const built = makeBarBuilding(
+    // **A fresh `Rules` per call, seeded from the same `seed` as the district
+    // roller**, and that is the third bullet of the header arriving one building
+    // late: `MakeItemAlcohol` (`BaseMapGenerator.cs:1965`) rolls
+    // `m_Game.Rules.RollChance(66)` and then its child's own `Roll(0, 4)` / `Roll(0, 2)`,
+    // so a bar's bottles are a function of the *session's* roller position and not of
+    // `m_DiceRoller` alone. Two calls sharing one `Rules` therefore draw different
+    // liquor -- which is the C#'s behaviour, not a defect, and is why "same seed, same
+    // bar" below needs both rollers reseeded rather than one.
+    { ...ctx, map, block, roller: new DiceRoller(seed), game: { ...ctx.game, rules: new Rules(new DiceRoller(seed)) } },
+    0
+  );
   return { map, block, built };
 }
 
@@ -646,6 +657,8 @@ describe("Feature.Bar: the room it builds", () => {
 
   it("is a pure function of the block and the roll: same seed, same bar", () => {
     const ctx = barContext();
+    // Both rollers are reseeded by `buildBar` -- see its note -- because the
+    // alcohol is drawn from the session's `Rules` and not from `m_DiceRoller`.
     expect(fingerprint(buildBar(ctx, 7).map)).toBe(fingerprint(buildBar(ctx, 7).map));
     // And a different roll is a different bar, so the line above is not passing
     // because the door side and the tables happen to be constants.

@@ -1108,6 +1108,24 @@ export class GameImages {
   static readonly OBJ_BAR_SHELVES = "MapObjects/bar_shelves";
   static readonly OBJ_KITCHEN_SINK = "MapObjects/kitchen_sink";
   static readonly OBJ_KITCHEN_COUNTER = "MapObjects/kitchen_counter";
+  /**
+   * The two liquor bottles, Release 7-1 (`GameImages.cs:1095-1096`).
+   *
+   * **`makeItemAlcohol`'s third of a bottle**, the one the C#'s
+   * `MakeItemLiquorForMolotov` (`BaseMapGenerator.cs:1946`) reaches on a `Roll(0, 2)`.
+   * They are not "bar" art in the way the shelf and the counter above are — they are
+   * what the shelf and the counter *hold* — and they are named after the glass rather
+   * than the drink, which is also why the two `liquor` models share a name and a
+   * plural and differ only here.
+   *
+   * Both ship in the *classic* pack, so both paths already resolve to a file on disk
+   * — `tests/sprite-assets.test.ts` is what keeps that true. Note the C#'s file
+   * names are lower-case (`GameImages.cs:1095-1096`) even though the ids are not:
+   * `imagePath()` concatenates rather than resolving, so the spelling on disk is
+   * the one that has to survive.
+   */
+  static readonly ITEM_LIQUOR_BOTTLE_AMBER = "Items/item_liquor_bottle_amber";
+  static readonly ITEM_LIQUOR_BOTTLE_CLEAR = "Items/item_liquor_bottle_clear";
 
   // ── Feature.Clinic: the clinic building generator (`BaseTownGenerator.cs:3358`).
   //
@@ -1333,6 +1351,27 @@ export class GameImages {
   static readonly OBJ_TRACTOR = "MapObjects/tractor";
   static readonly DECO_ANIMAL_SHELTER = "Tiles/Decoration/animal_shelter_sign";
   static readonly DECO_KENNEL = "Tiles/Decoration/kennel";
+  /**
+   * The seed packet, Release 5-5 (`GameImages.cs:1165`).
+   *
+   * Half of a farm shed's contents: `MakeFarmShedItem`
+   * (`BaseTownGenerator.cs:7877-7887`) draws one of these on five of its twelve arms
+   * and on `case 11`'s 85%. The sprite shipped with the classic pack all along —
+   * this is the id, not the asset.
+   */
+  static readonly ITEM_VEGETABLE_SEEDS = "Items/item_vegetable_seeds";
+
+  // ── The six CHAR documents: Release 3 ──────────────────────────────────────
+  //
+  // One sprite for `UNIQUE_CHAR_DOCUMENT1..6` (`GameItems.cs:2886-2916`), which is
+  // the C#'s own arrangement: six items, six flavour texts, one page of art. It is
+  // here rather than in a feature block because nothing in the port draws it yet --
+  // the only thing that has ever placed one is the CHAR underground's storage room
+  // (`BaseTownGenerator.cs:8613`), and `makeCHARStorageRoom` is transcribed at
+  // vanilla fidelity, with none of the `placedCHARdocument` latch. The models exist
+  // and are registered; the drop does not, and inventing one is not this change's
+  // job. See the report on `ItemID.UNIQUE_CHAR_DOCUMENT1`.
+  static readonly ITEM_CHAR_DOCUMENT = "Items/item_CHAR_document";
 
   // ── Effects & Misc ────────────────────────────────────────────────────────
   static readonly EFFECT_BARRICADED = "Effects/barricaded";

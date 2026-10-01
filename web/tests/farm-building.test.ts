@@ -931,11 +931,13 @@ describe("Feature.Farm: the shed", () => {
     }
   });
 
-  it("drops one shed item per eligible tile, and never a vegetable seed", () => {
-    // `MakeFarmShedItem`'s `roll(0, 12)` spends one die per eligible tile, and six of
-    // its twelve arms are vegetable seeds -- which `ItemID.VEGETABLE_SEEDS` does not
-    // have a row for, so the drop is skipped on those. The roll is still spent, which
-    // is what the dice-sequence test above pins; this one pins the consequence.
+  it("drops one shed item per eligible tile, all of them tools or seeds", () => {
+    // `MakeFarmShedItem`'s `roll(0, 12)` spends one die per eligible tile. Six of
+    // its twelve arms are vegetable seeds and five more are tools; both kinds now
+    // drop, since `ItemID.VEGETABLE_SEEDS` exists (added with the models). The roll
+    // is spent either way, which is what the dice-sequence test above pins -- it
+    // was spent while the seeds were skipped, and restoring the drop must not move
+    // it, so this one pins the consequence on both sides.
     const shedItemImages = new Set([
       GameImages.ITEM_SHOVEL,
       GameImages.ITEM_PICKAXE,
