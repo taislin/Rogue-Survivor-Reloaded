@@ -567,6 +567,19 @@ td:first-child kbd { margin-right: 0.15rem; }
 .callout--tip  { border-left-color: var(--rust); }
 .callout--note { border-left-color: var(--blue); }
 
+/* A keyboard layout, printed as preformatted text. Mono and tight so the grid
+   lines up, with the direction names spaced far enough right to read as a second
+   column rather than as part of the key sequence. */
+pre.keys {
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  line-height: 1.5;
+  margin: 0.6rem 0 0;
+  color: var(--text-dim);
+  white-space: pre;
+  overflow-x: auto;
+}
+
 .callout__label {
   display: block;
   font: 700 0.7rem/1 var(--font-mono);

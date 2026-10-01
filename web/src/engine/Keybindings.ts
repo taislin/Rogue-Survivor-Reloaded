@@ -99,7 +99,7 @@ export class Keybindings {
 
     this.set(PlayerCommand.BARRICADE_MODE, 'B');
     this.set(PlayerCommand.BREAK_MODE, 'K');
-    this.set(PlayerCommand.CLOSE_DOOR, 'C');
+    this.set(PlayerCommand.CLOSE_DOOR, 'Shift+T');
     this.set(PlayerCommand.FIRE_MODE, 'F');
 
     // C# `Keybindings.cs:65`: `Keys.F | Keys.Control`, Release 7-6. `Ctrl+F` rather
@@ -120,6 +120,31 @@ export class Keybindings {
     this.set(PlayerCommand.ITEM_SLOT_8, '9');
     this.set(PlayerCommand.ITEM_SLOT_9, '0');
 
+    /*
+     * The commands the movement grid displaced.
+     *
+     * Seven commands lost their key to the grid. Six letters went to the eight
+     * directions: `S` was SHOUT, `A` USE_SPRAY, `E` NEGOCIATE_TRADE, `Z` SLEEP,
+     * `W` WAIT_LONG and `C` CLOSE_DOOR, and LOOK_RIGHT lost `C` as well.
+     *
+     * Five letters were unclaimed — `J` `L` `M` `Q` `U` — and `Q` is a grid
+     * corner, so four of the seven could keep a bare letter and the rest had to
+     * take a Shift chord.
+     *
+     * WAIT_LONG kept its letter as `Shift+W`, one chord from the bare `W` the player
+     * knew. It deliberately did *not* take the freed `Shift+X`: `X` is now
+     * WAIT_OR_SELF, and "wait a turn" beside "wait an hour" trades a
+     * muscle-memory win for a mispress that costs a turn.
+     *
+     * LOOK_RIGHT took `Shift+C` for the same reason, keeping `C` as the letter.
+     *
+     * The remaining four could not use a Shift chord at all, because every letter
+     * they wanted was already taken by a longer existing binding: `Shift+S` is
+     * SAVE_GAME and `Ctrl+S` is SWITCH_PLACE (so SHOUT took the free `U`),
+     * `Shift+A` is ABANDON_GAME (USE_SPRAY took `M`), `Shift+E` is EAT_CORPSE
+     * and `Ctrl+E` is MARK_ENEMIES_MODE (NEGOCIATE_TRADE took `L`), and
+     * `Shift+M` is MESSAGE_LOG. SLEEP took `Shift+Z`, which nothing else claims.
+     */
     this.set(PlayerCommand.ABANDON_GAME, 'Shift+A');
     this.set(PlayerCommand.ADVISOR, 'Shift+H');
     this.set(PlayerCommand.BUILD_LARGE_FORTIFICATION, 'Ctrl+N');
@@ -128,36 +153,56 @@ export class Keybindings {
     this.set(PlayerCommand.EAT_CORPSE, 'Shift+E');
     this.set(PlayerCommand.GIVE_ITEM, 'G');
     this.set(PlayerCommand.HINTS_SCREEN_MODE, 'Ctrl+H');
-    this.set(PlayerCommand.NEGOCIATE_TRADE, 'E');
+    this.set(PlayerCommand.NEGOCIATE_TRADE, 'L');
     this.set(PlayerCommand.LOAD_GAME, 'Shift+L');
     this.set(PlayerCommand.MARK_ENEMIES_MODE, 'Ctrl+E');
     this.set(PlayerCommand.MESSAGE_LOG, 'Shift+M');
 
-    // Arrows, then the numpad. `set` for the first and `addKey` for the rest, so
-    // each direction ends up with both and neither replaces the other.
-    this.set(PlayerCommand.MOVE_E, 'ArrowRight');
-    this.set(PlayerCommand.MOVE_N, 'ArrowUp');
-    this.set(PlayerCommand.MOVE_S, 'ArrowDown');
-    this.set(PlayerCommand.MOVE_W, 'ArrowLeft');
-
     /*
-     * The C# binds the eight directions to the numpad as well
-     * (`MOVE_NW = Keys.NumPad7` and so on — Keybindings.cs), and this port had
-     * silently dropped all eight: the comment above used to claim "Numpad +
-     * arrows + vi keys" while binding only the arrows. They could not simply be
-     * added, because `NumPad7` and `D7` both arrive as the string "7" and binding
-     * one would have taken the other's binding with it — which is the bug
-     * `canonicalKey` fixes. Each direction therefore carries the arrow key *and*
-     * its numpad key.
+     * The eight compass moves, as the 3x3 grid the player expects from an
+     * isometric map:
+     *
+     *     Q W E        NW  N  NE
+     *     A S D         W  S   E
+     *     Z C           SW    SE
+     *
+     * Eight keys rather than nine, because the centre is `S` and there is no
+     * "stand still" key in the middle of it — waiting is `X`/`Num 5`, which was
+     * the C#'s `NumPad5` (`Keybindings.cs:93`) and reads as a deliberate act
+     * rather than as something reached by not moving.
+     *
+     * `set` for the letter, `addKey` for the extra keys, so each direction
+     * carries all of them and none replaces another.
+     *
+     * The four arrows stay on the four cardinals only, as they were: an arrow
+     * that reached a diagonal would make Up mean north *and* north-west, and the
+     * grid letter is what disambiguates. The numpad diagonals are redundant with
+     * `Q`/`E`/`Z`/`C` but stay because they cost nothing, and because `NumPad7`
+     * and `D7` both arriving as the string `"7"` is the ambiguity `canonicalKey`
+     * exists to resolve.
      */
+    this.set(PlayerCommand.MOVE_N, 'W');
+    this.set(PlayerCommand.MOVE_NE, 'E');
+    this.set(PlayerCommand.MOVE_E, 'D');
+    this.set(PlayerCommand.MOVE_SE, 'C');
+    this.set(PlayerCommand.MOVE_S, 'S');
+    this.set(PlayerCommand.MOVE_SW, 'Z');
+    this.set(PlayerCommand.MOVE_W, 'A');
+    this.set(PlayerCommand.MOVE_NW, 'Q');
+
+    this.addKey(PlayerCommand.MOVE_N, 'ArrowUp');
+    this.addKey(PlayerCommand.MOVE_E, 'ArrowRight');
+    this.addKey(PlayerCommand.MOVE_S, 'ArrowDown');
+    this.addKey(PlayerCommand.MOVE_W, 'ArrowLeft');
+
+    this.addKey(PlayerCommand.MOVE_N, 'Num 8');
+    this.addKey(PlayerCommand.MOVE_NE, 'Num 9');
     this.addKey(PlayerCommand.MOVE_E, 'Num 6');
+    this.addKey(PlayerCommand.MOVE_SE, 'Num 3');
     this.addKey(PlayerCommand.MOVE_S, 'Num 2');
     this.addKey(PlayerCommand.MOVE_SW, 'Num 1');
     this.addKey(PlayerCommand.MOVE_W, 'Num 4');
     this.addKey(PlayerCommand.MOVE_NW, 'Num 7');
-    this.addKey(PlayerCommand.MOVE_N, 'Num 8');
-    this.addKey(PlayerCommand.MOVE_NE, 'Num 9');
-    this.addKey(PlayerCommand.MOVE_SE, 'Num 3');
 
     this.set(PlayerCommand.OPTIONS_MODE, 'Shift+O');
     this.set(PlayerCommand.ORDER_MODE, 'O');
@@ -168,14 +213,29 @@ export class Keybindings {
     this.set(PlayerCommand.RUN_TOGGLE, 'R');
     this.set(PlayerCommand.SAVE_GAME, 'Shift+S');
     this.set(PlayerCommand.SCREENSHOT, 'Shift+N');
-    this.set(PlayerCommand.SHOUT, 'S');
-    this.set(PlayerCommand.SLEEP, 'Z');
+    this.set(PlayerCommand.SHOUT, 'U');
+    this.set(PlayerCommand.SLEEP, 'Shift+Z');
     this.set(PlayerCommand.SWITCH_PLACE, 'Ctrl+S');
     this.set(PlayerCommand.LEAD_MODE, 'T');
-    this.set(PlayerCommand.USE_SPRAY, 'A');
-    this.set(PlayerCommand.USE_EXIT, 'X');
-    this.set(PlayerCommand.WAIT_OR_SELF, '.');
-    this.set(PlayerCommand.WAIT_LONG, 'W');
+    this.set(PlayerCommand.USE_SPRAY, 'M');
+    this.set(PlayerCommand.USE_EXIT, '.');
+    this.set(PlayerCommand.WAIT_OR_SELF, 'X');
+    this.set(PlayerCommand.WAIT_LONG, 'Shift+W');
+
+    /*
+     * Waiting a turn is on `X` and on `Num 5`, the C#'s `NumPad5`
+     * (`Keybindings.cs:93`), which this port had dropped in favour of `.` alone —
+     * while `manual.txt` kept advertising the numpad key. Both are back: `X` is
+     * under the right hand rather than on the numeric keypad, and the numpad key
+     * is where the C# had it.
+     *
+     * `USE_EXIT` and `WAIT_OR_SELF` swapped places. `X` was the exit and `.` was
+     * the wait, and this puts the exit where the wait was. It is a deliberate
+     * swap, so it is worth saying why the exit did not keep `X`: `X` and `Shift+X`
+     * as "take the stairs" and "sleep an hour" is the pairing that reads worst
+     * under pressure, and one of the two had to move anyway.
+     */
+    this.addKey(PlayerCommand.WAIT_OR_SELF, 'Num 5');
 
     /*
      * Map zoom. Bound to the unshifted '=' and '-', not to '+' and '_': on a US
@@ -198,12 +258,16 @@ export class Keybindings {
      * one meaning in the binding table, the remap is a single pure function over
      * the command, and it is testable over all eight movement commands at once.
      *
+     * LOOK_RIGHT was `C`, paired with LOOK_LEFT's `V` by adjacency. The grid took
+     * `C`, so it is `Shift+C` now — still adjacent in feel, still a free action
+     * either hand can reach, and reachable by muscle memory from the old binding.
+     *
      * Two keys, because a free action wants a comfortable pair and either hand
      * reaches both.
      */
     this.set(PlayerCommand.LOOK_LEFT, 'V');
     this.addKey(PlayerCommand.LOOK_LEFT, '[');
-    this.set(PlayerCommand.LOOK_RIGHT, 'C');
+    this.set(PlayerCommand.LOOK_RIGHT, 'Shift+C');
     this.addKey(PlayerCommand.LOOK_RIGHT, ']');
 
     /*
@@ -214,7 +278,7 @@ export class Keybindings {
      * the *option* and then runs the same `ApplyOptions` the options screen does,
      * so there is one place the change takes effect rather than two.
      */
-    this.set(PlayerCommand.VIEW_MODE_TOGGLE, 'F');
+    this.set(PlayerCommand.VIEW_MODE_TOGGLE, 'Shift+F');
 
     /*
      * Still Alive, Release 8-2. C# `Keybindings.cs:88` binds
