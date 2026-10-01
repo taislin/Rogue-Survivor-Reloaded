@@ -316,6 +316,251 @@ export class GameImages {
   // Release 7-3.
   static readonly DECO_WALL_MALL_DAMAGED = "Tiles/Decoration/wall_mall_damaged";
 
+  // ── World decay: tile decorations ─────────────────────────────────────────
+  // Still Alive, Release 7-6 -- the C# puts `//@@MP (Release 7-6)` on every row of
+  // its own `#region World decay` (`GameImages.cs:370-571`) and preloads the whole
+  // block in the same commit (`:1601-1802`). The blank lines below are the C#'s own
+  // grouping, one per tile image.
+  //
+  // **174 ids for 21 tile images, and the ratio is the design.** Each image has two
+  // or three hand-drawn variants of each phase, and
+  // `ChooseRelevantDecayDecorationForTile` rolls over the variants so that no two
+  // neighbouring tiles crack identically.
+  //
+  // One naming scheme throughout, which the C# keeps without exception:
+  // `DECO_` + what is decaying + `_DECAY` + `_V<n>` + `_PHASE<n>`. The departures
+  // from that pattern are all the C#'s, and all readable off the list:
+  //
+  // - `DECO_WALL_GENERIC_INTERIOR_DECAY_PHASE<n>` carries no `_V<n>` at all,
+  //   because there is one drawing per phase for *every* interior wall rather than
+  //   one per material (`RogueGame.cs:9350-9352`).
+  // - Wood is `DECO_FLOOR_PLANKS_*` and `DECO_WALL_PLANKS_*` -- named for the
+  //   material with FLOOR/WALL in the middle, not for the images they go on
+  //   (`TILE_FLOOR_PLANKS`, `TILE_WALL_WOOD_PLANKS`).
+  // - `*_SHOP_TILE_*` and `*_WHITE_TILE_*` decorate `TILE_FLOOR_TILES` and
+  //   `TILE_FLOOR_WHITE_TILE`; `*_CHAR_*` decorates `TILE_WALL_CHAR_OFFICE`. Again
+  //   named for the material, and the `CHAR_wall_*` file names say so too.
+  //
+  // **The `_phase<n>` suffix is load-bearing twice, which is why none of these may
+  // be renamed.** `ApplyWorldDecayPhase` finds the *previous* phase's drawing in
+  // order to remove it by asking whether a decoration id contains `"_phase"`
+  // (`RogueGame.cs:9327`), and the map-object arm asks whether an object already
+  // wears the phase it is about to apply by looking for `phase<n>` in its image
+  // name (`:9377`, `:9385`, `:9390`). The same coupling the nine `*_DAMAGED` ids
+  // above have with the scorch guard's `_damaged` test, and for the same reason: a
+  // rename is invisible to the type-checker and silently stops the sweep from ever
+  // replacing a phase.
+  //
+  // **The variant count is uneven, and the unevenness is the C#'s.** Three for most
+  // pairs; two for stone walls and plank walls; and phases 1 and 2 only for four
+  // indoor floors -- `office`, `planks`, `shop_tile`, `white_tile` -- because an
+  // indoor floor never reaches phase 3 (`:9296-9298`). The C#'s comment on those
+  // four explains that they still answer phase 3 with a phase-2 drawing "in case
+  // entrance tiles count as !IsInside, and are thus missed by the filters in the
+  // calling parent function". The array lengths are the roll's range inside
+  // `ChooseRelevantDecayDecorationForTile`, so dropping a variant narrows the roll
+  // rather than failing loudly.
+  //
+  // **The two court pairs key on a substring, not an id.** `basketball_court_*` and
+  // `tennis_court_*` are sixty-odd distinct floor images between them, and the reader
+  // matches them with `ImageID.Contains` (`:9578`, `:9596`) -- "need to use this
+  // broad method, as courts are made up of dozens of unique tiles".
+  static readonly DECO_FLOOR_WALKWAY_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/walkway_v1_phase1";
+  static readonly DECO_FLOOR_WALKWAY_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/walkway_v1_phase2";
+  static readonly DECO_FLOOR_WALKWAY_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/walkway_v1_phase3";
+  static readonly DECO_FLOOR_WALKWAY_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/walkway_v2_phase1";
+  static readonly DECO_FLOOR_WALKWAY_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/walkway_v2_phase2";
+  static readonly DECO_FLOOR_WALKWAY_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/walkway_v2_phase3";
+  static readonly DECO_FLOOR_WALKWAY_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/walkway_v3_phase1";
+  static readonly DECO_FLOOR_WALKWAY_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/walkway_v3_phase2";
+  static readonly DECO_FLOOR_WALKWAY_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/walkway_v3_phase3";
+
+  static readonly DECO_FLOOR_ROAD_NS_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/road_asphalt_NS_v1_phase1";
+  static readonly DECO_FLOOR_ROAD_NS_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/road_asphalt_NS_v1_phase2";
+  static readonly DECO_FLOOR_ROAD_NS_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/road_asphalt_NS_v1_phase3";
+  static readonly DECO_FLOOR_ROAD_NS_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/road_asphalt_NS_v2_phase1";
+  static readonly DECO_FLOOR_ROAD_NS_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/road_asphalt_NS_v2_phase2";
+  static readonly DECO_FLOOR_ROAD_NS_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/road_asphalt_NS_v2_phase3";
+  static readonly DECO_FLOOR_ROAD_NS_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/road_asphalt_NS_v3_phase1";
+  static readonly DECO_FLOOR_ROAD_NS_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/road_asphalt_NS_v3_phase2";
+  static readonly DECO_FLOOR_ROAD_NS_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/road_asphalt_NS_v3_phase3";
+
+  static readonly DECO_FLOOR_ROAD_EW_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/road_asphalt_EW_v1_phase1";
+  static readonly DECO_FLOOR_ROAD_EW_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/road_asphalt_EW_v1_phase2";
+  static readonly DECO_FLOOR_ROAD_EW_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/road_asphalt_EW_v1_phase3";
+  static readonly DECO_FLOOR_ROAD_EW_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/road_asphalt_EW_v2_phase1";
+  static readonly DECO_FLOOR_ROAD_EW_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/road_asphalt_EW_v2_phase2";
+  static readonly DECO_FLOOR_ROAD_EW_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/road_asphalt_EW_v2_phase3";
+  static readonly DECO_FLOOR_ROAD_EW_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/road_asphalt_EW_v3_phase1";
+  static readonly DECO_FLOOR_ROAD_EW_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/road_asphalt_EW_v3_phase2";
+  static readonly DECO_FLOOR_ROAD_EW_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/road_asphalt_EW_v3_phase3";
+
+  static readonly DECO_FLOOR_ASPHALT_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/asphalt_floor_v1_phase1";
+  static readonly DECO_FLOOR_ASPHALT_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/asphalt_floor_v1_phase2";
+  static readonly DECO_FLOOR_ASPHALT_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/asphalt_floor_v1_phase3";
+  static readonly DECO_FLOOR_ASPHALT_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/asphalt_floor_v2_phase1";
+  static readonly DECO_FLOOR_ASPHALT_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/asphalt_floor_v2_phase2";
+  static readonly DECO_FLOOR_ASPHALT_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/asphalt_floor_v2_phase3";
+  static readonly DECO_FLOOR_ASPHALT_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/asphalt_floor_v3_phase1";
+  static readonly DECO_FLOOR_ASPHALT_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/asphalt_floor_v3_phase2";
+  static readonly DECO_FLOOR_ASPHALT_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/asphalt_floor_v3_phase3";
+
+  static readonly DECO_FLOOR_OFFICE_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/office_floor_v1_phase1";
+  static readonly DECO_FLOOR_OFFICE_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/office_floor_v1_phase2";
+  static readonly DECO_FLOOR_OFFICE_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/office_floor_v2_phase1";
+  static readonly DECO_FLOOR_OFFICE_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/office_floor_v2_phase2";
+  static readonly DECO_FLOOR_OFFICE_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/office_floor_v3_phase1";
+  static readonly DECO_FLOOR_OFFICE_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/office_floor_v3_phase2";
+
+  static readonly DECO_FLOOR_PLANKS_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/planks_floor_v1_phase1";
+  static readonly DECO_FLOOR_PLANKS_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/planks_floor_v1_phase2";
+  static readonly DECO_FLOOR_PLANKS_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/planks_floor_v2_phase1";
+  static readonly DECO_FLOOR_PLANKS_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/planks_floor_v2_phase2";
+  static readonly DECO_FLOOR_PLANKS_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/planks_floor_v3_phase1";
+  static readonly DECO_FLOOR_PLANKS_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/planks_floor_v3_phase2";
+
+  static readonly DECO_FLOOR_SHOP_TILE_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/shop_tile_v1_phase1";
+  static readonly DECO_FLOOR_SHOP_TILE_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/shop_tile_v1_phase2";
+  static readonly DECO_FLOOR_SHOP_TILE_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/shop_tile_v2_phase1";
+  static readonly DECO_FLOOR_SHOP_TILE_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/shop_tile_v2_phase2";
+  static readonly DECO_FLOOR_SHOP_TILE_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/shop_tile_v3_phase1";
+  static readonly DECO_FLOOR_SHOP_TILE_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/shop_tile_v3_phase2";
+
+  static readonly DECO_FLOOR_CONCRETE_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/concrete_floor_v1_phase1";
+  static readonly DECO_FLOOR_CONCRETE_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/concrete_floor_v1_phase2";
+  static readonly DECO_FLOOR_CONCRETE_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/concrete_floor_v1_phase3";
+  static readonly DECO_FLOOR_CONCRETE_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/concrete_floor_v2_phase1";
+  static readonly DECO_FLOOR_CONCRETE_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/concrete_floor_v2_phase2";
+  static readonly DECO_FLOOR_CONCRETE_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/concrete_floor_v2_phase3";
+  static readonly DECO_FLOOR_CONCRETE_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/concrete_floor_v3_phase1";
+  static readonly DECO_FLOOR_CONCRETE_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/concrete_floor_v3_phase2";
+  static readonly DECO_FLOOR_CONCRETE_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/concrete_floor_v3_phase3";
+
+  static readonly DECO_FLOOR_WHITE_TILE_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/white_floor_tile_v1_phase1";
+  static readonly DECO_FLOOR_WHITE_TILE_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/white_floor_tile_v1_phase2";
+  static readonly DECO_FLOOR_WHITE_TILE_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/white_floor_tile_v2_phase1";
+  static readonly DECO_FLOOR_WHITE_TILE_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/white_floor_tile_v2_phase2";
+  static readonly DECO_FLOOR_WHITE_TILE_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/white_floor_tile_v3_phase1";
+  static readonly DECO_FLOOR_WHITE_TILE_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/white_floor_tile_v3_phase2";
+
+  static readonly DECO_FLOOR_BASKETBALL_COURT_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/basketball_court_v1_phase1";
+  static readonly DECO_FLOOR_BASKETBALL_COURT_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/basketball_court_v1_phase2";
+  static readonly DECO_FLOOR_BASKETBALL_COURT_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/basketball_court_v1_phase3";
+  static readonly DECO_FLOOR_BASKETBALL_COURT_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/basketball_court_v2_phase1";
+  static readonly DECO_FLOOR_BASKETBALL_COURT_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/basketball_court_v2_phase2";
+  static readonly DECO_FLOOR_BASKETBALL_COURT_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/basketball_court_v2_phase3";
+  static readonly DECO_FLOOR_BASKETBALL_COURT_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/basketball_court_v3_phase1";
+  static readonly DECO_FLOOR_BASKETBALL_COURT_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/basketball_court_v3_phase2";
+  static readonly DECO_FLOOR_BASKETBALL_COURT_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/basketball_court_v3_phase3";
+
+  static readonly DECO_FLOOR_TENNIS_COURT_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/tennis_court_v1_phase1";
+  static readonly DECO_FLOOR_TENNIS_COURT_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/tennis_court_v1_phase2";
+  static readonly DECO_FLOOR_TENNIS_COURT_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/tennis_court_v1_phase3";
+  static readonly DECO_FLOOR_TENNIS_COURT_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/tennis_court_v2_phase1";
+  static readonly DECO_FLOOR_TENNIS_COURT_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/tennis_court_v2_phase2";
+  static readonly DECO_FLOOR_TENNIS_COURT_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/tennis_court_v2_phase3";
+  static readonly DECO_FLOOR_TENNIS_COURT_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/tennis_court_v3_phase1";
+  static readonly DECO_FLOOR_TENNIS_COURT_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/tennis_court_v3_phase2";
+  static readonly DECO_FLOOR_TENNIS_COURT_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/tennis_court_v3_phase3";
+
+  static readonly DECO_WALL_GENERIC_INTERIOR_DECAY_PHASE1 = "Tiles/Decoration/decay/interior_walls_generic_decay_phase1";
+  static readonly DECO_WALL_GENERIC_INTERIOR_DECAY_PHASE2 = "Tiles/Decoration/decay/interior_walls_generic_decay_phase2";
+  static readonly DECO_WALL_GENERIC_INTERIOR_DECAY_PHASE3 = "Tiles/Decoration/decay/interior_walls_generic_decay_phase3";
+
+  static readonly DECO_WALL_BRICK_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/brick_wall_v1_phase1";
+  static readonly DECO_WALL_BRICK_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/brick_wall_v1_phase2";
+  static readonly DECO_WALL_BRICK_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/brick_wall_v1_phase3";
+  static readonly DECO_WALL_BRICK_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/brick_wall_v2_phase1";
+  static readonly DECO_WALL_BRICK_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/brick_wall_v2_phase2";
+  static readonly DECO_WALL_BRICK_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/brick_wall_v2_phase3";
+  static readonly DECO_WALL_BRICK_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/brick_wall_v3_phase1";
+  static readonly DECO_WALL_BRICK_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/brick_wall_v3_phase2";
+  static readonly DECO_WALL_BRICK_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/brick_wall_v3_phase3";
+
+  static readonly DECO_WALL_CHAR_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/CHAR_wall_v1_phase1";
+  static readonly DECO_WALL_CHAR_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/CHAR_wall_v1_phase2";
+  static readonly DECO_WALL_CHAR_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/CHAR_wall_v1_phase3";
+  static readonly DECO_WALL_CHAR_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/CHAR_wall_v2_phase1";
+  static readonly DECO_WALL_CHAR_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/CHAR_wall_v2_phase2";
+  static readonly DECO_WALL_CHAR_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/CHAR_wall_v2_phase3";
+  static readonly DECO_WALL_CHAR_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/CHAR_wall_v3_phase1";
+  static readonly DECO_WALL_CHAR_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/CHAR_wall_v3_phase2";
+  static readonly DECO_WALL_CHAR_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/CHAR_wall_v3_phase3";
+
+  static readonly DECO_WALL_STONE_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/stone_wall_v1_phase1";
+  static readonly DECO_WALL_STONE_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/stone_wall_v1_phase2";
+  static readonly DECO_WALL_STONE_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/stone_wall_v1_phase3";
+  static readonly DECO_WALL_STONE_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/stone_wall_v2_phase1";
+  static readonly DECO_WALL_STONE_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/stone_wall_v2_phase2";
+  static readonly DECO_WALL_STONE_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/stone_wall_v2_phase3";
+
+  static readonly DECO_WALL_LIGHT_BROWN_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/light_brown_wall_v1_phase1";
+  static readonly DECO_WALL_LIGHT_BROWN_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/light_brown_wall_v1_phase2";
+  static readonly DECO_WALL_LIGHT_BROWN_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/light_brown_wall_v1_phase3";
+  static readonly DECO_WALL_LIGHT_BROWN_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/light_brown_wall_v2_phase1";
+  static readonly DECO_WALL_LIGHT_BROWN_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/light_brown_wall_v2_phase2";
+  static readonly DECO_WALL_LIGHT_BROWN_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/light_brown_wall_v2_phase3";
+  static readonly DECO_WALL_LIGHT_BROWN_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/light_brown_wall_v3_phase1";
+  static readonly DECO_WALL_LIGHT_BROWN_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/light_brown_wall_v3_phase2";
+  static readonly DECO_WALL_LIGHT_BROWN_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/light_brown_wall_v3_phase3";
+
+  static readonly DECO_WALL_CONCRETE_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/concrete_wall_v1_phase1";
+  static readonly DECO_WALL_CONCRETE_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/concrete_wall_v1_phase2";
+  static readonly DECO_WALL_CONCRETE_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/concrete_wall_v1_phase3";
+  static readonly DECO_WALL_CONCRETE_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/concrete_wall_v2_phase1";
+  static readonly DECO_WALL_CONCRETE_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/concrete_wall_v2_phase2";
+  static readonly DECO_WALL_CONCRETE_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/concrete_wall_v2_phase3";
+  static readonly DECO_WALL_CONCRETE_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/concrete_wall_v3_phase1";
+  static readonly DECO_WALL_CONCRETE_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/concrete_wall_v3_phase2";
+  static readonly DECO_WALL_CONCRETE_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/concrete_wall_v3_phase3";
+
+  static readonly DECO_WALL_ARMY_BASE_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/army_base_wall_v1_phase1";
+  static readonly DECO_WALL_ARMY_BASE_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/army_base_wall_v1_phase2";
+  static readonly DECO_WALL_ARMY_BASE_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/army_base_wall_v1_phase3";
+  static readonly DECO_WALL_ARMY_BASE_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/army_base_wall_v2_phase1";
+  static readonly DECO_WALL_ARMY_BASE_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/army_base_wall_v2_phase2";
+  static readonly DECO_WALL_ARMY_BASE_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/army_base_wall_v2_phase3";
+  static readonly DECO_WALL_ARMY_BASE_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/army_base_wall_v3_phase1";
+  static readonly DECO_WALL_ARMY_BASE_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/army_base_wall_v3_phase2";
+  static readonly DECO_WALL_ARMY_BASE_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/army_base_wall_v3_phase3";
+
+  static readonly DECO_WALL_FUEL_STATION_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/fuel_station_wall_v1_phase1";
+  static readonly DECO_WALL_FUEL_STATION_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/fuel_station_wall_v1_phase2";
+  static readonly DECO_WALL_FUEL_STATION_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/fuel_station_wall_v1_phase3";
+  static readonly DECO_WALL_FUEL_STATION_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/fuel_station_wall_v2_phase1";
+  static readonly DECO_WALL_FUEL_STATION_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/fuel_station_wall_v2_phase2";
+  static readonly DECO_WALL_FUEL_STATION_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/fuel_station_wall_v2_phase3";
+  static readonly DECO_WALL_FUEL_STATION_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/fuel_station_wall_v3_phase1";
+  static readonly DECO_WALL_FUEL_STATION_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/fuel_station_wall_v3_phase2";
+  static readonly DECO_WALL_FUEL_STATION_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/fuel_station_wall_v3_phase3";
+
+  static readonly DECO_WALL_PLANKS_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/planks_wall_v1_phase1";
+  static readonly DECO_WALL_PLANKS_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/planks_wall_v1_phase2";
+  static readonly DECO_WALL_PLANKS_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/planks_wall_v1_phase3";
+  static readonly DECO_WALL_PLANKS_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/planks_wall_v2_phase1";
+  static readonly DECO_WALL_PLANKS_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/planks_wall_v2_phase2";
+  static readonly DECO_WALL_PLANKS_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/planks_wall_v2_phase3";
+
+  static readonly DECO_WALL_HOSPITAL_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/hospital_wall_v1_phase1";
+  static readonly DECO_WALL_HOSPITAL_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/hospital_wall_v1_phase2";
+  static readonly DECO_WALL_HOSPITAL_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/hospital_wall_v1_phase3";
+  static readonly DECO_WALL_HOSPITAL_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/hospital_wall_v2_phase1";
+  static readonly DECO_WALL_HOSPITAL_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/hospital_wall_v2_phase2";
+  static readonly DECO_WALL_HOSPITAL_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/hospital_wall_v2_phase3";
+  static readonly DECO_WALL_HOSPITAL_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/hospital_wall_v3_phase1";
+  static readonly DECO_WALL_HOSPITAL_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/hospital_wall_v3_phase2";
+  static readonly DECO_WALL_HOSPITAL_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/hospital_wall_v3_phase3";
+
+  static readonly DECO_WALL_MALL_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/mall_wall_v1_phase1";
+  static readonly DECO_WALL_MALL_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/mall_wall_v1_phase2";
+  static readonly DECO_WALL_MALL_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/mall_wall_v1_phase3";
+  static readonly DECO_WALL_MALL_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/mall_wall_v2_phase1";
+  static readonly DECO_WALL_MALL_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/mall_wall_v2_phase2";
+  static readonly DECO_WALL_MALL_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/mall_wall_v2_phase3";
+  static readonly DECO_WALL_MALL_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/mall_wall_v3_phase1";
+  static readonly DECO_WALL_MALL_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/mall_wall_v3_phase2";
+  static readonly DECO_WALL_MALL_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/mall_wall_v3_phase3";
+
   // ── Map Objects ───────────────────────────────────────────────────────────
   static readonly OBJ_TREE = "MapObjects/tree";
   static readonly OBJ_WOODEN_DOOR_CLOSED = "MapObjects/wooden_door_closed";
@@ -384,6 +629,89 @@ export class GameImages {
   static readonly OBJ_BANK_TELLER = "MapObjects/bank_teller";
   static readonly OBJ_BANK_SAFE_CLOSED = "MapObjects/bank_safe_closed";
   static readonly OBJ_BANK_SAFE_OPEN = "MapObjects/bank_safe_open";
+
+  // ── World decay: map objects ──────────────────────────────────────────────
+  // Still Alive, Release 7-6. The C# keeps the picket / chainwire / chainwire-gate
+  // trio in its own `#region Decay` (`GameImages.cs:788-825`) and the car phase ids
+  // in the block just above it (`:761-786`, "the trailing number indicates its level
+  // of decay state"); the same commit preloads both (`:1991-2056`).
+  //
+  // **30 decay drawings** -- 9 picket fence, 12 chainwire fence, 9 chainwire gate --
+  // in the tile decorations' scheme, with `OBJ_` where that block has `DECO_`. The
+  // file names disagree with the constant names: four sets of chainwire fence are
+  // `fence_v1..v4_*` and all three gates are `fence_gate_v1..v3_*`, while the picket
+  // fence files keep their direction (`picket_fence_EW_*`, `picket_fence_NS_left_*`,
+  // `picket_fence_NS_right_*`) because it is the only one of the three whose sprites
+  // are orientation-specific.
+  //
+  // **The picket fence arm is dead in the reference, and stays dead here.** Nothing
+  // in the C#'s generators places one -- `GameImages.cs:610-612` declares the three
+  // phase-0 sprites and no `BaseMapGenerator` factory ever asks for them -- so
+  // `ChooseRelevantPicketFenceSprite` (`RogueGame.cs:9799-9831`) has no reachable
+  // caller. The three base ids are therefore *not* declared here: the port's preload
+  // manifest is derived from the constants rather than written out, and nothing in
+  // the port would ever name them.
+  //
+  // **The car phase ids are named by nobody, which is why the 18 rows below are the
+  // whole of the car block.** `ApplyWorldDecayPhase`'s car arm never asks for a car
+  // sprite: it reads the trailing digit off the object's current image and rebuilds
+  // the name around a new one (`RogueGame.cs:9394-9405`). They are here because the
+  // C# declares and preloads them, and because the port's car factory names cars
+  // after the *vanilla* `car1..car4` rather than after these (see the five
+  // `*_PHASE0` rows under `Feature.Junkyard`), so that string surgery lands on
+  // `MapObjects/car1`..`car4` instead. `RogueGame.ApplyWorldDecayPhase` says what
+  // that costs.
+  static readonly OBJ_CAR_RED_PHASE1 = "MapObjects/car_red_phase1";
+  static readonly OBJ_CAR_RED_PHASE2 = "MapObjects/car_red_phase2";
+  static readonly OBJ_CAR_RED_PHASE3 = "MapObjects/car_red_phase3";
+  static readonly OBJ_CAR_WHITE_PHASE1 = "MapObjects/car_white_phase1";
+  static readonly OBJ_CAR_WHITE_PHASE2 = "MapObjects/car_white_phase2";
+  static readonly OBJ_CAR_WHITE_PHASE3 = "MapObjects/car_white_phase3";
+  static readonly OBJ_CAR_GREEN_PHASE1 = "MapObjects/car_green_phase1";
+  static readonly OBJ_CAR_GREEN_PHASE2 = "MapObjects/car_green_phase2";
+  static readonly OBJ_CAR_GREEN_PHASE3 = "MapObjects/car_green_phase3";
+  static readonly OBJ_CAR_BLUE_PHASE1 = "MapObjects/car_blue_phase1";
+  static readonly OBJ_CAR_BLUE_PHASE2 = "MapObjects/car_blue_phase2";
+  static readonly OBJ_CAR_BLUE_PHASE3 = "MapObjects/car_blue_phase3";
+  static readonly OBJ_VAN_PHASE1 = "MapObjects/van_phase1";
+  static readonly OBJ_VAN_PHASE2 = "MapObjects/van_phase2";
+  static readonly OBJ_VAN_PHASE3 = "MapObjects/van_phase3";
+  static readonly OBJ_POLICE_CAR_PHASE1 = "MapObjects/police_car_phase1";
+  static readonly OBJ_POLICE_CAR_PHASE2 = "MapObjects/police_car_phase2";
+  static readonly OBJ_POLICE_CAR_PHASE3 = "MapObjects/police_car_phase3";
+
+  static readonly OBJ_PICKET_FENCE_EW_V1_PHASE1 = "MapObjects/decay/picket_fence_EW_v1_phase1";
+  static readonly OBJ_PICKET_FENCE_EW_V1_PHASE2 = "MapObjects/decay/picket_fence_EW_v1_phase2";
+  static readonly OBJ_PICKET_FENCE_EW_V1_PHASE3 = "MapObjects/decay/picket_fence_EW_v1_phase3";
+  static readonly OBJ_PICKET_FENCE_NS_LEFT_V1_PHASE1 = "MapObjects/decay/picket_fence_NS_left_v1_phase1";
+  static readonly OBJ_PICKET_FENCE_NS_LEFT_V1_PHASE2 = "MapObjects/decay/picket_fence_NS_left_v1_phase2";
+  static readonly OBJ_PICKET_FENCE_NS_LEFT_V1_PHASE3 = "MapObjects/decay/picket_fence_NS_left_v1_phase3";
+  static readonly OBJ_PICKET_FENCE_NS_RIGHT_V1_PHASE1 = "MapObjects/decay/picket_fence_NS_right_v1_phase1";
+  static readonly OBJ_PICKET_FENCE_NS_RIGHT_V1_PHASE2 = "MapObjects/decay/picket_fence_NS_right_v1_phase2";
+  static readonly OBJ_PICKET_FENCE_NS_RIGHT_V1_PHASE3 = "MapObjects/decay/picket_fence_NS_right_v1_phase3";
+
+  static readonly OBJ_CHAINWIRE_FENCE_V1_PHASE1 = "MapObjects/decay/fence_v1_phase1";
+  static readonly OBJ_CHAINWIRE_FENCE_V1_PHASE2 = "MapObjects/decay/fence_v1_phase2";
+  static readonly OBJ_CHAINWIRE_FENCE_V1_PHASE3 = "MapObjects/decay/fence_v1_phase3";
+  static readonly OBJ_CHAINWIRE_FENCE_V2_PHASE1 = "MapObjects/decay/fence_v2_phase1";
+  static readonly OBJ_CHAINWIRE_FENCE_V2_PHASE2 = "MapObjects/decay/fence_v2_phase2";
+  static readonly OBJ_CHAINWIRE_FENCE_V2_PHASE3 = "MapObjects/decay/fence_v2_phase3";
+  static readonly OBJ_CHAINWIRE_FENCE_V3_PHASE1 = "MapObjects/decay/fence_v3_phase1";
+  static readonly OBJ_CHAINWIRE_FENCE_V3_PHASE2 = "MapObjects/decay/fence_v3_phase2";
+  static readonly OBJ_CHAINWIRE_FENCE_V3_PHASE3 = "MapObjects/decay/fence_v3_phase3";
+  static readonly OBJ_CHAINWIRE_FENCE_V4_PHASE1 = "MapObjects/decay/fence_v4_phase1";
+  static readonly OBJ_CHAINWIRE_FENCE_V4_PHASE2 = "MapObjects/decay/fence_v4_phase2";
+  static readonly OBJ_CHAINWIRE_FENCE_V4_PHASE3 = "MapObjects/decay/fence_v4_phase3";
+
+  static readonly OBJ_CHAINWIRE_FENCE_GATE_V1_PHASE1 = "MapObjects/decay/fence_gate_v1_phase1";
+  static readonly OBJ_CHAINWIRE_FENCE_GATE_V1_PHASE2 = "MapObjects/decay/fence_gate_v1_phase2";
+  static readonly OBJ_CHAINWIRE_FENCE_GATE_V1_PHASE3 = "MapObjects/decay/fence_gate_v1_phase3";
+  static readonly OBJ_CHAINWIRE_FENCE_GATE_V2_PHASE1 = "MapObjects/decay/fence_gate_v2_phase1";
+  static readonly OBJ_CHAINWIRE_FENCE_GATE_V2_PHASE2 = "MapObjects/decay/fence_gate_v2_phase2";
+  static readonly OBJ_CHAINWIRE_FENCE_GATE_V2_PHASE3 = "MapObjects/decay/fence_gate_v2_phase3";
+  static readonly OBJ_CHAINWIRE_FENCE_GATE_V3_PHASE1 = "MapObjects/decay/fence_gate_v3_phase1";
+  static readonly OBJ_CHAINWIRE_FENCE_GATE_V3_PHASE2 = "MapObjects/decay/fence_gate_v3_phase2";
+  static readonly OBJ_CHAINWIRE_FENCE_GATE_V3_PHASE3 = "MapObjects/decay/fence_gate_v3_phase3";
 
   // ── Actors ────────────────────────────────────────────────────────────────
   static readonly PLAYER_FOLLOWER = "Actors/player_follower";
@@ -846,7 +1174,10 @@ export class GameImages {
   // C# `BaseMapGenerator.cs:552`, the `CARS` row `MakeObjWreckedCar` picks from:
   // four coloured cars plus the police car the fork added in Release 7-6. The
   // port's own protected `makeObjWreckedCar` uses the *vanilla* `car1..car4`
-  // instead, which is why these five had no ids until now.
+  // instead, which is why these five had no ids until now. The five ids' phase 1-3
+  // siblings are under "World decay: map objects", and
+  // `RogueGame.ApplyWorldDecayPhase` is where the consequence of the `car1..car4`
+  // choice shows up.
   static readonly OBJ_CAR_BLUE_PHASE0 = "MapObjects/car_blue_phase0";
   static readonly OBJ_CAR_GREEN_PHASE0 = "MapObjects/car_green_phase0";
   static readonly OBJ_CAR_RED_PHASE0 = "MapObjects/car_red_phase0";

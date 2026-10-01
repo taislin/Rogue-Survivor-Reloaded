@@ -4482,6 +4482,60 @@ export class RogueGame {
 						),
 					);
 				await this.OnNewNight();
+
+				// Still Alive, Release 7-6: age the world. C# `:5617-5626`, inside the
+				// sunset branch and immediately after `OnNewNight()`, verbatim:
+				//
+				// ```csharp
+				// //after a period of time, some objects and tiles around the world show decay        //@@MP (Release 7-6)
+				// if ((s_Options.IsWorldDecayOn) && (m_Session.WorldTime.TurnCounter >= (s_Options.DaysBeforeWorldDecays * WorldTime.TURNS_PER_DAY)))
+				// {
+				//     for (int x = 0; x < m_Session.World.Size; x++)
+				//         for (int y = 0; y < m_Session.World.Size; y++)
+				//         {
+				//             District dist = m_Session.World[x, y];
+				//             CheckIfWorldDecays(dist.EntryMap);
+				//         }
+				// }
+				// ```
+				//
+				// **Sunset, not dawn and not "on any day change".** This sits in the
+				// `wasNight && !isNight` / `!wasNight && isNight` pair, so it fires once
+				// per day on the turn night falls and on no other turn -- which is why
+				// a district the player is nowhere near still ages at the same rate as
+				// the one they are standing in.
+				//
+				// **The day count is read twice, and that is the C#'s.** This outer test
+				// (`turn >= days * TURNS_PER_DAY`) and `CheckIfWorldDecays`'s own
+				// (`day >= days`, then the divisibility test) are the same condition in
+				// two currencies. Keeping both means the option's help text is literally
+				// true -- "If this is Off, the 'Days before the world looks decayed'
+				// setting is ignored" -- because with the master switch off the day count
+				// is never multiplied by anything.
+				//
+				// **The two nulls are the port's and not the C#'s.** `World[x, y]` is a
+				// dense `District[,]` in the C# and `EntryMap` is a non-nullable
+				// property; the port's `World.getDistrict` returns `District | null` and
+				// `District.entryMap` is nullable, and both are legitimately null — the
+				// first for a world grid that was never filled, the second for a district
+				// whose surface map has not been generated yet. Skipping them is the only
+				// answer that does not turn a missing map into a crash at day 7.
+				if (
+					s_Options.isWorldDecayOn &&
+					this.m_Session.worldTime.turnCounter >=
+						s_Options.daysBeforeWorldDecays * WorldTime.TURNS_PER_DAY
+				) {
+					const decayingWorld = this.m_Session.world;
+					if (decayingWorld !== null) {
+						for (let x = 0; x < decayingWorld.size; x++) {
+							for (let y = 0; y < decayingWorld.size; y++) {
+								const dist = decayingWorld.getDistrict(x, y);
+								if (dist === null || dist.entryMap === null) continue;
+								this.CheckIfWorldDecays(dist.entryMap);
+							}
+						}
+					}
+				}
 			} else if (prevPhase !== newPhase) {
 				if (canSeeSky) {
 					this.AddMessage(
@@ -12545,6 +12599,1163 @@ inv.removeAllQuantity(it);
 
 		this.ClearOverlays();
 		return actionDone;
+	}
+
+	/**
+	 * C# `CheckIfWorldDecays` — `RogueGame.cs:9246-9263`, `//@@MP (Release 7-6)`.
+	 *
+	 * (C# line numbers in this block are against
+	 * `_refs/StillAlive-master/Rogue Survivor Still Alive/Engine/RogueGame.cs`,
+	 * grepped rather than taken from a header. Some comments elsewhere in this file
+	 * quote a different revision of the C# and do not agree with it:
+	 * `HandlePlayerUseSpray` is `:9034` above and `:14876` in `_refs`, and
+	 * `OnNewNight` is `:17240` above and `:8907` in `_refs`. Others do agree --
+	 * `ReplaceDestroyedWall` is `:20134` in both -- so it is a mixed bag rather than
+	 * a second file, and these are the numbers that can be checked today.)
+	 *
+	 * ## The cadence is three days and then never again
+	 *
+	 * The C# divides the current day by `DaysBeforeWorldDecays` and applies a phase
+	 * only when the quotient is exactly 1, 2 or 3:
+	 *
+	 * ```csharp
+	 * double decayPhase = ((double)m_Session.WorldTime.Day / (double)s_Options.DaysBeforeWorldDecays);
+	 * if ((int)decayPhase != decayPhase)
+	 *     return; //not an interger
+	 *
+	 * if (decayPhase == 1)
+	 *     ApplyWorldDecayPhase(1, map); //first phase
+	 * else if (decayPhase == 2)
+	 *     ApplyWorldDecayPhase(2, map); //second phase
+	 * else if (decayPhase == 3)
+	 *     ApplyWorldDecayPhase(3, map); //third phase
+	 * //else, not a day where decay state changes
+	 * ```
+	 *
+	 * So the option is a *period*, not an offset, and the world gets exactly three
+	 * passes ever. At the default 7 that is day 7, 14 and 21; at 28 it is day 28, 56
+	 * and 84, which most runs never reach. A fourth phase is not merely absent, it
+	 * is unimplemented — there is no `_PHASE4` drawing in the C# and the reader
+	 * below has no `case 4`.
+	 *
+	 * The C#'s integrality test is a truncating cast compared against the double,
+	 * which is an integer test written the long way. `Number.isInteger` is the same
+	 * predicate and also absorbs the divide-by-zero that a `daysBeforeWorldDecays` of
+	 * zero would produce (`day / 0` is `Infinity`, not an integer), so there is no
+	 * separate guard for it — the C# does not have one either, and its cast of
+	 * `Infinity` to `int` is itself unspecified, so both ends up returning.
+	 */
+	private CheckIfWorldDecays(map: Map): void {
+		// Start/continue the world decay process
+		if (this.m_Session.worldTime.day < s_Options.daysBeforeWorldDecays) {
+			//don't even bother before the first day of decay
+			return;
+		}
+
+		const decayPhase =
+			this.m_Session.worldTime.day / s_Options.daysBeforeWorldDecays;
+		if (!Number.isInteger(decayPhase)) return; //not an interger
+
+		if (decayPhase === 1) this.ApplyWorldDecayPhase(1, map); //first phase
+		else if (decayPhase === 2) this.ApplyWorldDecayPhase(2, map); //second phase
+		else if (decayPhase === 3) this.ApplyWorldDecayPhase(3, map); //third phase
+		//else, not a day where decay state changes
+	}
+
+	/**
+	 * C# `ApplyWorldDecayPhase` — `RogueGame.cs:9265-9410`, `//@@MP (Release 7-6)`.
+	 *
+	 * One pass of one phase over one map: every tile, then every map object. The C#
+	 * is 145 lines of which the tile half is a ladder of early exits and the object
+	 * half is a four-way `else if` on the image name; both are transcribed here in
+	 * that order, because the order is what the exits mean.
+	 *
+	 * ## The tile half, guard by guard
+	 *
+	 * 1. `!tile.Model.CanDecay` — 34 of the 142 models, and the exclusion is
+	 *    *not* "not walkable": grass, dirt, the ponds and the two carpets all fail
+	 *    it while `FLOOR_TILES` and `FLOOR_WHITE_TILE` pass. The C#'s own reason is
+	 *    a comment on the guard: "is tile a decay type? (not relevant for ponds,
+	 *    grass, etc)".
+	 * 2. `tile.DecayPhase >= phase` — the high-water mark. A tile already at or past
+	 *    this phase is left alone, which is what makes the pass idempotent and what
+	 *    makes a save/reload safe: the phase travels with the tile
+	 *    (`Tile.decayPhase`) and not merely with its drawing.
+	 * 3. The inside/outside ladder, below. **This is the ladder the subway comment
+	 *    in `GameTiles` is pointing at**, and the answer is that the special case is
+	 *    `map.Lighting`, not a wall model.
+	 *
+	 * ## The subway, and every other below-ground map
+	 *
+	 * `GameTiles.cs:506` registers `WALL_SUBWAY` with `CanDecay = true` and says so:
+	 *
+	 * > `//to handle the fact that subways are also below ground and thus that bit
+	 * > doesn't decay, we handle this in RogueGame.ApplyWorldDecayPhase()`
+	 *
+	 * **There is no `WALL_SUBWAY` test anywhere in the C#** — `grep -r WALL_SUBWAY`
+	 * over the reference returns `GameTiles.cs` and nothing else. What the comment
+	 * points at is the `map.Lighting == Lighting.OUTSIDE` test on `:9289`, and it
+	 * does the job for subways by way of two facts about the generator rather than
+	 * one fact about the wall:
+	 *
+	 * - `GenerateSubwayMap` builds the whole map with `Lighting.DARKNESS`
+	 *   (`BaseTownGenerator.cs:937`), and so does `GenerateSewersMap`
+	 *   (`:633`). Every other below-ground map the fork generates is `DARKNESS` or
+	 *   `LIT` too.
+	 * - `GenerateSubwayMap` then marks *every* tile `IsInside = true`
+	 *   (`:1101`).
+	 *
+	 * So a subway wall arrives as `CanDecay && isInside && !isWalkable` on a map whose
+	 * lighting is not `OUTSIDE`, and the arm at `:9292` — `else //is underground, so no
+	 * decay` — `continue`s it. `WALL_SUBWAY`'s `CanDecay = true` is therefore not a
+	 * contradiction: it is the flag that lets the tile *reach* the ladder, where the
+	 * ladder is what declines it. Do not "fix" it by setting the flag false; that
+	 * would silently make subway walls differ from every other below-ground wall,
+	 * which `CanDecay` does not and cannot express.
+	 *
+	 * The same arm declines sewer walls (`CanDecay = false` already) and the
+	 * interior walls of any `DARKNESS`/`LIT` map — the mall's underground car park,
+	 * the basements, the CHAR facility. That is the generalisation the subway comment
+	 * is really about, and it is why the guard is written on lighting rather than on
+	 * the wall.
+	 *
+	 * ## Draw order is the point of the `insertDecoration` / `addDecoration` split
+	 *
+	 * An interior wall takes `addDecoration` and lands on top of the pile
+	 * (`:9346-9353`); everything else takes `insertDecoration(..., 0)` and lands at
+	 * the bottom (`:9357`). So blood and scorch draw *over* decayed grime outdoors
+	 * and *under* it indoors. That asymmetry is the C#'s own, `Tile.insertDecoration`
+	 * says so in its doc comment, and it is preserved rather than tidied up.
+	 */
+	private ApplyWorldDecayPhase(phase: number, map: Map): void {
+		//walls and floors
+		for (let x = 0; x < map.width; x++) {
+			for (let y = 0; y < map.height; y++) {
+				//get tile
+				const tile = map.getTileAt(x, y);
+				if (tile === null) continue;
+
+				//is tile a decay type? (not relevant for ponds, grass, etc)
+				if (!tile.model.canDecay) continue;
+
+				//does it already have a decay deco of this level or higher?
+				if (tile.decayPhase >= phase) continue;
+
+				//less prone to weathering than outside tiles
+				let interiorWallForDecay = false;
+				if (tile.isInside) {
+					if (!tile.model.isWalkable) {
+						//indoor wall tiles
+						if (map.lighting === Lighting.OUTSIDE) {
+							//ground level interior walls have a generic decoration applied
+							interiorWallForDecay = true;
+						} else {
+							//is underground, so no decay
+							// ** The subway, the sewers, the basements and the mall
+							// car park all arrive here. See the method header. **
+							continue;
+						}
+					} else {
+						//indoor floor tile
+						//inside floor tiles only have two phases of decay, not three like outdoor tiles
+						if (tile.decayPhase === 2) continue;
+
+						//don't do every indoor floor tile all at once. it looks more organic if a trickle of tiles decay each day
+						if (!this.m_Rules.rollChance(25)) continue;
+					}
+				}
+				//certain outdoor floor tiles should be spread out rather than decayed all at once
+				else if (
+					tile.model.imageId.includes("basketball") ||
+					tile.model.imageId.includes("tennis") ||
+					tile.model === this.m_GameTiles.get(TileID.ROAD_ASPHALT_NS) ||
+					tile.model === this.m_GameTiles.get(TileID.ROAD_ASPHALT_EW) ||
+					tile.model === this.m_GameTiles.get(TileID.FLOOR_WALKWAY) ||
+					tile.model === this.m_GameTiles.get(TileID.FLOOR_ASPHALT)
+				) {
+					if (!this.m_Rules.rollChance(25)) continue;
+				}
+
+				//check what, if any, decorations this tile already has
+				const decayDecorations: string[] = [];
+				if (tile.hasDecorations) {
+					let isDamagedWall = false;
+					for (const deco of tile.getDecorations!) {
+						//don't apply to damaged walls
+						if (deco.includes("_damaged")) {
+							isDamagedWall = true;
+							break;
+						}
+						//check if it has a decay phase deco already
+						else if (deco.includes("_phase")) decayDecorations.push(deco);
+					}
+					if (isDamagedWall) continue;
+
+					//if we've reached here we're clear to proceed with applying a decay decoration
+
+					//first remove any existing decay decoration
+					if (decayDecorations.length > 0) {
+						//should only ever be one decay deco (but you never know, i am a bush league dev ;) )
+						//
+						// ** The guard really is unreachable in practice: guard 2 above
+						// skips a tile whose phase is already >= the phase being applied,
+						// so the only `_phase` decoration that can be present is the one
+						// from the *previous* phase. `Tile.removeDecoration` also nulls
+						// the whole list when the last entry goes, which is why a tile
+						// that decayed twice and then lost its drawing has no
+						// decorations at all rather than an empty array. **
+						for (const decayDeco of decayDecorations) tile.removeDecoration(decayDeco);
+					}
+				}
+
+				//add decoration phase#
+				tile.decayPhase = phase;
+				if (interiorWallForDecay) {
+					if (phase === 1)
+						tile.addDecoration(
+							GameImages.DECO_WALL_GENERIC_INTERIOR_DECAY_PHASE1,
+						);
+					else if (phase === 2)
+						tile.addDecoration(
+							GameImages.DECO_WALL_GENERIC_INTERIOR_DECAY_PHASE2,
+						);
+					else if (phase === 3)
+						tile.addDecoration(
+							GameImages.DECO_WALL_GENERIC_INTERIOR_DECAY_PHASE3,
+						);
+				} else {
+					tile.insertDecoration(
+						this.ChooseRelevantDecayDecorationForTile(tile),
+						0,
+					);
+					//decorations are drawn based on their position in the tile's index of decorations. first one in is the first one drawn on the tile
+					//it's thus vital that decay decorations are drawn first, so that others such as blood splatters and fire/explosion scorches are drawn on top of them
+					//the new InsertDecoration() method fulfills this purpose
+				}
+			}
+		}
+
+		// C# `#region MapObjects`, `:9365-9409`.
+		//
+		// **The whole region is guarded on `!IsInside`, and that is a different test
+		// from the tile half's.** A fence on a pavement is outdoor and decays; the
+		// identical sprite inside a shop does not. The C# asks the *tile* the object
+		// stands on, not the object and not the map.
+		for (const mapObj of map.mapObjects) {
+			const at = map.getTileAt(
+				mapObj.location.position.x,
+				mapObj.location.position.y,
+			);
+			// A map object is always placed in bounds, so `null` here is unreachable
+			// the way the C#'s `GetTileAt` never returns null. The port's does, and
+			// a sweep over every object on the map is no place for a null
+			// dereference: an object that somehow is off its map is simply not
+			// decayed, and the alternative is crashing a game at day 7.
+			if (at === null || at.isInside) continue;
+
+			//note: in some places we dice roll. we don't do every tile all at once. for certain things it looks more organic if a trickle of tiles decay each day
+
+			const currentImageName = mapObj.imageId;
+
+			//picket fences
+			if (currentImageName.includes("picket_fence")) {
+				if (!currentImageName.includes(`phase${phase}`)) {
+					//checks that it doesn't already have an image of the target phase
+					// Dead in the reference too: no generator places a picket fence.
+					// See the "World decay: map objects" block in `GameImages`.
+					mapObj.imageId = RogueGame.ChooseRelevantPicketFenceSprite(currentImageName, phase); //there are 3 different directions to handle
+				}
+			}
+			//chainwire fences (basketball and tennis courts)
+			else if (currentImageName.includes("chainwire_fence")) {
+				if (
+					!currentImageName.includes(`phase${phase}`) &&
+					this.m_Rules.rollChance(33)
+				) {
+					mapObj.imageId = this.ChooseRandomWireFenceSprite(phase); //there are 4 different sets of fence decay sprites, so gimme a random one for this phase
+				}
+			} else if (currentImageName.includes("chainwire_gate")) {
+				//(let's just ignore open ones)
+				if (
+					!currentImageName.includes(`phase${phase}`) &&
+					this.m_Rules.rollChance(33)
+				) {
+					mapObj.imageId = this.ChooseRandomWireFenceGateSprite(phase); //there are 3 different sets of fence decay sprites, so gimme a random one for this phase
+				}
+			}
+			//cars
+			else if (mapObj instanceof Car) {
+				//if imagephase is 2 or more behind the current phase do it automatically, otherwise roll
+				//get the last character only (which indicates the phase of decay)
+				//this works because all car file names end with "_phase#", where # is a number from 1 to 4
+				//
+				// ** ...which is a statement about the C#'s car ids and not about the
+				// port's. `BaseMapGenerator.CARS` here is the *vanilla*
+				// `car1..car4` (see the `Feature.Junkyard` block in `GameImages`), and
+				// the trailing digit of those is not a decay phase at all -- it is
+				// which of four cars it is. So this arm renames a car from
+				// `MapObjects/car3` to `MapObjects/car2` and the player sees a
+				// different car rather than a rustier one. The C#'s logic is
+				// transcribed exactly; the divergence is in the ids, which are
+				// `generators/`' to change and which the Classic fingerprint depends
+				// on. The C#'s own `int.Parse` would throw on a non-digit trailing
+				// character; `parseInt` yields `NaN`, which fails the `<` comparison
+				// and leaves the 33% roll in charge. No port car ends in a
+				// non-digit, so neither path is taken. **
+				const currentImagePhase = parseInt(
+					currentImageName[currentImageName.length - 1],
+					10,
+				);
+				if (currentImagePhase < phase - 1 || this.m_Rules.rollChance(33)) {
+					//get the sprite's filename without the final digit (which indicates the phase of decay)
+					//
+					// The C# writes `currentImageName.TrimEnd().Substring(0, ...)`:
+					// the `TrimEnd()` result is discarded, because the `Substring` is
+					// taken off the *untrimmed* name. Dead code, kept as the C# has it.
+					const withoutLast = currentImageName.slice(0, -1);
+					//set the sprite of the new phase
+					mapObj.imageId = withoutLast + phase;
+				}
+			}
+		}
+	}
+
+	/**
+	 * C# `ChooseRelevantDecayDecorationForTile` — `RogueGame.cs:9412-9797`,
+	 * `//@@MP (Release 7-6)`.
+	 *
+	 * The pick-one-of-two-or-three table, and it is a long one: 385 lines of C#,
+	 * 21 image ids, and a `throw` at the end. The C#'s own two-line preface:
+	 *
+	 * ```csharp
+	 * //tile parameter should never be 0, as the phase is ++ by the calling parent function
+	 * //these are order from roughly most common to least, just to reduce as many CPU cycles as possible
+	 * ```
+	 *
+	 * Three things about the shape are worth stating before the table, because all
+	 * three are easy to break with a tidy-up:
+	 *
+	 * ## The cases are on `imageId`, never on `TileID`
+	 *
+	 * Nine of the twenty-one are exact `ImageID ==` comparisons and two are
+	 * `ImageID.Contains`. Keying on `TileID` instead — the obvious port — puts
+	 * `FLOOR_ARMY` (registered with the *office floor* texture) in the wrong place
+	 * and, worse, breaks the two walls that are registered as stone:
+	 * `WALL_POLICE_STATION` and `WALL_SUBWAY` both carry
+	 * `GameImages.TILE_WALL_STONE`, so they arrive here already spelled
+	 * `Tiles/wall_stone` and take the stone case. `ReplaceDestroyedWall` has the
+	 * same alias and the same trap, and `tests/replace-destroyed-wall.test.ts`
+	 * has the test that fails first.
+	 *
+	 * ## The unmatched phase falls *through* to the next case, and that is the throw
+	 *
+	 * Every case is `if (imageId == X) { switch (DecayPhase) { case 1: return ...; } }`
+	 * with no `default`. A phase of 0 (or 4) matches no `case`, so control leaves the
+	 * switch, leaves the `if`, and carries on to the *next* image's test — which also
+	 * fails, and so on down the list to the `throw`. So the C#'s terminal
+	 * `InvalidOperationException` is reachable two ways: an unlisted `imageId`, or a
+	 * listed one at a phase its array does not cover. The first is the parking
+	 * asphalt gap below; the second cannot happen, because the caller sets
+	 * `tile.DecayPhase = phase` immediately before calling and `phase` is only ever
+	 * 1, 2 or 3.
+	 *
+	 * **One listed `imageId` *is* unhandled, and it is a port artefact rather than a
+	 * C# gap.** `Tiles/parking_asphalt_ns` and `Tiles/parking_asphalt_ew` are images
+	 * the C# declares and preloads (`GameImages.cs:219-220`, Release 7-3) but never
+	 * registers a `TileModel` for, and the port has registered both *and* marked them
+	 * `canDecay`. Nothing places them, so the throw is unreachable — but it is
+	 * reachable in a way the C#'s is not, and the C#'s own comment on the spot says
+	 * the same thing:
+	 *
+	 * ```csharp
+	 * //parking asphalt (there are two subtypes)
+	 * //// don't need to do this one at the moment, as it's only used in the mall underground parking so far
+	 * ```
+	 *
+	 * Nothing was added here to paper over it. Clearing `canDecay` on those two
+	 * models would hide the landmine by making a modelling decision the reference
+	 * does not make, and a case here would need drawings that do not exist.
+	 *
+	 * ## Four indoor floors answer phase 3 with a phase-2 drawing
+	 *
+	 * `office`, `planks`, `shop_tile` and `white_tile` are written
+	 * `case 2: case 3:` returning the *phase 2* array, and the C# says why on each:
+	 * "I include three in case entrance tiles count as !IsInside, and are thus missed
+	 * by the filters in the calling parent function". An indoor floor normally never
+	 * reaches phase 3 (`ApplyWorldDecayPhase` stops it at 2), so this is the
+	 * belt-and-braces path for a doorway tile that the generator left marked
+	 * outdoor. Preserved, including the comment's claim.
+	 */
+	private ChooseRelevantDecayDecorationForTile(tile: Tile): string {
+		//tile parameter should never be 0, as the phase is ++ by the calling parent function
+		//these are order from roughly most common to least, just to reduce as many CPU cycles as possible
+		// (C# `:9414-9415`)
+
+		if (tile.model.isWalkable) {
+			//floor tiles
+			//note: inside floor tiles aren't exposed to the elements and thus don't suffer as much decay (ie. no phase 3)
+
+			// walkway
+			//this method accounts for the fact that multiple tilemodels can use the same tile image
+			if (tile.model.imageId === GameImages.TILE_FLOOR_WALKWAY) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_FLOOR_WALKWAY_DECAY_V1_PHASE1,
+							GameImages.DECO_FLOOR_WALKWAY_DECAY_V2_PHASE1,
+							GameImages.DECO_FLOOR_WALKWAY_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_FLOOR_WALKWAY_DECAY_V1_PHASE2,
+							GameImages.DECO_FLOOR_WALKWAY_DECAY_V2_PHASE2,
+							GameImages.DECO_FLOOR_WALKWAY_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_FLOOR_WALKWAY_DECAY_V1_PHASE3,
+							GameImages.DECO_FLOOR_WALKWAY_DECAY_V2_PHASE3,
+							GameImages.DECO_FLOOR_WALKWAY_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// road (asphalt - there are 3 subtypes)
+			//North-South
+			if (tile.model.imageId === GameImages.TILE_ROAD_ASPHALT_NS) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_FLOOR_ROAD_NS_DECAY_V1_PHASE1,
+							GameImages.DECO_FLOOR_ROAD_NS_DECAY_V2_PHASE1,
+							GameImages.DECO_FLOOR_ROAD_NS_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_FLOOR_ROAD_NS_DECAY_V1_PHASE2,
+							GameImages.DECO_FLOOR_ROAD_NS_DECAY_V2_PHASE2,
+							GameImages.DECO_FLOOR_ROAD_NS_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_FLOOR_ROAD_NS_DECAY_V1_PHASE3,
+							GameImages.DECO_FLOOR_ROAD_NS_DECAY_V2_PHASE3,
+							GameImages.DECO_FLOOR_ROAD_NS_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+			//East-West
+			if (tile.model.imageId === GameImages.TILE_ROAD_ASPHALT_EW) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_FLOOR_ROAD_EW_DECAY_V1_PHASE1,
+							GameImages.DECO_FLOOR_ROAD_EW_DECAY_V2_PHASE1,
+							GameImages.DECO_FLOOR_ROAD_EW_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_FLOOR_ROAD_EW_DECAY_V1_PHASE2,
+							GameImages.DECO_FLOOR_ROAD_EW_DECAY_V2_PHASE2,
+							GameImages.DECO_FLOOR_ROAD_EW_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_FLOOR_ROAD_EW_DECAY_V1_PHASE3,
+							GameImages.DECO_FLOOR_ROAD_EW_DECAY_V2_PHASE3,
+							GameImages.DECO_FLOOR_ROAD_EW_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// asphalt floor
+			if (tile.model.imageId === GameImages.TILE_FLOOR_ASPHALT) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_FLOOR_ASPHALT_DECAY_V1_PHASE1,
+							GameImages.DECO_FLOOR_ASPHALT_DECAY_V2_PHASE1,
+							GameImages.DECO_FLOOR_ASPHALT_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_FLOOR_ASPHALT_DECAY_V1_PHASE2,
+							GameImages.DECO_FLOOR_ASPHALT_DECAY_V2_PHASE2,
+							GameImages.DECO_FLOOR_ASPHALT_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_FLOOR_ASPHALT_DECAY_V1_PHASE3,
+							GameImages.DECO_FLOOR_ASPHALT_DECAY_V2_PHASE3,
+							GameImages.DECO_FLOOR_ASPHALT_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// office
+			if (tile.model.imageId === GameImages.TILE_FLOOR_OFFICE) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_FLOOR_OFFICE_DECAY_V1_PHASE1,
+							GameImages.DECO_FLOOR_OFFICE_DECAY_V2_PHASE1,
+							GameImages.DECO_FLOOR_OFFICE_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					//I include three in case entrance tiles count as !IsInside, and are thus missed by the filters in the calling parent function
+					case 2:
+					case 3: {
+						const phase2Decorations = [
+							GameImages.DECO_FLOOR_OFFICE_DECAY_V1_PHASE2,
+							GameImages.DECO_FLOOR_OFFICE_DECAY_V2_PHASE2,
+							GameImages.DECO_FLOOR_OFFICE_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+				}
+			}
+
+			// floor planks
+			if (tile.model.imageId === GameImages.TILE_FLOOR_PLANKS) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_FLOOR_PLANKS_DECAY_V1_PHASE1,
+							GameImages.DECO_FLOOR_PLANKS_DECAY_V2_PHASE1,
+							GameImages.DECO_FLOOR_PLANKS_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					//I include three in case entrance tiles count as !IsInside, and are thus missed by the filters in the calling parent function
+					case 2:
+					case 3: {
+						const phase2Decorations = [
+							GameImages.DECO_FLOOR_PLANKS_DECAY_V1_PHASE2,
+							GameImages.DECO_FLOOR_PLANKS_DECAY_V2_PHASE2,
+							GameImages.DECO_FLOOR_PLANKS_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+				}
+			}
+
+			// shop tiles
+			if (tile.model.imageId === GameImages.TILE_FLOOR_TILES) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_FLOOR_SHOP_TILE_DECAY_V1_PHASE1,
+							GameImages.DECO_FLOOR_SHOP_TILE_DECAY_V2_PHASE1,
+							GameImages.DECO_FLOOR_SHOP_TILE_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					//I include three in case entrance tiles count as !IsInside, and are thus missed by the filters in the calling parent function
+					case 2:
+					case 3: {
+						const phase2Decorations = [
+							GameImages.DECO_FLOOR_SHOP_TILE_DECAY_V1_PHASE2,
+							GameImages.DECO_FLOOR_SHOP_TILE_DECAY_V2_PHASE2,
+							GameImages.DECO_FLOOR_SHOP_TILE_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+				}
+			}
+
+			// concrete
+			if (tile.model.imageId === GameImages.TILE_FLOOR_CONCRETE) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_FLOOR_CONCRETE_DECAY_V1_PHASE1,
+							GameImages.DECO_FLOOR_CONCRETE_DECAY_V2_PHASE1,
+							GameImages.DECO_FLOOR_CONCRETE_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_FLOOR_CONCRETE_DECAY_V1_PHASE2,
+							GameImages.DECO_FLOOR_CONCRETE_DECAY_V2_PHASE2,
+							GameImages.DECO_FLOOR_CONCRETE_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_FLOOR_CONCRETE_DECAY_V1_PHASE3,
+							GameImages.DECO_FLOOR_CONCRETE_DECAY_V2_PHASE3,
+							GameImages.DECO_FLOOR_CONCRETE_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// white tile (shopping mall)
+			if (tile.model.imageId === GameImages.TILE_FLOOR_WHITE_TILE) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_FLOOR_WHITE_TILE_DECAY_V1_PHASE1,
+							GameImages.DECO_FLOOR_WHITE_TILE_DECAY_V2_PHASE1,
+							GameImages.DECO_FLOOR_WHITE_TILE_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					//I include three in case entrance tiles count as !IsInside, and are thus missed by the filters in the calling parent function
+					case 2:
+					case 3: {
+						const phase2Decorations = [
+							GameImages.DECO_FLOOR_WHITE_TILE_DECAY_V1_PHASE2,
+							GameImages.DECO_FLOOR_WHITE_TILE_DECAY_V2_PHASE2,
+							GameImages.DECO_FLOOR_WHITE_TILE_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+				}
+			}
+
+			//parking asphalt (there are two subtypes)
+			//// don't need to do this one at the moment, as it's only used in the mall underground parking so far
+			//
+			// ** The C#'s comment, and the two models the port registered for those
+			// images are `canDecay` without a case here. See the method header. **
+
+			// basketball court
+			//need to use this broad method, as courts are made up of dozens of unique tiles
+			if (tile.model.imageId.includes("basketball")) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_FLOOR_BASKETBALL_COURT_DECAY_V1_PHASE1,
+							GameImages.DECO_FLOOR_BASKETBALL_COURT_DECAY_V2_PHASE1,
+							GameImages.DECO_FLOOR_BASKETBALL_COURT_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_FLOOR_BASKETBALL_COURT_DECAY_V1_PHASE2,
+							GameImages.DECO_FLOOR_BASKETBALL_COURT_DECAY_V2_PHASE2,
+							GameImages.DECO_FLOOR_BASKETBALL_COURT_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_FLOOR_BASKETBALL_COURT_DECAY_V1_PHASE3,
+							GameImages.DECO_FLOOR_BASKETBALL_COURT_DECAY_V2_PHASE3,
+							GameImages.DECO_FLOOR_BASKETBALL_COURT_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// tennis court
+			//need to use this broad method, as courts are made up of dozens of unique tiles
+			if (tile.model.imageId.includes("tennis")) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_FLOOR_TENNIS_COURT_DECAY_V1_PHASE1,
+							GameImages.DECO_FLOOR_TENNIS_COURT_DECAY_V2_PHASE1,
+							GameImages.DECO_FLOOR_TENNIS_COURT_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_FLOOR_TENNIS_COURT_DECAY_V1_PHASE2,
+							GameImages.DECO_FLOOR_TENNIS_COURT_DECAY_V2_PHASE2,
+							GameImages.DECO_FLOOR_TENNIS_COURT_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_FLOOR_TENNIS_COURT_DECAY_V1_PHASE3,
+							GameImages.DECO_FLOOR_TENNIS_COURT_DECAY_V2_PHASE3,
+							GameImages.DECO_FLOOR_TENNIS_COURT_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+		} else {
+			//wall tile
+
+			// brick
+			if (tile.model.imageId === GameImages.TILE_WALL_BRICK) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_WALL_BRICK_DECAY_V1_PHASE1,
+							GameImages.DECO_WALL_BRICK_DECAY_V2_PHASE1,
+							GameImages.DECO_WALL_BRICK_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_WALL_BRICK_DECAY_V1_PHASE2,
+							GameImages.DECO_WALL_BRICK_DECAY_V2_PHASE2,
+							GameImages.DECO_WALL_BRICK_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_WALL_BRICK_DECAY_V1_PHASE3,
+							GameImages.DECO_WALL_BRICK_DECAY_V2_PHASE3,
+							GameImages.DECO_WALL_BRICK_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// CHAR office
+			if (tile.model.imageId === GameImages.TILE_WALL_CHAR_OFFICE) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_WALL_CHAR_DECAY_V1_PHASE1,
+							GameImages.DECO_WALL_CHAR_DECAY_V2_PHASE1,
+							GameImages.DECO_WALL_CHAR_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_WALL_CHAR_DECAY_V1_PHASE2,
+							GameImages.DECO_WALL_CHAR_DECAY_V2_PHASE2,
+							GameImages.DECO_WALL_CHAR_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_WALL_CHAR_DECAY_V1_PHASE3,
+							GameImages.DECO_WALL_CHAR_DECAY_V2_PHASE3,
+							GameImages.DECO_WALL_CHAR_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// stone wall
+			//
+			// ** Two variants, not three, and police-station and subway walls land
+			// here too: both are registered with `TILE_WALL_STONE`. **
+			if (tile.model.imageId === GameImages.TILE_WALL_STONE) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_WALL_STONE_DECAY_V1_PHASE1,
+							GameImages.DECO_WALL_STONE_DECAY_V2_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_WALL_STONE_DECAY_V1_PHASE2,
+							GameImages.DECO_WALL_STONE_DECAY_V2_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_WALL_STONE_DECAY_V1_PHASE3,
+							GameImages.DECO_WALL_STONE_DECAY_V2_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// light brown wall
+			if (tile.model.imageId === GameImages.TILE_WALL_LIGHT_BROWN) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_WALL_LIGHT_BROWN_DECAY_V1_PHASE1,
+							GameImages.DECO_WALL_LIGHT_BROWN_DECAY_V2_PHASE1,
+							GameImages.DECO_WALL_LIGHT_BROWN_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_WALL_LIGHT_BROWN_DECAY_V1_PHASE2,
+							GameImages.DECO_WALL_LIGHT_BROWN_DECAY_V2_PHASE2,
+							GameImages.DECO_WALL_LIGHT_BROWN_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_WALL_LIGHT_BROWN_DECAY_V1_PHASE3,
+							GameImages.DECO_WALL_LIGHT_BROWN_DECAY_V2_PHASE3,
+							GameImages.DECO_WALL_LIGHT_BROWN_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// concrete (non-CHAR offices)
+			if (tile.model.imageId === GameImages.TILE_WALL_CONCRETE) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_WALL_CONCRETE_DECAY_V1_PHASE1,
+							GameImages.DECO_WALL_CONCRETE_DECAY_V2_PHASE1,
+							GameImages.DECO_WALL_CONCRETE_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_WALL_CONCRETE_DECAY_V1_PHASE2,
+							GameImages.DECO_WALL_CONCRETE_DECAY_V2_PHASE2,
+							GameImages.DECO_WALL_CONCRETE_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_WALL_CONCRETE_DECAY_V1_PHASE3,
+							GameImages.DECO_WALL_CONCRETE_DECAY_V2_PHASE3,
+							GameImages.DECO_WALL_CONCRETE_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// army wall
+			if (tile.model.imageId === GameImages.TILE_WALL_ARMY_BASE) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_WALL_ARMY_BASE_DECAY_V1_PHASE1,
+							GameImages.DECO_WALL_ARMY_BASE_DECAY_V2_PHASE1,
+							GameImages.DECO_WALL_ARMY_BASE_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_WALL_ARMY_BASE_DECAY_V1_PHASE2,
+							GameImages.DECO_WALL_ARMY_BASE_DECAY_V2_PHASE2,
+							GameImages.DECO_WALL_ARMY_BASE_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_WALL_ARMY_BASE_DECAY_V1_PHASE3,
+							GameImages.DECO_WALL_ARMY_BASE_DECAY_V2_PHASE3,
+							GameImages.DECO_WALL_ARMY_BASE_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// fuel station wall
+			if (tile.model.imageId === GameImages.TILE_WALL_FUEL_STATION) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_WALL_FUEL_STATION_DECAY_V1_PHASE1,
+							GameImages.DECO_WALL_FUEL_STATION_DECAY_V2_PHASE1,
+							GameImages.DECO_WALL_FUEL_STATION_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_WALL_FUEL_STATION_DECAY_V1_PHASE2,
+							GameImages.DECO_WALL_FUEL_STATION_DECAY_V2_PHASE2,
+							GameImages.DECO_WALL_FUEL_STATION_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_WALL_FUEL_STATION_DECAY_V1_PHASE3,
+							GameImages.DECO_WALL_FUEL_STATION_DECAY_V2_PHASE3,
+							GameImages.DECO_WALL_FUEL_STATION_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// wood (farm shed)
+			//
+			// ** Two variants, not three, and the decos are named `*_WALL_PLANKS_*`
+			// for a tile whose image is `wall_wood_planks`. **
+			if (tile.model.imageId === GameImages.TILE_WALL_WOOD_PLANKS) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_WALL_PLANKS_DECAY_V1_PHASE1,
+							GameImages.DECO_WALL_PLANKS_DECAY_V2_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_WALL_PLANKS_DECAY_V1_PHASE2,
+							GameImages.DECO_WALL_PLANKS_DECAY_V2_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_WALL_PLANKS_DECAY_V1_PHASE3,
+							GameImages.DECO_WALL_PLANKS_DECAY_V2_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// hospital
+			if (tile.model.imageId === GameImages.TILE_WALL_HOSPITAL) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_WALL_HOSPITAL_DECAY_V1_PHASE1,
+							GameImages.DECO_WALL_HOSPITAL_DECAY_V2_PHASE1,
+							GameImages.DECO_WALL_HOSPITAL_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_WALL_HOSPITAL_DECAY_V1_PHASE2,
+							GameImages.DECO_WALL_HOSPITAL_DECAY_V2_PHASE2,
+							GameImages.DECO_WALL_HOSPITAL_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_WALL_HOSPITAL_DECAY_V1_PHASE3,
+							GameImages.DECO_WALL_HOSPITAL_DECAY_V2_PHASE3,
+							GameImages.DECO_WALL_HOSPITAL_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// mall
+			if (tile.model.imageId === GameImages.TILE_WALL_MALL) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_WALL_MALL_DECAY_V1_PHASE1,
+							GameImages.DECO_WALL_MALL_DECAY_V2_PHASE1,
+							GameImages.DECO_WALL_MALL_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_WALL_MALL_DECAY_V1_PHASE2,
+							GameImages.DECO_WALL_MALL_DECAY_V2_PHASE2,
+							GameImages.DECO_WALL_MALL_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_WALL_MALL_DECAY_V1_PHASE3,
+							GameImages.DECO_WALL_MALL_DECAY_V2_PHASE3,
+							GameImages.DECO_WALL_MALL_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+		}
+
+		throw new Error(
+			`unexpected tile model? tilemodel: ${tile.model.imageId}`,
+		);
+	}
+
+	/**
+	 * C# `ChooseRelevantPicketFenceSprite` — `RogueGame.cs:9799-9831`, Release 7-6.
+	 * Static there because it rolls nothing; `static` here for the same reason.
+	 *
+	 * **Dead in the reference and dead here.** No C# generator places a picket fence
+	 * (`GameImages.cs:610-612` declares the three phase-0 sprites and
+	 * `BaseMapGenerator` never asks for them), and the port's generators place none
+	 * either, so the arm in `ApplyWorldDecayPhase` that would call this can never be
+	 * entered. Transcribed anyway, because it is part of the method the C# has and
+	 * because the C#'s `ArgumentOutOfRangeException` for a fourth phase is the only
+	 * statement in the whole subsystem that says out loud that there are three
+	 * phases and no more.
+	 *
+	 * Note the C#'s own two throws: the `switch`'s `default` for a phase outside
+	 * 1..3, and a second one after the switch for an image name that is neither `EW`
+	 * nor `NS_left` nor `NS_right`. Both are preserved, and the second is reachable in
+	 * the C# too if a fourth picket-fence sprite is ever added without a case.
+	 */
+	private static ChooseRelevantPicketFenceSprite(
+		currentImageName: string,
+		newPhase: number,
+	): string {
+		switch (newPhase) {
+			case 1:
+				if (currentImageName.includes("EW"))
+					return GameImages.OBJ_PICKET_FENCE_EW_V1_PHASE1;
+				else if (currentImageName.includes("NS_left"))
+					return GameImages.OBJ_PICKET_FENCE_NS_LEFT_V1_PHASE1;
+				else if (currentImageName.includes("NS_right"))
+					return GameImages.OBJ_PICKET_FENCE_NS_RIGHT_V1_PHASE1;
+				break;
+			case 2:
+				if (currentImageName.includes("EW"))
+					return GameImages.OBJ_PICKET_FENCE_EW_V1_PHASE2;
+				else if (currentImageName.includes("NS_left"))
+					return GameImages.OBJ_PICKET_FENCE_NS_LEFT_V1_PHASE2;
+				else if (currentImageName.includes("NS_right"))
+					return GameImages.OBJ_PICKET_FENCE_NS_RIGHT_V1_PHASE2;
+				break;
+			case 3:
+				if (currentImageName.includes("EW"))
+					return GameImages.OBJ_PICKET_FENCE_EW_V1_PHASE3;
+				else if (currentImageName.includes("NS_left"))
+					return GameImages.OBJ_PICKET_FENCE_NS_LEFT_V1_PHASE3;
+				else if (currentImageName.includes("NS_right"))
+					return GameImages.OBJ_PICKET_FENCE_NS_RIGHT_V1_PHASE3;
+				break;
+			default:
+				throw new RangeError("newPhase");
+		}
+
+		throw new Error("unexpected picket fence image name?");
+	}
+
+	/**
+	 * C# `ChooseRandomWireFenceSprite` — `RogueGame.cs:9833-9848`, Release 7-6.
+	 *
+	 * Four sets of chainwire-fence decay sprites per phase, picked at random, and the
+	 * randomness is the point: the C#'s comment is "there are 4 different sets of
+	 * fence decay sprites, so gimme a random one for this phase". A single set would
+	 * make every court in the city rusted identically.
+	 *
+	 * Live, unlike its picket-fence sibling: `Feature.SportsCourts` places
+	 * `MapObjects/chainwire_fence`, which contains the `"chainwire_fence"`
+	 * substring the caller's `else if` matches on.
+	 */
+	private ChooseRandomWireFenceSprite(newPhase: number): string {
+		switch (newPhase) {
+			case 1: {
+				const phase1Sprites = [
+					GameImages.OBJ_CHAINWIRE_FENCE_V1_PHASE1,
+					GameImages.OBJ_CHAINWIRE_FENCE_V2_PHASE1,
+					GameImages.OBJ_CHAINWIRE_FENCE_V3_PHASE1,
+					GameImages.OBJ_CHAINWIRE_FENCE_V4_PHASE1,
+				];
+				return phase1Sprites[this.m_Rules.roll(0, phase1Sprites.length)];
+			}
+			case 2: {
+				const phase2Sprites = [
+					GameImages.OBJ_CHAINWIRE_FENCE_V1_PHASE2,
+					GameImages.OBJ_CHAINWIRE_FENCE_V2_PHASE2,
+					GameImages.OBJ_CHAINWIRE_FENCE_V3_PHASE2,
+					GameImages.OBJ_CHAINWIRE_FENCE_V4_PHASE2,
+				];
+				return phase2Sprites[this.m_Rules.roll(0, phase2Sprites.length)];
+			}
+			case 3: {
+				const phase3Sprites = [
+					GameImages.OBJ_CHAINWIRE_FENCE_V1_PHASE3,
+					GameImages.OBJ_CHAINWIRE_FENCE_V2_PHASE3,
+					GameImages.OBJ_CHAINWIRE_FENCE_V3_PHASE3,
+					GameImages.OBJ_CHAINWIRE_FENCE_V4_PHASE3,
+				];
+				return phase3Sprites[this.m_Rules.roll(0, phase3Sprites.length)];
+			}
+			default:
+				throw new RangeError("newPhase");
+		}
+	}
+
+	/**
+	 * C# `ChooseRandomWireFenceGateSprite` — `RogueGame.cs:9850-9865`, Release 7-6.
+	 *
+	 * Three sets rather than four, and it is called for a *closed* gate: the C#'s
+	 * comment on the call site is "(let's just ignore open ones)", which is why the
+	 * caller's arm matches on the bare substring `"chainwire_gate"` and lets
+	 * `chainwire_gate_closed`, `chainwire_gate_open` and `chainwire_gate_broken` all
+	 * through. An open gate therefore decays too, despite the comment.
+	 */
+	private ChooseRandomWireFenceGateSprite(newPhase: number): string {
+		switch (newPhase) {
+			case 1: {
+				const phase1Sprites = [
+					GameImages.OBJ_CHAINWIRE_FENCE_GATE_V1_PHASE1,
+					GameImages.OBJ_CHAINWIRE_FENCE_GATE_V2_PHASE1,
+					GameImages.OBJ_CHAINWIRE_FENCE_GATE_V3_PHASE1,
+				];
+				return phase1Sprites[this.m_Rules.roll(0, phase1Sprites.length)];
+			}
+			case 2: {
+				const phase2Sprites = [
+					GameImages.OBJ_CHAINWIRE_FENCE_GATE_V1_PHASE2,
+					GameImages.OBJ_CHAINWIRE_FENCE_GATE_V2_PHASE2,
+					GameImages.OBJ_CHAINWIRE_FENCE_GATE_V3_PHASE2,
+				];
+				return phase2Sprites[this.m_Rules.roll(0, phase2Sprites.length)];
+			}
+			case 3: {
+				const phase3Sprites = [
+					GameImages.OBJ_CHAINWIRE_FENCE_GATE_V1_PHASE3,
+					GameImages.OBJ_CHAINWIRE_FENCE_GATE_V2_PHASE3,
+					GameImages.OBJ_CHAINWIRE_FENCE_GATE_V3_PHASE3,
+				];
+				return phase3Sprites[this.m_Rules.roll(0, phase3Sprites.length)];
+			}
+			default:
+				throw new RangeError("newPhase");
+		}
 	}
 
 	// C# StartPlayerWaitLong — RogueGame.cs:9267
