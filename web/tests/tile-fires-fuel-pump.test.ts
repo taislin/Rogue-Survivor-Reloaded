@@ -39,8 +39,10 @@
  * The blast wall-destruction guard is exercised too, because removing
  * `throw new Error("blast.destroyWalls")` was a precondition for any of this:
  * the fuel pump's blast carries `canDestroyWalls`, so the arm could not have run
- * at all. `ReplaceDestroyedWall` is still unported, so what the guard decides is
- * asserted rather than what it would do.
+ * at all. What the guard *decides* is asserted here; what it *does* — the rubble,
+ * the floor swap, the plank drop and the scorch suppression — is asserted in
+ * `replace-destroyed-wall.test.ts`, which could not exist until
+ * `ReplaceDestroyedWall` was ported.
  */
 
 import { beforeEach, describe, expect, it } from "vitest";

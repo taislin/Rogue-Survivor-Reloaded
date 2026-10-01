@@ -280,6 +280,42 @@ export class GameImages {
   static readonly DECO_SCORCH_MARK_INNER_WALL = "Tiles/Decoration/scorched_inner_wall";
   static readonly DECO_SCORCH_MARK_OUTER_WALL = "Tiles/Decoration/scorched_outer_wall";
 
+  // ── Damaged walls ─────────────────────────────────────────────────────────
+  // The nine rubble drawings `ReplaceDestroyedWall` (`RogueGame.cs:20134-20232`,
+  // first reader Release 3) lays over the floor it drops a blown-up wall onto.
+  // C# `GameImages.cs:340-348`.
+  //
+  // **Nine decorations for eleven wall cases, and that gap is the C#'s, not an
+  // omission here.** `wall_wood_planks` spawns a wooden plank item instead of a
+  // drawing, and `wall_red_curtains` leaves a bare gap, so neither has a sprite
+  // to name here.
+  //
+  // **`wall_army_base_damaged`, `wall_fuel_station_damaged` and
+  // `wall_mall_damaged` are Release 6-3/7-3, and `wall_light_brown_damaged` is
+  // Release 4** -- the other five are original.
+  //
+  // The reader switches on `TileModel.imageId`, and **that is why the police
+  // station and subway walls do not need names of their own.** Both are
+  // registered with `GameImages.TILE_WALL_STONE` as their image (`GameTiles.cs`,
+  // and the port at `GameTiles.ts:247,250`), so they arrive here already
+  // spelled `Tiles/wall_stone` and take the stone rubble. The reference's own
+  // comment above its model table warns to keep `IsDestructibleWallModel()` and
+  // `ReplaceDestroyedWall()` in step; they are *not* in step by name, and the
+  // stone alias is what keeps the `default:` throw from being reachable.
+  static readonly DECO_WALL_BRICK_DAMAGED = "Tiles/Decoration/wall_brick_damaged";
+  static readonly DECO_WALL_CHAR_OFFICE_DAMAGED = "Tiles/Decoration/wall_char_office_damaged";
+  static readonly DECO_WALL_HOSPITAL_DAMAGED = "Tiles/Decoration/wall_hospital_damaged";
+  static readonly DECO_WALL_SEWER_DAMAGED = "Tiles/Decoration/wall_sewer_damaged";
+  static readonly DECO_WALL_STONE_DAMAGED = "Tiles/Decoration/wall_stone_damaged";
+  // Release 4.
+  static readonly DECO_WALL_LIGHT_BROWN_DAMAGED = "Tiles/Decoration/wall_light_brown_damaged";
+  // Release 6-3.
+  static readonly DECO_WALL_ARMY_BASE_DAMAGED = "Tiles/Decoration/wall_army_base_damaged";
+  // Release 7-3.
+  static readonly DECO_WALL_FUEL_STATION_DAMAGED = "Tiles/Decoration/wall_fuel_station_damaged";
+  // Release 7-3.
+  static readonly DECO_WALL_MALL_DAMAGED = "Tiles/Decoration/wall_mall_damaged";
+
   // ── Map Objects ───────────────────────────────────────────────────────────
   static readonly OBJ_TREE = "MapObjects/tree";
   static readonly OBJ_WOODEN_DOOR_CLOSED = "MapObjects/wooden_door_closed";

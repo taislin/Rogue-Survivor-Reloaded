@@ -19070,20 +19070,20 @@ inv.removeAllQuantity(it);
 			!map.isOnMapBorder(location.position.x, location.position.y) &&
 			wallTile !== null &&
 			(Models.tiles as GameTiles).isDestructibleWallModel(wallTile.model);
+
+		// C# `:20015`, immediately before the wall branch and read again at `:20026`
+		// to decide whether to scorch. Declared here rather than inside the branch
+		// because its whole purpose is to carry "did the wall actually go" out to the
+		// scorch step below.
+		let wallDestroyed = false;
+
 		if (
 			blast.canDestroyWalls &&
 			isDestructibleWall &&
 			!map.anyAdjacentOutOfBounds(location.position)
 		) {
-			// TODO(Still Alive): ReplaceDestroyedWall — `RogueGame.cs:20134-20232`, ~99
-			// lines — is still unported, so a wall that passes the guard is left
-			// standing. Doing nothing here is deliberate and is strictly better than
-			// throwing: the blast still damages actors, items, corpses and objects,
-			// still sets tiles on fire, and still detonates adjacent fuel pumps, which
-			// is the whole of `Feature.TileFires`' arm. What is missing is
-			// visible-but-cosmetic rubble, and all nine `DECO_WALL_*_DAMAGED` sprites
-			// already ship -- so what remains is the `GameImages` constants, the swap to
-			// an adjacent floor model, and the plank drop for `WALL_WOOD_PLANKS`.
+			this.ReplaceDestroyedWall(location);
+			wallDestroyed = true;
 		}
 
 		// Scorch the blast mark. C# `:20027-20030`, Release 2:
@@ -19096,14 +19096,21 @@ inv.removeAllQuantity(it);
 		// }
 		// ```
 		//
-		// `wallDestroyed` is hard-coded false because `ReplaceDestroyedWall` above is
-		// still unported, so the only explosive that could set it never does. Wiring
-		// scorch now means it is already correct the day that method lands, rather
-		// than needing a second pass to add the drawing to work that already existed.
+		// The two exclusions are the C#'s and both are load-bearing.
+		//
+		// `wallDestroyed` is the interesting one. A tile whose wall just fell is now
+		// an open patch of the building's own floor with rubble drawn over it, and
+		// scorching *that* would blacken the floor the player is being invited to walk
+		// through — so the C# suppresses the mark whenever the wall came down, and
+		// leaves it for every other blast (bare ground, or a wall that survived) to
+		// record itself. Before `ReplaceDestroyedWall` landed this was hard-coded
+		// false, which made the exclusion unreachable; it is now genuinely reachable,
+		// and it is the first thing that changes for dynamite, C4 and a detonating
+		// fuel pump in any district with a wall between two rooms.
 		//
 		// The plasma charge exclusion is the C#'s: the BFG "doesnt fire a standard
 		// explosive", so it leaves no conventional scorch.
-		if (itemModel.id !== ItemID.EXPLOSIVE_PLASMA_CHARGE_PRIMED) {
+		if (!wallDestroyed && itemModel.id !== ItemID.EXPLOSIVE_PLASMA_CHARGE_PRIMED) {
 			this.scorchBurntTile(map, location.position.x, location.position.y, modifiedDamage);
 		}
 
@@ -19203,6 +19210,191 @@ inv.removeAllQuantity(it);
 			this.m_TownGenerator.makeObjFuelPumpBroken(GameImages.OBJ_FUEL_PUMP_BROKEN),
 			location.position,
 		);
+	}
+
+	/**
+	 * C# `RogueGame.ReplaceDestroyedWall(Location)` — `RogueGame.cs:20134-20232`,
+	 * Release 3, made `static` in Release 5-7. "Replaces the wall tile with the
+	 * appropriate type of floor tile and damaged wall section."
+	 *
+	 * Only ever reached from `ApplyExplosionDamage`, and only once that method's
+	 * guard has already established this tile is a destructible wall whose whole
+	 * eight-square ring is on the map. That guard is why none of the four neighbour
+	 * probes below needs an out-of-bounds question answered.
+	 *
+	 * ## Both switches read `imageId`, never `TileID`
+	 *
+	 * This is the one thing in the method that is easy to get wrong, because the
+	 * obvious-looking port — switching on the wall's `TileID` — is wrong in a way
+	 * that only shows up on three specific walls.
+	 *
+	 * `WALL_POLICE_STATION` and `WALL_SUBWAY` are registered in `GameTiles` with
+	 * `GameImages.TILE_WALL_STONE` as their image (`GameTiles.ts:247,250`, mirroring
+	 * the reference's own `GameTiles.cs`). The reference's model table even carries
+	 * the author's warning to keep `IsDestructibleWallModel()` and
+	 * `ReplaceDestroyedWall()` in step — and by *name* they are not in step, because
+	 * neither has a `case`. The stone image they share is what closes the gap: they
+	 * arrive at this switch already spelled `Tiles/wall_stone` and take the stone
+	 * rubble.
+	 *
+	 * So all twelve destructible walls resolve to a case, and the C#'s
+	 * `default: throw new NotSupportedException(...)` is genuinely unreachable.
+	 * **That is why the `default:` below leaves the tile as bare floor instead of
+	 * throwing.** A `TileID`-keyed switch would put police station and subway walls
+	 * in that default, and throwing there would be a crash the reference does not
+	 * have — inventing a bug rather than porting one.
+	 *
+	 * ## Also note what the method does *not* do
+	 *
+	 * `wall_wood_planks` spawns a plank instead of a drawing, and `wall_red_curtains`
+	 * leaves a bare gap — "leaves a whole gap", the C#'s own comment. So eleven wall
+	 * cases resolve to eight distinct rubble drawings, a plank, or nothing at all.
+	 */
+	private ReplaceDestroyedWall(location: Location): void {
+		const map = location.map!;
+		const tile = map.getTileAt(location.position.x, location.position.y);
+		if (tile === null) return;
+
+		// C# `:20138`, Release 4: drop any decorations first, "eg shop signage".
+		// Removing rather than keeping is the point — a blown-up cinema wall should
+		// not still be advertising itself over the hole.
+		tile.removeAllDecorations();
+
+		// C# `:20141-20179`: read the wall's *image*, then decorate. `addDecoration`
+		// appends, which is the C#'s `AddDecoration` (`Tile.cs:118-125`); the
+		// priority-inserting `insertDecoration` is a different call for world decay.
+		//
+		// The `imageId` is captured before any model swap below, matching the C#'s
+		// order, and because decorations live on the tile rather than on the model,
+		// the rubble drawn here survives `setTileModelAt` turning the tile into a
+		// walkable floor.
+		const wallImageId = tile.model.imageId;
+		switch (wallImageId) {
+			case GameImages.TILE_WALL_BRICK:
+				tile.addDecoration(GameImages.DECO_WALL_BRICK_DAMAGED);
+				break;
+			case GameImages.TILE_WALL_CHAR_OFFICE:
+				tile.addDecoration(GameImages.DECO_WALL_CHAR_OFFICE_DAMAGED);
+				break;
+			case GameImages.TILE_WALL_HOSPITAL:
+				tile.addDecoration(GameImages.DECO_WALL_HOSPITAL_DAMAGED);
+				break;
+			// Unreachable in practice: `WALL_SEWER` is one of the three walls
+			// `IsDestructibleWallModel` excludes, so no guard lets us in here for a
+			// sewer wall. Kept because the C# keeps it, and because excluding it
+			// would be a second, invisible divergence from the reference.
+			case GameImages.TILE_WALL_SEWER:
+				tile.addDecoration(GameImages.DECO_WALL_SEWER_DAMAGED);
+				break;
+			// Stone rubble for three models: plain stone, police station and subway.
+			case GameImages.TILE_WALL_STONE:
+				tile.addDecoration(GameImages.DECO_WALL_STONE_DAMAGED);
+				break;
+			case GameImages.TILE_WALL_LIGHT_BROWN:
+				tile.addDecoration(GameImages.DECO_WALL_LIGHT_BROWN_DAMAGED);
+				break;
+			case GameImages.TILE_WALL_ARMY_BASE:
+				tile.addDecoration(GameImages.DECO_WALL_ARMY_BASE_DAMAGED);
+				break;
+			// Release 7-3. The only case that drops an item rather than a
+			// decoration — the planks that were holding the wall up are now loose.
+			case GameImages.TILE_WALL_WOOD_PLANKS:
+				map.dropItemAt(this.m_TownGenerator.makeItemWoodenPlank(), location.position);
+				break;
+			case GameImages.TILE_WALL_FUEL_STATION:
+				tile.addDecoration(GameImages.DECO_WALL_FUEL_STATION_DAMAGED);
+				break;
+			case GameImages.TILE_WALL_MALL:
+				tile.addDecoration(GameImages.DECO_WALL_MALL_DAMAGED);
+				break;
+			case GameImages.TILE_WALL_RED_CURTAINS:
+				// "Leaves a whole gap" (C# `:20175`). No decoration, no item: the
+				// curtain comes down entirely and you can simply walk through.
+				break;
+			default:
+				// The C# throws `NotSupportedException` here. Unreachable there too,
+				// for the aliasing reason in this method's header — and kept
+				// deliberately quiet, since throwing would be a crash of this
+				// port's own making rather than one carried over.
+				break;
+		}
+
+		// C# `:20181-20195`: adopt an adjacent floor so the player is shown the new
+		// floor is walk-through-able. The probe order is load-bearing and is the
+		// C#'s verbatim — `y+1`, `y-1`, `x+1`, `x-1`, first match wins.
+		//
+		// (The C#'s own comments label `y+1` "north" and `y-1` "south"; the labels
+		// are kept with the lines they belong to, and it is the sequence, not the
+		// compass words, that has to match.)
+		const { x, y } = location.position;
+		const north = new Point(x, y + 1);
+		const south = new Point(x, y - 1);
+		const east = new Point(x + 1, y);
+		const west = new Point(x - 1, y);
+		const chosen =
+			map.isBuildingFloorTileAt(north.x, north.y) ? north
+			: map.isBuildingFloorTileAt(south.x, south.y) ? south
+			: map.isBuildingFloorTileAt(east.x, east.y) ? east
+			: map.isBuildingFloorTileAt(west.x, west.y) ? west
+			: null;
+
+		// No structural floor anywhere around: asphalt, and no further work. A wall
+		// with open ground on all four sides is the case the C# handles first, before
+		// the switch below ever runs.
+		if (chosen === null) {
+			map.setTileModelAt(x, y, Models.tiles.get(TileID.FLOOR_ASPHALT)!);
+			return;
+		}
+
+		// C# `:20197-20231`.
+		const floorImageId = map.getTileAt(chosen.x, chosen.y)?.model.imageId;
+		switch (floorImageId) {
+			case GameImages.TILE_FLOOR_OFFICE:
+				map.setTileModelAt(x, y, Models.tiles.get(TileID.FLOOR_OFFICE)!);
+				break;
+			case GameImages.TILE_FLOOR_TILES:
+				map.setTileModelAt(x, y, Models.tiles.get(TileID.FLOOR_TILES)!);
+				break;
+			case GameImages.TILE_FLOOR_CONCRETE:
+				map.setTileModelAt(x, y, Models.tiles.get(TileID.FLOOR_CONCRETE)!);
+				break;
+			case GameImages.TILE_FLOOR_WALKWAY:
+				map.setTileModelAt(x, y, Models.tiles.get(TileID.FLOOR_WALKWAY)!);
+				break;
+			case GameImages.TILE_FLOOR_PLANKS:
+				map.setTileModelAt(x, y, Models.tiles.get(TileID.FLOOR_PLANKS)!);
+				break;
+			// **These two cases cannot run**, and that is the reference's doing.
+			// The only route into this switch is a neighbour `isBuildingFloorTileAt`
+			// approved, and that list names neither floor, so a food-court pool or a
+			// white-tile floor next door never reaches the case written for it. Kept
+			// dead on purpose: dropping them would hide a real quirk of the C#, and
+			// widening the predicate to reach them would invent behaviour it does not
+			// have. See `Map.isBuildingFloorTileAt`.
+			case GameImages.TILE_FLOOR_FOOD_COURT_POOL:
+				map.setTileModelAt(x, y, Models.tiles.get(TileID.FLOOR_FOOD_COURT_POOL)!);
+				break;
+			case GameImages.TILE_FLOOR_WHITE_TILE:
+				map.setTileModelAt(x, y, Models.tiles.get(TileID.FLOOR_WHITE_TILE)!);
+				break;
+			// Five sewer drawings collapse to one model. The animated frames are
+			// distinct images but one destination tile, which is why this keeps the
+			// water and cover properties `GameTiles` hangs on `FLOOR_SEWER_WATER`
+			// rather than copying an animation onto the wall that just fell over.
+			case GameImages.TILE_FLOOR_SEWER_WATER:
+			case GameImages.TILE_FLOOR_SEWER_WATER_ANIM1:
+			case GameImages.TILE_FLOOR_SEWER_WATER_ANIM2:
+			case GameImages.TILE_FLOOR_SEWER_WATER_ANIM3:
+			case GameImages.TILE_FLOOR_SEWER_WATER_COVER:
+				map.setTileModelAt(x, y, Models.tiles.get(TileID.FLOOR_SEWER_WATER)!);
+				break;
+			default:
+				// Everything `isBuildingFloorTileAt` approves but this switch does not
+				// name: the two Release 4 carpets, dirt, and the nine Release 6-1 pond
+				// tiles. Fifteen structural floors in, seven out.
+				map.setTileModelAt(x, y, Models.tiles.get(TileID.FLOOR_WALKWAY)!);
+				break;
+		}
 	}
 
 	// C# ExplosionChainReaction — RogueGame.cs:14469
@@ -24232,13 +24424,24 @@ inv.removeAllQuantity(it);
 		// Do not scorch a damaged wall: the scorch sprite would hide the opening.
 		// C# `:24560-24569`, Release 7-6.
 		//
-		// **This test is currently vacuous and I want that written down rather than
-		// left to be discovered.** It looks for a decoration containing "_damaged",
-		// but the wall-damage decorations are added by `ReplaceDestroyedWall`
-		// (`RogueGame.cs:20134-20232`), which is still an unported no-op in this
-		// file. The guard costs nothing and starts working for free the moment that
-		// method lands, so it is ported rather than dropped -- but today no tile can
-		// ever pass through this early return.
+		// **This guard only started working when `ReplaceDestroyedWall` landed, and
+		// that is worth keeping written down** because it changes behaviour for the
+		// two things that can put a `_damaged` drawing on a tile. It was ported
+		// defensively while that method was still a no-op, which left the branch
+		// unreachable rather than absent — the same state `ApplyExplosionDamage`'s
+		// scorch suppression was in, and both came alive together.
+		//
+		// Now it is live, and all nine `DECO_WALL_*_DAMAGED` ids match, since each
+		// ends `_damaged` by construction (they are named for the drawing, not for
+		// the state). Two consequences worth being explicit about:
+		//
+		// - A tile fire that reaches a blown-open wall now stops at it instead of
+		//   blacking over the gap, which is the whole reason the guard exists.
+		// - `wall_wood_planks` and `wall_red_curtains` are the two destructible walls
+		//   that add *no* decoration, so neither can satisfy this test. A fire will
+		//   scorch those two openings. That is the reference's behaviour too, and it
+		//   is a consequence of those two cases dropping a drawing, not a separate
+		//   decision.
 		if (tile.hasDecorations) {
 			for (const deco of tile.getDecorations ?? []) {
 				if (deco.includes("_damaged")) return;

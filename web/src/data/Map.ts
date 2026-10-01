@@ -218,6 +218,73 @@ export class Map {
   }
 
   /**
+   * C# `Map.IsBuildingFloorTileAt(int, int)` — Release 3, "check whether there's a
+   * structural floor tile here".
+   *
+   * The other half of `anyAdjacentOutOfBounds` above, and the two are a pair: that
+   * one answers "is the ring off the map?", this one answers "is the neighbour a
+   * floor?". `ReplaceDestroyedWall` needs both before it will replace a wall with
+   * walkable floor — the ring test so a blast cannot punch a hole out of the world
+   * at a district boundary, this one so the wall it opens up gets *that building's*
+   * flooring rather than a generic one.
+   *
+   * **The out-of-bounds answer is unreachable at the one call site.** The four
+   * neighbours it is asked about are compass steps from a tile whose whole
+   * eight-square ring already passed `anyAdjacentOutOfBounds`, so they are in
+   * bounds by construction. Answering `false` for a missing tile is defensive
+   * rather than a behaviour the C# ever gets to observe.
+   *
+   * ## The two floors this says "no" to
+   *
+   * `floor_food_court_pool` and `floor_white_tile` are absent, and that is worth
+   * stating plainly because `ReplaceDestroyedWall`'s *second* switch does list
+   * them. The only way to reach that switch is through a neighbour this method has
+   * just approved, and neither floor can be approved here, so those two cases can
+   * never run — a food-court pool next door is skipped in favour of whichever other
+   * neighbour matched first, or falls through to asphalt if none did.
+   *
+   * That is a dead branch in the reference, and it is kept dead here. Widening
+   * this list to "fix" it would invent behaviour the C# does not have, and the
+   * second switch would quietly start answering for floors the reference never
+   * consults.
+   */
+  isBuildingFloorTileAt(x: number, y: number): boolean {
+    const tile = this.getTileAt(x, y);
+    if (tile === null) return false;
+    switch (tile.model.imageId) {
+      case GameImages.TILE_FLOOR_OFFICE:
+      case GameImages.TILE_FLOOR_TILES:
+      case GameImages.TILE_FLOOR_CONCRETE:
+      case GameImages.TILE_FLOOR_WALKWAY:
+      case GameImages.TILE_FLOOR_PLANKS:
+      // Release 4.
+      case GameImages.TILE_FLOOR_RED_CARPET:
+      case GameImages.TILE_FLOOR_BLUE_CARPET:
+      case GameImages.TILE_FLOOR_DIRT:
+      case GameImages.TILE_FLOOR_SEWER_WATER:
+      case GameImages.TILE_FLOOR_SEWER_WATER_ANIM1:
+      case GameImages.TILE_FLOOR_SEWER_WATER_ANIM2:
+      case GameImages.TILE_FLOOR_SEWER_WATER_ANIM3:
+      case GameImages.TILE_FLOOR_SEWER_WATER_COVER:
+      // Release 6-1, the pond's nine structural tiles. Deliberately not
+      // `TILE_FLOOR_POND_WATER_COVER`: the C#'s list stops at the nine edge and
+      // centre drawings and does not name the cover overlay.
+      case GameImages.TILE_FLOOR_POND_CENTER:
+      case GameImages.TILE_FLOOR_POND_N_EDGE:
+      case GameImages.TILE_FLOOR_POND_NE_CORNER:
+      case GameImages.TILE_FLOOR_POND_E_EDGE:
+      case GameImages.TILE_FLOOR_POND_SE_CORNER:
+      case GameImages.TILE_FLOOR_POND_S_EDGE:
+      case GameImages.TILE_FLOOR_POND_SW_CORNER:
+      case GameImages.TILE_FLOOR_POND_W_EDGE:
+      case GameImages.TILE_FLOOR_POND_NW_CORNER:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  /**
    * C# `Map.IsMapBoundary(int, int)` — the ring immediately *outside* the map.
    *
    * Distinct from `isOnMapBorder` above, and the two names in the C# are close

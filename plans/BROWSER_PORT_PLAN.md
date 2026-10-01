@@ -2740,12 +2740,34 @@ plan for rather than discover:
 >   present since "Port Phase 4 slice 6" and reachable for dynamite and C4 the whole
 >   time — had to go, because the fuel pump's blast carries `canDestroyWalls` and the
 >   arm could not run at all. Its C# guard (`:20016-20024`) is now ported verbatim,
->   so the *decision* to destroy a wall is correct, but `ReplaceDestroyedWall`
->   (`:20134-20232`, ~99 lines) is still unported and a wall that passes the guard is
->   left standing. Doing nothing beats throwing: the blast still damages actors,
->   items, corpses and objects, still ignites tiles, and still cascades the pumps.
->   All nine `DECO_WALL_*_DAMAGED` sprites already ship, so what remains is the
->   constants, the swap to an adjacent floor model, and the plank drop.
+>   and **`ReplaceDestroyedWall` (`:20134-20232`) has since landed too**, so the arm
+>   is end to end: a wall that passes the guard now comes down.
+>
+>   `ReplaceDestroyedWall` needed the nine `GameImages.DECO_WALL_*_DAMAGED`
+>   constants, `Map.isBuildingFloorTileAt` (Release 3's structural-floor test), the
+>   adjacent-floor probe, and the plank drop for `WALL_WOOD_PLANKS`. Two findings
+>   worth carrying forward, both asserted in `tests/replace-destroyed-wall.test.ts`:
+>
+>   - **Both switches key on `TileModel.imageId`, never on `TileID`.**
+>     `WALL_POLICE_STATION` and `WALL_SUBWAY` have no `case` in the C# switch, and
+>     a `TileID`-keyed port would drop all three stone-ish walls into the C#'s
+>     `default: throw`. They work because `GameTiles` registers all three with
+>     `GameImages.TILE_WALL_STONE` as their image (`GameTiles.ts:247,250`), so they
+>     arrive already spelled `Tiles/wall_stone`. The reference's own comment above
+>     its model table warns to keep `IsDestructibleWallModel()` and
+>     `ReplaceDestroyedWall()` in step; they are out of step *by name* and the
+>     aliasing is what closes the gap. `ReplaceDestroyedWall`'s `default:` therefore
+>     stays quiet instead of throwing, since throwing there would be a crash of this
+>     port's own invention.
+>   - **`floor_food_court_pool` and `floor_white_tile` are handled by the method's
+>     second switch but absent from `isBuildingFloorTileAt`,** which is the only way
+>     into it — so those two cases are dead in the C# and are kept dead here.
+>
+>   Landing the method also activated two guards that had been ported while
+>   unreachable: `ApplyExplosionDamage`'s `if (!wallDestroyed)` scorch suppression
+>   (`:20027-20030`) and `ScorchBurntTile`'s damaged-wall skip (`:24560-24569`),
+>   which matches on the `_damaged` substring every rubble drawing ends with.
+>
 >
 >   `Feature.SiphonFuel`'s player half was already wired (`RogueGame.ts:23475`) and
 >   is unaffected.
@@ -3264,7 +3286,7 @@ zero precisely because of the dump-every-own-field design.
 | `Activity` +19 | enum | 0 | cosmetic labels, but they become load-bearing: `CivilianAI` filters trade partners on `isFightingOrFleeing` |
 | 7 new `PlayerCommand`s | enum — **append only** | 0 | bury, cook, destroy item, make fire, unload ammo, inspection mode, swap inventory |
 | `ExtendedAudio` | none (constants + a `Record` per id) | 0 | **table DONE** — 180 pairs in `GameSounds`/`SOUND_FILES`, 182 `.ogg` copied into `assets/sfx/`, generated from `GameSounds.cs` by `scripts/port-game-sounds.py` rather than transcribed. **3 call sites wired** (the two `Fishing` sounds §5.6e deferred, and `DoEatCorpse`'s id choice). The other 177 need the distance model — see its section |
-| `ScorchBurntTile` | `Map.tileAlreadyHasScorchDecoration` | ~50 C# lines | **DONE** — the method was three lines that set `IS_SCORCHED` and stopped; the flag is what `Map.isInflammableTile` reads, but no player had ever seen it. Now the full C# `:24556-24608`: stairs skipped, damaged-wall guard, three damage tiers x wall/floor, and the `TaskRemoveDecoration(TURNS_PER_DAY * 3)` cleanup, plus the `ApplyExplosionDamage` call site with its plasma-charge exclusion. **`damage > 0` gates the flag too**, not just the drawing — a zero-damage call marks nothing. The damaged-wall guard is ported but **currently vacuous**: it looks for a `_damaged` decoration, which only `ReplaceDestroyedWall` (`:20134-20232`, still unported) adds | 
+| `ScorchBurntTile` | `Map.tileAlreadyHasScorchDecoration` | ~50 C# lines | **DONE** — the method was three lines that set `IS_SCORCHED` and stopped; the flag is what `Map.isInflammableTile` reads, but no player had ever seen it. Now the full C# `:24556-24608`: stairs skipped, damaged-wall guard, three damage tiers x wall/floor, and the `TaskRemoveDecoration(TURNS_PER_DAY * 3)` cleanup, plus the `ApplyExplosionDamage` call site with its plasma-charge exclusion. **`damage > 0` gates the flag too**, not just the drawing — a zero-damage call marks nothing. The damaged-wall guard was ported while vacuous - it looks for a `_damaged` decoration, which only `ReplaceDestroyedWall` (`:20134-20232`) adds - and **is now live**, since that method has landed. Every one of the nine rubble ids ends `_damaged`, so a tile fire now stops at an opened wall instead of blacking over it | 
 | `MakeParkPond` | `makeItemFishingRod`, `Map.hasWaterTiles` | ~100 C# lines | **DONE, except the C#'s `else` arm** — Release 6-1's replacement for alpha10's shed, and the only thing in the game that makes `Map.hasFishing` true, so the player's rod finally has water and the NPC arm has a gate to pass. Gated on `Feature.Fishing` at the step, which is what keeps Classic on the shed and byte-identical. **The `else` (a fire barrel in parks too small for a pond) is deferred**: it is eleven C# lines and it breaks world-generation determinism in a way not yet explained — see the comment at the step | 
 | `MAKE_COOKING_FIRE` | `ItemID.MATCHES`, `Rules.canStartCookingFire`, `DoMakeFireForCooking` | ~230 C# lines | **DONE** — the command both `Cooking` and `FireBarrels` were blocked on: until it landed the only fire in the port came from an explosion. `Ctrl+F`, an eight-check rule with per-refusal messages, MATCHES MODE, and three shapes (new campfire / refuel / relight) | 
 | `Graveyard` | none — a `bool isgraveyard` on `makeParkBuilding` | ~0 new lines | **DONE** — three in-method branches (graves vs trees/benches, the `Graveyard` zone name, "only add stuff to parks") and a new band in the green cascade. No new method, because the C# added none |
