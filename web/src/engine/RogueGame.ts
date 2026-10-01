@@ -21503,6 +21503,16 @@ inv.removeAllQuantity(it);
 	OnEquipItem(actor: Actor, it: Item): void {
 		// Weapons
 		if (it.model instanceof ItemWeaponModel) {
+			// C# `bool isOneHanded = false;` (`:20978`), read at `:21014`. The
+			// default is load-bearing rather than a placeholder: both the shield
+			// drop below and the fishing rod's arm test `!isOneHanded`, so a model
+			// that reached this point without setting the local would have a shield
+			// taken off it. Only the two weapon subclasses can get here, and each
+			// assigns, so the default is unreachable today -- it is transcribed
+			// because the C#'s is, and because a third `ItemWeaponModel` subclass
+			// should inherit the reference's behaviour rather than this port's
+			// reading of it.
+			let isOneHanded = false;
 			if (it.model instanceof ItemMeleeWeaponModel) {
 				const meleeModel = it.model;
 				const unarmed = actor.sheet.unarmedAttack;
@@ -21513,6 +21523,7 @@ inv.removeAllQuantity(it);
 					meleeModel.attack.staminaPenalty,
 					meleeModel.attack.disarmChance,
 				);
+				isOneHanded = meleeModel.isOneHanded; // C# :20987
 			} else if (it.model instanceof ItemRangedWeaponModel) {
 				const rangedModel = it.model;
 				actor.currentRangedAttack = Attack.rangedAttack(
@@ -21524,11 +21535,60 @@ inv.removeAllQuantity(it);
 					rangedModel.attack.damageValue,
 					rangedModel.attack.range,
 				);
+				isOneHanded = rangedModel.isOneHanded; // C# :20997
+			}
+
+			// C# `:21014-21019`. Still Alive, Release 7-2: a two-handed weapon
+			// cannot be held alongside a shield, so equipping one drops the shield.
+			// This is the direction the C# gets for free from `DoEquipItem` -- the
+			// weapon is already on the arm by the time `OnEquipItem` runs, and the
+			// shield is a different part, so neither unequip displaces the other.
+			//
+			// **`DoUnequipItem` strips the arm and nothing else.** It does not put
+			// the item back in an inventory; the reference's own method is
+			// `EquippedPart = NONE` plus a message (`:20956-20971`), so a shield
+			// dropped this way is out of the actor's hands and still in its pack.
+			// That is transcribed rather than "fixed" -- returning it would be a
+			// second, unrecorded copy of the call the reference does not make.
+			if (!isOneHanded) {
+				// `getEquippedShield` is the left arm, not a type test: the fork has
+				// no `ItemShieldModel`, so this is whatever is on that arm.
+				const shield = actor.getEquippedShield();
+				if (shield !== null) this.DoUnequipItem(actor, shield);
 			}
 		}
 		// Armors
 		else if (it.model instanceof ItemBodyArmorModel) {
 			actor.currentDefence = actor.currentDefence.add(it.model.toDefence());
+		}
+		// Still Alive, Release 7-2 (C# `:21030-21045`): the arm is the shield, so
+		// this is the inverse of the guard above -- equipping a shield drops a
+		// two-handed weapon. It sits between the armour arm and the batteries
+		// because that is where the reference has it, inside its `Armors` region.
+		//
+		// **The `if`/`else` is the reference's and is deliberate.** A two-handed
+		// *melee* weapon is dropped and the ranged weapon is never looked at
+		// (`:21034-21035` then `:21038-21040`); only when the melee weapon is
+		// absent or one-handed does the ranged get its turn. Collapsing the `else`
+		// into a second `if` would drop two things where the reference drops one,
+		// which is the kind of fix that reads as a bug fix and is a divergence.
+		// In practice the actor has one right hand, so at most one of the two can be
+		// equipped anyway -- the `else` is unobservable with today's arm layout and
+		// is kept because the two-arm case is exactly where it would stop being so.
+		else if (it.model.equipmentPart === DollPart.LEFT_ARM) {
+			const melee = actor.getEquippedMeleeWeapon();
+			if (melee !== null && !melee.isOneHanded) {
+				this.DoUnequipItem(actor, melee);
+			} else {
+				const ranged = actor.getEquippedRangedWeapon();
+				if (ranged !== null && !ranged.isOneHanded)
+					this.DoUnequipItem(actor, ranged);
+			}
+			// C# `:21043-21044`. **The EQUIP sound is not ported**: `GameSounds.EQUIP`
+			// arrives with `Feature.ExtendedAudio` and is still pending, the same
+			// gap the fishing rod's cast sound records. Nothing else in this arm is
+			// missing -- the player-only test is the only other thing the C# does,
+			// and it guards nothing but the sound.
 		}
 		// Batteries
 		else if (it.model instanceof ItemTrackerModel) {
@@ -21767,6 +21827,15 @@ inv.removeAllQuantity(it);
 		//else if (it instanceof ItemSprayScent)  // alpha10 new way to use spray scent
 		//    this.DoUseSprayScentItem(actor, it);
 		else if (it instanceof ItemTrap) this.DoUseTrapItem(actor, it);
+		// Still Alive, Release 7-2 (C# RogueGame.cs:21531-21532), between the trap
+		// and molotov arms as in the reference.
+		//
+		// **The C# tests model identity, not an id:** `it.Model ==
+		// GameItems.POLICE_RIOT_SHIELD`. There is no shield model class to test
+		// against, so the reference compares the registered instance. `it.model.id`
+		// answers the same question here and reads better; the two cannot disagree,
+		// because the registry hands out one instance per id.
+		else if (it.model.id === ItemID.POLICE_RIOT_SHIELD) this.DoUseShieldItem(actor, it);
 		// Still Alive, Release 7-1: using a siphon kit drains an adjacent car.
 		// Placed before the fallthrough so a kit is never silently consumed.
 		else if (
@@ -22187,6 +22256,30 @@ inv.removeAllQuantity(it);
 		// is DoSprayOdorSuppressor. Ported as empty.
 		void actor;
 		void spray;
+	}
+
+	// C# DoUseShieldItem — RogueGame.cs:21974, Still Alive Release 7-2
+	//
+	// Equip-or-unequip on the left arm, and nothing else: no AP spend, no message of
+	// its own, no state change. The reference gets away with that because
+	// `DoEquipItem`/`DoUnequipItem` speak for themselves.
+	//
+	// **The third argument the C# passes, `true`, is `showMessage`, and this port
+	// has no such flag.** Both `DoEquipItem` and `DoUnequipItem` here always message,
+	// where the C# defaults `showMessage = false` (Release 6-1). That collapse is
+	// pre-existing and not this method's to undo — but it happens to land on the
+	// answer the shield wants, since it is the one C# site that asks for `true`.
+	// Note the asymmetry it hides: `DoUnequipItem`'s port signature calls its flag
+	// `canMessage = true`, so the port's *default* is the opposite of the C#'s.
+	//
+	// The toggle reads the left arm rather than asking whether `shield` is the item
+	// currently equipped there, which is what the C# does. The two differ only if
+	// two shields are in hand at once: the C# would unequip whichever one is on the
+	// arm, this port unequips the one passed in. Transcribed as-is.
+	DoUseShieldItem(actor: Actor, shield: Item): void {
+		const leftArmItem = actor.getEquippedItem(DollPart.LEFT_ARM);
+		if (leftArmItem === null) this.DoEquipItem(actor, shield);
+		else this.DoUnequipItem(actor, shield);
 	}
 
 	// C# DoUseTrapItem — RogueGame.cs:15400
@@ -26294,18 +26387,28 @@ inv.removeAllQuantity(it);
 	/**
 	 * Using a fishing rod casts it.  C# `DoUseFishingRodItem` — `RogueGame.cs:21940`.
 	 *
-	 * Of the C#'s three statements, one is ported and two are not:
+	 * Of the C#'s three statements, two are ported and one is not:
 	 *
-	 * - **Not ported: dropping a two-handed right-hand weapon** (C# 21945-21956).
-	 *   That arm asks `meleeModel.IsOneHanded` / `rangedModel.IsOneHanded`, and the
-	 *   port has no such field. It is not a column: the fork sets it by hand on
-	 *   every weapon model in `GameItems.cs` (`IsOneHanded = false` throughout, `true`
-	 *   for the combat knife and the pistols). Porting it means touching 20-odd
-	 *   model constructions for a Release 7-2 field that belongs to the *shield*
-	 *   mechanic, and inventing a default would silently unequip the wrong weapons.
-	 *   Until that field lands, a survivor who equips a rod over a two-hander keeps
-	 *   both, which is the C#'s behaviour for a one-hander and a divergence for the
-	 *   rest. Recorded here and in plans/BROWSER_PORT_PLAN rather than faked.
+	 * - **Ported: dropping a two-handed right-hand weapon** (C# 21945-21956). This
+	 *   arm was held back only because it asks `IsOneHanded`, which did not exist
+	 *   in the port; it does now, and the earlier note here saying so has been
+	 *   corrected below. The rod goes in the *left* hand, so the reference clears
+	 *   the right one first — the same mutual exclusion as the shield, for the same
+	 *   reason, and with the same `DoUnequipItem(..., false)` third argument: the
+	 *   C#'s `showMessage = false`, which is this port's `canMessage = false` (the
+	 *   two names are opposites by default — the C# defaults `showMessage` to
+	 *   `false`, the port defaults `canMessage` to `true` — so the *passed* value
+	 *   is the same either way, unlike the defaults).
+	 *   The arm tests the **model** (`rightHandItem.Model is ItemMeleeWeaponModel`)
+	 *   and unequips the **item**, exactly as the reference does, and it is
+	 *   `if`/`else if` there too: a melee right-hand weapon is considered and a
+	 *   ranged one only if it was not a melee.
+	 *   **This runs before the `isPlayer` test, ungated inside the method.** That
+	 *   is deliberate on both counts and worth stating, because the C# puts the
+	 *   clear-the-hand first and the whole reason it cannot move a Classic world is
+	 *   the `Feature.Fishing` gate on the only call site (the `DoUseItem` arm that
+	 *   tests `it.model.id === ItemID.FISHING_ROD`), not anything in here. An NPC
+	 *   casting a rod clears its own hand, as in the reference.
 	 * - **Not ported: the cast and reel sounds** (`GameSounds.FISHING_CAST_*` and
 	 *   `FISHING_REEL_*`, `GameSounds.cs:424-431`). Four of the ~180 entries that
 	 *   arrive with `Feature.ExtendedAudio`, still pending. The C# stops the cast
@@ -26314,6 +26417,19 @@ inv.removeAllQuantity(it);
 	 * - **Ported: the sentence.** It is the only part of a cast the player is told
 	 *   about, and it is the one that turns a rod from an inventory object into
 	 *   something to do.
+	 *
+	 * **A correction to what this comment used to say.** It claimed the fork sets
+	 * `IsOneHanded = false` throughout, `true` for "the combat knife and the
+	 * pistols". That was wrong on both halves, and it was wrong in the direction
+	 * that matters — it implied one-handedness was rare, when it is the majority:
+	 * **19 of the fork's 37 melee weapons are one-handed** and only 7 of its 22
+	 * ranged ones are. The combat knife is 1 of 19; the "pistols" are 4 of 7, and
+	 * they are not all of it — the SMG, the nail gun and the stun gun are
+	 * one-handed too, and the nail gun and the stun gun are *not* pistols, being the
+	 * two `isSingleShot` weapons sitting next to those literals. Conversely the
+	 * baseball bat, the chainsaw, the katana and the fire axe are all two-handed.
+	 * The full sets are transcribed one at a time in `GameItems`' `meleeMap` and
+	 * `rangedMap` headers, and asserted in `tests/two-handed-weapons.test.ts`.
 	 *
 	 * **Reachable from the player's own hands only through the AI.** A rod has
 	 * `EquipmentPart = LEFT_HAND` and so `IsEquipable`, which means both the
@@ -26327,6 +26443,19 @@ inv.removeAllQuantity(it);
 	 * enter -- it is a wait with a rod in your hand.
 	 */
 	DoUseFishingRodItem(actor: Actor): void {
+		// C# 21942-21958. See the header for why this is before the `isPlayer`
+		// test and why the third argument is `false`.
+		const rightHandItem = actor.getEquippedItem(DollPart.RIGHT_HAND);
+		if (rightHandItem !== null) {
+			if (rightHandItem.model instanceof ItemMeleeWeaponModel) {
+				if (!rightHandItem.model.isOneHanded)
+					this.DoUnequipItem(actor, rightHandItem, false);
+			} else if (rightHandItem.model instanceof ItemRangedWeaponModel) {
+				if (!rightHandItem.model.isOneHanded)
+					this.DoUnequipItem(actor, rightHandItem, false);
+			}
+		}
+
 		if (actor.isPlayer) {
 			// The cast sound, and the first of the four `Feature.ExtendedAudio`
 			// readers. Gated because the file is the fork's: `fishing_cast_player`
@@ -26342,8 +26471,7 @@ inv.removeAllQuantity(it);
 			// `FISHING_CAST_NEARBY` when `IsAudibleToPlayer(loc, QUIET_NOISE_RADIUS)`.
 			// The port has no `QUIET_NOISE_RADIUS` and no audibility predicate that
 			// takes a radius, and inventing one would be guessing a number the C#
-			// does not define here. Recorded rather than faked, like `isOneHanded`
-			// below.
+			// does not define here. Recorded rather than faked.
 			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
 				this.m_SoundManager.play(GameSounds.FISHING_CAST_PLAYER);
 

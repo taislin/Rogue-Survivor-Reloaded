@@ -692,22 +692,48 @@ export class GameItems implements ItemModelDB {
     // qualify; a frying pan and a baseball bat do not. It is a list because "is it
     // sharp" is not something the melee model already carries, and the fork spells
     // the same thirteen out one at a time at `GameItems.cs`.
+    //
+    // `oneHanded: true` is the same shape of thing for Release 7-2's
+    // `IsOneHanded`, and it is here for the same reason: 19 of the 37 models the
+    // fork assigns it to are `true`, the other 18 are `false`, and it decides
+    // whether the riot shield can stay on the left arm. **It is a flag on the row
+    // rather than a column read**, unlike the `ISFRAGILE` and `WEIGHT` reads below
+    // -- there is no `ISONEHANDED` in `Items_MeleeWeapons.csv` and the C# writes
+    // all 37 values out as literals at the construction sites (`GameItems.cs:1384`
+    // for the baseball bat, `:1399` for the combat knife, through `:1956` for the
+    // fire axe). Absence below therefore means `false`, which is the C# default
+    // and is *not* a gap to be filled in later: the eighteen two-handed models are
+    // exactly the rows with no `oneHanded`, and that is deliberate.
+    //
+    // The four `UNIQUE_` rows have **no C# model at all** -- those ids appear
+    // nowhere in the reference, which constructs 37 `ItemMeleeWeaponModel`s and
+    // registers none of them -- so there is no `IsOneHanded` line to transcribe and
+    // they take the default too. Eight models in this file (these four plus the
+    // ranged side's four) are two-handed because the reference is silent about
+    // them, not because it said so.
     const meleeMap: Record<
       string,
-      { id: ItemID; img: string; verb: [string, string?]; unique?: boolean; butcher?: boolean }
+      {
+        id: ItemID;
+        img: string;
+        verb: [string, string?];
+        unique?: boolean;
+        butcher?: boolean;
+        oneHanded?: boolean;
+      }
     > = {
       MELEE_BASEBALLBAT: { id: ItemID.MELEE_BASEBALLBAT, img: GameImages.ITEM_BASEBALL_BAT, verb: ["smash", "smashes"] },
-      MELEE_COMBAT_KNIFE: { id: ItemID.MELEE_COMBAT_KNIFE, img: GameImages.ITEM_COMBAT_KNIFE, verb: ["stab", "stabs"] , butcher: true},
-      MELEE_CROWBAR: { id: ItemID.MELEE_CROWBAR, img: GameImages.ITEM_CROWBAR, verb: ["strike"], butcher: true },
+      MELEE_COMBAT_KNIFE: { id: ItemID.MELEE_COMBAT_KNIFE, img: GameImages.ITEM_COMBAT_KNIFE, verb: ["stab", "stabs"] , butcher: true, oneHanded: true},
+      MELEE_CROWBAR: { id: ItemID.MELEE_CROWBAR, img: GameImages.ITEM_CROWBAR, verb: ["strike"], butcher: true, oneHanded: true },
       UNIQUE_JASON_MYERS_AXE: { id: ItemID.UNIQUE_JASON_MYERS_AXE, img: GameImages.ITEM_JASON_MYERS_AXE, verb: ["slash", "slashes"], unique: true },
       MELEE_HUGE_HAMMER: { id: ItemID.MELEE_HUGE_HAMMER, img: GameImages.ITEM_HUGE_HAMMER, verb: ["smash", "smashes"] },
-      MELEE_SMALL_HAMMER: { id: ItemID.MELEE_SMALL_HAMMER, img: GameImages.ITEM_SMALL_HAMMER, verb: ["smash"] },
+      MELEE_SMALL_HAMMER: { id: ItemID.MELEE_SMALL_HAMMER, img: GameImages.ITEM_SMALL_HAMMER, verb: ["smash"], oneHanded: true },
       MELEE_GOLFCLUB: { id: ItemID.MELEE_GOLFCLUB, img: GameImages.ITEM_GOLF_CLUB, verb: ["strike"] },
       MELEE_IRON_GOLFCLUB: { id: ItemID.MELEE_IRON_GOLFCLUB, img: GameImages.ITEM_IRON_GOLF_CLUB, verb: ["strike"] },
       MELEE_SHOVEL: { id: ItemID.MELEE_SHOVEL, img: GameImages.ITEM_SHOVEL, verb: ["strike"] },
-      MELEE_SHORT_SHOVEL: { id: ItemID.MELEE_SHORT_SHOVEL, img: GameImages.ITEM_SHORT_SHOVEL, verb: ["strike"] },
-      MELEE_TRUNCHEON: { id: ItemID.MELEE_TRUNCHEON, img: GameImages.ITEM_TRUNCHEON, verb: ["strike"] },
-      MELEE_IMPROVISED_CLUB: { id: ItemID.MELEE_IMPROVISED_CLUB, img: GameImages.ITEM_IMPROVISED_CLUB, verb: ["strike"] },
+      MELEE_SHORT_SHOVEL: { id: ItemID.MELEE_SHORT_SHOVEL, img: GameImages.ITEM_SHORT_SHOVEL, verb: ["strike"], oneHanded: true },
+      MELEE_TRUNCHEON: { id: ItemID.MELEE_TRUNCHEON, img: GameImages.ITEM_TRUNCHEON, verb: ["strike"], oneHanded: true },
+      MELEE_IMPROVISED_CLUB: { id: ItemID.MELEE_IMPROVISED_CLUB, img: GameImages.ITEM_IMPROVISED_CLUB, verb: ["strike"], oneHanded: true },
       MELEE_IMPROVISED_SPEAR: { id: ItemID.MELEE_IMPROVISED_SPEAR, img: GameImages.ITEM_IMPROVISED_SPEAR, verb: ["pierce"] },
       UNIQUE_FAMU_FATARU_KATANA: { id: ItemID.UNIQUE_FAMU_FATARU_KATANA, img: GameImages.ITEM_FAMU_FATARU_KATANA, verb: ["slash", "slashes"], unique: true },
       UNIQUE_BIGBEAR_BAT: { id: ItemID.UNIQUE_BIGBEAR_BAT, img: GameImages.ITEM_BIGBEAR_BAT, verb: ["smash", "smashes"], unique: true },
@@ -716,26 +742,26 @@ export class GameItems implements ItemModelDB {
       MELEE_KATANA: { id: ItemID.MELEE_KATANA, img: GameImages.ITEM_KATANA, verb: ["slash", "slashes"], unique: true , butcher: true},
       MELEE_BARBED_WIRE_BAT: { id: ItemID.MELEE_BARBED_WIRE_BAT, img: GameImages.ITEM_BARBED_WIRE_BAT, verb: ["smash", "smashes"], unique: true },
       MELEE_KEYBOARD: { id: ItemID.MELEE_KEYBOARD, img: GameImages.ITEM_KEYBOARD, verb: ["bash", "bashes"], unique: true },
-      MELEE_TENNIS_RACKET: { id: ItemID.MELEE_TENNIS_RACKET, img: GameImages.ITEM_TENNIS_RACKET, verb: ["bash", "bashes"] },
+      MELEE_TENNIS_RACKET: { id: ItemID.MELEE_TENNIS_RACKET, img: GameImages.ITEM_TENNIS_RACKET, verb: ["bash", "bashes"], oneHanded: true },
       MELEE_HOCKEY_STICK: { id: ItemID.MELEE_HOCKEY_STICK, img: GameImages.ITEM_HOCKEY_STICK, verb: ["bash", "bashes"] },
-      MELEE_MACHETE: { id: ItemID.MELEE_MACHETE, img: GameImages.ITEM_MACHETE, verb: ["slash", "slashes"] , butcher: true},
+      MELEE_MACHETE: { id: ItemID.MELEE_MACHETE, img: GameImages.ITEM_MACHETE, verb: ["slash", "slashes"] , butcher: true, oneHanded: true},
       MELEE_STANDARD_AXE: { id: ItemID.MELEE_STANDARD_AXE, img: GameImages.ITEM_STANDARD_AXE, verb: ["chop"] , butcher: true},
       MELEE_PICKAXE: { id: ItemID.MELEE_PICKAXE, img: GameImages.ITEM_PICKAXE, verb: ["strike"] },
-      MELEE_PIPE_WRENCH: { id: ItemID.MELEE_PIPE_WRENCH, img: GameImages.ITEM_PIPE_WRENCH, verb: ["bash", "bashes"] },
+      MELEE_PIPE_WRENCH: { id: ItemID.MELEE_PIPE_WRENCH, img: GameImages.ITEM_PIPE_WRENCH, verb: ["bash", "bashes"], oneHanded: true },
       MELEE_CHAINSAW: { id: ItemID.MELEE_CHAINSAW, img: GameImages.ITEM_CHAINSAW, verb: ["cut", "cuts"] , butcher: true},
-      MELEE_CLEAVER: { id: ItemID.MELEE_CLEAVER, img: GameImages.ITEM_CLEAVER, verb: ["chop"] , butcher: true},
-      MELEE_BRASS_KNUCKLES: { id: ItemID.MELEE_BRASS_KNUCKLES, img: GameImages.ITEM_BRASS_KNUCKLES, verb: ["strike"] },
-      MELEE_FLAIL: { id: ItemID.MELEE_FLAIL, img: GameImages.ITEM_FLAIL, verb: ["strike"] },
-      MELEE_KITCHEN_KNIFE: { id: ItemID.MELEE_KITCHEN_KNIFE, img: GameImages.ITEM_KITCHEN_KNIFE, verb: ["slash", "slashes"] , butcher: true},
-      MELEE_SCIMITAR: { id: ItemID.MELEE_SCIMITAR, img: GameImages.ITEM_SCIMITAR, verb: ["slash", "slashes"] , butcher: true},
-      MELEE_MACE: { id: ItemID.MELEE_MACE, img: GameImages.ITEM_MACE, verb: ["smash", "smashes"] },
-      MELEE_NUNCHAKU: { id: ItemID.MELEE_NUNCHAKU, img: GameImages.ITEM_NUNCHAKU, verb: ["strike"] },
-      MELEE_FRYING_PAN: { id: ItemID.MELEE_FRYING_PAN, img: GameImages.ITEM_FRYING_PAN, verb: ["bash", "bashes"] },
+      MELEE_CLEAVER: { id: ItemID.MELEE_CLEAVER, img: GameImages.ITEM_CLEAVER, verb: ["chop"] , butcher: true, oneHanded: true},
+      MELEE_BRASS_KNUCKLES: { id: ItemID.MELEE_BRASS_KNUCKLES, img: GameImages.ITEM_BRASS_KNUCKLES, verb: ["strike"], oneHanded: true },
+      MELEE_FLAIL: { id: ItemID.MELEE_FLAIL, img: GameImages.ITEM_FLAIL, verb: ["strike"], oneHanded: true },
+      MELEE_KITCHEN_KNIFE: { id: ItemID.MELEE_KITCHEN_KNIFE, img: GameImages.ITEM_KITCHEN_KNIFE, verb: ["slash", "slashes"] , butcher: true, oneHanded: true},
+      MELEE_SCIMITAR: { id: ItemID.MELEE_SCIMITAR, img: GameImages.ITEM_SCIMITAR, verb: ["slash", "slashes"] , butcher: true, oneHanded: true},
+      MELEE_MACE: { id: ItemID.MELEE_MACE, img: GameImages.ITEM_MACE, verb: ["smash", "smashes"], oneHanded: true },
+      MELEE_NUNCHAKU: { id: ItemID.MELEE_NUNCHAKU, img: GameImages.ITEM_NUNCHAKU, verb: ["strike"], oneHanded: true },
+      MELEE_FRYING_PAN: { id: ItemID.MELEE_FRYING_PAN, img: GameImages.ITEM_FRYING_PAN, verb: ["bash", "bashes"], oneHanded: true },
       MELEE_PITCH_FORK: { id: ItemID.MELEE_PITCH_FORK, img: GameImages.ITEM_PITCH_FORK, verb: ["pierce"] },
       MELEE_SCYTHE: { id: ItemID.MELEE_SCYTHE, img: GameImages.ITEM_SCYTHE, verb: ["slash", "slashes"] , butcher: true},
-      MELEE_SICKLE: { id: ItemID.MELEE_SICKLE, img: GameImages.ITEM_SICKLE, verb: ["slash", "slashes"] , butcher: true},
+      MELEE_SICKLE: { id: ItemID.MELEE_SICKLE, img: GameImages.ITEM_SICKLE, verb: ["slash", "slashes"] , butcher: true, oneHanded: true},
       MELEE_SPEAR: { id: ItemID.MELEE_SPEAR, img: GameImages.ITEM_SPEAR, verb: ["pierce"] },
-      MELEE_SPIKED_MACE: { id: ItemID.MELEE_SPIKED_MACE, img: GameImages.ITEM_SPIKED_MACE, verb: ["smash", "smashes"] },
+      MELEE_SPIKED_MACE: { id: ItemID.MELEE_SPIKED_MACE, img: GameImages.ITEM_SPIKED_MACE, verb: ["smash", "smashes"], oneHanded: true },
       MELEE_FIRE_AXE: { id: ItemID.MELEE_FIRE_AXE, img: GameImages.ITEM_FIRE_AXE, verb: ["chop"] , butcher: true},
     };
 
@@ -758,6 +784,10 @@ export class GameItems implements ItemModelDB {
         d.ISFRAGILE === 1,
         d.TOOLBASHDMGBONUS ?? 0,
         d.TOOLBUILDBONUS ?? 0,
+        // Still Alive's `IsOneHanded`, Release 7-2. `=== true` rather than a bare
+        // read for the same reason the CSV booleans above use it: absent means
+        // two-handed, and `undefined` is not `false` until it is compared.
+        meta.oneHanded === true,
         // Still Alive's WEIGHT column. `?? 0` rather than a bare read: the
         // column only exists because the merge added it, and an older merged
         // table without it would otherwise load every melee weapon as NaN
@@ -785,12 +815,40 @@ export class GameItems implements ItemModelDB {
     // (GameItems.cs:987-1086). `kind` is derived from the ammo type, which
     // is equivalent to the C#'s explicit AttackKind per weapon since only the
     // crossbow takes bolts.
-    const rangedMap: Record<string, { id: ItemID; img: string; ammo: AmmoType; verb: [string, string?]; unique?: boolean }> = {
-      RANGED_ARMY_PISTOL: { id: ItemID.RANGED_ARMY_PISTOL, img: GameImages.ITEM_ARMY_PISTOL, ammo: AmmoType.HEAVY_PISTOL, verb: ["shoot"] },
+    //
+    // `oneHanded: true` is Release 7-2's `IsOneHanded`, and unlike the melee side
+    // it is *not* an object initialiser in the C#: `ItemRangedWeaponModel`'s is
+    // the eighth constructor argument (`ItemRangedWeaponModel.cs:66`, assigned at
+    // `:72`), so the value is the literal sitting immediately before `rwp.WEIGHT`
+    // in each `new ItemRangedWeaponModel(...)` call. Seven of the fork's 22 are
+    // `true`, and they are not the seven that share an ammo type -- they are the
+    // army pistol, the pistol, the revolver, the vintage pistol, the nail gun, the
+    // stun gun and the SMG (`GameItems.cs:1970`, `:2019`, `:2029`, `:2058`,
+    // `:2070`, `:2090`, `:2102` respectively). That set is worth stating in full
+    // because the neighbouring literal is `isSingleShot` and the two are
+    // independent: the SMG and the army pistol are both one-handed *and*
+    // rapid-firing, the nail gun and the stun gun are one-handed *and*
+    // single-shot, and reading the wrong one of the pair is a silent transposition
+    // that compiles, type-checks and produces a plausible weapon.
+    //
+    // The four rows below the C#'s own 22 -- `RANGED_ARMY_RIFLE`,
+    // `RANGED_KOLT_REVOLVER`, `UNIQUE_SANTAMAN_SHOTGUN` and
+    // `UNIQUE_HANS_VON_HANZ_PISTOL` -- have **no C# model at all**: the ids appear
+    // nowhere in the reference, so the fork dropped them and the CSV kept the rows.
+    // There is no reference value to transcribe for them, so they are left off the
+    // `oneHanded` list and take the field's `false` default. That is a decision
+    // rather than an omission, and it is the safe direction for a *pistol* and a
+    // *revolver* only in the sense that a two-handed pistol is a stranger thing
+    // than a one-handed rifle; the honest statement is that the reference is
+    // silent, and the field's own default is the only answer available. Writing
+    // `oneHanded: true` on the two pistols would be a guess dressed as a
+    // transcription.
+    const rangedMap: Record<string, { id: ItemID; img: string; ammo: AmmoType; verb: [string, string?]; unique?: boolean; oneHanded?: boolean }> = {
+      RANGED_ARMY_PISTOL: { id: ItemID.RANGED_ARMY_PISTOL, img: GameImages.ITEM_ARMY_PISTOL, ammo: AmmoType.HEAVY_PISTOL, verb: ["shoot"], oneHanded: true },
       RANGED_ARMY_RIFLE: { id: ItemID.RANGED_ARMY_RIFLE, img: GameImages.ITEM_ARMY_RIFLE, ammo: AmmoType.HEAVY_RIFLE, verb: ["fire a salvo at", "fires a salvo at"] },
       RANGED_HUNTING_CROSSBOW: { id: ItemID.RANGED_HUNTING_CROSSBOW, img: GameImages.ITEM_HUNTING_CROSSBOW, ammo: AmmoType.BOLT, verb: ["shoot"] },
       RANGED_HUNTING_RIFLE: { id: ItemID.RANGED_HUNTING_RIFLE, img: GameImages.ITEM_HUNTING_RIFLE, ammo: AmmoType.LIGHT_RIFLE, verb: ["shoot"] },
-      RANGED_PISTOL: { id: ItemID.RANGED_PISTOL, img: GameImages.ITEM_PISTOL, ammo: AmmoType.LIGHT_PISTOL, verb: ["shoot"] },
+      RANGED_PISTOL: { id: ItemID.RANGED_PISTOL, img: GameImages.ITEM_PISTOL, ammo: AmmoType.LIGHT_PISTOL, verb: ["shoot"], oneHanded: true },
       RANGED_KOLT_REVOLVER: { id: ItemID.RANGED_KOLT_REVOLVER, img: GameImages.ITEM_KOLT_REVOLVER, ammo: AmmoType.HEAVY_PISTOL, verb: ["shoot"] },
       RANGED_PRECISION_RIFLE: { id: ItemID.RANGED_PRECISION_RIFLE, img: GameImages.ITEM_PRECISION_RIFLE, ammo: AmmoType.HEAVY_RIFLE, verb: ["shoot"] },
       RANGED_SHOTGUN: { id: ItemID.RANGED_SHOTGUN, img: GameImages.ITEM_SHOTGUN, ammo: AmmoType.SHOTGUN, verb: ["shoot"] },
@@ -798,12 +856,12 @@ export class GameItems implements ItemModelDB {
       UNIQUE_HANS_VON_HANZ_PISTOL: { id: ItemID.UNIQUE_HANS_VON_HANZ_PISTOL, img: GameImages.ITEM_HANS_VON_HANZ_PISTOL, ammo: AmmoType.HEAVY_PISTOL, verb: ["shoot"], unique: true },
       RANGED_ARMY_PRECISION_RIFLE: { id: ItemID.RANGED_ARMY_PRECISION_RIFLE, img: GameImages.ITEM_ARMY_PRECISION_RIFLE, ammo: AmmoType.PRECISION_RIFLE, verb: ["shoot"] },
       RANGED_ARMY_RIFLE1: { id: ItemID.RANGED_ARMY_RIFLE1, img: GameImages.ITEM_ARMY_RIFLE1, ammo: AmmoType.HEAVY_RIFLE, verb: ["shoot"] },
-      RANGED_REVOLVER: { id: ItemID.RANGED_REVOLVER, img: GameImages.ITEM_REVOLVER, ammo: AmmoType.LIGHT_PISTOL, verb: ["shoot"] },
-      RANGED_VINTAGE_PISTOL: { id: ItemID.RANGED_VINTAGE_PISTOL, img: GameImages.ITEM_VINTAGE_PISTOL, ammo: AmmoType.LIGHT_PISTOL, verb: ["shoot"], unique: true },
-      RANGED_NAIL_GUN: { id: ItemID.RANGED_NAIL_GUN, img: GameImages.ITEM_NAIL_GUN, ammo: AmmoType.NAIL, verb: ["nail"] },
+      RANGED_REVOLVER: { id: ItemID.RANGED_REVOLVER, img: GameImages.ITEM_REVOLVER, ammo: AmmoType.LIGHT_PISTOL, verb: ["shoot"], oneHanded: true },
+      RANGED_VINTAGE_PISTOL: { id: ItemID.RANGED_VINTAGE_PISTOL, img: GameImages.ITEM_VINTAGE_PISTOL, ammo: AmmoType.LIGHT_PISTOL, verb: ["shoot"], unique: true, oneHanded: true },
+      RANGED_NAIL_GUN: { id: ItemID.RANGED_NAIL_GUN, img: GameImages.ITEM_NAIL_GUN, ammo: AmmoType.NAIL, verb: ["nail"], oneHanded: true },
       RANGED_FLAMETHROWER: { id: ItemID.RANGED_FLAMETHROWER, img: GameImages.ITEM_FLAMETHROWER, ammo: AmmoType.FUEL, verb: ["burn"] },
-      RANGED_STUN_GUN: { id: ItemID.RANGED_STUN_GUN, img: GameImages.ITEM_STUN_GUN, ammo: AmmoType.CHARGE, verb: ["paralyze"] },
-      RANGED_SMG: { id: ItemID.RANGED_SMG, img: GameImages.ITEM_SMG, ammo: AmmoType.LIGHT_PISTOL, verb: ["shoot"] },
+      RANGED_STUN_GUN: { id: ItemID.RANGED_STUN_GUN, img: GameImages.ITEM_STUN_GUN, ammo: AmmoType.CHARGE, verb: ["paralyze"], oneHanded: true },
+      RANGED_SMG: { id: ItemID.RANGED_SMG, img: GameImages.ITEM_SMG, ammo: AmmoType.LIGHT_PISTOL, verb: ["shoot"], oneHanded: true },
       RANGED_DOUBLE_BARREL: { id: ItemID.RANGED_DOUBLE_BARREL, img: GameImages.ITEM_DOUBLE_BARREL, ammo: AmmoType.SHOTGUN, verb: ["shoot"] },
       RANGED_MINIGUN: { id: ItemID.RANGED_MINIGUN, img: GameImages.ITEM_MINIGUN, ammo: AmmoType.MINIGUN, verb: ["shoot"], unique: true },
       RANGED_TACTICAL_SHOTGUN: { id: ItemID.RANGED_TACTICAL_SHOTGUN, img: GameImages.ITEM_TACTICAL_SHOTGUN, ammo: AmmoType.SHOTGUN, verb: ["shoot"] },
@@ -837,6 +895,12 @@ export class GameItems implements ItemModelDB {
         // gave every ranged weapon maxAmmo = undefined, so guns could never
         // hold a magazine.
         d.MAXAMMO,
+        // Still Alive's `IsOneHanded`, Release 7-2. In the C# this is the
+        // constructor's eighth argument, the literal between `isSingleShot` and
+        // `rwp.WEIGHT`; see the rangedMap header for the seven that are `true`.
+        // `=== true` for the same reason as the melee side: absent means
+        // two-handed, and the four models the reference dropped take the default.
+        meta.oneHanded === true,
         d.WEIGHT ?? 0
       );
       model.equipmentPart = DollPart.RIGHT_HAND;

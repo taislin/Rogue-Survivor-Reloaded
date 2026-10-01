@@ -276,12 +276,25 @@ export class Rules {
    * string from this constant instead of writing `"25% base chance to block melee
    * attacks."` out. The C# does the same (`GameItems.cs:3038`).
    *
-   * The C#'s sibling `SHIELD_ENCUMBERANCE_PENALTY` (`Rules.cs:130`, a 0.75 speed
-   * multiplier) is *not* here: it is consumed by `ActorSpeed`, which is where
-   * `GetEquippedShield()` first becomes reachable, and that reader is part of the
-   * `RogueGame` half of the shield feature rather than part of the row.
+   * The C#'s sibling `SHIELD_ENCUMBERANCE_PENALTY` (`Rules.cs:130`) is declared just
+   * below, with the note that its only reader is `actorSpeed`.
    */
   static readonly SHIELD_BASE_BLOCK_CHANCE = 25;
+
+  /**
+   * C# `Rules.SHIELD_ENCUMBERANCE_PENALTY` — `Rules.cs:130`, Release 7-2.
+   *
+   * A speed multiplier, not an int, unlike its sibling above. The C# declares it
+   * `const float`; this port writes `0.75` and lets it be a `number`, because
+   * `actorSpeed` already works in floating point until its final `Math.floor`.
+   *
+   * Read exactly once, by `actorSpeed`, and ungated — the C# has no gate because
+   * it has one ruleset. **It is provably inert under Classic**, which is why that
+   * is safe here: `DollPart.LEFT_ARM` did not exist in this port until the shield
+   * landed, and the only model that names it is `POLICE_RIOT_SHIELD`. So no
+   * Classic actor can satisfy `getEquippedShield()` and no Classic speed moves.
+   */
+  static readonly SHIELD_ENCUMBERANCE_PENALTY = 0.75;
 
   // Hunger/Rot & Sleep & Sanity
   static readonly FOOD_BASE_POINTS = WorldTime.TURNS_PER_HOUR * 48;
@@ -2486,6 +2499,23 @@ export class Rules {
     // wearing armor.
     const armor = actor.getEquippedItem(DollPart.TORSO);
     if (armor instanceof ItemBodyArmor) speed -= armor.weight;
+
+    // carrying a shield. Still Alive (Release 7-2), C# `Rules.cs:4650-4652`.
+    //
+    // **Position is load-bearing.** In the C# this sits between the torso armour
+    // subtraction and the heavy-weapon subtraction, and it is a multiply where
+    // those are subtracts — so moving it changes the result, not just the reading.
+    // For a shield plus a rifle: (speed - armour) * 0.75 - weaponWeight, and any
+    // other order gives a different number.
+    //
+    // Ungated, and inert under Classic: `DollPart.LEFT_ARM` is new in this port
+    // and only `POLICE_RIOT_SHIELD` names it, so `getEquippedShield()` cannot
+    // answer for a Classic actor. Note it uses the same accessor as the block
+    // roll, which means the penalty follows the reference's rule that "shield" is
+    // decided by the arm rather than by the item's type.
+    if (actor.getEquippedShield() !== null) {
+      speed *= Rules.SHIELD_ENCUMBERANCE_PENALTY;
+    }
 
     // carrying a heavy weapon. Still Alive (Release 7-6), gated because it
     // changes the speed of every actor with a gun in hand, not just the ones

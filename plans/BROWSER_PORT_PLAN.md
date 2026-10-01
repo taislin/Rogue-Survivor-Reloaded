@@ -3103,14 +3103,14 @@ plan for rather than discover:
 >   done.** The `DoWait` NPC path (a non-player lands a fish on its first wait,
 >   with no roll) *is* ported, so the arm is a behaviour to switch on rather than a
 >   mechanism to build — but nothing reaches it.
-> - **`isOneHanded`.** The C#'s "unequip a two-handed right-hand weapon" arm
->   (`RogueGame.cs:21945-21956`) reads `meleeModel.IsOneHanded`, and the port has
->   no such field. It is not a CSV column: the fork sets it by hand on every weapon
->   model in `GameItems.cs` (`false` throughout, `true` for the combat knife and
->   the pistols). Porting it is Release 7-2 *shield* data across 20-odd model
->   constructions, and inventing a default would silently unequip the wrong
->   weapons — so a survivor who equips a rod over a two-hander keeps both, which is
->   the C#'s behaviour for a one-hander and a divergence for the rest.
+> - ~~**`isOneHanded`.**~~ **LANDED.** `ItemWeaponModel.isOneHanded` now exists
+>   (Release 7-2) and the fishing rod's "unequip a two-handed right-hand weapon"
+>   arm (`RogueGame.cs:21945-21956`) is ported with it. The bullet that used to sit
+>   here was wrong about the data, so the correction is the record: the fork does
+>   **not** set `IsOneHanded = false` throughout, and one-handed is the
+>   **majority** — **19 of 37 melee** and **7 of 22 ranged**. "True for the combat
+>   knife and the pistols" named 1 melee and 4 of the 7 ranged, and missed the SMG,
+>   the nail gun and the stun gun. See `IsOneHanded` below.
 > - **The four sounds** (`GameSounds.cs:424-431`: cast and reel, player and
 >   nearby). **Arrived** with `Feature.ExtendedAudio`: the two player ones are
 >   wired and gated, and the `_NEARBY` pair is still not, because both of its arms
@@ -3139,6 +3139,117 @@ plan for rather than discover:
 > above, which is **equivalent** for the shipped constant rather than an untested
 > behaviour — recorded here because a suite that has an equivalent mutation and one
 > that has a missing test should not look the same.
+
+> ### `IsOneHanded` — the field, and the two guards that were blocked on it
+>
+> Still Alive, Release 7-2. **DONE**, and it is the last piece of the police riot
+> shield: the shield itself, the block roll and the encumbrance landed earlier, but
+> without this a shield and a baseball bat coexist, which the reference forbids.
+>
+> **The field is `ItemWeaponModel.isOneHanded`, defaulting to `false`, and it is on
+> the base rather than the two subclasses.** The C# declares it twice with no
+> common declaration to port — `ItemMeleeWeaponModel.IsOneHanded`
+> (`ItemMeleeWeaponModel.cs:14`) is a settable property, while
+> `ItemRangedWeaponModel`'s (`:43`) returns a private field (`:13`) that the
+> constructor's `isOneHanded` parameter assigns (`:72`) as the **eighth**
+> argument, between `isSingleShot` and `weight` (`:66`). That is the same asymmetry
+> `weight` has, and the same reason `weight` is hoisted to the base: one
+> declaration, one comment, and readers that do not care which subclass they were
+> handed. `ItemWeapon.isOneHanded` is the pass-through the C# writes twice on the
+> concrete items (`ItemMeleeWeapon.cs:16-19`, `ItemRangedWeapon.cs:27-30`) —
+> it is on the *item* because the shield guard holds an `ItemMeleeWeapon` from
+> `getEquippedMeleeWeapon()` and asks that, not the model.
+>
+> **Hand-set, not a column — and that is the part worth writing down.** There is
+> no `ISONEHANDED` in `Items_MeleeWeapons.csv` or `Items_RangedWeapons.csv`, and
+> the reference never reads one: all 37 melee and all 22 of its ranged values are
+> literals at the construction site. It *looks* like data, so the natural
+> assumption is that it is data, and `d.ISONEHANDED` would be `undefined` for every
+> weapon in the game — silently giving all of them the default. So it is a
+> `oneHanded: true` on the `meleeMap`/`rangedMap` row (`GameItems.ts:725`,
+> `:847`), read as `meta.oneHanded === true`, which is the same treatment
+> `butcher` already has and for the same reason: it is a hand-set per-model flag,
+> and absence is the answer.
+>
+> **The correction, which is the reason this section is longer than the change.**
+> The `Fishing` bullet above said the fork sets `IsOneHanded = false` throughout,
+> `true` "for the combat knife and the pistols". That was wrong on both halves and
+> wrong in the direction that matters — it implied one-handedness was rare, when
+> **one-handed is the majority**:
+>
+> | | one-handed | two-handed |
+> |---|---|---|
+> | melee (C#'s 37) | **19** | **18** |
+> | ranged (C#'s 22) | **7** | **15** |
+>
+> The combat knife is 1 of 19. The "pistols" are 4 of 7 — army pistol, pistol,
+> revolver, vintage pistol — and are not all of it: the **SMG**, the **nail gun**
+> and the **stun gun** are one-handed too, and the nail gun and the stun gun are
+> not pistols, being the two `isSingleShot` weapons sitting immediately left of
+> those literals in the source. Conversely the baseball bat, the chainsaw, the
+> katana and the fire axe are all two-handed, so "the combat knife" was 1 of 19
+> and the melee side was described as if it were the other 18. **Reading the wrong
+> one of the two adjacent `bool` literals is a silent transposition**: it compiles,
+> type-checks, and produces a plausible weapon.
+>
+> **The two guards, both in `OnEquipItem`, and both ungated.**
+>
+> 1. `:21014-21019` — equipping a **two-handed** weapon unequips an equipped
+>    shield. A local `let isOneHanded = false` (`:20978`) is assigned from the
+>    melee model (`:20987`) or the ranged one (`:20997`); the default is
+>    transcribed rather than tidied because both downstream readers test
+>    `!isOneHanded`, so a model that reached the test unassigned would have a
+>    shield pulled off it.
+> 2. `:21030-21045` — equipping a **shield** (`EquipmentPart == LEFT_ARM`)
+>    unequips a two-handed melee weapon, **else** a two-handed ranged one. The
+>    `else` is the reference's and is deliberate: a two-handed melee weapon wins
+>    and the ranged one is never considered. Today it is unobservable, because an
+>    actor has one right hand and so at most one of the two can be equipped; it is
+>    kept because the two-arm case is exactly where it would stop being so.
+>    The `EQUIP` sound at `:21043-21044` is **not** ported — it is
+>    `GameSounds.EQUIP`, still pending with `Feature.ExtendedAudio`.
+>
+> **The fishing-rod arm is ported too.** `RogueGame.cs:21945-21956` asks the same
+> field and was explicitly deferred *because the field did not exist*; the
+> `DoUseFishingRodItem` header carried that as a recorded gap. It runs before the
+> `isPlayer` test, as in the C#. Its `DoUnequipItem(..., false)` third argument is
+> the C#'s `showMessage = false`, which is this port's `canMessage = false` — the
+> two flags are *opposites by default* (the C# defaults `showMessage` to `false`,
+> the port defaults `canMessage` to `true`), so the passed value agrees while the
+> defaults do not. `Fishing` stays **NOT done** for its own reason: the NPC arm has
+> no `BehaviorGoFish` and no pond generator, so `Map.hasFishing` is never set and
+> nothing reaches this code from a player casting a rod.
+>
+> **Eight models have no reference value, and take the default.** The four
+> `UNIQUE_` melee rows (Jason Myers' axe, the Famu Fataru katana, the Bigbear bat,
+> the Roguedjack keyboard) and four ranged rows (`RANGED_ARMY_RIFLE`,
+> `RANGED_KOLT_REVOLVER`, `UNIQUE_SANTAMAN_SHOTGUN`,
+> `UNIQUE_HANS_VON_HANZ_PISTOL`) are ids that appear **nowhere in the reference** —
+> the fork dropped the models and the CSV kept the rows. There is no
+> `IsOneHanded` line to transcribe, so all eight are two-handed because the
+> reference is silent, not because it said so. That is recorded at both tables
+> rather than papered over with a plausible guess: two of the eight are pistols,
+> and marking them one-handed would be a guess dressed as a transcription.
+>
+> **Why the Classic fingerprint cannot move, and it is not a gate.** It was checked
+> for two reasons and answered structurally for both. The pinned
+> `e097b9d976ffac15` is the FNV digest of `tile.model.id | mapObject.imageId |
+> decorations | isInside` per cell (`tests/bank-building.test.ts:89-101`) — it
+> reads tiles and map objects and nothing else, so no item model and no equip rule
+> can reach it. And the shield arms are inert under Classic for a second,
+> independent reason: the only model that names `DollPart.LEFT_ARM` is
+> `POLICE_RIOT_SHIELD`, a hand-written model with no CSV row, so
+> `getEquippedShield()` cannot answer for a Classic actor and the `if/else` arm is
+> unreachable even when a Classic weapon's value is wrong. A wrong value would
+> only mean the wrong weapon is dropped on a *shield* — and there is no shield. The
+> fishing rod is a different mechanism and it is gated: `Feature.Fishing` is tested
+> on the only call site (`RogueGame.ts:21852`, the `Feature.Fishing` arm of
+> `DoUseItem`) before the method is entered, and
+> `FISHING_ROD` is a hand-written model rather than a CSV row, so Classic cannot
+> reach the arm at all.
+>
+> Tests: `tests/two-handed-weapons.test.ts`, asserting the exact 19 and 18 melee
+> ids, the 7 and 15 ranged ids, and all three equip behaviours against real models.
 
 > ### `AmbientAudio` — a third channel, and five of thirteen tracks
 >
