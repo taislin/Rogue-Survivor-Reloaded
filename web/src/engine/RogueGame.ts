@@ -513,6 +513,137 @@ export const CREDIT_CHAR_SPACING: number = 8;
 export const CREDIT_LINE_SPACING: number = LINE_SPACING;
 export const TEXTFILE_CHARS_PER_LINE: number = 120;
 export const TEXTFILE_LINES_PER_PAGE: number = 50;
+
+/**
+ * The credits screen's top and bottom rules, framing the readable block.
+ *
+ * 120 glyphs at `MENU_CHAR_WIDTH` is 1200 of the 1366 px canvas, so the rule is
+ * as wide as the widest line `TEXTFILE_CHARS_PER_LINE` allows — which is the
+ * point of keeping that number at 120 rather than raising it to the canvas: a
+ * line that overruns the rule reads as broken even when it is only too long.
+ * Same string the manual reader draws (`HandleHelpMode`), for the same reason.
+ */
+export const CREDITS_RULE: string =
+	"---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+";
+
+/**
+ * How many lines of `CREDITS_LINES` the credits screen shows at once.
+ *
+ * Derived from the geometry rather than counted by hand: the header is three bold
+ * steps tall, the footer claims two more, and the reader draws while `gy` is
+ * short of `CANVAS_HEIGHT - 2 * MENU_BOLD_LINE_SPACING`. That is 38 at the
+ * shipped constants.
+ *
+ * **Less than `TEXTFILE_LINES_PER_PAGE` (50), and that gap is why this exists.**
+ * The manual reader clamps its cursor against the page size, which is sound for a
+ * manual that is longer than a page and quietly wrong for one that is not: for a
+ * file of fewer than 50 lines the clamp pins the cursor to 0 on every pass, so
+ * the arrow keys and the page keys all become no-ops and the screen only ever
+ * moves when a number key is pressed. The credits are 42 lines, so they have to
+ * be clamped against what *fits*. Asserted in the test suite, because the number
+ * silently becoming wrong would not break anything - it would just start cropping
+ * lines off the bottom again.
+ */
+export const CREDITS_LINES_PER_SCREEN: number = Math.max(
+	1,
+	Math.floor(
+		(CANVAS_HEIGHT -
+			2 * MENU_BOLD_LINE_SPACING -
+			1 -
+			3 * MENU_BOLD_LINE_SPACING) /
+			MENU_BOLD_LINE_SPACING,
+	) + 1,
+);
+
+/**
+ * Keeps the credits reader's cursor inside the lines it can actually show.
+ *
+ * The last legal cursor is `length - CREDITS_LINES_PER_SCREEN`, not
+ * `length - 1`: from `length - 1` there is one line of text left to draw and
+ * 37 lines of black. A file shorter than a screen clamps to 0 and simply does
+ * not scroll, which is correct - there is nothing to scroll to - and is the
+ * reason this takes the length as an argument rather than reading a module
+ * constant: it is the reader's rule, and it has to hold for any list length.
+ */
+export function clampCreditsLine(line: number, length: number): number {
+	return Math.max(0, Math.min(line, Math.max(0, length - CREDITS_LINES_PER_SCREEN)));
+}
+
+/**
+ * The credits screen's lines, in reading order.
+ *
+ * This was a wall of `UI_DrawStringBold` calls in C# (`RogueGame.cs:2258-2288`)
+ * and stayed one through the first port, because until now it only had to hold
+ * the original author's name. It no longer fits on a 768 px canvas: crediting
+ * the *Still Alive* fork and the four sprite styles adds twenty-odd lines, and
+ * the ones that were on screen would fall off the bottom. So the screen became
+ * the paged reader `HandleHelpMode` already is, and these lines are its source —
+ * which is also what lets a section be addressed by number rather than scrolled
+ * to.
+ *
+ * `<SECTION>` is a marker, not text: the reader skips it when drawing, and the
+ * number keys jump to the Nth one. Section *order* is therefore the jump order
+ * (0 is the top of the file, 1 the first marker, and so on), so adding a section
+ * in the middle renumbers every later one — that is the reader's behaviour, not
+ * a bug to work around.
+ *
+ * The attribution that is not optional and has to be somewhere a player can
+ * read is the licence one. The fork states in its own `CREDITS.txt` that its
+ * third-party media are CC0 or CC-BY 3.0 and that *every* file in them has been
+ * modified, which makes CC-BY attribution a condition rather than a courtesy
+ * (`plans/STILL_ALIVE_REFERENCE.md` §8). Those files are merged into this port's
+ * `classic` sprite set and its audio tables, so they are ours to credit.
+ */
+export const CREDITS_LINES: readonly string[] = [
+	"",
+	"ROGUE SURVIVOR - the original game",
+	"Programming, graphics & music by Jacques Ruiz (roguedjack), 2012-2018.",
+	"",
+	"  Programming           : C# .NET 3.5, Microsoft Visual Studio Community 2017",
+	"  Graphic software      : Inkscape, Paint.NET",
+	"  Sound & music software: GuitarPro 7, Audacity",
+	"  Sound samples         : sound-fishing.net, soundsnap.com",
+	"  Blog                  : http://roguesurvivor.blogspot.com/",
+	"  Fans forum            : http://roguesurvivor.proboards.com/",
+	"<SECTION>",
+	"",
+	"ROGUE SURVIVOR: STILL ALIVE - the modifications and extra content",
+	"Programming by Mark Pryor (MP).",
+	"",
+	"  Source                : https://gitlab.com/RogueSurvivor-StillAlive/",
+	"  Forum                 : http://roguesurvivor.proboards.com/user/180",
+	"  Images                : opengameart.org",
+	"  Sounds                : freesound.org, pixabay.com",
+	"",
+	"  That mod ships the full list of the files it borrowed, and every one of",
+	"  them is public domain (CC0) or CC-BY 3.0, and every one of them has been",
+	"  modified. Thank you to the artists and sound designers named there.",
+	"<SECTION>",
+	"",
+	"ROGUE SURVIVOR: RELOADED - this port",
+	"Porting, sprite styles and fixes by Taislin.",
+	"",
+	"  Source                : https://github.com/taislin/Rogue-Survivor-Reloaded",
+	"  Licence               : GNU GPL v3, inherited from the original game",
+	"",
+	"  Not affiliated with or endorsed by the original author. Please keep these",
+	"  credits and the licence intact if you redistribute the game.",
+	"<SECTION>",
+	"",
+	"SPRITE STYLES - Options, (Gfx) Sprite Style",
+	"",
+	// Labels are the options-screen names verbatim, folder case and all, so a
+	// player who picked a style can find the line that credits it. The proper name
+	// of the work goes in the value column, where "Daft Tiles b1" can be both.
+	"  classic              : Jacques Ruiz (roguedjack) - the original artwork",
+	"  deonapocalypse v9 r1 : Deon - \"DEONAPOCALYPSE\" Rogue Survivor mod 1.2",
+	"  genesis classic 1.4  : Deon - \"Genesis Classic\" Rogue Survivor mod 1.4",
+	"  dafttiles b1         : daftigod - \"Daft Tiles\", on the Rogue Survivor forum",
+	"",
+	"  The two Deon mods and the Daft Tiles pack are on dffd.bay12games.com and",
+	"  on roguesurvivor.proboards.com. Thanks to all of them, and to the players",
+	"  for their feedback and eagerness to die!",
+];
 export const NAME_SUBWAY_STATION: string = "Subway Station";
 export const NAME_SEWERS_MAINTENANCE: string = "Sewers Maintenance";
 export const NAME_SUBWAY_RAILS: string = "rails";
@@ -1541,6 +1672,16 @@ export class RogueGame {
 	m_CharGen: CharGen = new CharGen();
 	m_Manual: TextFile | null = null;
 	m_ManualLine!: number;
+	/**
+	 * First line of `CREDITS_LINES` the credits screen is showing.
+	 *
+	 * A field rather than a local for the reason `m_ManualLine` is one: the
+	 * reader is a `do`/`while`, so a local would be re-initialised every time the
+	 * player left the screen, and every visit would open on page one. It is
+	 * initialised where the manual's is (`Init`) and clamped to
+	 * `CREDITS_LINES.length` on the way in.
+	 */
+	m_CreditsLine: number = 0;
 	m_GameFactions!: GameFactions;
 	m_GameActors!: GameActors;
 	m_GameItems!: GameItems;
@@ -4048,106 +4189,112 @@ export class RogueGame {
 	}
 
 	// C# HandleCredits — RogueGame.cs:2248
+	//
+	// The C# draws one screenful of hardcoded strings and waits for Escape. This
+	// is the fork's shape instead (`_refs/StillAlive-master/.../RogueGame.cs:2114`),
+	// a reader over CREDITS_LINES: the C# block no longer fits on the canvas now
+	// that the Still Alive fork and the four sprite styles are credited, and a
+	// credits screen whose bottom is unreachable is not a credits screen.
 	async HandleCredits(): Promise<void> {
-		const left = 0;
-		const right = 256;
-		let gy = 0;
-
 		// music.
 		this.m_MusicManager.stop();
 		this.m_MusicManager.playLooping(GameMusics.SLEEP, MusicPriority.BGM);
 
-		// draw.
-		this.m_UI.UI_Clear(Color.Black);
-		this.DrawHeader();
-		gy += MENU_BOLD_LINE_SPACING;
-		this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Credits", 0, gy);
-		gy += 2 * MENU_BOLD_LINE_SPACING;
-		this.m_UI.UI_DrawStringBoldLarge(
-			Color.White,
-			"Programming, Graphics & Music by Jacques Ruiz (roguedjack) 2018",
-			0,
-			gy,
-		);
-		gy += 2 * MENU_BOLD_LINE_SPACING;
+		const lines = CREDITS_LINES;
+		// A visit resumes where the last one stopped, which is what the field
+		// rather than a local buys. Clamped on the way in for the same reason it is
+		// clamped at the bottom of the loop: a cursor at the very end draws one
+		// blank screen, which reads as an empty credits file.
+		this.m_CreditsLine = clampCreditsLine(this.m_CreditsLine, lines.length);
 
-		this.m_UI.UI_DrawStringBoldLarge(Color.White, "Programming", left, gy);
-		this.m_UI.UI_DrawStringLarge(
-			Color.White,
-			"- C# NET 3.5, Microsoft Visual Studio Community 2017",
-			right,
-			gy,
-		);
-		gy += MENU_BOLD_LINE_SPACING;
-		this.m_UI.UI_DrawStringBoldLarge(
-			Color.White,
-			"Graphic softwares",
-			left,
-			gy,
-		);
-		this.m_UI.UI_DrawStringLarge(
-			Color.White,
-			"- Inkscape, Paint.NET",
-			right,
-			gy,
-		);
-		gy += MENU_BOLD_LINE_SPACING;
-		this.m_UI.UI_DrawStringBoldLarge(
-			Color.White,
-			"Sound & Music softwares",
-			left,
-			gy,
-		);
-		this.m_UI.UI_DrawStringLarge(
-			Color.White,
-			"- GuitarPro 7, Audacity",
-			right,
-			gy,
-		);
-		gy += MENU_BOLD_LINE_SPACING;
-		this.m_UI.UI_DrawStringBoldLarge(Color.White, "Sound samples", left, gy);
-		this.m_UI.UI_DrawStringLarge(
-			Color.White,
-			"- http://www.sound-fishing.net  http://www.soundsnap.com/",
-			right,
-			gy,
-		);
+		let loop = true;
+		do {
+			// draw header.
+			this.m_UI.UI_Clear(Color.Black);
+			let gy = 0;
+			this.DrawHeader();
+			gy += MENU_BOLD_LINE_SPACING;
+			this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Credits", 0, gy);
+			gy += MENU_BOLD_LINE_SPACING;
+			this.m_UI.UI_DrawStringBoldLarge(Color.White, CREDITS_RULE, 0, gy);
+			gy += MENU_BOLD_LINE_SPACING;
 
-		gy += 2 * MENU_BOLD_LINE_SPACING;
-		this.m_UI.UI_DrawStringBoldLarge(Color.White, "Contact", 0, gy);
-		gy += MENU_BOLD_LINE_SPACING;
-		this.m_UI.UI_DrawStringLarge(
-			Color.White,
-			"Email      : roguedjack@yahoo.fr",
-			0,
-			gy,
-		);
-		gy += MENU_LINE_SPACING;
-		this.m_UI.UI_DrawStringLarge(
-			Color.White,
-			"Blog       : http://roguesurvivor.blogspot.com/",
-			0,
-			gy,
-		);
-		gy += MENU_LINE_SPACING;
-		this.m_UI.UI_DrawStringLarge(
-			Color.White,
-			"Fans Forum : http://roguesurvivor.proboards.com/",
-			0,
-			gy,
-		);
-		gy += MENU_LINE_SPACING;
-		this.m_UI.UI_DrawStringBoldLarge(
-			Color.White,
-			"Thanks to the players for their feedback and eagerness to die!",
-			0,
-			gy,
-		);
-		gy += MENU_BOLD_LINE_SPACING;
+			// draw credits, as many as fit.
+			let iLine = this.m_CreditsLine;
+			do {
+				// ignore commands
+				const ignore = lines[iLine] === "<SECTION>";
 
-		this.DrawFootnote(Color.White, "ESC to leave");
-		this.m_UI.UI_Repaint();
-		await this.WaitEscape();
+				if (!ignore) {
+					this.m_UI.UI_DrawStringBoldLarge(Color.LightGray, lines[iLine], 0, gy);
+					gy += MENU_BOLD_LINE_SPACING;
+				}
+				++iLine;
+			} while (
+				iLine < lines.length &&
+				gy < CANVAS_HEIGHT - 2 * MENU_BOLD_LINE_SPACING
+			);
+
+			// draw foot.
+			this.m_UI.UI_DrawStringBoldLarge(Color.White, CREDITS_RULE, 0, gy);
+			gy += MENU_BOLD_LINE_SPACING;
+			this.DrawFootnote(
+				Color.White,
+				"cursor and PgUp/PgDn to move, numbers to jump to section, ESC to leave",
+			);
+
+			this.m_UI.UI_Repaint();
+
+			// get command. The page keys move by a screenful rather than by
+			// TEXTFILE_LINES_PER_PAGE, because a "page" here has to mean the
+			// screen: 50 lines against a 38-line screen would skip twelve credits
+			// every press and never land on them.
+			const key = await this.m_UI.UI_WaitKey();
+			const choice = this.KeyToChoiceNumber(key);
+
+			if (choice >= 0) {
+				if (choice === 0) {
+					this.m_CreditsLine = 0;
+				} else {
+					// jump to Nth section.
+					const prevLine = this.m_CreditsLine;
+					let sectionCount = 0;
+					this.m_CreditsLine = 0;
+					while (sectionCount < choice && this.m_CreditsLine < lines.length) {
+						if (lines[this.m_CreditsLine] === "<SECTION>") {
+							++sectionCount;
+						}
+						++this.m_CreditsLine;
+					}
+
+					// if section not found, don't move.
+					if (this.m_CreditsLine >= lines.length) {
+						this.m_CreditsLine = prevLine;
+					}
+				}
+			} else {
+				switch (key.key) {
+					case "Escape":
+						loop = false;
+						break;
+
+					case "ArrowUp":
+						--this.m_CreditsLine;
+						break;
+					case "ArrowDown":
+						++this.m_CreditsLine;
+						break;
+					case "PageUp":
+						this.m_CreditsLine -= CREDITS_LINES_PER_SCREEN;
+						break;
+					case "PageDown":
+						this.m_CreditsLine += CREDITS_LINES_PER_SCREEN;
+						break;
+				}
+			}
+
+			this.m_CreditsLine = clampCreditsLine(this.m_CreditsLine, lines.length);
+		} while (loop);
 	}
 
 	// C# HandleOptions — RogueGame.cs:2295
