@@ -423,8 +423,14 @@ Move the mouse on the map to look at a tile.
 Gives you usefull descriptions for learning the game or analyzing the tactical situation.
 
 
-> MOVING  (default Numpad)
-Walk or run around.
+> MOVING  (default Q W E / A S D / Z C)
+Walk or run around, using the grid laid out over the map:
+
+    Q W E        NW  N  NE
+    A S D         W  S   E
+    Z C           SW    SE
+
+The four arrow keys and the numpad work too, so you can keep whichever you learned first.
 If you try to move where you cannot you might "bump" into something.
 "Bumping" allows you to perform some actions.
 
@@ -446,7 +452,7 @@ furniture. Now bumping into something breakable just refuses the move and tells
 you which key does the job. See BREAKING OBJECTS below.
 
 
-> USING AN EXIT  (default X)
+> USING AN EXIT  (default .)
 Some exits (such as ladders and holes) allow you to move between maps.
 Stand on an exit and use the command.
 
@@ -456,20 +462,20 @@ You can start and stop running. When running you move 2x faster but it cost you 
 You need to be not tired to start or continue running. If you are tired while running you automatically stop.
 
 
-> WAITING/RESTING  (default NumPad5)
+> WAITING/RESTING  (default X, or NumPad5)
 Do nothing. You recover STA faster this way.
 
 
-> WAITING ONE HOUR  (default W)
+> WAITING ONE HOUR  (default Shift-W)
 Wait for one hour. Interrupted if you see enemies, become hungry or sleepy, or witness something important happening.
 Useful if you want to wait for the day to rise, the night to fall or just to waste time.
 
 
-> CLOSING A DOOR/WINDOW  (default C)
+> CLOSING A DOOR/WINDOW  (default Shift-T)
 Closes an adjacent door or window.
 
 
-> SLEEPING  (default Z)
+> SLEEPING  (default Shift-Z)
 Sleeping recovers SLP points and can slowly heal you.
 You can sleep anywhere but sleeping on a couch recovers your points faster and can slowly heal you.
 You cannot sleep while Hungry, apart from that you can sleep anytime you wish.
@@ -496,7 +502,7 @@ It is a fast and easy way to trade but the items you are offered might not be th
 Use the negociating trade command if you want more control and better deals.
 
 
-> NEGOCIATING TRADE WITH AN ACTOR (default E)
+> NEGOCIATING TRADE WITH AN ACTOR (default L)
 You can initiate a more detailled trade negociation with this command.
 Press the key and with the direction keys select an adjacent actor willing to trade.
 This works like normal trading, except you chose which items you want to exhange instead of getting a semi-random offer from an actor.
@@ -635,13 +641,13 @@ Give orders or directives to your followers.
 See the Followers section for more details.
 
 
-> SHOUTING  (default S)
+> SHOUTING  (default U)
 Make a lot of noise.
 Useful to try to wake up nearby sleepers.
 The closer you are when shouting the more chance they have to wake up.
 
 
-> USE SPRAY  (default A)
+> USE SPRAY  (default M)
 Use the spray you have equipped in your left hang.
 The action depends on the type of spray. See below for the different actions.
 

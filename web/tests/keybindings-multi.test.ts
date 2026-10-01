@@ -71,17 +71,29 @@ describe("the numpad and the digit row are different keys", () => {
       PlayerCommand.MOVE_N
     );
     expect(press(kb, "8", "Numpad8")).toBe(PlayerCommand.MOVE_N);
-    expect(kb.getAll(PlayerCommand.MOVE_N)).toEqual(["ArrowUp", "Num 8"]);
+    expect(kb.getAll(PlayerCommand.MOVE_N)).toEqual(["W", "ArrowUp", "Num 8"]);
   });
 
   it("still lets the numpad drive the item slots when nothing claims it there", () => {
-    // Regression guard for the fallback: with NumLock on, a numpad 5 reports
-    // `key: "5"`, and a player used to selecting items with the numpad must keep
-    // working. Nothing is bound to "Num 5" by default, so it falls through to the
-    // digit-row binding for "5" — which is the fifth slot, `ITEM_SLOT_4`.
+    // Regression guard for the fallback: with NumLock on, a numpad 0 reports
+    // `key: "0"`, and a player used to selecting items with the numpad must keep
+    // working. No direction claims "Num 0" — none of the eight moves is there —
+    // so it falls through to the digit-row binding for "0", `ITEM_SLOT_9`.
+    //
+    // Numpad 5 is not usable as this test's subject any more: `WAIT_OR_SELF` is
+    // bound there, restoring the C#'s `NumPad5`, so the key resolves to waiting
+    // rather than falling through. That is the fallback working, not failing.
     const kb = new Keybindings();
-    expect(kb.getAll(PlayerCommand.ITEM_SLOT_4)).toEqual(["5"]);
-    expect(press(kb, "5", "Numpad5")).toBe(PlayerCommand.ITEM_SLOT_4);
+    expect(kb.getAll(PlayerCommand.ITEM_SLOT_9)).toEqual(["0"]);
+    expect(press(kb, "0", "Numpad0")).toBe(PlayerCommand.ITEM_SLOT_9);
+  });
+
+  it("puts waiting back on numpad 5, the way the C# had it", () => {
+    // The port moved WAIT_OR_SELF to `.` alone while `manual.txt` kept advertising
+    // the numpad key, so the documented control was not bound to anything.
+    const kb = new Keybindings();
+    expect(kb.getAll(PlayerCommand.WAIT_OR_SELF)).toEqual(["X", "Num 5"]);
+    expect(press(kb, "5", "Numpad5")).toBe(PlayerCommand.WAIT_OR_SELF);
   });
 
   it("names a numpad key readably, because these strings are shown to the player", () => {
@@ -100,6 +112,79 @@ describe("the numpad and the digit row are different keys", () => {
   });
 });
 
+describe("the defaults are reachable", () => {
+  /**
+   * The failure this guards is not hypothetical.
+   *
+   * `set` unbinds a command's keys and then binds one, and binding a key takes it
+   * away from whichever command held it — so `set(X, "C")` written *after*
+   * `set(Y, "C")` leaves `Y` with nothing, silently. `LOOK_RIGHT` and
+   * `VIEW_MODE_TOGGLE` did exactly that: `CLOSE_DOOR` lost `C` and `FIRE_MODE`
+   * lost `F`, so closing a door and firing a gun were both unreachable, and the
+   * "press <...>" hints for them printed empty brackets.
+   *
+   * Nothing caught it. `checkForConflict` cannot, because `keyToCommand` is a 1:1
+   * map by construction and never reports a *missing* key; the existing collision
+   * test only checks that no key is bound twice, which was true throughout.
+   */
+
+  it("binds every command to at least one key", () => {
+    const kb = new Keybindings();
+    const orphans = Object.values(PlayerCommand)
+      .filter((value): value is PlayerCommand => typeof value === "number" && value !== PlayerCommand.NONE)
+      .filter((command) => kb.getAll(command).length === 0)
+      .map((command) => PlayerCommand[command]);
+    expect(orphans, "these commands cannot be reached by any key").toEqual([]);
+  });
+
+  it("binds no key to two commands", () => {
+    const kb = new Keybindings();
+    expect(kb.checkForConflict()).toBe(false);
+  });
+
+  it("puts the eight directions on the grid, and keeps arrows and numpad", () => {
+    const kb = new Keybindings();
+    const grid: [string, PlayerCommand][] = [
+      ["q", PlayerCommand.MOVE_NW],
+      ["w", PlayerCommand.MOVE_N],
+      ["e", PlayerCommand.MOVE_NE],
+      ["a", PlayerCommand.MOVE_W],
+      ["s", PlayerCommand.MOVE_S],
+      ["d", PlayerCommand.MOVE_E],
+      ["z", PlayerCommand.MOVE_SW],
+      ["c", PlayerCommand.MOVE_SE],
+    ];
+    for (const [key, command] of grid) {
+      expect(InputTranslator.keyToCommand(kb, key, false, false, false), `${key} does not move`).toBe(command);
+    }
+    // Nothing regressed: the arrows are still cardinal-only, so Up cannot mean
+    // north and north-west at once, and the numpad still carries all eight.
+    expect(kb.getAll(PlayerCommand.MOVE_N)).toContain("ArrowUp");
+    expect(kb.getAll(PlayerCommand.MOVE_NW)).not.toContain("ArrowUp");
+    expect(kb.getAll(PlayerCommand.MOVE_NW)).toEqual(["Q", "Num 7"]);
+  });
+
+  it("keeps the moved commands reachable, and off the grid", () => {
+    const kb = new Keybindings();
+    const expected: [PlayerCommand, string[]][] = [
+      [PlayerCommand.WAIT_OR_SELF, ["X", "Num 5"]],
+      [PlayerCommand.WAIT_LONG, ["Shift+W"]],
+      [PlayerCommand.USE_EXIT, ["."]],
+      [PlayerCommand.SLEEP, ["Shift+Z"]],
+      [PlayerCommand.SHOUT, ["U"]],
+      [PlayerCommand.USE_SPRAY, ["M"]],
+      [PlayerCommand.NEGOCIATE_TRADE, ["L"]],
+      [PlayerCommand.CLOSE_DOOR, ["Shift+T"]],
+      [PlayerCommand.FIRE_MODE, ["F"]],
+      [PlayerCommand.VIEW_MODE_TOGGLE, ["Shift+F"]],
+      [PlayerCommand.LOOK_RIGHT, ["Shift+C", "]"]],
+    ];
+    for (const [command, keys] of expected) {
+      expect(kb.getAll(command), PlayerCommand[command]).toEqual(keys);
+    }
+  });
+});
+
 describe("several keys per command", () => {
   it("adds a key without dropping the one it had", () => {
     const kb = new Keybindings();
@@ -115,7 +200,7 @@ describe("several keys per command", () => {
     // listing every alias would overflow its columns.
     const kb = new Keybindings();
     kb.addKey(PlayerCommand.SHOUT, "Ctrl+G");
-    expect(kb.get(PlayerCommand.SHOUT)).toBe("S");
+    expect(kb.get(PlayerCommand.SHOUT)).toBe("U");
   });
 
   it("replaces every key when `set` is used", () => {
@@ -139,25 +224,25 @@ describe("several keys per command", () => {
     const kb = new Keybindings();
     kb.addKey(PlayerCommand.SHOUT, "Ctrl+G");
     kb.addKey(PlayerCommand.SHOUT, "Ctrl+G");
-    expect(kb.getAll(PlayerCommand.SHOUT)).toEqual(["S", "Ctrl+G"]);
+    expect(kb.getAll(PlayerCommand.SHOUT)).toEqual(["U", "Ctrl+G"]);
   });
 
   it("drops the last key on request, and can be left unbound", () => {
     const kb = new Keybindings();
     kb.addKey(PlayerCommand.SHOUT, "Ctrl+G");
     kb.addKey(PlayerCommand.SHOUT, "Alt+G");
-    expect(kb.getAll(PlayerCommand.SHOUT)).toEqual(["S", "Ctrl+G", "Alt+G"]);
+    expect(kb.getAll(PlayerCommand.SHOUT)).toEqual(["U", "Ctrl+G", "Alt+G"]);
 
     kb.removeLastKey(PlayerCommand.SHOUT);
-    expect(kb.getAll(PlayerCommand.SHOUT)).toEqual(["S", "Ctrl+G"]);
+    expect(kb.getAll(PlayerCommand.SHOUT)).toEqual(["U", "Ctrl+G"]);
 
     kb.removeLastKey(PlayerCommand.SHOUT);
     kb.removeLastKey(PlayerCommand.SHOUT);
     expect(kb.getAll(PlayerCommand.SHOUT)).toEqual([]);
     expect(kb.get(PlayerCommand.SHOUT)).toBeUndefined();
     // And the freed key is available again rather than orphaned.
-    kb.addKey(PlayerCommand.SHOUT, "S");
-    expect(kb.getCommand("S")).toBe(PlayerCommand.SHOUT);
+    kb.addKey(PlayerCommand.SHOUT, "U");
+    expect(kb.getCommand("U")).toBe(PlayerCommand.SHOUT);
   });
 
   it("reports a conflict when one key somehow reaches two commands", () => {
@@ -183,8 +268,8 @@ describe("keybinding storage", () => {
     const back = new Keybindings();
     back.resetToDefaults();
     expect(back.loadFromStorage()).toBe(true);
-    expect(back.getAll(PlayerCommand.SHOUT)).toEqual(["S", "Ctrl+G"]);
-    expect(back.getAll(PlayerCommand.MOVE_NW)).toEqual(["Num 7", "Ctrl+Num 7"]);
+    expect(back.getAll(PlayerCommand.SHOUT)).toEqual(["U", "Ctrl+G"]);
+    expect(back.getAll(PlayerCommand.MOVE_NW)).toEqual(["Q", "Num 7", "Ctrl+Num 7"]);
   });
 
   it("still reads a save written when a command could only have one key", () => {
