@@ -163,9 +163,8 @@ a { color: var(--ember); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 h1, h2, h3, h4 {
-  font-family: var(--font-display);
   line-height: 1.25;
-  margin: 0 0 0.6em;
+  margin: 0.6em 0 0.6em;
   /* 400, not the 700 the body face would take. Storm Gust ships no bold face,
      so a 700 here is a synthesised smear rather than a real weight -- see the
      @font-face note. This is the whole reason the heading rule cannot just
@@ -173,10 +172,10 @@ h1, h2, h3, h4 {
   font-weight: 400;
   letter-spacing: -0.005em;
 }
-h1 { font-size: clamp(1.9rem, 4.5vw, 2.9rem); }
-h2 { font-size: clamp(1.4rem, 3vw, 1.85rem); }
-h3 { font-size: 1.15rem; }
-h4 { font-size: 1rem; }
+h1 { font-size: clamp(1.9rem, 4.5vw, 2.9rem); font-family: var(--font-display);}
+h2 { font-size: clamp(1.4rem, 3vw, 1.85rem); font-family: var(--font-display);}
+h3 { font-size: 1.15rem; font-family: var(--font-mono); font-weight: bold;}
+h4 { font-size: 1rem; font-family: var(--font-mono); font-weight: bold;}
 
 p { margin: 0 0 1em; }
 ul, ol { margin: 0 0 1em; padding-left: 1.4em; }
@@ -345,10 +344,11 @@ hr {
 .hero__title-accent {
   display: block;
   color: var(--ember);
-  font: 700 clamp(0.8rem, 2vw, 1rem)/1 var(--font-mono);
+  font-family: var(--font-display);
   letter-spacing: 0.2em;
   text-transform: uppercase;
   margin-bottom: 0.8rem;
+  font-size: 2em;
 }
 
 .hero__meta {
