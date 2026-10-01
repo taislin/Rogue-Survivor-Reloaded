@@ -461,25 +461,107 @@ describe("the gate", () => {
     // is one, and the id-choice ternary in `DoEatCorpse` is two. A refactor that
     // moves the gate into a helper fails here, which is the review this is for
     // rather than an obstacle to it.
+    const BULK_TABLE = "RANGED_WEAPON_SOUND_FAMILIES";
+    /**
+     * Every `GameSounds` id the ranged-weapon table can name, read out of the table
+     * itself rather than hand-listed.
+     *
+     * A list of 45 literals would go stale the next time a weapon is added, and the
+     * failure would read as "an audio id changed" instead of "this test needs
+     * updating" -- which is the failure mode the rest of this file is careful about.
+     */
+    const WEAPON_SOUND_IDS = new Set<string>();
+    {
+      const text = readFileSync(join(SRC, "engine", "RogueGame.ts"), "utf-8");
+      // Start after the docblock: it names several ids in prose ("FLAMETHROWER_VISIBLE
+      // in the _PLAYER band"), and prose is not a declaration.
+      const doc = text.indexOf("The ranged-weapon sound families");
+      const from = text.indexOf("*/", doc) + 2;
+      const to = text.indexOf("\n]);", from);
+      for (const m of text.slice(from, to).matchAll(/GameSounds\.([A-Z][A-Z0-9_]+)/g)) {
+        const id = m[1]!;
+        if (FORK_IDS.has(DECLARED[id] ?? "")) WEAPON_SOUND_IDS.add(id);
+      }
+    }
+
     const offenders: string[] = [];
     const gated: string[] = [];
     for (const path of walk(SRC)) {
       if (path.endsWith(join("gameplay", "GameSounds.ts"))) continue;
-      const lines = readFileSync(path, "utf-8").split("\n");
+      const text = readFileSync(path, "utf-8");
+      const lines = text.split("\n");
+
+      // **Bulk tables are a second legitimate shape**, and the exemption is
+      // deliberately narrow rather than a widening of the three-line window.
+      //
+      // `RANGED_WEAPON_SOUND_FAMILIES` names 45 ids in one declaration, hundreds of
+      // lines from the gate that reads it. Putting a gate on each of the 45 rows
+      // would be 45 copies of the same `if`, which is the thing this test exists to
+      // prevent, and gating the declaration itself would gate nothing (a
+      // `ReadonlyMap` cannot be conditionally absent at type level).
+      //
+      // So the exemption is: *a fork id declared inside the text span of a named
+      // bulk table counts as gated if and only if that table's name is read by a
+      // `Feature.ExtendedAudio` gate in the same file.* Delete the gate and the
+      // exemption stops applying, the ids fall back to the three-line rule, and this
+      // fails -- which is the protection that matters. The failure mode this test was
+      // written for (a table nobody reads) still fails, in the other direction.
+      // The span runs from this section's own docblock to the map's closing `]);`.
+      // It has to start at the docblock rather than at the declaration, because four
+      // of the families are hoisted `const`s *above* the map and shared by name --
+      // and those hold a third of the ids.
+      const declAt = text.indexOf(`const ${BULK_TABLE}`);
+      const docAt = text.indexOf("The ranged-weapon sound families");
+      const tableStart = docAt === -1 ? declAt : docAt;
+      const tableEnd = tableStart === -1 ? -1 : text.indexOf("\n]);", tableStart);
+      // The gate has to be the one that *reads* the table: `if (gate) ... TABLE.get`.
+      // Anchoring on the gate rather than on the declaration is what makes this
+      // fail if the reader is deleted, which is the case worth failing on.
+      const tableIsGated =
+        declAt !== -1 &&
+        new RegExp(`Feature\\.ExtendedAudio[\\s\\S]{0,300}${BULK_TABLE}\\s*\\.get`).test(text);
+      const inBulkTable = (offset: number): boolean => tableIsGated && offset >= tableStart && offset <= tableEnd;
+
+      let offset = 0;
       lines.forEach((raw, i) => {
+        const at = offset;
+        offset += raw.length + 1;
         const code = raw.replace(/\/\/.*$/, "");
-        const m = code.match(/GameSounds\.([A-Z][A-Z0-9_]+)\b/);
-        if (m == null) return;
-        if (!FORK_IDS.has(DECLARED[m[1]!] ?? "")) return;
-        const window = lines.slice(Math.max(0, i - 3), i + 1).map((l) => l.replace(/\/\/.*$/, ""));
-        if (window.some((l) => /Feature\.ExtendedAudio/.test(l))) gated.push(m[1]!);
-        else offenders.push(`${path}:${i + 1}  ${code.trim()}`);
+        // **Every** id on the line, not the first. The scanner used `String.match`,
+        // which sees one, and that was invisible until a line carried two -- the
+        // weapon table's `{ single: A, rapid: B }` is eleven of them. A scanner that
+        // silently ignores the second id on a line is a scanner that would have
+        // passed an ungated one, which is the whole failure this test exists for.
+        for (const m of code.matchAll(/GameSounds\.([A-Z][A-Z0-9_]+)\b/g)) {
+          const id = m[1]!;
+          if (!FORK_IDS.has(DECLARED[id] ?? "")) continue;
+          const window = lines
+            .slice(Math.max(0, i - 3), i + 1)
+            .map((l) => l.replace(/\/\/.*$/, ""));
+          if (window.some((l) => /Feature\.ExtendedAudio/.test(l)) || inBulkTable(at)) {
+            gated.push(id);
+          } else {
+            offenders.push(`${path}:${i + 1}  ${id}`);
+          }
+        }
       });
     }
     expect(offenders, `fork sounds named with no gate nearby:\n  ${offenders.join("\n  ")}`).toEqual([]);
     // Named, not counted, so adding a fourth wired sound is a deliberate edit
     // here and the reason for it has a place to be written.
-    expect(gated.sort()).toEqual(["FISHING_CAST_PLAYER", "FISHING_REEL_PLAYER", "UNDEAD_EAT_PLAYER"]);
+    //
+    // The weapon ids are asserted *as a set derived from the table* rather than as a
+    // hand-written list, because a list of 45 goes stale the moment a weapon is
+    // added and the failure would read as "an audio id changed" instead of "this
+    // test needs updating".
+    const weapons = gated.filter((id) => WEAPON_SOUND_IDS.has(id));
+    expect(weapons.sort(), "every weapon family id the table can name is gated").toEqual(
+      [...WEAPON_SOUND_IDS].sort(),
+    );
+    expect(
+      gated.filter((id) => !weapons.includes(id)).sort(),
+      "and the three pre-existing effects are still wired",
+    ).toEqual(["FISHING_CAST_PLAYER", "FISHING_REEL_PLAYER", "UNDEAD_EAT_PLAYER"]);
   });
 });
 

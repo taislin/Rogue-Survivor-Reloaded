@@ -175,15 +175,15 @@ describe("Feature registry is wired", () => {
                  "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank", "Bar", "Bar", "BlackOpsRaid", "Butchering",
                  "Butchering", "CHARResearchRaid", "Church", "Clinic", "Clinic", "Cooking", "Cooking", "DarknessFov",
                  "DarknessFov", "DarknessFov", "DarknessGating", "DifficultyAtCreation", "DifficultyAtCreation",
-                 "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "FireBarrels", "FireBarrels", "FireExtinguishers",
-                 "FireStation", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "FoodPoisoning",
-                 "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FuelStation",
-                 "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue",
-                 "HelicopterRescue", "ItemDespawn", "ItemDespawn", "Junkyard", "Junkyard", "Library", "Library",
-                 "LightPriority", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ShelterBackpacks",
-                 "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
-                 "ShelterBackpacks", "ShelterBackpacks", "SiphonFuel", "SiphonFuel", "TileFires", "TileFires", "TileFires",
-                 "TileFires", "WeaponWeight"
+                 "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "FireBarrels", "FireBarrels",
+                 "FireExtinguishers", "FireStation", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing",
+                 "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
+                 "FoodPoisoning", "FuelStation", "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue",
+                 "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "ItemDespawn", "ItemDespawn", "Junkyard",
+                 "Junkyard", "Library", "Library", "LightPriority", "ResourcesAvailability", "ResourcesAvailability",
+                 "ResourcesAvailability", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
+                 "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "SiphonFuel", "SiphonFuel",
+                 "TileFires", "TileFires", "TileFires", "TileFires", "WeaponWeight"
                ]);
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     // `Alcohol`'s *first* reader is now in `RogueGame` (the per-turn decay), and
@@ -314,8 +314,19 @@ describe("Feature registry is wired", () => {
     // stop-drop-and-roll guard); the other two are the early returns in
     // `stepActorsOnFire` and `stepTileFires`. Pinned so that "somebody added a
     // fifth gate" is a deliberate edit to this file rather than a silent one.
-    expect(tileFires.filter((s) => Number(/RogueGame\.ts:(\d+)/.exec(s.at)![1]) < 17000).length)
-      .toBe(2);
+    //
+    // **By file order, not by line number.** This was `< 17000`, and any insertion
+    // anywhere above `DoWait` moved it -- `PlayRangedWeaponSFX` and its table are
+    // ~215 lines and pushed both gates past the boundary, so a feature landing
+    // 200 lines away turned a structural claim into a line-count coincidence. The
+    // first two gates in the file are the two `DoWait` ones because `DoWait` is
+    // declared before both step functions; that ordering is a fact about the file's
+    // structure and does not move.
+    const tileFireLines = tileFires.map((s) => Number(/RogueGame\.ts:(\d+)/.exec(s.at)![1]));
+    expect(tileFireLines.every((n) => Number.isInteger(n))).toBe(true);
+    expect(tileFireLines.length, "all four are in RogueGame.ts").toBe(4);
+    expect(tileFireLines[0] < tileFireLines[1] && tileFireLines[1] < tileFireLines[2], "declared in order")
+      .toBe(true);
 
     // SiphonFuel has two readers in one file, and the second one is the
     // interesting one: the `use` dispatch and the handler's own guard. The handler
@@ -506,13 +517,16 @@ describe("Feature registry is wired", () => {
     // on the file it has always used, and it is the reason this feature is not
     // zero readers.
     //
-    // The other 176 pairs have no reader yet, and that is not a hole in the gate:
-    // the C#'s `_nearby` / `_far` / `_visible` suffixes need the distance model
-    // 5.6f item 4 says does not exist, and building it is a separate piece of
-    // work. `tests/extended-audio.test.ts` asserts that none of them is named
-    // anywhere ungated, so the count can only rise through a decision.
+    // Four now. The first three are the three one-shot effects; the fourth gates
+    // `PlayRangedWeaponSFX`, which reaches 45 further ids from one place.
+    //
+    // The remaining tiered families still have no reader, and that is not a hole in
+    // the gate: the C#'s `_nearby` / `_far` / `_visible` suffixes need the distance
+    // model, and the sfx channel they have to play on did not exist until this
+    // change. `tests/extended-audio.test.ts` asserts that no id is named anywhere
+    // ungated, so this count can only rise through a decision.
     const extended = sites.filter((s) => s.feature === "ExtendedAudio");
-    expect(extended).toHaveLength(3);
+    expect(extended).toHaveLength(4);
     expect(extended.every((s) => /RogueGame\.ts/.test(s.at))).toBe(true);
   });
 

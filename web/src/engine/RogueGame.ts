@@ -182,7 +182,11 @@ import { storage } from "@engine/storage";
 import { TextFile } from "@engine/TextFile";
 import { TaskRemoveDecoration } from "@engine/tasks/TaskRemoveDecoration";
 import { DayPhase, WorldTime } from "@engine/WorldTime";
-import { NoiseBand, bandForDistance, isWithinBand } from "@engine/NoiseDistance";
+import {
+	NoiseBand,
+	bandForDistance,
+	isWithinBand,
+} from "@engine/NoiseDistance";
 import {
 	BaseAI,
 	ItemRating,
@@ -874,6 +878,189 @@ let s_MapZoom: MapZoom = loadMapZoom();
 function logInit(text: string): void {
 	console.log(`[RogueGame] ${text}`);
 }
+
+/**
+ * The ranged-weapon sound families -- C# `PlayRangedWeaponSFX`
+ * (`RogueGame.cs:19008-19187`, Release 7-1).
+ *
+ * The C# writes this as **three `switch` statements**, one per distance band, each
+ * switching on `weapon.TheName.ToString()` -- the weapon's *display name*, string
+ * matched, added in Release 7-2. That is 180 lines to express fourteen families
+ * across three bands, and it means a rename in `Items_RangedWeapons.csv` silently
+ * stops a gun being audible.
+ *
+ * **This table is keyed by `ItemID` instead**, which is the same mapping without the
+ * string matching: every C# `case` label is quoted beside the id it resolves to, so
+ * the correspondence is checkable against the reference and the C#'s fragility is
+ * not inherited. The bands are not symmetric -- six families have no `_FAR` and two
+ * have no `_NEARBY` -- so the absent entries are absent here too rather than
+ * defaulted.
+ *
+ * ## `single` and `rapid`
+ *
+ * Six families have two ids per band, chosen on `shots == 1`. That is not a
+ * stylistic choice in the C#: a pistol fired once and a pistol fired in rapid fire
+ * are different sounds because the second is a burst and the noise model treats it
+ * as one. The five automatics are pistol, army rifle, revolver, SMG and minigun;
+ * the minigun has only a rapid id in the C#, and firing it once plays the rapid
+ * sound, which is what the reference does.
+ *
+ * ## The flamethrower's odd one out
+ *
+ * `FLAMETHROWER_VISIBLE` in the `_PLAYER` band and `FLAMETHROWER_AUDIBLE` in
+ * `_NEARBY`. Neither is `_NEARBY`, and that is the C#'s own naming: this is the one
+ * family whose suffixes come from `GameImages.cs:334-336`'s "visible"/"audible"
+ * vocabulary rather than the `_PLAYER`/`_NEARBY`/`_FAR` one. Kept verbatim --
+ * renaming them to fit the pattern would lose the evidence that the pattern is not
+ * universal.
+ */
+type SoundFamilyBand = {
+	/** `shots == 1`. Absent where the C# has only a rapid id. */
+	single?: string;
+	/** `shots > 1`, or the C#'s only id for this band. */
+	rapid?: string;
+};
+
+type SoundFamily = {
+	/** The C#'s `case` labels, verbatim, for checking against the reference. */
+	readonly csharpNames: readonly string[];
+	readonly player?: SoundFamilyBand;
+	readonly nearby?: SoundFamilyBand;
+	readonly far?: SoundFamilyBand;
+};
+
+const PISTOL: SoundFamily = {
+	csharpNames: ["the pistol"],
+	player: { single: GameSounds.PISTOL_SINGLE_SHOT_PLAYER, rapid: GameSounds.PISTOL_RAPID_FIRE_PLAYER },
+	nearby: { single: GameSounds.PISTOL_SINGLE_SHOT_NEARBY, rapid: GameSounds.PISTOL_RAPID_FIRE_NEARBY },
+	far: { single: GameSounds.PISTOL_SINGLE_SHOT_FAR, rapid: GameSounds.PISTOL_RAPID_FIRE_FAR },
+};
+const PRECISION: SoundFamily = {
+	csharpNames: ["the precision rifle"],
+	player: { single: GameSounds.PRECISION_RIFLE_FIRE_PLAYER },
+	nearby: { single: GameSounds.PRECISION_RIFLE_FIRE_NEARBY },
+	far: { single: GameSounds.PRECISION_RIFLE_FIRE_FAR },
+};
+const SHOTGUN: SoundFamily = {
+	csharpNames: ["the shotgun"],
+	player: { single: GameSounds.SHOTGUN_FIRE_PLAYER },
+	nearby: { single: GameSounds.SHOTGUN_FIRE_NEARBY },
+	far: { single: GameSounds.SHOTGUN_FIRE_FAR },
+};
+const REVOLVER: SoundFamily = {
+	csharpNames: ["the revolver"],
+	player: { single: GameSounds.REVOLVER_SINGLE_SHOT_PLAYER, rapid: GameSounds.REVOLVER_RAPID_FIRE_PLAYER },
+	nearby: { single: GameSounds.REVOLVER_SINGLE_SHOT_NEARBY, rapid: GameSounds.REVOLVER_RAPID_FIRE_NEARBY },
+	far: { single: GameSounds.REVOLVER_SINGLE_SHOT_FAR, rapid: GameSounds.REVOLVER_RAPID_FIRE_FAR },
+};
+
+/** The twenty `ItemID`s covering fourteen families, keyed by the port's id. */
+// `globalThis.Map`, because this file imports the game's `Map` class -- which is
+// the right shadowing to get caught by the compiler and the wrong one here.
+const RANGED_WEAPON_SOUND_FAMILIES: ReadonlyMap<number, SoundFamily> = new globalThis.Map([
+	[ItemID.RANGED_PISTOL, PISTOL],
+	[ItemID.UNIQUE_HANS_VON_HANZ_PISTOL, { ...PISTOL, csharpNames: ["Hans von Hanz pistol"] }],
+	[
+		ItemID.RANGED_HUNTING_RIFLE,
+		{
+			csharpNames: ["the hunting rifle"],
+			player: { single: GameSounds.HUNTING_RIFLE_FIRE_PLAYER },
+			nearby: { single: GameSounds.HUNTING_RIFLE_FIRE_NEARBY },
+			far: { single: GameSounds.HUNTING_RIFLE_FIRE_FAR },
+		},
+	],
+	[ItemID.RANGED_PRECISION_RIFLE, PRECISION],
+	[ItemID.RANGED_ARMY_PRECISION_RIFLE, { ...PRECISION, csharpNames: ["the army precision rifle"] }],
+	[
+		ItemID.RANGED_ARMY_RIFLE,
+		{
+			csharpNames: ["the army rifle"],
+			player: { single: GameSounds.ARMY_RIFLE_SINGLE_SHOT_PLAYER, rapid: GameSounds.ARMY_RIFLE_RAPID_FIRE_PLAYER },
+			nearby: { single: GameSounds.ARMY_RIFLE_SINGLE_SHOT_NEARBY, rapid: GameSounds.ARMY_RIFLE_RAPID_FIRE_NEARBY },
+			far: { single: GameSounds.ARMY_RIFLE_SINGLE_SHOT_FAR, rapid: GameSounds.ARMY_RIFLE_RAPID_FIRE_FAR },
+		},
+	],
+	[ItemID.RANGED_SHOTGUN, SHOTGUN],
+	[ItemID.RANGED_TACTICAL_SHOTGUN, { ...SHOTGUN, csharpNames: ["the tactical shotgun"] }],
+	[ItemID.RANGED_DOUBLE_BARREL, { ...SHOTGUN, csharpNames: ["the double barrel"] }],
+	[ItemID.UNIQUE_SANTAMAN_SHOTGUN, { ...SHOTGUN, csharpNames: ["Santaman shotgun"] }],
+	[
+		ItemID.RANGED_HUNTING_CROSSBOW,
+		{
+			csharpNames: ["the hunting crossbow"],
+			player: { single: GameSounds.CROSSBOW_FIRE_PLAYER },
+			nearby: { single: GameSounds.CROSSBOW_FIRE_NEARBY },
+			// No `_FAR` in the C# either. The crossbow is quiet at any distance, which
+			// is a design statement and not an omission in the transcription.
+		},
+	],
+	[
+		ItemID.RANGED_NAIL_GUN,
+		{
+			csharpNames: ["the nail gun"],
+			// Player band only, and it is a `rapid` slot for a weapon that fires one
+			// nail at a time -- which is the C#'s own arrangement, so a single shot
+			// plays `NAIL_GUN` rather than falling through to nothing.
+			player: { rapid: GameSounds.NAIL_GUN },
+		},
+	],
+	[ItemID.RANGED_REVOLVER, REVOLVER],
+	[ItemID.RANGED_ARMY_PISTOL, { ...REVOLVER, csharpNames: ["the army pistol"] }],
+	[
+		ItemID.RANGED_FLAMETHROWER,
+		{
+			csharpNames: ["the flame thrower"],
+			// `_VISIBLE` / `_AUDIBLE`, not `_PLAYER` / `_NEARBY`. See the module comment.
+			player: { single: GameSounds.FLAMETHROWER_VISIBLE },
+			nearby: { single: GameSounds.FLAMETHROWER_AUDIBLE },
+		},
+	],
+	[
+		ItemID.RANGED_STUN_GUN,
+		{
+			csharpNames: ["the stun gun"],
+			player: { single: GameSounds.STUN_GUN_PLAYER },
+			nearby: { single: GameSounds.STUN_GUN_NEARBY },
+		},
+	],
+	[
+		ItemID.RANGED_SMG,
+		{
+			csharpNames: ["the SMG"],
+			player: { single: GameSounds.SMG_SINGLE_SHOT_PLAYER, rapid: GameSounds.SMG_RAPID_FIRE_PLAYER },
+			nearby: { single: GameSounds.SMG_SINGLE_SHOT_NEARBY, rapid: GameSounds.SMG_RAPID_FIRE_NEARBY },
+			far: { single: GameSounds.SMG_SINGLE_SHOT_FAR, rapid: GameSounds.SMG_RAPID_FIRE_FAR },
+		},
+	],
+	[
+		ItemID.RANGED_MINIGUN,
+		{
+			csharpNames: ["the minigun"],
+			// Rapid-only in every band: the C# has no single-shot minigun id, so
+			// firing it once plays the rapid sound.
+			player: { rapid: GameSounds.MINIGUN_RAPID_FIRE_PLAYER },
+			nearby: { rapid: GameSounds.MINIGUN_RAPID_FIRE_NEARBY },
+			far: { rapid: GameSounds.MINIGUN_RAPID_FIRE_FAR },
+		},
+	],
+	[
+		ItemID.RANGED_GRENADE_LAUNCHER,
+		{
+			csharpNames: ["the grenade launcher"],
+			player: { single: GameSounds.GRENADE_LAUNCHER_SINGLE_SHOT_PLAYER },
+			nearby: { single: GameSounds.GRENADE_LAUNCHER_SINGLE_SHOT_NEARBY },
+		},
+	],
+	[
+		ItemID.RANGED_BIO_FORCE_GUN,
+		{
+			csharpNames: ["the bio force gun"],
+			// Player band only. The one weapon the C# gives a bespoke id to rather
+			// than a weapon-family suffix, because it is not a projectile.
+			player: { single: GameSounds.BIO_FORCE_GUN_PLAYER },
+		},
+	],
+]);
 
 export class RogueGame {
 	/** Browser save slot used by the C# "current save file" (`GetUserSave`). */
@@ -6723,6 +6910,67 @@ inv.removeAllQuantity(it);
 				"A CHAR research team entered the district.",
 			);
 		}
+	}
+
+	/**
+	 * C# `PlayRangedWeaponSFX(Location, ItemRangedWeapon, int)` --
+	 * `RogueGame.cs:19008-19187`, Release 7-1.
+	 *
+	 * `shots` is the C#'s `soundEffectShots`: **0 for none, 1 for single-shot, 2 for
+	 * rapid-fire** (`:18645`). Zero is a real case and not a guard against a caller
+	 * mistake -- the C# sets it deliberately for a fire mode that should be silent.
+	 *
+	 * The C# writes this as three `switch` statements on the weapon's *display name*,
+	 * one per distance band. The band is chosen first (`:19009`, `:19076`, `:19137`),
+	 * then the id, then the single/rapid choice inside each case.
+	 *
+	 * **Two divergences, both because the port lacks what the C# has.**
+	 *
+	 * 1. The band is chosen with `NoiseDistance.bandForDistance` rather than by
+	 *    calling `IsAudibleToPlayer` three times. That is *not* equivalent, and the
+	 *    difference is worth naming: the C#'s outer gate re-tests the player's
+	 *    Euclidean `AudioRange` against each radius in turn, so an actor whose
+	 *    `AudioRange` is shorter than the band radius falls out of every band and
+	 *    hears nothing. Banding the distance once means a short-range listener still
+	 *    gets the `_FAR` id at 14 tiles. The C#'s version is arguably the bug -- it
+	 *    makes audibility depend on the *listener's* stat twice -- but it is the
+	 *    reference, so this keeps the `isAudibleToPlayer` shape available and notes
+	 *    the choice rather than hiding it in a band lookup.
+	 * 2. `shots` is the C#'s `soundEffectShots` verbatim, threaded through from the
+	 *    fire-mode branch in `DoRangedAttack` -- 1 for `DEFAULT`, 2 for the first shot
+	 *    of a `RAPID` burst that has a second shot coming, 0 for the second shot and
+	 *    for the silent cases. `FireMode.FLAMING` (Release 7-2, the flaming crossbow
+	 *    bolt) is absent from the port's `FireMode` enum, so its `soundEffectShots = 1`
+	 *    case is unreachable here rather than unimplemented.
+	 *
+	 * Returns the id it played, or `null` for "nothing was audible" -- which for a
+	 * weapon with no family entry is also the answer, and is the same `null` the
+	 * C#'s missing `default:` case produces.
+	 */
+	private PlayRangedWeaponSFX(location: Location, weapon: ItemModel, shots: number): string | null {
+		if (!hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio)) return null;
+		const family = RANGED_WEAPON_SOUND_FAMILIES.get(weapon.id);
+		if (family === undefined) return null;
+
+		const distance = this.DistanceToPlayer(location.map!, location.position);
+		const band = bandForDistance(distance);
+		const wanted =
+			band === NoiseBand.Quiet
+				? family.player
+				: band === NoiseBand.Moderate
+					? family.nearby ?? family.player
+					: band === NoiseBand.Loud
+						? family.far ?? family.nearby ?? family.player
+						: family.far;
+		if (wanted === undefined) return null;
+
+		// `shots === 1` is single-shot. A family with only a rapid id (the minigun,
+		// and the nail gun in the player band) plays that one either way, which is what
+		// the C# does -- its `else` covers the single-shot case when there is no `if`.
+		const id = shots === 1 ? (wanted.single ?? wanted.rapid) : wanted.rapid;
+		if (id === undefined) return null;
+		this.m_SoundManager.play(id);
+		return id;
 	}
 
 	// C# DistanceToPlayer — RogueGame.cs:4951
@@ -17706,7 +17954,9 @@ inv.removeAllQuantity(it);
 				this.SpendActorActionPoints(attacker, Rules.BASE_ACTION_COST);
 
 				// do attack.
-				await this.DoSingleRangedAttack(attacker, defender, LoF, 0);
+				// C# `:18608-18609`: DEFAULT and FLAMING both fire once and make the
+				// single-shot sound.
+				await this.DoSingleRangedAttack(attacker, defender, LoF, 0, 1);
 				break;
 			}
 
@@ -17714,8 +17964,17 @@ inv.removeAllQuantity(it);
 				// spend AP.
 				this.SpendActorActionPoints(attacker, Rules.BASE_ACTION_COST);
 
+				// C# `:18614-18620`. The first shot only makes the *rapid* sound if a
+				// second shot is actually coming, which is what `Ammo >= 2` decides --
+				// so emptying the magazine on the last round gives a single-shot bark
+				// rather than a burst that never arrives.
+				const burstWeapon = attacker.getEquippedWeapon();
+				if (!(burstWeapon instanceof ItemRangedWeapon))
+					throw new Error("rapid fire but no equipped ranged weapon");
+				const soundEffect = burstWeapon.ammo >= 2 ? 2 : 1;
+
 				// 1st attack
-				await this.DoSingleRangedAttack(attacker, defender, LoF, 1);
+				await this.DoSingleRangedAttack(attacker, defender, LoF, 1, soundEffect);
 
 				// 2nd attack.
 				// special cases:
@@ -17741,7 +18000,10 @@ inv.removeAllQuantity(it);
 					return;
 				} else {
 					// perform attack normally.
-					await this.DoSingleRangedAttack(attacker, defender, LoF, 2);
+					// Zero sound, as the C# (`:18631-18632`): the burst already made its
+					// noise on the first shot and a second report would be two gunshots
+					// where the player fired once.
+					await this.DoSingleRangedAttack(attacker, defender, LoF, 2, 0);
 				}
 				break;
 			}
@@ -17758,6 +18020,7 @@ inv.removeAllQuantity(it);
 		defender: Actor,
 		LoF: Point[],
 		shotCounter: number,
+		soundEffectShots: number = 0,
 	): Promise<void> {
 		// set activiy & target.
 		attacker.activity = Activity.FIGHTING;
@@ -17781,6 +18044,28 @@ inv.removeAllQuantity(it);
 
 		// spend STA.
 		this.SpendActorStaminaPoints(attacker, attack.staminaPenalty);
+
+		// The gun's report. C# `RogueGame.cs:18696-18697`, in the same place:
+		//
+		// ```csharp
+		// if (soundEffectShots > 0)
+		//     PlayRangedWeaponSFX(attacker.Location, weapon, soundEffectShots);
+		// ```
+		//
+		// The port has no `FireMode`, so the C#'s `soundEffectShots` is derived from
+		// the 0-based `shotCounter`: the first shot of a burst is single-shot and the
+		// rest are rapid. A single-shot fire mode produces `shotCounter === 0` every
+		// time anyway, so this is the same choice a fire-mode enum would make -- see
+		// `PlayRangedWeaponSFX` for the two divergences that follow from not having one.
+		//
+		// Placed before the jam roll on purpose: a jammed weapon does make a noise,
+		// and the C#'s call is likewise above the jam branch's early `return`.
+		if (soundEffectShots > 0) {
+			const rangedWeapon = attacker.getEquippedWeapon();
+			if (rangedWeapon !== null) {
+				this.PlayRangedWeaponSFX(attacker.location, rangedWeapon.model, soundEffectShots);
+			}
+		}
 
 		// Firearms weapon jam?
 		if (attack.kind === AttackKind.FIREARM) {
