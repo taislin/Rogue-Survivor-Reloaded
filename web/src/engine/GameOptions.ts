@@ -1462,9 +1462,9 @@ export class GameOptions {
       return (
         "Draws the play screen from your own eyes rather than from above.\n" +
         "The map, the rules and one-action-per-turn are all unchanged.\n" +
-        "In first person the arrow keys change meaning:\n" +
-        "Left and Right turn you an eighth of a circle, costing no turn;\n" +
-        "Up and Down walk you forward and back the way you are facing."
+        "In first person west and east change meaning:\n" +
+        "Left and Right, or A and D, turn you an eighth of a circle, costing no turn;\n" +
+        "Up and Down, or W and S, walk you forward and back the way you are facing."
       );
     case OptionIDs.GAME_IDLE_AUTO_ADVANCE:
       return (

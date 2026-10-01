@@ -15777,13 +15777,14 @@ inv.removeAllQuantity(it);
 				title = "MOVEMENT - DIRECTIONS";
 				body = [
 					"MOVE your character around with the movements keys.",
-					"The default keys are your NUMPAD numbers.",
+					"The default keys are the grid over the map:",
 					"",
-					"7 8 9",
-					"4 - 6",
-					"1 2 3",
+					"Q W E        NW  N  NE",
+					"A S D         W  S   E",
+					"Z C           SW    SE",
 					"",
-					"5 makes you WAIT one turn.",
+					"Your NUMPAD does the same thing, and the four arrow keys walk you north, south, east and west.",
+					"",
 					"The move keys are the most important ones.",
 					"When asked for a DIRECTION, press a MOVE key.",
 					"Be sure to remember that!",
@@ -27104,8 +27105,8 @@ inv.removeAllQuantity(it);
 		this.m_MessageManager.add(
 			new Message(
 				GameOptions.isFirstPersonView(s_Options.viewMode)
-					? "First person view. Left and Right turn you; Up and Down walk you forward and back."
-					: "Top-down view. The arrow keys walk you again.",
+					? "First person view. Left and Right turn you, and so do A and D; Up and Down walk you forward and back."
+					: "Top-down view. The arrow keys and A W S D walk you again.",
 				this.m_Session.worldTime.turnCounter,
 				Color.LightGray,
 			),

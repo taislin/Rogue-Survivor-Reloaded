@@ -158,7 +158,7 @@ async function redrawsWhileWaiting(probe: MouseProbeUI, ms: number): Promise<num
 
   const running = game.HandlePlayerActor(player);
   await new Promise<void>((r) => setTimeout(r, ms));
-  probe.postKey("."); // WAIT_OR_SELF: ends the turn and returns from the loop
+  probe.postKey("X"); // WAIT_OR_SELF: ends the turn and returns from the loop
   await Promise.race([
     running,
     new Promise<void>((r) => setTimeout(r, 2000)),
