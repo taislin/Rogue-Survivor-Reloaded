@@ -262,6 +262,23 @@ export class GameImages {
   static readonly DECO_HOSPITAL = "Tiles/Decoration/hospital";
   // Still Alive Release 4, first reader `Feature.Bank`.
   static readonly DECO_BANK_SIGN = "Tiles/Decoration/bank_sign";
+  // ── Still Alive, Release 2 and 6-3 (`GameImages.cs:332-337`). The five scorch
+  // marks `ScorchBurntTile` (`RogueGame.cs:24556-24608`) picks by blast damage
+  // tier and by whether the tile is a wall, and all five ship in the *classic*
+  // pack, so every path here already resolves to a file on disk --
+  // `tests/sprite-assets.test.ts` is what keeps that true.
+  //
+  // The centre and inner floor marks are "flat", so the same drawing serves
+  // every heading; the wall pair is "slightly tilted to give the appearance of
+  // being on a vertical" (the C#'s words, at `:334` and `:336`). That is why
+  // the wall and floor variants are five separate sprites rather than one pair
+  // plus a rotation, and why `damage > 120` drops the wall branch entirely and
+  // lays the flat centre mark over a wall too.
+  static readonly DECO_SCORCH_MARK_CENTER_FLOOR = "Tiles/Decoration/scorched_center_floor";
+  static readonly DECO_SCORCH_MARK_INNER_FLOOR = "Tiles/Decoration/scorched_inner_floor";
+  static readonly DECO_SCORCH_MARK_OUTER_FLOOR = "Tiles/Decoration/scorched_outer_floor";
+  static readonly DECO_SCORCH_MARK_INNER_WALL = "Tiles/Decoration/scorched_inner_wall";
+  static readonly DECO_SCORCH_MARK_OUTER_WALL = "Tiles/Decoration/scorched_outer_wall";
 
   // ── Map Objects ───────────────────────────────────────────────────────────
   static readonly OBJ_TREE = "MapObjects/tree";
