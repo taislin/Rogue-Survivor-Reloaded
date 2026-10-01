@@ -81,7 +81,7 @@ All run from `web/`.
 ```
 .
 ├── src/                  Original C# source (reference only — never modified)
-├── BROWSER_PORT_PLAN.md  Porting plan, phase status, and the bug log
+├── plans/                Design docs and audits (see plans/SUGGESTIONS.md)
 ├── docs/                 Static website (GitHub Pages source)
 ├── Dockerfile
 ├── LICENSE.txt           GPLv3 (inherited from the original)
@@ -192,7 +192,7 @@ This is not a convenience. A clean `tsc` and a clean build do **not** mean the
 port works: the first headless run found nine runtime bugs, two of them fatal,
 and none of them visible to the type-checker. A later audit of the CSV → JSON
 data layer found eighteen more, none of which the sim could see either.
-`BROWSER_PORT_PLAN.md` has the full list. If you change engine code, run the sim.
+`plans/BROWSER_PORT_PLAN.md` has the full list. If you change engine code, run the sim.
 
 The suite covers the primitives, save/load, asset resolution, the input
 contract, actor sprite mapping, map view/visited flags, the minimap cache
@@ -307,10 +307,17 @@ keeps every existing mouse behaviour and adds:
 
 ## Porting notes
 
-`BROWSER_PORT_PLAN.md` is the working document: phase status, per-slice
+`plans/BROWSER_PORT_PLAN.md` is the working document: phase status, per-slice
 breakdown, and a log of every runtime bug found by the simulator. Worth reading
 before touching engine code — several entries describe failures that a
 type-checker is structurally unable to catch.
+
+The rest of `plans/` is context rather than instructions:
+[`STILL_ALIVE_REFERENCE.md`](../plans/STILL_ALIVE_REFERENCE.md) audits the GPLv3
+fork this port is merging content from, [`MULTIPLAYER_PLAN.md`](../plans/MULTIPLAYER_PLAN.md)
+is a networked-play design, and
+[`SUGGESTIONS.md`](../plans/SUGGESTIONS.md) is the 2010–11 fan-forum backlog with
+a per-item measure of what already shipped.
 
 The C# in `src/` is treated as read-only reference. If behaviour is wrong,
 compare against it before "fixing" the port.

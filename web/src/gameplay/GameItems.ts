@@ -218,7 +218,7 @@ export enum ItemID {
   // paint and explosives. The 5 backpacks were left out here on purpose -- they
   // are the ShelterBackpacks mechanic (a nested Inventory on an Item, a BACK doll
   // part, Hauler-gated slot tiers), not a data row -- and land at the end of the
-  // enum instead, once that mechanic existed. See BROWSER_PORT_PLAN 5.6d.
+  // enum instead, once that mechanic existed. See plans/BROWSER_PORT_PLAN 5.6d.
   MEDICINE_SMALL_MEDIKIT = 140,
   MEDICINE_LARGE_MEDIKIT = 141,
   MEDICINE_ALCOHOL_BEER_BOTTLE_BROWN = 142,

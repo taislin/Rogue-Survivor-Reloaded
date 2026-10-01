@@ -28,7 +28,7 @@ import { HeadlessRunner } from "../src/sim/HeadlessRunner";
 import { NullRogueUI } from "@ui/NullRogueUI";
 
 /**
- * Stage 2 of BROWSER_PORT_PLAN §5.6c: the vanilla Alpha 10.1 defects that the
+ * Stage 2 of plans/BROWSER_PORT_PLAN §5.6c: the vanilla Alpha 10.1 defects that the
  * Still Alive fork fixed.
  *
  * Every test here was checked against the broken behaviour first — a mutation

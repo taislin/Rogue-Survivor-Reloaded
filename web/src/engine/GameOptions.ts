@@ -172,7 +172,7 @@ export const DIFFICULTY_OPTIONS: readonly OptionIDs[] = [
  * One knob, and it reaches surprisingly far -- starting kit, meat per corpse,
  * fish odds, plant fruiting, the antiviral drop in an army-supplies cache, the
  * dynamite in an underground cache, and the survival-difficulty rating. See
- * BROWSER_PORT_PLAN for the full reader list.
+ * plans/BROWSER_PORT_PLAN for the full reader list.
  *
  * `LOW = 0` is not an accident: the C#'s difficulty screen steps the value with
  * `-1`/`+1` and clamps at the ends, so the numbering has to run from LOW to HIGH

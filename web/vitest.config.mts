@@ -46,7 +46,7 @@ export default defineConfig({
       // library code, and are covered transitively by the integration tests.
       include: ["src/engine/**", "src/data/**", "src/gameplay/**", "src/ui/**"],
       exclude: ["src/**/*.d.ts"],
-      // A measured floor, not a target. See §4.3 of BROWSER_PORT_PLAN.md -- "do
+      // A measured floor, not a target. See §4.3 of plans/BROWSER_PORT_PLAN.md -- "do
       // not pick aspirational numbers on day one; the port is not at full
       // coverage and a failing threshold will just be disabled again". The suite
       // is deterministic (seeded sim, no wall-clock assertions on behaviour), so

@@ -21,7 +21,7 @@
  * Two things the feature needs are *not* here, and the tests below say so rather
  * than pretending: the NPC arm (`CivilianAI.cs:754` with `BaseAI.cs:6625`) is not
  * ported, and neither is `isOneHanded`, which the C#'s "drop the two-hander" line
- * reads. Both are recorded on `DoUseFishingRodItem` and in BROWSER_PORT_PLAN.
+ * reads. Both are recorded on `DoUseFishingRodItem` and in plans/BROWSER_PORT_PLAN.
  */
 
 import { beforeEach, describe, expect, it } from "vitest";

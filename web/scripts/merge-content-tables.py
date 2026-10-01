@@ -12,7 +12,7 @@ what "Alpha 10.1" means here. The merged tables therefore land in `web/data/`,
 which is the source for the TypeScript tables and nothing else, and
 `convert-csv.js --from` points at it.
 
-WHY A MERGE AND NOT A REPLACEMENT. The design in BROWSER_PORT_PLAN §5.6a is one
+WHY A MERGE AND NOT A REPLACEMENT. The design in plans/BROWSER_PORT_PLAN §5.6a is one
 *superset* content pack plus a ruleset flag, and a superset has to be built out
 of the union rather than out of either side. Copying the fork's tables would
 change thirteen item rows' numbers — army ration nutrition 0.25 to 0.33,
@@ -73,7 +73,7 @@ def main():
     if not os.path.isdir(FORK):
         sys.exit(
             "fork tables not found at %s\n"
-            "The audit in STILL_ALIVE_REFERENCE.md was done against that tree; "
+            "The audit in plans/STILL_ALIVE_REFERENCE.md was done against that tree; "
             "this script cannot reproduce it without it." % FORK
         )
     os.makedirs(OUT, exist_ok=True)

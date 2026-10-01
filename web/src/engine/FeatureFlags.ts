@@ -26,7 +26,7 @@
  * partition test deals in, and the only one a failure message is readable in.
  * Name keys also make `PENDING_WIRING` greppable and diffable.
  *
- * See BROWSER_PORT_PLAN §5.6a for why a superset content pack plus a flag is the
+ * See plans/BROWSER_PORT_PLAN §5.6a for why a superset content pack plus a flag is the
  * shape, and what the four structural facts are that rule out two content sets.
  */
 

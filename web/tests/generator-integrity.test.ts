@@ -18,7 +18,7 @@ import { DoorWindow } from "@engine/mapobjects/MapObjects";
  * existing assertion. Thresholds are therefore calibrated from measurement, not
  * guessed -- see the numbers recorded below.
  *
- * One seed per file, following the constraint in BROWSER_PORT_PLAN §4.1a:
+ * One seed per file, following the constraint in plans/BROWSER_PORT_PLAN §4.1a:
  * `Session.get()` is a process-wide singleton and the model databases
  * self-register into `Models` statics, so two games in one process share state.
  * `reproducibility.test.ts` shells out to the CLI for the same reason. The seed

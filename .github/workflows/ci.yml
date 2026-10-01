@@ -1,6 +1,6 @@
 # Phase 8 CI for the browser port.
 #
-# The point of this workflow is the lesson from §1.1 of BROWSER_PORT_PLAN.md:
+# The point of this workflow is the lesson from §1.1 of plans/BROWSER_PORT_PLAN.md:
 # for four phases "0 stubs + green tsc + green build" was treated as done, and
 # the first actual execution of the engine then found nine runtime bugs, two of
 # them fatal. So this runs the engine, not just the compiler:

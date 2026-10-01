@@ -1,7 +1,7 @@
 /**
  * RogueGame — browser port of `src/Engine/RogueGame.cs` (23 233 lines).
  *
- * Phase 4 of the BROWSER_PORT_PLAN. Ported as ONE class (see the plan's
+ * Phase 4 of the plans/BROWSER_PORT_PLAN. Ported as ONE class (see the plan's
  * "As implemented" section): the C# regions share a single set of private
  * fields and input → actions → rendering call each other, so splitting into
  * modules would mean making most of that state public and creating circular
@@ -1702,7 +1702,7 @@ export class RogueGame {
 		this.m_AmbientSFXManager = ambients;
 		// The mix. The C# reads it from `Options.AmbientSFXVolume` in `ApplyOptions`
 		// (`RogueGame.cs:2703`); the port has no such option row yet (see
-		// BROWSER_PORT_PLAN §5.6f), so the C#'s own default is the level.
+		// plans/BROWSER_PORT_PLAN §5.6f), so the C#'s own default is the level.
 		this.m_AmbientSFXManager.setVolume(AMBIENT_SFX_VOLUME);
 
 		logInit("creating MessageManager");
@@ -2473,7 +2473,7 @@ export class RogueGame {
 	 * Which content/mechanic ruleset to play. No C# original — this screen is new
 	 * in the port, because `GameMode` has no Still Alive equivalent to hang it on.
 	 * The axis is separate from gameMode and the two compose, so it gets its own
-	 * screen rather than more rows on that one. See BROWSER_PORT_PLAN §5.6b.
+	 * screen rather than more rows on that one. See plans/BROWSER_PORT_PLAN §5.6b.
 	 */
 	async HandleSelectRuleset(): Promise<boolean> {
 		const menuEntries: string[] = [
@@ -3268,7 +3268,7 @@ export class RogueGame {
 	 * (`RogueGame.cs:1509`, `:1503`) and the whole mechanism is a deleted block
 	 * of the mid-game option list. So the rows are gone from the mid-game screen
 	 * for Still Alive and the screen is not offered mid-game at all, but no
-	 * runtime check refuses an edit. See BROWSER_PORT_PLAN §5.6e.
+	 * runtime check refuses an edit. See plans/BROWSER_PORT_PLAN §5.6e.
 	 *
 	 * The mode filters (Release 7-6) are the C#'s: two rows are STD-only, three
 	 * are dropped in VTG, and one — antiviral pills — is VTG-only *and* is not an
@@ -24370,7 +24370,7 @@ inv.removeAllQuantity(it);
 	// functions under `Feature.TileFires` as well. That is defensible — fire
 	// resistance is only meaningful if fire can set you alight, and in this port
 	// fire *is* `TileFires` — but it is a coupling, not a fact of the C#, and it
-	// is recorded in BROWSER_PORT_PLAN rather than buried.
+	// is recorded in plans/BROWSER_PORT_PLAN rather than buried.
 
 	/**
 	 * C# `SetActorOnFire` — `RogueGame.cs:24737`.
@@ -24653,7 +24653,7 @@ inv.removeAllQuantity(it);
 	 *   mechanic, and inventing a default would silently unequip the wrong weapons.
 	 *   Until that field lands, a survivor who equips a rod over a two-hander keeps
 	 *   both, which is the C#'s behaviour for a one-hander and a divergence for the
-	 *   rest. Recorded here and in BROWSER_PORT_PLAN rather than faked.
+	 *   rest. Recorded here and in plans/BROWSER_PORT_PLAN rather than faked.
 	 * - **Not ported: the cast and reel sounds** (`GameSounds.FISHING_CAST_*` and
 	 *   `FISHING_REEL_*`, `GameSounds.cs:424-431`). Four of the ~180 entries that
 	 *   arrive with `Feature.ExtendedAudio`, still pending. The C# stops the cast
@@ -30035,7 +30035,7 @@ inv.removeAllQuantity(it);
 		// a business quarter with none in it — and the C# answered that by throwing
 		// out of a method whose only caller had an unreachable catch, so the game
 		// was dead with no way to continue and nothing in the log. See
-		// `GenerateWorld`'s retry and BROWSER_PORT_PLAN §5.6c item 2.
+		// `GenerateWorld`'s retry and plans/BROWSER_PORT_PLAN §5.6c item 2.
 		if (goodDistricts.length === 0) return null;
 		const chosenDistrict =
 			goodDistricts[this.m_Rules.roll(0, goodDistricts.length)];

@@ -226,7 +226,7 @@ describe("every ItemID resolves to a model", () => {
  * anywhere near it, so this is the only place it can be caught.
  *
  * The exception list used to hold the five backpacks, and it is now empty: they
- * were `ShelterBackpacks` (BROWSER_PORT_PLAN §5.6d) — a nested `Inventory` on an
+ * were `ShelterBackpacks` (plans/BROWSER_PORT_PLAN §5.6d) — a nested `Inventory` on an
  * `Item`, a `DollPart.BACK`, slot tiers gated on the Hauler skill — and that
  * feature landed, so they have models like everything else. An empty list is kept
  * rather than deleted because "this list is empty *and it is supposed to be*"

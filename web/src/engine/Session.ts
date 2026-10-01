@@ -39,7 +39,7 @@ export enum GameMode {
  * `CLASSIC` is not "no ruleset" — it is the port as it has been since the start,
  * Alpha 10.1. `STILL_ALIVE` is the fork in `_refs/StillAlive-master`, as a
  * superset: its content is present in the model tables either way, and the flag
- * decides what spawns, what generates and what runs. See BROWSER_PORT_PLAN §5.6.
+ * decides what spawns, what generates and what runs. See plans/BROWSER_PORT_PLAN §5.6.
  */
 export enum Ruleset {
   CLASSIC,
@@ -903,7 +903,7 @@ export class Session {
   // The `default: throw` is load-bearing, and it is the same discipline the
   // GameMode helpers above already use. A ruleset that fell through to a
   // fallback string would produce a session that runs with an unrecognised
-  // content set rather than one that refuses to start. See BROWSER_PORT_PLAN
+  // content set rather than one that refuses to start. See plans/BROWSER_PORT_PLAN
   // §5.6b item 1.4.
   static descRuleset(ruleset: Ruleset): string {
     switch (ruleset) {

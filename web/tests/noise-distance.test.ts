@@ -610,7 +610,7 @@ describe("the model is pure", () => {
     // The model has no audio state, and this is the observable form of that: a
     // `NullSoundManager` is still a no-op after it has been asked every
     // question. The port plays every effect through the *music* manager and has
-    // no `m_SoundManager` at all (see BROWSER_PORT_PLAN, `ExtendedAudio`), so
+    // no `m_SoundManager` at all (see plans/BROWSER_PORT_PLAN, `ExtendedAudio`), so
     // this is the manager a headless run actually has, and a model that reached
     // for one would break every headless test in the suite.
     const sounds = new NullSoundManager();

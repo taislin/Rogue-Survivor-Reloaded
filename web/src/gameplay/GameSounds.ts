@@ -9,7 +9,7 @@ export class GameSounds {
   // `NIGHTMARE` alone, so these are Classic's sound set and the fork's is
   // everything below: `UNDEAD_EAT` is the fork's `UNDEAD_EAT_PLAYER` /
   // `UNDEAD_EAT_NEARBY` pair and `UNDEAD_RISE` is not in `GameSounds.cs` at all
-  // (BROWSER_PORT_PLAN §5.6f item 2).
+  // (plans/BROWSER_PORT_PLAN §5.6f item 2).
   static readonly UNDEAD_EAT = "undead eat";
   static readonly UNDEAD_EAT_FILE = `${GameSounds.PATH}sfx - undead eat`;
 

@@ -29,7 +29,7 @@ WHY THE FILE NAMES ARE COPIED AS THEY ARE
 so the file on disk has to be named exactly what the C#'s `*_FILE` constant
 says. The fork's `Resources/Sfx/` already uses that convention for the three
 files the port already had (`sfx - nightmare.ogg`, `sfx - undead eat nearby.ogg`),
-so there is nothing to rename -- the thing BROWSER_PORT_PLAN 5.6f item 1 warns
+so there is nothing to rename -- the thing plans/BROWSER_PORT_PLAN 5.6f item 1 warns
 about ("the fork's 180 new files use a different convention") is not true of the
 file names, only of the fact that the *vanilla* `sfx - undead eat.ogg` was split
 into `sfx - undead eat player` / `sfx - undead eat nearby` by the fork.

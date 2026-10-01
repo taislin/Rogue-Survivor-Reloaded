@@ -523,7 +523,7 @@ describe("Feature registry is wired", () => {
     // the number that has to be grown.
     //
     // The three are not one behaviour either. Two are additions (the fishing
-    // cast and the fishing reel, the four sounds BROWSER_PORT_PLAN 5.6f hands
+    // cast and the fishing reel, the four sounds plans/BROWSER_PORT_PLAN 5.6f hands
     // here from `Feature.Fishing`) and one is a *choice*: `DoEatCorpse` plays
     // the vanilla `UNDEAD_EAT` under CLASSIC and the fork's `UNDEAD_EAT_PLAYER`
     // above it, because the fork split that one effect per distance tier. Gating

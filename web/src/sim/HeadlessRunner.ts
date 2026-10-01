@@ -152,7 +152,7 @@ export class HeadlessRunner {
     // is here rather than left implicit because the harness is the only place a
     // run can be *labelled* with the content set it played, and a metrics
     // report that does not say which ruleset produced it is not comparable with
-    // one that does. BROWSER_PORT_PLAN §5.6b item 1.8.
+    // one that does. plans/BROWSER_PORT_PLAN §5.6b item 1.8.
     if (hasFeature(game.session.ruleset, Feature.Alcohol)) {
       step("ruleset: Still Alive (alcohol on)");
     }

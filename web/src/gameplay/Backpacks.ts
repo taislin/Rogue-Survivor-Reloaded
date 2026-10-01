@@ -26,7 +26,7 @@ import { ItemID } from "@gameplay/GameItems";
  * interactive swap prompt still attached. The port splits it the other way: the
  * prompt is a modal key loop the UI layer owns, and *this* is the part worth
  * testing, so it is here with no dependency on a `RogueGame` at all. The report in
- * BROWSER_PORT_PLAN §5.6d lists the three `RogueGame` call sites.
+ * plans/BROWSER_PORT_PLAN §5.6d lists the three `RogueGame` call sites.
  *
  * ## No roller
  *
