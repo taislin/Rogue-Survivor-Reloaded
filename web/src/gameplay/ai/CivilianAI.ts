@@ -6,6 +6,8 @@
  */
 
 import { Activity } from '@data/Activity';
+import { Models } from '@data/Models';
+import { ItemID } from '@gameplay/GameItems';
 import { Actor } from '@data/Actor';
 import type { ActorAction } from '@data/ActorAction';
 import { Percept } from '@engine/ai/Sensors';
@@ -25,6 +27,7 @@ import { ExplorationData } from './ExplorationData';
 import { LOSSensor, SensingFilter } from './GameplaySensors';
 import { SpecialActions } from './RouteFinder';
 import { LOS } from "@engine/LOS";
+import { Point } from "@engine/Point";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Game = any;
@@ -141,6 +144,26 @@ export class CivilianAI extends OrderableAI {
     const actor = this.controlledActor;
     const fov = this.m_LOSSensor.fov;
     const mapPercepts = this.filterSameMap(game, percepts);
+
+    // "Complete a fishing". C# `CivilianAI.cs:137-157`, step A, Release 7-6.
+    //
+    // **First thing `selectAction` does, and that position is the design.** An NPC
+    // that is mid-cast has `Activity.FISHING`, and if this were anywhere else in the
+    // chain it could be pre-empted: a hungry survivor would charge food instead, a
+    // scared one would run, and the cast would silently never complete. Getting here
+    // first means a fish landing is always resolved before anything else is
+    // considered.
+    //
+    // The action drops the activity to `WAITING` rather than back to `FISHING`,
+    // because `BehaviorGoFish` returns the *casting* wait and this is the wait that
+    // follows it -- the two together are one cast spread over two turns.
+    if (actor.activity === Activity.FISHING) {
+      const catchFish = this.behaviorGoFish(game);
+      if (catchFish) {
+        actor.activity = Activity.WAITING;
+        return catchFish;
+      }
+    }
 
     ///////////////////////
     // 0. Equip best item.  // alpha10
@@ -423,6 +446,52 @@ export class CivilianAI extends OrderableAI {
       this.m_LastItemsSaw = lastItemsSawBox.value;
 
       if (getItemAction) return getItemAction;
+
+      // Fishing. C# `CivilianAI.cs:750-806`, step 15a, Release 7-6.
+      //
+      // Placed inside the `!hasEnemies && canTakeItems` block because that is where
+      // the C# has it: the arm is a *want* (no food, has a rod, map has fishing) and
+      // the surrounding block is the "nothing urgent, improve your situation"
+      // region. Three fallbacks, and the order is the design:
+      //
+      //  1. **fish** -- equip the rod if needed and cast (`Activity.FISHING`);
+      //  2. **walk to water you can see** (`Activity.SEARCHING`), so an NPC on the
+      //     far side of the park heads for the pond rather than standing still;
+      //  3. **walk toward any water at all**, scanning the whole map. The C#'s
+      //     comment is why this is safe: "thanks to `Map.HasFishing`, this will only
+      //     apply to ponds, and not shopping mall fountains." That is load-bearing --
+      //     it depends on the pond generator, which is what makes the flag true.
+      //
+      // Gated on `hasNoFoodItems` as in the C#. An NPC with food does not fish, which
+      // is what stops a whole district from crowding one pond.
+      if (this.hasNoFoodItems(actor)) {
+        const map = actor.location.map!;
+        if (map.hasFishing && actor.inventory?.getSmallestStackByModel(Models.items.get(ItemID.FISHING_ROD)!) !== null) {
+          const goFish = this.behaviorGoFish(game);
+          if (goFish) {
+            actor.activity = Activity.FISHING;
+            return goFish;
+          }
+
+          const goToWater = this.behaviorGoToNearestVisibleWater(game, LOS.fovPoints(this.m_LOSSensor.fov));
+          if (goToWater) {
+            actor.activity = Activity.SEARCHING;
+            return goToWater;
+          }
+
+          for (let x = 0; x < map.width; x++) {
+            for (let y = 0; y < map.height; y++) {
+              const tile = map.getTileAt(x, y);
+              if (tile === null || !tile.model.isWater) continue;
+              const towardWater = this.behaviorIntelligentBumpToward(game, new Point(x, y), false, false);
+              if (towardWater !== null) {
+                actor.activity = Activity.SEARCHING;
+                return towardWater;
+              }
+            }
+          }
+        }
+      }
 
       // Trade
       if (this.directives.canTrade) {

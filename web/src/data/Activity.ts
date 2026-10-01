@@ -28,4 +28,14 @@ export enum Activity {
    * nothing can reach is still a landmine.
    */
   FISHING = 9,
+  /**
+   * The two Release 7-6 labels the fishing arm needs, appended.
+   *
+   * `SEARCHING` is the activity while an NPC walks to water it can see;
+   * `WAITING` is the one it drops to when it is standing there with a rod and
+   * nothing to do but let a fish land. Both are C# per-run labels, not stored ids
+   * (no `Activity` reaches a save), so the numbering is free.
+   */
+  SEARCHING = 10,
+  WAITING = 11,
 }

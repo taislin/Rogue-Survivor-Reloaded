@@ -6,6 +6,7 @@ import { ActorOrder } from '@data/ActorOrder';
 import { AIController } from '@data/AIController';
 import { Map as GameMap, Lighting, Exit } from '@data/Map';
 import { Item } from '@data/Item';
+import { ItemID } from '@gameplay/GameItems';
 import { Location } from '@data/Location';
 import { MapObject } from '@data/MapObject';
 import { Direction } from '@engine/Direction';
@@ -714,6 +715,86 @@ export abstract class BaseAI extends AIController {
 
       return distance;
     });
+  }
+
+  /**
+   * C# `BehaviorGoFish(RogueGame)` -- `BaseAI.cs:5550-5599`, Release 7-6.
+   *
+   * Three turns, not one, and the shape is the interesting part:
+   *
+   *  - **no rod equipped** -- equip it and `ActionWait(..., isFishing: false)`;
+   *  - **rod equipped but not in hand** -- `ActionWait(..., false)`, because the
+   *    equip takes a turn;
+   *  - **rod in hand** -- `ActionWait(..., isFishing: true)`, which is the cast.
+   *
+   * So the same method returns a wait three times with different flags, and the
+   * *caller* is what advances the state. That is why the C# notes "we only want to
+   * wait one turn for NPCs, because if we lock them into fishing they might get
+   * attacked" -- `ActionWait` is not a fishing lock, it is a single turn.
+   *
+   * `MarkEquipmentSlotAsTaboo(LEFT_HAND)` is load-bearing and easy to drop:
+   * `BehaviorEquipBestItems` would otherwise immediately unequip the rod to put
+   * something more useful in the off hand, and the NPC would equip and unequip
+   * forever.
+   */
+  protected behaviorGoFish(game: Game): ActorAction | null {
+    const actor = this.controlledActor;
+    let fishingRod: Item | null = null;
+    for (const it of actor.inventory?.items ?? []) {
+      if (it.model.id !== ItemID.FISHING_ROD) continue;
+      fishingRod = it;
+      if (it.isEquipped) break;
+    }
+
+    if (fishingRod === null) return null; // the calling paths pre-check for a rod
+    if (!fishingRod.isEquipped) {
+      const canEquip = game.rules.canActorEquipFishingRod(actor, fishingRod);
+      if (!canEquip.ok) return null;
+      this.markEquipmentSlotAsTaboo(DollPart.LEFT_HAND);
+      game.doEquipItem(actor, fishingRod);
+      return new ActionWait(actor, game, false);
+    }
+
+    // An equipped rod means we started fishing on a previous turn. We have not caught
+    // anything, because this action is only reached when the actor has no food, so
+    // keep waiting for a fish to land.
+    return new ActionWait(actor, game, true);
+  }
+
+  /**
+   * C# `BehaviorGoToNearestVisibleWater(RogueGame, HashSet<Point> FOV)` --
+   * `BaseAI.cs:1125-1164`, Release 6-1.
+   *
+   * Scans the actor's field of view for the **nearest** water tile by *Euclidean*
+   * distance (`StdDistance`) and bumps toward it. Returns null when there is no
+   * water in view, which is the signal the caller uses to give up on fishing.
+   *
+   * The scan is over the FOV set rather than the whole map on purpose: an NPC that
+   * cannot see the pond should not walk toward it, and the C#'s comment says as much.
+   */
+  protected behaviorGoToNearestVisibleWater(game: Game, fov: Point[]): ActorAction | null {
+    const actor = this.controlledActor;
+    const map = actor.location.map;
+    if (map === null) return null;
+
+    let waterPos: Point | null = null;
+    let nearestDist = Number.MAX_VALUE;
+    for (const p of fov) {
+      const tile = map.getTileAt(p.x, p.y);
+      if (tile === null || !tile.model.isWater) continue;
+      const dist = game.rules.euclideanDistance(actor.location.position, p);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        waterPos = p;
+      }
+    }
+
+    // if we see water, try to get there.
+    if (waterPos !== null) {
+      const moveThere = this.behaviorIntelligentBumpToward(game, waterPos, false, false);
+      if (moveThere !== null) return moveThere;
+    }
+    return null; // no water i can see
   }
 
   protected behaviorGoEatCorpse(game: Game, corpsesPercepts: Percept[] | null): ActorAction | null {

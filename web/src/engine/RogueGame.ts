@@ -32550,8 +32550,8 @@ inv.removeAllQuantity(it);
 	}
 
 	/** camelCase alias for `game.doWait()` — C# `DoWait`. */
-	doWait(actor: Actor): void {
-		this.DoWait(actor);
+	doWait(actor: Actor, isFishing = false): void {
+		this.DoWait(actor, isFishing);
 	}
 
 	UpdatePlayerFOV(player: Actor): void {

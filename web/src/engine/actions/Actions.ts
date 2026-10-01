@@ -34,9 +34,20 @@ type Game = any;
 // ActionWait
 // ────────────────────────────────────────────────────────────────────────────
 
+/**
+ * C# `ActionWait(Actor, RogueGame, bool isFishing = false)` --
+ * `Engine/Actions/ActionWait.cs:17`, the flag added in Release 7-6.
+ *
+ * The flag is the whole difference between waiting and *casting*: `DoWait` reads it
+ * to decide that a wait is a fishing attempt, and the NPC arm needs that to be
+ * expressible as an action rather than as a special case inside the AI.
+ */
 export class ActionWait extends ActorAction {
-  constructor(actor: Actor, game: Game) {
+  private readonly isFishing: boolean;
+
+  constructor(actor: Actor, game: Game, isFishing = false) {
     super(actor, game);
+    this.isFishing = isFishing;
   }
 
   isLegal(): boolean {
@@ -44,7 +55,7 @@ export class ActionWait extends ActorAction {
   }
 
   perform(): void {
-    this.game.doWait(this.actor);
+    this.game.doWait(this.actor, this.isFishing);
   }
 }
 
