@@ -43,8 +43,16 @@ Config/
 log.txt
 hiscores.txt
 
-# Bundled SFML debug build (only Release is referenced by the project)
-src/libs/sfml/Debug/
+# The original C# game (Rogue Survivor Reloaded), kept as a local reference
+# folder and no longer tracked. The port in web/ does not build against it and
+# nothing in the test suite reads it any more: src/Resources/Data was the input
+# to web/scripts/convert-csv.js, and web/tests/data-tables.test.ts compared the
+# committed JSON against those CSVs until this commit removed that assertion.
+# Balanced against web/, because a bare `src/` would swallow the TypeScript
+# sources under web/src/, which are the whole game.
+/src/
+
+# MSVC debug symbols, alongside the project files above
 *.pdb
 
 # OS / editor junk
@@ -57,6 +65,13 @@ Desktop.ini
 *.bak
 *.swp
 *~
+
+# CPython bytecode. The one-shot porting helpers under web/scripts/ are run in
+# place, so running any of them drops a __pycache__/ next to it. Regenerated on
+# every interpreter start, meaningless to a reader, and it went untracked here
+# only because the helpers are. Unanchored so it covers wherever they get run.
+__pycache__/
+*.py[cod]
 
 # Scratch icon copies in the repo root.
 #
