@@ -16960,6 +16960,22 @@ inv.removeAllQuantity(it);
 			// line below prints "to equip", which is true and useless.
 			inInvAdditionalDesc =
 				`to fish : <${key(PlayerCommand.WAIT_LONG)}> or <${key(PlayerCommand.WAIT_OR_SELF)}>`;
+		} else if (isPlayerInventory && it.model.equipmentPart === DollPart.LEFT_ARM) {
+			// C# RogueGame.cs:32097, Release 7-2. Rewrites the shield's own flavour
+			// text from its static base chance to the total, the reader's Martial Arts
+			// included -- so the number a player reads is the number the block roll
+			// will actually use.
+			//
+			// **This mutates shared model state**, replacing the string on the
+			// registered `ItemModel` rather than a per-item copy. That is the C#'s
+			// arrangement and it is kept: every shield carries the same text, so the
+			// mutation is idempotent, and "fixing" it with a copy would diverge from
+			// the reference for no observable gain.
+			//
+			// The C# places this branch *before* the rod and matchbox ones; here it
+			// follows them. The order is immaterial -- it is an `else if` chain and no
+			// item is both a left-arm part and one of those.
+			it.model.flavorDescription = `${this.m_Rules.actorShieldChanceToBlock(this.m_Player)}% total chance to block (including skill)`;
 		}
 
 		// 3. Flavor description
@@ -19218,8 +19234,70 @@ inv.removeAllQuantity(it);
 		// which is the readable order.
 		await this.AnimateAttackLunge(attacker, defender);
 
-		// Hit vs Missed
-		if (hitRoll > defRoll) {
+		// Blocked by the defender's shield? C# `:18368-18390`, Release 7-2.
+		//
+		// **This is the C#'s `if`/`else`, not a modifier on the attack below it.**
+		// A blocked swing does no damage at all: the message says the attack "is
+		// blocked by a shield", and the C# puts the entire hit/miss resolution --
+		// the `hitRoll`/`defRoll` comparison, damage, zombification, the lot -- in
+		// the `else` arm, so none of it runs. Reading it as an extra `if` over the
+		// top of the resolution would produce an attack that reports being blocked
+		// and then wounds the defender anyway, which is the opposite of what a
+		// shield is for.
+		//
+		// One divergence forced by this port, not by the reference: the C# rolls
+		// `hitRoll`/`defRoll` *inside* the `else`, so its shield check precedes
+		// them. This port rolled them before the lunge animation instead,
+		// deliberately, so a save taken mid-swing cannot capture half an attack
+		// (see the comment above `AnimateAttackLunge`). The shield roll therefore
+		// lands after them rather than before. Classic never reaches the check at
+		// all -- there is no shield item in it -- so no Classic roll order moves.
+		if (
+			defender.getEquippedShield() !== null &&
+			this.m_Rules.rollChance(this.m_Rules.actorShieldChanceToBlock(defender))
+		) {
+			if (isPlayer) {
+				this.m_SoundManager.play(GameSounds.SHIELD_BLOCK_PLAYER_FILE);
+			} else if (this.isAudibleToPlayer(attacker.location, NOISE_RADII.QUIET)) {
+				this.m_SoundManager.play(GameSounds.SHIELD_BLOCK_NEARBY_FILE);
+			}
+
+			if (isAttVisible || isDefVisible) {
+				this.AddMessage(
+					this.MakeMessage(
+						attacker,
+						this.Conjugate(attacker, attack.verb),
+						defender,
+						" but is blocked by a shield.",
+					),
+				);
+				try {
+					this.AddOverlay(
+						new OverlayImage(
+							this.MapToScreen(defender.location.position),
+							GameImages.ICON_MELEE_MISS,
+						),
+					);
+				} catch (e) {
+					reportSwallowed("DoMeleeAttack", e);
+				}
+				this.RedrawPlayScreen();
+				await this.AnimDelay(isPlayer ? DELAY_NORMAL : DELAY_SHORT);
+			}
+
+			// The C# then rolls to disarm, from the same `CanDisarm` +
+			// `DisarmChance` pair the hit path uses -- but it discards the result,
+			// where the hit path narrates the item sent flying. This port's `Disarm`
+			// takes the disarmed actor alone rather than both, so the call is
+			// `Disarm(defender)` and the return value goes unused, as in the C#.
+			if (
+				attacker.model.abilities.canDisarm &&
+				this.m_Rules.rollChance(attack.disarmChance)
+			) {
+				this.Disarm(defender);
+			}
+		} else if (hitRoll > defRoll) {
+			// Hit vs Missed
 			// alpha10
 			// roll for attacker disarming defender
 			if (
@@ -26600,15 +26678,25 @@ inv.removeAllQuantity(it);
 		}
 		if (it instanceof ItemTrap && it.model.id !== ItemID.TRAP_EMPTY_CAN) return;
 		// `SLEEPING_BAG` and `FISHING_ROD`: rare items no refugee wave brings in, so
-		// they must not be deleted (C# RogueGame.cs:21477). `SLEEPING_BAG` still does
-		// not exist in the port. The rod's line needs no `hasFeature` gate, and the
-		// reason is the same one the Butchering sanity carve-out uses: this tests a
-		// *data* flag, not a behaviour. Nothing in the port can produce a rod -- the
-		// fork's own `BaseMapGenerator.MakeItemFishingRod` has no callers, and no
-		// spawn table names one -- so under CLASSIC this line cannot change anything.
-		// It is ungated rather than inert so that the day a generator does spawn
-		// rods, the exemption is already the C#'s.
+		// they must not be deleted (C# RogueGame.cs:21477). Neither line needs a
+		// `hasFeature` gate, and the reason is the same one the Butchering sanity
+		// carve-out uses: this tests a *data* flag, not a behaviour. Nothing in the
+		// port can produce a rod -- the fork's own `BaseMapGenerator.MakeItemFishingRod`
+		// has no callers, and no spawn table names one -- so under CLASSIC this line
+		// cannot change anything. It is ungated rather than inert so that the day a
+		// generator does spawn rods, the exemption is already the C#'s.
+		//
+		// The bag's exemption was written as prose only: the comment named
+		// `SLEEPING_BAG` and then said it "still does not exist in the port", and the
+		// line below tested the rod alone. That was true while the item was missing,
+		// and became a live gap the moment `ItemID.SLEEPING_BAG` was registered -- the
+		// sentence would have read as covered while the code was not. The bag is
+		// ungated for the rod's reason plus one more: nothing spawns it either (its
+		// three reference readers are unported), so under CLASSIC this cannot fire
+		// either, and when the sleeping-bag use path lands the exemption is already
+		// the C#'s rather than a rot-everything bug waiting behind it.
 		if (it.model.id === ItemID.FISHING_ROD) return;
+		if (it.model.id === ItemID.SLEEPING_BAG) return;
 		if (it.isUnique || it.isForbiddenToAI) return;
 		it.droppedOnTurnNumber = this.m_Session.worldTime.turnCounter;
 	}

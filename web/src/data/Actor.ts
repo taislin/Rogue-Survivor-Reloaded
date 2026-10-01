@@ -572,12 +572,16 @@ export class Actor {
    * `ItemShieldModel` in the fork, so "is a shield" is decided by *which arm the
    * item is on* rather than by what it is. A plain cast means the same thing here.
    *
-   * Its one reader today is `Rules.actorShieldChanceToBlock`'s future caller --
-   * the melee roll in `RogueGame.DoMeleeAttack` and the flavour rewrite in
-   * `DescribeItemLong` are both still to come, so nothing calls this yet. It is
-   * `null` for every actor in the port as it stands, because
-   * `POLICE_RIOT_SHIELD` has no drop site.
-   */
+* **Anything on the left arm is a shield.** There is no `ItemShieldModel` in
+	 * the fork, so "is this a shield" is decided by which arm the item is on and by
+	 * nothing else -- a crowbar on the left arm blocks. Tightening that to a type
+	 * check would be a silent divergence that reads as a correctness improvement.
+	 *
+	 * Read by `DoMeleeAttack`'s block roll (`RogueGame.cs:18368-18390`), where it
+	 * gates the whole hit/miss resolution, and by `Rules.actorShieldChanceToBlock`.
+	 * It is `null` for nearly every actor in practice, because `POLICE_RIOT_SHIELD`
+	 * has no drop site yet.
+	 */
   getEquippedShield(): Item | null {
     return this.getEquippedItem(DollPart.LEFT_ARM);
   }
