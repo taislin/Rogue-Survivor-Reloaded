@@ -40,6 +40,11 @@ import { makeBarBuilding } from './BarBuilding';
 import { makeBankBuilding } from './buildings/makeBankBuilding';
 import { makeFireStationBuilding } from './buildings/makeFireStationBuilding';
 import { makeFuelStationBuilding } from './buildings/makeFuelStationBuilding';
+import {
+  makeBasketballCourtBuilding,
+  makeTennisCourtBuilding,
+} from './buildings/makeSportsCourts';
+import { makeFarmBuilding } from './buildings/makeFarmBuilding';
 import { makeJunkyard } from './buildings/makeJunkyard';
 import { makeAnimalShelterBuilding } from './buildings/makeAnimalShelterBuilding';
 import { makeClinicBuilding } from './buildings/makeClinicBuilding';
@@ -465,12 +470,20 @@ export class BaseTownGenerator extends BaseMapGenerator {
     completedBlocks.length = 0;
     for (const b of emptyBlocks) {
       if (!this.m_DiceRoller.rollChance(this.m_Params.parkBuildingChance)) continue;
-      // The fuel station is the second arm of the C#'s `&&` chain and the first
-      // thing in it that exists in the port. It is here, between the courts (not
-      // yet ported) and the fire station, rather than in a pass of its own for the
-      // reason in `makeFireStation`'s header: it shares this loop's single
-      // `RollChance` and must not be offered a block that lost it.
-      if (this.makeFuelStation(map, b)) completedBlocks.push(b);
+// The sports courts are the first arm of the C#'s `&&` chain, ahead of the
+      // fuel station and the fire station. They are here for the same shared-die
+      // reason: `if (!MakeTennisCourt(map, b) && !MakeBasketballCourt(map, b))`
+      // at `:555` means both are reached for every block that passed this loop's
+      // `rollChance`, and a pass of their own would roll for itself and be offered
+      // the blocks that lost it.
+      //
+      // **Their two gates are exact `buildingRect` equality** -- 8x10 and 10x8 --
+      // the only such gates among the C#'s fourteen, and mutually exclusive by
+      // shape, so the chain never chooses between them. Neither spends a die before
+      // its size return, so a block that fails both costs the district nothing.
+      if (this.makeTennisCourt(map, b)) completedBlocks.push(b);
+      else if (this.makeBasketballCourt(map, b)) completedBlocks.push(b);
+      else if (this.makeFuelStation(map, b)) completedBlocks.push(b);
       else if (this.makeFireStation(map, b)) completedBlocks.push(b);
       else if (this.makeParkBuilding(map, b)) completedBlocks.push(b);
     }
@@ -616,6 +629,37 @@ export class BaseTownGenerator extends BaseMapGenerator {
     return makeFuelStationBuilding(this.buildingContext(map, b));
   }
 
+  // ── Sports courts ──────────────────────────────────────────────────────────
+
+  /**
+   * C# `MakeTennisCourt(map, b)` — `BaseTownGenerator.cs:5858` — the **first**
+   * operand of `if (!MakeTennisCourt(map, b) && !MakeBasketballCourt(map, b))` at
+   * `:555`. Two `protected` shims and not inline `if`s for the reason every other
+   * stage here has one: the gate has to be testable as a no-op, and over riding
+   * this away is a generator with the building genuinely removed.
+   *
+   * **Not a dead method in the reference, unlike `MakeFireStation`.** That one is
+   * unreachable because `:547` initialises `fireStationPlaced = true`; nothing does
+   * the same to either court, both are `protected virtual` and neither is
+   * overridden. Their `greenSuccess` at `:554` is initialised `true` and neither
+   * court assigns it, which *looks* like the same class of bug and is not: a court
+   * succeeding with `greenSuccess` still `true` is precisely how the block gets
+   * consumed, which is what the C# means by it. Do not "fix" that initialiser.
+   *
+   * They are also **rare**, and the rarity is the content: an 8x10 `buildingRect`
+   * is a 10x12 block, one tile off the floor of what `makeBlocks` cuts at the
+   * default `minBlockSize` of 11. The Release 7-3 comment at `:555` ("these must be
+   * limited to specific dimensions") reads as a warning rather than a design.
+   */
+  protected makeTennisCourt(map: GameMap, b: Block): boolean {
+    return makeTennisCourtBuilding(this.buildingContext(map, b));
+  }
+
+  /** C# `MakeBasketballCourt(map, b)` — `BaseTownGenerator.cs:5968`, the second operand. */
+  protected makeBasketballCourt(map: GameMap, b: Block): boolean {
+    return makeBasketballCourtBuilding(this.buildingContext(map, b));
+  }
+
   // ── Junkyard ──────────────────────────────────────────────────────────────
 
   /**
@@ -689,7 +733,9 @@ export class BaseTownGenerator extends BaseMapGenerator {
     // junkyard, so the junkyard gets 11% and the farm 34% against the comments'
     // "35% / 10%". Transcribed rather than corrected: the bands are a hand-tuned
     // distribution and a one-point "fix" is invisible in a test and unarguable in a
-    // diff. Farm is still pending, so this is where it gets decided.
+    // diff. **Decided when `Feature.Farm` landed**, and decided as the C# has it:
+    // the farm's band is `30..63`, so 64 still falls through to the junkyard and the
+    // distribution is still 35/34/10/10/11 against the comments' 35/35/10/10/10.
     //
     // The gate is ahead of both rolls, for the reason `makeChurchBuildings` puts
     // its gate there: a roll that is taken and thrown away still moves every roll
@@ -722,8 +768,23 @@ export class BaseTownGenerator extends BaseMapGenerator {
         if (this.makeParkBuilding(map, b, true)) built.push(b);
       } else if (makeAnimalShelterBuilding(this.buildingContext(map, b), rolled)) {
         // C# `:577`, band `20..29`. The generator declines every other band itself,
-        // for the reason `makeJunkyard` does — one shared die, five mutually
-        // exclusive arms — so this arm carries no gate and no bound of its own.
+        // for the reason `makeJunkyard` does - one shared die, five mutually
+        // exclusive arms - so this arm carries no gate and no bound of its own.
+        built.push(b);
+      } else if (
+        // C# `:575`, band `30..63`. **The band test is here and not inside
+        // `makeFarmBuilding`,** which is a departure from the shelter and the
+        // junkyard: those two take the `dispatchRoll` and decline bands themselves,
+        // and the farm does not. One shared die, five arms, and the ordering
+        // requirement is only that the farm precedes the junkyard -- which is the
+        // `else`, so anything not claimed above lands there. The bands are disjoint,
+        // so the farm's position relative to the shelter and the graveyard does not
+        // matter.
+        rolled >= 30 &&
+        rolled < 64 &&
+        hasFeature(Session.get().ruleset, Feature.Farm) &&
+        makeFarmBuilding(this.buildingContext(map, b))
+      ) {
         built.push(b);
       } else if (makeJunkyard(this.buildingContext(map, b), rolled)) {
         built.push(b);

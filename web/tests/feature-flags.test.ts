@@ -169,23 +169,14 @@ describe("Feature registry is wired", () => {
     //
     // Asserting the exact multiset means a new reader has to be added here, which
     // is the point: a reader is a decision, not an accident.
-    expect(sites.map((s) => s.feature).sort()).toEqual([
-                 "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "AmbientAudio", "AmbientAudio",
-                 "AmbientAudio", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AnimalShelter", "AnimalShelter",
-                 "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank", "Bar", "Bar", "BlackOpsRaid", "Butchering",
-                 "Butchering", "CHARResearchRaid", "Church", "Clinic", "Clinic", "Cooking", "Cooking", "Cooking", "DarknessFov",
-                 "DarknessFov", "DarknessFov", "DarknessGating", "DifficultyAtCreation", "DifficultyAtCreation",
-                 "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",
-                 "FireBarrels", "FireBarrels", "FireExtinguishers", "FireStation", "Fishing", "Fishing", "Fishing", "Fishing",
-                 "Fishing", "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-                 "FoodPoisoning", "FoodPoisoning", "FuelStation", "Graveyard", "Graveyard", "HelicopterRescue",
-                 "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "ItemDespawn", "ItemDespawn",
-                 "Junkyard", "Junkyard", "Library", "Library", "LightPriority", "ResourcesAvailability",
-                 "ResourcesAvailability", "ResourcesAvailability", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
-                 "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
-                 "SiphonFuel", "SiphonFuel", "TileFires", "TileFires", "TileFires", "TileFires", "WeaponWeight"
-               ]);
-    const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
+    expect(sites.map((s) => s.feature).sort())
+      .toEqual(["Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AnimalShelter", "AnimalShelter",
+                 "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank", "Bar", "Bar", "BlackOpsRaid", "Butchering", "Butchering", "CHARResearchRaid", "Church", "Clinic", "Clinic", "Cooking",
+                 "Cooking", "Cooking", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessGating", "DifficultyAtCreation", "DifficultyAtCreation", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "Farm",
+                 "Farm", "FireBarrels", "FireBarrels", "FireExtinguishers", "FireStation", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
+                 "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FuelStation", "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "ItemDespawn", "ItemDespawn", "Junkyard", "Junkyard",
+                 "Library", "Library", "LightPriority", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "SiphonFuel",
+                 "SiphonFuel", "SportsCourts", "SportsCourts", "TileFires", "TileFires", "TileFires", "TileFires", "WeaponWeight"]);    const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     // `Alcohol`'s *first* reader is now in `RogueGame` (the per-turn decay), and
     // the harness line is one of six rather than the only one.
     expect(at("Alcohol")).toMatch(/RogueGame\.ts:\d+$/);
@@ -445,6 +436,28 @@ describe("Feature registry is wired", () => {
     const charRaid = sites.filter((s) => s.feature === "CHARResearchRaid");
     expect(charRaid).toHaveLength(1);
     expect(charRaid[0]!.at).toMatch(/RogueGame\.ts:\d+$/);
+
+    // SportsCourts is **two** readers, and the split is the feature: the C# reaches
+    // the courts through `!MakeTennisCourt(map, b) && !MakeBasketballCourt(map, b)`
+    // at `:555`, so each gates itself and the pair is one chain entry. Two readers
+    // in one file, both in the building file rather than at the `BaseTownGenerator`
+    // call site, which is the convention every other building here follows.
+    const courts = sites.filter((s) => s.feature === "SportsCourts");
+    expect(courts).toHaveLength(2);
+    expect(courts.every((s) => /buildings\/makeSportsCourts\.ts/.test(s.at))).toBe(true);
+
+    // Farm is two readers in *two* files, and that asymmetry is the design rather
+    // than an accident. One is the gate on the green cascade's band test in
+    // `BaseTownGenerator` -- which is where `Feature.Graveyard`'s gate lives too,
+    // for the reason that a roll taken and discarded still moves every roll after
+    // it. The other is inside the building itself. Unlike the courts and the
+    // shelter, the farm does **not** take the shared `dispatchRoll` and decline
+    // bands itself, so its band test had to live at the call site; that is the
+    // reason for the split and is recorded there.
+    const farm = sites.filter((s) => s.feature === "Farm");
+    expect(farm).toHaveLength(2);
+    expect(farm.filter((s) => /BaseTownGenerator\.ts/.test(s.at))).toHaveLength(1);
+    expect(farm.filter((s) => /buildings\/makeFarmBuilding\.ts/.test(s.at))).toHaveLength(1);
 
     // AmbientAudio is five readers in one file, and the split is the design rather
     // than an accident: **one** that decides what should be audible

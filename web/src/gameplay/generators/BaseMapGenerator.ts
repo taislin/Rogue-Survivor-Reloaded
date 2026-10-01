@@ -531,6 +531,44 @@ export abstract class BaseMapGenerator extends MapGenerator {
     return fence;
   }
 
+  /**
+   * C# `MakeObjWoodenFence(string)` — `BaseMapGenerator.cs:467-475`, Release 6-1.
+   *
+   * **Not the port's `makeObjFence` above, and not a duplicate of it.** The two
+   * disagree on four of the fields that matter: the port's is called `fence` and
+   * carries `BASE_HITPOINTS * 10` and a `burnable` parameter defaulting to
+   * `UNINFLAMMABLE` and `standOnFovBonus`; this one is called `wooden fence`, is
+   * `BURNABLE` outright, carries one `BASE_HITPOINTS` — forty, a tenth of the
+   * other — and has no fov bonus. A farm fence that a survivor could not cut for
+   * planks in one hit, and one that would not burn, would be a different building,
+   * so this is a new method rather than a call with different arguments.
+   *
+   * `JumpLevel = 1` is what makes a farm fence hoppable, so the fence is a
+   * perimeter rather than a wall: a survivor walks in over it and out under it.
+   * `GivesWood` is why they would bother.
+   *
+   * **`static` is the C#'s (`protected static MakeObjWoodenFence`) and `public` is
+   * the one word changed.** Every other factory in this class is an instance method,
+   * but the C#'s is static and its only caller is a *building* file
+   * (`./buildings/makeFarmBuilding`), which has a `TownBuildingContext` and no `this`
+   * to call it on. `public static` is what lets that file use the one copy instead of
+   * re-declaring it — which is the difference between a factory of record and the
+   * ninth private copy this project has been collecting.
+   */
+  public static makeObjWoodenFence(fenceImageID: string): MapObject {
+    const fence = new MapObject(
+      'wooden fence',
+      fenceImageID,
+      MapObjectBreak.BREAKABLE,
+      MapObjectFire.BURNABLE,
+      DoorWindow.BASE_HITPOINTS
+    );
+    fence.isMaterialTransparent = true;
+    fence.jumpLevel = 1;
+    fence.givesWood = true;
+    return fence;
+  }
+
   protected makeObjIronFence(fenceImageID: string): MapObject {
     const fence = new MapObject('iron fence', fenceImageID);
     fence.isMaterialTransparent = true;
@@ -660,6 +698,49 @@ export abstract class BaseMapGenerator extends MapGenerator {
     );
     tree.givesWood = true;
     return tree;
+  }
+
+  /**
+   * C# `MakeObjFarmPlant(string name, string plantImageID)` —
+   * `BaseMapGenerator.cs:1155-1163`, whose doc comment calls it a "generic plant to
+   * be used as a container for fruit or veggies".
+   *
+   * The port had no equivalent of any kind, so this is not a second copy of
+   * anything: the farm's crops (a berry bush, a peanut plant, a grape vine) are
+   * **map objects, one per inside-rect tile**, which is why `Feature.Farm` needs no
+   * farming substrate at all. `TileID.FLOOR_PLANTED` is reached only from
+   * `HandlePlayerPlantSeeds` (`RogueGame.cs:14208`), which is unported.
+   *
+   * Two hit points. `DoorWindow.BASE_HITPOINTS / 20` is `int / int` in the C#, and
+   * `Math.floor` is what keeps it that way — the port's own `makeObjGlassDoor` and
+   * `makeObjChair` write the same guard for the same reason. `UNBREAKABLE` with two
+   * hit points is a contradiction on its face and is not one: `MapObject`'s
+   * constructor only assigns the hit points because `BURNABLE` is set, and the
+   * blast path gates on `IsBreakable` (`RogueGame.cs:19975`), so a crop cannot be
+   * shot off its stalk by a neighbour's explosion. It can, however, be set alight,
+   * and losing the crop is the point.
+   *
+   * `isWalkable` is the load-bearing flag and the reason this is a map object at
+   * all: the plant *is* the floor. A tile carrying a walkable object is walkable
+   * (`Map.ts:331-338`), so a farm's inside rect is a walkable field of crops rather
+   * than a field of obstacles — which is also what lets the shed's door-front
+   * rejection loop clear a plant instead of refusing the door.
+   *
+   * `public static` for the same reason as `makeObjWoodenFence` above: the C#'s is
+   * `protected static`, and its only caller is a building file with no `this`.
+   */
+  public static makeObjFarmPlant(name: string, plantImageID: string): MapObject {
+    const plant = new MapObject(
+      name,
+      plantImageID,
+      MapObjectBreak.UNBREAKABLE,
+      MapObjectFire.BURNABLE,
+      Math.floor(DoorWindow.BASE_HITPOINTS / 20)
+    );
+    plant.isMaterialTransparent = true;
+    plant.isContainer = true;
+    plant.isWalkable = true;
+    return plant;
   }
 
   private static readonly CARS = [GameImages.OBJ_CAR1, GameImages.OBJ_CAR2, GameImages.OBJ_CAR3, GameImages.OBJ_CAR4];

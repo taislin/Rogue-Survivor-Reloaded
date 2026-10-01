@@ -920,6 +920,50 @@ export class GameImages {
   static readonly OBJ_CHAINWIRE_GATE_OPEN = "MapObjects/chainwire_gate_open";
   static readonly OBJ_CHAINWIRE_GATE_BROKEN = "MapObjects/chainwire_gate_broken";
   static readonly OBJ_VAN_PHASE0 = "MapObjects/van_phase0";
+
+  // ── Feature.SportsCourts ──────────────────────────────────────────────────
+  //
+  // The basketball ring, placed by `MakeBasketballCourt`
+  // (`BaseTownGenerator.cs:6028`) on the two floor tiles its own tile list carries
+  // rings in -- sheet cells r4c2 and r4c9, the two ends of the centre line.
+  //
+  // **No `OBJ_EMPTY_BIN` here.** The court hands `makeObjFireBarrel` that sprite
+  // for its single 5%-per-tile barrel (`:6031`), but the constant already existed
+  // for `makeObjFireBarrel`'s own sake and is declared above at `:871`; a second
+  // declaration of the same id would be a duplicate identifier, and two constants
+  // for one sprite is two places for the basketball court and the fire barrel to
+  // disagree about.
+  static readonly OBJ_BASKETBALL_RING = "MapObjects/basketball_ring";
+
+  // ── Feature.Farm ──────────────────────────────────────────────────────────
+  //
+  // Three fence orientations, chosen by which neighbour is the path
+  // (`BaseTownGenerator.cs:3713-3717`), and three plant sprites for the crop
+  // objects `MapObjectFill` puts one of on every inside-rect tile
+  // (`:3736-3738`). The plants are the farm's *only* produce: the crop is a
+  // `MapObject`, not a `FLOOR_PLANTED` tile, which is why `Feature.Farm` never
+  // needed the farming substrate and why `CheckIfPlantsFruit`'s map-object arm is
+  // the one that matters. Note `MakeObjFarmPlant` is handed the name *without* an
+  // article -- `"berry bush"`, not `"a berry bush"` -- because `MapObject` adds
+  // the article itself and the fruiting code matches on the result.
+  static readonly OBJ_FARM_FENCE_EW = "MapObjects/farm_fence_ew";
+  static readonly OBJ_FARM_FENCE_NS_RIGHT = "MapObjects/farm_fence_ns_right";
+  static readonly OBJ_FARM_FENCE_NS_LEFT = "MapObjects/farm_fence_ns_left";
+  static readonly OBJ_BERRY_BUSH = "MapObjects/berry_bush";
+  static readonly OBJ_PEANUT_PLANT = "MapObjects/peanut_plant";
+  static readonly OBJ_GRAPE_VINE = "MapObjects/grape_vine";
+  /**
+   * C# `GameImages.cs:723`, used by the farm's shed at `BaseTownGenerator.cs:3863`.
+   *
+   * The sprite always shipped -- `tractor.webp` is on disk -- so this is a constant
+   * that was never declared rather than an asset that never arrived. It was briefly
+   * declared locally inside `makeFarmBuilding.ts`, which is exactly the failure mode
+   * `tests/sprite-assets.test.ts` cannot see: that test enumerates
+   * `Object.getOwnPropertyNames(GameImages)`, so a local id resolves fine and is
+   * never checked. An id that is not on `GameImages` is not preloaded and not
+   * covered.
+   */
+  static readonly OBJ_TRACTOR = "MapObjects/tractor";
   static readonly DECO_ANIMAL_SHELTER = "Tiles/Decoration/animal_shelter_sign";
   static readonly DECO_KENNEL = "Tiles/Decoration/kennel";
 
