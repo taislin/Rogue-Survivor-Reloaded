@@ -57,8 +57,14 @@ scaled up. The gameplay screenshots in `assets/img/screens/` are the exception:
 they are already 1:1 canvas output, so they are *not* pixelated, and they are
 1562×867 rather than 32×32.
 
-The site's own served assets are about **220 KB** across 54 files — roughly 16 KB
-of sprites, 152 KB of screenshots, 28 KB of icons and 22 KB of CSS/JS.
+The site's own served assets are about **1.1 MB** across 97 files — roughly
+48 KB of sprites and icons, 457 KB of screenshots, 430 KB of fonts, 131 KB of
+HTML and 35 KB of CSS/JS. **The fonts are the largest single item**, which is
+worth knowing before adding a fifth family: JetBrains Mono alone is 372 KB
+across four faces, and Storm Gust adds 58 KB for the headings alone. They are
+self-hosted so the site makes no third-party request, which is the reason they
+are there at all — so the trade is deliberate rather than free, and a new face
+should be argued for rather than added.
 
 `assets/img/screens/screens.psd` is the layered source for those screenshots.
 Only the flattened WebP is published. The PSD is a 5.3 MB working file that

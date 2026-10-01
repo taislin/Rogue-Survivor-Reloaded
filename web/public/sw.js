@@ -76,7 +76,7 @@ const INDEX_URL = new URL("index.html", self.location.href).href;
 // entire UI in a fallback face. All four selectable families are precached, not
 // just the default, because a player who chose Iosevka on a connected run and
 // then went offline should not silently get the platform font instead — and the
-// faces are 306 KB together, which is small next to the 55 MB of sprites and
+// faces are 283 KB together, which is small next to the 55 MB of sprites and
 // audio that are deliberately *not* precached below.
 //
 // Relative, for the reason above: the Cache API resolves these against the
@@ -90,8 +90,8 @@ const SHELL_URLS = [
   "./icon-512.png",
   "./fonts/JetBrainsMono-Regular.woff2",
   "./fonts/JetBrainsMono-Bold.woff2",
-  "./fonts/IosevkaTermSlab-Regular.woff2",
-  "./fonts/IosevkaTermSlab-Bold.woff2",
+  "./fonts/IosevkaSlab-Extended-Regular.woff2",
+  "./fonts/IosevkaSlab-Extended-Bold.woff2",
   "./fonts/hack-regular.woff2",
   "./fonts/hack-bold.woff2",
   "./fonts/IBMPlexMono-Regular.woff2",

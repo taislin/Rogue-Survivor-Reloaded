@@ -1405,7 +1405,7 @@ export class GameOptions {
     case OptionIDs.UI_SPRITE_STYLE:
       return "Which sprite set to draw the game with.\nThe other sets are variations of the classic one and do not contain every sprite: anything they are missing is drawn from classic, so a missing entry falls back rather than leaving a hole.";
     case OptionIDs.UI_FONT_CHOICE:
-        return "Which typeface to draw the text with.\nFour are bundled, so they look the same everywhere and work offline: JetBrains Mono (the default), Iosevka Term Slab, Hack and IBM Plex Mono. Classic uses the system's own monospace font, which is what this game was drawn with before.";
+        return "Which typeface to draw the text with.\nFour are bundled, so they look the same everywhere and work offline: JetBrains Mono (the default), Iosevka Slab, Hack and IBM Plex Mono. Classic uses the system's own monospace font, which is what this game was drawn with before.";
     case OptionIDs.UI_VIEW_MODE:
       return (
         "Draws the play screen from your own eyes rather than from above.\n" +

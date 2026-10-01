@@ -221,7 +221,7 @@ the C# `GameOptions.IDs` list, which has no equivalent:
 | Option | Choices | Notes |
 |---|---|---|
 | **Sprite style** | Classic, Deonapocalypse v9 r1, Genesis Classic 1.4 | Swaps the whole art set from `assets/images/`. Classic is the original. |
-| **Font** | JetBrains Mono (default), Iosevka Term Slab, Hack, IBM Plex Mono, Classic (system) | Four families vendored and subset to the glyphs the game can draw. See `src/ui/fonts.ts` for why they are bundled and subset. |
+| **Font** | JetBrains Mono (default), Iosevka Slab, Hack, IBM Plex Mono, Classic (system) | Four families vendored and subset to the glyphs the game can draw. See `src/ui/fonts.ts` for why they are bundled and subset, and for the advance width the menu layout depends on. |
 | **View mode** | Top-down, First-person | A raycast renderer over the same map and rules. |
 
 The font option is the one most likely to surprise: every family is 0.6 em

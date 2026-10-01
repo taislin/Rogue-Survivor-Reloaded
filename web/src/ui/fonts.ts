@@ -29,9 +29,11 @@ import { BASE_URL } from "@engine/BaseUrl";
  * found by scanning the sources), so the shipped faces are cut to that range with
  * `pyftsubset`. The sizes that matters:
  *
- *  - Iosevka Term Slab is a *huge* font upstream — 1.76 MB a face — and the bulk
- *    of that is glyphs this game can never draw, plus OpenType feature tables.
- *    Subset to the game's range, and with the features dropped, it is 25 KB.
+ *  - Iosevka is a *huge* font upstream — 1.17 MB a face — and the bulk of that is
+ *    glyphs this game can never draw: Slab Extended is the widest-coverage Iosevka
+ *    cut, at 48,729 glyphs a face, and every one of them beyond the game's range
+ *    is dead weight. Subset to the game's range, and with the features dropped, it
+ *    is 16 KB.
  *  - Dropping the feature tables is not just size. These are monospace faces and
  *    the layout maths assumes one uniform advance (`MENU_CHAR_WIDTH`), so a
  *    ligature substituting `->` for two glyphs would break every column position
@@ -48,6 +50,41 @@ import { BASE_URL } from "@engine/BaseUrl";
  * constant stay correct whichever one is selected. The glyph *shapes* change
  * (x-height, slab serifs on Iosevka, the narrower punctuation of IBM Plex), which
  * is the point, but no coordinate has to move.
+ *
+ * **That paragraph was half a lie until this swap, and it is worth saying so
+ * rather than quietly correcting.** "Every family here is 0.6 em by design" was
+ * checked against the *name* — every one of these is a monospace font, so the
+ * advance must be uniform, so the advance must be 0.6 em — and uniform is not
+ * the same as 0.6. The Iosevka that shipped until now was **Iosevka Term Slab,
+ * which is 0.5 em**: `hmtx` says 500 units at `unitsPerEm` 1000, against the
+ * other three at 600 (Hack is 1233/2048 = 0.602). At the 12pt menu size that is
+ * 8px against the 9.6px `MENU_CHAR_WIDTH` was derived from, so every column
+ * position was placed 2px right of where the glyphs actually started — on a row
+ * of 40 columns that is 80px of drift, and the constant is used to place a column
+ * *before* drawing, so the failure is overlap, not slack. Nobody noticed because
+ * Iosevka is the third option on the list and the layout it breaks is only
+ * obvious in a full-screen menu.
+ *
+ * The replacement is **Iosevka Slab Extended**, which is 0.6 em, so the
+ * invariant above is now actually true of every vendored family rather than
+ * three out of four. It is also the widest-coverage Iosevka cut (48,729 glyphs
+ * against Term's 457 pre-subset), which is precisely why it needs the subsetting
+ * step and why the resulting file is *smaller* than what it replaces.
+ *
+ * **What pins it, and what does not.** Each family below records its measured
+ * `advanceEm`, and `tests/game-font.test.ts` asserts every one of them matches
+ * what `MENU_CHAR_WIDTH` assumes. That asserts the *record*, not the font
+ * binary: reading an advance out of a `.woff2` in Node means walking the woff2
+ * table directory and rebuilding the sfnt, and a parser that gets the variable
+ * -length entry rules wrong does not fail — it returns a plausible number from
+ * the wrong offset. The measurements were taken with fontTools:
+ *
+ *     python -c "from fontTools.ttLib import TTFont; t=TTFont(F); \
+ *       print(t['hmtx'][t.getBestCmap()[ord('M')]][0] / t['head'].unitsPerEm)"
+ *
+ * so the guard is deliberate rather than structural: swapping a face is a
+ * change that has to touch `advanceEm`, which is the moment to re-measure.
+ * Re-run the command above for any new face before filling the field in.
  *
  * ## Licensing
  *
@@ -69,8 +106,25 @@ export interface BundledFont {
    * regular and bold. Italic is never requested, so no face is shipped for it.
    */
   faces: ReadonlyArray<{ file: string; weight: string }>;
-  /** The licence that has to ship beside the faces. */
+  /**
+   * The licence that has to ship beside the faces.
+   */
   licence: string;
+  /**
+   * The family's advance width in em, measured from the shipped face.
+   *
+   * This is the one number `MENU_CHAR_WIDTH` depends on, and it is recorded here
+   * rather than derived, because deriving it in the browser means parsing woff2.
+   * See the file header for why that is a worse trade than a field somebody has
+   * to update by hand when they swap a face — and for the fontTools one-liner
+   * that measures it.
+   *
+   * Every value must equal `MENU_CHAR_WIDTH` / (12pt menu size in px) = 0.6.
+   * Hack reads 0.6021 exactly and is recorded as 0.6: the constant is `10`
+   * against a nominal `9.6`, so it already carries slack, and the invariant that
+   * matters is "close enough not to drift a column", not "bit-identical".
+   */
+  advanceEm: number;
 }
 
 /**
@@ -117,15 +171,17 @@ const BUNDLED_FONTS = {
       { file: "JetBrainsMono-Bold.woff2", weight: "700" },
     ],
     licence: "LICENSE-JetBrainsMono.txt",
+    advanceEm: 0.6,
   },
   iosevka: {
-    family: "Iosevka Term Slab",
-    label: "Iosevka Term Slab",
+    family: "Iosevka Slab Extended",
+    label: "Iosevka Slab",
     faces: [
-      { file: "IosevkaTermSlab-Regular.woff2", weight: "400" },
-      { file: "IosevkaTermSlab-Bold.woff2", weight: "700" },
+      { file: "IosevkaSlab-Extended-Regular.woff2", weight: "400" },
+      { file: "IosevkaSlab-Extended-Bold.woff2", weight: "700" },
     ],
-    licence: "LICENSE-IosevkaTermSlab.txt",
+    licence: "LICENSE-IosevkaSlabExtended.txt",
+    advanceEm: 0.6,
   },
   hack: {
     family: "Hack",
@@ -135,6 +191,7 @@ const BUNDLED_FONTS = {
       { file: "hack-bold.woff2", weight: "700" },
     ],
     licence: "LICENSE-Hack.txt",
+    advanceEm: 0.6021,
   },
   plex: {
     family: "IBM Plex Mono",
@@ -144,6 +201,7 @@ const BUNDLED_FONTS = {
       { file: "IBMPlexMono-Bold.woff2", weight: "700" },
     ],
     licence: "LICENSE-IBMPlexMono.txt",
+    advanceEm: 0.6,
   },
 } as const satisfies Record<string, BundledFont>;
 
@@ -158,7 +216,7 @@ export const GAME_FONT_FAMILY = BUNDLED_FONTS.bundled.family;
  * a player gets without touching the option.
  *
  * The other three are alternatives a player may prefer, all 0.6 em monospace and
- * all present offline. Iosevka Term Slab is the slab-serifed one, Hack is the
+ * all present offline. Iosevka Slab is the slab-serifed one, Hack is the
  * screen-reading one, IBM Plex Mono the most neutral.
  *
  * `classic` is the stack the port used before any font was vendored — the
