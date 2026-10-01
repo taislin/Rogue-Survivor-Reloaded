@@ -13,6 +13,7 @@ import { RogueGame } from "@engine/RogueGame";
 import { Ruleset, Session } from "@engine/Session";
 import { Feature, hasFeature } from "@engine/FeatureFlags";
 import { MusicPriority, type IMusicManager, type MusicPriorityValue } from "@engine/audio/IMusicManager";
+import type { ISoundManager } from "@engine/audio/ISoundManager";
 import { NullSoundManager } from "@engine/audio/NullSoundManager";
 import { isKnownAudioId, soundPath } from "@engine/AssetPaths";
 import { sfxGain } from "@gameplay/AudioLevels";
@@ -288,6 +289,32 @@ describe("NullSoundManager with the whole id set", () => {
 });
 
 /** Records every id the game asks for, and does nothing else. */
+/**
+ * A recording *sound* manager.
+ *
+ * Added with `Feature.ExtendedAudio`'s channel work. The five wired effects used to
+ * be observed on the music manager, because that is where they were being played --
+ * which is the bug: `musicGain` returns 1.0 for anything not in `MUSIC_FILES`, so
+ * every effect was at unity gain instead of its measured level in `SFX_GAINS`.
+ * `sfx - undead eat` is the loud one: measured peak 0.39 against 1.0 for "nightmare",
+ * given a gain of **2.446** to be audible at all, and the port was playing it a
+ * sixth too quietly.
+ */
+class RecordingSoundManager implements ISoundManager {
+  public readonly played: string[] = [];
+  play(soundId: string): void {
+    this.played.push(soundId);
+  }
+  stopAll(): void {}
+  setVolume(): void {}
+  getVolume(): number {
+    return 1;
+  }
+  preload(): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
 class RecordingMusicManager implements IMusicManager {
   public readonly played: string[] = [];
   play(musicId: string, _priority: MusicPriorityValue): void {
@@ -319,6 +346,7 @@ const survivors = new Faction("The Survivors", "survivor");
 describe("the gate", () => {
   let game: RogueGame;
   let music: RecordingMusicManager;
+  let sfx: RecordingSoundManager;
   let map: GameMap;
   let player: Actor;
 
@@ -326,7 +354,8 @@ describe("the gate", () => {
     new GameActors();
     new GameItems();
     music = new RecordingMusicManager();
-    game = new RogueGame(new NullRogueUI(), music);
+    sfx = new RecordingSoundManager();
+    game = new RogueGame(new NullRogueUI(), music, undefined, sfx);
     map = new GameMap(1, "test", 40, 40);
     player = new Actor(Models.actors.get(ActorID.MALE_CIVILIAN), survivors, "you");
     player.controller = new PlayerController();
@@ -366,17 +395,17 @@ describe("the gate", () => {
     game.DoUseFishingRodItem(player);
     vi.spyOn(game.m_Rules, "rollChance").mockReturnValue(true);
     game.DoWait(player, true);
-    expect(music.played).toContain(GameSounds.FISHING_CAST_PLAYER);
-    expect(music.played).toContain(GameSounds.FISHING_REEL_PLAYER);
-    expect(music.played, "the NPC arm is not ported, so nothing plays a _nearby id").not.toContain(
+    expect(sfx.played).toContain(GameSounds.FISHING_CAST_PLAYER);
+    expect(sfx.played).toContain(GameSounds.FISHING_REEL_PLAYER);
+    expect(sfx.played, "the NPC arm is not ported, so nothing plays a _nearby id").not.toContain(
       GameSounds.FISHING_CAST_NEARBY,
     );
 
-    music.played.length = 0;
+    sfx.played.length = 0;
     Session.get().ruleset = Ruleset.CLASSIC;
     game.DoUseFishingRodItem(player);
     game.DoWait(player, true);
-    expect(music.played, "CLASSIC must hear none of the fork's effects").toEqual([]);
+    expect(sfx.played, "CLASSIC must hear none of the fork's effects").toEqual([]);
   });
 
   it("keeps the vanilla feast sound under CLASSIC and the fork's under STILL_ALIVE", () => {
@@ -386,12 +415,12 @@ describe("the gate", () => {
     // always played.
     Session.get().ruleset = Ruleset.CLASSIC;
     game.DoEatCorpse(player, kill());
-    expect(music.played).toEqual([GameSounds.UNDEAD_EAT]);
+    expect(sfx.played).toEqual([GameSounds.UNDEAD_EAT]);
 
-    music.played.length = 0;
+    sfx.played.length = 0;
     Session.get().ruleset = Ruleset.STILL_ALIVE;
     game.DoEatCorpse(player, kill());
-    expect(music.played).toEqual([GameSounds.UNDEAD_EAT_PLAYER]);
+    expect(sfx.played).toEqual([GameSounds.UNDEAD_EAT_PLAYER]);
   });
 
   it("plays a vanilla id under CLASSIC and a fork id under STILL_ALIVE, never the other way round", () => {
@@ -400,13 +429,13 @@ describe("the gate", () => {
     // 176 ids it has not: an id that is not wired anywhere cannot be played under
     // any ruleset, and the scan below is what would say so if it became wired.
     const playsUnder = (ruleset: Ruleset): string[] => {
-      music.played.length = 0;
+      sfx.played.length = 0;
       Session.get().ruleset = ruleset;
       game.DoUseFishingRodItem(player);
       vi.spyOn(game.m_Rules, "rollChance").mockReturnValue(true);
       game.DoWait(player, true);
       game.DoEatCorpse(player, kill());
-      return music.played.slice();
+      return sfx.played.slice();
     };
     const classic = playsUnder(Ruleset.CLASSIC);
     const stillAlive = playsUnder(Ruleset.STILL_ALIVE);

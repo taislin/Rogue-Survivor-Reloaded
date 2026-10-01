@@ -4,6 +4,7 @@ import { Color }                from "@engine/Color";
 import { RogueGame }            from "@engine/RogueGame";
 import { WebAudioAmbientManager } from "@engine/audio/WebAudioAmbientManager";
 import { WebAudioMusicManager } from "@engine/audio/WebAudioMusicManager";
+import { WebAudioSoundManager } from "@engine/audio/WebAudioSoundManager";
 import { loadGameFonts }        from "@ui/fonts";
 import { InputTranslator }      from "@engine/Keybindings";
 import { PlayerCommand }        from "@engine/PlayerCommand";
@@ -75,7 +76,17 @@ async function main(): Promise<void> {
   // and the tests never touch a browser audio API, and the browser passes the
   // real ones. C# does the same at `RogueGame.cs:861` — a *second* manager
   // instance, not a second kind of manager.
-  const game = new RogueGame(ui, new WebAudioMusicManager(), new WebAudioAmbientManager());
+  // Three channels, because they are three different things: music and ambients are
+  // streamed beds and sound effects are one-shots. The third is the only one that
+  // applies the measured per-effect gains in `AudioLevels.SFX_GAINS` -- see
+  // `RogueGame`'s constructor for why every effect was quietly playing too quietly
+  // before it existed.
+  const game = new RogueGame(
+    ui,
+    new WebAudioMusicManager(),
+    new WebAudioAmbientManager(),
+    new WebAudioSoundManager(),
+  );
   try {
     await game.Run();
   } catch (e) {

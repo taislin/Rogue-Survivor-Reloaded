@@ -61,6 +61,8 @@ import {
 import { AMBIENT_SFX_VOLUME, type IAmbientManager } from "@engine/audio/IAmbientManager";
 import { type IMusicManager, MusicPriority } from "@engine/audio/IMusicManager";
 import { NullAmbientManager } from "@engine/audio/NullAmbientManager";
+import { NullSoundManager } from "@engine/audio/NullSoundManager";
+import type { ISoundManager } from "@engine/audio/ISoundManager";
 import { NullMusicManager } from "@engine/audio/NullMusicManager";
 import { Color } from "@engine/Color";
 import { fireAndForget, reportSwallowed } from "@engine/Diagnostics";
@@ -1270,6 +1272,17 @@ export class RogueGame {
 	 * rather than replacing it.
 	 */
 	m_AmbientSFXManager!: IAmbientManager;
+
+	/**
+	 * C# `m_SFXManager` -- the sound-effects channel (`RogueGame.cs:833`).
+	 *
+	 * One-shots, and the only manager that applies the *measured* per-effect gains in
+	 * `AudioLevels.SFX_GAINS`. Music and ambients have their own managers and their
+	 * own gain tables; sending an effect through either of those loses the
+	 * measurement, which is how every one of the port's 183 effects was playing at
+	 * unity gain until this field existed.
+	 */
+	m_SoundManager!: ISoundManager;
 	/** C# `struct CharGen` — a struct is zero-initialized, so the field starts out filled. */
 	m_CharGen: CharGen = new CharGen();
 	m_Manual: TextFile | null = null;
@@ -1396,6 +1409,7 @@ export class RogueGame {
 		UI: IRogueUI,
 		music: IMusicManager = new NullMusicManager(),
 		ambients: IAmbientManager = new NullAmbientManager(),
+		sound: ISoundManager = new NullSoundManager(),
 	) {
 		logInit("RogueGame()");
 
@@ -1404,6 +1418,25 @@ export class RogueGame {
 		// C# picks MDX/SFML/NullSoundManager (the C# Null implements both sound+music).
 		// The browser passes `WebAudioMusicManager` from main.ts.
 		this.m_MusicManager = music;
+
+		logInit("creating Sound Manager");
+		// C# `RogueGame.cs:833` -- the *third* manager, and the reason the port has
+		// three interfaces where the C# arguably has two. The C#'s own comment on the
+		// ambient manager ("the music manager is good for long tracks, as they are
+		// streamed from disk rather than kept in memory") is the same argument one
+		// level down: music and ambients are beds, sound effects are one-shots.
+		//
+		// **This was the last thing `Feature.ExtendedAudio` was missing, and it was
+		// not cosmetic.** Every effect the port played went through
+		// `m_MusicManager.play`, which applies `musicGain(id)` -- a lookup that
+		// returns 1.0 for anything not in `MUSIC_FILES`. So all 180 fork effects, and
+		// the three vanilla ones, were playing at unity gain while their measured
+		// levels sat unused in `AudioLevels.SFX_GAINS`: `sfx - undead eat` was
+		// measured at a peak of 0.39 against 1.0 for "nightmare" and given a gain of
+		// **2.446** precisely so it would be audible at all, and the port was playing
+		// it a sixth too quietly. `WebAudioSoundManager` applies `sfxGain` correctly
+		// and nothing was constructing it.
+		this.m_SoundManager = sound;
 
 		logInit("creating Ambient Sound Manager");
 		// C# `RogueGame.cs:857-868` builds a *second* manager here, not a third kind
@@ -4837,9 +4870,8 @@ export class RogueGame {
 									// that the id resolved at all — it did not, because only
 									// `musicPath` was consulted and `undead rise` lives in the sound
 									// table. `audioPath` now checks both. See `AssetPaths.audioPath`.
-									this.m_MusicManager.play(
+									this.m_SoundManager.play(
 										GameSounds.UNDEAD_RISE,
-										MusicPriority.EVENT,
 									);
 								}
 							}
@@ -5184,9 +5216,8 @@ export class RogueGame {
 								// because `play()` assigns `src` before the request resolves —
 								// silenced the current track as well. `audioPath` fixes both.
 								this.m_MusicManager.stop();
-								this.m_MusicManager.play(
+								this.m_SoundManager.play(
 									GameSounds.NIGHTMARE,
-									MusicPriority.EVENT,
 								);
 							}
 						}
@@ -9718,11 +9749,10 @@ inv.removeAllQuantity(it);
 			// `UNDEAD_EAT_NEARBY` at `QUIET_NOISE_RADIUS`) for the same reason as
 			// the fishing cast's: the port has no radius-bearing audibility
 			// predicate to test.
-			this.m_MusicManager.play(
+			this.m_SoundManager.play(
 				hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio)
 					? GameSounds.UNDEAD_EAT_PLAYER
 					: GameSounds.UNDEAD_EAT,
-				MusicPriority.EVENT,
 			);
 		}
 
@@ -16801,9 +16831,8 @@ inv.removeAllQuantity(it);
 					// so using it would silence the soundtrack. The overlap is audible
 					// and harmless; silencing the music is neither.
 					if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
-						this.m_MusicManager.play(
+						this.m_SoundManager.play(
 							GameSounds.FISHING_REEL_PLAYER,
-							MusicPriority.EVENT,
 						);
 
 					// `AddMessageIfAudibleForPlayer` rather than `AddMessage`: the C# says
@@ -24150,7 +24179,7 @@ inv.removeAllQuantity(it);
 			// does not define here. Recorded rather than faked, like `isOneHanded`
 			// below.
 			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
-				this.m_MusicManager.play(GameSounds.FISHING_CAST_PLAYER, MusicPriority.EVENT);
+				this.m_SoundManager.play(GameSounds.FISHING_CAST_PLAYER);
 
 			this.AddMessage(
 				new Message(
