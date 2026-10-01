@@ -68,6 +68,30 @@ export class Map {
   }
 
   /**
+   * Does this map have water tiles a burning actor could reach?
+   *
+   * C# `Data/Map.cs:150`, set by `MakeParkPond` (`BaseTownGenerator.cs:5746`) and
+   * read by the AI's "I am on fire and looking for somewhere to put myself out"
+   * behaviour. Same shape as `hasFishing` above for the same reason: the C# writes
+   * this through `BinaryFormatter`, so a save predating the field has no key to
+   * assign and a plain field would read `undefined`.
+   *
+   * **Nothing reads this in the port yet.** It is not `hasFishing`'s situation --
+   * `hasFishing` is read by the fishing path, which has landed -- but by the fire
+   * arm of the NPC AI, which has not. Recorded so the flag is not mistaken for
+   * working behaviour.
+   */
+  private _hasWaterTiles: boolean = false;
+
+  get hasWaterTiles(): boolean {
+    return this._hasWaterTiles ?? false;
+  }
+
+  set hasWaterTiles(value: boolean) {
+    this._hasWaterTiles = value;
+  }
+
+  /**
    * Does this map have a church on it? Still Alive, Release 6-6.
    *
    * C# `Data/Map.cs:138` over `m_HasChurch`, and shaped exactly like

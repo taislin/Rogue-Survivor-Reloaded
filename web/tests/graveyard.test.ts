@@ -82,6 +82,38 @@ const graveyardZones = (map: GameMap): string[] =>
 const parkZones = (map: GameMap): string[] =>
   zonesOf(map).filter((n) => n.startsWith("Park@"));
 
+/**
+ * A district that actually contains a graveyard, found by sweeping seeds.
+ *
+ * This file used to hardcode `generate(7)` in nine places, because seed 7 happened
+ * to roll the green cascade into the graveyard band. **That is a property of the
+ * dice stream, not of the feature**, and any change anywhere in `makeParkBuilding`
+ * moves it -- `Feature.Fishing`'s pond did exactly that, and nine assertions failed
+ * for the right reason with a confusing message.
+ *
+ * The sweep is bounded and cheap (a district generation is milliseconds) and it is
+ * the same lesson `animal-shelter-building.test.ts` records at length: a fixture
+ * that depends on *where in the roll space* a thing lands will break every time
+ * something before it changes, and the fix is to ask the generator for a district
+ * with the feature rather than to re-pick a seed after every change.
+ */
+let cachedGraveyard: GameMap | null = null;
+function mapWithGraveyard(): GameMap {
+  if (cachedGraveyard !== null) return cachedGraveyard;
+  for (let seed = 1; seed <= 40; seed++) {
+    const map = newGenerator(100).generate(seed);
+    if (graveyardZones(map).length > 0) {
+      cachedGraveyard = map;
+      return map;
+    }
+  }
+  throw new Error(
+    "no district in seeds 1..40 contained a Graveyard zone. If the band is intact " +
+      "this means the sweep is too narrow; if the band is broken, this is the " +
+      "assertion that should have caught it.",
+  );
+}
+
 /** One green-region block, big enough for the fill to have room. */
 function bigBlock(): Block {
   return new Block(new Rect(2, 2, 17, 17));
@@ -98,7 +130,7 @@ describe("Feature.Graveyard: the zone name is the feature's fingerprint", () => 
   });
 
   it("a graveyard is a Graveyard zone on the building rect", () => {
-    const map = newGenerator(100).generate(7);
+    const map = mapWithGraveyard();
     expect(graveyardZones(map).length, "some block became a graveyard").toBeGreaterThan(0);
     for (const name of graveyardZones(map)) {
       // `MakeUniqueZone` appends the centre, so the name is `Graveyard@x-y`.
@@ -107,7 +139,7 @@ describe("Feature.Graveyard: the zone name is the feature's fingerprint", () => 
   });
 
   it("never names a Park zone 'Graveyard' or the reverse", () => {
-    const map = newGenerator(100).generate(7);
+    const map = mapWithGraveyard();
     const both = new Set([...parkZones(map), ...graveyardZones(map)]);
     expect(both.size, "no zone is in both sets").toBe(parkZones(map).length + graveyardZones(map).length);
   });
@@ -119,7 +151,7 @@ describe("Feature.Graveyard: what fills it", () => {
     // parks *and* graveyards, and a park's benches are exactly what this assertion
     // is claiming the absence of -- a district-wide scan finds them and fails for
     // the right-looking wrong reason.
-    const map = newGenerator(100).generate(7);
+    const map = mapWithGraveyard();
     const images = imagesInside(map, graveyardZones(map));
     expect(images.some((id) => id.includes("tombstone")), "a graveyard has headstones").toBe(true);
     expect(
@@ -142,7 +174,7 @@ describe("Feature.Graveyard: what fills it", () => {
     // The C#'s `roll(0, 10)` puts 10% on a park tree, 60% on a plain stone and 30%
     // on a cross. `default` is unreachable, so pinning the set is a real bound on
     // the transcription rather than a restatement of it.
-    const map = newGenerator(100).generate(7);
+    const map = mapWithGraveyard();
     const stones = imagesInside(map, graveyardZones(map)).filter((id) => id.includes("tombstone"));
     expect(stones.length, "a graveyard is mostly headstones").toBeGreaterThan(0);
     for (const id of stones) {
@@ -157,9 +189,17 @@ describe("Feature.Graveyard: what fills it", () => {
 describe("Feature.Graveyard: the gate", () => {
   it("CLASSIC produces no Graveyard zone at all", () => {
     Session.get().ruleset = Ruleset.STILL_ALIVE;
-    const stillAlive = graveyardZones(newGenerator(100).generate(7)).length;
+    // Not `mapWithGraveyard()`: the point is that the *same seed* makes a graveyard
+    // under one ruleset and none under the other, so this needs the seed, not a
+    // cached map. Sweep it once and reuse the winner.
+    let seed = 0;
+    Session.get().ruleset = Ruleset.STILL_ALIVE;
+    for (let s = 1; s <= 40 && seed === 0; s++) {
+      if (graveyardZones(newGenerator(100).generate(s)).length > 0) seed = s;
+    }
+    const stillAlive = graveyardZones(newGenerator(100).generate(seed)).length;
     Session.get().ruleset = Ruleset.CLASSIC;
-    const classic = graveyardZones(newGenerator(100).generate(7));
+    const classic = graveyardZones(newGenerator(100).generate(seed));
     expect(stillAlive, "sanity: the flag does something").toBeGreaterThan(0);
     expect(classic, "and nothing under classic").toHaveLength(0);
   });
@@ -202,7 +242,7 @@ describe("Feature.Graveyard: the gate", () => {
         { rules: new Rules(new DiceRoller(20250929)), ApplyOnFire: () => undefined } as never,
         newParams(100),
       );
-      probe.generate(7);
+      probe.generate(7); // a literal seed: this measures rolls, not content.
       return probe.greenPassRolls;
     };
 
@@ -252,13 +292,13 @@ describe("Feature.Graveyard: the shared die", () => {
 
 describe("Feature.Graveyard: determinism", () => {
   it("the same seed makes the same graveyard", () => {
-    const a = graveyardZones(newGenerator(100).generate(7));
-    const b = graveyardZones(newGenerator(100).generate(7));
+    const a = graveyardZones(mapWithGraveyard());
+    const b = graveyardZones(mapWithGraveyard());
     expect(a).toEqual(b);
   });
 
   it("a different seed makes a different district", () => {
-    const a = newGenerator(100).generate(7).mapObjects.map((o) => o.imageId).join();
+    const a = mapWithGraveyard().mapObjects.map((o) => o.imageId).join();
     const b = newGenerator(100).generate(8).mapObjects.map((o) => o.imageId).join();
     expect(a, "so the assertions above are not vacuous").not.toBe(b);
   });

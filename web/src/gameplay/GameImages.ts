@@ -862,6 +862,14 @@ export class GameImages {
   static readonly OBJ_ARMY_TABLE = "MapObjects/army_table";
   static readonly OBJ_ARMY_COMPUTER_STATION = "MapObjects/army_computer_station";
 
+  // ── Feature.Fishing, Release 7-6 ──────────────────────────────────────────
+  //
+  // The unlit bin a too-small-for-a-pond park gets instead (`BaseTownGenerator.cs:5721`),
+  // passed straight to `makeObjFireBarrel`. The C# names it `OBJ_EMPTY_BIN` even
+  // though it builds a fire barrel from it -- "empty bin" is what the sprite is,
+  // not what the object becomes.
+  static readonly OBJ_EMPTY_BIN = "MapObjects/empty_bin";
+
   // ── Feature.Graveyard ───────────────────────────────────────────────────
   //
   // A graveyard is not its own generator: the C# passes `isgraveyard` into

@@ -937,6 +937,19 @@ export abstract class BaseMapGenerator extends MapGenerator {
 
   // ── Common items ──────────────────────────────────────────────────────────
 
+  /**
+   * C# `MakeItemFishingRod` -- `BaseMapGenerator.cs:2188-2191`, Release 7-6.
+   *
+   * The C# drops one at every pond (`BaseTownGenerator.cs:5709`) and sells one in
+   * four shop rolls. The item model already landed with `Feature.Fishing`'s player
+   * path; what was missing was the factory, which is why the player could equip a
+   * rod but no map in the world contained one.
+   */
+  makeItemFishingRod(): Item {
+    const model = Models.items.get(ItemID.FISHING_ROD);
+    return new Item(model);
+  }
+
   makeItemBandages(): Item {
     const model = Models.items.get(ItemID.MEDICINE_BANDAGES);
     return new ItemMedicine(model) as Item;

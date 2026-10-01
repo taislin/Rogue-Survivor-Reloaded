@@ -169,13 +169,22 @@ describe("Feature registry is wired", () => {
     //
     // Asserting the exact multiset means a new reader has to be added here, which
     // is the point: a reader is a decision, not an accident.
-    expect(sites.map((s) => s.feature).sort())
-.toEqual(["Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AnimalShelter", "AnimalShelter",
-                 "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank", "Bar", "Bar", "BlackOpsRaid", "Butchering", "Butchering", "CHARResearchRaid", "Church", "Clinic", "Clinic", "Cooking",
-                 "Cooking", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessGating", "DifficultyAtCreation", "DifficultyAtCreation", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "FireBarrels", "FireBarrels", "FireExtinguishers", "FireStation", "Fishing",
-                 "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FuelStation", "Graveyard", "Graveyard", "HelicopterRescue",
-                 "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "ItemDespawn", "ItemDespawn", "Junkyard", "Junkyard", "Library", "Library", "LightPriority", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ShelterBackpacks",
-                 "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "SiphonFuel", "SiphonFuel", "TileFires", "TileFires", "TileFires", "TileFires", "WeaponWeight"]);
+    expect(sites.map((s) => s.feature).sort()).toEqual([
+                 "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "AmbientAudio", "AmbientAudio",
+                 "AmbientAudio", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AnimalShelter", "AnimalShelter",
+                 "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank", "Bar", "Bar", "BlackOpsRaid", "Butchering",
+                 "Butchering", "CHARResearchRaid", "Church", "Clinic", "Clinic", "Cooking", "Cooking", "DarknessFov",
+                 "DarknessFov", "DarknessFov", "DarknessGating", "DifficultyAtCreation", "DifficultyAtCreation",
+                 "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "FireBarrels", "FireBarrels", "FireExtinguishers",
+                 "FireStation", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "FoodPoisoning",
+                 "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FuelStation",
+                 "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue",
+                 "HelicopterRescue", "ItemDespawn", "ItemDespawn", "Junkyard", "Junkyard", "Library", "Library",
+                 "LightPriority", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ShelterBackpacks",
+                 "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
+                 "ShelterBackpacks", "ShelterBackpacks", "SiphonFuel", "SiphonFuel", "TileFires", "TileFires", "TileFires",
+                 "TileFires", "WeaponWeight"
+               ]);
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     // `Alcohol`'s *first* reader is now in `RogueGame` (the per-turn decay), and
     // the harness line is one of six rather than the only one.
@@ -243,8 +252,13 @@ describe("Feature registry is wired", () => {
     // EXTINGUISH MODE and then tags a floor instead.
     expect(sites.filter((s) => s.feature === "FireExtinguishers")).toHaveLength(1);
 
-    // Fishing is six, split one-and-five, and both halves of the split are the
+    // Fishing is seven, split one-and-five-and-one, and all three halves are the
     // design rather than bookkeeping.
+    //
+    // The seventh is the pond, in `BaseTownGenerator`: Release 6-1's replacement for
+    // alpha10's shed, and the only thing in the game that makes `Map.hasFishing`
+    // true. It is gated at the step, which is what keeps Classic on the shed and
+    // therefore byte-identical -- see the branch in `makeParkBuilding`.
     //
     // The one in `Rules` is the equip gate: a rod is a rod only beside water, and
     // that is a *rule*, so it belongs with the other "can this actor" questions
@@ -268,9 +282,10 @@ describe("Feature registry is wired", () => {
     // damage) and a survivor who kept a rod through one of them and not the other
     // would be a bug neither single gate could see.
     const fishing = sites.filter((s) => s.feature === "Fishing");
-    expect(fishing).toHaveLength(6);
+    expect(fishing).toHaveLength(7);
     expect(fishing.filter((s) => /Rules\.ts/.test(s.at))).toHaveLength(1);
     expect(fishing.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(5);
+    expect(fishing.filter((s) => /BaseTownGenerator\.ts/.test(s.at))).toHaveLength(1);
     // And the `Rules` reader is the predicate, not the catch chance: the chance is
     // a pure number only the gated wait asks for, the same arrangement
     // `Rules.meatQuantityPerCorpse` has, so a second gate there would be a gate

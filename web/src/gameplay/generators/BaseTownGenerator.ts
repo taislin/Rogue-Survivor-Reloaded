@@ -77,6 +77,15 @@ const NAME_SUBWAY_RAILS = 'rails';
 // ── Constants ──────────────────────────────────────────────────────────────
 const PARK_TREE_CHANCE = 25;
 const PARK_BENCH_CHANCE = 5;
+
+// ── Still Alive, Release 6-1 and 7-6 (`BaseTownGenerator.cs:311-313`).
+//
+// The pond replaced alpha10's shed outright ("based on alpha 10 shed"), and the
+// dimensions are unchanged, so `PARK_SHED_WIDTH`/`HEIGHT` below are these numbers
+// under their old names.
+const PARK_POND_CHANCE = 1000;
+const PARK_POND_WIDTH = 5;
+const PARK_POND_HEIGHT = 5;
 /**
  * Still Alive, Release 4: inside a *graveyard*, the tree roll is reused as a
  * "grave or tree" roll and then a tombstone is drawn from it. The C# says so:
@@ -94,6 +103,8 @@ const PARK_TREES: readonly string[] = [
   GameImages.OBJ_TREE4,
 ];
 const PARK_ITEM_CHANCE = 5;
+// The alpha10 shed, which Release 6-1 replaced with the pond and which the port
+// still builds **under Classic**, so that Classic stays byte-identical. See step 6.
 const PARK_SHED_CHANCE = 75; // alpha10.1
 const PARK_SHED_WIDTH = 5; // alpha10
 const PARK_SHED_HEIGHT = 5; // alpha10
@@ -2718,52 +2729,93 @@ export class BaseTownGenerator extends BaseMapGenerator {
     map.addZone(parkZone);
     this.makeWalkwayZones(map, b);
 
-    // alpha10
+    // Still Alive, Release 6-1 (pond) and 7-6 (the barrel in the `else`).
     ////////////
-    // 5. Shed?
+    // 6. Pond?
     ////////////
-    if (!isgraveyard && b.insideRect.width > PARK_SHED_WIDTH + 2 && b.insideRect.height > PARK_SHED_HEIGHT + 2) {
-      if (this.m_DiceRoller.rollChance(PARK_SHED_CHANCE)) {
-        // roll shed pos - dont put next to park fences!
-        const shedX = this.m_DiceRoller.roll(b.insideRect.left + 1, b.insideRect.right - PARK_SHED_WIDTH);
-        const shedY = this.m_DiceRoller.roll(b.insideRect.top + 1, b.insideRect.bottom - PARK_SHED_HEIGHT);
-        const shedRect = new Rect(shedX, shedY, PARK_SHED_WIDTH, PARK_SHED_HEIGHT);
+    //
+    // C# `:5690-5723`, which replaced alpha10's shed step.
+    //
+    // **This step lost its `!isgraveyard` guard and that is the C#'s doing.** The
+    // port's shed line above had one; `MakeParkBuilding`'s step 6 in the reference
+    // (`:5690`) is gated only on size, so a graveyard large enough for a pond gets
+    // one. Graveyards and parks share this generator and the C# clearly stopped
+    // distinguishing them at this step. Ported as written rather than keeping the
+    // port's own guard, because that guard was inherited from a step the C# deleted.
+    if (!hasFeature(Session.get().ruleset, Feature.Fishing)) {
+      // No `Feature.Fishing`: the alpha10 shed, unchanged, which is what keeps
+      // Classic byte-identical. The C# has no such branch -- it deleted the shed
+      // outright in Release 6-1 -- but the C# also has no `Feature.Fishing`, so the
+      // two are describing the same world from two feature sets.
+      if (!isgraveyard && b.insideRect.width > PARK_SHED_WIDTH + 2 && b.insideRect.height > PARK_SHED_HEIGHT + 2) {
+        if (this.m_DiceRoller.rollChance(PARK_SHED_CHANCE)) {
+          const shedX = this.m_DiceRoller.roll(b.insideRect.left + 1, b.insideRect.right - PARK_SHED_WIDTH);
+          const shedY = this.m_DiceRoller.roll(b.insideRect.top + 1, b.insideRect.bottom - PARK_SHED_HEIGHT);
+          const shedRect = new Rect(shedX, shedY, PARK_SHED_WIDTH, PARK_SHED_HEIGHT);
+          this.clearRectangle(map, shedRect, false);
+          this.makeParkShedBuilding(map, 'Shed', shedRect);
+        }
+      }
+    } else if (b.insideRect.width > PARK_POND_WIDTH + 2 && b.insideRect.height > PARK_POND_HEIGHT + 2) {
+      if (this.m_DiceRoller.rollChance(PARK_POND_CHANCE)) {
+        // roll pond pos - dont put next to park fences!
+        const pondX = this.m_DiceRoller.roll(b.insideRect.left + 1, b.insideRect.right - PARK_POND_WIDTH);
+        const pondY = this.m_DiceRoller.roll(b.insideRect.top + 1, b.insideRect.bottom - PARK_POND_HEIGHT);
+        // The outer rect, "for the edge tiles (a la walls)" in the C#'s words.
+        const pondRect = new Rect(pondX, pondY, PARK_POND_WIDTH, PARK_POND_HEIGHT);
 
-        // clear everything but zones in shed location
-        this.clearRectangle(map, shedRect, false);
+        // clear everything but zones in pond location
+        this.clearRectangle(map, pondRect, false);
 
         // build it
-        this.makeParkShedBuilding(map, 'Shed', shedRect);
+        this.makeParkPond(map, 'Pond', pondRect);
+
+        // drop a fishing rod. Release 7-6. This one line is the whole reason the
+        // NPC fishing arm is reachable: `Map.hasFishing` was true on no map in the
+        // world before it, and `CivilianAI` gates the whole arm on that flag.
+        map.dropItemAt(this.makeItemFishingRod(), new Point(pondX, pondY));
       }
     }
 
+    // ── DEFERRED: the C#'s `else` arm (Release 7-6, `:5711-5723`) ────────────
+    //
+    // ```csharp
+    // else //add a fire barrel
+    // {
+    //     bool placedBarrel = false;
+    //     MapObjectFill(map, b.InsideRect, (pt) =>
+    //     {
+    //         if (!placedBarrel)
+    //         {
+    //             if (m_DiceRoller.RollChance(PARK_BENCH_CHANCE))
+    //             { placedBarrel = true; return MakeObjFireBarrel(GameImages.OBJ_EMPTY_BIN); }
+    //             else return null;
+    //         }
+    //         else return null;
+    //     });
+    // }
+    //
+    // **It is the C#'s, and it is not here, because landing it breaks world
+    // generation determinism in a way that has not been explained yet.**
+    //
+    // The symptom is precise and reproducible: `helicopter-rescue.test.ts`'s "still
+    // costs nothing under STILL_ALIVE: the stage generates no geometry" compares two
+    // worlds from the same seed whose only difference is that one of them skips
+    // `PickHelicopterRescueSite` -- which takes exactly one `m_Rules.roll`. With this
+    // arm present the two worlds differ; remove it and they match again. One roll
+    // from `m_Rules`, taken *before* the player spawn, cannot reach
+    // `BaseTownGenerator`'s own per-district `DiceRoller` as far as the code reads,
+    // so the coupling is not understood, and a change that reshuffles every world
+    // the port can generate is not one to land on a guess.
+    //
+    // The arm itself is eleven lines and `GameImages.OBJ_EMPTY_BIN` is already
+    // added for it, so this is a blocker to clear rather than work to avoid. The
+    // pond itself is unaffected: `PARK_POND_CHANCE` is 1000, so a park big enough
+    // for a pond always gets one, and only the too-small parks ever reached the
+    // missing `else`.
+
     // Done.
     return true;
-  }
-
-  /**
-   * C# `MakeObjParkTree(DiceRoller)` — `BaseMapGenerator.cs:530`, Release 7-3.
-   *
-   * Four tree sprites where the old `makeObjTree` had one. The roll is on the
-   * district's `DiceRoller`, not a fresh one, so it moves the stream exactly where
-   * the C#'s does.
-   */
-  protected makeObjParkTree(roller: DiceRoller): MapObject {
-    return this.makeObjTree(PARK_TREES[roller.roll(0, PARK_TREES.length)]!);
-  }
-
-  /**
-   * C# `MakeObjTombstone(string)` — `BaseMapGenerator.cs:979`, made static in
-   * Release 5-7. `IsMaterialTransparent` and `JumpLevel = 1` are the two that
-   * matter: a body should not stop at a headstone, and a headstone should be see-
-   * and shoot-over.
-   */
-  protected makeObjTombstone(imageId: string): MapObject {
-    const grave = new MapObject('tombstone', imageId);
-    grave.isMaterialTransparent = true;
-    grave.jumpLevel = 1;
-    grave.standOnFovBonus = true;
-    return grave;
   }
 
   makeParkShedBuilding(map: GameMap, baseZoneName: string, shedBuildingRect: Rect): void {
@@ -2833,6 +2885,113 @@ export class BaseTownGenerator extends BaseMapGenerator {
       if (it.model.isStackable) it.quantity = it.model.stackingLimit;
       map.dropItemAt(it, pt);
     });
+  }
+
+  /**
+   * C# `MakeParkPond(Map, string, Rectangle)` -- `BaseTownGenerator.cs:5737-5807`.
+   *
+   * Release 6-1's replacement for alpha10's shed, and the first thing in the game
+   * that is a body of water rather than a decoration. Three things come out of it:
+   * the tiles, a zone, and **`Map.hasFishing = true`** -- the flag the whole NPC
+   * fishing arm gates on, which until this landed was false on every map in the
+   * world.
+   *
+   * The C# fills the interior and then places four edges and four corners with four
+   * separate `do/while` loops, one per side, each re-deciding its own corners. That
+   * is 70 lines for what is a ring of sixteen tiles, and it is transcribed as four
+   * loops rather than tidied into one, because the loops are what tell you the
+   * corners are *deliberately* written twice -- once by the vertical sides and once
+   * by the horizontal ones -- and a reader who collapses it loses the evidence that
+   * the corner names agree.
+   *
+   * `IsInside = false` on the fill (Release 6-1's own change from alpha10's `true`)
+   * is the load-bearing line: **a pond is outdoors.** Alpha10's shed was a building.
+   */
+  protected makeParkPond(map: GameMap, baseZoneName: string, pondBuildingRect: Rect): void {
+    const pondInsideRect = new Rect(
+      pondBuildingRect.x + 1,
+      pondBuildingRect.y + 1,
+      pondBuildingRect.width - 2,
+      pondBuildingRect.height - 2,
+    );
+
+    // build & zone
+    this.tileFill(
+      map,
+      Models.tiles.get(TileID.FLOOR_POND_CENTER)!,
+      pondInsideRect,
+      (tile) => {
+        tile.isInside = false;
+      },
+    );
+    map.addZone(this.makeUniqueZone(baseZoneName, pondInsideRect));
+    // Release 7-6. The flag the fishing arm reads.
+    map.hasFishing = true;
+    // Read by the AI's "on fire and looking for water" behaviour, which has not
+    // been ported -- see `Map.hasWaterTiles`.
+    map.hasWaterTiles = true;
+
+    // The four sides, each looping its own length and deciding its own corners.
+    // WEST
+    let westY = pondBuildingRect.top;
+    do {
+      if (westY === pondBuildingRect.bottom - 1) map.setTileModelAt(pondBuildingRect.left, westY, Models.tiles.get(TileID.FLOOR_POND_SW_CORNER)!);
+      else if (westY === pondBuildingRect.top) map.setTileModelAt(pondBuildingRect.left, westY, Models.tiles.get(TileID.FLOOR_POND_NW_CORNER)!);
+      else map.setTileModelAt(pondBuildingRect.left, westY, Models.tiles.get(TileID.FLOOR_POND_W_EDGE)!);
+      westY++;
+    } while (westY <= pondBuildingRect.bottom - 1);
+
+    // EAST
+    let eastY = pondBuildingRect.top;
+    do {
+      if (eastY === pondBuildingRect.bottom - 1) map.setTileModelAt(pondBuildingRect.right - 1, eastY, Models.tiles.get(TileID.FLOOR_POND_SE_CORNER)!);
+      else if (eastY === pondBuildingRect.top) map.setTileModelAt(pondBuildingRect.right - 1, eastY, Models.tiles.get(TileID.FLOOR_POND_NE_CORNER)!);
+      else map.setTileModelAt(pondBuildingRect.right - 1, eastY, Models.tiles.get(TileID.FLOOR_POND_E_EDGE)!);
+      eastY++;
+    } while (eastY <= pondBuildingRect.bottom - 1);
+
+    // NORTH
+    let northX = pondBuildingRect.left;
+    do {
+      if (northX === pondBuildingRect.left) map.setTileModelAt(northX, pondBuildingRect.top, Models.tiles.get(TileID.FLOOR_POND_NW_CORNER)!);
+      else if (northX === pondBuildingRect.right - 1) map.setTileModelAt(northX, pondBuildingRect.top, Models.tiles.get(TileID.FLOOR_POND_NE_CORNER)!);
+      else map.setTileModelAt(northX, pondBuildingRect.top, Models.tiles.get(TileID.FLOOR_POND_N_EDGE)!);
+      northX++;
+    } while (northX <= pondBuildingRect.right - 1);
+
+    // SOUTH
+    let southX = pondBuildingRect.left;
+    do {
+      if (southX === pondBuildingRect.left) map.setTileModelAt(southX, pondBuildingRect.bottom - 1, Models.tiles.get(TileID.FLOOR_POND_SW_CORNER)!);
+      else if (southX === pondBuildingRect.right - 1) map.setTileModelAt(southX, pondBuildingRect.bottom - 1, Models.tiles.get(TileID.FLOOR_POND_SE_CORNER)!);
+      else map.setTileModelAt(southX, pondBuildingRect.bottom - 1, Models.tiles.get(TileID.FLOOR_POND_S_EDGE)!);
+      southX++;
+    } while (southX <= pondBuildingRect.right - 1);
+  }
+
+  /**
+   * C# `MakeObjTombstone(string)` -- `BaseMapGenerator.cs:979`, made static in
+   * Release 5-7. `IsMaterialTransparent` and `JumpLevel = 1` are the two that
+   * matter: a body should not stop at a headstone, and a headstone should be see-
+   * and shoot-over.
+   */
+  protected makeObjTombstone(imageId: string): MapObject {
+    const grave = new MapObject('tombstone', imageId);
+    grave.isMaterialTransparent = true;
+    grave.jumpLevel = 1;
+    grave.standOnFovBonus = true;
+    return grave;
+  }
+
+  /**
+   * C# `MakeObjParkTree(DiceRoller)` — `BaseMapGenerator.cs:530`, Release 7-3.
+   *
+   * Four tree sprites where the old `makeObjTree` had one. The roll is on the
+   * district's `DiceRoller`, not a fresh one, so it moves the stream exactly where
+   * the C#'s does.
+   */
+  protected makeObjParkTree(roller: DiceRoller): MapObject {
+    return this.makeObjTree(PARK_TREES[roller.roll(0, PARK_TREES.length)]!);
   }
 
   // alpha10.1 makes apartements or vanilla house

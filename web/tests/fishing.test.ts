@@ -670,3 +670,4 @@ describe("Feature.Fishing: the rod survives the item sweep", () => {
     expect(club.droppedOnTurnNumber, "not a rod").not.toBeNull();
   });
 });
+
