@@ -90,6 +90,30 @@ export class Parameters {
   generatePoliceStation: boolean = false;
   generateHospital: boolean = false;
 
+  /**
+   * C# `BaseTownGenerator.cs:63` `GenerateShoppingMall`, Release 7-3 — the one
+   * parameter the port's transcription of `Parameters` was missing.
+   *
+   * It is a plain flag like its two neighbours, but it is the *heaviest* one in the
+   * class, and that is why the C# also had to raise the `DistrictSize` floor from 30
+   * to 50 in the same release (`GameOptions.cs:476`, `//@@MP - was 30 (Release
+   * 7-3)`): `MakeMallBlocks` splits the **whole city rectangle** into a fixed 50x50
+   * corner and gives the other three quads back to `MakeBlocks`, so a smaller
+   * district has nowhere to put the mall. See `districtsSizeFloor` in
+   * `@engine/GameOptions` for why that floor is ruleset-dependent here and 30 under
+   * Classic.
+   *
+   * **Nothing in this port sets it yet.** The C#'s writer is `RogueGame.cs:5006`
+   * (`genParams.GenerateShoppingMall = (district.WorldPosition == mallDistrictPos)`),
+   * fed by a `m_Rules` roll over `noSpecialDistricts` at `:4239` that runs *after*
+   * the police station and the hospital have each taken one — i.e. three lines of
+   * `RogueGame.ts`, in a file this branch does not own. The exact patch is written
+   * out at the head of `buildings/makeShoppingMall.ts`; until it lands the mall is
+   * reachable only by a caller that sets the flag, which is what
+   * `tests/shopping-mall-building.test.ts` does.
+   */
+  generateShoppingMall: boolean = false;
+
   private m_MapWidth: number = MAP_MAX_WIDTH;
   private m_MapHeight: number = MAP_MAX_HEIGHT;
   private m_MinBlockSize: number = 11;

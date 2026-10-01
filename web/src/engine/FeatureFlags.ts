@@ -193,10 +193,14 @@ export type Stage = 2 | 4 | 5;
  *
  * Removing an entry from this list is the point of Stage 4: it becomes a real
  * `hasFeature` call, and the test follows.
+ *
+ * **Empty.** `ShoppingMall` was the last, and it emptied the register in the way
+ * this paragraph says it should: its reader is `makeShoppingMall`'s own first
+ * statement (`buildings/makeShoppingMall.ts`), not a flag bolted on at a call site,
+ * so there is exactly one place the mall can be switched off and it is ahead of
+ * every roll the generator spends.
  */
-const PENDING_WIRING: Readonly<Partial<Record<string, Stage>>> = {
-  ShoppingMall: 5,
-};
+const PENDING_WIRING: Readonly<Partial<Record<string, Stage>>> = {};
 
 /**
  * Feature value -> name. The one reverse lookup in the project, and it exists

@@ -1389,6 +1389,55 @@ export class GameImages {
    */
   static readonly ITEM_VEGETABLE_SEEDS = "Items/item_vegetable_seeds";
 
+  // ── Feature.ShoppingMall ───────────────────────────────────────────────────
+  //
+  // Every one of these shipped with the *classic* pack -- `mall_sign_the.webp`,
+  // `wigs_display1.webp`, `supermarket_checkout.webp` and the rest were already in
+  // `assets/images/classic/` before this building existed, because Release 7-3 art
+  // for a feature nobody in this port had wired is still art. So this is 22
+  // constants and no vendoring: `tests/sprite-assets.test.ts` enumerates
+  // `Object.getOwnPropertyNames(GameImages)` against the pack, and every path below
+  // already resolves to a file on disk.
+  //
+  // The eight shop signs and the two mall signs are wall *decorations*, so they
+  // ride a tile rather than standing on one, which is why they are `DECO_` and not
+  // `OBJ_`. `DECO_SHOP_SPORTSWEAR`, `DECO_SHOP_PHARMACY`, `DECO_SHOP_GROCERY`,
+  // `DECO_CINEMA_SIGN` and `DECO_STAIRS_UP`/`_DOWN` are **not** declared here: the
+  // port already had them for the shop generator, the firstperson stairs and the
+  // police station's levels, and two constants for one sprite is two places for the
+  // mall and its neighbour to disagree about it.
+  //
+  // **`OBJ_COUCH` (`:627`), `OBJ_CAR1..CAR4` (`:593-595`) and `OBJ_EMPTY_BIN` /
+  // `OBJ_SHOP_SHELF` / `OBJ_BOOK_SHELVES` / `OBJ_FRIDGE` are not here for the same
+  // reason.** The dealership's eight display cars (`MakeObjDisplayCar`,
+  // `BaseMapGenerator.cs:582`) are drawn out of the very `CARS` table the wrecked
+  // cars use and those four ids are already declared, which is also the answer to
+  // whether this building needs to vendor anything: it does not, not even a car.
+  static readonly DECO_MALL_SIGN_THE = "Tiles/Decoration/mall_sign_the";
+  static readonly DECO_MALL_SIGN_MALL = "Tiles/Decoration/mall_sign_mall";
+  static readonly DECO_SHOP_BARBER = "Tiles/Decoration/shop_barber";
+  static readonly DECO_SHOP_BOOKSTORE = "Tiles/Decoration/shop_bookstore";
+  static readonly DECO_SHOP_DEALERSHIP = "Tiles/Decoration/shop_dealership";
+  static readonly DECO_SHOP_MOBILES = "Tiles/Decoration/shop_mobiles";
+  static readonly DECO_SHOP_ELECTRONICS = "Tiles/Decoration/shop_electronics";
+  static readonly DECO_SHOP_CLOTHES_STORE = "Tiles/Decoration/shop_clothes_store";
+  static readonly DECO_SHOP_LIQUOR = "Tiles/Decoration/shop_liquor";
+  static readonly OBJ_WIGS_DISPLAY1 = "MapObjects/wigs_display1";
+  static readonly OBJ_WIGS_DISPLAY2 = "MapObjects/wigs_display2";
+  static readonly OBJ_WIGS_DISPLAY3 = "MapObjects/wigs_display3";
+  static readonly OBJ_CLOTHES_WALL1 = "MapObjects/clothes_wall1";
+  static readonly OBJ_CLOTHES_WALL2 = "MapObjects/clothes_wall2";
+  static readonly OBJ_SHOES_WALL = "MapObjects/shoes_wall";
+  static readonly OBJ_MOBILES_TABLE = "MapObjects/mobiles_table";
+  static readonly OBJ_TELEVISION = "MapObjects/television";
+  static readonly OBJ_LAPTOPS_TABLE = "MapObjects/laptops_table";
+  static readonly OBJ_WASHING_MACHINE = "MapObjects/washing_machine";
+  static readonly OBJ_DRYER = "MapObjects/dryer";
+  static readonly OBJ_DISHWASHER = "MapObjects/dishwasher";
+  static readonly OBJ_POTTED_PLANT = "MapObjects/potted_plant";
+  static readonly OBJ_BARBER_CHAIR = "MapObjects/barber_chair";
+  static readonly OBJ_BATHROOM_BASIN = "MapObjects/bathroom_basin";
+
   // ── The six CHAR documents: Release 3 ──────────────────────────────────────
   //
   // One sprite for `UNIQUE_CHAR_DOCUMENT1..6` (`GameItems.cs:2886-2916`), which is

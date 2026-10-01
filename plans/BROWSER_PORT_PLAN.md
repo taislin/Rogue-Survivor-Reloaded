@@ -1378,8 +1378,8 @@ Stages 4 and 5 have not started.
 | **1** | `Ruleset`, save compat, `FeatureFlags`, picker, HUD | **done** — `f0782aa`, `4d43299`. Except **1.7, deferred to Stage 4** |
 | **2** | 15 audited defects → 8 fixed, 4 inapplicable, 1 open | **done** — `dd42e82` |
 | **3** | merged content pack | **data tables, sprite files, the actors (2 of 4), all 143 tiles, 90 of 95 items and all 123 item factories done.** The 5 backpacks (a new mechanic) and ~420 unused `GameImages` constants are the only content left; nothing *calls* the new factories yet, which is placement and belongs to Stage 4/5 |
-| **4** | 37 gated features | **31 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (lightable at last — see `MAKE_COOKING_FIRE`), `ItemDespawn`, `DarknessFov` (both halves), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`, `TileFires`, `FireExtinguishers`, `Butchering`, `ResourcesAvailability`, `DifficultyAtCreation`, `Fishing` (player path, the pond, **and the NPC arm** — see its section), `ExtendedAudio` (the 180-pair table, **the sfx channel it needed**, and **61 ids** (45 ranged-weapon, 16 bash/break); 6 of 180 call sites wired, see its section), `AmbientAudio` (**12 of its 13 tracks** — only `TEST_AMBIENT` is unreachable, and it waits on an options-screen row rather than a feature; the 5 helicopter and 2 church tracks are now wired, see its section), `ArmyBase` (the underground office and its eight National Guards). 17 remain |
-| **5** | content, audio, credits | **started** — `ExtendedAudio`'s table and assets are in; the ambients channel, the 15 building generators and the credits page are not |
+| **4** | 37 gated features | **37 of 37 wired** — `WeaponWeight`, `ArmorResist` (infection half only), `FoodPoisoning`, `Cooking`, `FireBarrels` (lightable at last — see `MAKE_COOKING_FIRE`), `ItemDespawn`, `DarknessFov` (both halves), `DarknessGating`, `LightPriority`, `Alcohol`, `SiphonFuel`, `TileFires`, `FireExtinguishers`, `Butchering`, `ResourcesAvailability`, `DifficultyAtCreation`, `Fishing` (player path, the pond, **and the NPC arm** — see its section), `ExtendedAudio` (the 180-pair table, **the sfx channel it needed**, and **61 ids** (45 ranged-weapon, 16 bash/break); 6 of 180 call sites wired, see its section), `AmbientAudio` (**12 of its 13 tracks** — only `TEST_AMBIENT` is unreachable, and it waits on an options-screen row rather than a feature; the 5 helicopter and 2 church tracks are now wired, see its section), `ArmyBase` (the underground office and its eight National Guards). **None remain: `PENDING_WIRING` is `{}` and every one of the 37 declared features now has a reader**, the last of them `ShoppingMall` in Stage 5 (see its row and its section) |
+| **5** | content, audio, credits | **started** — `ExtendedAudio`'s table and assets are in, the ambients channel and the credits page, and **`ShoppingMall`, which was the last entry in `PENDING_WIRING`: that register is now `{}` and every one of the 37 declared features has at least one reader.** 14 of the C#'s sixteen `Make…(Map map, Block b)` generators are ported; `MakeMechanicWorkshop` and `MakeOrdinaryOffice` are the two that are not, and neither is a Stage 5 feature (they are vanilla and the shared `roll(0, 4)` / CHAR-office fallbacks) |
 
 Two things a later session should not have to re-derive:
 
@@ -3308,6 +3308,8 @@ zero precisely because of the dump-every-own-field design.
 | `Farm` | new `makeFarmBuilding` + `makeObjWoodenFence`/`makeObjFarmPlant` | ~121 + shed C# lines | **DONE** — and **it was never blocked on the farming substrate**, which was the belief for most of this port's life. `TileID.FLOOR_PLANTED` was already here; the point is that `MakeFarmBuilding` never *uses* it. Its tiles are `FLOOR_WALKWAY`, `FLOOR_GRASS`, `FLOOR_DIRT`, `WALL_WOOD_PLANKS` and one `FLOOR_ASPHALT`. The crops are **map objects**, one per inside-rect tile, so the farm feeds `CheckIfPlantsFruit`'s *map-object* arm and not the planted-tile arm at all. Band `30..63` of the green `Roll(0, 99)`, so the C#'s `64` fall-through is still live and the distribution is still 35/34/10/10/11 against the comments' 35/35/10/10/10 — decided as the C# has it. Two quirks: the gate is `:3690-3693`'s two redundant lines (`< 8 || < 6` twice), transcribed rather than simplified; and the C#'s comment beside `Roll(0, 3)` says *"berries (1), peanuts (2) or crops (3)"* and is **stale** — there is no crops case and `case 2` is the grape vine. The chickens at `:3778-3801` are inside `#if false` upstream and nothing is ported, described at the step so the absence cannot read as an omission. **`ItemID.VEGETABLE_SEEDS` does not exist**, so the shed's most common item — six of twelve arms — is skipped with the roll preserved; a wrong item would be a quieter lie than an absent one |
 | `WorldDecay` | `CheckIfWorldDecays` / `ApplyWorldDecayPhase` / `ChooseRelevantDecayDecorationForTile` + 4 sprite choosers, in `RogueGame` | ~700 C# lines (`:9246-9865`), on top of commit `e3c3347`'s substrate | **DONE** — and it is the reason the substrate was built: 108 of 142 models carry `canDecay`, the generator emits it, `Tile.decayPhase` rides in two bits of the existing `flags` word (the tile codec asserts the own-field set, so a new field would have needed registering), and `insertDecoration` exists because decay inserts at index 0 while `addDecoration` appends. 174 tile-decoration ids and 30 map-object ids (picket / chainwire fence / chainwire gate) added to `GameImages`. Wired into `advancePlayDistrict` at the C#'s `:5617-5626`. **`WALL_SUBWAY` needed no special case after all**: `GameTiles.cs` carries a comment claiming `ApplyWorldDecayPhase` handles it, but no such test exists anywhere in the reference — the mechanism is the `Lighting == OUTSIDE` test at `:9289`, and a subway arrives as `CanDecay && isInside && !isWalkable` on a `DARKNESS` map, which the existing `else //is underground, so no decay` arm declines. The `canDecay` flag is left `true` on purpose: it is what lets the tile *reach* the ladder that declines it. That arm tests `== OUTSIDE`, not `!= DARKNESS`, so `LIT` maps are declined too — sewers, basements, the CHAR facility and the mall car park all fall out of the same branch for free. **One latent landmine, pinned by a test rather than papered over:** the port registers `TILE_PARKING_ASPHALT_NS`/`_EW` as decaying models (the C# declares the images but never registers a model) and the decoration chooser has no case for them, so one reaching the reader hits the C#'s terminal `throw`. Nothing places either model, so it is unreachable in play; neither clearing `canDecay` nor inventing drawings would be a decision the reference supports. **The C#'s car arm is still wrong here and is not this feature's bug to fix:** it derives a decay phase by stripping the last character off the image id, which assumes `CARS` holds `car_red_phase0..`, while the port's holds vanilla `car1..car4` — so a phase rename lands on a *different* car. Fixing `CARS` would move the Classic fingerprint, so it is documented at the call site instead. **Not ported:** `GameOptions.cs:610-612`'s three phase-0 picket-fence sprites, which nothing places in either game, and `CheckIfPlantsFruit`, which is not this subsystem |
 
+| `ShoppingMall` | new `makeShoppingMall` (`MallQuadSplit` + `MakeMallBlocks` + `MakeShoppingMall` + `GenerateShoppingMallGroundFloor` + `MakeMallShopDisplays`) plus `MakeNarrowPark`, `Parameters.generateShoppingMall` and `GameOptions`' district-size floor | ~600 C# lines ported of ~1 000 (`:1224-1305`, `:5809-5856`, `:9861-10176`, `:10614-10706`) | **PARTIAL, and the last three lines of its wiring are in `RogueGame.ts`** — the ground floor and both level *shells* are ported, with all six `AddExit` pairs, twelve shops, seventy shopfronts, twenty glass doors, the barber's chair-and-basin rewrite and the dealership's eight display cars; the `+1` food court / supermarket / two cinemas (`:10194-10488`, ~295 C# lines) and the `-1` car park's bays, pillars, railings and abandoned cars (`:10508-10608`, ~100) are **not**, and the car park **cannot** be without a `GameTiles.ts` change (there is no `PARKING_ASPHALT_NS`/`_EW` *model* in the port). 22 `GameImages` constants and **no vendoring** — every mall sprite was already in `assets/images/classic/`. 46 factories transcribed, one of them (`makeObjShelf`) disagreeing with the port's own copy. **`PENDING_WIRING` is now `{}`.** See its section |
+
 `AmmoType` +7 and `AttackKind.OTHER` and `FireMode.FLAMING` are enum growth on
 mechanic axes that are already shared — no per-pack variant needed.
 
@@ -3364,6 +3366,110 @@ cycle the other mode never had.
 > rod it drops, and the fire barrel. All of that is one `makeParkBuilding`
 > conformance job, and it is not this feature.
 >
+> ### `ShoppingMall` — the last one, and the only one that moved a *global* option
+>
+> `ShoppingMall` emptied `PENDING_WIRING`, so the register is `{}` and the partition
+> test in `tests/feature-flags.test.ts` now asserts that all 37 declared features are
+> either read or withheld. Two readers, in two files, and the second is the interesting
+> one: the generator's own first statement, and **the `DistrictSize` floor in
+> `GameOptions`**.
+>
+> #### The floor, and why it is ruleset-dependent rather than global
+>
+> The decision this feature forced is whether to raise `GameOptions.districtSize`'s
+> floor from 30 to 50 **globally**, which is what the C# does:
+>
+> ```csharp
+> // _refs/StillAlive-master/.../Engine/GameOptions.cs:476
+> if (value < 50) value = 50; //@@MP - was 30 (Release 7-3)
+> ```
+>
+> That is the whole of Release 7-3's change to the option, and the reason is
+> `MakeMallBlocks`: `MallQuadSplit` (`:1227-1228`) splits the **whole city rectangle**
+> at a hard-coded `leftWidthSplit = topHeightSplit = 50`, so the mall always occupies
+> the north-west 50x50 corner and the other three quads go back to `MakeBlocks`. Below
+> 50 there is nowhere to put it. `DEFAULT_DISTRICT_SIZE` was already 50 in the port, so
+> only a player who has deliberately stepped the option down is affected.
+>
+> **The C# cannot tell the two rulesets apart, because the C# has one ruleset — it *is*
+> the fork.** This port has two and holds Classic byte-identical, and `districtSize` is
+> read by world generation: a global 50 would move the pinned Classic fingerprint
+> `e097b9d976ffac15` (7 test files, 11 assertion sites; `tests/bank-building.test.ts:606`
+> shows the committed value). So the floor is read from the ruleset —
+> `districtsSizeFloor()` in `GameOptions.ts`, `hasFeature(ruleset, Feature.ShoppingMall)
+> ? 50 : 30` — which is also why this feature has a reader in `GameOptions` at all
+> rather than only in its generator.
+>
+> The `//@@MP - was 30` on that C# line *is* the Classic value: the comment is the fork
+> recording the number this port has to keep, and reading it as "50 always" is how a
+> Classic district silently becomes 25 tiles wider.
+>
+> #### What is ported, and what is not
+>
+> | C# | port | |
+> |---|---|---|
+> | `MallQuadSplit` `:1224-1248` | `mallQuadSplit` | no dice — "static split point", `50` |
+> | `MakeMallBlocks` `:1250-1305` | `makeMallBlocks` | the `map.Width > 50` test is load-bearing at both ends |
+> | `MakeNarrowPark` `:5809-5856` | `makeNarrowPark` | **needed because of the mall**: at 50 wide all three leftover quads are degenerate and go here rather than back to `MakeBlocks`, so a default-sized mall district is *entirely* mall plus three empty narrow parks |
+> | `MakeShoppingMall` `:9861-9926` | `makeShoppingMall` | six `AddExit` pairs, twelve calls, all `isAnAIExit: true` |
+> | `GenerateShoppingMall_UpperLevel` `:10178-10193` | `generateShoppingMallUpperLevel` | **shell only** |
+> | `GenerateShoppingMall_Parking` `:10490-10506` | `generateShoppingMallParking` | **shell only** |
+> | `GenerateShoppingMallGroundFloor` `:9928-10176` | `generateShoppingMallGroundFloor` | all of it |
+> | `MakeMallShopDisplays` `:10614-10706` | `makeMallShopDisplays` | all of it |
+> | `MakeRandomMallShopItem` `:7400-7420` | `makeRandomMallShopItem` | all of it |
+> | `GenerateShoppingMall_UpperLevel` `:10194-10488` | — | **not ported** (food court, supermarket, two cinemas) |
+> | `GenerateShoppingMall_Parking` `:10508-10608` | — | **not ported, and blocked**: it fills the bays with `GameTiles.PARKING_ASPHALT_NS`/`_EW`, which have **no model in the port** |
+>
+> The shells are worth having rather than stubbing: the staircase column is what puts
+> `parkingStairs1`/`parkingStairs2` at `(1, 25)`/`(1, 26)` on walkway, so the six exits
+> land somewhere walkable and AI-usable instead of on nothing.
+>
+> `HasWaterTiles = true` on the upper level is **not** set, deliberately: its only
+> reason in the C# is the food court's pool, which is part of what is not ported, and
+> the flag is read by the AI when it is on fire looking for water to put itself out in.
+>
+> `UniqueMaps.ShoppingMall_{GroundFloor,UpperLevel,Parking}` (`:9921-9923`) are **not**
+> ported. `ShoppingMall_GroundFloor` is an *alias* for the district's own entry map, so
+> registering it would store a second name for a map the save graph already carries, and
+> `UniqueMaps` is an inline graph class whose slot table is hand-written
+> (`specs.ts:962`, `uniqueMapSlots`). The two level maps are reachable through
+> `District.addUniqueMap`, which is what actually makes a map part of a district.
+>
+> #### Three C# quirks kept verbatim
+>
+> - **The twelve shops overlap by one row, twice.** Four rows at `t+0`, `t+10`, `t+25`,
+>   `t+35`, each eleven tall, so rows 1/2 share `t+10` and rows 3/4 share `t+35`, and the
+>   *later* row's `TileRectangle` wall lands on the earlier row's last row. A "tidy grid"
+>   port (`0/11/22/33`) is 44 tiles short of the 46 the four rows have to cover.
+> - **The shops dictionary has eleven entries for twelve `Block`s.** `shopBlock7` is not
+>   in it, because it is the car dealership and `:10147-10169` fills it by hand with
+>   eight display cars and the seating — which is also why `MallShopType.DEALERSHIP`'s
+>   arm is `display = null`. The `//electronics` comment on `:10015` is stale; the two
+>   `DECO_SHOP_DEALERSHIP` signs at `:10085`/`:10092` say what it is.
+> - **The mall's own music assignment is dead.** `:9881` sets the surface map's
+>   `BgMusic` to `SHOPPING_MALL`, and `Generate`'s last statement (`:537`) overwrites it
+>   with `SURFACE`. A mall district plays the surface tune and its two levels play the
+>   mall's.
+>
+> Plus two smaller ones: the four **bins** at `:9971` are on absolute map coordinates
+> while every other list in that method is `l +`/`t +` (and two of the four line up only
+> because a mall's `l` and `t` are both 2), and the **eleven registers** come out as
+> ten checkouts because `:10142-10143` removes by name any that landed inside the
+> barber's.
+>
+> #### The wiring this branch does not own
+>
+> Three lines, all in `RogueGame.ts`: a third `m_Rules.Roll(0, noSpecialDistricts.Count)`
+> beside the two at `:4233`/`:4236` (the C# draws the mall's district *after* the police
+> station and the hospital have each taken one — "Only ONE special building max per
+> district", `:4226`), the parameter on `GenerateDistrictEntryMap`, and
+> `genParams.generateShoppingMall = (district.WorldPosition == mallDistrictPos)` beside
+> `:31806-31810`. They are written out at the head of
+> `buildings/makeShoppingMall.ts`, in the `ShelterBackpacks` shape. Until they land the
+> flag is `false` for every district, which is **load-bearing** and is why every Classic
+> world stays byte-identical; `tests/shopping-mall-building.test.ts` pulls the same lever
+> from the other side.
+
 > ### `HelicopterRescue` and `ShelterBackpacks` — the two that closed other things
 >
 > **HelicopterRescue** consumed `Session.armyHelicopterRescueDay`, which

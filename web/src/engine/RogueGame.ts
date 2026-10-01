@@ -30695,6 +30695,25 @@ inv.removeAllQuantity(it);
 		const hospitalDistrictPos = noSpecialDistricts[districtIdx];
 		noSpecialDistricts.splice(districtIdx, 1);
 
+		// The mall takes the third special-building slot. C# `:4239-4240`, Release 7-3.
+		//
+		// **The C# spends this die unconditionally and this port must not.** Still Alive
+		// has a single ruleset, so the reference can simply draw a third position and
+		// its own `//@@MP (Release 7-3)` marker records that the fork added it. Here the
+		// roll sits behind `Feature.ShoppingMall`, because an ungated third roll would
+		// consume a die in Classic and shift every roll after it -- which is the
+		// fingerprint, not just a layout difference. Same reasoning as the BlackOps
+		// gate, which went on the check rather than the fire so Classic spends no dice.
+		//
+		// So `null` here means "Classic", and the `equals` at the params site treats it
+		// as "not this district" for the same reason it does for an empty list.
+		let mallDistrictPos: Point | null = null;
+		if (hasFeature(this.m_Session.ruleset, Feature.ShoppingMall)) {
+			districtIdx = this.m_Rules.roll(0, noSpecialDistricts.length);
+			mallDistrictPos = noSpecialDistricts[districtIdx];
+			noSpecialDistricts.splice(districtIdx, 1);
+		}
+
 		/////////////////////////
 		// Create districts maps
 		/////////////////////////
@@ -30725,6 +30744,7 @@ inv.removeAllQuantity(it);
 					district,
 					policeStationDistrictPos,
 					hospitalDistrictPos,
+					mallDistrictPos,
 				);
 				district.entryMap = entryMap;
 				district.name = entryMap.name;
@@ -31745,6 +31765,13 @@ inv.removeAllQuantity(it);
 		district: District,
 		policeStationDistrictPos: Point,
 		hospitalDistrictPos: Point,
+		/**
+		 * The mall's district, or `null` under Classic. C# `:5006` compares against
+		 * `mallDistrictPos` directly because the reference always drew one; here the
+		 * roll is gated on `Feature.ShoppingMall`, so Classic passes `null` and the
+		 * comparison is written to answer "not this district" for it.
+		 */
+		mallDistrictPos: Point | null,
 	): Map {
 		const gridX = district.worldPosition.x;
 		const gridY = district.worldPosition.y;
@@ -31808,6 +31835,11 @@ inv.removeAllQuantity(it);
 		);
 		genParams.generateHospital =
 			district.worldPosition.equals(hospitalDistrictPos);
+		// C# `:5006`, Release 7-3. `mallDistrictPos` is null under Classic, and
+		// `Point.equals(null)` is false, so the param is left false there rather than
+		// needing a separate gate -- the same shape as the two above it.
+		genParams.generateShoppingMall =
+			mallDistrictPos !== null && district.worldPosition.equals(mallDistrictPos);
 
 		// 4. Generate map.
 		const prevParams = this.m_TownGenerator.params;

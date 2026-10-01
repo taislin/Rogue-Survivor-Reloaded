@@ -4,7 +4,8 @@
  * C# binary serialization → `localStorage` JSON.
  */
 
-import { GameMode } from "@engine/Session";
+import { GameMode, Session } from "@engine/Session";
+import { Feature, hasFeature } from "@engine/FeatureFlags";
 import { storage } from "@engine/storage";
 import {
 	DEFAULT_IMAGE_SET,
@@ -298,6 +299,54 @@ export function idleAdvanceMs(value: IdleAdvance): number {
 
 const MAP_MAX_HEIGHT = 100; // RogueGame.MAP_MAX_HEIGHT
 const MAP_MAX_WIDTH = 100; // RogueGame.MAP_MAX_WIDTH
+
+/**
+ * The smallest district size each ruleset will accept.
+ *
+ * **Two numbers, because the reference has one and this port has two.**
+ *
+ * The C# carries a single, *global* floor — `_refs/StillAlive-master/.../Engine/
+ * GameOptions.cs:476`:
+ *
+ * ```csharp
+ * if (value < 50) value = 50; //@@MP - was 30 (Release 7-3)
+ * ```
+ *
+ * That is the whole change Release 7-3 made to this option, and the reason is
+ * `Feature.ShoppingMall`: `BaseTownGenerator.cs:390` gates block-cutting on
+ * `m_Params.GenerateShoppingMall` with the comment *"mall must have a 46x46
+ * block"*, and `MallQuadSplit` (`:1227-1228`) splits the whole city rectangle at a
+ * hard-coded `leftWidthSplit = topHeightSplit = 50`. A district narrower than 50
+ * cannot hold the mall and still have a road layout around it.
+ *
+ * But the C# has **one** ruleset — it *is* the fork — so it never has to say which
+ * game the floor is for. This port has two, and its standing rule is that Classic
+ * stays byte-identical: the Classic world fingerprint is `e097b9d976ffac15`, pinned
+ * by seven test files, and a district size that silently moved from 30 to 50 under
+ * Classic would move it. The `//@@MP - was 30` on that C# line *is* the Classic
+ * value — the comment is the fork recording the number this port must keep.
+ *
+ * So the floor is read from the ruleset instead of being written into the literal:
+ * {@link districtsSizeFloor} is the single place that answers "how small may a
+ * district be in this game", and it asks `Feature.ShoppingMall` rather than naming
+ * a number twice.
+ *
+ * `DEFAULT_DISTRICT_SIZE` is 50 for **both** rulesets (`:304`, unchanged), so the
+ * default is unaffected either way; the floor only bites on a player who has
+ * deliberately stepped the option down.
+ *
+ * Reading the ruleset here rather than threading it through is a cycle
+ * (`Session` imports `GameOptions` for `GameOptions`/`Options`, and this file
+ * already imported `GameMode` from `Session`) — it is pre-existing, and
+ * `FeatureFlags` is inside the same component so no new edge is introduced. What
+ * matters is *when* the value is read: inside the setter, at the moment somebody
+ * presses a key, not at module scope. `Session.m_Ruleset` defaults to `CLASSIC` and
+ * is only assigned by the new-game picker (`RogueGame.ts:2727`) or by a load
+ * (`Session.ts:740`), and both happen after the module is evaluated.
+ */
+function districtsSizeFloor(): number {
+	return hasFeature(Session.get().ruleset, Feature.ShoppingMall) ? 50 : 30;
+}
 
 export class GameOptions {
   // ── Default values ──────────────────────────────────────────────────────
@@ -629,7 +678,10 @@ export class GameOptions {
     return this.m_DistrictSize;
   }
   set districtSize(value: number) {
-    if (value < 30) value = 30;
+    // `30` under CLASSIC, `50` everywhere the mall exists - see
+    // `districtsSizeFloor` above for the `//@@MP - was 30 (Release 7-3)` this
+    // replaces and why it cannot be a single literal.
+    if (value < districtsSizeFloor()) value = districtsSizeFloor();
     if (value > MAP_MAX_HEIGHT || value > MAP_MAX_WIDTH) {
       value = Math.min(MAP_MAX_WIDTH, MAP_MAX_HEIGHT);
     }

@@ -48,6 +48,7 @@ import { makeFarmBuilding } from './buildings/makeFarmBuilding';
 import { makeJunkyard } from './buildings/makeJunkyard';
 import { makeAnimalShelterBuilding } from './buildings/makeAnimalShelterBuilding';
 import { makeClinicBuilding } from './buildings/makeClinicBuilding';
+import { makeMallBlocks, makeShoppingMall } from './buildings/makeShoppingMall';
 import { TOWN_BUILDING_PASSES, runTownBuildingPasses } from './TownBuilding';
 import { makeChurchBuilding } from './buildings/makeChurchBuilding';
 import { makeLibraryBuilding } from './buildings/makeLibraryBuilding';
@@ -311,7 +312,34 @@ export class BaseTownGenerator extends BaseMapGenerator {
     ///////////////
     const blocks: Block[] = [];
     const cityRectangle = new Rect(0, 0, map.width, map.height);
-    this.makeBlocks(map, true, blocks, cityRectangle);
+    // C# `:390-393`, Release 7-3:
+    //
+    // ```csharp
+    // if (m_Params.GenerateShoppingMall) //@@MP - mall must have a 46x46 block (Release 7-3)
+    //     MakeMallBlocks(map, ref blocks, cityRectangle);
+    // else
+    //     MakeBlocks(map, true, ref blocks, cityRectangle);
+    // ```
+    //
+    // **The one call site in the whole engine that replaces the block layout instead
+    // of filling a block**, which is why it is not a `TOWN_BUILDING_PASSES` entry and
+    // why the mall's generator takes a `recurse` callback rather than reaching for
+    // `makeBlocks` itself.
+    //
+    // The context is built against a throwaway `Block`: `makeMallBlocks` and
+    // `makeNarrowPark` never read `ctx.block` — they cut their own blocks from the
+    // quads the split gives them — and `TownBuildingContext` has no shape without one.
+    if (this.m_Params.generateShoppingMall) {
+      makeMallBlocks(
+        map,
+        blocks,
+        cityRectangle,
+        this.buildingContext(map, new Block(cityRectangle)),
+        (m, list, rect) => this.makeBlocks(m, true, list, rect)
+      );
+    } else {
+      this.makeBlocks(map, true, blocks, cityRectangle);
+    }
 
     ///////////////////////////////////////
     // Make concrete buildings from blocks
@@ -323,6 +351,20 @@ export class BaseTownGenerator extends BaseMapGenerator {
     this.m_SurfaceBlocks = blocks.map((b) => new Block(b.rectangle));
 
     // Special buildings.
+    // Shopping mall? C# `:409-414`, Release 7-3. Ahead of the police station, which
+    // is where the C# has it: "Single-block Unique buildings" is three blocks in
+    // the reference and the mall is the first.
+    //
+    // `makeShoppingMall` returns `null` behind `Feature.ShoppingMall`, so the flag
+    // and the feature gate are two locks on the same door and either one alone is
+    // enough to keep Classic on `makeBlocks`.
+    if (this.m_Params.generateShoppingMall) {
+      const mallBlock = makeShoppingMall(map, blocks, this.buildingContext(map, new Block(cityRectangle)));
+      if (mallBlock) {
+        const index = emptyBlocks.indexOf(mallBlock);
+        if (index !== -1) emptyBlocks.splice(index, 1);
+      }
+    }
     // Police Station?
     if (this.m_Params.generatePoliceStation) {
       const policeBlock = this.makePoliceStation(map, blocks);

@@ -169,14 +169,26 @@ describe("Feature registry is wired", () => {
     //
     // Asserting the exact multiset means a new reader has to be added here, which
     // is the point: a reader is a decision, not an accident.
+    //
+    // **The array below is generated, not written.** `scripts/gen-feature-flag-sites.mjs`
+    // walks `src/` with this test's own regex and prints it in this shape; paste its
+    // output over the array in the same commit as the reader. Hand-editing it is how a
+    // "has a reader" check comes to disagree with the code it is checking, which is
+    // the one failure mode a multiset is supposed to rule out.
     expect(sites.map((s) => s.feature).sort())
-      .toEqual(["Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AnimalShelter", "AnimalShelter",
-                 "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank", "Bar", "Bar", "BlackOpsRaid", "Butchering", "Butchering", "CHARResearchRaid", "Church", "Clinic", "Clinic", "Cooking",
-                 "Cooking", "Cooking", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessGating", "DifficultyAtCreation", "DifficultyAtCreation", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "Farm",
-                 "Farm", "FireBarrels", "FireBarrels", "FireExtinguishers", "FireStation", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-                 "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FuelStation", "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "ItemDespawn", "ItemDespawn", "Junkyard", "Junkyard",
-                 "Library", "Library", "LightPriority", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "SiphonFuel",
-                 "SiphonFuel", "SportsCourts", "SportsCourts", "TileFires", "TileFires", "TileFires", "TileFires", "WeaponWeight"]);    const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
+      .toEqual(["Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "AmbientAudio", "AmbientAudio", "AmbientAudio",
+   "AmbientAudio", "AmbientAudio", "AmbientAudio", "AnimalShelter", "AnimalShelter", "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank",
+   "Bar", "Bar", "BlackOpsRaid", "Butchering", "Butchering", "CHARResearchRaid", "Church", "Clinic", "Clinic", "Cooking",
+   "Cooking", "Cooking", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessGating", "DifficultyAtCreation", "DifficultyAtCreation", "ExtendedAudio", "ExtendedAudio",
+   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "Farm", "Farm", "FireBarrels", "FireBarrels", "FireExtinguishers", "FireStation",
+   "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
+   "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FuelStation", "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue",
+   "HelicopterRescue", "ItemDespawn", "ItemDespawn", "Junkyard", "Junkyard", "Library", "Library", "LightPriority", "ResourcesAvailability", "ResourcesAvailability",
+   "ResourcesAvailability", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
+   "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShoppingMall",
+   "ShoppingMall", "ShoppingMall", "SiphonFuel", "SiphonFuel", "SportsCourts", "SportsCourts", "TileFires", "TileFires", "TileFires", "TileFires", "WeaponWeight"]);
+
+    const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     // `Alcohol`'s *first* reader is now in `RogueGame` (the per-turn decay), and
     // the harness line is one of six rather than the only one.
     expect(at("Alcohol")).toMatch(/RogueGame\.ts:\d+$/);
@@ -445,6 +457,45 @@ describe("Feature registry is wired", () => {
     const courts = sites.filter((s) => s.feature === "SportsCourts");
     expect(courts).toHaveLength(2);
     expect(courts.every((s) => /buildings\/makeSportsCourts\.ts/.test(s.at))).toBe(true);
+
+    // ShoppingMall is **two** readers in two files, and it is the only feature in
+    // the set whose second reader is not in `RogueGame` and not a call site: one is
+    // the generator's own first statement, and the other is the **district-size
+    // floor** in `GameOptions`. That split is the feature rather than bookkeeping.
+    //
+    // The C# raised `DistrictSize`'s floor from 30 to 50 globally in Release 7-3
+    // (`GameOptions.cs:476`, `//@@MP - was 30 (Release 7-3)`) because `MakeMallBlocks`
+    // splits the whole city rectangle at a hard-coded 50x50. It could do that
+    // globally because the C# has one ruleset. This port has two and holds Classic
+    // byte-identical -- `districtSize` is read by world generation, so a floor of 50
+    // under Classic moves the pinned fingerprint `e097b9d976ffac15` -- so the floor
+    // is ruleset-dependent and *this line is the whole of the fork's half of it*.
+    // Dropping it would let a Still Alive player choose a 45-wide district, where
+    // `MallQuadSplit`'s right/bottom splits go negative and the mall's three leftover
+    // quads run off the map.
+    //
+    // The generator gate has to be the generator's *first statement*, not a call
+    // site, for the usual reason: a mall under Classic spends dice (the three
+    // `MakeNarrowPark` fills) and rewrites the whole block list, so it is not a
+    // smaller change than a missing building, it is a different world.
+    const mall = sites.filter((s) => s.feature === "ShoppingMall");
+    expect(mall).toHaveLength(3);
+    expect(mall.filter((s) => /engine\/GameOptions\.ts/.test(s.at))).toHaveLength(1);
+    expect(mall.filter((s) => /buildings\/makeShoppingMall\.ts/.test(s.at))).toHaveLength(1);
+    // The third is the **gate on the district roll** in `GenerateWorld`, and it is
+    // the reader that makes the feature reachable at all. The C# draws the mall's
+    // district unconditionally (`RogueGame.cs:4239`) because it has a single
+    // ruleset; an ungated third roll here would spend a die under Classic and shift
+    // every roll after it. So the gate sits on the roll rather than on the
+    // generator's internals -- the same shape as the BlackOps gate, and the reason
+    // the fingerprint holds.
+    expect(mall.filter((s) => /engine\/RogueGame\.ts/.test(s.at))).toHaveLength(1);
+    // And the generator one is the gate, which is a `return null` on the first line of
+    // `makeShoppingMall` rather than something inside it - pinned by location so that
+    // moving the gate below the first roll cannot be silent.
+    expect(mall.find((s) => /makeShoppingMall\.ts/.test(s.at))!.at).toMatch(
+      /buildings\/makeShoppingMall\.ts:\d+$/,
+    );
 
     // Farm is two readers in *two* files, and that asymmetry is the design rather
     // than an accident. One is the gate on the green cascade's band test in
