@@ -217,8 +217,21 @@ import { OptionsScreen } from "@ui/OptionsScreen";
 /** C# `System.TimeSpan` — not ported yet; `TimeSpanToString` gets it in Phase 4 slice 6. */
 type TimeSpan = number;
 
-/** C# `SetupConfig.GAME_VERSION` (also duplicated in `ui/OptionsScreen.ts`). */
-const GAME_VERSION = "0.3.0";
+/**
+ * C# `SetupConfig.GAME_VERSION` (also duplicated in `ui/OptionsScreen.ts`).
+ *
+ * The user-facing version: the window title, the options screen's heading, the
+ * graveyard lines, and the header of the high-score *text export*. That last one
+ * is the only place this string reaches storage-adjacent state, and it is
+ * write-only -- `HiScoreTable.load()` reads JSON and never parses the header, so
+ * bumping this cannot orphan anyone's scores. The C# also builds a docs path
+ * from it (`RogueGame.cs:2531`), which has no equivalent in a browser port.
+ *
+ * Must stay equal to `web/package.json`'s `version`, which is the same number
+ * from the other direction. Duplicated rather than shared because the C# keeps
+ * one `SetupConfig` constant and this port has no equivalent module to put it in.
+ */
+const GAME_VERSION = "0.9.0";
 
 /** C# numeric/string format alignment: `{0,3}`, `{0,6}` (right aligned). */
 export function padLeft(s: string | number, width: number): string {

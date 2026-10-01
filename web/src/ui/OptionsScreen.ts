@@ -37,8 +37,11 @@ const MENU_BOLD_LINE_SPACING = 18;
 const MENU_LINE_SPACING = 16;
 const RIGHT_PADDING = 400;
 
-// SetupConfig.GAME_VERSION
-const GAME_VERSION = "0.3.0";
+// C# `SetupConfig.GAME_VERSION`. The other half of the pair: the same constant
+// also lives in `engine/RogueGame.ts`, which says why it is duplicated rather
+// than shared. Both must read 0.9.0, and both must agree with
+// `web/package.json`'s `version`.
+const GAME_VERSION = "0.9.0";
 
 /**
  * Browser port of `RogueGame.HandleOptions(bool ingame)` (RogueGame.cs ≈ line 2294).
