@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 /**
- * The CSV -> JSON data tables must stay in sync with their source CSVs.
+ * The data tables must keep the column names the code reads them by.
  *
  * The bug this guards: `scripts/convert-csv.js` used the raw CSV header cell as
  * the JSON key, so any column whose header spelled out a unit or asked a
@@ -15,13 +15,18 @@ import { resolve } from "node:path";
  *
  * The trap was that `d.VERB` and friends also "worked", so the reads looked
  * fine. Hence these assertions are on the *files*, not on the runtime: they
- * fail when a CSV gains a column, loses one, or gets re-ordered, and when a
- * committed JSON falls behind its CSV.
+ * fail when a table gains a column, loses one, or gets re-ordered.
+ *
+ * These tables used to be generated from the original game's
+ * `src/Resources/Data/*.csv`, and a third assertion here compared each
+ * committed JSON against its CSV to catch a table that was edited but never
+ * regenerated. src/ is gone from the repository (it survives only as a local,
+ * gitignored reference folder), so there is nothing left to compare against
+ * and nothing left to regenerate from: the JSON is now the only copy, and these
+ * two assertions are what stands between it and a silently unreadable column.
  */
 
-const repoRoot = resolve(__dirname, "../..");
-const csvDir = resolve(repoRoot, "src/Resources/Data");
-const jsonDir = resolve(repoRoot, "web/src/gameplay/data");
+const jsonDir = resolve(__dirname, "../src/gameplay/data");
 
 /** The canonical column names, mirroring `COLUMNS` in convert-csv.js. */
 const EXPECTED_COLUMNS: Record<string, string[]> = {
@@ -42,34 +47,9 @@ const EXPECTED_COLUMNS: Record<string, string[]> = {
   "Skills.json": ["ID", "NAME", "VALUE1", "VALUE2", "VALUE3", "VALUE4"],
 };
 
-/** Splits one CSV line, honouring double quotes, as convert-csv.js does. */
-function parseCsvLine(line: string): string[] {
-  const out: string[] = [];
-  let cur = "";
-  let inQuotes = false;
-  for (const c of line) {
-    if (c === '"') inQuotes = !inQuotes;
-    else if (c === "," && !inQuotes) {
-      out.push(cur.trim());
-      cur = "";
-    } else cur += c;
-  }
-  out.push(cur.trim());
-  return out;
-}
-
-/** Coerces a CSV cell the way the converter does: numeric strings become numbers. */
-function coerce(val: string): string | number {
-  if (val.startsWith('"') && val.endsWith('"') && val.length >= 2) {
-    val = val.slice(1, -1);
-  }
-  if (val !== "" && !isNaN(Number(val))) return Number(val);
-  return val;
-}
-
 const names = Object.keys(EXPECTED_COLUMNS);
 
-describe("CSV -> JSON data tables", () => {
+describe("data tables", () => {
   it.each(names)("%s has the canonical column names", (name) => {
     const rows = JSON.parse(readFileSync(resolve(jsonDir, name), "utf-8"));
     expect(rows.length).toBeGreaterThan(0);
@@ -83,25 +63,6 @@ describe("CSV -> JSON data tables", () => {
     const rows = JSON.parse(readFileSync(resolve(jsonDir, name), "utf-8"));
     for (const key of Object.keys(rows[0])) {
       expect(key, `${name} key ${JSON.stringify(key)} looks like a raw CSV header`).not.toMatch(/\s/);
-    }
-  });
-
-  it.each(names)("%s is still in sync with its CSV", (name) => {
-    const csv = readFileSync(resolve(csvDir, name.replace(/\.json$/, ".csv")), "utf-8");
-    const lines = csv.split(/\r?\n/).filter((l) => l.trim().length > 0);
-    const header = parseCsvLine(lines[0]).length;
-    const body = lines.slice(1).map((l) => parseCsvLine(l).map(coerce));
-
-    const json = JSON.parse(readFileSync(resolve(jsonDir, name), "utf-8"));
-
-    // Same shape as the source...
-    expect(header).toBe(EXPECTED_COLUMNS[name].length);
-    expect(json.length).toBe(body.length);
-    // ...and same values, in the same order. Comparing positionally is the
-    // point: it catches a CSV edit that was never regenerated, which is the
-    // failure mode that leaves the game running on stale balance data.
-    for (let i = 0; i < body.length; i++) {
-      expect(Object.values(json[i]), `row ${i} of ${name}`).toEqual(body[i]);
     }
   });
 });
