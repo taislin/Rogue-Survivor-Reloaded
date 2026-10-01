@@ -115,15 +115,19 @@ describe("§1.1f bug 56: DollPart._FIRST exists", () => {
     expect(DollPart.FEET).toBe(6);
     expect(DollPart.SKIN).toBe(7);
     expect(DollPart.EYES).toBe(8);
-    // `BACK` (Still Alive, Release 8-2, the backpack slot) is *not* the C#'s 10.
-    // The C# numbers it 10 because it has `LEFT_ARM` at 9 for the police riot
-    // shield, a Release 7-2 feature this port has not built, so there is no 9 to
-    // collide with and `BACK` takes it. The relationship is the part that matters:
-    // `_COUNT` is one past the last part, because `Doll`'s decoration array is
+    // `BACK` (Still Alive, Release 8-2, the backpack slot) took 9 precisely because
+    // `LEFT_ARM` (Release 7-2, the police riot shield) did not exist; that was this
+    // file's stated reason for `BACK` not being the C#'s 10. `LEFT_ARM` now does
+    // exist -- `POLICE_RIOT_SHIELD` is registered on it -- and it takes 10, which
+    // leaves `BACK` at 9 rather than renumbering a live part. So the two are now
+    // the C#'s values with `BACK` and `LEFT_ARM` swapped, and `LEFT_ARM` is the last
+    // part rather than `BACK`. The relationship that matters is unchanged: `_COUNT`
+    // is one past the last part, because `Doll`'s decoration array is
     // `new Array(DollPart._COUNT).fill(null)` and a part with no slot in it is a
-    // part nothing can be decorated on.
+    // part nothing can be decorated on. See the comment on `DollPart.LEFT_ARM`.
     expect(DollPart.BACK).toBe(9);
-    expect(DollPart._COUNT).toBe(DollPart.BACK + 1);
+    expect(DollPart.LEFT_ARM).toBe(10);
+    expect(DollPart._COUNT).toBe(DollPart.LEFT_ARM + 1);
   });
 });
 

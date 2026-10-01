@@ -986,6 +986,34 @@ export class GameImages {
   // ── Still Alive medicine, paint and explosives (scripts/port-item-models.py).
   static readonly ITEM_AMMO_FUEL = "Items/item_ammo_fuel";
   static readonly ITEM_SIPHON_KIT = "Items/item_siphon_kit";
+  /**
+   * The last eleven Still Alive item rows, and the ten sprites they need that
+   * were not already declared here (`GameItems.cs:2233-3043`). Every path below
+   * is the fork's own `GameImages.cs` value (`:998-1003`, `:1036`, `:1065`,
+   * `:1072`, `:1127`, `:1143`) and every one ships in the *classic* pack, so
+   * `tests/sprite-assets.test.ts` is what keeps them true.
+   *
+   * Two of the eleven need no id of their own, and both are the reference's
+   * doing rather than a shortcut:
+   *
+   * - `AMMO_NAILS` draws `ITEM_AMMO_NAILS`, whose value is **`item_ammo_nail_gun`**
+   *   -- singular, and the gun's own filename. `GameImages.cs:998` really does
+   *   point the nail *ammo* row at that file, and it is the only nail-ammunition
+   *   sprite the fork ships, so it is transcribed rather than "corrected".
+   * - `UNIQUE_ARMY_ACCESS_BADGE` draws `ITEM_SUBWAY_BADGE` (`:2918`), deliberately
+   *   sharing the subway worker's badge art. That constant is declared at `:931`
+   *   above, so there is nothing to add for it.
+   */
+  static readonly ITEM_AMMO_NAILS = "Items/item_ammo_nail_gun";
+  static readonly ITEM_AMMO_PRECISION_RIFLE = "Items/item_ammo_precision_rifle";
+  static readonly ITEM_AMMO_MINIGUN = "Items/item_ammo_minigun";
+  static readonly ITEM_AMMO_GRENADES = "Items/item_ammo_grenades";
+  static readonly ITEM_AMMO_PLASMA = "Items/item_ammo_plasma";
+  static readonly ITEM_CANDLES_BOX = "Items/item_candles_box";
+  static readonly ITEM_FLARES_KIT = "Items/item_flares_kit";
+  static readonly ITEM_GLOWSTICKS_BOX = "Items/item_glowsticks_box";
+  static readonly ITEM_POLICE_RIOT_SHIELD = "Items/item_police_riot_shield";
+  static readonly ITEM_SLEEPING_BAG = "Items/item_sleeping_bag";
   // Still Alive, Release 7-6. The sprite shipped with the classic pack, so this
   // is only the id: the fork's `GameImages.cs:1062` has the same path.
   static readonly ITEM_FISHING_ROD = "Items/item_fishing_rod";

@@ -367,18 +367,87 @@ export enum ItemID {
   UNIQUE_CHAR_DOCUMENT4 = 185,
   UNIQUE_CHAR_DOCUMENT5 = 186,
   UNIQUE_CHAR_DOCUMENT6 = 187,
-  _COUNT = 188,
+  /**
+   * Still Alive, Release 5-1 (`GameItems.cs:2233`). The nail gun's ammunition,
+   * `AmmoType.NAIL`, a stack of 99.
+   *
+   * Its sprite is `GameImages.ITEM_AMMO_NAILS`, whose value is
+   * `Items/item_ammo_nail_gun` -- the *gun's* filename, singular. That is the
+   * reference's own constant (`GameImages.cs:998`) and the only nail-ammunition
+   * sprite the fork ships, so it is recorded rather than corrected.
+   *
+   * Appended for the same reason as everything above it.
+   */
+  AMMO_NAILS = 188,
+  /** Still Alive, Release 6-6 (`GameItems.cs:2241`), a stack of 20. */
+  AMMO_PRECISION_RIFLE = 189,
+  /** Still Alive, Release 7-6 (`GameItems.cs:2257`), a stack of 96. */
+  AMMO_MINIGUN = 190,
+  /** Still Alive, Release 7-6 (`GameItems.cs:2264`), a stack of 10. */
+  AMMO_GRENADES = 191,
+  /**
+   * Still Alive, Release 7-6 (`GameItems.cs:2271`), a stack of 5. The only one of
+   * the five with a non-empty `FlavorDescription`.
+   */
+  AMMO_PLASMA = 192,
+  /**
+   * Still Alive, Release 6-3 (`GameItems.cs:2918`).
+   *
+   * **Registered unplaced, and that is faithful rather than lazy.** The C# has
+   * exactly one consumer for this badge and it is commented out: the army office
+   * door check at `RogueGame.cs:23166` reads
+   * `Inventory.HasItemMatching(it.Model == UNIQUE_ARMY_ACCESS_BADGE)` in the source
+   * but ships as `Inventory.Contains(m_Session.UniqueItems.TheArmyOfficePass.TheItem)`
+   * instead, so nothing reads the model. The one copy the fork actually places is
+   * `SpawnUniqueArmyOfficePass` (`RogueGame.cs:4756`), and the port has no such
+   * spawn and no `UniqueItems.TheArmyOfficePass` -- so the row lands with no drop
+   * site, exactly as the six CHAR documents did. Inventing a place to put it would
+   * be a worse answer than having none.
+   *
+   * It deliberately draws `GameImages.ITEM_SUBWAY_BADGE`, sharing the subway
+   * worker's badge art with `UNIQUE_SUBWAY_BADGE`, and its `FlavorDescription` is
+   * its own name -- both are the reference's.
+   */
+  UNIQUE_ARMY_ACCESS_BADGE = 193,
+  /** Still Alive, Release 7-1 (`GameItems.cs:2996`), a stack of 40. */
+  CANDLES_BOX = 194,
+  /** Still Alive, Release 7-1 (`GameItems.cs:3004`), a stack of 40. */
+  FLARES_KIT = 195,
+  /** Still Alive, Release 7-1 (`GameItems.cs:3012`), a stack of 60. */
+  GLOWSTICKS_BOX = 196,
+  /**
+   * Still Alive, Release 7-2 (`GameItems.cs:3036`). The one item of the eleven
+   * that is a mechanic rather than a data row: it goes on the **left arm**, and
+   * `Rules.actorShieldChanceToBlock` decides how often a swing at its wearer is
+   * stopped outright.
+   *
+   * `DollPart.LEFT_ARM` exists only because of this row; see its comment in
+   * `@data/Doll` for why it is numbered 10 rather than the C#'s 9.
+   *
+   * Appended for the same reason as everything above it.
+   */
+  POLICE_RIOT_SHIELD = 197,
+  /**
+   * Still Alive, Release 7-3 (`GameItems.cs:3043`).
+   *
+   * `RogueGame.ApplyItemTurnTracker`'s despawn exemption names this item but does
+   * not test for it, because the item did not exist -- so the row landing here is
+   * what makes that comment true. The *other* half of the feature (sleeping on one
+   * for the couch regen rate) has no port equivalent yet; see the test file.
+   */
+  SLEEPING_BAG = 198,
+  _COUNT = 199,
 }
 
 /**
  * The models the C# marks `CanGoInBackpacks = true`. Still Alive, Release 8-2.
  *
  * Transcribed from the fork's `GameItems.cs` one `this[IDs.X] = new … { … }` block
- * at a time: 121 of its 187 registrations carry the flag, 111 of those 121 have an
- * `ItemID` here, and the other 10 (five ammo rows the C# added and the port has
- * not, the army access badge, the candle/glowstick/flare kits and the sleeping bag)
- * have no model, so they stay at the default `false` and are named rather than
- * faked.
+ * at a time. **All 121 of the C#'s flagged registrations now have an `ItemID` and
+ * a model**, so this list is the whole of the flag rather than the reachable part
+ * of it: 121 flagged rows in the reference, 121 ids here. The one item of the last
+ * eleven that the C# does *not* flag is `POLICE_RIOT_SHIELD` -- a shield is carried
+ * on the arm and there is no `CanGoInBackpacks` on its initialiser (`:3036-3040`).
  *
  * **This is a curated list and the curation does not reduce to a rule.** The
  * C# author walked the list and picked: a combat knife packs and a crowbar does
@@ -468,6 +537,16 @@ const CAN_GO_IN_BACKPACKS: ReadonlySet<ItemID> = new Set<ItemID>([
   // `:3033`). All three are hand-written models rather than CSV rows, so there was
   // no `ItemID` to hang the flag on until they landed.
   ItemID.VEGETABLE_SEEDS, ItemID.LIQUOR_AMBER, ItemID.LIQUOR_CLEAR,
+
+  // The last ten of the C#'s flagged rows (`GameItems.cs:2233-3043`): the five
+  // Still Alive ammo, the army office pass, the candle/flare/glowstick kits and the
+  // sleeping bag. Ten of the eleven is the exact count, because
+  // `POLICE_RIOT_SHIELD` is the one the C# leaves unflagged.
+  ItemID.AMMO_NAILS, ItemID.AMMO_PRECISION_RIFLE, ItemID.AMMO_MINIGUN,
+  ItemID.AMMO_GRENADES, ItemID.AMMO_PLASMA,
+  ItemID.UNIQUE_ARMY_ACCESS_BADGE,
+  ItemID.CANDLES_BOX, ItemID.FLARES_KIT, ItemID.GLOWSTICKS_BOX,
+  ItemID.SLEEPING_BAG,
 ]);
 
 export class GameItems implements ItemModelDB {
@@ -1035,6 +1114,36 @@ export class GameItems implements ItemModelDB {
       // cosmetic: `HandlePlayerSiphonFuel` clamps the stack to it, which is also
       // why a `Car`'s tank is capped at 99 rather than at a day's burn.
       [ItemID.AMMO_FUEL, "fuel", GameImages.ITEM_AMMO_FUEL, AmmoType.FUEL, 20],
+      // The four remaining Still Alive ammo with an *empty* flavour text, which
+      // is what lets them join the table: the loop below writes `""` onto every
+      // row it builds, and the C# gives these four exactly that
+      // (`GameItems.cs:2236`, `:2244`, `:2260`, `:2267`).
+      //
+      // `AMMO_PLASMA` is the fifth and is deliberately *not* in this table -- see
+      // just below it.
+      //
+      // **Every one of these four already had its weapon in the port.** The
+      // `rangedMap` above names `AmmoType.NAIL`, `PRECISION_RIFLE`, `MINIGUN` and
+      // `GRENADES` for the nail gun, the army precision rifle, the minigun and the
+      // grenade launcher, and `Items_RangedWeapons.csv` has a row for each, so what
+      // was missing was the other half of the pair and not the gun. They still add
+      // no behaviour, because nothing drops them: the port has no
+      // `MakeItemNailGunAmmo` / `MakeItemRandomCommonAmmo` / `MakeItemMinigunAmmo` /
+      // `MakeItemGrenadeLauncherAmmo`, and the C#'s one reader for them is
+      // `DoUnloadAmmoFromGun` (`RogueGame.cs:22132`), which is not ported either.
+      //
+      // Still Alive, Release 5-1. Stack limit 99, and `ITEM_AMMO_NAILS` is
+      // `Items/item_ammo_nail_gun` -- the gun's own sprite, which is the reference's
+      // (`GameImages.cs:998`) and the only nail ammunition it ships.
+      [ItemID.AMMO_NAILS, "nails", GameImages.ITEM_AMMO_NAILS, AmmoType.NAIL, 99],
+      // Still Alive, Release 6-6. The army precision rifle's magazine, so this one
+      // *is* reachable once a drop site exists.
+      [ItemID.AMMO_PRECISION_RIFLE, "precision rifle rounds", GameImages.ITEM_AMMO_PRECISION_RIFLE, AmmoType.PRECISION_RIFLE, 20],
+      // Still Alive, Release 7-6. Ninety-six, which is the minigun's belt.
+      [ItemID.AMMO_MINIGUN, "minigun rounds", GameImages.ITEM_AMMO_MINIGUN, AmmoType.MINIGUN, 96],
+      // Still Alive, Release 7-6. Named "launcher grenades" rather than "grenades"
+      // because the C# does (`:2264`) -- it is the grenade *launcher's* ammunition.
+      [ItemID.AMMO_GRENADES, "launcher grenades", GameImages.ITEM_AMMO_GRENADES, AmmoType.GRENADES, 10],
     ];
     for (const [id, name, img, type, quantity] of ammo) {
       const model = new ItemAmmoModel(name, name, img, type, quantity);
@@ -1042,6 +1151,29 @@ export class GameItems implements ItemModelDB {
       model.flavorDescription = "";
       this.setModel(id, model);
     }
+
+    // Still Alive, Release 7-6 (`GameItems.cs:2271-2276`). Hand-built rather than
+    // added to the table above, and the only reason is one string: the loop writes
+    // `""` onto every row it builds and this is the one Still Alive ammo whose
+    // `FlavorDescription` is not empty. Giving the table a sixth column would have
+    // meant restating the empty string eleven times to satisfy one.
+    //
+    // Five rounds to a stack. `AMMO_PLASMA` is the bio-force gun's ammunition and
+    // the weapon *is* ported (`RANGED_BIO_FORCE_GUN`, `AmmoType.PLASMA` in the
+    // `rangedMap` above), so as with the four above it is the row that was missing
+    // rather than the gun -- and as with them, nothing spawns it, because
+    // `MakeItemBioForceGunAmmo` (`BaseMapGenerator.cs:2323`) is not ported.
+    const ammoPlasma = new ItemAmmoModel(
+      "bio force plasma",
+      "bio force plasma",
+      GameImages.ITEM_AMMO_PLASMA,
+      AmmoType.PLASMA,
+      5,
+    );
+    ammoPlasma.isPlural = true;
+    ammoPlasma.flavorDescription =
+      "Warning: fire with caution. Wide discharge radius.";
+    this.setModel(ItemID.AMMO_PLASMA, ammoPlasma);
 
     // Miscellaneous. Still Alive, Release 7-1.
     //
@@ -1144,6 +1276,60 @@ export class GameItems implements ItemModelDB {
     vegetableSeeds.stackingLimit = 9;
     this.setModel(ItemID.VEGETABLE_SEEDS, vegetableSeeds);
 
+    // The three light kits. Still Alive, Release 7-1 (`GameItems.cs:2996-3019`),
+    // placed before the liquors because that is where the C# has them (`:2996` is
+    // above `:3020`). Hand-written for the same reason as the seeds and the
+    // siphon kit: there is no `Items_Misc.csv` row for any of them.
+    //
+    // **All three are plain `ItemModel`s and none of them is an `ItemLight`.** The
+    // flavour text promises light -- "long-lasting", "bright, throwable" -- and the
+    // light is not theirs: the C# has *no* light field on any of the three
+    // initialisers. `FLARES_KIT` and `GLOWSTICKS_BOX` are only light because
+    // `HandlePlayerUseLightPackThrowable` (`RogueGame.cs:15012`) turns one into
+    // `new ItemLight(LIGHT_FLARE)` / `new ItemLight(LIGHT_GLOWSTICK)` at use time,
+    // and `CANDLES_BOX` is only light because dropping one places a
+    // `DECO_LIT_CANDLE` decoration (`RogueGame.cs:21203`). None of those three
+    // readers is ported, so here the three are boxes of nothing, and that is
+    // recorded rather than papered over: making them emit light on this side would
+    // be inventing a mechanism the reference does not have on the model.
+    //
+    // Their names are the C#'s, plurals included: `"candles box"` / `"candles
+    // boxes"` is a box *of* candles, so the singular is the odd one. Both halves
+    // are kept verbatim.
+    //
+    // The C#'s `CanGoInBackpacks` (Release 8-2) is applied in `postProcess`, from
+    // the `CAN_GO_IN_BACKPACKS` set, rather than here.
+    const candlesBox = new ItemModel(
+      "candles box",
+      "candles boxes",
+      GameImages.ITEM_CANDLES_BOX,
+    );
+    candlesBox.flavorDescription = "Place candles for long-lasting light.";
+    candlesBox.isStackable = true;
+    candlesBox.stackingLimit = 40;
+    this.setModel(ItemID.CANDLES_BOX, candlesBox);
+
+    const flaresKit = new ItemModel(
+      "flares kit",
+      "flares kits",
+      GameImages.ITEM_FLARES_KIT,
+    );
+    flaresKit.flavorDescription = "Use flares for bright, throwable light.";
+    flaresKit.isStackable = true;
+    flaresKit.stackingLimit = 40;
+    this.setModel(ItemID.FLARES_KIT, flaresKit);
+
+    const glowsticksBox = new ItemModel(
+      "glowsticks box",
+      "glowsticks boxes",
+      GameImages.ITEM_GLOWSTICKS_BOX,
+    );
+    glowsticksBox.flavorDescription =
+      "Use glowsticks for long-lasting, throwable light.";
+    glowsticksBox.isStackable = true;
+    glowsticksBox.stackingLimit = 60;
+    this.setModel(ItemID.GLOWSTICKS_BOX, glowsticksBox);
+
     // Still Alive, Release 7-1 (`GameItems.cs:3020-3034`). Hand-written for the same
     // reason as the seeds above: no CSV row.
     //
@@ -1174,6 +1360,59 @@ export class GameItems implements ItemModelDB {
     liquorClear.isStackable = true;
     liquorClear.stackingLimit = 3;
     this.setModel(ItemID.LIQUOR_CLEAR, liquorClear);
+
+    // The police riot shield. Still Alive, Release 7-2 (`GameItems.cs:3036-3040`).
+    // Hand-written like everything else in this region, and the only one of the
+    // last eleven that is a mechanic rather than a data row.
+    //
+    // `EquipmentPart = DollPart.LEFT_ARM` is the whole feature: the C# decides what
+    // is a shield by *which arm it is on* (`Actor.GetEquippedShield`,
+    // `Actor.cs:1133`, and `RogueGame.cs:21033`'s `it.Model.EquipmentPart ==
+    // DollPart.LEFT_ARM` branch), not by asking whether the item is a shield. The
+    // port has no such branch yet, so a shield here is equipable and inert.
+    //
+    // **The flavour string is an interpolation of `Rules.SHIELD_BASE_BLOCK_CHANCE`,
+    // not a literal**, because the C# builds it that way (`:3038`) and because
+    // `RogueGame.DescribeItemLong` *overwrites* it with the total including the
+    // Martial Arts bonus while the shield is in the player's pack
+    // (`RogueGame.cs:32097`). Deriving it keeps the two readings from disagreeing
+    // when the constant changes.
+    //
+    // `CanGoInBackpacks` is the one thing the C# does *not* set here -- the flag is
+    // absent from this initialiser, which is why this id is the one of the eleven
+    // missing from `CAN_GO_IN_BACKPACKS`. A shield is carried on the arm.
+    const policeRiotShield = new ItemModel(
+      "police riot shield",
+      "police riot shields",
+      GameImages.ITEM_POLICE_RIOT_SHIELD,
+    );
+    policeRiotShield.flavorDescription = `${Rules.SHIELD_BASE_BLOCK_CHANCE}% base chance to block melee attacks.`;
+    policeRiotShield.isStackable = false;
+    policeRiotShield.equipmentPart = DollPart.LEFT_ARM;
+    this.setModel(ItemID.POLICE_RIOT_SHIELD, policeRiotShield);
+
+    // The sleeping bag. Still Alive, Release 7-3 (`GameItems.cs:3043-3049`).
+    // Hand-written like the shield above: no CSV row.
+    //
+    // `IsStackable = false` with no `StackingLimit`, so `postProcess` leaves it
+    // non-stackable -- a bag of bags is not a thing, and the C#'s own post-pass
+    // (`GameItems.cs:3087`, `IsStackable = StackingLimit > 1`) reaches the same
+    // answer from `StackingLimit`'s default of 1.
+    //
+    // The flavour text promises a mechanic -- "Drop it on the ground for a somewhat
+    // comfortable sleep" -- and the mechanic is `HandlePlayerUseSleepingBag`
+    // (`RogueGame.cs:14856`), which is not ported. The part of the feature that
+    // *is* already written is the despawn exemption at `RogueGame.ts:26599`, and
+    // this row is what makes that comment accurate rather than aspirational.
+    const sleepingBag = new ItemModel(
+      "sleeping bag",
+      "sleeping bags",
+      GameImages.ITEM_SLEEPING_BAG,
+    );
+    sleepingBag.flavorDescription =
+      "Drop it on the ground for a somewhat comfortable sleep.";
+    sleepingBag.isStackable = false;
+    this.setModel(ItemID.SLEEPING_BAG, sleepingBag);
 
     // Still Alive, Release 7-6 (`GameItems.cs:2927`). Hand-written like the
     // fishing rod: no CSV row.
@@ -1234,6 +1473,38 @@ export class GameItems implements ItemModelDB {
       document.flavorDescription = flavour;
       this.setModel(id, document);
     }
+
+    // The army office pass. Still Alive, Release 6-3 (`GameItems.cs:2918-2924`),
+    // placed here because that is where the C# has it: immediately after the sixth
+    // CHAR document at `:2916`.
+    //
+    // **`GameImages.ITEM_SUBWAY_BADGE`, not a badge of its own.** The C# reuses the
+    // subway worker's badge art verbatim (`GameItems.cs:2920`), so this and
+    // `UNIQUE_SUBWAY_BADGE` are two ids drawing one sprite. A shared sprite is not a
+    // shared model, though, and the only things separating them here are the two
+    // name strings and the flavour text -- `equipmentPart` and `dontAutoEquip` are
+    // the same on both, `LEFT_HAND` and `true`, because the pass is a near-copy of
+    // the badge it was cloned from. A save still has to be able to say which pass a
+    // survivor is holding, which is why these are two models and one sprite rather
+    // than the reverse.
+    //
+    // `DontAutoEquip` is the C#'s, and it is what keeps picking the pass up from
+    // silently putting it in your off hand. The same two lines made the subway badge
+    // permanently *unequippable* in an earlier port -- `isEquipable` is derived from
+    // `equipmentPart`, so a model with neither is not held at all.
+    //
+    // Registered with no drop site, which is faithful: see the `ItemID` comment.
+    const armyOfficePass = new ItemModel(
+      "Army office pass",
+      "Army office pass",
+      GameImages.ITEM_SUBWAY_BADGE,
+    );
+    armyOfficePass.dontAutoEquip = true;
+    armyOfficePass.equipmentPart = DollPart.LEFT_HAND;
+    // The C#'s own name again, as the description. It reads as a bug until you
+    // notice the model has no other text, which is the point of it.
+    armyOfficePass.flavorDescription = "Army office pass";
+    this.setModel(ItemID.UNIQUE_ARMY_ACCESS_BADGE, armyOfficePass);
 
     // Backpacks. Still Alive, Release 8-2 (`GameItems.cs:1006-1060`).
     //

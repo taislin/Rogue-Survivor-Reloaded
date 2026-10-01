@@ -102,9 +102,14 @@ const DOCUMENTS: [ItemID, string][] = [
 ];
 
 describe("ItemID stayed append-only", () => {
-  it("the last pre-existing id is still 178 and the count is 188", () => {
+  it("the last pre-existing id is still 178 and the count is 199", () => {
     expect(ItemID.MATCHES).toBe(178);
-    expect(ItemID._COUNT).toBe(188);
+    // 188 when this batch landed its nine, and 199 now that eleven more have been
+    // appended above them (the five Still Alive ammo, the three light kits, the army
+    // office pass, the police riot shield and the sleeping bag). The count moving up
+    // is the append-only discipline working; `MATCHES` moving is the bug. See
+    // `still-alive-ammo-shield-items.test.ts` for the other half of this pair.
+    expect(ItemID._COUNT).toBe(199);
   });
 
   it("the nine were appended at 179..187, in the order above", () => {

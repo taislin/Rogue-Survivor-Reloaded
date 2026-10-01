@@ -564,5 +564,22 @@ export class Actor {
     const it = this.getEquippedItem(DollPart.RIGHT_HAND);
     return it instanceof ItemRangedWeapon ? it : null;
   }
+
+  /**
+   * C# `GetEquippedShield` (`Actor.cs:1133-1136`), Still Alive, Release 7-2.
+   *
+   * Returns a plain `Item`, not a subclass, and that is the C#'s too: there is no
+   * `ItemShieldModel` in the fork, so "is a shield" is decided by *which arm the
+   * item is on* rather than by what it is. A plain cast means the same thing here.
+   *
+   * Its one reader today is `Rules.actorShieldChanceToBlock`'s future caller --
+   * the melee roll in `RogueGame.DoMeleeAttack` and the flavour rewrite in
+   * `DescribeItemLong` are both still to come, so nothing calls this yet. It is
+   * `null` for every actor in the port as it stands, because
+   * `POLICE_RIOT_SHIELD` has no drop site.
+   */
+  getEquippedShield(): Item | null {
+    return this.getEquippedItem(DollPart.LEFT_ARM);
+  }
 }
 

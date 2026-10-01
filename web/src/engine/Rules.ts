@@ -267,6 +267,21 @@ export class Rules {
 
   // Body armors
   static readonly BODY_ARMOR_BREAK_CHANCE = 2;
+  /**
+   * Still Alive, Release 7-2 (`Rules.cs:129`). The police riot shield's chance to
+   * stop a melee attack outright, before skill.
+   *
+   * Read by exactly one thing today, `actorShieldChanceToBlock` below, and through
+   * it by `POLICE_RIOT_SHIELD`'s flavour text -- which is why the port builds that
+   * string from this constant instead of writing `"25% base chance to block melee
+   * attacks."` out. The C# does the same (`GameItems.cs:3038`).
+   *
+   * The C#'s sibling `SHIELD_ENCUMBERANCE_PENALTY` (`Rules.cs:130`, a 0.75 speed
+   * multiplier) is *not* here: it is consumed by `ActorSpeed`, which is where
+   * `GetEquippedShield()` first becomes reachable, and that reader is part of the
+   * `RogueGame` half of the shield feature rather than part of the row.
+   */
+  static readonly SHIELD_BASE_BLOCK_CHANCE = 25;
 
   // Hunger/Rot & Sleep & Sanity
   static readonly FOOD_BASE_POINTS = WorldTime.TURNS_PER_HOUR * 48;
@@ -409,6 +424,27 @@ export class Rules {
   static SKILL_MARTIAL_ARTS_ATK_BONUS = 6;
   static SKILL_MARTIAL_ARTS_DMG_BONUS = 2;
   static SKILL_MARTIAL_ARTS_DISARM_BONUS = 10;
+  /**
+   * Still Alive, Release 7-2 (`Rules.cs:375`), "+5% boost to shields": five points
+   * of `SHIELD_BASE_BLOCK_CHANCE` per level of Martial Arts.
+   *
+   * **Deliberately not wired to `Skills.csv`, and this one is worth reading twice.**
+   * The fork *does* assign it from a column -- `Skills.cs:376` writes
+   * `Rules.SKILL_MARTIAL_ARTS_SHIELD_BONUS = (int)s.VALUE4` -- and the fork's own
+   * `Skills.csv` duly has `MARTIAL_ARTS` with a fourth value of 5. The **vendored
+   * pack's** `Skills.json` does not: Martial Arts is a vanilla row there and its
+   * `VALUE4` is `0`. So a faithful-looking
+   * `Skills.SKILL_MARTIAL_ARTS_SHIELD_BONUS = Math.trunc(s.VALUE4)` would compile,
+   * pass a green type-check and silently make every shield in the game worth
+   * nothing, because `Skills.load()` runs at startup and 5 is overwritten by 0.
+   *
+   * Hence the C#'s declared value, 5, kept as a plain static like its three
+   * Martial Arts siblings -- the same shape `SKILL_UNSUSPICIOUS_FISHING_BONUS`
+   * below takes for the same underlying reason. The reference quirk is recorded
+   * rather than resolved: the fork's answer would be right against the fork's CSV
+   * and wrong against this one.
+   */
+  static SKILL_MARTIAL_ARTS_SHIELD_BONUS = 5;
   static SKILL_MEDIC_BONUS = 0.15;
   static SKILL_MEDIC_REVIVE_BONUS = 10;
   static SKILL_MEDIC_LEVEL_FOR_REVIVE_EST = 1;
@@ -2788,6 +2824,29 @@ export class Rules {
 
   actorDamageBonusVsUndeads(actor: Actor): number {
     return Rules.SKILL_NECROLOGY_UNDEAD_BONUS * actor.sheet.skillTable.getSkillLevel(SkillID.NECROLOGY);
+  }
+
+  /**
+   * Still Alive, Release 7-2 (`Rules.cs:4765`). How likely a swing at `actor` is to
+   * be blocked by its shield: 25 flat, plus five points per level of Martial Arts.
+   *
+   * **It does not check that the actor is carrying a shield**, and neither does the
+   * C#. The roll that consults it (`RogueGame.cs:18369`) is guarded by
+   * `defender.GetEquippedShield() != null`, so the shield test happens once and
+   * this is only the percentage. Reading it as "the chance this actor's next
+   * attack is stopped" would be wrong, and computing the guard here instead would
+   * make the two disagree.
+   *
+   * Two readers so far, both outside this file: the melee roll in
+   * `RogueGame.DoMeleeAttack` and the flavour text `DescribeItemLong` rewrites
+   * while a shield is in the player's pack. Neither is ported yet; the method lands
+   * first so both can be one-liners.
+   */
+  actorShieldChanceToBlock(actor: Actor): number {
+    const actorSkillModifier =
+      Rules.SKILL_MARTIAL_ARTS_SHIELD_BONUS *
+      actor.sheet.skillTable.getSkillLevel(SkillID.MARTIAL_ARTS);
+    return Rules.SHIELD_BASE_BLOCK_CHANCE + actorSkillModifier;
   }
 
   actorMeleeAttack(actor: Actor, baseAttack: Attack, target: Actor | null, objToBreak: MapObject | null = null): Attack {
