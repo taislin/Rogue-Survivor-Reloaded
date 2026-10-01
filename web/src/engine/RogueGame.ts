@@ -180,6 +180,7 @@ import { storage } from "@engine/storage";
 import { TextFile } from "@engine/TextFile";
 import { TaskRemoveDecoration } from "@engine/tasks/TaskRemoveDecoration";
 import { DayPhase, WorldTime } from "@engine/WorldTime";
+import { NoiseBand, bandForDistance, isWithinBand } from "@engine/NoiseDistance";
 import {
 	BaseAI,
 	ItemRating,
@@ -4207,6 +4208,36 @@ export class RogueGame {
 				this.DespawnJunkInDistrict(district);
 			}
 
+			// Still Alive, Release 6-6: the church bells, at sunset.
+			//
+			// C# `RogueGame.cs:5635-5641`, inside the same day-phase branch:
+			//
+			// ```csharp
+			// if (newPhase == DayPhase.SUNSET)
+			// {
+			//     if (m_Player.Location.Map.HasChurch && !m_Player.IsSleeping)
+			//         m_AmbientSFXManager.PlayIfNotAlreadyPlaying(GameAmbients.CHURCH_BELLS_WITHIN_MAP, AudioPriority.PRIORITY_BGM);
+			//     else
+			//         m_AmbientSFXManager.PlayIfNotAlreadyPlaying(GameAmbients.CHURCH_BELLS_OUTSIDE_MAP, AudioPriority.PRIORITY_BGM);
+			// }
+			// ```
+			//
+			// It sits in the `prevPhase != newPhase` branch above, so it fires on the
+			// turn the phase becomes sunset -- not once per turn at sunset, and not at
+			// any other phase change.
+			//
+			// **The `else` is doing more work than it looks.** A sleeping player rings
+			// the "outside the map" bells even when they are inside the church, because
+			// the only test is `HasChurch && !IsSleeping` and a sleeping player fails it
+			// whichever map they are on. Transcribed as-is: the C# clearly means "can
+			// the player hear it", and the answer for someone asleep indoors is no --
+			// it just happens to pick the outside recording for that case.
+			//
+			// Both are one-shots (`looping` defaults false, `ISoundManager.cs:52`), so
+			// `playIfNotAlreadyPlaying` only guards a re-trigger within the same
+			// ring's own length.
+			if (newPhase === DayPhase.SUNSET) this.checkChurchBellsSFX();
+
 			// alpha10
 			// if time to change weather do it and roll next change time.
 			if (
@@ -4490,6 +4521,33 @@ export class RogueGame {
 			this.m_TownGenerator.makeObjHelicopter(GameImages.OBJ_HELICOPTER3),
 			heliPoints[2],
 		);
+
+		// Audio. C# `RogueGame.cs:28869-28877`, Release 6-4, immediately after the
+		// three hulls are placed and before the AI is told:
+		//
+		// ```csharp
+		// CheckLandedHelicopterSFX(map);
+		// if (!IsPlaying(FARTHEST) && !IsPlaying(FAR) && !IsPlaying(NEAR) && !IsPlaying(VISIBLE))
+		//     PlayIfNotAlreadyPlaying(GameAmbients.HELICOPTER_FLYOVER, AudioPriority.PRIORITY_EVENT);
+		// ```
+		//
+		// The point of the flyover is that it is a **one-shot announcement for a
+		// player who is too far away to have a looping bed yet**. Once
+		// `CheckLandedHelicopterSFX` has started any of the four tiers the player can
+		// hear it properly, so a flyover on top would be a second helicopter. Hence
+		// the four-way "is anything playing" test, which is why the tiers have to be
+		// started first.
+		this.checkLandedHelicopterSFX(map);
+		const heliTiers = [
+			GameAmbients.STATIONARY_HELICOPTER_VISIBLE,
+			GameAmbients.STATIONARY_HELICOPTER_NEAR,
+			GameAmbients.STATIONARY_HELICOPTER_FAR,
+			GameAmbients.STATIONARY_HELICOPTER_FARTHEST,
+		];
+		if (!heliTiers.some((id) => this.m_AmbientSFXManager.isPlaying(id))) {
+			// A one-shot, like the C#: no `looping` argument, so false.
+			this.m_AmbientSFXManager.playIfNotAlreadyPlaying(GameAmbients.HELICOPTER_FLYOVER, false);
+		}
 
 		// Notify AI. //@@MP (Release 7-5)
 		this.NotifyOrderablesAI(
@@ -6077,6 +6135,20 @@ inv.removeAllQuantity(it);
 		) {
 			this.m_MusicManager.stop();
 			this.m_MusicManager.play(GameMusics.ARMY, MusicPriority.EVENT);
+
+			// The announcement flyover. C# `RogueGame.cs:28328`, Release 6-4:
+			//
+			// ```csharp
+			// m_AmbientSFXManager.Play(GameAmbients.HELICOPTER_FLYOVER, AudioPriority.PRIORITY_EVENT);
+			// ```
+			//
+			// **A different event from the rescue flyover, reached a different way.**
+			// This one is an unconditional `Play`, not `PlayIfNotAlreadyPlaying`, so a
+			// second supply drop while the first is still ringing restarts it rather
+			// than being swallowed. It goes here because this block *is* the C#'s
+			// announce branch, already gated on the player being here, awake and human
+			// -- so an undead player hears nothing, which is a good touch and is kept.
+			this.m_AmbientSFXManager.play(GameAmbients.HELICOPTER_FLYOVER);
 
 			this.ClearMessages();
 			this.AddMessage(
@@ -15882,9 +15954,14 @@ inv.removeAllQuantity(it);
 		// what the player's ears are hearing, and `CheckAmbientAudio` reads
 		// `m_Player`'s tile.
 		//
-		// The C#'s second call, `CheckLandedHelicopterSFX`, is absent: it needs
-		// `Feature.HelicopterRescue`. See `CheckAmbientAudio`.
-		if (actor.isPlayer) this.CheckAmbientAudio(map);
+		// Both C# calls, in the C#'s order. `CheckLandedHelicopterSFX` is second
+		// because it is the finer-grained of the two: `CheckAmbientAudio` picks one
+		// weather bed for the whole map, this picks a helicopter tier from the exact
+		// distance, so it is the one that has to be evaluated after the step.
+		if (actor.isPlayer) {
+			this.CheckAmbientAudio(map);
+			this.checkLandedHelicopterSFX(map);
+		}
 
 		// Check traps.
 		// Don't check if there is a covering mobj there.
@@ -23231,6 +23308,142 @@ inv.removeAllQuantity(it);
 		// otherwise have the bed restarted from the top under them.
 		this.m_AmbientSFXManager.playIfNotAlreadyPlaying(wanted, true);
 		this.StopAllAmbientsExcept(wanted);
+	}
+
+	/**
+	 * The church bells, at sunset. C# `RogueGame.cs:5635-5641`, Release 6-6.
+	 *
+	 * ```csharp
+	 * if (newPhase == DayPhase.SUNSET)
+	 * {
+	 *     if (m_Player.Location.Map.HasChurch && !m_Player.IsSleeping)
+	 *         m_AmbientSFXManager.PlayIfNotAlreadyPlaying(GameAmbients.CHURCH_BELLS_WITHIN_MAP, AudioPriority.PRIORITY_BGM);
+	 *     else
+	 *         m_AmbientSFXManager.PlayIfNotAlreadyPlaying(GameAmbients.CHURCH_BELLS_OUTSIDE_MAP, AudioPriority.PRIORITY_BGM);
+	 * }
+	 * ```
+	 *
+	 * A method where the C# has three inline lines, because the *selection* is the
+	 * only testable part and inlining it inside `advancePlayDistrict` would put it
+	 * behind a whole simulated turn. Nothing else is extracted.
+	 *
+	 * **The `else` is doing more work than it looks.** A sleeping player rings the
+	 * "outside the map" bells even while standing inside the church, because the
+	 * only test is `HasChurch && !IsSleeping` and a sleeping player fails it
+	 * whichever map they are on. Transcribed as-is: the C# plainly means "can the
+	 * player hear it", and the answer for someone asleep indoors is no -- it just
+	 * happens to reach for the outside recording in that case.
+	 *
+	 * Both are one-shots (`looping` defaults false, `ISoundManager.cs:52`), so
+	 * `playIfNotAlreadyPlaying` only guards a re-trigger inside the ring's own
+	 * length.
+	 */
+	private checkChurchBellsSFX(): void {
+		const playerMap = this.m_Player.location.map;
+		const id =
+			playerMap !== null && playerMap.hasChurch && !this.m_Player.isSleeping
+				? GameAmbients.CHURCH_BELLS_WITHIN_MAP
+				: GameAmbients.CHURCH_BELLS_OUTSIDE_MAP;
+		this.m_AmbientSFXManager.playIfNotAlreadyPlaying(id, false);
+	}
+
+	/**
+	 * C# `CheckLandedHelicopterSFX(Map)` -- `RogueGame.cs:10524-10568`, Release 6-4.
+	 *
+	 * A landed rescue helicopter is an ambient source in its own right, and which
+	 * of four looping tracks plays is a function of how far away the player is. So
+	 * this is called on **every player step**, not once at spawn: walk towards the
+	 * helicopter and the bed steps down through the tiers with you.
+	 *
+	 * The four tracks and their radii are the C#'s (`Rules.cs:226-229`: QUIET 5,
+	 * MODERATE 8, LOUD 14, BOOMING 23). `NoiseDistance` already models exactly this
+	 * ladder, so this method is `bandFor` plus a stop half rather than 45
+	 * transliterated lines.
+	 *
+	 * **One deliberate divergence, in the stop half.** The C# stops a track with
+	 * `IsPlaying(track) && dist > upperBound`, so the `NEAR` track keeps playing
+	 * for every distance up to `MODERATE` -- including the 3 tiles at which the C#
+	 * is simultaneously starting `VISIBLE`. Walking towards a landed helicopter
+	 * leaves two tracks running in the reference. `NoiseDistance.isWithinBand` is
+	 * the complement of the *start* ladder and is what this uses, so only one track
+	 * plays at a time. `NoiseDistance.ts:203-215` documents the divergence and why
+	 * the fixed form is the one a ported caller wants; recording it here so it is a
+	 * decision rather than a surprise.
+	 */
+	private checkLandedHelicopterSFX(_map: Map): void {
+		const session = Session.get();
+		const here = this.m_Player.location.map;
+		const coords = session.armyHelicopterRescueCoordinates;
+		// The C#'s outer condition, verbatim: it is present on rescue day, on that
+		// map, and in daylight. `armyHelicopterRescueMap` is derived from the
+		// district rather than stored (`Session.ts:338-357`), and the identity check
+		// the C# writes as `map == ...Map` is this.
+		const present =
+			session.worldTime.day === session.armyHelicopterRescueDay &&
+			here !== null &&
+			here === session.armyHelicopterRescueMap &&
+			!session.worldTime.isNight &&
+			coords !== null;
+
+		if (present && coords !== null && here !== null) {
+			// The C# takes the helicopter's *visual* top-left tile and adds one, to
+			// land roughly in the middle of its 4x2 footprint (`:10531`). Taking the
+			// top-left instead would put the source half a helicopter off, which is
+			// enough to shift a tier boundary for a player standing right beside it.
+			const heliPoint = new Point(coords.x + 1, coords.y);
+			const distance = this.DistanceToPlayer(here, heliPoint);
+			const band = bandForDistance(distance);
+
+			// The C#'s start ladder. `Inaudible` starts nothing, which is correct:
+			// past BOOMING there is no track to play.
+			const wanted =
+				band === NoiseBand.Quiet
+					? GameAmbients.STATIONARY_HELICOPTER_VISIBLE
+					: band === NoiseBand.Moderate
+						? GameAmbients.STATIONARY_HELICOPTER_NEAR
+						: band === NoiseBand.Loud
+							? GameAmbients.STATIONARY_HELICOPTER_FAR
+							: band === NoiseBand.Booming
+								? GameAmbients.STATIONARY_HELICOPTER_FARTHEST
+								: null;
+			if (wanted !== null) {
+				this.m_AmbientSFXManager.playIfNotAlreadyPlaying(wanted, true);
+			}
+
+			// The stop half, for all four, using the fixed band test.
+			for (const [track, tier] of [
+				[GameAmbients.STATIONARY_HELICOPTER_VISIBLE, NoiseBand.Quiet],
+				[GameAmbients.STATIONARY_HELICOPTER_NEAR, NoiseBand.Moderate],
+				[GameAmbients.STATIONARY_HELICOPTER_FAR, NoiseBand.Loud],
+				[GameAmbients.STATIONARY_HELICOPTER_FARTHEST, NoiseBand.Booming],
+			] as const) {
+				// The C#'s `IsPlaying(track) && dist > upperBound` (`RogueGame.cs:10545`).
+				// The `isPlaying` half is not decoration: without it every player step
+				// would issue three `stop` calls for tracks that were never started,
+				// which is noise a real `WebAudioAmbientManager` would have to absorb.
+				if (this.m_AmbientSFXManager.isPlaying(track) && !isWithinBand(tier, distance)) {
+					this.m_AmbientSFXManager.stop(track);
+				}
+			}
+			return;
+		}
+
+		// Not here, or night, or the wrong day: silence the lot.
+		//
+		// The C#'s `else if` chain (`:10558-10566`) stops only the *first* track it
+		// finds playing, farthest first. That is safe there only because the start
+		// ladder can never leave two running -- which, as noted above, it can. This
+		// stops all four, because the branch's purpose is "the helicopter is not
+		// here, so there must be no helicopter sound", and stopping one of four
+		// would not achieve that.
+		for (const track of [
+			GameAmbients.STATIONARY_HELICOPTER_VISIBLE,
+			GameAmbients.STATIONARY_HELICOPTER_NEAR,
+			GameAmbients.STATIONARY_HELICOPTER_FAR,
+			GameAmbients.STATIONARY_HELICOPTER_FARTHEST,
+		]) {
+			if (this.m_AmbientSFXManager.isPlaying(track)) this.m_AmbientSFXManager.stop(track);
+		}
 	}
 
 	/**

@@ -7,23 +7,33 @@
  * ## What is wired, and what is not
  *
  * The C# table (`Gameplay/GameAmbients.cs`) is 13 entries and every one of them has
- * a file. The port ships all 13 files and all 13 constants, and **5 of the 13 are
+ * a file. The port ships all 13 files and all 13 constants, and **12 of the 13 are
  * reachable**:
  *
  * - `RAIN_INSIDE` / `RAIN_OUTSIDE` / `THUNDERING_RAIN_INSIDE` /
- *   `THUNDERING_RAIN_OUTSIDE` / `NIGHT_ANIMALS` — wired. The port has `Weather`,
- *   `WorldTime.isNight` and `Tile.isInside`, which are the C#'s only three inputs
- *   into the decision.
- * - The five `HELICOPTER_FLYOVER` / `STATIONARY_HELICOPTER_*` — **not wired**,
- *   pending `Feature.HelicopterRescue`. `CheckLandedHelicopterSFX` needs a rescue
- *   *map* and *coordinates*, and four noise radii the port does not have.
- * - The two `CHURCH_BELLS_*` — **not wired**, pending `Feature.Church`. The C#'s
- *   trigger is `Map.HasChurch`, and the port's `Map` has no such field.
- * - `TEST_AMBIENT` — shipped, deliberately unreachable. Its only C# caller is the
- *   options screen's ambient-volume preview, and the port has no such row.
+ *   `THUNDERING_RAIN_OUTSIDE` / `NIGHT_ANIMALS` — wired from the start. The port
+ *   has `Weather`, `WorldTime.isNight` and `Tile.isInside`, which are the C#'s only
+ *   three inputs into the decision.
+ * - The five `HELICOPTER_FLYOVER` / `STATIONARY_HELICOPTER_*` — **now wired**, by
+ *   `checkLandedHelicopterSFX` (`RogueGame.cs:10524-10568`) on every player step
+ *   plus a one-shot flyover at spawn and at an army supply drop. These waited on
+ *   `Feature.HelicopterRescue` for a rescue *map* and *coordinates* and four noise
+ *   radii; all three have since landed (`Session.ts:316-370`, `NoiseDistance.ts`).
+ * - The two `CHURCH_BELLS_*` — **now wired**, at sunset in `advancePlayDistrict`.
+ *   These waited on `Feature.Church` for `Map.hasChurch`, which that feature added.
+ * - `TEST_AMBIENT` — shipped, **deliberately unreachable**, and the only one left.
+ *   Its only C# caller is the options screen's ambient-volume preview, and the port
+ *   has no such row.
  *
- * So this file is a suite about **five** tracks and a **thirteen**-entry table, and
- * it asserts both numbers rather than blurring them.
+ * So this file is a suite about **twelve** tracks and a **thirteen**-entry table,
+ * and it asserts both numbers rather than blurring them.
+ *
+ * **That 5 -> 12 jump is why this file still exists in this shape.** Each of the
+ * seven was blocked on a *different* prerequisite feature, so no two of them became
+ * reachable together, and the thing that was actually being tested all along was
+ * "does the port have the input this track needs", not anything to do with audio.
+ * One of the thirteen is still unreachable for want of a UI row rather than a
+ * gameplay feature, which is a different kind of missing and worth keeping visible.
  *
  * ## Why the asset test is the loudest thing here
  *
@@ -92,27 +102,44 @@ const CS_TABLE: readonly (readonly [string, string])[] = [
   ["test_ambient", "test_ambient"],
 ];
 
-/** The five the port can actually reach, and nothing else. See the file header. */
+/**
+ * Source with comments removed, so a scanner can tell a *call* from a mention.
+ *
+ * Crude on purpose: it is a test helper for one assertion, and a real parser would
+ * be more machinery than the thing it is protecting. Block comments go first (they
+ * cannot nest), then line comments.
+ */
+function stripComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+}
+
+/** The twelve the port can actually reach, and nothing else. See the file header. */
 const WIRED: readonly string[] = [
   GameAmbients.RAIN_INSIDE,
   GameAmbients.RAIN_OUTSIDE,
   GameAmbients.THUNDERING_RAIN_INSIDE,
   GameAmbients.THUNDERING_RAIN_OUTSIDE,
   GameAmbients.NIGHT_ANIMALS,
-];
-
-/** The eight that are not, and the pending feature each is waiting on. */
-const PENDING_ON_HELICOPTER: readonly string[] = [
+  // Feature.HelicopterRescue
   GameAmbients.HELICOPTER_FLYOVER,
   GameAmbients.STATIONARY_HELICOPTER_FARTHEST,
   GameAmbients.STATIONARY_HELICOPTER_FAR,
   GameAmbients.STATIONARY_HELICOPTER_NEAR,
   GameAmbients.STATIONARY_HELICOPTER_VISIBLE,
-];
-const PENDING_ON_CHURCH: readonly string[] = [
+  // Feature.Church
   GameAmbients.CHURCH_BELLS_WITHIN_MAP,
   GameAmbients.CHURCH_BELLS_OUTSIDE_MAP,
 ];
+
+/**
+ * The one that is still not reachable, and it is not waiting on a feature.
+ *
+ * Its only C# caller is `OptionsMenuAudioAdjustment` (`RogueGame.cs:2244`), a
+ * preview cue for the ambient-volume row in the options screen. Wiring it means
+ * adding `UI_AMBIENTSFXS` and `UI_AMBIENTSFXS_VOLUME` (`GameOptions.cs:1038`), which
+ * is options-screen work rather than audio work -- so this stays unwired on purpose.
+ */
+const UNREACHABLE: readonly string[] = [GameAmbients.TEST_AMBIENT];
 
 // ── The table ───────────────────────────────────────────────────────────────
 
@@ -781,55 +808,333 @@ describe("CLASSIC gets no ambient channel at all", () => {
   });
 });
 
-// ── The unwired eight ───────────────────────────────────────────────────────
+// ── The one unreachable track ───────────────────────────────────────────────
 
-describe("the eight unwired tracks", () => {
-  it("are the C#'s helicopter and church bells, and nothing else is missing", () => {
-    // 13 table entries - 5 wired - 8 pending. If a future stage wires one of the
-    // eight this fails and has to be updated on purpose, which is the point: a
-    // pending track that silently becomes live is the failure this guards.
+describe("the one unwired track", () => {
+  it("is TEST_AMBIENT and nothing else", () => {
+    // 13 table entries - 12 wired - 1 unreachable. If a future stage wires
+    // TEST_AMBIENT this fails and has to be updated on purpose: it would mean the
+    // options screen grew an ambient-volume row, which is a real change with real
+    // consequences for the other channels and should not happen by accident.
     const unwired = Object.keys(AMBIENT_FILES).filter((id) => !WIRED.includes(id));
-    expect(unwired.sort()).toEqual(
-      [...PENDING_ON_HELICOPTER, ...PENDING_ON_CHURCH, GameAmbients.TEST_AMBIENT].sort(),
-    );
-    expect(unwired).toHaveLength(8);
+    expect(unwired).toEqual([...UNREACHABLE]);
+    expect(unwired).toHaveLength(1);
   });
 
-  it("nothing outside CheckAmbientAudio names an unwired track", () => {
-    // A source scan, not a behavioural one: the eight have no trigger site at all,
-    // so the only way to catch one appearing is to read the source. This is the
+  it("is not named anywhere in the engine", () => {
+    // A source scan, not a behavioural one. The remaining track has no trigger site
+    // at all, so the only way to catch one appearing is to read the source -- the
     // same technique `feature-flags.test.ts` and `music-priority.test.ts` use.
     const src = readFileSync(
       join(__dirname, "..", "src", "engine", "RogueGame.ts"),
       "utf-8",
     );
-    const unwired = [
-      ...PENDING_ON_HELICOPTER,
-      ...PENDING_ON_CHURCH,
-    ];
-    // `GameAmbients.ts` holds the constants; the test file is the only other place
-    // allowed to name one, and the engine is not.
-    expect(src, "an unwired ambient is referenced in the engine").not.toMatch(
-      new RegExp(`GameAmbients\\.(${unwired.map((u) => u.split(" ").pop()).join("|")})`),
+    // Comments are stripped first. The engine *does* mention the constant by name --
+    // `CheckAmbientAudio`'s docblock points a reader at it to explain why it is the
+    // one still unwired -- and prose about a track is the opposite of a trigger for
+    // it. Scanning raw source cannot tell those apart, which is why the test above
+    // this one used to be satisfiable only by deleting an explanatory comment.
+    expect(stripComments(src), "TEST_AMBIENT is called in the engine").not.toMatch(
+      /GameAmbients\.TEST_AMBIENT/,
     );
   });
 
-  it("the five unwired engine constants are named at the site that waits for them", () => {
-    // A reader arriving at `CheckAmbientAudio` has to be told *which* pending
-    // feature each group is waiting on, in the source, not only in the plan.
+  it("still has its file, because unreachable is not the same as absent", () => {
+    // The table test above already resolves all thirteen ids and checks each file
+    // is on disk; this exists to say the *point*. If it ever fails, the asset was
+    // deleted rather than left unwired, and the table is no longer the C#'s
+    // thirteen -- which is a different kind of regression from "no trigger".
+    expect(AMBIENT_FILES, "TEST_AMBIENT is still in the table").toHaveProperty(
+      GameAmbients.TEST_AMBIENT,
+    );
+  });
+});
+
+describe("the seven that used to be unwired", () => {
+  it("are all named in the engine now", () => {
+    // The mirror of the test above, and the thing that would have caught a partial
+    // job: five helicopter tracks wired but the flyover forgotten is exactly the
+    // shape of that mistake.
     const src = readFileSync(
       join(__dirname, "..", "src", "engine", "RogueGame.ts"),
       "utf-8",
     );
-    // From the *docblock*, not the declaration: the pending-feature names are in
-    // the comment above the method, and slicing at the signature would read the
-    // body and find neither.
-    const doc = src.slice(
-      src.indexOf("C# `CheckAmbientSFX` (`RogueGame.cs:10417`)"),
-      src.indexOf("StopAllAmbientsExcept(exceptId"),
+    // The *constant names*, paired with their ids by hand.
+    //
+    // The tempting shortcut is `id.split(" ").pop()`, which reads
+    // "stationary helicopter visible" as `visible` -- and there is no such
+    // constant. It survived in this file only because every assertion that used it
+    // was an *absence* check, which passes just as happily against a pattern that
+    // can never match anything. A presence assertion is what exposed it.
+    for (const name of [
+      "HELICOPTER_FLYOVER",
+      "STATIONARY_HELICOPTER_FARTHEST",
+      "STATIONARY_HELICOPTER_FAR",
+      "STATIONARY_HELICOPTER_NEAR",
+      "STATIONARY_HELICOPTER_VISIBLE",
+      "CHURCH_BELLS_WITHIN_MAP",
+      "CHURCH_BELLS_OUTSIDE_MAP",
+    ]) {
+      expect(stripComments(src), `${name} is called in the engine`).toMatch(
+        new RegExp(`GameAmbients\\.${name}\\b`),
+      );
+    }
+  });
+
+  it("keeps the helicopter and bell ids out of StopAllAmbientsExcept", () => {
+    // `StopAllAmbientsExcept` silences the weather family on every player step. If
+    // the helicopter tiers were in its list, walking indoors would kill a landed
+    // helicopter's audio for as long as the player stayed in -- and walking back
+    // out would not restore it until the next step. The C#'s five-name list does
+    // not contain them either; this pins that the port agrees.
+    const src = readFileSync(
+      join(__dirname, "..", "src", "engine", "RogueGame.ts"),
+      "utf-8",
     );
-    expect(doc.length, "the CheckAmbientAudio docblock was found").toBeGreaterThan(1000);
-    expect(doc).toMatch(/Feature\.HelicopterRescue/);
-    expect(doc).toMatch(/Feature\.Church/);
+    const body = src.slice(src.indexOf("StopAllAmbientsExcept(exceptId"));
+    const list = body.slice(0, body.indexOf("];"));
+    for (const name of [
+      "HELICOPTER_FLYOVER",
+      "STATIONARY_HELICOPTER_FARTHEST",
+      "STATIONARY_HELICOPTER_FAR",
+      "STATIONARY_HELICOPTER_NEAR",
+      "STATIONARY_HELICOPTER_VISIBLE",
+      "CHURCH_BELLS_WITHIN_MAP",
+      "CHURCH_BELLS_OUTSIDE_MAP",
+    ]) {
+      expect(list, `${name} must not be silenced by the weather bed`).not.toContain(name);
+    }
+  });
+});
+
+// ── The seven, behaviourally ─────────────────────────────────────────────────
+
+describe("Feature.Church: the bells", () => {
+  let game: RogueGame;
+  let ambients: RecordingAmbientManager;
+  let map: GameMap;
+
+  const ring = (): void =>
+    (game as unknown as { checkChurchBellsSFX(): void }).checkChurchBellsSFX();
+
+  beforeEach(() => {
+    Session.get().ruleset = Ruleset.STILL_ALIVE;
+    map = new GameMap(1, "test", 20, 20);
+    for (let x = 0; x < 20; x++) {
+      for (let y = 0; y < 20; y++) {
+        map.setTileModelAt(x, y, Models.tiles.get(TileID.FLOOR_GRASS)!);
+      }
+    }
+    game = new RogueGame(new NullRogueUI());
+    ambients = new RecordingAmbientManager();
+    (game as unknown as { m_AmbientSFXManager: IAmbientManager }).m_AmbientSFXManager = ambients;
+
+    const player = new Actor(
+      Models.actors.get(ActorID.MALE_CIVILIAN)!,
+      new Faction("The Survivors", "survivor"),
+      "you",
+    );
+    player.controller = new PlayerController();
+    map.placeActor(player, new Point(5, 5));
+    game.m_Player = player;
+  });
+
+  it("rings the near bells on a map with a church", () => {
+    map.hasChurch = true;
+    ring();
+    expect(ambients.calls).toEqual([
+      `playIfNotAlreadyPlaying(${GameAmbients.CHURCH_BELLS_WITHIN_MAP},false)`,
+    ]);
+  });
+
+  it("rings the far bells on a map with no church", () => {
+    ring();
+    expect(ambients.calls).toEqual([
+      `playIfNotAlreadyPlaying(${GameAmbients.CHURCH_BELLS_OUTSIDE_MAP},false)`,
+    ]);
+  });
+
+  it("rings the far bells for a sleeping player even inside the church", () => {
+    // The C#'s condition is `HasChurch && !IsSleeping`, so a sleeping player fails it
+    // whichever map they are on. Transcribed, not tidied: the intent is "can the
+    // player hear it", and an unconscious player cannot.
+    map.hasChurch = true;
+    game.m_Player.isSleeping = true;
+    ring();
+    expect(ambients.calls).toEqual([
+      `playIfNotAlreadyPlaying(${GameAmbients.CHURCH_BELLS_OUTSIDE_MAP},false)`,
+    ]);
+  });
+
+  it("is a one-shot, not a bed", () => {
+    // `looping` defaults to false in the C# (`ISoundManager.cs:52`), so it must not
+    // be requested as a loop -- a bell that loops is a drone.
+    map.hasChurch = true;
+    ring();
+    expect(ambients.calls[0], "one-shot").toContain(",false)");
+  });
+});
+
+describe("Feature.HelicopterRescue: the landed helicopter", () => {
+  let game: RogueGame;
+  let ambients: RecordingAmbientManager;
+  let map: GameMap;
+
+  /** Where the helicopter sits, and the player, who gets moved around. */
+  let heli: Point;
+  let player: Actor;
+
+  const check = (): void =>
+    (
+      game as unknown as { checkLandedHelicopterSFX(_map: GameMap): void }
+    ).checkLandedHelicopterSFX(map);
+
+  beforeEach(() => {
+    Session.get().ruleset = Ruleset.STILL_ALIVE;
+    map = new GameMap(1, "test", 60, 60);
+    for (let x = 0; x < 60; x++) {
+      for (let y = 0; y < 60; y++) {
+        map.setTileModelAt(x, y, Models.tiles.get(TileID.FLOOR_GRASS)!);
+      }
+    }
+    game = new RogueGame(new NullRogueUI());
+    ambients = new RecordingAmbientManager();
+    (game as unknown as { m_AmbientSFXManager: IAmbientManager }).m_AmbientSFXManager = ambients;
+
+    heli = new Point(30, 30);
+    player = new Actor(
+      Models.actors.get(ActorID.MALE_CIVILIAN)!,
+      new Faction("The Survivors", "survivor"),
+      "you",
+    );
+    player.controller = new PlayerController();
+    map.placeActor(player, new Point(5, 5));
+    game.m_Player = player;
+
+    // Midday, because turn 0 is deep night in this clock and the C#'s outer
+    // condition requires daylight -- a rescue helicopter is inaudible at midnight,
+    // which is the one part of the ladder that is about the heli not existing.
+    Session.get().worldTime.turnCounter = WorldTime.TURNS_PER_HOUR * 12;
+    Session.get().armyHelicopterRescueDay = Session.get().worldTime.day;
+    Session.get().setHelicopterRescueSite("A1", heli);
+
+    // `armyHelicopterRescueMap` is a *derived* getter: it resolves the district
+    // reference against the live world (`Session.ts:358-370`) so it cannot go
+    // stale across a regenerate or a load. Standing up a whole world to make it
+    // return this one map would be testing `World.getDistrict`, not the audio, so
+    // the getter is stubbed for the test instead. Everything the audio method reads
+    // off it -- "is this the rescue map" -- is exercised by the last test.
+    rescueMap = map;
+    Object.defineProperty(Session.get(), "armyHelicopterRescueMap", {
+      get: () => rescueMap,
+      configurable: true,
+    });
+  });
+
+  /** Which map `armyHelicopterRescueMap` resolves to; swapped by one test. */
+  let rescueMap: GameMap;
+
+  const standAt = (x: number, y: number): void => {
+    map.removeActor(player);
+    map.placeActor(player, new Point(x, y));
+  };
+
+  it("picks one of the four tiers from the distance, and the right one", () => {
+    // The radii are the C#'s (`Rules.cs:226-229`): QUIET 5, MODERATE 8, LOUD 14,
+    // BOOMING 23. The source point is `heli + (1, 0)`, the middle of the 4x2 hull.
+    const cases: [number, string][] = [
+      [0, GameAmbients.STATIONARY_HELICOPTER_VISIBLE],
+      [5, GameAmbients.STATIONARY_HELICOPTER_VISIBLE],
+      [6, GameAmbients.STATIONARY_HELICOPTER_NEAR],
+      [8, GameAmbients.STATIONARY_HELICOPTER_NEAR],
+      [9, GameAmbients.STATIONARY_HELICOPTER_FAR],
+      [14, GameAmbients.STATIONARY_HELICOPTER_FAR],
+      [15, GameAmbients.STATIONARY_HELICOPTER_FARTHEST],
+      [23, GameAmbients.STATIONARY_HELICOPTER_FARTHEST],
+    ];
+    for (const [distance, expected] of cases) {
+      ambients.calls.length = 0;
+      ambients.playing = [];
+      standAt(heli.x + 1 - distance, heli.y);
+      check();
+      expect(ambients.calls, `${distance} tiles`).toEqual([
+        `playIfNotAlreadyPlaying(${expected},true)`,
+      ]);
+    }
+  });
+
+  it("starts nothing beyond BOOMING, and stops what was playing", () => {
+    // 24 tiles is past the last radius, so there is no track to play -- which is the
+    // common case, not a failure case.
+    standAt(heli.x + 1 + 24, heli.y);
+    check();
+    expect(ambients.calls.filter((c) => c.startsWith("play")), "no bed started").toHaveLength(0);
+  });
+
+  it("steps down a tier as the player approaches, leaving one bed running", () => {
+    // The C#'s stop ladder keeps the NEAR track alive for every distance up to
+    // MODERATE -- including the three tiles where it also starts VISIBLE -- so
+    // approaching a landed helicopter runs two tracks in the reference. This port
+    // uses `NoiseDistance.isWithinBand`, the complement of the start ladder, so
+    // exactly one is ever playing. `NoiseDistance.ts:203-215` documents it.
+    standAt(heli.x + 1 - 20, heli.y);
+    check();
+    expect(ambients.getPlayingAmbients()).toEqual([GameAmbients.STATIONARY_HELICOPTER_FARTHEST]);
+
+    standAt(heli.x + 1 - 3, heli.y);
+    check();
+    expect(
+      ambients.getPlayingAmbients().filter((id) => id.toLowerCase().includes("helicopter")),
+      "one helicopter bed, not two",
+    ).toEqual([GameAmbients.STATIONARY_HELICOPTER_VISIBLE]);
+  });
+
+  it("silences all four at night", () => {
+    standAt(heli.x + 1 - 2, heli.y);
+    check();
+    expect(ambients.getPlayingAmbients().length, "playing by day").toBe(1);
+
+    Session.get().worldTime.turnCounter += WorldTime.TURNS_PER_DAY;
+    check();
+    expect(
+      ambients.getPlayingAmbients().filter((id) => id.toLowerCase().includes("helicopter")),
+      "nothing at night",
+    ).toEqual([]);
+  });
+
+  it("silences all four on another day", () => {
+    standAt(heli.x + 1 - 2, heli.y);
+    check();
+    expect(ambients.getPlayingAmbients().length, "playing on the day").toBe(1);
+
+    Session.get().armyHelicopterRescueDay += 1;
+    check();
+    expect(
+      ambients.getPlayingAmbients().filter((id) => id.toLowerCase().includes("helicopter")),
+      "nothing on another day",
+    ).toEqual([]);
+  });
+
+  it("silences all four on another map", () => {
+    standAt(heli.x + 1 - 2, heli.y);
+    check();
+    expect(ambients.getPlayingAmbients().length, "playing on the rescue map").toBe(1);
+
+    const elsewhere = new GameMap(2, "elsewhere", 60, 60);
+    for (let x = 0; x < 60; x++) {
+      for (let y = 0; y < 60; y++) {
+        elsewhere.setTileModelAt(x, y, Models.tiles.get(TileID.FLOOR_GRASS)!);
+      }
+    }
+    rescueMap = map;
+    elsewhere.removeActor(player);
+    elsewhere.placeActor(player, new Point(5, 5));
+    (
+      game as unknown as { checkLandedHelicopterSFX(_map: GameMap): void }
+    ).checkLandedHelicopterSFX(elsewhere);
+    expect(
+      ambients.getPlayingAmbients().filter((id) => id.toLowerCase().includes("helicopter")),
+      "nothing elsewhere",
+    ).toEqual([]);
   });
 });
