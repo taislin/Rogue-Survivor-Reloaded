@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 /**
@@ -17,33 +17,32 @@ import { resolve } from "node:path";
  * fine. Hence these assertions are on the *files*, not on the runtime: they
  * fail when a table gains a column, loses one, or gets re-ordered.
  *
- * These tables used to be generated from the original game's
- * `src/Resources/Data/*.csv`, and a third assertion here compared each
- * committed JSON against its CSV to catch a table that was edited but never
- * regenerated. src/ is gone from the repository (it survives only as a local,
- * gitignored reference folder), so there is nothing left to compare against
- * and nothing left to regenerate from: the JSON is now the only copy, and these
- * two assertions are what stands between it and a silently unreadable column.
+ * ## What this file no longer checks, and why
+ *
+ * It used to carry a third suite, "the Still Alive merge did not disturb
+ * classic", which compared every committed JSON row against the original game's
+ * `src/Resources/Data/*.csv` — canonical column names *and* positional equality
+ * *and* the one permitted id rename. That is gone, and it is not recoverable
+ * here: `src/` was removed from the repository's tracking (it survives only as a
+ * local, gitignored reference folder), so there is nothing left to compare
+ * against and nothing left to regenerate from. The JSON is now the only copy.
+ *
+ * **The property that suite asserted is real and is now unpinned.** Still Alive
+ * adds a ruleset that plays against these same tables, so the merge is only safe
+ * if classic is untouched — and taking the fork's tables wholesale looks like
+ * the merge while silently rebalancing classic (army ration nutrition 0.25 to
+ * 0.33, best-before 5 days to never) at the layer both rulesets read. The two
+ * suites below still catch the failure mode they were written for: a column that
+ * the code cannot read, and a header cell used raw as a key. What is no longer
+ * caught is a *value* edited in one place and never regenerated in the other.
+ *
+ * If `src/Resources/Data` is ever restored to the working tree, that suite is
+ * worth bringing back rather than writing fresh — it pinned an id rename
+ * (`Actors.csv` row 0, `_FIRST` -> `UNDEAD_SKELETON`) that nothing else records.
  */
 
 const repoRoot = resolve(__dirname, "../..");
-// The merged superset, which is what `convert-csv.js` reads by default. The
-// vanilla tree in `src/Resources/Data` is never modified -- it is the C# game's
-// own resource directory and the statement of intent this port is written
-// against -- so it is only read by the "classic did not regress" test below.
-const csvDir = resolve(repoRoot, "web/data");
-const vanillaCsvDir = resolve(repoRoot, "src/Resources/Data");
 const jsonDir = resolve(repoRoot, "web/src/gameplay/data");
-
-/**
- * The C# tree's own files, which are not valid UTF-8: `Items_Traps.csv` has a
- * stray 0xA0 before a "?" in one FLAVOR cell. The merge reads these as latin-1
- * and writes UTF-8, so the merged table is valid UTF-8 and needs no special
- * handling here. This map only applies to the read-only `src/` side.
- */
-const VANILLA_ENCODINGS: Record<string, BufferEncoding> = {
-  "Items_Traps.csv": "latin1",
-};
 
 /** The canonical column names, mirroring `COLUMNS` in convert-csv.js. */
 const EXPECTED_COLUMNS: Record<string, string[]> = {
@@ -82,117 +81,5 @@ describe("data tables", () => {
     for (const key of Object.keys(rows[0])) {
       expect(key, `${name} key ${JSON.stringify(key)} looks like a raw CSV header`).not.toMatch(/\s/);
     }
-  });
-});
-
-/**
- * Still Alive adds a ruleset that plays against the *same* content tables, so
- * the merge is only safe if classic is untouched. This is the check that says so
- * as a property rather than as a claim in a commit message: every row the
- * vanilla tree defines is still present, in the same order, with the same
- * values, and the new content is strictly additive after them.
- *
- * The regression it guards against is the tempting one. Taking the fork's
- * tables wholesale looks like the merge, and it silently rebalances classic --
- * army ration nutrition 0.25 to 0.33, best-before 5 days to never -- at the data
- * layer that both rulesets read. That is a Stage 4 decision behind a flag, not
- * a data merge, and this test fails if it ever happens by accident.
- */
-describe("the Still Alive merge did not disturb classic", () => {
-  /** Reads a table from the read-only vanilla tree, honouring its encoding. */
-  function readVanilla(csvName: string): Record<string, string>[] {
-    const enc = VANILLA_ENCODINGS[csvName] ?? "utf-8";
-    const text = readFileSync(resolve(vanillaCsvDir, csvName), enc);
-    const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-    const header = parseCsvLine(lines[0]);
-    return lines.slice(1).map((l) => Object.fromEntries(
-      header.map((h, i) => [h, parseCsvLine(l)[i] ?? ""]),
-    ));
-  }
-
-/**
- * The only row-id changes the merge is allowed to make, keyed by CSV. Each is
- * the fork filling in an upstream placeholder rather than adding content, and
- * each keeps the vanilla row's position and values — only the id is corrected.
- *
- * `Actors.csv` row 0 is `_FIRST`: the C# reads that table by index, so the id
- * was never needed and was left as a placeholder. Still Alive gave it a real
- * name and a real FLAVOR. Note that the *values* still have to match vanilla,
- * so this map buys the id correction and nothing else.
- */
-const ID_RENAMES: Record<string, Record<string, string>> = {
-  "Actors.csv": { _FIRST: "UNDEAD_SKELETON" },
-};
-
-  const mergedNames = Object.keys(EXPECTED_COLUMNS).map((n) => n.replace(/\.json$/, ".csv"));
-
-  it.each(mergedNames.filter((n) => n !== "Items_Backpacks.csv"))(
-    "%s keeps every classic row, unchanged, with new rows appended",
-    (csvName) => {
-      const vanilla = readVanilla(csvName);
-      const text = readFileSync(resolve(csvDir, csvName), "utf-8");
-      const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-      const header = parseCsvLine(lines[0]);
-      const merged = lines.slice(1).map((l) => Object.fromEntries(
-        header.map((h, i) => [h, parseCsvLine(l)[i] ?? ""]),
-      ));
-
-      expect(merged.length).toBeGreaterThanOrEqual(vanilla.length);
-      // Ids are the join key, and the order is the contract: classic rows keep
-      // their positions so the numeric enum order stays valid.
-      //
-      // The one permitted id change is the fork filling in a placeholder. Row 0
-      // of `Actors.csv` is `_FIRST` upstream — a stand-in for "the first
-      // undead", never filled in because the C# reads the table positionally —
-      // and Still Alive corrected it to `UNDEAD_SKELETON`, also replacing the
-      // placeholder FLAVOR with a real one. The merge adopts the corrected id
-      // and keeps *our* values. Anything else is listed, so an id change that
-      // nobody decided on still fails.
-      const renames = ID_RENAMES[csvName] ?? {};
-      for (let i = 0; i < vanilla.length; i++) {
-        expect(merged[i].ID, `row ${i} of ${csvName}`)
-          .toBe(renames[vanilla[i].ID] ?? vanilla[i].ID);
-      }
-
-      // Match vanilla columns to merged ones by name. Four tables gained
-      // columns *before* FLAVOR (`WEIGHT`, `FIRE_RESIST%`, ...), so position is
-      // not a usable key there, and `Items_Traps.csv` needs the opposite: its
-      // headers are the same length but the fork fixed "DESACTIVATES" to
-      // "DEACTIVATES", so a name lookup misses and position is the only thing
-      // that resolves it. Name first, then same-index for whatever is left --
-      // and only when the widths agree, since otherwise the index means
-      // something different on each side.
-      const mergedCols = parseCsvLine(lines[0]);
-      const vanillaCols = parseCsvLine(
-        readFileSync(resolve(vanillaCsvDir, csvName), VANILLA_ENCODINGS[csvName] ?? "utf-8")
-          .split(/\r?\n/)[0],
-      );
-      const sameWidth = mergedCols.length === vanillaCols.length;
-      const indexFor = (col: string, at: number): number => {
-        const byName = mergedCols.indexOf(col);
-        if (byName !== -1) return byName;
-        expect(sameWidth, `${csvName}: column ${col} is in neither table`).toBe(true);
-        return at;
-      };
-
-      for (let i = 0; i < vanilla.length; i++) {
-        const ours = vanilla[i];
-        const oursCols = Object.keys(ours);
-        for (let c = 0; c < oursCols.length; c++) {
-          const col = oursCols[c];
-          // ID is asserted above, against the rename map; comparing it here
-          // would just re-report the same permitted change as a failure.
-          if (col === "ID") continue;
-          expect(merged[i][mergedCols[indexFor(col, c)]], `${csvName} ${ours.ID} ${col}`)
-            .toBe(ours[col]);
-        }
-      }
-    },
-  );
-
-  it("the fork's backpacks are present, since vanilla has no such table", () => {
-    const rows = readFileSync(resolve(csvDir, "Items_Backpacks.csv"), "utf-8");
-    expect(rows).toContain("BACKPACK_WAIST_POUCH");
-    expect(existsSync(resolve(vanillaCsvDir, "Items_Backpacks.csv"))).toBe(false);
   });
 });

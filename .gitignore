@@ -101,3 +101,5 @@ __pycache__/
 # already tracked, and silently drops any *new* one from `git add`, so anchor it.
 # `_refs/` above already covers the reference anyway.
 /src/
+
+/run_dev.bat
