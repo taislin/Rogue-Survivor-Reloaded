@@ -1401,11 +1401,12 @@ export class GameImages {
   //
   // The eight shop signs and the two mall signs are wall *decorations*, so they
   // ride a tile rather than standing on one, which is why they are `DECO_` and not
-  // `OBJ_`. `DECO_SHOP_SPORTSWEAR`, `DECO_SHOP_PHARMACY`, `DECO_SHOP_GROCERY`,
-  // `DECO_CINEMA_SIGN` and `DECO_STAIRS_UP`/`_DOWN` are **not** declared here: the
-  // port already had them for the shop generator, the firstperson stairs and the
-  // police station's levels, and two constants for one sprite is two places for the
-  // mall and its neighbour to disagree about it.
+  // `OBJ_`. `DECO_SHOP_SPORTSWEAR`, `DECO_SHOP_PHARMACY`, `DECO_SHOP_GROCERY` and
+  // `DECO_STAIRS_UP`/`_DOWN` are **not** declared here: the port already had them
+  // for the shop generator and the firstperson stairs, and two constants for one
+  // sprite is two places for the mall and its neighbour to disagree about it.
+  // (`DECO_CINEMA_SIGN` was listed there once and had never in fact been declared
+  // -- it is one of the twenty-two below, added with the upper level.)
   //
   // **`OBJ_COUCH` (`:627`), `OBJ_CAR1..CAR4` (`:593-595`) and `OBJ_EMPTY_BIN` /
   // `OBJ_SHOP_SHELF` / `OBJ_BOOK_SHELVES` / `OBJ_FRIDGE` are not here for the same
@@ -1437,6 +1438,53 @@ export class GameImages {
   static readonly OBJ_POTTED_PLANT = "MapObjects/potted_plant";
   static readonly OBJ_BARBER_CHAIR = "MapObjects/barber_chair";
   static readonly OBJ_BATHROOM_BASIN = "MapObjects/bathroom_basin";
+
+  // ── Feature.ShoppingMall: the upper level and the car park ─────────────────
+  //
+  // The other twenty-one mall ids, for `GenerateShoppingMall_UpperLevel`
+  // (`BaseTownGenerator.cs:10178`) and `GenerateShoppingMall_Parking` (`:10490`).
+  // Same story as the block above and for the same reason: Release 7-3 art for a
+  // feature nobody in this port had wired is still art, so every one of these was
+  // already in `assets/images/classic/` before the levels existed. No vendoring;
+  // `tests/sprite-assets.test.ts` enumerates `Object.getOwnPropertyNames(GameImages)`
+  // against the pack, and every path below already resolves to a file on disk.
+  //
+  // The upper level's five food-court price boards and the two cinema signs are
+  // wall decorations; the two cinema signs are `cinema1`/`cinema2`, which are the
+  // *numbers on the doors* rather than a drawing of a cinema, and the C# places one
+  // of each on either side of a pair of doorways.
+  //
+  // `OBJ_LECTERN` (C# `GameImages.cs:626`) and `OBJ_BANK_TELLER` (`:630`) are **not**
+  // here: the church already added both. The cinema foyer reuses the bank's teller
+  // sprite for six reception desks (`MakeObjReceptionDesk(GameImages.OBJ_BANK_TELLER)`,
+  // `BaseTownGenerator.cs:10408-10413`) and the church's lectern for the one drawer at
+  // the ticket check (`:10418`) -- one sprite each, two names, as `OBJ_CLINIC_DESK` is
+  // for the mall's registers. `TILE_PARKING_ASPHALT_EW` / `_NS`,
+  // `TILE_WALL_PILLAR_CONCRETE`, `TILE_WALL_RED_CURTAINS` and
+  // `TILE_FLOOR_FOOD_COURT_POOL` are **not** here either: they are tile images already
+  // declared above for world decay, and their `TileModel`s were registered in
+  // `GameTiles.ts` all along.
+  static readonly DECO_FOOD_COURT_PRICEBOARD1 = "Tiles/Decoration/food_court_priceboard1";
+  static readonly DECO_FOOD_COURT_PRICEBOARD2 = "Tiles/Decoration/food_court_priceboard2";
+  static readonly DECO_FOOD_COURT_PRICEBOARD3 = "Tiles/Decoration/food_court_priceboard3";
+  static readonly DECO_FOOD_COURT_PRICEBOARD4 = "Tiles/Decoration/food_court_priceboard4";
+  static readonly DECO_FOOD_COURT_PRICEBOARD5 = "Tiles/Decoration/food_court_priceboard5";
+  static readonly DECO_CINEMA_SIGN = "Tiles/Decoration/cinema_sign";
+  static readonly DECO_CINEMA1 = "Tiles/Decoration/cinema1";
+  static readonly DECO_CINEMA2 = "Tiles/Decoration/cinema2";
+  static readonly OBJ_FOOD_COURT_COUNTER1 = "MapObjects/food_court_counter1";
+  static readonly OBJ_FOOD_COURT_COUNTER2 = "MapObjects/food_court_counter2";
+  static readonly OBJ_FOOD_COURT_COUNTER3 = "MapObjects/food_court_counter3";
+  static readonly OBJ_FOOD_COURT_COUNTER4 = "MapObjects/food_court_counter4";
+  static readonly OBJ_FOOD_COURT_COUNTER5 = "MapObjects/food_court_counter5";
+  static readonly OBJ_FOOD_COURT_TABLE = "MapObjects/food_court_table";
+  static readonly OBJ_FOOD_COURT_CHAIR = "MapObjects/food_court_chair";
+  static readonly OBJ_FOOD_COURT_PALM_TREE = "MapObjects/food_court_palm_tree";
+  static readonly OBJ_SUPERMARKET_CHECKOUT = "MapObjects/supermarket_checkout";
+  static readonly OBJ_TOILET = "MapObjects/toilet";
+  static readonly OBJ_CINEMA_SEAT = "MapObjects/cinema_seat";
+  static readonly OBJ_CINEMA_SCREEN = "MapObjects/cinema_screen";
+  static readonly OBJ_RAILING = "MapObjects/railing";
 
   // ── The six CHAR documents: Release 3 ──────────────────────────────────────
   //

@@ -1,8 +1,10 @@
 /**
- * `Feature.ShoppingMall` — C# `BaseTownGenerator.cs`, Release 7-3, five methods:
+* `Feature.ShoppingMall` — C# `BaseTownGenerator.cs`, Release 7-3, seven methods:
  * `MallQuadSplit` (`:1224-1248`), `MakeMallBlocks` (`:1250-1305`),
  * `MakeShoppingMall` (`:9861-9926`), `GenerateShoppingMallGroundFloor`
- * (`:9928-10176`) and `MakeMallShopDisplays` (`:10614-10706`).
+ * (`:9928-10176`), `GenerateShoppingMall_UpperLevel` (`:10178-10488`),
+ * `GenerateShoppingMall_Parking` (`:10490-10612`) and `MakeMallShopDisplays`
+ * (`:10614-10706`).
  *
  * The mall is the only generator in the C# that **replaces the block layout** rather
  * than filling a block somebody else cut, so it is the only one that is not a
@@ -110,7 +112,7 @@
  * inset on one axis only — the axis `horizontalAlleys` picks from
  * `b.Rectangle.Width >= b.Rectangle.Height`.
  *
- * ## Six `AddExit` pairs, and the two level maps are shells
+* ## Six `AddExit` pairs, and two furnished levels
  *
  * `MakeShoppingMall` links three maps: the district's own surface map (the mall's
  * ground floor), a `+1` food court / cinema / supermarket level and a `-1` car park,
@@ -119,32 +121,32 @@
  * passes `isAnAIExit: true`, so a survivor who knows the mall will use the stairs
  * rather than path around it.
  *
- * The two levels are **ported as their shells only**: the map, its seed, its name, its
- * `51x51` size, `Lighting.DARKNESS`, `IsInside`, and the wall/floor shell
- * (`:10186-10193`, `:10499-10506`). Their fit-outs — the food court, the
- * supermarket, the two cinemas at `:10194-10488`, and the parking bays, pillars,
- * railings and abandoned cars at `:10508-10608` — are **not** ported. Three reasons,
- * in the order they actually bite:
+ * Both levels are **ported whole**: the shells (`:10186-10193`, `:10499-10506`) and the
+ * fit-outs behind them — the food court, the pool, the supermarket, the two bathrooms
+ * and the two cinemas at `:10194-10488`, and the entry rooms, the two power rooms, the
+ * parking bays, the pillars, the railings and the abandoned cars at `:10508-10608`.
+ * Each method's own header carries the detail; this section only says why they were
+ * worth doing.
  *
- *  1. **The parking level cannot be ported at all in this branch.** It fills the car
- *     spaces with `m_Game.GameTiles.PARKING_ASPHALT_NS` / `_EW` (`:10574-10592`) and
- *     its car test at `:10599` compares against them, and **the port has no such tile
- *     models** — `TileID` has no `PARKING_ASPHALT_*` at all. The *images* exist
- *     (`GameImages.TILE_PARKING_ASPHALT_EW` / `_NS`, on disk, declared for world
- *     decay) but a `TileModel` is `GameTiles.ts`, which this branch does not own.
- *  2. The upper level needs ~20 more `GameImages` constants and nine more factories
- *     (`MakeObjCounter`, `MakeObjSeat`, `MakeObjCinemaScreen`, `MakeObjToilet`,
- *     `MakeObjReceptionDesk`, `MakeObjTree`, …) plus `MakeItemCookedChicken`,
- *     `MakeItemFryingPan`, `MakeItemCleaver`, `MakeItemKitchenKnife` and
- *     `MakeItemSnackBar`. It is ~300 C# lines of fit-out with no bearing on this
- *     feature being *wired*, and porting it with the parking level blocked would
- *     produce a mall whose food court is reachable and whose car park is a wall.
- *  3. The shells are honest about it: the stairs land on floor, the walls are there,
- *     and the upper level is dark, so the six exits are real, walkable and
- *     AI-usable rather than pointing at nothing.
+ * **They cost nothing under Classic, and that is structural rather than lucky.** The
+ * two levels are built by `generateShoppingMall`, whose first statement is the
+ * `Feature.ShoppingMall` gate, and `generate()` only calls it under
+ * `Parameters.generateShoppingMall` — which nothing sets, so the district's `m_DiceRoller`
+ * never spends a die on either fit-out. Neither method is a `TOWN_BUILDING_PASSES` entry
+ * and neither reads `ctx.block`, so there is no second route in. The upper level's
+ * 24-counter row alone costs 72 dice and its supermarket's 160 shelves cost 160 more.
+ *
+ * **A previous note here claimed the parking level could not be ported at all** because
+ * `GameTiles.PARKING_ASPHALT_NS` / `_EW` were "not registered models". That was wrong:
+ * they are registered at `GameTiles.ts:402-403` (`= 133` and `= 134`) over
+ * `GameImages.TILE_PARKING_ASPHALT_EW` / `_NS`, which were themselves already declared
+ * at `:210-211` for world decay — so the *images* being present was never the evidence
+ * anybody needed, and the *models* are present too. `WALL_PILLAR_CONCRETE` (`:140`) is
+ * at `:409` for the same reason. What the earlier claim got right was the conclusion it
+ * drew from the wrong premise, and that conclusion is now simply false.
  *
  * `m_Game.Session.UniqueMaps.ShoppingMall_{GroundFloor,UpperLevel,Parking}` (`:9921-9923`)
- * are **not** ported either. `ShoppingMall_GroundFloor` is an *alias* for the
+ * are **not** ported. `ShoppingMall_GroundFloor` is an *alias* for the
  * district's entry map — the very same `Map` object `district.entryMap` already points
  * at — so registering it would store a second name for a map the graph already carries,
  * and `UniqueMaps` is an inline graph class whose slots are a hand-written table
@@ -155,11 +157,12 @@
  * ## Rollers
  *
  * `ctx.roller` is the district's, which is what `MakeMallBlocks`, `MakeNarrowPark`,
- * the shop displays and the dealership all spend — the C# spends `m_DiceRoller` there
- * too. The two exceptions are both *deliberate* and both reach past it:
- * `MakeItemAlcohol` (`:7409-7410`), which rolls `m_Game.Rules`, and
- * `MakeRandomMallShopItem`'s `MakeItemBook` / `MakeItemMagazines`. See
- * {@link makeRandomMallShopItem}.
+ * the shop displays, the dealership, both levels and `MakeShopGroceryItem` all spend —
+ * the C# spends `m_DiceRoller` there too. Three exceptions, all *deliberate*, all
+ * reaching past it: `MakeItemAlcohol` (`:7409-7410`), which rolls `m_Game.Rules`;
+ * `MakeRandomMallShopItem`'s `MakeItemBook` / `MakeItemMagazines`; and the upper
+ * level's `MakeItemSnackBar`, which is the third of the three `m_Rules` factories
+ * (`BaseMapGenerator.cs:1852`). See {@link makeRandomMallShopItem}.
  */
 
 import { Item } from '@data/Item';
@@ -169,11 +172,12 @@ import type { ItemFoodModel } from '@engine/items/ItemFood';
 import { Models } from '@data/Models';
 import type { DiceRoller } from '@engine/DiceRoller';
 import { Feature, hasFeature } from '@engine/FeatureFlags';
+import { Direction } from '@engine/Direction';
 import { Point } from '@engine/Point';
 import { Rect } from '@engine/Rect';
 import { Session } from '@engine/Session';
 import { WorldTime } from '@engine/WorldTime';
-import { Barrel, DoorWindow, Car } from '@engine/mapobjects/MapObjects';
+import { Barrel, DoorWindow, Car, PowerGenerator } from '@engine/mapobjects/MapObjects';
 import { ItemEntertainment, ItemBarricadeMaterial, ItemSprayScent } from '@engine/items/ItemMisc';
 import { ItemFood } from '@engine/items/ItemFood';
 import { ItemLight } from '@engine/items/ItemLight';
@@ -194,6 +198,63 @@ import { Block } from '../TownBuilding';
 const MALL_SHELF_ODD_ROW = 1;
 /** C# `:10186` / `:10499` — the upper level and the car park are both 51x51. */
 const MALL_LEVEL_SIZE = 51;
+
+/**
+ * C# `Direction.cs:86` `COMPASS_NSEW`, Release 7-3, as `:10260` walks it: the four
+ * cardinals in the order **N, S, E, W**.
+ *
+ * **Not `Direction.COMPASS_4`.** The C# has *both* orders side by side and they
+ * differ only in the middle pair — `COMPASS_NESW` (`:81`, vanilla, "renamed to more
+ * meaningful") is `N, E, S, W`, and `COMPASS_NSEW` (`:86`, Release 7-3, added for
+ * this very loop) is `N, S, E, W`. The port's `Direction.COMPASS_4` is the
+ * *vanilla* one, so reaching for it here would silently transpose two of the four
+ * chairs around every food-court table.
+ *
+ * It happens not to matter on this layout — the twenty `tablePoints` at `:10251`
+ * are four tiles apart on both axes, so no two tables ever claim the same chair
+ * tile and no placement is declined whatever the order — and the order is still
+ * spelled out, because that is the kind of thing that stops mattering and then
+ * gets tidied.
+ */
+const FOOD_COURT_CHAIR_DIRECTIONS: readonly Direction[] = [
+  Direction.N,
+  Direction.S,
+  Direction.E,
+  Direction.W,
+];
+
+/** C# `:10213` / `:10226` — `m_DiceRoller.Roll(0, 5)`, once for the board, once for the counter. */
+const FOOD_COURT_VARIANTS = 5;
+/** C# `:10236` — `m_DiceRoller.Roll(0, 4)` over the four things a counter carries. */
+const FOOD_COURT_COUNTER_ITEMS = 4;
+/** C# `:10221` — `new Point(pt.X, pt.Y - 2)`: the price board hangs on the wall behind. */
+const FOOD_COURT_PRICEBOARD_ROWS_UP = 2;
+/** C# `:10466` — `m_DiceRoller.RollChance(20)` for the snack bar on a cinema seat. */
+const CINEMA_SEAT_SNACK_CHANCE = 20;
+/** C# `:10501` — `m_DiceRoller.RollChance(20)` for the car in a parking bay. */
+const PARKING_CAR_CHANCE = 20;
+
+/**
+ * C# `BaseMapGenerator.cs` — the five price boards of `:10215-10219`, in the C#'s switch
+ * order. The roll is `Roll(0, 5)` on the district's roller, and it is the *first* of the
+ * three the food court's twenty-four counter tiles spend each.
+ */
+const FOOD_COURT_PRICEBOARDS: readonly string[] = [
+  GameImages.DECO_FOOD_COURT_PRICEBOARD1,
+  GameImages.DECO_FOOD_COURT_PRICEBOARD2,
+  GameImages.DECO_FOOD_COURT_PRICEBOARD3,
+  GameImages.DECO_FOOD_COURT_PRICEBOARD4,
+  GameImages.DECO_FOOD_COURT_PRICEBOARD5,
+];
+
+/** C# `:10228-10232` — the five food-court counters, same roll and same order as above. */
+const FOOD_COURT_COUNTERS: readonly string[] = [
+  GameImages.OBJ_FOOD_COURT_COUNTER1,
+  GameImages.OBJ_FOOD_COURT_COUNTER2,
+  GameImages.OBJ_FOOD_COURT_COUNTER3,
+  GameImages.OBJ_FOOD_COURT_COUNTER4,
+  GameImages.OBJ_FOOD_COURT_COUNTER5,
+];
 
 // ── The C#'s shop-kind enum ──────────────────────────────────────────────────
 
@@ -490,71 +551,478 @@ export function makeShoppingMall(map: GameMap, freeBlocks: Block[], ctx: TownBui
   return mallBlock;
 }
 
-// ── The two level shells ────────────────────────────────────────────────────
+// ── The two levels ───────────────────────────────────────────────────────────
 
 /**
- * C# `BaseTownGenerator.cs:10178-10193` `GenerateShoppingMall_UpperLevel`, Release 7-3 —
- * **the first sixteen lines only.**
+ * C# `BaseTownGenerator.cs:10178-10488` `GenerateShoppingMall_UpperLevel`, Release 7-3.
+ *
+ * 311 C# lines in five regions: the shell, the **food court** (north-west 25x22), the
+ * **supermarket** (north-east 25x22), the **central row** (two public bathrooms, a
+ * seating strip and a cinema foyer) and the **cinemas** (the whole southern 21 rows,
+ * a corridor with four bins and two auditoria).
+ *
+ * ## The floor plan comment at `:10195-10199` is the map's only documentation
  *
  * ```csharp
- * Map map = new Map(seed, "Shopping Mall - Upper Level", 51, 51)
- * {
- *     Lighting = Lighting.DARKNESS,
- *     HasWaterTiles = true //the pool with plam trees...
- * };
- * DoForEachTile(map.Rect, (pt) => map.GetTileAt(pt).IsInside = true);
- * TileFill(map, m_Game.GameTiles.FLOOR_WHITE_TILE);
- * TileRectangle(map, m_Game.GameTiles.WALL_MALL, map.Rect);
+ * // Floor plan.
+ * // 2. top left: food court
+ * // 3. top right: supermarket
+ * // 4. central row
+ * // 5. bottom: cinemas
  * ```
  *
- * `hasWaterTiles` is set even though the pool that motivates it (`:10277-10278`) is
- * part of the fit-out that is **not** ported — see the module header. It is a flag the
- * AI reads when it is on fire and looking for water to put itself out in, so setting it
- * on a level with no water in it is a small lie; leaving it off is a small refusal to
- * lie. It is left **off**, and that is recorded at the call site.
+ * It numbers from 2, because the `1.` above it is "Create map", and the four labels
+ * are the regions below. Kept as written — the numbering is the C#'s and it is not a
+ * gap.
  *
- * The fit-out this would carry (`:10194-10488`, ~295 C# lines) is the food court, the
- * supermarket and two cinemas.
+ * ## The 24-counter row spends 72 district dice, and the C#'s order is the map
+ *
+ * `MapObjectFill(map, new Rectangle(1, 2, 24, 1), …)` (`:10208`) is one row of 24
+ * tiles, and each tile costs **three** `m_DiceRoller` rolls: the price board
+ * (`Roll(0, 5)`), the counter (`Roll(0, 5)`) and the item on it (`Roll(0, 4)`, the
+ * Release 7-6 addition at `:10235`). `MapObjectFill` walks `x` outer and `y` inner
+ * (`MapGenerator.cs:271-282`), so for a one-row rect the twenty-four tiles are in
+ * `x` order and the dice fall that way. The counter's *return value* is created last
+ * but placed after the whole fill's callback for that tile — the item is dropped
+ * before the counter exists on the tile, exactly as in `MakeMallShopDisplays`.
+ *
+ * The price board goes on `pt.Y - 2` (`:10221`), which is `y == 0`: the **north
+ * perimeter wall** laid down by the shell's `TileRectangle(WALL_MALL, map.Rect)`.
+ * So the row of 24 price boards is a run of wall decoration along the top of the
+ * building, and the counters are two rows below it.
+ *
+ * ## `HasWaterTiles = true` is now honest
+ *
+ * `:10189` sets it with the comment "the pool with plam trees". The pool is
+ * `FLOOR_FOOD_COURT_POOL` at `:10277-10278`, and `GameTiles.ts:301` registers that
+ * model with `isWater = true`, so the flag and the tiles agree — **and the water is a
+ * ten-tile ring rather than a twelve-tile rectangle**, because the C# uses
+ * `TileRectangle` for it. It is set from the map's own initialiser position in the C# and
+ * is set here in the same place — before the floor fill — because the pool tile is the
+ * only thing that makes it true and the reader is `CivilianAI`'s "on fire, find water"
+ * arm, which this port has not reached (`Actor.isOnFire` does not exist yet; see
+ * `Map.hasWaterTiles` and the identical assignment on the pond at
+ * `BaseTownGenerator.ts:3036`).
+ *
+ * ## The supermarket's shelf aisles are the *same* `MakeMallShopDisplays` code
+ *
+ * `:10309-10348` is a copy of `MakeMallShopDisplays` (`:10639`) with the switch
+ * collapsed to a single arm: `MakeShopGroceryItem()` on every odd row, `OBJ_SHOP_SHELF`
+ * for the display. `supermarketInsideRect` is 23 wide and 17 tall, so
+ * `horizontalAlleys` is true, `centralAlley` is `27 + 23 / 2 == 38`, and `alleysRect`
+ * is `(28, 2, 21, 17)`. The division is transposed rather than hoisted onto the
+ * existing method, for the reason {@link makeMallShopDisplays} gives: the two copies
+ * would then have to be told which one they are.
  */
 export function generateShoppingMallUpperLevel(seed: number, ctx: TownBuildingContext): GameMap {
+  //////////////////
+  // 1. Create map.
+  // 2. Floor plan.
+  //////////////////
+
   // 1. Create map.
   const map = new GameMap(seed, 'Shopping Mall - Upper Level', MALL_LEVEL_SIZE, MALL_LEVEL_SIZE);
   map.lighting = Lighting.DARKNESS;
+  map.hasWaterTiles = true; //the pool with plam trees. HasWaterTiles is used by the AI if they are on fire and looking for somewhere to extinguish themselves
   ctx.doForEachTile(map, map.rect, (pt) => {
     const tile = map.getTileAt(pt.x, pt.y);
     if (tile) tile.isInside = true;
   });
   ctx.tileFill(map, Models.tiles.get(TileID.FLOOR_WHITE_TILE)!, map.rect);
   ctx.tileRectangle(map, Models.tiles.get(TileID.WALL_MALL)!, map.rect);
-  // The fit-out ends here. `HasWaterTiles = true` (`:10189`) is *not* set: its only
-  // reason in the C# is the food court's pool, which is part of what is not ported,
-  // and a flag that claims there is water to put a burning actor out in is a lie the
-  // AI would act on. Recorded here rather than quietly omitted.
+
+  // Floor plan.
+  // 2. top left: food court
+  // 3. top right: supermarket
+  // 4. central row
+  // 5. bottom: cinemas
+
+  //////////////////////////
+  // 2. top left: food court
+  //////////////////////////
+  // zone
+  const foodCourtRect = new Rect(1, 1, 25, 22);
+  ctx.tileRectangle(map, Models.tiles.get(TileID.WALL_MALL)!, new Rect(1, 22, 4, 1)); //little piece of wall running internally
+  map.addZone(ctx.makeUniqueZone('food court', foodCourtRect));
+
+  // counters
+  ctx.mapObjectFill(map, new Rect(1, 2, 24, 1), (pt) => {
+    //place the price board on the wall behind the counter
+    addDecoration(
+      map,
+      new Point(pt.x, pt.y - FOOD_COURT_PRICEBOARD_ROWS_UP),
+      FOOD_COURT_PRICEBOARDS[ctx.roller.roll(0, FOOD_COURT_VARIANTS)]!
+    );
+
+    //select which counter we'll have
+    const counterImage = FOOD_COURT_COUNTERS[ctx.roller.roll(0, FOOD_COURT_VARIANTS)]!;
+
+    //add an item to the counter            //@@MP (Release 7-6)
+    // The third and last roll of each tile, and the drop happens *before* the counter
+    // is offered — so the four arms below are not a second pass over the row.
+    switch (ctx.roller.roll(0, FOOD_COURT_COUNTER_ITEMS)) {
+      case 0: map.dropItemAt(makeItemCookedChicken(), pt); break;
+      case 1: map.dropItemAt(makeItemFryingPan(), pt); break;
+      case 2: map.dropItemAt(makeItemCleaver(), pt); break;
+      case 3: map.dropItemAt(makeItemKitchenKnife(), pt); break;
+    }
+
+    //now place the counter
+    return makeObjCounter(counterImage);
+  });
+
+  // chairs and tables
+  const tablePoints: readonly (readonly [number, number])[] = [
+    [3, 7], [3, 11], [3, 15], [3, 19], [7, 7], [7, 11], [7, 15], [7, 19], [11, 7], [11, 19], [16, 7], [16, 19],
+    [20, 7], [20, 11], [20, 15], [20, 19], [24, 7], [24, 11], [24, 15], [24, 19],
+  ];
+  for (const [tableX, tableY] of tablePoints) {
+    const tablePT = new Point(tableX, tableY);
+    //central table with a chair each at NSEW
+    ctx.mapObjectPlace(map, tablePT.x, tablePT.y, makeObjTable(GameImages.OBJ_FOOD_COURT_TABLE));
+    for (const d of FOOD_COURT_CHAIR_DIRECTIONS) {
+      const next = d.applyTo(tablePT);
+      ctx.mapObjectPlace(map, next.x, next.y, makeObjChair(GameImages.OBJ_FOOD_COURT_CHAIR));
+    }
+  }
+
+  // pool with palm trees
+  //-outer edge
+  const poolOuter = new Rect(11, 11, 6, 5);
+  ctx.tileRectangle(map, Models.tiles.get(TileID.FLOOR_CONCRETE)!, poolOuter);
+  //-plants on corners
+  const poolPlants: readonly (readonly [number, number])[] = [[11, 11], [11, 15], [16, 11], [16, 15]];
+  for (const [plantX, plantY] of poolPlants) {
+    ctx.mapObjectPlace(map, plantX, plantY, makeObjPottedPlant(GameImages.OBJ_POTTED_PLANT));
+  }
+  //-pool
+  //
+  // **`TileRectangle`, not `TileFill`** — and that is the whole reason the two palm trees
+  // below stand on dry floor. `Rectangle(12, 12, 4, 3)` is a *perimeter*, so it lays ten
+  // water tiles and leaves `(13, 13)` and `(14, 13)` on the white tile the shell filled.
+  // The pool is therefore a one-tile-wide ring of water around a two-tile island, and the
+  // "palm tree in the middle" of `:10279` is two palm trees on that island. The C#'s.
+  const poolWater = new Rect(12, 12, 4, 3);
+  ctx.tileRectangle(map, Models.tiles.get(TileID.FLOOR_FOOD_COURT_POOL)!, poolWater);
+  //-palm tree in the middle
+  ctx.mapObjectPlace(map, 13, 13, makeObjTree(GameImages.OBJ_FOOD_COURT_PALM_TREE));
+  ctx.mapObjectPlace(map, 14, 13, makeObjTree(GameImages.OBJ_FOOD_COURT_PALM_TREE));
+
+  //bins dotted around the place
+  const foodCourtBins: readonly (readonly [number, number])[] = [
+    [1, 5], [1, 21], [10, 13], [13, 10], [14, 10], [13, 16], [14, 16], [17, 13], [13, 22], [14, 22], [25, 22],
+  ];
+  for (const [binX, binY] of foodCourtBins) {
+    ctx.mapObjectPlace(map, binX, binY, makeObjFireBarrel(GameImages.OBJ_EMPTY_BIN));
+  }
+
+  //////////////////////////
+  // 3. top right: supermarket
+  //////////////////////////
+  //walls and floor
+  const supermarketRect = new Rect(26, 1, 25, 22);
+  ctx.tileRectangle(map, Models.tiles.get(TileID.WALL_MALL)!, supermarketRect);
+  ctx.tileFill(
+    map,
+    Models.tiles.get(TileID.FLOOR_TILES)!,
+    new Rect(supermarketRect.left + 1, supermarketRect.top + 1, 23, 20)
+  );
+  map.addZone(ctx.makeUniqueZone('Supermarket', supermarketRect));
+  //entry
+  addDecoration(map, new Point(27, 22), GameImages.DECO_SHOP_GROCERY);
+  ctx.tileRectangle(map, Models.tiles.get(TileID.FLOOR_WHITE_TILE)!, new Rect(28, 22, 5, 1));
+  addDecoration(map, new Point(33, 22), GameImages.DECO_SHOP_GROCERY);
+  //shelves
+  //
+  // A transcription of `MakeMallShopDisplays`' alley walk with the switch collapsed
+  // to one arm. `supermarketInsideRect` is 23 wide and 17 tall, so `horizontalAlleys`
+  // is `true`, `centralAlley` is `27 + 23 / 2 == 38` and `alleysRect` is
+  // `FromLTRB(28, 2, 49, 19)` — 21 by 17, and **not** the supermarket rect: it is
+  // one tile in on the x axis only, because `horizontalAlleys` insets x. See the
+  // method header.
+  const supermarketInsideRect = new Rect(27, 2, 23, 17);
+  let alleysStartX = supermarketInsideRect.left;
+  let alleysStartY = supermarketInsideRect.top;
+  let alleysEndX = supermarketInsideRect.right;
+  let alleysEndY = supermarketInsideRect.bottom;
+  const horizontalAlleys = supermarketInsideRect.width >= supermarketInsideRect.height;
+  let centralAlley: number;
+
+  if (horizontalAlleys) {
+    ++alleysStartX;
+    --alleysEndX;
+    centralAlley = supermarketInsideRect.left + Math.floor(supermarketInsideRect.width / 2);
+  } else {
+    ++alleysStartY;
+    --alleysEndY;
+    centralAlley = supermarketInsideRect.top + Math.floor(supermarketInsideRect.height / 2);
+  }
+  // `Rectangle.FromLTRB(left, top, right, bottom)` - the C#'s ends are exclusive
+  // corners, not widths. **Both ends are already inset above**, which is the load-bearing
+  // half of the `++`/`--` pair: `FromLTRB(28, 2, 49, 19)` is twenty-one wide, and
+  // subtracting from the *original* right would make it twenty-two and put a seventeenth
+  // shelf column at `x == 49` against the supermarket's east wall.
+  const alleysRect = new Rect(alleysStartX, alleysStartY, alleysEndX - alleysStartX, alleysEndY - alleysStartY);
+
+  ctx.mapObjectFill(map, alleysRect, (pt) => {
+    // Only the horizontal arm is reachable (`23 >= 17` is fixed at these literals),
+    // and the vertical one is transcribed rather than dropped so that the copy stays
+    // a copy of the C# and not a second, differently-shaped thing.
+    let addShelf: boolean;
+
+    if (horizontalAlleys) addShelf = (pt.y - alleysRect.top) % 2 === MALL_SHELF_ODD_ROW && pt.x !== centralAlley;
+    else addShelf = (pt.x - alleysRect.left) % 2 === MALL_SHELF_ODD_ROW && pt.y !== centralAlley;
+
+    if (!addShelf) return null;
+
+    // **The item is dropped before the shelf is offered, and the offer is declined
+    // on a taken tile** (`MapObjectFill` checks after the callback), so a grocery
+    // shelf that could not be placed still leaves its item on the floor. The same
+    // property the module header records for the ground floor's displays.
+    map.dropItemAt(makeShopGroceryItem(ctx), pt);
+    return makeObjShelf(GameImages.OBJ_SHOP_SHELF);
+  });
+
+  //checkouts
+  //
+  // Eight, every other tile from `x+34` to `x+48` on `y == 20` — a gap of two between
+  // each, so the queue runs along the bottom of the store rather than against it.
+  const checkoutXs: readonly number[] = [34, 36, 38, 40, 42, 44, 46, 48];
+  for (const checkoutX of checkoutXs) {
+    ctx.mapObjectPlace(map, checkoutX, 20, makeObjCheckout(GameImages.OBJ_SUPERMARKET_CHECKOUT));
+  }
+
+  ////////////////////////////
+  // 4. central row
+  ////////////////////////////
+  //bathrooms
+  //
+  // **Two cubicles stacked at `x` 1-2 with the doors in the `x == 3` column, and the
+  // wall between them is drawn *over* the north cubicle's door tile.** `:10366` sets
+  // `(3, 24)` to `WALL_MALL` and `:10367` lays `Rectangle(1, 25, 3, 2)` — the two rows
+  // *below* it — so the sequence is: south door, north fixtures, north door column
+  // turned to wall, the two-row divider, south fixtures, south door. Kept in that
+  // order because the order is what puts `(3, 24)` and `(3, 27)` into the wall and
+  // leaves `(3, 25)` and `(3, 26)` as the cubicle mouths.
+  ctx.mapObjectPlace(map, 3, 23, ctx.makeObjWoodenDoor());
+  ctx.mapObjectPlace(map, 1, 24, makeObjToilet(GameImages.OBJ_TOILET));
+  ctx.mapObjectPlace(map, 2, 24, makeObjBathroomBasin(GameImages.OBJ_BATHROOM_BASIN));
+  map.setTileModelAt(3, 24, Models.tiles.get(TileID.WALL_MALL)!);
+  ctx.tileRectangle(map, Models.tiles.get(TileID.WALL_MALL)!, new Rect(1, 25, 3, 2)); //wall between bathrooms
+  map.setTileModelAt(3, 27, Models.tiles.get(TileID.WALL_MALL)!);
+  ctx.mapObjectPlace(map, 1, 27, makeObjToilet(GameImages.OBJ_TOILET));
+  ctx.mapObjectPlace(map, 2, 27, makeObjBathroomBasin(GameImages.OBJ_BATHROOM_BASIN));
+  ctx.mapObjectPlace(map, 3, 28, ctx.makeObjWoodenDoor());
+
+  //plants and seating
+  //
+  // One row at `y == 28`, transcribed as `[x, sprite]` because the object differs
+  // every few tiles and the C# writes one call per line in that order.
+  const centralRow: readonly (readonly [number, MapObject])[] = [
+    [6, makeObjFireBarrel(GameImages.OBJ_EMPTY_BIN)],
+    [7, makeObjPottedPlant(GameImages.OBJ_POTTED_PLANT)],
+    [8, makeObjCouch(GameImages.OBJ_COUCH)],
+    [9, makeObjCouch(GameImages.OBJ_COUCH)],
+    [10, makeObjCouch(GameImages.OBJ_COUCH)],
+    [11, makeObjCouch(GameImages.OBJ_COUCH)],
+    [12, makeObjCouch(GameImages.OBJ_COUCH)],
+    [13, makeObjPottedPlant(GameImages.OBJ_POTTED_PLANT)],
+    [14, makeObjFireBarrel(GameImages.OBJ_EMPTY_BIN)],
+    [23, makeObjFireBarrel(GameImages.OBJ_EMPTY_BIN)],
+    [24, makeObjPottedPlant(GameImages.OBJ_POTTED_PLANT)],
+    [25, makeObjCouch(GameImages.OBJ_COUCH)],
+    [26, makeObjCouch(GameImages.OBJ_COUCH)],
+    [27, makeObjCouch(GameImages.OBJ_COUCH)],
+    [28, makeObjCouch(GameImages.OBJ_COUCH)],
+    [29, makeObjCouch(GameImages.OBJ_COUCH)],
+    [30, makeObjPottedPlant(GameImages.OBJ_POTTED_PLANT)],
+    [31, makeObjFireBarrel(GameImages.OBJ_EMPTY_BIN)],
+  ];
+  for (const [furnitureX, furniture] of centralRow) {
+    ctx.mapObjectPlace(map, furnitureX, 28, furniture);
+  }
+
+  //cinema entry
+  //
+  // The waiting area: two benches either side of a bin on each of `y == 23` and
+  // `y == 28`, and nothing at all between `x` 15 and 22 — that gap is the way in
+  // from the food court and the supermarket.
+  const cinemaWaiting: readonly (readonly [number, number, MapObject])[] = [
+    [38, 23, makeObjFireBarrel(GameImages.OBJ_EMPTY_BIN)],
+    [39, 23, makeObjBench(GameImages.OBJ_BENCH)],
+    [40, 23, makeObjBench(GameImages.OBJ_BENCH)],
+    [39, 28, makeObjBench(GameImages.OBJ_BENCH)],
+    [40, 28, makeObjBench(GameImages.OBJ_BENCH)],
+    [38, 28, makeObjFireBarrel(GameImages.OBJ_EMPTY_BIN)],
+  ];
+  for (const [waitX, waitY, waitObj] of cinemaWaiting) {
+    ctx.mapObjectPlace(map, waitX, waitY, waitObj);
+  }
+
+  //cinema foyer
+  //
+  // **Both cinema signs ride a `WALL_MALL` tile**, which is not an accident: `:10402` and
+  // `:10404` lay two two-tile wall runs at `x == 41`, leaving `y` 25 and 26 as the two-tile
+  // entry, and the signs go on the inner tile of each run. Transcribed in the C#'s order,
+  // which puts the wall down before the decoration in both cases.
+  ctx.tileRectangle(map, Models.tiles.get(TileID.WALL_MALL)!, new Rect(41, 23, 1, 2)); //north side of the entry
+  addDecoration(map, new Point(41, 24), GameImages.DECO_CINEMA_SIGN);
+  ctx.tileRectangle(map, Models.tiles.get(TileID.WALL_MALL)!, new Rect(41, 27, 1, 2)); //south side of the entry
+  addDecoration(map, new Point(41, 27), GameImages.DECO_CINEMA_SIGN);
+  const cinemaFoyer = new Rect(42, 23, 8, 6);
+  ctx.tileFill(map, Models.tiles.get(TileID.FLOOR_RED_CARPET)!, cinemaFoyer);
+  // **Six reception desks in one column at `x == 48`, against the foyer's east wall**
+  // — and `OBJ_BANK_TELLER`, not a cinema sprite: the C# reuses the bank counter.
+  for (let deskY = 23; deskY <= 28; deskY++) {
+    ctx.mapObjectPlace(map, 48, deskY, makeObjReceptionDesk(GameImages.OBJ_BANK_TELLER));
+  }
+  const foyerNorthSide: readonly number[] = [42, 43, 44, 45];
+  for (const couchX of foyerNorthSide) {
+    ctx.mapObjectPlace(map, couchX, 23, makeObjCouch(GameImages.OBJ_COUCH)); //north side of the entry
+  }
+  ctx.mapObjectPlace(map, 46, 29, makeObjDrawer(GameImages.OBJ_LECTERN)); //ticket check
+  const foyerSouthSide: readonly number[] = [42, 43, 44];
+  for (const couchX of foyerSouthSide) {
+    ctx.mapObjectPlace(map, couchX, 28, makeObjCouch(GameImages.OBJ_COUCH)); //south side of the entry
+  }
+
+  //////////////////
+  // 5. bottom: cinemas
+  //////////////////
+  //-walls
+  //
+  // The corridor wall runs the full width at `y == 29`, and the only hole in it is
+  // the three red-carpet tiles at `x` 45-47 — directly under the foyer's south side,
+  // so the foyer's six desks and seven couches all look onto a three-tile mouth into
+  // the corridor, **one tile of which the ticket drawer then stands in.**
+  ctx.tileRectangle(map, Models.tiles.get(TileID.WALL_MALL)!, new Rect(1, 29, 50, 1)); //wall ecapsulating corridor
+  ctx.tileRectangle(map, Models.tiles.get(TileID.FLOOR_RED_CARPET)!, new Rect(45, 29, 3, 1)); //entry to corridor
+  ctx.tileFill(map, Models.tiles.get(TileID.FLOOR_RED_CARPET)!, new Rect(1, 30, 49, 20)); //corridor and cinemas
+  ctx.tileRectangle(map, Models.tiles.get(TileID.WALL_RED_CURTAINS)!, new Rect(1, 30, 1, 21)); //left wall
+  ctx.tileRectangle(map, Models.tiles.get(TileID.WALL_RED_CURTAINS)!, new Rect(1, 50, 50, 1)); //bottom wall
+  ctx.tileRectangle(map, Models.tiles.get(TileID.WALL_RED_CURTAINS)!, new Rect(50, 30, 1, 21)); //right wall
+  ctx.tileRectangle(map, Models.tiles.get(TileID.WALL_RED_CURTAINS)!, new Rect(1, 32, 50, 1)); //top wall
+  ctx.tileRectangle(map, Models.tiles.get(TileID.WALL_RED_CURTAINS)!, new Rect(26, 32, 1, 19)); //cinema dividing wall
+  //-bins in corridor
+  const corridorBins: readonly (readonly [number, number])[] = [[2, 30], [2, 31], [49, 30], [49, 31]];
+  for (const [binX, binY] of corridorBins) {
+    ctx.mapObjectPlace(map, binX, binY, makeObjFireBarrel(GameImages.OBJ_EMPTY_BIN));
+  }
+  //-doors and signs
+  //
+  // A real `Dictionary<int, int>` here, not one of the `KeyValuePairWithDuplicates`
+  // lists — eight distinct `x` values, so a dictionary would not have thrown. Written
+  // as pairs anyway, because `foreach` over that dictionary is insertion order in
+  // practice and the order is when the doors and then the signs land.
+  const cinemaDoorPoints: readonly (readonly [number, number])[] = [
+    [3, 32], [4, 32], [23, 32], [24, 32], [28, 32], [29, 32], [47, 32], [48, 32],
+  ];
+  for (const [doorX, doorY] of cinemaDoorPoints) {
+    map.setTileModelAt(doorX, doorY, Models.tiles.get(TileID.FLOOR_RED_CARPET)!);
+    ctx.mapObjectPlace(map, doorX, doorY, ctx.makeObjWoodenDoor());
+  }
+  // **CINEMA2 on the left (`x` 5 and 22), CINEMA1 on the right (`x` 30 and 46)** —
+  // and cinema 1 is the one at `x` 28..48, which the seat rows below also call the
+  // smaller. So the C#'s numbering is the *west* auditorium's `2`.
+  addDecoration(map, new Point(5, 32), GameImages.DECO_CINEMA2);
+  addDecoration(map, new Point(22, 32), GameImages.DECO_CINEMA2);
+  addDecoration(map, new Point(30, 32), GameImages.DECO_CINEMA1);
+  addDecoration(map, new Point(46, 32), GameImages.DECO_CINEMA1);
+  //-seats
+  const rowStarts: readonly (readonly [number, number])[] = [
+    [4, 34], [4, 36], [4, 38], [4, 40], [4, 42], [4, 44], [29, 34], [29, 36], [29, 38], [29, 40], [29, 42], [29, 44],
+  ];
+  for (const [rowStartX, rowStartY] of rowStarts) {
+    let rowWidth = 20;
+    if (rowStartX === 29) rowWidth = 19; //cinema1, slightly smaller
+
+    ctx.mapObjectFill(map, new Rect(rowStartX, rowStartY, rowWidth, 1), (pt) => {
+      // `//@@MP (Release 7-6)` — one seat in five has something on it, and the item is
+      // dropped whether or not the seat itself goes down.
+      if (ctx.roller.rollChance(CINEMA_SEAT_SNACK_CHANCE)) map.dropItemAt(makeItemSnackBar(ctx.game.rules), pt);
+      return makeObjSeat(GameImages.OBJ_CINEMA_SEAT);
+    });
+  }
+  //-screens
+  //
+  // Two `Rectangle`s one tile high at `y == 49`, and the numbering agrees with the
+  // signs above: **cinema1 is the east auditorium and cinema2 the west.** What is *not*
+  // symmetric is the width — the east one gets a 21-tile screen and 19-seat rows and
+  // the west one gets a 22-tile screen and 20-seat rows, so cinema1 is the smaller of
+  // the pair on both counts, exactly as `//cinema1, slightly smaller` says at `:10460`.
+  // They do not meet either: `x` 25, `x == 26` and `x` 27 are curtain, so the two
+  // screens are separated by the dividing wall and its two shoulders.
+  const cinema1Screen = new Rect(28, 49, 21, 1);
+  ctx.mapObjectFill(map, cinema1Screen, () => makeObjCinemaScreen(GameImages.OBJ_CINEMA_SCREEN));
+  const cinema2Screen = new Rect(3, 49, 22, 1);
+  ctx.mapObjectFill(map, cinema2Screen, () => makeObjCinemaScreen(GameImages.OBJ_CINEMA_SCREEN));
+
+  // done.
   return map;
 }
 
 /**
- * C# `BaseTownGenerator.cs:10490-10506` `GenerateShoppingMall_Parking`, Release 7-3 —
- * **the first seventeen lines only.**
+ * C# `BaseTownGenerator.cs:10490-10612` `GenerateShoppingMall_Parking`, Release 7-3.
  *
- * ```csharp
- * Map map = new Map(seed, "Shopping Mall - Parking", 51, 51) { Lighting = Lighting.DARKNESS };
- * DoForEachTile(map.Rect, (pt) => map.GetTileAt(pt).IsInside = true);
- * TileFill(map, m_Game.GameTiles.FLOOR_ASPHALT); //for the car spaces area
- * TileFill(map, m_Game.GameTiles.FLOOR_WALKWAY, new Rectangle(1,1,5,50));
- * TileRectangle(map, m_Game.GameTiles.WALL_CONCRETE, map.Rect);
- * ```
+ * 123 C# lines in three steps: the shell, the **entry and power rooms** (a five-wide
+ * walkway strip down the west side, split by a concrete wall at `x == 4` with six
+ * openings) and the **parking** (three edge rows and sixteen twenty-one-tile columns,
+ * with a pillar or a railing between every pair of bays).
  *
- * The staircase column this leaves is what makes `parkingStairs1` / `parkingStairs2` at
- * `(1, 25)` and `(1, 26)` stand on walkway, which is why the shells are worth porting
- * rather than being stubs.
+ * ## `PARKING_ASPHALT_EW` / `_NS` are real tile models and always were
  *
- * The rest (`:10508-10608`) is the entry and power rooms, the parking bays, the
- * concrete pillars, the iron railings and the abandoned cars, and it is blocked on
- * `PARKING_ASPHALT_NS` / `_EW` **not existing as tile models in the port** — see the
- * module header.
+ * The tile at `:10586` is set twenty-one times per column and the abandoned-car test
+ * at `:10599` compares `Tile.Model` against both of them, so the whole step depends
+ * on those two models being registered. They are: `GameTiles.ts:402-403` registers
+ * `PARKING_ASPHALT_EW` (`= 133`) and `PARKING_ASPHALT_NS` (`= 134`) as grey, walkable,
+ * inside models over `GameImages.TILE_PARKING_ASPHALT_EW` / `_NS`, and
+ * `WALL_PILLAR_CONCRETE` (`:140`) at `:409`. **The images were already declared for
+ * world decay** (`:210-211`, `:217`); only the models were the open question, and they
+ * are there.
+ *
+ * ## The orientation is the C#'s, and it is the whole trick
+ *
+ * * **The edges are `NS`, the bays are `EW`.** `:10574` lays the top and bottom rows
+ *   `PARKING_ASPHALT_NS` and `:10575` lays the right-hand column `PARKING_ASPHALT_EW`,
+ *   while every one of the sixteen columns' own bay tiles is `EW` (`:10586`). A car
+ *   parked on a bay tile is therefore drawn east-west and a car on the top or bottom
+ *   row north-south, which is what the sprites encode and why both models appear in the
+ *   abandoned-car test rather than one.
+ * * **The right-hand column is `EW` and the other two are `NS`** even though all three
+ *   are edge runs, and nothing in the geometry requires it. Transcribed.
+ *
+ * ## The power rooms are ringed, not filled, and that is `CountAdjWalls`' eight directions
+ *
+ * `:10543-10550` and `:10561-10568` place a generator on every tile of the two power
+ * rooms with `CountAdjWalls(map, pt) >= 3`. `CountAdjWalls` is `CountForEachAdjacent`
+ * over **`Direction.COMPASS`** — all *eight* neighbours, diagonals included
+ * (`MapGenerator.cs:405-420`) — so "three walls" counts corners, and each room gets an
+ * **L of twenty-one generators**: both side columns for all ten rows, plus the single
+ * far-end tile between them. The near-end tile of that column (`(2, 1)` and `(2, 49)`)
+ * is the one that reaches three; `(2, 2)` and `(2, 48)` reach two and are left as the
+ * doorway in.
+ *
+ * Worth stating because a reader who takes `COMPASS_4` gets a different map: on the four
+ * cardinals alone the same test places **no generator at all**, since the room is three
+ * wide and ten tall and no tile has three cardinal walls.
+ *
+ * ## Six openings, and the pillar/railing alternation
+ *
+ * `:10512-10517` punches `x == 4` at `y` 15-16, 25-26 and 35-36 — three doorways, each
+ * two tiles, and one of them is at exactly the stair pair `(1, 25)` / `(1, 26)` the
+ * ground floor's `AddExit` lands on. Inside each column loop (`:10584-10592`) the
+ * divider at `x + 1` is a `WALL_PILLAR_CONCRETE` tile when `i % 5 == 0` and an
+ * `OBJ_RAILING` map object otherwise, so a bay pair is five wide: a pillar at the head
+ * of every run of five and four railings, and the pillar *overwrites the tile* rather
+ * than standing on it.
  */
 export function generateShoppingMallParking(seed: number, ctx: TownBuildingContext): GameMap {
+  //////////////////
+  // 1. Create map.
+  // 2. Entry and power rooms.
+  // 3. Parking.
+  //////////////////
+
   // 1. Create map.
   const map = new GameMap(seed, 'Shopping Mall - Parking', MALL_LEVEL_SIZE, MALL_LEVEL_SIZE);
   map.lighting = Lighting.DARKNESS;
@@ -565,6 +1033,133 @@ export function generateShoppingMallParking(seed: number, ctx: TownBuildingConte
   ctx.tileFill(map, Models.tiles.get(TileID.FLOOR_ASPHALT)!, map.rect); //for the car spaces area
   ctx.tileFill(map, Models.tiles.get(TileID.FLOOR_WALKWAY)!, new Rect(1, 1, 5, 50)); //for the entry and power rooms area
   ctx.tileRectangle(map, Models.tiles.get(TileID.WALL_CONCRETE)!, map.rect);
+
+  /////////////////////////
+  // 2. Entry and power rooms.
+  /////////////////////////
+  ctx.tileRectangle(map, Models.tiles.get(TileID.WALL_CONCRETE)!, new Rect(4, 1, 1, 49)); //wall separating stairs and power rooms from car spaces
+  //-openings from entry to parking area
+  const parkingOpenings: readonly (readonly [number, number])[] = [
+    [4, 15], [4, 16], [4, 25], [4, 26], [4, 35], [4, 36],
+  ];
+  for (const [openingX, openingY] of parkingOpenings) {
+    map.setTileModelAt(openingX, openingY, Models.tiles.get(TileID.FLOOR_WALKWAY)!);
+  }
+  //-bins, plants and benches
+  //
+  // One run down the `x == 1` column, `y` 16-22 and `y` 29-35, so the walkway strip
+  // gets the same bin/bench alternation as the food court and nothing at all between
+  // the two runs — which is where the stair column at `y` 25-26 lands.
+  const parkingFurniture: readonly (readonly [number, MapObject])[] = [
+    [16, makeObjFireBarrel(GameImages.OBJ_EMPTY_BIN)],
+    [17, makeObjPottedPlant(GameImages.OBJ_POTTED_PLANT)],
+    [18, makeObjBench(GameImages.OBJ_BENCH)],
+    [19, makeObjBench(GameImages.OBJ_BENCH)],
+    [20, makeObjBench(GameImages.OBJ_BENCH)],
+    [21, makeObjPottedPlant(GameImages.OBJ_POTTED_PLANT)],
+    [22, makeObjFireBarrel(GameImages.OBJ_EMPTY_BIN)],
+    [29, makeObjFireBarrel(GameImages.OBJ_EMPTY_BIN)],
+    [30, makeObjPottedPlant(GameImages.OBJ_POTTED_PLANT)],
+    [31, makeObjBench(GameImages.OBJ_BENCH)],
+    [32, makeObjBench(GameImages.OBJ_BENCH)],
+    [33, makeObjBench(GameImages.OBJ_BENCH)],
+    [34, makeObjPottedPlant(GameImages.OBJ_POTTED_PLANT)],
+    [35, makeObjFireBarrel(GameImages.OBJ_EMPTY_BIN)],
+  ];
+  for (const [furnitureY, furniture] of parkingFurniture) {
+    ctx.mapObjectPlace(map, 1, furnitureY, furniture);
+  }
+
+  //-power room north.
+  //--door
+  map.setTileModelAt(1, 11, Models.tiles.get(TileID.WALL_CONCRETE)!);
+  ctx.mapObjectPlace(map, 2, 11, ctx.makeObjIronDoor());
+  map.setTileModelAt(3, 11, Models.tiles.get(TileID.WALL_CONCRETE)!);
+  //--zone
+  const powerRoomNorth = new Rect(1, 1, 3, 10);
+  map.addZone(ctx.makeUniqueZone('power room', powerRoomNorth));
+  //--power generators.
+  //
+  // **An L of twenty-one, not a full grid and not an empty room** — see the method header
+  // for why the diagonals count. The walk is transcribed whole, gate included, because the
+  // room's shape is a fact about the *walls* and not about how the generator placed things.
+  ctx.doForEachTile(map, powerRoomNorth, (pt) => {
+    if (ctx.countAdjWalls(map, pt.x, pt.y) < 3) return;
+    ctx.mapObjectPlace(map, pt.x, pt.y, makeObjPowerGenerator(GameImages.OBJ_POWERGEN_OFF, GameImages.OBJ_POWERGEN_ON));
+  });
+
+  //-power room south.
+  //--door
+  map.setTileModelAt(1, 39, Models.tiles.get(TileID.WALL_CONCRETE)!);
+  ctx.mapObjectPlace(map, 2, 39, ctx.makeObjIronDoor());
+  map.setTileModelAt(3, 39, Models.tiles.get(TileID.WALL_CONCRETE)!);
+  //--zone
+  const powerRoomSouth = new Rect(1, 40, 3, 10);
+  map.addZone(ctx.makeUniqueZone('power room', powerRoomSouth));
+  //--power generators.
+  ctx.doForEachTile(map, powerRoomSouth, (pt) => {
+    if (ctx.countAdjWalls(map, pt.x, pt.y) < 3) return;
+    ctx.mapObjectPlace(map, pt.x, pt.y, makeObjPowerGenerator(GameImages.OBJ_POWERGEN_OFF, GameImages.OBJ_POWERGEN_ON));
+  });
+
+  ////////////////
+  // 3. Parking.
+  ////////////////
+  //-edges
+  ctx.tileRectangle(map, Models.tiles.get(TileID.PARKING_ASPHALT_NS)!, new Rect(6, 1, 42, 1)); //top row
+  ctx.tileRectangle(map, Models.tiles.get(TileID.PARKING_ASPHALT_EW)!, new Rect(49, 2, 1, 47)); //right side column
+  ctx.tileRectangle(map, Models.tiles.get(TileID.PARKING_ASPHALT_NS)!, new Rect(6, 49, 42, 1)); //bottom row
+  //-central columns
+  //
+  // Sixteen columns of *two* bay strips (`x` and `x + 2`) with a divider at `x + 1`,
+  // five tiles apart along `x` and split into a northern run and a southern one by the
+  // open middle of the car park (`y` 25 and 26, which is where the third doorway is).
+  // The two runs start at `y == 4` and `y == 27` and are both 21 long, so the last bay
+  // of each is at `y == 24` and `y == 47`.
+  const parkingColumns: readonly (readonly [number, number])[] = [
+    //--north of dividing lanes
+    [9, 4], [14, 4], [19, 4], [24, 4], [29, 4], [34, 4], [39, 4], [44, 4],
+    //--south of dividing lanes
+    [9, 27], [14, 27], [19, 27], [24, 27], [29, 27], [34, 27], [39, 27], [44, 27],
+  ];
+  for (const [columnX, columnY] of parkingColumns) {
+    for (let i = 0; i <= 20; ++i) {
+      map.setTileModelAt(columnX, columnY + i, Models.tiles.get(TileID.PARKING_ASPHALT_EW)!); //parking spot
+      // The divider is a *tile* every fifth step and a *map object* otherwise, so the
+      // pillars are part of the floor and the railings stand on the asphalt.
+      if (i % 5 === 0) {
+        map.setTileModelAt(columnX + 1, columnY + i, Models.tiles.get(TileID.WALL_PILLAR_CONCRETE)!); //load-bearing pillar
+      } else {
+        //railing
+        ctx.mapObjectPlace(map, columnX + 1, columnY + i, makeObjIronRailing(GameImages.OBJ_RAILING));
+      }
+      map.setTileModelAt(columnX + 2, columnY + i, Models.tiles.get(TileID.PARKING_ASPHALT_EW)!); //parking spot
+    }
+  }
+
+  //-cars
+  //
+  // One 20%-per-bay roll, and the *only* test is the tile model: anything that is not
+  // `PARKING_ASPHALT_EW` or `PARKING_ASPHALT_NS` is skipped without spending a die.
+  // The rect is `(6, 2, 44, 48)`, so it covers the bottom `NS` row at `y == 49` and the
+  // right-hand `EW` column at `x == 49` but **stops one row short of the top row at
+  // `y == 1`** — so the top row is a real bay strip that the generator lays down and then
+  // never rolls for, and cars appear on the other two edges and on the sixteen columns'
+  // own bays. The C#'s rect, kept.
+  const parkingAsphaltEW = Models.tiles.get(TileID.PARKING_ASPHALT_EW)!;
+  const parkingAsphaltNS = Models.tiles.get(TileID.PARKING_ASPHALT_NS)!;
+  ctx.mapObjectFill(map, new Rect(6, 2, 44, 48), (pt) => {
+    const model = map.getTileAt(pt.x, pt.y)?.model;
+    if (model === parkingAsphaltEW || model === parkingAsphaltNS) {
+      // Two district dice per car that lands: the 20% and then `MakeObjAbandonedCar`'s
+      // own `Roll(0, 4)` for the sprite and `Roll(30, 98)` for the fuel.
+      if (ctx.roller.rollChance(PARKING_CAR_CHANCE)) return makeObjAbandonedCar(ctx.roller);
+    }
+
+    return null;
+  });
+
+  // done.
   return map;
 }
 
@@ -1611,6 +2206,168 @@ function makeObjDisplayCar(roller: DiceRoller): Car {
   return car;
 }
 
+/**
+ * C# `BaseMapGenerator.cs:590-593` `MakeObjAbandonedCar(DiceRoller)` — the car park's
+ * reader of the same `CARS` table, Release 7-3.
+ *
+ * `MakeObjCar(..., MapObject.Break.UNBREAKABLE, roller.Roll(30, 98))` at `:565-578`, so
+ * the flag block above is the C#'s except for two things this factory adds:
+ *
+ * - **`fuelUnits` is `roller.Roll(30, 98)`, not zero.** A display car gets an empty tank
+ *   (`MakeObjDisplayCar` passes `0`) and an abandoned one gets 30-98 units, so a car park
+ *   is worth siphoning and a dealership is not. `Car.MAX_FUEL_UNITS` is 99, so the roll
+ *   can never quite fill one.
+ * - **Two more dice per car** — the sprite's `Roll(0, 4)` and the fuel — on top of the
+ *   20% that asked for the car at all.
+ *
+ * **The C#'s `CARS` table is re-spelled here rather than shared with
+ * {@link makeObjDisplayCar}.** That is the same four ids and the same two-line read, and
+ * a shared `const` would have been the tidier answer; the existing factory's header
+ * already records it as "the mall's only reader of the `CARS` table as a *whole car*",
+ * which stops being true either way it is spelled.
+ */
+function makeObjAbandonedCar(roller: DiceRoller): Car {
+  const CARS = [GameImages.OBJ_CAR1, GameImages.OBJ_CAR2, GameImages.OBJ_CAR3, GameImages.OBJ_CAR4];
+  const car = new Car('abandoned car', CARS[roller.roll(0, CARS.length)]!, MapObjectBreak.UNBREAKABLE, roller.roll(30, 98));
+  car.breakState = MapObjectBreak.UNBREAKABLE;
+  car.isMaterialTransparent = true;
+  car.jumpLevel = 1;
+  car.isMovable = true;
+  car.weight = 100;
+  car.standOnFovBonus = true;
+  return car;
+}
+
+/**
+ * C# `BaseMapGenerator.cs:956-965` `MakeObjCounter`, Release 5-3.
+ *
+ * The food court's twenty-four counters. Unusually for this file's furniture it is
+ * **neither movable nor a container** and it has no weight of its own beyond the
+ * default: it is a built-in fixture, four times a checkout's hit points, jumpable, and
+ * standing on it widens your field of view — which is the only reason a player would
+ * ever step on a counter.
+ */
+function makeObjCounter(counterImageId: string): MapObject {
+  const counter = new MapObject('counter', counterImageId, MapObjectBreak.BREAKABLE, MapObjectFire.BURNABLE, DoorWindow.BASE_HITPOINTS * 4);
+  counter.jumpLevel = 1;
+  counter.isMaterialTransparent = true;
+  counter.givesWood = true;
+  counter.standOnFovBonus = true;
+  return counter;
+}
+
+/**
+ * C# `BaseMapGenerator.cs:1238-1247` `MakeObjSeat`.
+ *
+ * A cinema seat: breakable and **burnable**, twice a base hit point, and **not**
+ * movable — you cannot carry a cinema seat out of a cinema, which is what separates it
+ * from {@link makeObjChair} next door in the food court.
+ */
+function makeObjSeat(seatImageId: string): MapObject {
+  const seat = new MapObject('seat', seatImageId, MapObjectBreak.BREAKABLE, MapObjectFire.BURNABLE, DoorWindow.BASE_HITPOINTS * 2);
+  seat.isMaterialTransparent = true;
+  seat.givesWood = true;
+  seat.standOnFovBonus = true;
+  seat.jumpLevel = 1;
+  return seat;
+}
+
+/**
+ * C# `BaseMapGenerator.cs:1249-1252` `MakeObjCinemaScreen`.
+ *
+ * **A single base hit point and nothing else** — no transparency, no wood, no jump
+ * level, no stand-on bonus. The one object in this file with no flags at all, and the
+ * C#'s own way of saying a screen is scenery: 43 of them get laid down in two runs and
+ * none of them can be walked through, sat on, or used as fuel.
+ */
+function makeObjCinemaScreen(screenImageId: string): MapObject {
+  return new MapObject('screen', screenImageId, MapObjectBreak.BREAKABLE, MapObjectFire.BURNABLE, DoorWindow.BASE_HITPOINTS);
+}
+
+/** C# `BaseMapGenerator.cs:1217-1225` `MakeObjToilet` — jumpable, and standing on it gives FOV. */
+function makeObjToilet(toiletImageId: string): MapObject {
+  const toilet = new MapObject('toilet', toiletImageId, MapObjectBreak.BREAKABLE, MapObjectFire.UNINFLAMMABLE, DoorWindow.BASE_HITPOINTS);
+  toilet.isMaterialTransparent = true;
+  toilet.jumpLevel = 1;
+  toilet.standOnFovBonus = true;
+  return toilet;
+}
+
+/**
+ * C# `BaseMapGenerator.cs:1038-1047` `MakeObjReceptionDesk`, Release 5-3's `IsContainer`.
+ *
+ * The cinema foyer hands this factory the **bank teller's sprite** (`:10408-10413`) — six
+ * of them in a column — so the name the player is told is "a reception desk" and the
+ * drawing is a bank counter. The C# does the same thing to the mall's registers, which
+ * take `OBJ_CLINIC_DESK`.
+ */
+function makeObjReceptionDesk(receptionDeskImageId: string): MapObject {
+  const desk = new MapObject('reception desk', receptionDeskImageId);
+  desk.isContainer = true; //@@MP (Release 5-3)
+  desk.jumpLevel = 1;
+  desk.isMaterialTransparent = true;
+  desk.standOnFovBonus = true;
+  return desk;
+}
+
+/**
+ * C# `BaseMapGenerator.cs:668-679` `MakeObjDrawer`.
+ *
+ * The one object in the cinema foyer that is not a couch: the ticket check at `(46, 29)`,
+ * drawn with the church's `OBJ_LECTERN`. Six kilos, movable, container, jumpable — a
+ * drawer you can pick up and empty, unlike the six reception desks either side of it.
+ */
+function makeObjDrawer(drawerImageId: string): MapObject {
+  const drawer = new MapObject('drawer', drawerImageId, MapObjectBreak.BREAKABLE, MapObjectFire.BURNABLE, DoorWindow.BASE_HITPOINTS);
+  drawer.isMaterialTransparent = true;
+  drawer.jumpLevel = 1;
+  drawer.isContainer = true;
+  drawer.givesWood = true;
+  drawer.isMovable = true;
+  drawer.weight = 6;
+  return drawer;
+}
+
+/**
+ * C# `BaseMapGenerator.cs:477-486` `MakeObjIronRailing`, Release 7-6.
+ *
+ * The default `MapObject(name, imageID)` constructor, so **`UNBREAKABLE` with zero hit
+ * points** — a railing you can neither break nor burn, only vault — plus transparency,
+ * a jump level, `IsAn` (the indefinite article: "an iron railing") and `IsMetal`.
+ *
+ * `isMetal` *is* a field on the port's `MapObject` (`MapObject.ts:140`, added for the
+ * fuel station's pumps after {@link makeObjHouseholdMachine} was written and documented
+ * as not having one), so it is set here and is genuinely absent from that older factory.
+ * The two disagree inside one file now, and the disagreement is recorded at both ends
+ * rather than resolved: the older one is the ground floor's own shelf of electronics,
+ * the newer one is this file's.
+ */
+function makeObjIronRailing(fenceImageId: string): MapObject {
+  const railing = new MapObject('iron railing', fenceImageId);
+  railing.isMaterialTransparent = true;
+  railing.jumpLevel = 1;
+  railing.isAn = true;
+  railing.isMetal = true;
+  return railing;
+}
+
+/**
+ * C# `BaseMapGenerator.cs:789-795` `MakeObjPowerGenerator`, Release 5-7 — the whole of it
+ * is one `IsMetal` on a `StateMapObject`.
+ *
+ * The car park's two power rooms get twenty-one of these each (see the
+ * `generateShoppingMallParking` header), which makes this the third call site in the port
+ * after the clinic's and the farm shed's. The three existing building copies
+ * (`makeClinicBuilding.ts:462`, `makeFarmBuilding.ts:920`, `makeFireStationBuilding.ts:443`)
+ * all say the same thing, and a fourth is the cost of a seam that has to be extended
+ * rather than a private helper duplicated once.
+ */
+function makeObjPowerGenerator(offImageId: string, onImageId: string): PowerGenerator {
+  const generator = new PowerGenerator('power generator', offImageId, onImageId);
+  generator.isMetal = true; //@@MP (Release 5-4)
+  return generator;
+}
+
 // ── Item factories reached through `MakeRandomMallShopItem` ──────────────────
 
 /** C# `BaseMapGenerator.cs:1203-1205` `MakeItemCellPhone`. */
@@ -1634,6 +2391,64 @@ function makeItemSprayPaint(rules: DiceRoller): Item {
   const it = new ItemBarricadeMaterial(Models.items.get(paints[rules.roll(0, 4)])!);
   it.isForbiddenToAI = true;
   return it;
+}
+
+// ── The four items a food-court counter carries, and the cinema's snack bar ───
+
+/**
+ * C# `BaseMapGenerator.cs:2238-2245` `MakeItemCookedChicken`, Release 7-6.
+ *
+ * **No dice at all** — the only one of the five factories below that rolls nothing, and
+ * the only one with arithmetic. `freshUntil` is the plain
+ * `WorldTime.TURNS_PER_DAY * BestBeforeDays` offset from the current turn, which is the
+ * same shape `MakeItemRawChicken` (`:2229-2236`) has and *not* the half-to-full roll
+ * {@link makeItemGroceries} does.
+ *
+ * The C#'s `ItemFood(model, freshUntil, true, true)` has its two booleans as the
+ * raw/cooked pair, and those live on the *model* in the port
+ * (`ItemFoodModel.canBeCooked`) rather than on the instance, so only the `freshUntil`
+ * half is representable — cooked chicken is not cookable, which is what
+ * `COOKED_CHICKEN`'s model row already says.
+ *
+ * `// FIXME: should be map local time.` on `:2240` is the C#'s and is not ported: the
+ * port reads `Session.get().worldTime.turnCounter`, which is the same global clock the
+ * C# is complaining about.
+ */
+function makeItemCookedChicken(): Item {
+  const model = Models.items.get(ItemID.FOOD_COOKED_CHICKEN) as ItemFoodModel;
+  const max = WorldTime.TURNS_PER_DAY * model.bestBeforeDays;
+  const freshUntil = Session.get().worldTime.turnCounter + max;
+  return new ItemFood(model, freshUntil);
+}
+
+/** C# `BaseMapGenerator.cs:2089-2092` `MakeItemFryingPan` — no quantity, so the model's. */
+function makeItemFryingPan(): Item {
+  return new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_FRYING_PAN)!);
+}
+
+/** C# `BaseMapGenerator.cs:2054-2057` `MakeItemCleaver` — no quantity, so the model's. */
+function makeItemCleaver(): Item {
+  return new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_CLEAVER)!);
+}
+
+/** C# `BaseMapGenerator.cs:2069-2072` `MakeItemKitchenKnife` — no quantity, so the model's. */
+function makeItemKitchenKnife(): Item {
+  return new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_KITCHEN_KNIFE)!);
+}
+
+/**
+ * C# `BaseMapGenerator.cs:1848-1854` `MakeItemSnackBar`, Release 7-1.
+ *
+ * `Quantity = m_Rules.Roll(1, …StackingLimit)` — **on `m_Rules`**, so `rules` and not
+ * `ctx.roller`, exactly like {@link makeItemMagazines} and `makeItemSprayPaint` above.
+ * One cinema seat in five carries one, so the twelve `rowStarts` of `:10454` cost at
+ * most 235 rules dice and at least none.
+ */
+function makeItemSnackBar(rules: DiceRoller): Item {
+  const model = Models.items.get(ItemID.FOOD_SNACK_BAR)!;
+  const snackBar = new ItemFood(model);
+  snackBar.quantity = rules.roll(1, model.stackingLimit);
+  return snackBar;
 }
 
 // ── Small helpers ───────────────────────────────────────────────────────────
