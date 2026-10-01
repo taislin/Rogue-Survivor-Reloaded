@@ -373,7 +373,27 @@ export interface TownBuildingContext {
   doForEachTile(map: GameMap, rect: Rect, doFn: (p: Point) => void): void;
   /** 3 call sites; 3 in the C# buildings (a farm or shelter clearing its yard). */
   clearRectangle(map: GameMap, rect: Rect, clearZones?: boolean): void;
-  /** 14 call sites; 1 in the C# buildings (the animal shelter's dogs). */
+  /**
+   * `CreateNewFeralDog` `BaseTownGenerator.cs:11957`; 1 port call site, the ten
+   * kennel dogs of `MakeAnimalShelterBuilding` (`:4230`).
+   *
+   * **The first actor factory on the context, and the only one the C#'s
+   * buildings ask for.** The other `CreateNew*` factories are called by
+   * `RogueGame` and by the *level* generators (`MakePoliceStation`,
+   * `MakeHospital`), which are still methods on the class and so never needed
+   * the seam. Nothing about the spawn itself is building-specific — an actor is
+   * an actor and `Map.placeActor` is a map method — so what this records is the
+   * decision, not the mechanism: a *building generator* is allowed to put a
+   * living actor on the map it is generating, which for the shelter was the one
+   * line `BaseTownGenerator.cs:4189-4251` could not be translated without.
+   *
+   * `spawnTime` alone, exactly as the C#: the factory skins off the generator's
+   * own district roller (`SkinDog`, `BaseMapGenerator.cs:92`, one `Roll(0, N)`),
+   * so it is `ctx.roller` that gets spent and a caller wanting a different
+   * roller would be asking for a different method.
+   */
+  createNewFeralDog(spawnTime: number): Actor;
+  /** 15 call sites; 1 in the C# buildings (the animal shelter's dogs). */
   actorPlace(
     roller: DiceRoller,
     maxTries: number,

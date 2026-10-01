@@ -56,34 +56,61 @@
  * verbatim. This arm's bounds are `20..30`, which touches nothing above 30, so
  * the farm's question is still open and is still decided when the farm lands.
  *
- * ## The dogs are not placed, and that omission is deliberate
+ * ## The dogs: ten `createNewFeralDog` + `actorPlace` calls, through the seam
  *
- * C# `:4230-4231` puts a `CreateNewFeralDog(0)` in every one of the ten kennel
- * cells, and `:4232-4234` gives it three cooked chickens. **Only the food is
- * ported.** The spawn is not, and the reason is not that `ActorID.FERAL_DOG` is
- * missing — it is `ActorID.FERAL_DOG = 18` and `createNewFeralDog` exists on
- * `BaseTownGenerator`. The reason is that
+ * C# `:4230` builds a `CreateNewFeralDog(0)` in each of the ten kennel cells,
+ * `:4231-4233` drops three cooked chickens on the tile beside it, and `:4234`
+ * puts the dog at `kennelPos`. All three lines are ported.
  *
- * - `createNewFeralDog` calls `skinDog`, which spends `Roll(0, N)` off the
- *   district's roller. Ten kennel cells is therefore ten actors' worth of dice
- *   the port would have to reproduce exactly or every roll after the shelter
- *   moves, and
- * - the decision to spawn actors during world generation is a subsystem
- *   decision, not a building decision: actor-on-fire registration and the
- *   recorded "a building may put an actor here" call are being built separately,
- *   and inventing a private spawner here would be exactly the second, unrecorded
- *   copy of that call.
+ * The spawn used to be left out on purpose, on two grounds, and both are gone.
  *
- * So the kennel level is a kennel level with food in it and nothing else living
- * in it. `tests/animal-shelter-building.test.ts` asserts the absence, out loud,
- * so that it cannot quietly become permanent: the day the spawn lands, that test
- * is the thing that has to change.
+ * - **The dice.** `createNewFeralDog` calls `skinDog`
+ *   (`BaseMapGenerator.cs:92`), which spends exactly one `Roll(0, N)` per dog
+ *   off the district's roller, so ten cells is ten rolls that had to land in the
+ *   C#'s order or every roll after the shelter would move and a different
+ *   district would come out the other end. They do: the factory is
+ *   `ctx.createNewFeralDog`, the delegate in `BaseTownGenerator.placement()`
+ *   calls `this.createNewFeralDog`, and that spends `this.m_DiceRoller` — the
+ *   same object `ctx.roller` hands out, once per cell, in the C#'s order. Ten
+ *   rolls, no module-level RNG, and nothing drawn from the kennel level's own
+ *   seed, which is a *map* seed derived from the surface map's at `:4197` and is
+ *   not a dice source at all.
+ * - **The seam.** The decision to spawn actors during world generation had no
+ *   recorded call, so a building that invented a spawner would have owned the
+ *   second, unrecorded copy of it. `TownBuilding.ts` now declares the seam that
+ *   omission was waiting for — `actorPlace` (`:397`) and, added beside it,
+ *   `createNewFeralDog` (`:395`) — so the ten dogs are placed the recorded way,
+ *   like every other actor the world generates.
+ *
+ * ### The one place this port spends dice the C# does not
+ *
+ * C# `:4234` is `map.PlaceActorAt(dog, kennelPos)` (`Data/Map.cs:653`): a direct
+ * place onto a tile the method already knows, and **no dice whatsoever**.
+ * `ctx.actorPlace` is the port's `MapGenerator.actorPlace` — the C#'s
+ * `Engine/MapGenerator.cs:224` — and it is a rejection sampler: it rolls a
+ * candidate position over the whole map and only then asks `goodPositionFn`
+ * whether it landed on the tile the C# named. Hitting one specific tile of a
+ * 21x8 level costs about 168 attempts at two rolls apiece, so a kennel level now
+ * costs the district stream roughly `10 x 168 x 2` rolls where the C# spent 10.
+ *
+ * That is the price of going through the recorded seam rather than around it,
+ * and it is a *recorded* difference rather than an accident: the alternative was
+ * a second, private way for a building to put an actor somewhere, which is the
+ * thing the omission existed to prevent. It is Still Alive only, because the
+ * `Feature.AnimalShelter` gate is the first statement of
+ * {@link makeAnimalShelterBuilding} and runs before the first roll — which is
+ * why the CLASSIC fingerprint `e097b9d976ffac15` in `tests/bank-building.test.ts`
+ * is unmoved by any of this. A Still Alive district generated before this change
+ * and one generated after are not the same district, and that belongs in a
+ * comment rather than in a pair of worlds somebody has to diff to notice.
+ *
+ * `tests/animal-shelter.test.ts` drives the real generator and counts the dogs.
  *
  * ## The dead locals
  *
- * The C# declares two and reads neither: `officeInsideRect` at `:3982` in the
+ * The C# declares two and reads neither: `officeInsideRect` at `:3985` in the
  * outer method (the helper recomputes it at `:4046`) and the `cells` list at
- * `:4208`, which accumulates ten rects that nothing ever asks for. Both are left
+ * `:4211`, which accumulates ten rects that nothing ever asks for. Both are left
  * out rather than transliterated, because `noUnusedLocals` is on and a
  * `void`-consumed variable is noise; the geometry they describe is built anyway,
  * by the helper and by the loop.
@@ -231,6 +258,25 @@ const KENNELS_LEVEL_EXIT = { x: 2, y: 1 };
 /** C# `:4245` — the corridor zone, `Rectangle.FromLTRB(1, 1, map.Width, yCells)`. */
 const KENNELS_CORRIDOR_LEFT = 1;
 const KENNELS_CORRIDOR_TOP = 1;
+
+/**
+ * `maxTries` for the ten `ctx.actorPlace` calls that put the dogs on `kennelPos`
+ * (C# `:4234`).
+ *
+ * **Twenty attempts per tile of the level, and the arithmetic is the whole
+ * reason the number is a constant and not a literal.** `actorPlace` samples a
+ * position uniformly over the map before it asks `goodPositionFn` about it, and
+ * the good position is one specific tile of 21x8, so the expected number of
+ * attempts is 168 and twenty times that leaves a per-dog chance of about
+ * `e^-20` — roughly two in a billion — of the dog silently not being placed at
+ * all. Ten dogs per shelter, so the file's own dog count is never a function of
+ * luck.
+ *
+ * The C# has no such budget because `Map.PlaceActorAt` (`Data/Map.cs:653`) is not
+ * a sampler: it puts the actor on the tile it is handed. The cost of this
+ * constant is the rolls, and the module header records what those are.
+ */
+const KENNEL_DOG_PLACE_TRIES = 20 * KENNELS_LEVEL_WIDTH * KENNELS_LEVEL_HEIGHT;
 
 // ── The C# method ───────────────────────────────────────────────────────────
 
@@ -612,22 +658,25 @@ function makeAnimalShelterOfficeBuilding(
  * The only generator in the C# that takes a map it did not create and returns a
  * new one, and the only building in the port so far that needs a second map at
  * all — which is why `ctx.addExit` carries the comment it does at
- * `TownBuilding.ts:328` ("2 in the C# buildings (the animal shelter's stairs)").
+ * `TownBuilding.ts:352` ("2 in the C# buildings (the animal shelter's stairs)").
  *
- * **No dogs.** C# `:4230` puts a `CreateNewFeralDog(0)` in every cell and `:4232`
- * gives it three cooked chickens; the chickens are here and the dog is not. See
- * the module header for why, and `tests/animal-shelter-building.test.ts` for the
- * assertion that keeps the omission visible.
+ * **Ten dogs, and the map argument is the kennel level's.** C# `:4230-4234` puts
+ * a `CreateNewFeralDog(0)` and three cooked chickens in every cell; both halves
+ * are here, and both go through the context, because the kennel level is a map
+ * this method created and not `ctx.map` — `actorPlace` takes the map explicitly
+ * for exactly that reason. See the module header for the dice the placement
+ * search costs where the C#'s `PlaceActorAt` costs none.
  */
 function generateAnimalShelterKennelsLevel(
   ctx: TownBuildingContext,
   surfaceMap: GameMap
 ): GameMap {
-  // 1. Create map. C# `:4195-4200`. The seed is the surface map's, shifted and
-  // xored — so the kennels are a deterministic function of the district rather
-  // than of the dice, and generating the same district twice regenerates the same
-  // kennel. DARKNESS, because it is underground: the port's `Map.lighting` is the
-  // C#'s `Lighting` (`Data/Map.cs`).
+  // 1. Create map. C# `:4196-4201`, then `:4202` marks every tile indoors. The
+  // seed is the surface map's, shifted and xored — so the kennels are a
+  // deterministic function of the district rather than of the dice, and
+  // generating the same district twice regenerates the same kennel. DARKNESS,
+  // because it is underground: the port's `Map.lighting` is the C#'s `Lighting`
+  // (`Data/Map.cs`).
   const seed = (surfaceMap.seed << 1) ^ surfaceMap.seed;
   const map = new GameMap(seed, 'Animal shelter', KENNELS_LEVEL_WIDTH, KENNELS_LEVEL_HEIGHT);
   map.lighting = Lighting.DARKNESS;
@@ -636,11 +685,11 @@ function generateAnimalShelterKennelsLevel(
     map.getTileAt(pt.x, pt.y)!.isInside = true;
   });
 
-  // 2. Floor plan. C# `:4202-4203`.
+  // 2. Floor plan. C# `:4204-4206`.
   ctx.tileFill(map, Models.tiles.get(TileID.FLOOR_TILES)!, map.rect);
   ctx.tileRectangle(map, Models.tiles.get(TileID.WALL_HOSPITAL)!, map.rect);
 
-  // - small cells. C# `:4204-4246`. Ten of them: `x` steps by two over a
+  // - small cells. C# `:4207-4244`. Ten of them: `x` steps by two over a
   // three-wide cell on a map twenty-one wide, so the last is at 18.
   for (let x = 0; x + KENNEL_CELL_WIDTH <= map.width; x += KENNEL_CELL_WIDTH - 1) {
     // room.
@@ -655,19 +704,23 @@ function generateAnimalShelterKennelsLevel(
       return placeFence ? makeObjKennelFence(GameImages.OBJ_CHAINWIRE_FENCE) : null;
     });
 
-    // deco and dog. C# `:4228-4234`.
+    // deco and dog. C# `:4227-4234`.
     const kennelPos = new Point(x + 1, KENNEL_CELL_TOP + 1);
     map.getTileAt(kennelPos.x, kennelPos.y)!.addDecoration(GameImages.DECO_KENNEL);
-    // The C# puts a feral dog on `kennelPos` here and does not remove it. It is
-    // NOT ported: see the module header. `createNewFeralDog` rolls for the dog's
-    // skin off the district's roller and actor spawn-during-generation is a
-    // subsystem decision being recorded elsewhere, so the port would either have
-    // to reproduce ten actors' worth of dice exactly or own a second, private copy
-    // of a call that does not exist yet. The three chickens are the other half of
-    // the C#'s two lines and they cost no roll at all, so they are here.
+    // C# `:4230`. One `skinDog` roll off the district roller per cell, in cell
+    // order, exactly as the C# spends them; the factory reaches `m_DiceRoller`
+    // itself, which is `ctx.roller`.
+    const dog = ctx.createNewFeralDog(0);
     map.dropItemAt(makeItemCookedChicken(), kennelPos); // give him some food.
     map.dropItemAt(makeItemCookedChicken(), kennelPos);
     map.dropItemAt(makeItemCookedChicken(), kennelPos);
+    // C# `:4234`, and the one deliberate divergence from it. The C# is
+    // `map.PlaceActorAt(dog, kennelPos)` — direct, and free. `ctx.actorPlace` is
+    // the rejection sampler that `MapGenerator.actorPlace` transliterates, so the
+    // tile has to be named as the *only* good one and the search is over the
+    // whole level. `map` is the kennel level, not `ctx.map`: the dog is one
+    // storey down, and a dog on the yard is not a dog in a kennel cell.
+    ctx.actorPlace(ctx.roller, KENNEL_DOG_PLACE_TRIES, map, dog, (pt) => pt.equals(kennelPos));
 
     // gate. C# `:4236-4240`. The tile under the gate is forced back to concrete —
     // the fence fill above just put a kennel fence on it, and `RemoveMapObjectAt`
@@ -681,7 +734,7 @@ function generateAnimalShelterKennelsLevel(
     map.addZone(ctx.makeUniqueZone('Kennels', cellRoom));
   }
 
-  // - corridor. C# `:4244-4246`. `Rectangle.FromLTRB(1, 1, map.Width, yCells)`,
+  // - corridor. C# `:4245-4247`. `Rectangle.FromLTRB(1, 1, map.Width, yCells)`,
   // which is the whole strip above the cells and everything to their right on it.
   const corridor = new Rect(
     KENNELS_CORRIDOR_LEFT,
@@ -691,7 +744,7 @@ function generateAnimalShelterKennelsLevel(
   );
   map.addZone(ctx.makeUniqueZone('cages corridor', corridor));
 
-  // done. C# `:4248`.
+  // done. C# `:4249`.
   return map;
 }
 

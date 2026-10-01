@@ -273,6 +273,7 @@ export class BaseTownGenerator extends BaseMapGenerator {
         this.itemsDrop(map, rect, isGoodPositionFn, createFn),
       doForEachTile: (map, rect, doFn) => this.doForEachTile(map, rect, doFn),
       clearRectangle: (map, rect, clearZones) => this.clearRectangle(map, rect, clearZones),
+      createNewFeralDog: (spawnTime) => this.createNewFeralDog(spawnTime),
       actorPlace: (roller, maxTries, map, actor, goodPositionFn) =>
         this.actorPlace(roller, maxTries, map, actor, goodPositionFn),
     };
@@ -6803,6 +6804,17 @@ export class BaseTownGenerator extends BaseMapGenerator {
     return newBO;
   }
 
+  /**
+   * C# `BaseTownGenerator.cs:11957-11970` `CreateNewFeralDog(spawnTime)`.
+   *
+   * The only actor factory a *building* generator reaches, and it reaches this
+   * one through `placement()` rather than through `this`: see
+   * `TownBuildingContext.createNewFeralDog`. The ten kennel dogs of the animal
+   * shelter (`:4230`) are its only callers outside this class, and the one roll
+   * `skinDog` spends comes off `m_DiceRoller` — the district's roller — which is
+   * what keeps them interleaved with the rest of the block's generation instead
+   * of being a tenth of the world silently generating from somewhere else.
+   */
   createNewFeralDog(spawnTime: number): Actor {
     // model
     const newDog = Models.actors.get(ActorID.FERAL_DOG)!.createNumberedName(Models.factions.get(FactionID.TheFerals)!, spawnTime);
