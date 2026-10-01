@@ -10,6 +10,7 @@ import type { District } from "./District";
 import type { Actor } from "./Actor";
 import type { MapObject } from "./MapObject";
 import { Inventory } from "./Inventory";
+import { GameImages } from "@gameplay/GameImages";
 import type { Corpse } from "./Corpse";
 import { Odor, OdorScent } from "./Odor";
 import type { TimedTask } from "./TimedTask";
@@ -911,6 +912,36 @@ export class Map {
   /** C# `Map.CountTimers`. */
   get countTimers(): number {
     return this.timersList.length;
+  }
+
+  /**
+   * C# `Map.TileAlreadyHasScorchDecoration` -- `Data/Map.cs:406-416`, Release 6-3.
+   *
+   * Is there already a scorch mark on this tile? A `ScorchBurntTile` call with
+   * `damage > 0` that answers yes does nothing at all -- not even the
+   * `IsScorched` flag -- which is the point: Release 5-2 added it so a spreading
+   * tile fire cannot stack marks on a tile an explosion already blackened.
+   *
+   * All five marks are listed, including the centre one, so "already scorched"
+   * means scorched by *any* of the tiers rather than by this one. A tile that took
+   * a 200-damage blast and later a 10-damage one keeps the big mark.
+   *
+   * This imports `GameImages` into `data/`, which nothing else here does. That is
+   * safe rather than merely convenient: `GameImages` is 700+ lines of string
+   * constants with **no imports at all**, so the edge cannot close a cycle. It is
+   * the one place the layering is crossed, and it is crossed to keep the C#'s
+   * signature instead of threading five image ids through every caller.
+   */
+  tileAlreadyHasScorchDecoration(x: number, y: number): boolean {
+    const tile = this.getTileAt(x, y);
+    if (tile === null) return false;
+    return (
+      tile.hasDecoration(GameImages.DECO_SCORCH_MARK_OUTER_WALL) ||
+      tile.hasDecoration(GameImages.DECO_SCORCH_MARK_INNER_WALL) ||
+      tile.hasDecoration(GameImages.DECO_SCORCH_MARK_OUTER_FLOOR) ||
+      tile.hasDecoration(GameImages.DECO_SCORCH_MARK_INNER_FLOOR) ||
+      tile.hasDecoration(GameImages.DECO_SCORCH_MARK_CENTER_FLOOR)
+    );
   }
 
   addTimer(timer: TimedTask): void {

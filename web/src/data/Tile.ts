@@ -75,9 +75,16 @@ export class Tile {
    * Burn this tile out: no flammable material left.
    *
    * Kept as a method rather than a bare `isScorched = true` so the flag and its
-   * meaning stay together, and because the scorch decoration the C# adds is not
-   * ported -- the C#'s `ScorchBurntTile` adds `DECO_SCORCHED_FLOOR`, whose
-   * `GameImages` constant is one of the ~420 still deferred.
+   * meaning stay together.
+   *
+   * **This is only the flag.** The scorch *decoration* is added by
+   * `RogueGame.scorchBurntTile`, which is the C#'s method of the same name and
+   * pairs the two deliberately: the flag means "no fuel left to burn", the drawing
+   * is the temporary evidence that a fire was here, and `Map.isInflammableTile`
+   * reads the flag while only the player ever sees the drawing. Calling this
+   * directly scorches a tile with nothing to show for it -- which is what the port
+   * did for its whole life before the drawing was wired, and why the damage tiers
+   * had nowhere to go.
    */
   scorchTile(): void {
     this.isScorched = true;

@@ -18469,6 +18469,27 @@ inv.removeAllQuantity(it);
 			// an adjacent floor model, and the plank drop for `WALL_WOOD_PLANKS`.
 		}
 
+		// Scorch the blast mark. C# `:20027-20030`, Release 2:
+		//
+		// ```csharp
+		// if (!wallDestroyed) // add scorch sprite where ground or surviving wall was blasted
+		// {
+		//     if (itemModel != m_GameItems.PLASMA_CHARGE_PRIMED) // special case for the BFG
+		//         ScorchBurntTile(map, x, y, modifiedDamage);
+		// }
+		// ```
+		//
+		// `wallDestroyed` is hard-coded false because `ReplaceDestroyedWall` above is
+		// still unported, so the only explosive that could set it never does. Wiring
+		// scorch now means it is already correct the day that method lands, rather
+		// than needing a second pass to add the drawing to work that already existed.
+		//
+		// The plasma charge exclusion is the C#'s: the BFG "doesnt fire a standard
+		// explosive", so it leaves no conventional scorch.
+		if (itemModel.id !== ItemID.EXPLOSIVE_PLASMA_CHARGE_PRIMED) {
+			this.scorchBurntTile(map, location.position.x, location.position.y, modifiedDamage);
+		}
+
 		// Explosion fires. C# `:20035-20037`, the last thing `ApplyExplosionDamage`
 		// does before returning:
 		//
@@ -23371,7 +23392,10 @@ inv.removeAllQuantity(it);
 			tile.addDecoration(GameImages.EFFECT_ONFIRE);
 			scorched = true;
 		}
-		if (wasFlameWeapon || scorched) this.scorchBurntTile(map, x, y);
+		// The C# passes BASE_TILE_FIRE_DAMAGE (1) -- `RogueGame.cs:24631`. It is 1,
+		// which lands in the `<= 40` tier, so an ordinary spreading fire draws the
+		// outer mark and only explosions draw anything heavier.
+		if (wasFlameWeapon || scorched) this.scorchBurntTile(map, x, y, RogueGame.BASE_TILE_FIRE_DAMAGE);
 
 		// Fires blow up adjacent fuel pumps. C# `:24633-24642`, Release 7-3:
 		//
@@ -23423,8 +23447,71 @@ inv.removeAllQuantity(it);
 	 * a tile it already burnt, and a single match consumes an entire building
 	 * forever rather than burning out.
 	 */
-	private scorchBurntTile(map: Map, x: number, y: number): void {
-		map.getTileAt(x, y)?.scorchTile();
+	/**
+	 * C# `ScorchBurntTile(Map, int, int, int)` -- `RogueGame.cs:24556-24608`.
+	 *
+	 * Add a burn mark to the ground. Before this was ported the method only set the
+	 * `IsScorched` flag and left the decoration off, which is why it read as three
+	 * lines; the C# is 53 of them, and all of that is the damage tier.
+	 *
+	 * The tiers are the C#'s own, including its own complaint about them: the C#
+	 * marks the damage thresholds "a lazy way of doing it -- should go back and
+	 * calculate based on radius from the center of the blast". Kept as-is, because
+	 * a scorch mark that differs from the reference is worse than a scorch mark that
+	 * is merely arbitrary.
+	 *
+	 * **The `damage > 0` test gates the flag too, not just the decoration.** That is
+	 * easy to misread as a guard on the drawing alone. In the C# `IsScorched = true`
+	 * is inside the `if`, so a zero-damage call marks nothing and flags nothing.
+	 * `setTileOnFire` therefore only scorches once a fire has actually taken on a
+	 * walkable tile.
+	 */
+	private scorchBurntTile(map: Map, x: number, y: number, damage: number): void {
+		// Stairs are skipped. C# `:24558`.
+		if (map.getExitAt(new Point(x, y)) !== null) return;
+
+		const tile = map.getTileAt(x, y);
+		if (tile === null) return;
+
+		// Do not scorch a damaged wall: the scorch sprite would hide the opening.
+		// C# `:24560-24569`, Release 7-6.
+		//
+		// **This test is currently vacuous and I want that written down rather than
+		// left to be discovered.** It looks for a decoration containing "_damaged",
+		// but the wall-damage decorations are added by `ReplaceDestroyedWall`
+		// (`RogueGame.cs:20134-20232`), which is still an unported no-op in this
+		// file. The guard costs nothing and starts working for free the moment that
+		// method lands, so it is ported rather than dropped -- but today no tile can
+		// ever pass through this early return.
+		if (tile.hasDecorations) {
+			for (const deco of tile.getDecorations ?? []) {
+				if (deco.includes("_damaged")) return;
+			}
+		}
+
+		// Release 5-2: never stack a second scorch over a first.
+		if (!(damage > 0) || map.tileAlreadyHasScorchDecoration(x, y)) return;
+
+		tile.scorchTile();
+
+		// The C# adds a `TaskRemoveDecoration(TURNS_PER_DAY * 3)` alongside every
+		// mark, so a scorch is temporary evidence of a fire that *was* here and not
+		// a permanent scar. The `IsScorched` flag above is the permanent half and
+		// has no timer -- it means "no fuel left to burn", which is why a spreading
+		// tile fire walks over scorched ground without reigniting it.
+		const isWall = (Models.tiles as GameTiles).isWallModel(tile.model);
+		let imageId: string;
+		if (damage <= 40) {
+			imageId = isWall ? GameImages.DECO_SCORCH_MARK_OUTER_WALL : GameImages.DECO_SCORCH_MARK_OUTER_FLOOR;
+		} else if (damage <= 120) {
+			imageId = isWall ? GameImages.DECO_SCORCH_MARK_INNER_WALL : GameImages.DECO_SCORCH_MARK_INNER_FLOOR;
+		} else {
+			// No wall branch. The centre mark is a flat drawing, so the C# lays it
+			// over a wall as well rather than having nothing to show.
+			imageId = GameImages.DECO_SCORCH_MARK_CENTER_FLOOR;
+		}
+		tile.addDecoration(imageId);
+		map.addTimer(new TaskRemoveDecoration(WorldTime.TURNS_PER_DAY * 3, x, y, imageId));
 	}
 
 	/** Put a burning tile out. Still Alive, Release 6-1. */
