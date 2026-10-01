@@ -314,7 +314,19 @@ export enum ItemID {
    * pack all along, so the gap was a missing row rather than a missing asset.
    */
   CHAR_LAPTOP = 177,
-  _COUNT = 178,
+  /**
+   * Still Alive, Release 7-6 (`GameItems.cs:121`).
+   *
+   * The one item that makes `Feature.Cooking` and `Feature.FireBarrels` reachable.
+   * Without it a player cannot start a fire at all -- the only fire in the port came
+   * from an explosion -- so both of those features had models, burn loops and rules
+   * that nothing could ever enter.
+   *
+   * Appended rather than placed at the C#'s enum position for the usual reason: a
+   * save stores an `ItemID` as a bare number.
+   */
+  MATCHES = 178,
+  _COUNT = 179,
 }
 
 /**
@@ -404,6 +416,7 @@ const CAN_GO_IN_BACKPACKS: ReadonlySet<ItemID> = new Set<ItemID>([
   // comment above says the laptop is one of the rows with no model here, which is
   // what kept it out of this set until now.
   ItemID.CHAR_LAPTOP,
+  ItemID.MATCHES,
 ]);
 
 export class GameItems implements ItemModelDB {
@@ -1039,6 +1052,21 @@ export class GameItems implements ItemModelDB {
     fishingRod.equipmentPart = DollPart.LEFT_HAND;
     fishingRod.dontAutoEquip = true;
     this.setModel(ItemID.FISHING_ROD, fishingRod);
+
+    // Still Alive, Release 7-6 (`GameItems.cs:3058-3066`). Hand-written like the
+    // fishing rod and the siphon kit: no CSV row exists.
+    //
+    // The flavour text is the C#'s and it is a tutorial: "Use with wood to make a
+    // campfire or start a receptacle fire." That is the whole command surface --
+    // a matchbox is not a weapon, not a light, and not a fuel source. It goes in the
+    // **left hand** because the right hand is the only hand a weapon can occupy, so
+    // holding matches does not cost you what you are holding.
+    const matches = new ItemModel("box of matches", "boxes of matches", GameImages.ITEM_MATCHES);
+    matches.flavorDescription = "Use with wood to make a campfire or start a receptacle fire.";
+    matches.isStackable = true;
+    matches.equipmentPart = DollPart.LEFT_HAND;
+    matches.dontAutoEquip = true;
+    this.setModel(ItemID.MATCHES, matches);
 
     // Still Alive, Release 7-6 (`GameItems.cs:2927`). Hand-written like the
     // fishing rod: no CSV row.

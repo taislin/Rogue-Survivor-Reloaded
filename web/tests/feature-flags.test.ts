@@ -173,11 +173,11 @@ describe("Feature registry is wired", () => {
                  "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "AmbientAudio", "AmbientAudio",
                  "AmbientAudio", "AmbientAudio", "AmbientAudio", "AmbientAudio", "AnimalShelter", "AnimalShelter",
                  "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank", "Bar", "Bar", "BlackOpsRaid", "Butchering",
-                 "Butchering", "CHARResearchRaid", "Church", "Clinic", "Clinic", "Cooking", "Cooking", "DarknessFov",
+                 "Butchering", "CHARResearchRaid", "Church", "Clinic", "Clinic", "Cooking", "Cooking", "Cooking", "DarknessFov",
                  "DarknessFov", "DarknessFov", "DarknessGating", "DifficultyAtCreation", "DifficultyAtCreation",
-                 "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "FireBarrels", "FireBarrels",
-                 "FireExtinguishers", "FireStation", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing",
-                 "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
+                 "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "FireBarrels",
+                 "FireBarrels", "FireExtinguishers", "FireStation", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing",
+                 "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
                  "FoodPoisoning", "FuelStation", "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue",
                  "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "ItemDespawn", "ItemDespawn", "Junkyard",
                  "Junkyard", "Library", "Library", "LightPriority", "ResourcesAvailability", "ResourcesAvailability",
@@ -192,13 +192,14 @@ describe("Feature registry is wired", () => {
     expect(sites.some((s) => s.feature === "Alcohol" && /HeadlessRunner\.ts/.test(s.at))).toBe(true);
     expect(at("WeaponWeight")).toMatch(/Rules\.ts:\d+$/);
     expect(at("ArmorResist")).toMatch(/Rules\.ts:\d+$/);
-    // `Cooking` is two, like `FoodPoisoning`: the predicate in `Rules` beside the
-    // other "can this actor" questions, and the per-turn tick in `RogueGame`,
-    // which guards its own loop over map objects for the same reason
-    // `FoodPoisoning`'s sweep does.
+    // `Cooking` is three, like `FoodPoisoning`: the predicate in `Rules` beside the
+    // other "can this actor" questions, the per-turn tick in `RogueGame`, which
+    // guards its own loop over map objects for the same reason `FoodPoisoning`'s
+    // sweep does, and `DoMakeFireForCooking` -- the command that made both of the
+    // other two reachable, since before it a fire could only come from an explosion.
     const cook = sites.filter((s) => s.feature === "Cooking");
     expect(cook.filter((s) => /Rules\.ts/.test(s.at))).toHaveLength(1);
-    expect(cook.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(1);
+    expect(cook.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(2);
 
     // The food-poisoning readers are split two-and-two, so the file is asserted
     // per site rather than per feature.
@@ -517,8 +518,11 @@ describe("Feature registry is wired", () => {
     // on the file it has always used, and it is the reason this feature is not
     // zero readers.
     //
-    // Four now. The first three are the three one-shot effects; the fourth gates
-    // `PlayRangedWeaponSFX`, which reaches 45 further ids from one place.
+    // Five now. Three are one-shot effects, the fourth gates `PlayRangedWeaponSFX`
+    // (which reaches 45 further ids from one place), and the fifth gates the
+    // match-strike recording in `DoMakeFireForCooking` -- gated on *this* feature
+    // rather than on `Cooking`, because it is the fork's recording of the fire and
+    // not the fire.
     //
     // The remaining tiered families still have no reader, and that is not a hole in
     // the gate: the C#'s `_nearby` / `_far` / `_visible` suffixes need the distance
@@ -526,7 +530,7 @@ describe("Feature registry is wired", () => {
     // change. `tests/extended-audio.test.ts` asserts that no id is named anywhere
     // ungated, so this count can only rise through a decision.
     const extended = sites.filter((s) => s.feature === "ExtendedAudio");
-    expect(extended).toHaveLength(4);
+    expect(extended).toHaveLength(5);
     expect(extended.every((s) => /RogueGame\.ts/.test(s.at))).toBe(true);
   });
 

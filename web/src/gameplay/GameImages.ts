@@ -870,6 +870,20 @@ export class GameImages {
   // not what the object becomes.
   static readonly OBJ_EMPTY_BIN = "MapObjects/empty_bin";
 
+  // ── Feature.Cooking / Feature.FireBarrels, Release 7-6 ────────────────────
+  //
+  // `ITEM_MATCHBOX` (`GameImages.cs:1105`). The sprite has always shipped in the
+  // classic pack; the id did not exist, so nothing could reference it.
+  //
+  // `ITEM_MATCHES_PRIMED` is declared one line below it in the C# (`:1106`) and
+  // **used nowhere** -- the C# never draws a lit-match sprite. Not ported, and not
+  // because it was forgotten: porting a constant nothing reads is how a table stops
+  // being the C#'s.
+  static readonly ITEM_MATCHES = "Items/item_matchbox";
+
+  /** C# `GameImages.OBJ_CAMPFIRE` (`:687`) -- the object `DoMakeFireForCooking` places. */
+  static readonly OBJ_CAMPFIRE = "MapObjects/campfire";
+
   // ── Feature.Graveyard ───────────────────────────────────────────────────
   //
   // A graveyard is not its own generator: the C# passes `isgraveyard` into

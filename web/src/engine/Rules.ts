@@ -62,7 +62,7 @@ import {
   ItemRangedWeapon,
   ItemWeapon,
 } from "@engine/items/ItemWeapon";
-import { DoorWindow, Fortification, PowerGenerator } from "@engine/mapobjects/MapObjects";
+import { Barrel, Campfire, DoorWindow, Fortification, PowerGenerator } from "@engine/mapobjects/MapObjects";
 
 import { FactionID } from "@gameplay/GameFactions";
 import { GangID } from "@gameplay/GameGangs";
@@ -2561,6 +2561,79 @@ export class Rules {
    * neighbouring tiles, and returning true for classic would make an
    * always-available command on a feature the ruleset does not have.
    */
+  /**
+   * C# `IsVisibleToActor(Actor, Point, Weather)` -- `Rules.cs:4131-4143`, Release 7-6.
+   *
+   * Two lines in the C# built from two things the port already has: the actor's FOV
+   * (`actorFOV`, `Rules.ts:2998`) and a line-of-sight trace (`LOS.canTraceViewLine`,
+   * `LOS.ts:166`). The reason it is written out rather than inlined at its two call
+   * sites is that it is the *only* visibility question in the rules that takes a
+   * target point rather than a target actor, and `Rules.canActorSeeSky` answers a
+   * different question.
+   */
+  isVisibleToActor(actor: Actor, target: Point, weather: Weather): boolean {
+    const map = actor.location.map;
+    if (map === null) return false;
+    // An FOV of zero means the actor cannot see anything at all, indoors by night,
+    // or blinded. The C# checks this before tracing, so a blind actor never gets a
+    // trace that would succeed.
+    const fov = this.actorFOV(actor, map.localTime, weather);
+    if (fov === 0) return false;
+    return LOS.canTraceViewLine(map, actor.location.position, target, fov);
+  }
+
+  /**
+   * C# `CanStartCookingFire(Actor, Point, out string reason)` -- `Rules.cs:4151-4286`,
+   * Release 7-6. 136 lines in the C#, eight checks, each with its own refusal string
+   * because the strings are what the player reads.
+   *
+   * This is the rule that makes the whole fire-start command reachable, and it is a
+   * rule rather than handler code for a reason: `HandlePlayerMakeFireForCooking` asks
+   * it once per direction while the player is in MATCHES MODE, so putting it in the
+   * handler would make the refusal text unreachable from a test.
+   */
+  canStartCookingFire(actor: Actor, firePos: Point): RuleResult {
+    const map = actor.location.map;
+    if (map === null) return { ok: false, reason: "You are nowhere." };
+    if (!map.isInBounds(firePos.x, firePos.y)) return { ok: false, reason: "You cannot place a fire there." };
+
+    const tile = map.getTileAt(firePos.x, firePos.y);
+    if (tile === null || !tile.model.isWalkable)
+      return { ok: false, reason: "You cannot place a fire there." };
+
+    if (map.getActorAtPoint(firePos) !== null)
+      return { ok: false, reason: "There is someone in the way." };
+
+    const mapObj = map.getMapObjectAt(firePos.x, firePos.y);
+    if (mapObj !== null) {
+      // An existing receptacle, or something in the way.
+      if (mapObj instanceof Barrel || mapObj instanceof Campfire) {
+        // A barrel or a campfire: always legal, and lighting it is the whole point of
+        // the "reignites a fire" message.
+      } else {
+        return { ok: false, reason: `${mapObj.aName} is in the way.` };
+      }
+    } else if (!tile.isInside) {
+      // Nothing there and it is outdoors: a new campfire. The C# refuses bare
+      // ground the player cannot see, which is the check below.
+    }
+
+    if (map.isAnyTileWaterThere(firePos))
+      return { ok: false, reason: "You cannot start a fire in the water." };
+
+    if (mapObj === null) {
+      // Needs something to burn.
+      const wood = actor.inventory?.getSmallestStackByType(ItemBarricadeMaterial) ?? null;
+      if (wood === null)
+        return { ok: false, reason: "You need some wood." };
+    }
+
+    if (!this.isVisibleToActor(actor, firePos, Session.get().weather))
+      return { ok: false, reason: "You cannot see there." };
+
+    return { ok: true, reason: "" };
+  }
+
   canActorCookFoodItem(actor: Actor, it: Item): { can: boolean; reason: string } {
     if (!hasFeature(Session.get().ruleset, Feature.Cooking)) {
       return { can: false, reason: "not available in this ruleset" };

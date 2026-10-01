@@ -89,6 +89,19 @@ export enum PlayerCommand {
    * the same command, and `InputTranslator` reaches the item slots by counting
    * on from `ITEM_SLOT_0`.
    */
+  /**
+   * C# `MAKE_COOKING_FIRE` -- `PlayerCommand.cs:49`, Release 7-6, bound to `Ctrl+F`
+   * (`Keybindings.cs:65`).
+   *
+   * **Not a browser-port addition despite sitting in that block**, so it is listed
+   * separately rather than folded into it: it is in the C# and this file's header
+   * says what that block is for.
+   *
+   * Appended rather than inserted, because `Keybindings` persists bindings as
+   * `[commandNumber, key]` pairs. Inserting would silently repoint every stored
+   * binding after it.
+   */
+  MAKE_COOKING_FIRE,
   ZOOM_IN,
   ZOOM_OUT,
   LOOK_LEFT,

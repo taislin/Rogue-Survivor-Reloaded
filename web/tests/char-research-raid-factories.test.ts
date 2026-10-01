@@ -344,8 +344,15 @@ describe("RaidType.CHAR_SCIENTISTS", () => {
 // ── ItemID.CHAR_LAPTOP is append-only ────────────────────────────────────────
 
 describe("ItemID.CHAR_LAPTOP", () => {
-  it("sits at the end of the enum, before _COUNT", () => {
-    expect(ItemID.CHAR_LAPTOP).toBe(ItemID._COUNT - 1);
+  it("sits where it was appended, and things landed after it rather than before", () => {
+    // Was `CHAR_LAPTOP === _COUNT - 1`, which was true until `ItemID.MATCHES` was
+    // appended at 178 for `Feature.Cooking`. The claim worth keeping is the
+    // append-only one -- the laptop is still at 177 and the enum grew *after* it --
+    // not "it happens to be last", which is a statement about today rather than
+    // about the discipline.
+    expect(ItemID.CHAR_LAPTOP).toBe(177);
+    expect(ItemID.MATCHES, "and 178 was free for the matchbox").toBe(178);
+    expect(ItemID.MATCHES, "the newest row is last").toBe(ItemID._COUNT - 1);
   });
 
   it("did not renumber the backpack rows above it", () => {
@@ -357,7 +364,10 @@ describe("ItemID.CHAR_LAPTOP", () => {
     expect(ItemID.BACKPACK_HIKING_PACK).toBe(175);
     expect(ItemID.BACKPACK_ARMY_RUCKSACK).toBe(176);
     expect(ItemID.CHAR_LAPTOP).toBe(177);
-    expect(ItemID._COUNT).toBe(178);
+    // Was 178, and is now 179 because `ItemID.MATCHES` took 178 for
+    // `Feature.Cooking`. The sentinel moving *up* is the append-only discipline
+    // working; the rows above it are what would have moved had it been inserted.
+    expect(ItemID._COUNT).toBe(179);
   });
 
   it("did not renumber the siphon kit, fishing rod or book either", () => {

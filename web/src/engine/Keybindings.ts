@@ -101,6 +101,11 @@ export class Keybindings {
     this.set(PlayerCommand.BREAK_MODE, 'K');
     this.set(PlayerCommand.CLOSE_DOOR, 'C');
     this.set(PlayerCommand.FIRE_MODE, 'F');
+
+    // C# `Keybindings.cs:65`: `Keys.F | Keys.Control`, Release 7-6. `Ctrl+F` rather
+    // than `F` because plain `F` is FIRE_MODE, and the C# picked the modifier
+    // instead of the letter for the same reason.
+    this.set(PlayerCommand.MAKE_COOKING_FIRE, 'Ctrl+F');
     this.set(PlayerCommand.HELP_MODE, 'H');
     this.set(PlayerCommand.KEYBINDING_MODE, 'Shift+K');
 

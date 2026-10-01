@@ -1077,6 +1077,14 @@ export class RogueGame {
 	static debugRender = false;
 
 	readonly POPUP_FILLCOLOR: Color = Color.withAlpha(192, Color.CornflowerBlue);
+	/**
+	 * C# `START_FIRE_MODE_TEXT` -- `RogueGame.cs:100`, Release 7-6. The C#'s own
+	 * wording, including that the fire is for "cooking/light" -- it is the only hint
+	 * that matches work as well as fire, and the command is not called "light torch".
+	 */
+	readonly START_FIRE_MODE_TEXT: string[] = [
+		"MATCHES MODE - directions to start a fire for cooking/light, ESC cancels",
+	];
 	readonly CLOSE_DOOR_MODE_TEXT: string[] = [
 		"CLOSE MODE - directions to close, ESC cancels",
 	];
@@ -1696,6 +1704,9 @@ export class RogueGame {
 	 * double-count it.
 	 */
 	private static readonly BASE_TILE_FIRE_DAMAGE = 1;
+
+	/** C# `FIRE_FUEL_PER_WOOD_PLANK` -- `RogueGame.cs:393`, Release 7-6. */
+	private static readonly FIRE_FUEL_PER_WOOD_PLANK = 90;
 	/**
 	 * Percent chance per adjacent flammable tile that a fire spreads.
 	 *
@@ -4112,6 +4123,7 @@ export class RogueGame {
 			"Help",
 			"Hints screen",
 			"Negociate Trade",
+			"Make fire (matches)",
 			"Item 1 slot",
 			"Item 2 slot",
 			"Item 3 slot",
@@ -4196,6 +4208,7 @@ export class RogueGame {
 			PlayerCommand.SWITCH_PLACE,
 			PlayerCommand.USE_EXIT,
 			PlayerCommand.USE_SPRAY,
+			PlayerCommand.MAKE_COOKING_FIRE,
 			PlayerCommand.ZOOM_IN,
 			PlayerCommand.ZOOM_OUT,
 		];
@@ -8172,6 +8185,14 @@ inv.removeAllQuantity(it);
 							loop = !this.HandlePlayerSwapItemInventory(player, mousePos);
 							break;
 
+						case PlayerCommand.MAKE_COOKING_FIRE: //@@MP (Release 7-6)
+							if (await this.TryPlayerUnwell()) {
+								loop = false;
+								break;
+							}
+							loop = !(await this.HandlePlayerMakeFireForCooking(player));
+							break;
+
 						case PlayerCommand.LEAD_MODE:
 							if (await this.TryPlayerUnwell()) {
 								loop = false;
@@ -12101,6 +12122,56 @@ inv.removeAllQuantity(it);
 
 		this.ClearOverlays();
 		return actionDone;
+	}
+
+	/**
+	 * C# `HandlePlayerMakeFireForCooking()` -- `RogueGame.cs:13519-13587`, Release 7-6.
+	 *
+	 * MATCHES MODE: point at a tile. Returns whether the turn continues.
+	 *
+	 * The C# checks the equipped item *before* entering the overlay and refuses with
+	 * "You must equip matches in order to make fires." The ordering matters:
+	 * entering the mode with the wrong item in hand would strand the player in a
+	 * direction-wait with nothing they can light.
+	 *
+	 * A refused direction does **not** leave the mode. The `do/while` continues on a
+	 * refusal, so pointing at a wall says why and lets you point somewhere else --
+	 * that is what the C# does, and cancelling is ESC rather than a second refusal.
+	 */
+	private async HandlePlayerMakeFireForCooking(player: Actor): Promise<boolean> {
+		const leftHand = player.getEquippedItem(DollPart.LEFT_HAND);
+		if (leftHand === null || leftHand.model.id !== ItemID.MATCHES) {
+			this.AddMessage(this.MakeMessage(player, "You must equip matches in order to make fires."));
+			return true;
+		}
+
+		this.ClearOverlays();
+		this.AddOverlay(
+			new OverlayPopup(
+				this.START_FIRE_MODE_TEXT,
+				this.MODE_TEXTCOLOR,
+				this.MODE_BORDERCOLOR,
+				this.MODE_FILLCOLOR,
+				new Point(0, 0),
+			),
+		);
+
+		let loop = true;
+		do {
+			this.RedrawPlayScreen();
+			const dir = await this.WaitDirectionOrCancel();
+			if (dir == null) {
+				loop = false;
+			} else if (dir !== Direction.NEUTRAL) {
+				const pos = dir.applyTo(player.location.position);
+				const canStart = this.m_Rules.canStartCookingFire(player, pos);
+				if (!canStart.ok) this.AddMessage(new Message(canStart.reason, this.m_Session.worldTime.turnCounter, this.NIGHT_COLOR));
+				else this.DoMakeFireForCooking(player, pos);
+			}
+		} while (loop);
+
+		this.ClearOverlays();
+		return loop;
 	}
 
 	// C# HandlePlayerUseSpray — RogueGame.cs:9034
@@ -24885,6 +24956,100 @@ inv.removeAllQuantity(it);
 	}
 
 	// C# ApplyOnFire — RogueGame.cs:17963
+	/**
+	 * C# `DoMakeFireForCooking(Actor, Point)` -- `RogueGame.cs:23550-23601`, Release 7-6.
+	 *
+	 * The only way in the whole game for a player to start a fire, and therefore the
+	 * thing `Feature.Cooking` and `Feature.FireBarrels` were both blocked on: before
+	 * it, the only fire the port could produce came from an explosion.
+	 *
+	 * Three shapes, distinguished by what it finds:
+	 *  - a **barrel or campfire with fuel** -- relight it, no wood consumed;
+	 *  - **one without fuel** -- add wood, then light it;
+	 *  - **empty ground** -- place a new campfire, add wood, light it.
+	 *
+	 * The `usedWood` flag exists only to pick the message, and it is the difference
+	 * between "starts a fire with some wood" and "reignites a fire" -- which is the
+	 * player's only indication of whether their plank went in.
+	 */
+	DoMakeFireForCooking(actor: Actor, firePos: Point): void {
+		// `Feature.Cooking` owns the command and the sound. The C# needs no gate here
+		// because `DoMakeFireForCooking` only exists in Release 7-6, so the fork's
+		// fire-start is unconditional there; the port gates the *feature*, and a
+		// Classic player has no matchbox to equip and no `MAKE_COOKING_FIRE` key.
+		if (!hasFeature(this.m_Session.ruleset, Feature.Cooking)) return;
+		let usedWood = false;
+		const map = actor.location.map;
+		if (map === null) return;
+
+		const mapObj = map.getMapObjectAt(firePos.x, firePos.y);
+		if (mapObj instanceof Barrel || mapObj instanceof Campfire) {
+			if (mapObj.fuelUnits <= 0) {
+				usedWood = true;
+				this.increaseCookingFireFuel(actor, mapObj);
+			}
+			// now light it
+			this.ApplyOnFire(mapObj);
+		} else {
+			// need to make a campfire
+			usedWood = true;
+			const newCampfire = this.m_TownGenerator.makeObjCampfire(GameImages.OBJ_CAMPFIRE);
+			map.placeMapObject(newCampfire, firePos);
+			this.increaseCookingFireFuel(actor, newCampfire);
+			this.ApplyOnFire(newCampfire);
+		}
+
+		// use up a match
+		const matches =
+			actor.inventory?.getSmallestStackByModel(Models.items.get(ItemID.MATCHES)!) ?? null;
+		if (matches !== null) actor.inventory!.consume(matches);
+
+		// Gated again rather than relying on the one at the top of the method: the
+		// effect is a separate feature surface from the fire, and it is seventeen lines
+		// away. `extended-audio.test.ts` requires a fork-only id to sit within three
+		// lines of its own gate, which is a rule about proximity rather than about
+		// control flow -- and a reader scanning for "is this sound gated" should not
+		// have to walk back up the method to find out.
+		// Gated on `ExtendedAudio`, not `Cooking`, and that is the distinction the
+		// other four gated effects in the port already make: `Cooking` owns the fire
+		// and `ExtendedAudio` owns the fork's *recordings* of it. The C# needs neither
+		// here because `DoMakeFireForCooking` only exists in Release 7-6, so its sound
+		// is unconditional by construction.
+		if (actor.isPlayer && hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+			this.m_SoundManager.play(GameSounds.MATCH_STRIKE_START_FIRE_PLAYER);
+		if (this.IsVisibleToPlayer(actor) || (mapObj !== null && this.IsVisibleToPlayer(mapObj))) {
+			this.AddMessage(
+				usedWood
+					? this.MakeMessage(actor, "starts a fire with some wood.")
+					: this.MakeMessage(actor, "reignites a fire."),
+			);
+		}
+	}
+
+	/**
+	 * C# `IncreaseCookingFireFuel(Actor, MapObject)` -- `RogueGame.cs:23603-23620`,
+	 * Release 7-6.
+	 *
+	 * One wood plank, consumed from the **smallest** stack (the C#'s
+	 * `GetSmallestStackByType`, "smallest stack first"), and a barrel gets four times
+	 * as much because it is four times as big.
+	 *
+	 * The clamp to `MaxFuelUnits` is the C#'s, and **it can never fire**: a
+	 * receptacle only takes wood when its fuel is at zero, so the largest single
+	 * jump is 0 -> 360 against a barrel's 720. It is transcribed because it is there,
+	 * and noted because a reader who works out that it is dead might otherwise
+	 * remove it and break parity with the reference.
+	 */
+	private increaseCookingFireFuel(actor: Actor, mapObj: Barrel | Campfire): void {
+		const wood = actor.inventory?.getSmallestStackByType(ItemBarricadeMaterial) ?? null;
+		if (wood !== null) actor.inventory!.consume(wood);
+
+		const per = mapObj instanceof Barrel
+			? RogueGame.FIRE_FUEL_PER_WOOD_PLANK * 4
+			: RogueGame.FIRE_FUEL_PER_WOOD_PLANK;
+		mapObj.fuelUnits = Math.min(mapObj.fuelUnits + per, mapObj.maxFuelUnits);
+	}
+
 	ApplyOnFire(mapObj: MapObject): void {
 		// put object on fire.
 		mapObj.fireState = MapObjectFire.ONFIRE;

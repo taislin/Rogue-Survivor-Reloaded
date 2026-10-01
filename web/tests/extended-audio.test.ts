@@ -560,8 +560,8 @@ describe("the gate", () => {
     );
     expect(
       gated.filter((id) => !weapons.includes(id)).sort(),
-      "and the three pre-existing effects are still wired",
-    ).toEqual(["FISHING_CAST_PLAYER", "FISHING_REEL_PLAYER", "UNDEAD_EAT_PLAYER"]);
+      "and the non-weapon effects are all still wired",
+    ).toEqual(["FISHING_CAST_PLAYER", "FISHING_REEL_PLAYER", "MATCH_STRIKE_START_FIRE_PLAYER", "UNDEAD_EAT_PLAYER"]);
   });
 });
 

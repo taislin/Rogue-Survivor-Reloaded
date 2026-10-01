@@ -727,7 +727,7 @@ export abstract class BaseMapGenerator extends MapGenerator {
   }
 
   /** An unlit campfire. Still Alive, Release 7-6. See `makeObjFireBarrel`. */
-  protected makeObjCampfire(campfireImageID: string): Campfire {
+  makeObjCampfire(campfireImageID: string): Campfire {
     const campfire = new Campfire('campfire', campfireImageID, MapObjectBreak.BREAKABLE, 0);
     campfire.isMaterialTransparent = true;
     campfire.isContainer = true;
