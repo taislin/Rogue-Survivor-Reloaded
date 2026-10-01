@@ -231,7 +231,7 @@ type TimeSpan = number;
  * from the other direction. Duplicated rather than shared because the C# keeps
  * one `SetupConfig` constant and this port has no equivalent module to put it in.
  */
-const GAME_VERSION = "0.9.0";
+const GAME_VERSION = "0.9.1";
 
 /** C# numeric/string format alignment: `{0,3}`, `{0,6}` (right aligned). */
 export function padLeft(s: string | number, width: number): string {
