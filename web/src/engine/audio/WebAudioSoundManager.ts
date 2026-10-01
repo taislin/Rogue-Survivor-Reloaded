@@ -25,6 +25,28 @@ export class WebAudioSoundManager implements ISoundManager {
     }
   }
 
+  /**
+   * Ids with a live buffer source right now.
+   *
+   * Exists for `playIfNotAlreadyPlaying`, which the C# also tracks (it asks
+   * `IsPlaying`). Set when a source starts and cleared on its `onended`, so an id
+   * drops out when the buffer finishes rather than when it was scheduled.
+   */
+  private readonly playing = new Set<string>();
+
+  /**
+   * C# `PlayIfNotAlreadyPlaying` -- `ISoundManager.cs:44`.
+   *
+   * Returns whether it started anything, which is what the C#'s callers would read
+   * off `IsPlaying` afterwards.
+   */
+  public playIfNotAlreadyPlaying(soundId: string): boolean {
+    if (!this.enabled || this.volume <= 0) return false;
+    if (this.playing.has(soundId)) return false;
+    void this.play(soundId);
+    return true;
+  }
+
   public async play(soundId: string): Promise<void> {
     if (!this.enabled || this.volume <= 0) return;
     this.initContext();
@@ -58,6 +80,10 @@ export class WebAudioSoundManager implements ISoundManager {
       gainNode.gain.value = this.volume * sfxGain(soundId);
       source.connect(gainNode);
       gainNode.connect(this.ctx.destination);
+      this.playing.add(soundId);
+      source.onended = () => {
+        this.playing.delete(soundId);
+      };
       source.start(0);
     }
   }

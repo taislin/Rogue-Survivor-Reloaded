@@ -183,8 +183,11 @@ import { TextFile } from "@engine/TextFile";
 import { TaskRemoveDecoration } from "@engine/tasks/TaskRemoveDecoration";
 import { DayPhase, WorldTime } from "@engine/WorldTime";
 import {
+	NO_NOISE_RADIUS,
+	NOISE_RADII,
 	NoiseBand,
 	bandForDistance,
+	isAudibleTo,
 	isWithinBand,
 } from "@engine/NoiseDistance";
 import {
@@ -1061,6 +1064,62 @@ const RANGED_WEAPON_SOUND_FAMILIES: ReadonlyMap<number, SoundFamily> = new globa
 		},
 	],
 ]);
+
+/**
+ * The bash/break sound ladder -- C# `PlayBashOrBreakSFX` (`RogueGame.cs:22597-22672`).
+ *
+ * A **material** ladder, not a distance one: work out what is being hit, then pick a
+ * sound from `isBroken` x { visible, audible-not-visible }. Two bands, not three --
+ * there is no `_FAR` variant of a bash, which is the C#'s own arrangement.
+ *
+ * A table rather than the C#'s four `switch`es for the same reason the weapon
+ * families are: four nested ternaries per band is sixteen branch evaluations to read
+ * and one edit to make when a material is added.
+ *
+ * ## The `default` differs between the two ladders
+ *
+ * Breaking an unknown material defaults to **woodendoor**; bashing one defaults to
+ * **other objects**. That asymmetry is the C#'s (`:22612` vs `:22648`) and it is
+ * transcribed rather than normalised -- "you broke a thing and it sounded like a
+ * door" is a real answer for a barricade plank, and normalising it would lose that.
+ *
+ * ## `CLIMB_FENCE` appears in both
+ *
+ * Chain fence has its own material but reuses the climb recording for a bash and for
+ * a break alike. The C# does the same, and it is the one place where the two ladders
+ * share an id.
+ */
+type BreakSound = { visible: string; audible: string };
+type BashSound = { visible: string; audible: string };
+
+/** Material -> sound, keyed by the C#'s own `objectMaterial` strings. */
+const BREAK_BY_MATERIAL: Readonly<Record<string, BreakSound>> = {
+  glass: { visible: GameSounds.BREAK_GLASSDOOR_PLAYER, audible: GameSounds.BREAK_GLASSDOOR_NEARBY },
+  metal: { visible: GameSounds.BREAK_METALDOOR_PLAYER, audible: GameSounds.BREAK_METALDOOR_NEARBY },
+  "chain fence": { visible: GameSounds.CLIMB_FENCE_PLAYER, audible: GameSounds.CLIMB_FENCE_NEARBY },
+  // `_VISIBLE` in both bands: the C# names it that way (`:22618`, `:22630`) and does
+  // not derive a nearby variant.
+  ceramic: { visible: GameSounds.BREAK_CERAMIC_VISIBLE, audible: GameSounds.BREAK_CERAMIC_VISIBLE },
+  wood: { visible: GameSounds.BREAK_WOODENDOOR_PLAYER, audible: GameSounds.BREAK_WOODENDOOR_NEARBY },
+};
+
+const BASH_BY_MATERIAL: Readonly<Record<string, BashSound>> = {
+  metal: { visible: GameSounds.BASH_METALDOOR_PLAYER, audible: GameSounds.BASH_METALDOOR_NEARBY },
+  "chain fence": { visible: GameSounds.CLIMB_FENCE_PLAYER, audible: GameSounds.CLIMB_FENCE_NEARBY },
+  ceramic: { visible: GameSounds.BASH_CERAMIC_VISIBLE, audible: GameSounds.BASH_CERAMIC_VISIBLE },
+  wood: { visible: GameSounds.BASH_WOOD_PLAYER, audible: GameSounds.BASH_WOOD_NEARBY },
+  // glass is absent, so it falls to the bash ladder's default.
+};
+
+/** The C#'s `wood`/`default` for a break, and `glass`/`default` for a bash. */
+const BREAK_DEFAULT: BreakSound = {
+  visible: GameSounds.BREAK_WOODENDOOR_PLAYER,
+  audible: GameSounds.BREAK_WOODENDOOR_NEARBY,
+};
+const BASH_DEFAULT: BashSound = {
+  visible: GameSounds.BASH_OTHER_OBJECTS_PLAYER,
+  audible: GameSounds.BASH_OTHER_OBJECTS_NEARBY,
+};
 
 export class RogueGame {
 	/** Browser save slot used by the C# "current save file" (`GetUserSave`). */
@@ -6960,6 +7019,102 @@ inv.removeAllQuantity(it);
 	 * weapon with no family entry is also the answer, and is the same `null` the
 	 * C#'s missing `default:` case produces.
 	 */
+	/**
+	 * C# `PlayBashOrBreakSFX(MapObject, bool)` -- `RogueGame.cs:22597-22672`, Release
+	 * 5-4. Sixteen ids, and the second of only two places the fork centralises sound
+	 * rather than inlining `m_SFXManager.Play` at two hundred call sites.
+	 *
+	 * The shape is a material ladder, not a distance ladder: first work out *what* is
+	 * being hit (wood / metal / glass / chain fence / ceramic / other), then pick a
+	 * sound from `isBroken` x { visible, audible-not-visible }. Two bands, not three --
+	 * there is no `_FAR` variant of a bash, which is the C#'s own arrangement and not
+	 * an omission here.
+	 *
+	 * **The material order is the design and it looks wrong on purpose.** The C#
+	 * checks, in order:
+	 *
+	 *  1. `GivesWood && AName != "a tree"` -> wood
+	 *  2. `AName == "a chain wire fence"` -> chain fence
+	 *  3. `IsMetal` -> metal
+	 *  4. door && barricaded -> wood
+	 *  5. door && (window || transparent) -> glass
+	 *  6. `AName == "a potted plant"` -> ceramic
+	 *
+	 * and each comment says why it has to come before the next. Chain fence is
+	 * *metal*, so checking metal first would file every fence under metal. And an
+	 * **open** door reports `IsTransparent`, so checking transparency before
+	 * barricade would file every barricaded wooden door as glass. Two orderings that
+	 * read as arbitrary and are not.
+	 *
+	 * `default` is wood in the break ladder and *other-objects* in the bash ladder --
+	 * the C#'s two defaults differ, which is easy to miss and is transcribed.
+	 */
+	private PlayBashOrBreakSFX(mapObj: MapObject, isBroken: boolean): void {
+		if (!hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio)) return;
+		const door = mapObj instanceof DoorWindow ? mapObj : null;
+
+		// need to know what sfx to play
+		let material = "other";
+		if (mapObj.givesWood && mapObj.aName !== "a tree") {
+			material = "wood";
+		} else if (mapObj.aName === "a chain wire fence") {
+			material = "chain fence"; // must be checked before metal, because it *is* metal
+		} else if (mapObj.isMetal) {
+			material = "metal";
+		} else if (door !== null && door.isBarricaded) {
+			material = "wood"; // wooden barricades
+		} else if (door !== null && (door.isWindow || door.isTransparent)) {
+			// wood and metal must be checked first, because an *open* door is
+			// transparent. Iron gates, as in the subways, are not DoorWindow objects
+			// and so do not count here.
+			material = "glass";
+		} else if (mapObj.aName === "a potted plant") {
+			material = "ceramic";
+		}
+
+		const table = isBroken ? BREAK_BY_MATERIAL[material] ?? BREAK_DEFAULT : BASH_BY_MATERIAL[material] ?? BASH_DEFAULT;
+		if (this.IsVisibleToPlayer(mapObj)) {
+			this.m_SoundManager.play(table.visible);
+		} else if (this.isAudibleToPlayer(mapObj.location, NOISE_RADII.MODERATE)) {
+			// Not `play`: the C# uses `PlayIfNotAlreadyPlaying` for the audible band
+			// and plain `Play` for the visible one, so four NPCs bashing the same door
+			// on one turn make one noise rather than four.
+			this.m_SoundManager.playIfNotAlreadyPlaying(table.audible);
+		}
+	}
+
+	/**
+	 * C# `IsAudibleToPlayer(Location, int)` -- `RogueGame.cs:993-1025`, Release 2, with
+	 * the optional radius from Release 5-3.
+	 *
+	 * Three non-geometric conditions and then two distance tests **in two different
+	 * metrics**, and the mixing is the thing worth writing down because both halves
+	 * take an `int` and substituting one for the other type-checks:
+	 *
+	 *  1. same map,
+	 *  2. the player is not asleep,
+	 *  3. **Euclidean** distance `<= actor.audioRange` -- the outer gate,
+	 *  4. and then, only if a radius was supplied, **Chebyshev** distance
+	 *     `<= audioRadius` -- the inner gate.
+	 *
+	 * Chebyshev never exceeds Euclidean, so the same number read in the other metric
+	 * is always the more permissive one. At a 5,5 diagonal the grid distance is 5
+	 * (`QUIET`) and the standard distance is 7.07 (`MODERATE`): a port that read the
+	 * ladder in Euclidean would hand every band boundary to the next tier out along
+	 * the diagonals and leave the axes correct, which is the kind of bug that reads
+	 * as "the audio feels slightly off". `NoiseDistance` holds both metrics
+	 * separately for exactly this reason.
+	 *
+	 * `audioRadius = 0` means "no tier", per the C#'s own sentinel.
+	 */
+	private isAudibleToPlayer(location: Location, audioRadius: number = NO_NOISE_RADIUS): boolean {
+		const player = this.m_Player;
+		if (player == null) return false;
+		if (location.map !== player.location.map) return false;
+		if (player.isSleeping) return false;
+		return isAudibleTo(player.location.position, location.position, player.audioRange, audioRadius);
+	}
+
 	private PlayRangedWeaponSFX(location: Location, weapon: ItemModel, shots: number): string | null {
 		if (!hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio)) return null;
 		const family = RANGED_WEAPON_SOUND_FAMILIES.get(weapon.id);
@@ -20709,6 +20864,9 @@ inv.removeAllQuantity(it);
 		}
 
 		// remove object - but not windows.
+		// C# `:22435`, between the improvised-spear drop and the door state change.
+		this.PlayBashOrBreakSFX(mapObj, true);
+
 		if (isWindow) {
 			door!.setState(DoorWindow.STATE_BROKEN);
 		} else mapObj.location.map!.removeMapObject(mapObj);

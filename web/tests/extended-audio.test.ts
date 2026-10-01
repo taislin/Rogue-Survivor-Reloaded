@@ -305,6 +305,12 @@ class RecordingSoundManager implements ISoundManager {
   play(soundId: string): void {
     this.played.push(soundId);
   }
+  playIfNotAlreadyPlaying(soundId: string): boolean {
+    // Always records, and says it started: this recorder has no notion of a sound
+    // still ringing, and a test that wanted one would be testing the recorder.
+    this.played.push(soundId);
+    return true;
+  }
   stopAll(): void {}
   setVolume(): void {}
   getVolume(): number {
@@ -461,7 +467,22 @@ describe("the gate", () => {
     // is one, and the id-choice ternary in `DoEatCorpse` is two. A refactor that
     // moves the gate into a helper fails here, which is the review this is for
     // rather than an obstacle to it.
-    const BULK_TABLE = "RANGED_WEAPON_SOUND_FAMILIES";
+    /**
+     * Bulk tables whose ids are gated by *reading the table*, not by a gate on each
+     * row. Each still needs its own consuming `Feature.ExtendedAudio` read in the
+     * same file -- see the exemption below for why that is enough.
+     */
+    //
+    // `from` is a stable phrase in the section's docblock, used as the span start:
+    // the declaration is not, because the weapon table has four family `const`s
+    // hoisted above it that hold a third of its ids.
+    const BULK_TABLES = [
+      { name: "RANGED_WEAPON_SOUND_FAMILIES", from: "The ranged-weapon sound families" },
+      { name: "BREAK_BY_MATERIAL", from: "The bash/break sound ladder" },
+      { name: "BASH_BY_MATERIAL", from: "The bash/break sound ladder" },
+      { name: "BREAK_DEFAULT", from: "The bash/break sound ladder" },
+      { name: "BASH_DEFAULT", from: "The bash/break sound ladder" },
+    ];
     /**
      * Every `GameSounds` id the ranged-weapon table can name, read out of the table
      * itself rather than hand-listed.
@@ -481,6 +502,24 @@ describe("the gate", () => {
       for (const m of text.slice(from, to).matchAll(/GameSounds\.([A-Z][A-Z0-9_]+)/g)) {
         const id = m[1]!;
         if (FORK_IDS.has(DECLARED[id] ?? "")) WEAPON_SOUND_IDS.add(id);
+      }
+    }
+
+    /** Every id in every bulk table, same derivation. */
+    const BULK_SOUND_IDS = new Set<string>();
+    {
+      const text = readFileSync(join(SRC, "engine", "RogueGame.ts"), "utf-8");
+      for (const { name, from } of BULK_TABLES) {
+        const at = text.indexOf(`const ${name}`);
+        const docFrom = text.indexOf(from);
+        if (at === -1) continue;
+        const end = text.indexOf("\n};", at);
+        const fromAt = docFrom === -1 ? at : docFrom;
+        const to = end === -1 ? text.length : Math.max(end, fromAt);
+        for (const m of text.slice(fromAt, to).matchAll(/GameSounds\.([A-Z][A-Z0-9_]+)/g)) {
+          const id = m[1]!;
+          if (FORK_IDS.has(DECLARED[id] ?? "")) BULK_SOUND_IDS.add(id);
+        }
       }
     }
 
@@ -506,21 +545,35 @@ describe("the gate", () => {
       // exemption stops applying, the ids fall back to the three-line rule, and this
       // fails -- which is the protection that matters. The failure mode this test was
       // written for (a table nobody reads) still fails, in the other direction.
-      // The span runs from this section's own docblock to the map's closing `]);`.
-      // It has to start at the docblock rather than at the declaration, because four
-      // of the families are hoisted `const`s *above* the map and shared by name --
-      // and those hold a third of the ids.
-      const declAt = text.indexOf(`const ${BULK_TABLE}`);
-      const docAt = text.indexOf("The ranged-weapon sound families");
-      const tableStart = docAt === -1 ? declAt : docAt;
-      const tableEnd = tableStart === -1 ? -1 : text.indexOf("\n]);", tableStart);
-      // The gate has to be the one that *reads* the table: `if (gate) ... TABLE.get`.
-      // Anchoring on the gate rather than on the declaration is what makes this
-      // fail if the reader is deleted, which is the case worth failing on.
-      const tableIsGated =
-        declAt !== -1 &&
-        new RegExp(`Feature\\.ExtendedAudio[\\s\\S]{0,300}${BULK_TABLE}\\s*\\.get`).test(text);
-      const inBulkTable = (offset: number): boolean => tableIsGated && offset >= tableStart && offset <= tableEnd;
+      // The span for each bulk table: from the line its `const NAME` is declared to
+      // the line the declaration closes. It has to start at the declaration, not the
+      // docblock above it, because the docblock names ids in prose and prose is not a
+      // declaration.
+      const bulkSpans = BULK_TABLES.map(({ name, from }) => {
+        const at = text.indexOf(`const ${name}`);
+        const docFrom = text.indexOf(from);
+        const start = docFrom === -1 ? at : docFrom;
+        // The close is searched from the *declaration*, not from the span start: the
+        // span covers a docblock and some hoisted `const`s, and the first `\n};` after
+        // the docblock belongs to a type alias in the middle of the section.
+        const closes = [text.indexOf("\n};", at), text.indexOf("\n]);", at)].filter((n) => n !== -1);
+        const end = closes.length === 0 ? -1 : Math.min(...closes);
+        // "Gated" means two things at once: the file contains an
+        // `Feature.ExtendedAudio` gate, *and* the table's name occurs more than once
+        // -- once at its declaration and once at a read.
+        //
+        // Counting occurrences rather than matching gate-then-read across a character
+        // window is deliberate. A window has to be wide enough to reach from a gate
+        // to its reader across a whole method body, and at that width it also reaches
+        // across the *next* method -- so it eventually stops meaning anything. The
+        // occurrence count is exactly the property that matters: delete the reader and
+        // the name is down to one occurrence and this fails.
+        const occurrences = text.split(new RegExp(`${name}\\b`)).length - 1;
+        const gated = at !== -1 && occurrences >= 2 && /Feature\.ExtendedAudio/.test(text);
+        return { start, end: end === -1 ? text.length : end, gated };
+      });
+      const inBulkTable = (offset: number): boolean =>
+        bulkSpans.some((s) => s.gated && offset >= s.start && offset <= s.end);
 
       let offset = 0;
       lines.forEach((raw, i) => {
@@ -558,8 +611,16 @@ describe("the gate", () => {
     expect(weapons.sort(), "every weapon family id the table can name is gated").toEqual(
       [...WEAPON_SOUND_IDS].sort(),
     );
+    // Subset, not equality: `BULK_SOUND_IDS` is derived from the tables and `gated`
+    // may legitimately hold more (the weapon ids share the same file). The claim is
+    // one-directional -- every id a table can name is gated -- and an equality would
+    // fail for the wrong reason the next time a table is added.
     expect(
-      gated.filter((id) => !weapons.includes(id)).sort(),
+      [...BULK_SOUND_IDS].filter((id) => !gated.includes(id)),
+      "every id a bulk table can name is gated",
+    ).toEqual([]);
+    expect(
+      gated.filter((id) => !WEAPON_SOUND_IDS.has(id) && !BULK_SOUND_IDS.has(id)).sort(),
       "and the non-weapon effects are all still wired",
     ).toEqual(["FISHING_CAST_PLAYER", "FISHING_REEL_PLAYER", "MATCH_STRIKE_START_FIRE_PLAYER", "UNDEAD_EAT_PLAYER"]);
   });

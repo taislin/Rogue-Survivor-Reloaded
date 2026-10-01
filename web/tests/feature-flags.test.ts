@@ -175,15 +175,15 @@ describe("Feature registry is wired", () => {
                  "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank", "Bar", "Bar", "BlackOpsRaid", "Butchering",
                  "Butchering", "CHARResearchRaid", "Church", "Clinic", "Clinic", "Cooking", "Cooking", "Cooking", "DarknessFov",
                  "DarknessFov", "DarknessFov", "DarknessGating", "DifficultyAtCreation", "DifficultyAtCreation",
-                 "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "FireBarrels",
-                 "FireBarrels", "FireExtinguishers", "FireStation", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing",
-                 "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-                 "FoodPoisoning", "FuelStation", "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue",
-                 "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "ItemDespawn", "ItemDespawn", "Junkyard",
-                 "Junkyard", "Library", "Library", "LightPriority", "ResourcesAvailability", "ResourcesAvailability",
-                 "ResourcesAvailability", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
-                 "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "SiphonFuel", "SiphonFuel",
-                 "TileFires", "TileFires", "TileFires", "TileFires", "WeaponWeight"
+                 "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",
+                 "FireBarrels", "FireBarrels", "FireExtinguishers", "FireStation", "Fishing", "Fishing", "Fishing", "Fishing",
+                 "Fishing", "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
+                 "FoodPoisoning", "FoodPoisoning", "FuelStation", "Graveyard", "Graveyard", "HelicopterRescue",
+                 "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "ItemDespawn", "ItemDespawn",
+                 "Junkyard", "Junkyard", "Library", "Library", "LightPriority", "ResourcesAvailability",
+                 "ResourcesAvailability", "ResourcesAvailability", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
+                 "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
+                 "SiphonFuel", "SiphonFuel", "TileFires", "TileFires", "TileFires", "TileFires", "WeaponWeight"
                ]);
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     // `Alcohol`'s *first* reader is now in `RogueGame` (the per-turn decay), and
@@ -518,11 +518,11 @@ describe("Feature registry is wired", () => {
     // on the file it has always used, and it is the reason this feature is not
     // zero readers.
     //
-    // Five now. Three are one-shot effects, the fourth gates `PlayRangedWeaponSFX`
-    // (which reaches 45 further ids from one place), and the fifth gates the
-    // match-strike recording in `DoMakeFireForCooking` -- gated on *this* feature
-    // rather than on `Cooking`, because it is the fork's recording of the fire and
-    // not the fire.
+    // Six now. Three are one-shot effects, one gates `PlayRangedWeaponSFX` (which
+    // reaches 45 further ids from one place), one gates `PlayBashOrBreakSFX` (16
+    // more), and one gates the match-strike recording in `DoMakeFireForCooking` --
+    // gated on *this* feature rather than on `Cooking`, because it is the fork's
+    // recording of the fire and not the fire.
     //
     // The remaining tiered families still have no reader, and that is not a hole in
     // the gate: the C#'s `_nearby` / `_far` / `_visible` suffixes need the distance
@@ -530,7 +530,7 @@ describe("Feature registry is wired", () => {
     // change. `tests/extended-audio.test.ts` asserts that no id is named anywhere
     // ungated, so this count can only rise through a decision.
     const extended = sites.filter((s) => s.feature === "ExtendedAudio");
-    expect(extended).toHaveLength(5);
+    expect(extended).toHaveLength(6);
     expect(extended.every((s) => /RogueGame\.ts/.test(s.at))).toBe(true);
   });
 
