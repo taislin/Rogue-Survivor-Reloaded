@@ -170,7 +170,6 @@ import { AchievementIDs, DifficultySide, Scoring } from "@engine/Scoring";
 import {
 	GameMode,
 	RaidType,
-	Ruleset,
 	ScriptStage,
 	Session,
 	UniqueActor,
@@ -179,6 +178,14 @@ import {
 } from "@engine/Session";
 import { reattachPlayer } from "@engine/serialization/sessionGraphRoot";
 import { storage, whenStorageReady } from "@engine/storage";
+  import {
+    applyLastNewGameConfig,
+    saveNewGameConfig,
+    RULESET_ENTRIES,
+    RULESET_VALUES,
+    MODE_ENTRIES,
+    MODE_VALUES,
+  } from "@engine/NewGameConfig";
 import { TextFile } from "@engine/TextFile";
 import { TaskRemoveDecoration } from "@engine/tasks/TaskRemoveDecoration";
 import { DayPhase, WorldTime } from "@engine/WorldTime";
@@ -2639,6 +2646,19 @@ export class RogueGame {
 		// Reset session
 		this.m_Session.reset();
 
+		// Cleared before anything can set it: a run cancelled part-way through the
+		// new-game flow would otherwise leave the flag set for the next attempt,
+		// which would silently skip the character screen with a stale "quick start".
+		this.m_QuickStartRequested = false;
+
+		// Seeds the session from the last confirmed pair, *here* rather than in the
+		// picker. The picker must keep showing the session, because returning to it
+		// after a cancel has to show what this run chose - a screen that opened on
+		// the stored pair would offer to undo a choice the player can still see
+		// they made. Applying it once, after the reset, gives the picker that for
+		// free and leaves it the single source of truth.
+		applyLastNewGameConfig(this.m_Session);
+
 		// C# allocates an unseeded `new DiceRoller()` here (RogueGame.cs:1417),
 		// which rolls off the clock. We seed it from the session instead so a run
 		// is reproducible; the session reset above has to come first for that seed
@@ -2654,7 +2674,18 @@ export class RogueGame {
 		// Character details on one screen too, or a quick start. This replaced three
 		// screens (race, then sex-or-undead-type, then skill) whose row set depended
 		// on the answer to the previous one.
-		if (!(await this.HandleNewCharacterDetails(roller))) return false;
+		//
+		// `Shift+Enter` on *this* screen asks for no character at all, so the
+		// shortcut skips straight past this one. The difficulty screen below is
+		// still shown: it is gated on the ruleset rather than on the character, and
+		// silently dropping a Still Alive rescue-day choice would be worse than one
+		// more keypress.
+		if (this.m_QuickStartRequested) {
+			this.m_QuickStartRequested = false;
+			this.applyQuickStartCharacter(roller);
+		} else if (!(await this.HandleNewCharacterDetails(roller))) {
+			return false;
+		}
 
 		// Choose difficulty, including the helicopter rescue day.
 		// C# RogueGame.cs:2881-2887 — the screen is *not* gated on the player
@@ -2734,15 +2765,8 @@ export class RogueGame {
 	 * carried over verbatim into `modeDescription`.
 	 */
 	async HandleSelectRulesetAndMode(): Promise<boolean> {
-		const rulesetEntries = [
-			Session.descShortRuleset(Ruleset.CLASSIC),
-			Session.descShortRuleset(Ruleset.STILL_ALIVE),
-		];
-		const modeEntries = [
-			Session.descGameMode(GameMode.GM_STANDARD),
-			Session.descGameMode(GameMode.GM_CORPSES_INFECTION),
-			Session.descGameMode(GameMode.GM_VINTAGE),
-		];
+		const rulesetEntries = RULESET_ENTRIES;
+		const modeEntries = MODE_ENTRIES;
 
 		// Seed both rows from the session, not from zero, so returning to this
 		// screen (Escape on the next one) shows what is actually set instead of
@@ -2772,6 +2796,17 @@ export class RogueGame {
 			this.m_UI.UI_Clear(Color.Black);
 			let gy = 0;
 			this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "New Game", 0, gy);
+			gy += 2 * MENU_BOLD_LINE_SPACING;
+
+			// A dedicated line rather than a longer footnote: `DrawFootnote` is one
+			// un-wrapped line pinned to the bottom of the canvas, and this is already
+			// close to its width. Window 2 sets the precedent for the same shortcut.
+			this.m_UI.UI_DrawStringBoldLarge(
+				Color.LightGray,
+				"SHIFT+ENTER quick start: these settings, random character.",
+				0,
+				gy,
+			);
 			gy += 2 * MENU_BOLD_LINE_SPACING;
 
 			this.DrawOptionRow("Ruleset  ", rulesetEntries, rulesetIdx, 0, gy, row === 0);
@@ -2815,14 +2850,14 @@ export class RogueGame {
 					loop = false;
 					break;
 				case "Enter":
-					this.m_Session.ruleset =
-						rulesetIdx === 1 ? Ruleset.STILL_ALIVE : Ruleset.CLASSIC;
-					this.m_Session.gameMode =
-						modeIdx === 1
-							? GameMode.GM_CORPSES_INFECTION
-							: modeIdx === 2
-								? GameMode.GM_VINTAGE
-								: GameMode.GM_STANDARD;
+					this.m_Session.ruleset = RULESET_VALUES[rulesetIdx];
+					this.m_Session.gameMode = MODE_VALUES[modeIdx];
+					// Recorded on both paths, so the shortcut repeats what was just
+					// played rather than what was played last time.
+					saveNewGameConfig(this.m_Session.ruleset, this.m_Session.gameMode);
+					// Tested before the switch's `case "Enter"` could swallow it: the
+					// UI reports the key as "Enter" with a separate modifier flag.
+					this.m_QuickStartRequested = key.shift === true;
 					ok = true;
 					loop = false;
 					break;
@@ -2830,6 +2865,35 @@ export class RogueGame {
 		} while (loop);
 
 		return ok;
+	}
+
+	/**
+	 * Set by `HandleSelectRulesetAndMode` when the confirm key was `Shift+Enter`,
+	 * and consumed by the caller to skip the character screen.
+	 *
+	 * A field rather than a wider return type because that method is pinned to
+	 * `Promise<boolean>` by `ruleset-picker.test.ts`, and because the flag is
+	 * strictly a message between two adjacent steps.
+	 */
+	private m_QuickStartRequested = false;
+
+	/**
+	 * `Shift+Enter`: a random human, of random sex, with a random skill.
+	 *
+	 * Shared by both quick starts so the two cannot drift apart. Roll semantics
+	 * are the C#'s, from the screens window 2 replaced: `rollChance(50)` for sex
+	 * (`RogueGame.cs:1719`) and `Skills.rollLiving` for the skill. The race has
+	 * **no** random entry - quick start is how you get a random character, and it
+	 * is always human - which is why the C#'s `WaitYesOrNo` "Is that OK?" after a
+	 * random race roll has nothing left to confirm.
+	 */
+	private applyQuickStartCharacter(roller: DiceRoller): void {
+		this.m_CharGen.isUndead = false;
+		this.m_CharGen.isMale = roller.rollChance(50);
+		const skID = Skills.rollLiving(roller);
+		this.m_CharGen.startingSkill = skID;
+		// scoring : starting skill.
+		this.m_Session.scoring.startingSkill = skID;
 	}
 
 	/** The two ruleset blurbs, carried over from `HandleSelectRuleset`. */
@@ -3052,12 +3116,7 @@ export class RogueGame {
 			// Shift+Enter is tested before Enter: the UI reports the key as "Enter"
 			// with a separate modifier flag, so a plain Enter would swallow it.
 			if (key.key === "Enter" && key.shift) {
-				this.m_CharGen.isUndead = false;
-				this.m_CharGen.isMale = roller.rollChance(50);
-				const skID = Skills.rollLiving(roller);
-				this.m_CharGen.startingSkill = skID;
-				// scoring : starting skill.
-				this.m_Session.scoring.startingSkill = skID;
+				this.applyQuickStartCharacter(roller);
 				ok = true;
 				loop = false;
 				continue;
