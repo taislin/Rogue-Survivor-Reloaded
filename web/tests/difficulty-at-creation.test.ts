@@ -21,7 +21,7 @@
  * called with a hand-picked argument.
  */
 
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { DiceRoller } from "@engine/DiceRoller";
 import { Feature, hasFeature } from "@engine/FeatureFlags";
@@ -42,6 +42,8 @@ import { GameMode, Ruleset, Session } from "@engine/Session";
 import { NullMusicManager } from "@engine/audio/NullMusicManager";
 import { OptionsScreen } from "@ui/OptionsScreen";
 import { NullRogueUI } from "@ui/NullRogueUI";
+import { LAST_NEW_GAME_CONFIG_KEY } from "@engine/NewGameConfig";
+import { storage } from "@engine/storage";
 
 let ui: NullRogueUI;
 let game: RogueGame;
@@ -55,7 +57,20 @@ beforeAll(async () => {
 	await game.LoadData();
 });
 
+beforeEach(() => {
+	// The flow now seeds itself from the last confirmed ruleset and mode, so a
+	// value left in storage by an earlier test would decide which ruleset the next
+	// flow runs under. That is correct behaviour — a player who last played Still
+	// Alive should be offered Still Alive — but it means these tests have to state
+	// their precondition instead of inheriting one. Before this, a Still Alive
+	// flow left `Still Alive` in storage and the *classic* flow below inherited it,
+	// reached the difficulty screen, and failed for a reason that had nothing to do
+	// with difficulty.
+	storage.removeItem(LAST_NEW_GAME_CONFIG_KEY);
+});
+
 afterEach(() => {
+	storage.removeItem(LAST_NEW_GAME_CONFIG_KEY);
 	Session.get().ruleset = Ruleset.CLASSIC;
 	Session.get().gameMode = GameMode.GM_STANDARD;
 	Session.get().armyHelicopterRescueDay = GameOptions.DEFAULT_RESCUE_DAY;

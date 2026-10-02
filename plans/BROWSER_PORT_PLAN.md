@@ -28,6 +28,32 @@
 > to prevent. Pinned by a test that fails with `whenReady() never settled` if the
 > deadline is ever removed.
 >
+> **The new-game screens grew a quick start, 2026-10-02.** `Shift+Enter` on the
+> character screen already made a random human; it now also works on the
+> **ruleset** screen, skipping the character screen entirely and repeating the
+> ruleset and mode you last confirmed (falling back to the session's own values on
+> a first run). Two things worth recording, because both were wrong on the first
+> attempt and the tests caught them:
+>
+> - **Storage seeds the session once, in `HandleNewCharacter` — not the picker.**
+>   Seeding the picker instead made it override the live session, which quietly
+>   broke the guarantee that returning to it after a cancel offers back the choice
+>   the player can see they made. It also leaked *between tests*: a Still Alive
+>   flow wrote the stored pair, and the next *classic* flow inherited it and
+>   reached a screen it must never reach. `difficulty-at-creation.test.ts` now
+>   clears the key and says why — the behaviour is right, the precondition was
+>   unstated.
+> - **The persistence is not on `RogueGame`.** `measure-roguegame.mjs` put the
+>   first version at **846 members / 94 private**, up ten, for a self-contained
+>   read/validate/write of one JSON record. It is now `NewGameConfig.ts` and the
+>   class is at **838 / 86**, up two: one method and one flag. `public` (752) and
+>   the reachable surface (113) are both unchanged, which is what §6.10 stops on.
+>
+> Stored as the two *display strings* and matched back with `indexOf`, never fed
+> through `descShortRuleset`/`descGameMode` — those **throw** on a value they do
+> not know, so a persisted entry a later version drops would throw inside the
+> new-game flow before anything was drawn.
+>
 > **Numbers in this file were stale by a wide margin until 2026-10-02** — the test
 > count alone was quoted as 1 542 in eight places when it was over 2 800, and
 > `RogueGame.ts` was described as 27 722 lines when it is 36 116. Re-measure

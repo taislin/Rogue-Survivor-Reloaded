@@ -104,6 +104,23 @@ export class NullRogueUI implements IRogueUI {
     }
   }
 
+  /**
+   * Queues one key with Shift held.
+   *
+   * `pushKeys` hard-codes `shift: false`, which was fine until the quick-start
+   * shortcuts: `Shift+Enter` is the *only* way to reach them, so a test for that
+   * behaviour cannot get there without this.
+   */
+  pushShiftKey(key: string): void {
+    this.keyQueue.push({
+      key,
+      keyCode: key.length === 1 ? key.toUpperCase().charCodeAt(0) : 0,
+      shift: true,
+      ctrl: false,
+      alt: false,
+    });
+  }
+
   // ── Input ──────────────────────────────────────────────────────────────────
 
   async UI_WaitKey(): Promise<GameKeyEvent> {

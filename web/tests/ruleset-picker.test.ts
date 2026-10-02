@@ -1,5 +1,7 @@
-import { describe, it, expect, beforeAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterEach } from "vitest";
 import { RogueGame } from "@engine/RogueGame";
+import { applyLastNewGameConfig, LAST_NEW_GAME_CONFIG_KEY } from "@engine/NewGameConfig";
+import { storage } from "@engine/storage";
 import { NullRogueUI } from "@ui/NullRogueUI";
 import { NullMusicManager } from "@engine/audio/NullMusicManager";
 import { GameMode, Ruleset, Session } from "@engine/Session";
@@ -132,6 +134,131 @@ describe("HandleSelectRulesetAndMode", () => {
     await expect(game.HandleSelectRulesetAndMode()).resolves.toBe(true);
     expect(Session.get().ruleset).toBe(Ruleset.STILL_ALIVE);
     expect(Session.get().gameMode).toBe(GameMode.GM_VINTAGE);
+  });
+});
+
+describe("the quick start", () => {
+  // Mirrors `NewGameConfig.LAST_NEW_GAME_CONFIG_KEY`, imported above.
+  const KEY = LAST_NEW_GAME_CONFIG_KEY;
+
+  /** The flag the caller reads to skip the character screen. */
+  function quickStartRequested(g: RogueGame): boolean {
+    return (g as unknown as { m_QuickStartRequested: boolean })
+      .m_QuickStartRequested;
+  }
+
+  beforeEach(() => {
+    // The screen now *seeds* from the stored pair, so a value left by an earlier
+    // test would change what these screens open showing. Each test states its own.
+    storage.removeItem(KEY);
+  });
+
+  afterEach(() => {
+    storage.removeItem(KEY);
+  });
+
+  it("is requested by Shift+Enter and not by a plain Enter", async () => {
+    // The distinction is one bit, and it is the whole feature: Enter wants a
+    // character, Shift+Enter does not. If the modifier were dropped, a player
+    // pressing Shift+Enter would silently get the random character too - which
+    // looks like it worked.
+    ui.pushShiftKey("Enter");
+    await expect(game.HandleSelectRulesetAndMode()).resolves.toBe(true);
+    expect(quickStartRequested(game)).toBe(true);
+
+    (game as unknown as { m_QuickStartRequested: boolean }).m_QuickStartRequested =
+      false;
+    ui.pushKeys("Enter");
+    await expect(game.HandleSelectRulesetAndMode()).resolves.toBe(true);
+    expect(quickStartRequested(game)).toBe(false);
+  });
+
+  it("repeats the last confirmed pair", async () => {
+    // Recorded by the Enter path, so the shortcut repeats what was actually played
+    // rather than what was played last time.
+    ui.pushKeys("ArrowRight", "ArrowDown", "ArrowRight", "ArrowRight", "Enter");
+    await expect(game.HandleSelectRulesetAndMode()).resolves.toBe(true);
+    expect(Session.get().ruleset).toBe(Ruleset.STILL_ALIVE);
+    expect(Session.get().gameMode).toBe(GameMode.GM_VINTAGE);
+    expect(JSON.parse(storage.getItem(KEY) ?? "null")).toEqual({
+      ruleset: "Still Alive",
+      mode: "VTG - Vintage Zombies",
+    });
+  });
+
+  it("seeds a fresh session from it, and never overrides a live one", async () => {
+    // The distinction that matters, and the reason the picker does not read
+    // storage itself. Returning to the picker after a cancel must offer back the
+    // choice the player can see they made; a screen that reopened on the stored
+    // pair would offer to undo a *different* run's choice.
+    storage.setItem(
+      KEY,
+      JSON.stringify({ ruleset: "Still Alive", mode: "VTG - Vintage Zombies" }),
+    );
+
+    // Fresh start: `HandleNewCharacter` seeds the session, so the picker opens
+    // showing the stored pair and Shift+Enter needs no arrow keys.
+    Session.get().reset();
+    applyLastNewGameConfig(Session.get());
+    expect(Session.get().ruleset).toBe(Ruleset.STILL_ALIVE);
+    expect(Session.get().gameMode).toBe(GameMode.GM_VINTAGE);
+    ui.pushShiftKey("Enter");
+    await expect(game.HandleSelectRulesetAndMode()).resolves.toBe(true);
+    expect(Session.get().ruleset).toBe(Ruleset.STILL_ALIVE);
+    expect(Session.get().gameMode).toBe(GameMode.GM_VINTAGE);
+
+    // Mid-run: the session is authoritative and storage is not consulted, so a
+    // picker left showing what the player picked still shows it.
+    Session.get().ruleset = Ruleset.CLASSIC;
+    Session.get().gameMode = GameMode.GM_STANDARD;
+    ui.pushKeys("Escape");
+    await expect(game.HandleSelectRulesetAndMode()).resolves.toBe(false);
+    ui.pushKeys("Enter");
+    await expect(game.HandleSelectRulesetAndMode()).resolves.toBe(true);
+    expect(Session.get().ruleset).toBe(Ruleset.CLASSIC);
+    expect(Session.get().gameMode).toBe(GameMode.GM_STANDARD);
+  });
+
+  it("falls back to the session's own values on a first run", async () => {
+    // Nothing stored: the screen must still work, and must not treat "no history"
+    // as an error.
+    Session.get().ruleset = Ruleset.STILL_ALIVE;
+    Session.get().gameMode = GameMode.GM_VINTAGE;
+    ui.pushShiftKey("Enter");
+    await expect(game.HandleSelectRulesetAndMode()).resolves.toBe(true);
+    expect(Session.get().ruleset).toBe(Ruleset.STILL_ALIVE);
+    expect(Session.get().gameMode).toBe(GameMode.GM_VINTAGE);
+  });
+
+  it("ignores an unusable stored pair instead of throwing", async () => {
+    // The load matches names against the entries on screen precisely so it cannot
+    // throw: `descShortRuleset` and `descGameMode` *throw* on a value they do not
+    // know, and a corrupt key must not take the new-game flow down with it.
+    //
+    // Exercised through `applyLastNewGameConfig`, which is the only reader: the
+    // picker itself never touches storage, so testing it there would assert
+    // nothing about the parse.
+    const seed = () => applyLastNewGameConfig(Session.get());
+
+    for (const stored of [
+      "{not json",
+      JSON.stringify({ ruleset: "Nonsense", mode: "Nonsense" }),
+      JSON.stringify({ ruleset: 7, mode: null }),
+      // Half-remembered: a real ruleset with a mode that has gone.
+      JSON.stringify({ ruleset: "Still Alive", mode: "Nonsense" }),
+      JSON.stringify({ ruleset: "Still Alive" }),
+      JSON.stringify({}),
+      "null",
+      "[]",
+      '"a string"',
+    ]) {
+      storage.setItem(KEY, stored);
+      Session.get().ruleset = Ruleset.CLASSIC;
+      Session.get().gameMode = GameMode.GM_STANDARD;
+      expect(() => seed()).not.toThrow();
+      expect(Session.get().ruleset).toBe(Ruleset.CLASSIC);
+      expect(Session.get().gameMode).toBe(GameMode.GM_STANDARD);
+    }
   });
 });
 
