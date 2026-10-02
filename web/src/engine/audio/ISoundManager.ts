@@ -13,5 +13,14 @@ export interface ISoundManager {
   stopAll(): void;
   setVolume(vol: number): void;
   getVolume(): number;
+  /**
+   * Still Alive, Release 2 — the C#'s `IsSoundEnabled`, driven by `UI_SFXS`.
+   *
+   * Not a volume of 0: the port's `WebAudioSoundManager` still reports and
+   * reports a 404 for a missing file either way, and `getVolume()` of 0 is
+   * indistinguishable from "the player turned it down". A mute is a different
+   * state from a quiet sound and it has its own option row.
+   */
+  setEnabled(on: boolean): void;
   preload(soundIds: string[]): Promise<void>;
 }

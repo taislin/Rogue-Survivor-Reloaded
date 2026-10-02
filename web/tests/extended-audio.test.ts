@@ -90,15 +90,32 @@ function shippedFiles(): string[] {
 
 /**
  * The ids the port can only play because this feature landed: the fixture's,
- * minus the one pair both versions declare. `NIGHTMARE` is in `GameSounds.cs`
+ * minus the ones both versions declare. `NIGHTMARE` is in `GameSounds.cs`
  * and is also Classic's, so it is not fork-only by any definition that matters,
  * and a test that called it one would demand a gate on the one sound both rulesets
  * are supposed to play.
+ *
+ * `MELEE_ATTACK_MISS_PLAYER` joins them, and the reason is worth stating because
+ * the list was hand-built and got this one wrong until the options screen named
+ * the constant. The fork annotates every constant it adds with an `//@@MP` note
+ * on the *declaration* — `UNDEAD_EAT_PLAYER` carries `- added a NEARBY (Release 3)`
+ * at `GameSounds.cs:15`. `MELEE_ATTACK_MISS_PLAYER` (`GameSounds.cs:119`) carries
+ * no such marker; only its *call site* is annotated (`//@@MP (Release 2)` at
+ * `RogueGame.cs:18548`), which is the fork wiring up a sound the original game
+ * already shipped. So it is vanilla, and asking for an `ExtendedAudio` gate around
+ * it would have put a Still Alive switch in front of a sound Classic plays.
+ *
+ * The marker is the discriminator, and it is on the declaration rather than the
+ * call site. Reading the wrong one is how this entry went missing.
  */
 const VANILLA_IDS: ReadonlySet<string> = new Set([
   GameSounds.UNDEAD_EAT,
   GameSounds.UNDEAD_RISE,
   GameSounds.NIGHTMARE,
+  // The miss pair. `_NEARBY` is vanilla for the same reason `_PLAYER` is, and it
+  // came in with the other half of the same melee-miss call site.
+  GameSounds.MELEE_ATTACK_MISS_PLAYER,
+  GameSounds.MELEE_ATTACK_MISS_NEARBY,
 ]);
 const FORK_IDS: ReadonlySet<string> = new Set(
   FIXTURE.entries.map((e) => e.id).filter((id) => !VANILLA_IDS.has(id)),
@@ -313,6 +330,7 @@ class RecordingSoundManager implements ISoundManager {
   }
   stopAll(): void {}
   setVolume(): void {}
+  setEnabled(_on: boolean): void {}
   getVolume(): number {
     return 1;
   }
@@ -329,6 +347,9 @@ class RecordingMusicManager implements IMusicManager {
   playLooping(musicId: string, _priority: MusicPriorityValue): void {
     this.played.push(musicId);
   }
+  playIfNotAlreadyPlaying(musicId: string, _priority: MusicPriorityValue): void {
+    this.played.push(musicId);
+  }
   stop(): void {}
   pause(): void {}
   resume(): void {}
@@ -342,6 +363,7 @@ class RecordingMusicManager implements IMusicManager {
     return MusicPriority.NULL;
   }
   setVolume(): void {}
+  setEnabled(_on: boolean): void {}
   getVolume(): number {
     return 0;
   }

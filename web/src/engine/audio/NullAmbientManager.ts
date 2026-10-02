@@ -22,4 +22,5 @@ export class NullAmbientManager implements IAmbientManager {
   getPlayingAmbients(): readonly string[] { return []; }
   setVolume(_vol: number): void {}
   getVolume(): number { return 0; }
+  setEnabled(_on: boolean): void {}
 }

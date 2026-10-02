@@ -129,17 +129,24 @@ const WIRED: readonly string[] = [
   // Feature.Church
   GameAmbients.CHURCH_BELLS_WITHIN_MAP,
   GameAmbients.CHURCH_BELLS_OUTSIDE_MAP,
+  // The options screen's ambient-volume preview. `RogueGame.cs:2244`.
+  GameAmbients.TEST_AMBIENT,
 ];
 
 /**
- * The one that is still not reachable, and it is not waiting on a feature.
+ * Nothing is unreachable any more.
  *
- * Its only C# caller is `OptionsMenuAudioAdjustment` (`RogueGame.cs:2244`), a
- * preview cue for the ambient-volume row in the options screen. Wiring it means
- * adding `UI_AMBIENTSFXS` and `UI_AMBIENTSFXS_VOLUME` (`GameOptions.cs:1038`), which
- * is options-screen work rather than audio work -- so this stays unwired on purpose.
+ * `TEST_AMBIENT` used to be listed here alone, with the `describe` block below
+ * asserting it was named nowhere in the engine. Both were correct then. The
+ * options screen grew a `UI_AMBIENTSFXS_VOLUME` row (Still Alive, Release 6-1)
+ * and `RogueGame.OptionsMenuAudioAdjustment` (`RogueGame.cs:2244`) previews this
+ * exact track from it, so the track now has the one caller the C# gives it.
+ *
+ * Kept as an empty list rather than deleted: the block asserts the table has no
+ * unwired entries left, which is the claim worth pinning, and deleting the
+ * constant would have quietly widened the scope of this file's other 90 tests.
  */
-const UNREACHABLE: readonly string[] = [GameAmbients.TEST_AMBIENT];
+const UNREACHABLE: readonly string[] = [];
 
 // ── The table ───────────────────────────────────────────────────────────────
 
@@ -264,6 +271,7 @@ class RecordingAmbientManager implements IAmbientManager {
   readonly calls: string[] = [];
   playing: string[] = [];
   volume = 0;
+  enabled = true;
   private paused = false;
 
   play(id: string): void { this.calls.push(`play(${id})`); this.mark(id); }
@@ -292,6 +300,8 @@ class RecordingAmbientManager implements IAmbientManager {
   getPlayingAmbients(): readonly string[] { return [...this.playing]; }
   setVolume(vol: number): void { this.calls.push(`setVolume(${vol})`); this.volume = vol; }
   getVolume(): number { return this.volume; }
+  /** Records the mute so a test can tell "off" from "zero volume". */
+  setEnabled(on: boolean): void { this.calls.push(`setEnabled(${on})`); this.enabled = on; }
   isPaused(): boolean { return this.paused; }
 }
 
@@ -810,36 +820,53 @@ describe("CLASSIC gets no ambient channel at all", () => {
 
 // ── The one unreachable track ───────────────────────────────────────────────
 
-describe("the one unwired track", () => {
-  it("is TEST_AMBIENT and nothing else", () => {
-    // 13 table entries - 12 wired - 1 unreachable. If a future stage wires
-    // TEST_AMBIENT this fails and has to be updated on purpose: it would mean the
-    // options screen grew an ambient-volume row, which is a real change with real
-    // consequences for the other channels and should not happen by accident.
+describe("the track that used to be unwired", () => {
+  it("is now wired, and every table entry has a caller", () => {
+    // The mirror of the test this replaced. It asserted `TEST_AMBIENT` was named
+    // nowhere; that stopped being true when the options screen grew its
+    // ambient-volume row, and the assertion below is the one that should survive:
+    // thirteen table entries, thirteen with a trigger site.
     const unwired = Object.keys(AMBIENT_FILES).filter((id) => !WIRED.includes(id));
     expect(unwired).toEqual([...UNREACHABLE]);
-    expect(unwired).toHaveLength(1);
+    expect(unwired).toHaveLength(0);
   });
 
-  it("is not named anywhere in the engine", () => {
-    // A source scan, not a behavioural one. The remaining track has no trigger site
-    // at all, so the only way to catch one appearing is to read the source -- the
-    // same technique `feature-flags.test.ts` and `music-priority.test.ts` use.
-    const src = readFileSync(
-      join(__dirname, "..", "src", "engine", "RogueGame.ts"),
-      "utf-8",
+  it("is previewed from the options screen's ambient-volume row", () => {
+    // A source scan, not a behavioural one — the same technique
+    // `feature-flags.test.ts` and `music-priority.test.ts` use, and for the same
+    // reason: the only way to catch this caller *disappearing* is to read the
+    // source, because nothing else asserts it.
+    //
+    // Both files are checked: the module that owns the switch and the screen that
+    // maps rows onto it. They used to be `RogueGame.ts` and `OptionsScreen.ts` --
+    // an earlier version of this change carried a copy of the switch on the engine
+    // class too, which was unreachable because `HandleOptions` builds the screen
+    // rather than looping itself.
+    // The two halves are checked separately, because they are in different files:
+    // the module that owns the switch names the track, and the screen maps the
+    // ambient-volume row onto it. They used to be one file each on
+    // `RogueGame.ts` and `OptionsScreen.ts` -- an earlier version of this change
+    // carried a copy of the switch on the engine class too, which was unreachable,
+    // because `HandleOptions` builds the screen rather than looping itself.
+    const preview = stripComments(
+      readFileSync(
+        join(__dirname, "..", "src", "engine", "audio", "OptionsAudioPreview.ts"),
+        "utf-8",
+      ),
     );
-    // Comments are stripped first. The engine *does* mention the constant by name --
-    // `CheckAmbientAudio`'s docblock points a reader at it to explain why it is the
-    // one still unwired -- and prose about a track is the opposite of a trigger for
-    // it. Scanning raw source cannot tell those apart, which is why the test above
-    // this one used to be satisfiable only by deleting an explanatory comment.
-    expect(stripComments(src), "TEST_AMBIENT is called in the engine").not.toMatch(
+    expect(preview, "the preview switch no longer names TEST_AMBIENT").toMatch(
       /GameAmbients\.TEST_AMBIENT/,
     );
+    const screen = stripComments(
+      readFileSync(join(__dirname, "..", "src", "ui", "OptionsScreen.ts"), "utf-8"),
+    );
+    expect(
+      screen,
+      "the options screen no longer routes the ambient-volume row to a preview",
+    ).toMatch(/UI_AMBIENTSFXS_VOLUME/);
   });
 
-  it("still has its file, because unreachable is not the same as absent", () => {
+  it("still has its file, because wired is not the same as correct", () => {
     // The table test above already resolves all thirteen ids and checks each file
     // is on disk; this exists to say the *point*. If it ever fails, the asset was
     // deleted rather than left unwired, and the table is no longer the C#'s

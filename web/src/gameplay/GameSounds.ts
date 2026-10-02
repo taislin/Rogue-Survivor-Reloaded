@@ -578,6 +578,17 @@ export class GameMusics {
   // alpha10
   static readonly SURFACE = "surface";
   static readonly SURFACE_FILE = `${GameMusics.PATH}RS - Surface`;
+
+  /**
+   * Still Alive, Release 7-3 — the options-menu level-preview cue.
+   *
+   * Not a track the game ever plays on its own: `RogueGame`'s
+   * `OptionsMenuAudioAdjustment` (`RogueGame.cs:2244`) starts it when the cursor
+   * lands on `UI_MUSIC_VOLUME`, so a player can hear the level they just stepped
+   * to. It is also why `UI_AMBIENTSFXS_VOLUME` needs a matching `TEST_AMBIENT`.
+   */
+  static readonly TEST_MUSIC = "test_music";
+  static readonly TEST_MUSIC_FILE = `${GameMusics.PATH}test_music`;
 }
 
 /**
@@ -613,6 +624,7 @@ export const MUSIC_FILES: Readonly<Record<string, string>> = {
   [GameMusics.SUBWAY]: "RS - Subway",
   [GameMusics.SURVIVORS]: "RS - Survivors",
   [GameMusics.SURFACE]: "RS - Surface",
+  [GameMusics.TEST_MUSIC]: "test_music",
 };
 
 /**

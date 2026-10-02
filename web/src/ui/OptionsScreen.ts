@@ -1,4 +1,11 @@
 import type { IMusicManager } from "@engine/audio/IMusicManager";
+import type { ISoundManager } from "@engine/audio/ISoundManager";
+import type { IAmbientManager } from "@engine/audio/IAmbientManager";
+import {
+	AudioPreview,
+	previewAudioAdjustment,
+	type AudioPreviewValue,
+} from "@engine/audio/OptionsAudioPreview";
 import { Color } from "@engine/Color";
 import { Feature, hasFeature } from "@engine/FeatureFlags";
 import {
@@ -90,6 +97,15 @@ export class OptionsScreen {
 		// display & sounds
 		OptionIDs.UI_MUSIC,
 		OptionIDs.UI_MUSIC_VOLUME,
+		/**
+		 * Still Alive, Release 2 / 6-1. The C# puts all four of these directly
+		 * after `UI_MUSIC_VOLUME` (`GameOptions.cs:16-19`), so they go here too —
+		 * this list is display order, not the enum order the save blob uses.
+		 */
+		OptionIDs.UI_SFXS,
+		OptionIDs.UI_SFXS_VOLUME,
+		OptionIDs.UI_AMBIENTSFXS,
+		OptionIDs.UI_AMBIENTSFXS_VOLUME,
 		OptionIDs.UI_ANIM_DELAY,
 		OptionIDs.UI_SHOW_MINIMAP,
 		OptionIDs.UI_SHOW_PLAYER_TAG_ON_MINIMAP,
@@ -189,6 +205,17 @@ export class OptionsScreen {
 	constructor(
 		private readonly ui: IRogueUI,
 		private readonly music?: IMusicManager,
+		/**
+		 * Still Alive, Release 2 / 6-1: the two other buses.
+		 *
+		 * The screen had only a music handle, which is why the sfx and ambient rows
+		 * had nowhere to be applied from — and why `optionsMenuAudioAdjustment` needs
+		 * all three to preview a level. Optional, as `music` is, so the existing
+		 * single-argument call sites and the test doubles that pass only a music
+		 * manager keep working; a screen with no audio simply previews nothing.
+		 */
+		private readonly sfx?: ISoundManager,
+		private readonly ambient?: IAmbientManager,
 	) {
 		this.menuEntries = this.list.map((id) => OptionsScreen.entryName(id));
 	}
@@ -223,6 +250,13 @@ export class OptionsScreen {
 		// The cursor as of the last input, so a wait can tell "the mouse moved" from
 		// "the mouse is sitting there". See `waitForInput`.
 		let prevMouse = this.ui.UI_GetMousePosition();
+		/**
+		 * The row the cursor was on last iteration, so the audio preview below fires
+		 * once per arrival. `null` at the start: the first iteration is an arrival on
+		 * row 0 and the C# previews there too, because it previews before reading
+		 * input rather than after.
+		 */
+		let prevSelected: number | null = null;
 
 		do {
 			this.draw(selected);
@@ -308,6 +342,16 @@ export class OptionsScreen {
 			if (Options.simThread) Options.simulateWhenSleeping = false;
 			// apply options.
 			this.applyOptions();
+			// Still Alive, Release 7-3: preview the row the cursor has *landed on*.
+			// The C# calls this from its own input handler on every keypress
+			// (`RogueGame.cs:2268`), which fires on movement as well as on Left/Right,
+			// so arriving at a volume row starts its cue. Only called when the row
+			// changed: the default arm resumes everything, and firing it on an
+			// unrelated row would be harmless but pointless work per keypress.
+			if (selected !== prevSelected) {
+				prevSelected = selected;
+				this.audioAdjustment(this.list[selected]);
+			}
 
 			// A typeface whose faces were still being fetched draws in the old
 			// face until they land, and the loop's own redraw has already happened
@@ -662,6 +706,33 @@ export class OptionsScreen {
 		}
 	}
 
+	/**
+	 * `RogueGame.OptionsMenuAudioAdjustment` — `RogueGame.cs:2230` (Release 7-3).
+	 *
+	 * The body lives in `engine/audio/OptionsAudioPreview` and is shared, because
+	 * this screen is not the only thing that could want it and a second copy on
+	 * `RogueGame` would have had no caller at all — `HandleOptions` builds this
+	 * screen, so the engine never gets a chance to call its own method.
+	 *
+	 * What is here is the mapping from an option row to a preview, which is the
+	 * part that belongs next to the row list.
+	 */
+	private audioAdjustment(option: OptionIDs): void {
+		const AUDIO_ROWS: Readonly<Partial<Record<OptionIDs, AudioPreviewValue>>> = {
+			[OptionIDs.UI_MUSIC]: AudioPreview.MUSIC_ENABLE,
+			[OptionIDs.UI_SFXS]: AudioPreview.SFX_ENABLE,
+			[OptionIDs.UI_AMBIENTSFXS]: AudioPreview.AMBIENT_ENABLE,
+			[OptionIDs.UI_MUSIC_VOLUME]: AudioPreview.MUSIC_VOLUME,
+			[OptionIDs.UI_SFXS_VOLUME]: AudioPreview.SFX_VOLUME,
+			[OptionIDs.UI_AMBIENTSFXS_VOLUME]: AudioPreview.AMBIENT_VOLUME,
+		};
+		previewAudioAdjustment(AUDIO_ROWS[option] ?? AudioPreview.NONE, {
+			music: this.music,
+			sfx: this.sfx,
+			ambient: this.ambient,
+		});
+	}
+
 	/** `RogueGame.ApplyOptions(bool ingame)` — RogueGame.cs ≈ line 19857. */
 	private applyOptions(): void {
 		// m_MusicManager.IsMusicEnabled = Options.PlayMusic;
@@ -669,6 +740,17 @@ export class OptionsScreen {
 		if (this.music) {
 			this.music.setVolume(Options.musicVolume / 100);
 			if (!Options.playMusic) this.music.stop();
+		}
+		// Still Alive, Release 2 / 6-1. Without these the two new volume rows step a
+		// number on screen and change nothing audible. See `RogueGame.ApplyOptions`
+		// for why the enabled flag is set apart from the volume.
+		if (this.sfx) {
+			this.sfx.setEnabled(Options.playSFXs);
+			this.sfx.setVolume(Options.sfxVolume / 100);
+		}
+		if (this.ambient) {
+			this.ambient.setEnabled(Options.playAmbientSFXs);
+			this.ambient.setVolume(Options.ambientSFXVolume / 100);
 		}
 
 		// update difficulty. C# also re-derives Scoring.Side from the player, but

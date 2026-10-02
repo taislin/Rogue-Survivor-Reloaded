@@ -10,6 +10,7 @@ import { IMusicManager, MusicPriority, type MusicPriorityValue } from './IMusicM
 export class NullMusicManager implements IMusicManager {
   play(_musicId: string, _priority: MusicPriorityValue): void {}
   playLooping(_musicId: string, _priority: MusicPriorityValue): void {}
+  playIfNotAlreadyPlaying(_musicId: string, _priority: MusicPriorityValue): void {}
   stop(): void {}
   pause(): void {}
   resume(): void {}

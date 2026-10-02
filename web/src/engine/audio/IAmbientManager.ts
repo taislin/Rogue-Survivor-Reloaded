@@ -88,6 +88,11 @@ export interface IAmbientManager {
    */
   setVolume(vol: number): void;
   getVolume(): number;
+  /**
+   * Still Alive, Release 6-1 — the C#'s `IsAmbientSoundEnabled`, driven by
+   * `UI_AMBIENTSFXS`. Same argument as `ISoundManager.setEnabled`.
+   */
+  setEnabled(on: boolean): void;
 }
 
 /**

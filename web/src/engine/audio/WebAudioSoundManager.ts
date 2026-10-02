@@ -111,6 +111,17 @@ export class WebAudioSoundManager implements ISoundManager {
     return this.volume;
   }
 
+  /**
+   * Still Alive, Release 2 — `UI_SFXS`.
+   *
+   * `enabled` was already here and already checked in `play` and
+   * `playIfNotAlreadyPlaying`; it just had no way to be set from outside, so the
+   * port had one shared on/off state that nothing could reach.
+   */
+  public setEnabled(on: boolean): void {
+    this.enabled = on;
+  }
+
   public async preload(soundIds: string[]): Promise<void> {
     this.initContext();
     if (!this.ctx) return;

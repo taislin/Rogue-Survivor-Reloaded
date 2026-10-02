@@ -102,6 +102,19 @@ export class WebAudioMusicManager implements IMusicManager {
     this.start(musicId, priority, true);
   }
 
+  /**
+   * C# `ISoundManager.PlayIfNotAlreadyPlaying` — `SFMLSoundManager.cs:123`.
+   *
+   * `start` already short-circuits when the requested id is the one sounding
+   * (`if (this.currentMusicId === musicId && this.isPlayingState) return;`), so
+   * this is `play` and the guard is inherited rather than restated. It is spelled
+   * out as its own method because the C# interface has it and the one caller —
+   * the options-menu preview — is written against that name.
+   */
+  public playIfNotAlreadyPlaying(musicId: string, priority: MusicPriorityValue): void {
+    this.start(musicId, priority, false);
+  }
+
   private start(musicId: string, priority: MusicPriorityValue, loop: boolean): void {
     if (!this.audioElement) return;
     if (this.currentMusicId === musicId && this.isPlayingState) return;

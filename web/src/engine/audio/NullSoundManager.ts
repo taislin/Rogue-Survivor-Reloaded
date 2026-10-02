@@ -8,5 +8,6 @@ export class NullSoundManager implements ISoundManager {
   stopAll(): void {}
   setVolume(_vol: number): void {}
   getVolume(): number { return 0; }
+  setEnabled(_on: boolean): void {}
   async preload(_soundIds: string[]): Promise<void> {}
 }

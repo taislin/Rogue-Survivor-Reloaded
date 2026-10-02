@@ -309,7 +309,17 @@ describe("no play call is handed a `*_FILE`", () => {
  * and `MELEE_ATTACK_MISS_PLAYER` at `RogueGame.cs:2251` is the sound-effects row's
  * preview. So this is a whole unported mechanism, not one orphaned track.
  */
-describe("TEST_AMBIENT still has no row to be previewed on", () => {
+/**
+ * The option rows `TEST_AMBIENT` was waiting for.
+ *
+ * This block used to assert that the four sound options were *absent* and that
+ * the options screen drove only the music volume. Both were true, both were the
+ * reason the track could not be previewed, and both were written to fail loudly
+ * if the rows appeared — which they have now (`GameOptions.cs:16-19`, Still Alive
+ * Release 2 / 6-1). The assertions below are the inversions, kept in the same
+ * place so the next reader finds the reason rather than the residue.
+ */
+describe("the rows TEST_AMBIENT is previewed from", () => {
   it("ships the file and declares the pair, because the table is the C#'s thirteen in full", () => {
     // The asset has to be there whether or not anything plays it: a later constant
     // naming it has to find it already on disk, which is the same reasoning
@@ -318,42 +328,89 @@ describe("TEST_AMBIENT still has no row to be previewed on", () => {
     expect(existsSync(publicFilePath("/assets/ambients/test_ambient.ogg"))).toBe(true);
   });
 
-  it("has no ambient-volume option for the preview to sit on", () => {
-    // Named as strings rather than compared against `OptionIDs` members, because a
-    // member cannot be referred to without existing: the assertion has to be about
-    // the option being *absent*, and `OptionIDs.UI_AMBIENTSFXS_VOLUME` would not
-    // compile. `Object.keys` on the enum object is the only way to ask.
+  it("are all four declared, and declared at the end", () => {
+    // Named as strings rather than as `OptionIDs` members, so this file keeps
+    // compiling on the older enum and so the assertion is about the enum object
+    // rather than about a symbol that only exists once the row does.
     const declared = Object.keys(OptionIDs);
-    for (const absent of [
-      "UI_AMBIENTSFXS",
-      "UI_AMBIENTSFXS_VOLUME",
+    for (const present of [
       "UI_SFXS",
       "UI_SFXS_VOLUME",
+      "UI_AMBIENTSFXS",
+      "UI_AMBIENTSFXS_VOLUME",
     ]) {
-      expect(declared, `${absent} now exists -- TEST_AMBIENT is wireable`).not.toContain(absent);
+      expect(declared, `${present} is still missing`).toContain(present);
     }
+    // At the end, and this is the load-bearing part. The C# has them at ids 2-5,
+    // wedged between `UI_MUSIC_VOLUME` and `UI_ANIM_DELAY`
+    // (`GameOptions.cs:16-19`), but a stored options blob carries the *number*, so
+    // inserting them there would silently re-point every saved value at the wrong
+    // row. Appended instead — the same rule as `GAME_RESCUE_DAY` and the other
+    // rows that arrived after the vanilla set.
+    expect(declared.slice(-4)).toEqual([
+      "UI_SFXS",
+      "UI_SFXS_VOLUME",
+      "UI_AMBIENTSFXS",
+      "UI_AMBIENTSFXS_VOLUME",
+    ]);
   });
 
-  it("and the options screen drives only the music volume", () => {
+  it("and the options screen drives all three buses", () => {
     // Asserted on the source rather than on the rendered screen, for the reason the
     // rest of this repository's source-shaped tests give: a row is added by editing
     // a list, and the list is the thing that can go stale.
     const screen = stripComments(readFileSync(join(SRC, "ui", "OptionsScreen.ts"), "utf-8"));
     expect(screen).toContain("OptionIDs.UI_MUSIC");
     expect(screen).toContain("OptionIDs.UI_MUSIC_VOLUME");
-    // The screen's only read of a volume is music's, and a second audio knob would
-    // be a second read. Narrowed to the property rather than to a spelling, because
-    // the screen reads `Options` for the typeface and the difficulty reset as well
-    // and those are none of this test's business.
+    // One volume read per bus. This was `["musicVolume"]` and the assertion said
+    // the screen "reads a second volume option" was a failure — which is exactly
+    // right, and is why the failure was worth taking as a signal rather than
+    // weakening the test to fit.
     const volumeReads = [...new Set([...screen.matchAll(/Options\.(\w*[Vv]olume)\b/g)].map((m) => m[1]!))];
-    expect(volumeReads, "the options screen reads a second volume option").toEqual(["musicVolume"]);
-    // Nor does it hold a sound-effects or ambient channel to set a volume on. The
-    // screen's own "// display & sounds" heading is a comment and `stripComments`
-    // has already taken it, so what is left is code -- a manager, an option, a
-    // `setVolume` -- and the C#'s four `OptionsMenuAudioAdjustment` cases all need
-    // at least one of those three.
-    expect(screen, "the options screen gained a second audio channel").not.toMatch(
-      /\b(?:sfx|ambient|sound)\w*\b/i,
+    expect(volumeReads.sort(), "the options screen drives the wrong set of buses").toEqual([
+      "ambientSFXVolume",
+      "musicVolume",
+      "sfxVolume",
+    ]);
+    // And it holds the other two channels, which is what the last assertion below
+    // used to forbid. The C#'s `OptionsMenuAudioAdjustment` has four cases and each
+    // one needs at least one of a manager, an option or a `setVolume`.
+    expect(screen, "the options screen lost a channel").toMatch(/\bsfx\b/);
+    expect(screen, "the options screen lost a channel").toMatch(/\bambient\b/);
+  });
+
+  it("previews each bus from the row that adjusts it", () => {
+    // The pairing is the whole point of `OptionsMenuAudioAdjustment` and it is
+    // invisible from the row list alone: four rows and four buses, and nothing
+    // connects them except the arms of that switch. A row list that grew without
+    // the switch would look right and play nothing.
+    //
+    // Read from the one module that owns the switch, plus the screen's mapping.
+    // `engine/RogueGame.ts` is deliberately *not* in that list, and used to be
+    // expected in it: an earlier version of this change put a copy of the switch
+    // there as well, which compiled, passed, and was dead on arrival -- because
+    // `HandleOptions` builds the screen and never calls the method itself. A dead
+    // copy on the class the split is meant to shrink is the wrong direction.
+    const preview = stripComments(
+      readFileSync(join(SRC, "engine", "audio", "OptionsAudioPreview.ts"), "utf-8"),
     );
+    for (const cue of [
+      "GameMusics.TEST_MUSIC",
+      "GameAmbients.TEST_AMBIENT",
+      "GameSounds.MELEE_ATTACK_MISS_PLAYER",
+    ]) {
+      expect(preview, `the preview lost ${cue}`).toContain(cue);
+    }
+    // The screen maps rows onto the four preview actions.
+    const screen = stripComments(readFileSync(join(SRC, "ui", "OptionsScreen.ts"), "utf-8"));
+    for (const row of ["UI_MUSIC_VOLUME", "UI_SFXS_VOLUME", "UI_AMBIENTSFXS_VOLUME"]) {
+      expect(screen, `the screen no longer maps ${row} to a preview`).toContain(row);
+    }
+    expect(screen, "the screen stopped calling the preview").toContain("previewAudioAdjustment");
+    // And nothing else owns a copy of the switch.
+    expect(
+      stripComments(readFileSync(join(SRC, "engine", "RogueGame.ts"), "utf-8")),
+      "RogueGame grew a second copy of the preview switch",
+    ).not.toMatch(/TEST_MUSIC|TEST_AMBIENT/);
   });
 });

@@ -58,6 +58,16 @@ export class WebAudioAmbientManager implements IAmbientManager {
   private volume: number = AMBIENT_SFX_VOLUME;
 
   /**
+   * Still Alive, Release 6-1 — `UI_AMBIENTSFXS`.
+   *
+   * Checked in `play` like `WebAudioSoundManager` does, and separately from
+   * `volume` so that "off" and "quiet" stay distinguishable: the C# has
+   * `IsAmbientSoundEnabled` alongside `AmbientSFXVolume`, and `RogueGame`'s
+   * `ApplyOptions` sets both.
+   */
+  private enabled: boolean = true;
+
+  /**
    * Routes new voices through Web Audio on first use.
    *
    * Lazy rather than in the constructor, for the same reason
@@ -97,10 +107,12 @@ export class WebAudioAmbientManager implements IAmbientManager {
   }
 
   public play(ambientId: string): void {
+    if (!this.enabled) return;
     this.start(ambientId, false);
   }
 
   public playLooping(ambientId: string): void {
+    if (!this.enabled) return;
     this.start(ambientId, true);
   }
 
@@ -109,6 +121,7 @@ export class WebAudioAmbientManager implements IAmbientManager {
     // (`if (!m_AmbientSFXManager.IsPlaying(...)) PlayLooping(...)`); the condition
     // is the same, and putting it here is what keeps a bed from restarting under a
     // player who is standing still in the rain.
+    if (!this.enabled) return;
     if (this.voices.has(ambientId)) return;
     this.start(ambientId, looping);
   }
@@ -233,6 +246,10 @@ export class WebAudioAmbientManager implements IAmbientManager {
 
   public getVolume(): number {
     return this.volume;
+  }
+
+  public setEnabled(on: boolean): void {
+    this.enabled = on;
   }
 
   /** Keeps the element silent when the gain stage carries the level. */

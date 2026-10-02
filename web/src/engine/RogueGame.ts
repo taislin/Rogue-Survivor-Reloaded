@@ -1927,8 +1927,9 @@ export class RogueGame {
 		// manager cannot be; see `engine/audio/IAmbientManager.ts`.
 		this.m_AmbientSFXManager = ambients;
 		// The mix. The C# reads it from `Options.AmbientSFXVolume` in `ApplyOptions`
-		// (`RogueGame.cs:2703`); the port has no such option row yet (see
-		// plans/BROWSER_PORT_PLAN §5.6f), so the C#'s own default is the level.
+		// (`RogueGame.cs:2703`), which is now ported (`UI_AMBIENTSFXS_VOLUME`). This
+		// is only the pre-options level for a title that goes straight to a game
+		// without an `ApplyOptions` call; `ApplyOptions` is what a player means.
 		this.m_AmbientSFXManager.setVolume(AMBIENT_SFX_VOLUME);
 
 		logInit("creating MessageManager");
@@ -4400,7 +4401,15 @@ export class RogueGame {
 	// C# HandleOptions — RogueGame.cs:2295
 	// The modal options loop is ported as `ui/OptionsScreen` (Phase 3).
 	async HandleOptions(ingame: boolean): Promise<void> {
-		await new OptionsScreen(this.m_UI, this.m_MusicManager).run(ingame);
+		// All three buses, so the Release 2 / 6-1 sfx and ambient rows take effect
+		// and `optionsMenuAudioAdjustment` can preview them. Passing only the music
+		// manager is what left those four rows inert on screen.
+		await new OptionsScreen(
+			this.m_UI,
+			this.m_MusicManager,
+			this.m_SoundManager,
+			this.m_AmbientSFXManager,
+		).run(ingame);
 	}
 
 	// C# HandleRedefineKeys — RogueGame.cs:2570
@@ -20058,6 +20067,29 @@ inv.removeAllQuantity(it);
 			}
 		} else {
 			// miss
+			/**
+			 * Still Alive, Release 2 — `RogueGame.cs:18547-18550`. The fork's "hear"
+			 * line for a whiffed melee attack, and it was missing from the port:
+			 * this block had the message and the overlay and nothing else, so the
+			 * game's most frequent sound never played. The port's own options-menu
+			 * preview of the same constant is what made the omission visible — a
+			 * constant reached only from a volume row has no other caller.
+			 *
+			 * Not gated on `Feature.ExtendedAudio`, and should not be: the constant
+			 * carries no `@@MP` marker on its declaration (`GameSounds.cs:119`), so
+			 * the sound is vanilla's and Classic plays it too. Only the *call site*
+			 * is a fork addition, which is the distinction the `VANILLA_IDS` comment
+			 * in `tests/extended-audio.test.ts` explains.
+			 *
+			 * Awaited, as the port's other `m_SoundManager.play` calls are: the
+			 * buffer fetch is async, so a fire-and-forget call lets the miss land a
+			 * beat before its own sound.
+			 */
+			if (isPlayer) {
+				await this.m_SoundManager.play(GameSounds.MELEE_ATTACK_MISS_PLAYER);
+			} else if (this.isAudibleToPlayer(attacker.location, NOISE_RADII.QUIET)) {
+				await this.m_SoundManager.play(GameSounds.MELEE_ATTACK_MISS_NEARBY);
+			}
 			// show
 			if (isAttVisible || isDefVisible) {
 				this.AddMessage(
@@ -31656,6 +31688,27 @@ inv.removeAllQuantity(it);
 		// m_MusicManager.IsMusicEnabled = Options.PlayMusic;
 		// m_MusicManager.Volume = Options.MusicVolume;   (C# volume is 0..100, WebAudio is 0..1)
 		this.m_MusicManager.setVolume(s_Options.musicVolume / 100);
+
+		/**
+		 * Still Alive, Release 2 / 6-1: the two sound buses.
+		 *
+		 * The C# sets all three of `IsSoundEnabled`, `SoundVolume`,
+		 * `IsAmbientSoundEnabled` and `AmbientSFXVolume` in the same block as the
+		 * music pair (`RogueGame.cs:2703`). The port had only the music pair, which
+		 * left two whole option rows with nothing to write to — and this is why:
+		 * `WebAudioSoundManager` had a private `enabled` that was checked in `play`
+		 * but could not be set from outside, so there was no seam for the flag and
+		 * the volume for non-music effects was never applied anywhere. A player
+		 * turning the sound down was changing the music and only the music.
+		 *
+		 * Enabled is set separately from volume for the reason `WebAudioSoundManager`
+		 * documents: an off bus and a quiet bus are different states, and the C# has
+		 * a row for each.
+		 */
+		this.m_SoundManager.setEnabled(s_Options.playSFXs);
+		this.m_SoundManager.setVolume(s_Options.sfxVolume / 100);
+		this.m_AmbientSFXManager.setEnabled(s_Options.playAmbientSFXs);
+		this.m_AmbientSFXManager.setVolume(s_Options.ambientSFXVolume / 100);
 
 		// update difficulty.
 		if (this.m_Session != null && this.m_Session.scoring != null) {

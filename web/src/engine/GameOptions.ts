@@ -105,6 +105,26 @@ export enum OptionIDs {
    * off the day count is never consulted, exactly as the C#'s help text says.
    */
   GAME_DAYS_BEFORE_WORLD_DECAYS,
+  /**
+   * Still Alive, Release 2. Appended, per the numeric-id rule. The C#'s
+   * `UI_SFXS`, which sits between `UI_MUSIC_VOLUME` and `UI_SHOW_PLAYER_TAG_ON_MINIMAP`.
+   */
+  UI_SFXS,
+  /** Still Alive, Release 2. Appended, per the numeric-id rule. */
+  UI_SFXS_VOLUME,
+  /** Still Alive, Release 6-1. Appended, per the numeric-id rule. */
+  UI_AMBIENTSFXS,
+  /**
+   * Still Alive, Release 6-1. Appended, per the numeric-id rule. The C#'s
+   * `UI_AMBIENTSFXS_VOLUME`.
+   *
+   * Note the id mismatch that this fork has throughout: the enum member is
+   * `UI_AMBIENTSFXS_VOLUME` (no `S` after `AMBIENT`) while the C#'s is the same,
+   * but the *property* is `AmbientSFXVolume` (with `SFX`). Preserved, because the
+   * C#'s `ApplyOptions` reads the property by that name and a rename here would
+   * read as a fix rather than a divergence.
+   */
+  UI_AMBIENTSFXS_VOLUME,
 }
 
 /**
@@ -427,6 +447,19 @@ export class GameOptions {
   private m_MaxUndeads = 0;
   private m_PlayMusic = false;
   private m_MusicVolume = 0;
+  /**
+   * Still Alive, Release 2 — the C#'s `m_PlaySFXs`.
+   *
+   * Separate from `m_PlayMusic` because the C# has three independent audio buses
+   * (`PlayMusic`, `PlaySFXs`, `PlayAmbientSFXs`), and collapsing them into one
+   * toggle is the kind of "sensible" simplification that leaves a player unable
+   * to silence the weather without losing every footstep.
+   */
+  private m_PlaySFXs = false;
+  private m_SFXVolume = 0;
+  /** Still Alive, Release 6-1 — the C#'s `m_PlayAmbientSFXs`. */
+  private m_PlayAmbientSFXs = false;
+  private m_AmbientSFXVolume = 0;
   private m_AnimDelay = false;
   private m_ShowMinimap = false;
   private m_EnabledAdvisor = false;
@@ -544,6 +577,48 @@ export class GameOptions {
     if (value < 0) value = 0;
     if (value > 100) value = 100;
     this.m_MusicVolume = value;
+  }
+
+  /** C# `PlaySFXs` — `GameOptions.cs:282`. */
+  get playSFXs(): boolean {
+    return this.m_PlaySFXs;
+  }
+  set playSFXs(value: boolean) {
+    this.m_PlaySFXs = value;
+  }
+
+  /**
+   * C# `SFXVolume` — `GameOptions.cs:295`.
+   *
+   * Clamped by the setter rather than by the caller, as `musicVolume` is: the C#
+   * clamps in its own setter (`GameOptions.cs:295`) and the port keeps the
+   * invariant in one place.
+   */
+  get sfxVolume(): number {
+    return this.m_SFXVolume;
+  }
+  set sfxVolume(value: number) {
+    if (value < 0) value = 0;
+    if (value > 100) value = 100;
+    this.m_SFXVolume = value;
+  }
+
+  /** C# `PlayAmbientSFXs` — `GameOptions.cs:305`. */
+  get playAmbientSFXs(): boolean {
+    return this.m_PlayAmbientSFXs;
+  }
+  set playAmbientSFXs(value: boolean) {
+    this.m_PlayAmbientSFXs = value;
+  }
+
+  /** C# `AmbientSFXVolume` — `GameOptions.cs:318`. */
+  get ambientSFXVolume(): number {
+    return this.m_AmbientSFXVolume;
+  }
+  set ambientSFXVolume(value: number) {
+    if (value < 0) value = 0;
+    if (value > 100) value = 100;
+    this.m_AmbientSFXVolume = value;
   }
 
   get showPlayerTagsOnMinimap(): boolean {
@@ -1097,6 +1172,23 @@ export class GameOptions {
     if (category === OptionsCategory.GENERAL || category === OptionsCategory.ALL) {
       this.m_PlayMusic = true;
       this.m_MusicVolume = 100;
+      /**
+       * Still Alive, Release 2 / 6-1. The C#'s `ResetToDefaultValues` sets both
+       * `PlaySFXs` and `PlayAmbientSFXs` to true (`GameOptions.cs:803,805`) but
+       * leaves both volumes *commented out* (`GameOptions.cs:804,806`), then sets
+       * them to 75 in the one-time block that runs only when loading fails
+       * (`GameOptions.cs:1389-1390`). So a player who has never saved options
+       * gets 75 and one who has saved gets 0 — the C#'s own bug.
+       *
+       * 75 is used for both, because 0 is not a default, it is a fault: it is a
+       * silent game. The C#'s `if (!Options.PlayMusic)` guard has an equivalent
+       * per bus in `ApplyOptions`, so an off bus is honoured while a zero-volume
+       * bus is a player who has turned the sound off by accident.
+       */
+      this.m_PlaySFXs = true;
+      this.m_SFXVolume = 75;
+      this.m_PlayAmbientSFXs = true;
+      this.m_AmbientSFXVolume = 75;
       this.m_AnimDelay = true;
       this.m_ShowMinimap = true;
       this.m_ShowPlayerTagsOnMinimap = true;
@@ -1277,6 +1369,14 @@ export class GameOptions {
         return "   (Sfx) Music";
       case OptionIDs.UI_MUSIC_VOLUME:
         return "   (Sfx) Music Volume";
+      case OptionIDs.UI_SFXS:
+        return "   (Sfx) Sound Effects";
+      case OptionIDs.UI_SFXS_VOLUME:
+        return "   (Sfx) Sound Effects Volume";
+      case OptionIDs.UI_AMBIENTSFXS:
+        return "   (Sfx) Ambient Sound Effects";
+      case OptionIDs.UI_AMBIENTSFXS_VOLUME:
+        return "   (Sfx) Ambient SFXs Volume";
       case OptionIDs.UI_SHOW_MINIMAP:
         return "   (Gfx) Show Minimap";
       case OptionIDs.UI_SHOW_PLAYER_TAG_ON_MINIMAP:
@@ -1413,6 +1513,14 @@ export class GameOptions {
         return "Enable or disable ingame musics. Musics are not essential for gameplay. If you can't hear music, try the configuration program.";
       case OptionIDs.UI_MUSIC_VOLUME:
         return "Music volume.";
+      case OptionIDs.UI_SFXS:
+        return "Enable or disable sound effects.\nSFXs are not essential for gameplay, though it is recommended you keep them enabled.";
+      case OptionIDs.UI_SFXS_VOLUME:
+        return "Sound effects volume (gunfire, screams, explosions, etc)";
+      case OptionIDs.UI_AMBIENTSFXS:
+        return "Enable or disable ambient sounds.\nAmbient sounds are weather, church bells and distant animals — not gunfire or screams.";
+      case OptionIDs.UI_AMBIENTSFXS_VOLUME:
+        return "Ambient sound effects volume (rain, church bells, distant animals, etc)";
       case OptionIDs.UI_SHOW_MINIMAP:
         return "Display or hide the minimap.\nThe minimap could potentially crash the game on some very old graphics cards.";
       case OptionIDs.UI_SHOW_PLAYER_TAG_ON_MINIMAP:
@@ -1753,6 +1861,14 @@ export class GameOptions {
         return this.playMusic ? "ON " : "OFF";
       case OptionIDs.UI_MUSIC_VOLUME:
         return `${this.musicVolume}%`;
+      case OptionIDs.UI_SFXS:
+        return this.playSFXs ? "ON " : "OFF";
+      case OptionIDs.UI_SFXS_VOLUME:
+        return `${this.sfxVolume}%`;
+      case OptionIDs.UI_AMBIENTSFXS:
+        return this.playAmbientSFXs ? "ON " : "OFF";
+      case OptionIDs.UI_AMBIENTSFXS_VOLUME:
+        return `${this.ambientSFXVolume}%`;
       case OptionIDs.UI_SHOW_MINIMAP:
         return this.isMinimapOn ? "ON " : "OFF";
       case OptionIDs.UI_SHOW_PLAYER_TAG_ON_MINIMAP:
@@ -1891,6 +2007,18 @@ export function stepGameOption(option: OptionIDs, dir: -1 | 1): void {
 			break;
 		case OptionIDs.UI_MUSIC_VOLUME:
 			o.musicVolume += dir * 5;
+			break;
+		case OptionIDs.UI_SFXS:
+			o.playSFXs = !o.playSFXs;
+			break;
+		case OptionIDs.UI_SFXS_VOLUME:
+			o.sfxVolume += dir * 5;
+			break;
+		case OptionIDs.UI_AMBIENTSFXS:
+			o.playAmbientSFXs = !o.playAmbientSFXs;
+			break;
+		case OptionIDs.UI_AMBIENTSFXS_VOLUME:
+			o.ambientSFXVolume += dir * 5;
 			break;
 		case OptionIDs.UI_ANIM_DELAY:
 			o.isAnimDelayOn = !o.isAnimDelayOn;
