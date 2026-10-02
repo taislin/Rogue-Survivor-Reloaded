@@ -83,28 +83,84 @@ for (let i = classStart; i < lines.length; i++) {
 }
 
 /**
- * Which wave, or which hub, a member belongs to — **by name**.
+ * Which region a member belongs to — **by name**, and ordered by how hard it is to
+ * move.
  *
- * The order matters: the render and describe patterns are tested before the hub
- * patterns, because a hub method can be named `RedrawPlayScreen` (it is, at
- * `:25605`) and a render method can be named `Do*` (it is: `DoSay` sits inside
- * the render cluster's line range without belonging to it). Naming is the only
- * stable key; see the header.
+ * The order matters. §6's original table was a list of `file:line` ranges, and the
+ * file grew in the middle, so those ranges no longer identify anything. Worse, the
+ * table was *incomplete*: 68 of the 110 externally-reached members fell outside every
+ * region it named, and they included `AddMessage`, `KillActor`, `AdvancePlay` and
+ * `UpdatePlayerFOV`. A wave plan whose residual is unclassified is not a plan, so
+ * this is a taxonomy over the whole class rather than a subset of it.
+ *
+ * The ordering is by **extractability**, not by position in the file, because that is
+ * the only thing that decides what to do first:
+ *
+ * - `HUB` — never moves. §6.8's reasoning survives re-measurement untouched: 27 of the
+ *   110 land here and they are the reason the split is worth doing.
+ * - `LEAF` — no instance state; reads its arguments or a `static`. Extractable into a
+ *   module with a thin delegation left behind, which is what §6.5 called Wave 1.
+ * - `VIEW` — first-person facing, map zoom, screen projection. Self-contained state,
+ *   reachable through a small interface, but it is real state so it needs one.
+ * - `WORLD` — actor spawning and district entry. Touches the session and the map.
+ * - `ENGINE` — options, save/load, ruleset, the turn loop. The deepest state, and the
+ *   last thing to move.
+ *
+ * A member matching none of these is reported as `STATE` — a field, a constant or a
+ * `this` accessor — because those are what `GameContext` has to *carry* rather than
+ * what a wave moves. That is the answer to §6.4's "which 11 service fields" question,
+ * measured instead of guessed.
  */
 function classify(name) {
-	// The two hubs, which §6.8 says never move.
-	if (/^Handle(Player|Mouse|LMB|RMB|KeyOrMouse|DirectionOrCancel)/.test(name)) return "HUB 2  HandlePlayer*/mouse command handlers";
-	if (/^(Do|On)[A-Z]/.test(name) && !/^Do(Redraw|Draw)/.test(name)) return "HUB 1  Do*/On* action primitives";
-	if (/^(Redraw|Draw|buildScene|drawOverlay|addOverlay)/.test(name)) return "WAVE 2  render cluster";
-	if (/^(GetUser|collectPlayerTagTiles|MapToScreen|ScreenToMap|MouseToMap|MenuRowAt|WaitMenuInput)/.test(name))
-		return "WAVE 1  leaves (paths, coordinates, menu chrome)";
-	if (/^Describe|^GetAdvisorHintText/.test(name)) return "WAVE 1  leaves (Describe*)";
-	if (/^do[A-Z]/.test(name)) return "WAVE 1  leaves (do* aliases for Actions.ts)";
-	// The new-game flow is a named list, not a pattern: §6.7 names sixteen methods
-	// and the rest of the file is not part of it.
-	if (/^(Run|GameLoop|HandleMainMenu|HandleNewCharacter|HandleSelectRuleset|HandleNewGameMode|StartNewGame|InitDirectories|LoadData|LoadOptions|SaveOptions|LoadKeybindings|LoadHiScoreTable|SaveHiScoreTable|HandleHelpMode|HandleHintsScreen|HandleCredits)$/.test(name))
-		return "WAVE 3  new-game flow";
-	return "unclassified";
+	// ── The two hubs. Never move. §6.8. ──────────────────────────────────────
+	if (/^Handle(Player|Mouse|LMB|RMB|KeyOrMouse|DirectionOrCancel)/.test(name)) {
+		return { region: "HUB 2", extract: "never", note: "mouse/command handlers" };
+	}
+	if (/^(Do|On)[A-Z]/.test(name) && !/^Do(Redraw|Draw)/.test(name)) {
+		return { region: "HUB 1", extract: "never", note: "action primitives" };
+	}
+
+	// ── Wave 3: the new-game flow. A named list, not a pattern: §6.7 names sixteen
+	// methods and the rest of the file is not part of it. ─────────────────────
+	if (/^(Run|GameLoop|HandleMainMenu|HandleNewCharacter|HandleSelectRuleset|HandleNewGameMode|StartNewGame|InitDirectories|LoadData|LoadOptions|SaveOptions|LoadKeybindings|SaveKeybindings|LoadHiScoreTable|SaveHiScoreTable|HandleHelpMode|HandleHintsScreen|HandleCredits)$/.test(name)) {
+		return { region: "WAVE 3", extract: "engine", note: "new-game flow" };
+	}
+
+	// ── Wave 2: the render cluster. Tested before the leaves because a leaf can be
+	// named `Draw*` and a hub method can be named `RedrawPlayScreen` (it is, and it
+	// is a hub). ───────────────────────────────────────────────────────────────
+	if (/^(Redraw|Draw|buildScene|drawOverlay|addOverlay|ClearOverlays)/.test(name)) {
+		return { region: "WAVE 2", extract: "view", note: "render cluster" };
+	}
+
+	// ── View state: first-person, zoom, projection, panel hit-testing. ─────────
+	if (/^(FirstPersonFacing|TurnFirstPerson|ToggleViewMode|ComputeViewRect|MapZoom|SetMapZoom|StepMapZoom|InventorySlotToScreen|PanelSlotAtMouse|MouseToInventoryItem|MenuRowAt|IsVisibleToPlayer|UpdatePlayerFOV|WaitKeyOrMouse|WaitMenuInput)/.test(name)) {
+		return { region: "VIEW", extract: "view", note: "first-person / zoom / projection" };
+	}
+
+	// ── World: actors and district entry. ─────────────────────────────────────
+	if (/^(Spawn|BeforePlayerEnterDistrict|AfterPlayerEnterDistrict|CreateUniqueMap|IsActorStandingInLight|GenerateDrunkAction|Bot(Take|Release)Control|RefreshPlayer|PickHelicopterRescueSite|TileIsGoodForHelicopter|IsInCHAR)/.test(name)) {
+		return { region: "WORLD", extract: "world", note: "actors / district entry" };
+	}
+
+	// ── Engine: the turn loop, damage, options, save and load. ────────────────
+	if (/^(AdvancePlay|KillActor|InflictDamage|ApplyExplosionDamage|ApplyOnFire|SetActorOnFire|DropItem|AddMessage|MakeErrorMessage|ApplyOptions|LoadGame|SaveGame|HandleNewCharacterDifficulty|HandleReincarnation|CheckAmbientAudio|isActorLinkedToPlayer|IsAlmostHungry)/.test(name)) {
+		return { region: "ENGINE", extract: "engine", note: "turn loop / damage / options / save" };
+	}
+
+	// ── Wave 1: the leaves. Stateless helpers and the `do*` aliases. ──────────
+	if (/^Describe/.test(name)) return { region: "WAVE 1", extract: "leaf", note: "Describe*" };
+	if (/^GetUser/.test(name)) return { region: "WAVE 1", extract: "leaf", note: "user-facing names" };
+	if (/^(MapToScreen|ScreenToMap|MouseToMap)$/.test(name)) {
+		return { region: "WAVE 1", extract: "leaf", note: "coordinates" };
+	}
+	if (/^do[A-Z]/.test(name)) return { region: "WAVE 1", extract: "leaf", note: "do* aliases for Actions.ts" };
+	// C# quirk kept: `C# GetAdvisorHintText`, ported as `GetAdvisorHintText`.
+	if (/^GetAdvisorHintText/.test(name)) return { region: "WAVE 1", extract: "leaf", note: "advisor hints" };
+
+	// ── Everything else is state `GameContext` has to carry, not something a wave
+	// moves. Fields, constants, and the `this` accessors over them. ───────────
+	return { region: "STATE", extract: "carry", note: "field / constant" };
 }
 
 /** `game.x` / `RogueGame.x` from anywhere but the class body, comments stripped. */
@@ -142,13 +198,14 @@ for (const m of members.values()) visibility[m.visibility]++;
 
 const buckets = new Map();
 for (const name of seen.keys()) {
-	const bucket = classify(name);
-	if (!buckets.has(bucket)) buckets.set(bucket, []);
-	buckets.get(bucket).push(name);
+	const { region } = classify(name);
+	if (!buckets.has(region)) buckets.set(region, []);
+	buckets.get(region).push(name);
 }
 
-const HUB = /^HUB/;
-const moving = [...seen.keys()].filter((n) => !HUB.test(classify(n)));
+/** §6.8's rule: the two hubs stay, and everything else is a candidate to move. */
+const isHub = (name) => classify(name).region.startsWith("HUB");
+const moving = [...seen.keys()].filter((n) => !isHub(n));
 const privateUsed = [...seen.keys()].filter((n) => members.get(n).visibility === "private");
 
 console.log(`RogueGame.ts: ${lines.length} lines, class at ${classStart + 1}`);

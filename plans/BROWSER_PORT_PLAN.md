@@ -4055,8 +4055,8 @@ done.
 
 > ## 6.0 Re-measured 2026-10-02 — Wave 0's gate, answered
 >
-> **Status: Wave 0 started. Waves 1–3 still not started, and §6.2–§6.9's
-> `file:line` citations are stale.** They were taken on 2026-09-29 at 27,722 lines;
+> **Status: Wave 0 done — gate answered, regions re-derived. Waves 1–3 not started,
+> and §6.2–§6.9's `file:line` citations are stale; use §6.0.1's table instead.** They were taken on 2026-09-29 at 27,722 lines;
 > the file is **35,961**. It did not grow at the end — ported content landed in
 > the middle — so a line range no longer identifies a region. Re-running §6.2's
 > own table against the current file puts `DoSay` (`:21697`) and `DoUseItem`
@@ -4112,9 +4112,69 @@ done.
 > §6.5–6.7 sequencing ("cheapest first") rests on a line budget that no longer
 > describes the file.
 >
-> **Therefore: re-derive §6.2's regions by name before Wave 1, not after.** The
-> gate §6.10 sets is answered and the answer is *proceed*; the work it gates is
-> not the work §6.5 describes.
+> ### 6.0.1 The re-derived region table — the blocker, resolved
+>
+> §6.2's regions were a list of `file:line` ranges and left **68 of the 110**
+> unclassified. They were not leftovers: they included `AddMessage`, `KillActor`,
+> `AdvancePlay`, `UpdatePlayerFOV`, `SpawnActorNear`, `RefreshPlayer`, `ApplyOptions`,
+> `LoadGame`, the map-zoom triple and the first-person pair — **more names than Wave 1's
+> entire 2,079-line budget.** So §6.5–6.7's "cheapest first" ordering had no input.
+>
+> `scripts/measure-roguegame.mjs` now classifies **the whole class** by member name,
+> into regions ordered by **extractability** rather than by position in the file —
+> because position is not what decides what to do first, and the file has no layout
+> that matches anything useful:
+>
+> | region | reached | extractable as | what is in it |
+> |---|---:|---|---|
+> | **`HUB 1`** | 20 | **never moves** | `Do*` / `On*` action primitives |
+> | **`HUB 2`** | 7 | **never moves** | `HandlePlayer*` / mouse command handlers |
+> | `WAVE 1` | 6 | a leaf — no instance state | `Describe*`, `MapToScreen`/`ScreenToMap`, `GetUser*`, the `do*` aliases |
+> | `WAVE 2` | 2 | a view interface | `DrawMap`, `RedrawPlayScreen` |
+> | `WAVE 3` | 7 | last — deepest state | the new-game flow |
+> | **`VIEW`** | 13 | a view interface | first-person facing, map zoom, screen projection, panel hit-testing, `IsVisibleToPlayer` |
+> | **`WORLD`** | 15 | session + map | actor spawning, district entry, `RefreshPlayer`, helicopter rescue sites |
+> | **`ENGINE`** | 17 | session + options | the turn loop, damage, `ApplyOptions`, `LoadGame`, reincarnation |
+> | **`STATE`** | 23 | **carried, not moved** | fields, constants, and two sim callbacks |
+> | | **110** | | no residual |
+>
+> The three bolded non-§6 rows are the new part, and between them they account for
+> **45 of the 110** the old table could not place.
+>
+> **§6.4's `GameContext` has to name 23 things, not 11.** §6.4 proposed "the 11 service
+> fields … plus `m_Player`, `m_PlayerFOV`, `m_MapViewRect`, `m_Overlays`,
+> `m_FirstPersonFacing`" — about sixteen. Measured, it is 23, and the list is *not only
+> fields*: `TAG_MODE_TEXT`, `MAX_THROWABLE_DISTANCE` and `VERB_UNLOAD` are constants the
+> UI reads, and `simulateOneBehindDistrictTurn` and `stepActorsOnFire` are **methods**
+> the headless sim reaches. So "a context of fields" is the wrong shape — hence the
+> `carry` classification rather than assuming everything in that bucket is data.
+>
+> **Wave 1's reachable seam is 6 names, not a region.** `DescribeActorActivity`,
+> `DescribeItemLong`, `GetUserNewScreenshotName`, `MapToScreen`, `ScreenToMap`,
+> `doEquipItem`. The wave itself is much larger than the part of it anything outside the
+> class touches, which is worth knowing before scheduling it — and it is the concrete
+> answer to §6.4's "when the game runs and the real cross-method dependencies are
+> known".
+>
+> ### 6.0.2 What this changes about the waves
+>
+> The gate is answered (**proceed**) and the ordering is now derived rather than
+> assumed. Read the table as a schedule, cheapest first:
+>
+> 1. **`STATE`** first, before any extraction. Nothing moves until the 23 carried names
+>    are written down and pinned. This is §6.4's "deliberate interface pass", and it is
+>    the step the old plan had no measurement for.
+> 2. **`WAVE 1`** — 6 reachable leaves. Extract with a delegation left behind.
+> 3. **`VIEW`** and **`WAVE 2`** together, because they share one interface: facing,
+>    zoom and projection are the same state the render cluster reads.
+> 4. **`WORLD`**, then **`ENGINE`**, then **`WAVE 3`** — each needs the session, and
+>    `WAVE 3` needs all three of the above.
+> 5. **`HUB 1` / `HUB 2` stay**, forever. §6.8's reasoning is unaffected by
+>    re-measurement: they are 27 of the 110 reached, and they are the reason the split
+>    is worth doing rather than the reason it fails.
+>
+> `tests/roguegame-surface.test.ts` pins every number above, plus the one invariant the
+> scheme rests on: **no hub member appears in any movable bucket.**
 
 > **Status: planned 2026-09-29.** *(Superseded in part — see §6.0 above: Wave 0
 > has started, and every `file:line` below is stale.)* This is a refactor of the port

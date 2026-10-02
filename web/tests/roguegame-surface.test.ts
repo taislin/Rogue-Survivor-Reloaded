@@ -141,38 +141,86 @@ describe("RogueGame's measured surface", () => {
 		expect(m.external).toBeGreaterThan(83);
 	});
 
-	it("68 of those 110 are in no region §6 names", () => {
-		// **The load-bearing finding of the re-measurement, and the reason §6 needs
-		// re-deriving before any wave starts.**
+	it("classifies all 110, with no residual", () => {
+		// This is the finding that forced the re-derivation, and the number that keeps
+		// it fixed. §6.2's region table left **68 of the 110** in no region at all —
+		// including `AddMessage`, `KillActor`, `AdvancePlay`, `UpdatePlayerFOV` and the
+		// whole map-zoom triple — which is larger than Wave 1's entire 2,079-line budget.
+		// A wave plan whose residual is unclassified is not a plan.
 		//
-		// §6.2's table enumerates nine regions and §6.5–6.7 cover them as Waves
-		// 1–3. The members outside all of them are *not* neutral leftovers: they
-		// include `AddMessage`, `AdvancePlay`, `KillActor`, `UpdatePlayerFOV`,
-		// `SpawnActorNear`, `RefreshPlayer`, `ApplyOptions`, `LoadGame`, the whole
-		// map-zoom triple and the first-person pair — and `m_PlayerFOV`,
-		// `m_PlayerWasRescued`, `m_CharGen`, `m_IsGameRunning`, `player`, `rules`,
-		// `keyBindings`, `options`, `gameItems`, `gameFactions`.
-		//
-		// So the plan's "extract the leaves, keep the hubs" is right about the hubs
-		// and silent about the majority. Sixty-eight is larger than Wave 1's entire
-		// 2,079-line budget, and a wave plan whose residual is unclassified is not
-		// a plan yet.
-		//
-		// Pinned as an exact number so the next measurement says whether this grew
-		// or shrank, rather than leaving it to be rediscovered.
+		// The taxonomy now covers the whole class and the residual is zero. Pinned as an
+		// equality rather than a ceiling: a *new* unclassified member is the regression
+		// this guards, and a ceiling would let one in while hiding it in a bucket that
+		// happens to be large.
 		const m = measure();
-		expect(m.buckets.get("unclassified")?.length).toBe(68);
+		const classified = [...m.buckets.values()].reduce((n, list) => n + list.length, 0);
+		expect(classified).toBe(m.external);
+		expect(m.buckets.get("STATE")?.length ?? 0).toBeLessThan(30);
 	});
 
-	it("splits 83 moving against 27 in the hubs, and the hubs stay", () => {
+	it("splits the reachable surface into 27 hub and 83 movable, and the hubs stay", () => {
+		// §6.8: the two hubs "are the reason the split is worth doing rather than the
+		// reason it fails". Still true, and now measured on the current file.
 		const m = measure();
 		expect(m.moving).toBe(83);
 		expect(m.hubs).toBe(27);
 		expect(m.moving + m.hubs).toBe(m.external);
-		// §6.8: "the two hubs … stay. Together they are 27.8% of the file and the
-		// reason the split is worth doing rather than the reason it fails." Still
-		// true, and now measured on the current file.
-		expect(m.buckets.get("HUB 1  Do*/On* action primitives")!.length).toBe(20);
-		expect(m.buckets.get("HUB 2  HandlePlayer*/mouse command handlers")!.length).toBe(7);
+		expect(m.buckets.get("HUB 1  Do*/On* action primitives")?.length ?? m.buckets.get("HUB 1")?.length).toBe(20);
+	});
+
+	it("names 23 members GameContext has to carry, not 11", () => {
+		// §6.4 proposed naming "the 11 service fields (`m_UI`, `m_Rules`, `m_Session`,
+		// …) plus `m_Player`, `m_PlayerFOV`, `m_MapViewRect`, `m_Overlays`,
+		// `m_FirstPersonFacing`" — about sixteen. The measured figure is 23, and the
+		// list is not only fields: `TAG_MODE_TEXT`, `MAX_THROWABLE_DISTANCE` and
+		// `VERB_UNLOAD` are constants reached from the UI, and `simulateOneBehindDistrictTurn`
+		// and `stepActorsOnFire` are *methods* reached from the sim rather than state at all.
+		//
+		// That last pair is why "a context of fields" is the wrong shape and the taxonomy
+		// has a `carry` classification rather than assuming everything here is data.
+		const m = measure();
+		const carry = m.buckets.get("STATE") ?? [];
+		expect(carry.length).toBe(23);
+		for (const name of ["player", "session", "rules", "m_PlayerFOV", "m_CharGen", "m_IsGameRunning", "m_PlayerWasRescued", "TAG_MODE_TEXT", "simulateOneBehindDistrictTurn", "stepActorsOnFire"]) {
+			expect(carry, `${name} should be classified as carried`).toContain(name);
+		}
+	});
+
+	it("finds six reachable leaves, which is the whole of Wave 1's seam", () => {
+		// `DescribeActorActivity`, `DescribeItemLong`, `GetUserNewScreenshotName`,
+		// `MapToScreen`, `ScreenToMap`, `doEquipItem`. Six, against §6.5's 2,079-line
+		// Wave 1 — the wave is much bigger than its *externally reached* part, which is
+		// worth knowing before scheduling it.
+		const m = measure();
+		expect(m.buckets.get("WAVE 1")?.length).toBe(6);
+	});
+
+	it("routes the three regions §6 never named, by extractability", () => {
+		// These are the groups that were in the 68. They are ordered by how hard they
+		// are to move, which is the only thing that decides what to do first — and the
+		// order runs *against* the file's layout, because the file has no layout that
+		// matches.
+		const m = measure();
+		expect(m.buckets.get("VIEW")?.length).toBe(13);
+		expect(m.buckets.get("WORLD")?.length).toBe(15);
+		expect(m.buckets.get("ENGINE")?.length).toBe(17);
+		// A representative from each, so a rename that silently empties a region fails.
+		expect(m.buckets.get("VIEW")).toContain("UpdatePlayerFOV");
+		expect(m.buckets.get("WORLD")).toContain("RefreshPlayer");
+		expect(m.buckets.get("ENGINE")).toContain("KillActor");
+	});
+
+	it("keeps the hubs out of every movable bucket", () => {
+		// The one invariant the whole scheme rests on. If a hub method ever matched a
+		// leaf or a region pattern, it would be scheduled to move out from under the
+		// render loop that calls it, and nothing else here would notice.
+		const m = measure();
+		const hubs = new Set(m.buckets.get("HUB 1") ?? []);
+		for (const name of m.buckets.get("HUB 2") ?? []) hubs.add(name);
+		expect(hubs.size).toBe(27);
+		for (const [region, list] of m.buckets) {
+			if (region.startsWith("HUB")) continue;
+			for (const name of list) expect(hubs.has(name), `${name} is in two regions`).toBe(false);
+		}
 	});
 });
