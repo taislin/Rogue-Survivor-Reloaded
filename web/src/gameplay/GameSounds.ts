@@ -1,5 +1,52 @@
 import { BASE_URL } from "@engine/BaseUrl";
 
+/**
+ * The sound-effect ids: the fork's 181 `GameSounds.cs` pairs, less `NIGHTMARE`
+ * (which both versions declare verbatim and the port already had), plus the two
+ * Classic effects the fork replaced outright.
+ *
+ * The fork's block below is transcribed by `scripts/port-game-sounds.py` from the
+ * C# and is not hand-edited; the two files are compared by
+ * `tests/extended-audio.test.ts` against a committed fixture of the C#'s own text,
+ * in both directions and in declaration order. The three Classic effects above the
+ * block are the port's own and are deliberately *not* in the generated run --
+ * `NIGHTMARE` because both versions declare it verbatim, `UNDEAD_EAT` and
+ * `UNDEAD_RISE` because the fork replaced them with a per-distance-tier pair and
+ * dropped them from the table entirely.
+ *
+ * ## A pair per id, and a call site wants the id
+ *
+ * The C# hands `m_SFXManager` an **id** and keeps the file name in a `*_FILE`
+ * companion constant, loading both at startup (`RogueGame.cs:5278-5458`). The port
+ * resolves the file at play time instead -- one fetch per effect, no preload
+ * manifest -- so it declares both halves and `SOUND_FILES` is the map between them.
+ * A call site should pass the **id**, never the `*_FILE`, and that is a correctness
+ * rule rather than a style one.
+ *
+ * `AssetPaths.soundPath` answers an id out of `SOUND_FILES` and appends `.ogg`, but
+ * its already-resolved pass-through calls `withOgg`, which only *replaces* an
+ * extension and adds none. The C#'s `*_FILE` constants carry no extension, so a
+ * `_FILE` comes back extension-less and the fetch 404s. `ambientPath` hit this
+ * first and has a second helper for it -- `asOgg`, whose own comment says the
+ * sibling helpers "have been fine" because a music id never arrives that way. A
+ * sound id can: `RogueGame.ts:19274` and `:19276` are the two call sites in `src/`
+ * that do, which is why the shield-block effect has been *wired and silent* since
+ * it landed, and why `tests/extended-audio-soundfiles.test.ts` exists.
+ *
+ * ## The table is not a claim about wiring
+ *
+ * Every id the C# declares is declared, tabled and on disk. **68 of the fork's 180
+ * are played**, and the other 112 are here because the reference declares them, not
+ * because anything reaches them: two centralised methods in `RogueGame.ts` account
+ * for 62 of the 68 -- `PlayRangedWeaponSFX` reads 46 and `PlayBashOrBreakSFX` 16 --
+ * and six are individual call sites. Two of those six are also ungated, which is the
+ * second half of what the same test pins.
+ *
+ * The distance model the `_nearby`/`_far` suffixes imply is the reason the feature
+ * was built table-first rather than call-site-first
+ * (plans/BROWSER_PORT_PLAN.md §5.6f item 4), and `tests/extended-audio.test.ts` is
+ * where the remaining call sites are tracked.
+ */
 export class GameSounds {
   // Prefixed with the deployment base, not a literal: see engine/BaseUrl.ts.
   static readonly PATH = `${BASE_URL}assets/sfx/`;
