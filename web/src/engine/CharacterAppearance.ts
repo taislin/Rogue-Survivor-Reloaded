@@ -61,21 +61,18 @@ export type OutfitChoices = Readonly<Record<AppearanceLayer, readonly string[]>>
  */
 export function describeAppearanceImage(imageId: string): string {
   const leaf = imageId.slice(imageId.lastIndexOf("/") + 1);
-  // `male_skin3` -> ["male", "skin", "3"]. The leading token is the body, which
-  // the row already says, so it is dropped.
+  // `male_skin3` -> ["male", "skin3"]. The leading token is the body, which the row
+  // already says, so it is dropped.
   const parts = leaf.split("_");
-  const body = parts[0] ?? "";
-  const rest = parts.slice(1);
-  const words: string[] = [];
-  for (const word of rest) {
-    if (/^\d+$/.test(word)) {
-      words.push(word);
-      continue;
-    }
-    words.push(word.charAt(0).toUpperCase() + word.slice(1));
-  }
-  const label = words.join(" ");
-  return label === "" ? body : label;
+  const rest = parts.slice(1).join(" ");
+  // The number is *attached* to the word - `skin3`, not `skin` `3` - so it has to be
+  // split back out or every option reads "Skin3".
+  return rest
+    .replace(/([A-Za-z])(\d+)/g, "$1 $2")
+    .split(" ")
+    .filter((w) => w !== "")
+    .map((w) => (/^\d+$/.test(w) ? w : w.charAt(0).toUpperCase() + w.slice(1)))
+    .join(" ");
 }
 
 export class CharacterAppearance {
@@ -120,30 +117,67 @@ export class CharacterAppearance {
     return cleared;
   }
 
-  /**
-   * The six arrays `dressCivilian` wants: a chosen layer becomes a
-   * single-element array, an unchosen one becomes the whole catalogue so the
-   * roller still picks from it.
-   *
-   * **All six or none.** `dressCivilian` falls back to a fully random dress if
-   * any layer is missing, so passing a mix would discard the specific choices
-   * along with the random ones. Expanding here keeps that contract intact.
-   */
-  asDressArgs(choices: OutfitChoices): [string[], string[], string[], string[], string[], string[]] {
-    const arg = (l: AppearanceLayer): string[] => {
-      const chosen = this[l];
-      if (chosen !== null && choices[l].includes(chosen)) return [chosen];
-      return [...choices[l]];
-    };
-    return [
-      arg("eyes"),
-      arg("skin"),
-      arg("head"),
-      arg("torso"),
-      arg("legs"),
-      arg("shoes"),
-    ];
-  }
+/**
+ * The concrete image id for every layer: the chosen one, or a **stable** random.
+ *
+ * Each random layer is derived from the seed and the layer's own name, never from
+ * a roller's position. That distinction is the whole feature: one `DiceRoller`
+ * shared across the six layers ties them together, so changing one advances it
+ * and reshuffles the rest — which is exactly what the first version did. Changing
+ * your skin moved your hair, and moving the cursor at all changed your pants,
+ * because every redraw consumed six more rolls from the same roller.
+ *
+ * Deriving per layer instead means the look depends on the seed and on nothing the
+ * player has touched since, so it is stable frame to frame *and* independent
+ * layer to layer. It is also stable between the preview and character creation,
+ * because both call this with the same seed — the preview used a roller and the
+ * created player used the game's, so what was previewed was not what was worn.
+ */
+resolve(
+	choices: OutfitChoices,
+	seed: number,
+): Record<AppearanceLayer, string> {
+	const out = {} as Record<AppearanceLayer, string>;
+	for (const l of APPEARANCE_LAYERS) {
+		const catalogue = choices[l];
+		if (catalogue.length === 0) continue;
+		const chosen = this[l];
+		if (chosen !== null && catalogue.includes(chosen)) {
+			out[l] = chosen;
+			continue;
+		}
+		out[l] = catalogue[stableIndex(l, seed, catalogue.length)]!;
+	}
+	return out;
+}
+
+/**
+ * The six single-element arrays `dressActorDoll` wants.
+ *
+ * **All six or none** — `dressCivilian` falls back to a fully random dress if any
+ * layer is missing, so passing a mix would discard the specific choices along with
+ * the random ones. Every array is one element long precisely so that the roller
+ * inside `dressActorDoll` has nothing to decide, which is what keeps the layering
+ * code shared between the preview and creation without sharing its randomness.
+ */
+asDressArgs(
+	choices: OutfitChoices,
+	seed: number,
+): [string[], string[], string[], string[], string[], string[]] {
+	const resolved = this.resolve(choices, seed);
+	const one = (l: AppearanceLayer): string[] => {
+		const id = resolved[l];
+		return id === undefined ? [] : [id];
+	};
+	return [
+		one("eyes"),
+		one("skin"),
+		one("head"),
+		one("torso"),
+		one("legs"),
+		one("shoes"),
+	];
+}
 
   toJSON(): Record<string, string> {
     const out: Record<string, string> = {};
@@ -177,4 +211,26 @@ export class CharacterAppearance {
 /** The layers on offer for a body. */
 export function outfitChoices(isMale: boolean): OutfitChoices {
   return BaseMapGenerator.civilianOutfitChoices(isMale);
+}
+/**
+ * A per-layer index that depends on the seed and the layer, and on nothing else.
+ *
+ * FNV-1a over the layer name, mixed with the seed. Not cryptographic and not
+ * meant to be: the requirement is that two layers of the same body do not tend to
+ * land on the same index for every seed, and that one layer always lands on the
+ * same index for a given seed.
+ */
+function layerHash(layer: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < layer.length; i++) {
+    h ^= layer.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+function stableIndex(layer: AppearanceLayer, seed: number, count: number): number {
+  if (count <= 0) return 0;
+  const mixed = (Math.imul(seed >>> 0, 2654435761) ^ layerHash(layer)) >>> 0;
+  return mixed % count;
 }

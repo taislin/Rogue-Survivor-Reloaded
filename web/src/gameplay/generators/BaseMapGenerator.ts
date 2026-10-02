@@ -48,6 +48,22 @@ import { decorateOutsideWalls as decorateOutsideWallsOn } from './TownBuilding';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Game = any;
 
+
+/**
+ * One candidate for a layer, chosen with the roller.
+ *
+ * An empty candidate list throws rather than adding an undefined decoration: that
+ * reaches the renderer, which misses in the image cache and asks to load an image
+ * named "undefined" — on every frame, forever, silently. An empty list means the
+ * caller passed no catalogue for that layer, which is a bug worth naming.
+ */
+function pick(roller: DiceRoller, candidates: readonly string[]): string {
+  if (candidates.length === 0) {
+    throw new Error("dressActorDoll: layer has no candidates");
+  }
+  return candidates[roller.roll(0, candidates.length)]!;
+}
+
 export abstract class BaseMapGenerator extends MapGenerator {
   protected readonly m_Game: Game;
 
@@ -212,33 +228,41 @@ private static readonly BIKER_HEADS = [GameImages.BIKER_HAIR1, GameImages.BIKER_
     BaseMapGenerator.dressActorDoll(roller, actor.doll, eyes, skins, heads, torsos, legs, shoes);
   }
 
-  /**
-   * The six layers, rolled from the given candidates and written to the doll.
-   *
-   * **Static, takes a `Doll`, and the instance methods above delegate to it**,
-   * because none of this needs a `Game` — and the constructor demands one. That is
-   * what lets the character customiser dress something to draw without building a
-   * whole game, and it keeps the preview from becoming a second, drifting copy of
-   * the dressing code.
-   */
-  static dressActorDoll(
-    roller: DiceRoller,
-    doll: Doll,
-    eyes: string[],
-    skins: string[],
-    heads: string[],
-    torsos: string[],
-    legs: string[],
-    shoes: string[],
-  ): void {
-    doll.removeAllDecorations();
-    doll.addDecoration(DollPart.EYES, eyes[roller.roll(0, eyes.length)]);
-    doll.addDecoration(DollPart.SKIN, skins[roller.roll(0, skins.length)]);
-    doll.addDecoration(DollPart.HEAD, heads[roller.roll(0, heads.length)]);
-    doll.addDecoration(DollPart.TORSO, torsos[roller.roll(0, torsos.length)]);
-    doll.addDecoration(DollPart.LEGS, legs[roller.roll(0, legs.length)]);
-    doll.addDecoration(DollPart.FEET, shoes[roller.roll(0, shoes.length)]);
-  }
+/**
+ * The six layers, each picked from its candidates and written to the doll.
+ *
+ * **Static, takes a `Doll`, and the instance methods above delegate to it**,
+ * because none of this needs a `Game` — and the constructor demands one. That is
+ * what lets the character customiser dress something to draw without building a
+ * whole game, and it keeps the preview from becoming a second, drifting copy of
+ * the dressing code.
+ *
+ * The roller is still here because the NPC path genuinely rolls from whole
+ * catalogues. The customiser's determinism does **not** come from this roller but
+ * from `CharacterAppearance.resolve`, which hands it single-element arrays, so
+ * `roll(0, 1)` is always index 0 whatever the roller's state. That is deliberate:
+ * the alternative — resolving the look here — would mean the preview and creation
+ * needed separate dressing code, which is how they drifted apart in the first
+ * place.
+ */
+static dressActorDoll(
+  roller: DiceRoller,
+  doll: Doll,
+  eyes: string[],
+  skins: string[],
+  heads: string[],
+  torsos: string[],
+  legs: string[],
+  shoes: string[],
+): void {
+doll.removeAllDecorations();
+  doll.addDecoration(DollPart.EYES, pick(roller, eyes));
+  doll.addDecoration(DollPart.SKIN, pick(roller, skins));
+  doll.addDecoration(DollPart.HEAD, pick(roller, heads));
+  doll.addDecoration(DollPart.TORSO, pick(roller, torsos));
+  doll.addDecoration(DollPart.LEGS, pick(roller, legs));
+  doll.addDecoration(DollPart.FEET, pick(roller, shoes));
+}
 
   skinNakedHuman(roller: DiceRoller, actor: Actor, eyes?: string[], skins?: string[], heads?: string[]): void {
     if (!eyes || !skins || !heads) {

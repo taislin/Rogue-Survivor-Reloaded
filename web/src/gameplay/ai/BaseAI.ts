@@ -2,6 +2,7 @@ import { Activity } from '@data/Activity';
 import { Actor, Actor as ActorClass } from '@data/Actor';
 import { ActorDirective, ActorCourage } from '@data/ActorDirective';
 import { ActorModel } from '@data/ActorModel';
+import { euclideanDistance } from '@engine/NoiseDistance';
 import { ActorOrder } from '@data/ActorOrder';
 import { AIController } from '@data/AIController';
 import { Map as GameMap, Lighting, Exit } from '@data/Map';
@@ -782,7 +783,7 @@ export abstract class BaseAI extends AIController {
     for (const p of fov) {
       const tile = map.getTileAt(p.x, p.y);
       if (tile === null || !tile.model.isWater) continue;
-      const dist = game.rules.euclideanDistance(actor.location.position, p);
+        const dist = euclideanDistance(actor.location.position, p);
       if (dist < nearestDist) {
         nearestDist = dist;
         waterPos = p;

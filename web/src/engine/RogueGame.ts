@@ -2934,20 +2934,53 @@ export class RogueGame {
 	 * `Zombify`d, which is the reference's order and the reason the zombified player
 	 * keeps a chosen shirt.
 	 */
-	private dressPlayerFromCharGen(roller: DiceRoller, player: Actor): void {
+/**
+	 * Seeds the look from the session seed, never from a roller.
+	 *
+	 * A roller here was the bug being fixed: one shared across the six layers and
+	 * consumed on every redraw, so changing the skin moved the hair, moving the
+	 * cursor moved the pants, and the preview did not match what was worn. Both the
+	 * preview and creation call `resolve` with this seed, which is what makes the
+	 * two agree.
+	 */
+	private get appearanceSeed(): number {
+		return this.m_Session.seed;
+	}
+
+	/**
+	 * Dresses the newly created player from the look the customiser chose.
+	 *
+	 * **The same `resolve` the preview draws with, on the same seed**, so what was
+	 * previewed is what is worn. The first version rolled each layer from a shared
+	 * `DiceRoller`, which meant the six layers were entangled: changing the skin
+	 * moved the hair, and moving the cursor moved the pants, because every redraw
+	 * consumed six more rolls. Randomness is now *derived* per layer rather than
+	 * *drawn in sequence*.
+	 *
+	 * The arrays handed to `dressActorDoll` are one element long, so the roller it
+	 * still takes has nothing to decide — which is how this stays the same
+	 * layering code the NPC path uses rather than a second implementation.
+	 *
+	 * An all-random look resolves to a stable per-seed look, so a run is still
+	 * reproducible: the session seed decides it, exactly as it decides the map.
+	 */
+	private dressPlayerFromCharGen(player: Actor): void {
 		const isMale = player.model.dollBody.isMale;
 		const [eyes, skins, heads, torsos, legs, shoes] =
-			this.m_CharGen.appearance.asDressArgs(outfitChoices(isMale));
+			this.m_CharGen.appearance.asDressArgs(
+				outfitChoices(isMale),
+				this.appearanceSeed,
+			);
 		BaseMapGenerator.dressActorDoll(
-		roller,
-		player.doll,
-		eyes,
-		skins,
-		heads,
-		torsos,
-		legs,
-		shoes,
-	);
+			new DiceRoller(this.appearanceSeed),
+			player.doll,
+			eyes,
+			skins,
+			heads,
+			torsos,
+			legs,
+			shoes,
+		);
 	}
 
 /**
@@ -3117,12 +3150,14 @@ export class RogueGame {
 		// instead of the player's hair quietly changing under the cursor.
 		let droppedNote: string[] = [];
 
-		// The customiser's own roller. A *dedicated* one, because a random layer has
-		// to land on the same sprite every frame or the preview flickers between
-		// five skins while the player reads the rows above it. Seeded from the
-		// session, so a run is still reproducible, and it is the roller the *chosen*
-		// appearance is later resolved with, so what was previewed is what is worn.
-		const previewRoller = new DiceRoller(this.m_Session.seed ^ 0x5eed);
+		// **No roller here, on purpose.** The first version kept a dedicated
+		// `DiceRoller` for the preview so a random layer would land on the same sprite
+		// every frame — and it still flickered, because that roller was shared across
+		// all six layers and re-consumed on every redraw. Changing one layer advanced
+		// it and reshuffled the rest; so did moving the cursor on an unrelated row.
+		// `CharacterAppearance.resolve` derives each layer from the session seed and
+		// the layer's own name instead, so stability and independence both come for
+		// free and nothing needs to remember anything between frames.
 
 		let loop = true;
 		let ok = false;
@@ -3257,9 +3292,13 @@ export class RogueGame {
 			// rebuilt each frame from the current selections.
 			this.DrawCharacterPreview(
 				isUndead,
-				isUndead ? typeIdx : sexIdx === 0 ? 0 : catalogueIsMale ? 1 : 2,
+				// `typeEntries` is `*Random*` followed by the five models, so entry 1
+				// is the *first* model. Passing `typeIdx` straight through showed the
+				// one after the one picked -- selecting Skeleton drew a shambler, and
+				// the last entry fell off the end. `0` stays `0`, which previews the
+				// first model for a random pick rather than rolling and flickering.
+				isUndead ? (typeIdx === 0 ? 0 : typeIdx - 1) : sexIdx === 0 ? 0 : catalogueIsMale ? 1 : 2,
 				appearance,
-				previewRoller,
 			);
 
 			this.DrawFootnote(
@@ -6422,11 +6461,13 @@ inv.removeAllQuantity(it);
 
 		if (this.m_Rules.rollChance(UNIQUE_REFUGEE_CHECK_CHANCE)) {
 			const array = Array.from(this.m_Session.uniqueActors.toArray());
+			// `theActor` is null exactly while `isSpawned` is false, so the `!` this
+			// condition used to carry was asserting non-null on the one branch where
+			// it is guaranteed null — every refugee-capable unique actor that had not
+			// yet arrived crashed the turn. "Not here yet" now reads as "cannot be
+			// dead", which is the same answer without dereferencing.
 			const mayArrive = array.filter(
-				(unique) =>
-					unique.isWithRefugees &&
-					!unique.isSpawned &&
-					!unique.theActor!.isDead,
+				(unique) => unique.isWithRefugees && !unique.isSpawned && unique.theActor == null,
 			);
 			if (mayArrive.length > 0) {
 				const iArrive = this.m_Rules.roll(0, mayArrive.length);
@@ -30076,7 +30117,6 @@ inv.removeAllQuantity(it);
 		isUndead: boolean,
 		body: number,
 		appearance: CharacterAppearance,
-		roller: DiceRoller,
 	): void {
 		const undeadIds = [
 			ActorID.UNDEAD_SKELETON,
@@ -30089,7 +30129,7 @@ inv.removeAllQuantity(it);
 		// `*Random*` undead (body 0) previews the first type rather than rolling: a
 		// preview that reshuffles every frame is worse than one that is stable and
 		// might change on Enter.
-		const model = isUndead
+const model = isUndead
 			? this.gameActors.get(
 					undeadIds[Math.max(0, Math.min(undeadIds.length - 1, body))],
 				)
@@ -30105,21 +30145,62 @@ inv.removeAllQuantity(it);
 		// belong to the model.
 		const doll = new Doll(model.dollBody);
 
-		if (!isUndead) {
-			// The *real* dressing code, so the preview cannot drift from what creation
-			// actually produces.
-			const [eyes, skins, heads, torsos, legs, shoes] =
-				appearance.asDressArgs(outfitChoices(isMale));
-			BaseMapGenerator.dressActorDoll(roller, doll, eyes, skins, heads, torsos, legs, shoes);
+		if (isUndead && model.imageId == null) {
+			// **Doll-based, so it has to be dressed or nothing is drawn at all.** The
+			// zombified pair are `imageId`-less models that inherit the victim's
+			// clothes and gain a bloodied torso (`makeZombified`), so that is exactly
+			// what is reproduced here. Sex comes from the model rather than the row,
+			// because a zombified man's model says so.
+			//
+			// The `isUndead` half of this condition is load-bearing: **living actors
+			// are `imageId`-less too**, so testing `imageId == null` alone dressed every
+			// human as a freshly-zombied one and put blood on their shirt.
+			const zombifiedIsMale = model.dollBody.isMale;
+			const [eyes, skins, heads, torsos, legs, shoes] = appearance.asDressArgs(
+				outfitChoices(zombifiedIsMale),
+				this.appearanceSeed,
+			);
+			BaseMapGenerator.dressActorDoll(
+				new DiceRoller(this.appearanceSeed),
+				doll,
+				eyes,
+				skins,
+				heads,
+				torsos,
+				legs,
+				shoes,
+			);
+			doll.addDecoration(DollPart.TORSO, GameImages.BLOODIED);
+		} else if (!isUndead) {
+			// Human: the *real* dressing code, and the same seed character creation will
+			// use, so the preview cannot drift from what the player actually gets.
+			const [eyes, skins, heads, torsos, legs, shoes] = appearance.asDressArgs(
+				outfitChoices(isMale),
+				this.appearanceSeed,
+			);
+			BaseMapGenerator.dressActorDoll(
+				new DiceRoller(this.appearanceSeed),
+				doll,
+				eyes,
+				skins,
+				heads,
+				torsos,
+				legs,
+				shoes,
+			);
 		}
-		// Undead are left alone: they have whole-body sprites (`Actors/skeleton`,
-		// `Actors/zombie`, `Actors/zombie_master`) and no customisation is offered for
-		// them, so dressing one would show a zombie in a shirt.
+		// Whole-body undead (`Actors/skeleton`, `Actors/zombie`,
+		// `Actors/zombie_master`) are left alone: they have no layers to choose and
+		// nothing to add. Dressing one showed a zombie in a shirt.
 
 		// Centred under the rows rather than beside them: every option row here spans
 		// the full canvas -- the skill list alone runs to its right edge -- so there is
 		// no column to put a preview in, and the lower half is empty.
-		const gx = Math.round((CANVAS_WIDTH - ACTOR_SIZE * PREVIEW_SCALE) / 2);
+		//
+		// `UI_DrawImageTransform` scales about the sprite's own centre, so the *drawn*
+		// width is irrelevant here and centring on `ACTOR_SIZE * PREVIEW_SCALE` left
+		// every figure half a sprite left of middle.
+		const gx = Math.round((CANVAS_WIDTH - ACTOR_SIZE) / 2);
 		this.DrawDollPreview(model.imageId, doll, gx, PREVIEW_TOP_Y, PREVIEW_SCALE);
 
 		this.m_UI.UI_DrawStringBoldLarge(
@@ -33845,7 +33926,7 @@ inv.removeAllQuantity(it);
 						this.gameFactions.get(FactionID.TheCivilians),
 						0,
 					);
-					this.dressPlayerFromCharGen(roller, player);
+					this.dressPlayerFromCharGen(player);
 					townGen.giveNameToActor(roller, player);
 					// Then zombify.
 					player = this.Zombify(null, player, true);
@@ -33875,7 +33956,7 @@ inv.removeAllQuantity(it);
 				this.gameFactions.get(FactionID.TheCivilians),
 				0,
 			);
-			this.dressPlayerFromCharGen(roller, player);
+			this.dressPlayerFromCharGen(player);
 			townGen.giveNameToActor(roller, player);
 			player.sheet.skillTable.addOrIncreaseSkill(this.m_CharGen.startingSkill);
 
@@ -34689,27 +34770,32 @@ inv.removeAllQuantity(it);
 		// 5. Sighting Jason Myer : !jasonmyers
 		{
 			const jasonMyers = this.m_Session.uniqueActors.jasonMyers.theActor;
-			if (player !== jasonMyers) {
-				if (!jasonMyers!.isDead) {
-					if (this.IsVisibleToPlayer(jasonMyers!)) {
-						// music.
-						if (this.m_MusicManager.getCurrentMusicId() !== GameMusics.INSANE) {
-							this.m_MusicManager.stop();
-							this.m_MusicManager.play(GameMusics.INSANE, MusicPriority.EVENT);
-						}
+			// **`theActor` is null until he spawns, and stays null forever under a
+			// ruleset that never spawns him.** The C# reads `.IsDead` unconditionally
+			// because Classic always creates him during world generation; the `!` here
+			// was that assumption copied into a port where it does not hold, and it
+			// threw `Cannot read properties of null (reading 'isDead')` on the first
+			// turn of every Still Alive run. Null and "not yet here" are the same thing
+			// for this check: there is nobody to see.
+			if (jasonMyers != null && player !== jasonMyers && !jasonMyers.isDead) {
+				if (this.IsVisibleToPlayer(jasonMyers)) {
+					// music.
+					if (this.m_MusicManager.getCurrentMusicId() !== GameMusics.INSANE) {
+						this.m_MusicManager.stop();
+						this.m_MusicManager.play(GameMusics.INSANE, MusicPriority.EVENT);
+					}
 
-						// message if 1st time.
-						if (!this.m_Session.scoring.hasSighted(jasonMyers!.model.id)) {
-							this.ClearMessages();
-							this.AddMessage(
-								new Message(
-									"Nice axe you have there!",
-									this.m_Session.worldTime.turnCounter,
-									Color.Yellow,
-								),
-							);
-							if (!this.m_Player.isBotPlayer) await this.AddMessagePressEnter();
-						}
+					// message if 1st time.
+					if (!this.m_Session.scoring.hasSighted(jasonMyers.model.id)) {
+						this.ClearMessages();
+						this.AddMessage(
+							new Message(
+								"Nice axe you have there!",
+								this.m_Session.worldTime.turnCounter,
+								Color.Yellow,
+							),
+						);
+						if (!this.m_Player.isBotPlayer) await this.AddMessagePressEnter();
 					}
 				}
 			}

@@ -101,11 +101,15 @@ describe("RogueGame's measured surface", () => {
 		// §6.2 calls this "the god object", and the argument for splitting is the
 		// ratio rather than the size. Pinned so the ratio has a history.
 		//
-// **842 / 756 with the character customiser**: four members, of which one is
-  // public — `DrawActorPreview`, which is public for the same reason
-  // `DrawActorSprite` and `DrawCorpse` are, being a drawing primitive. The other
-  // three are private: the note about a dropped choice, the preview itself, and
+// **843 / 757 with the character customiser**: four members, all private — the
+  // note about a dropped choice, the preview, the doll drawer it uses, and
   // dressing the player from it.
+  //
+  // **`public` is unchanged at 752 and `external` at 113.** The customiser's first
+  // public member, `DrawActorPreview`, is gone: the preview turned out not to need
+  // an `Actor` at all, only a `Doll` and an image id, so it is `DrawDollPreview`
+  // and private. Reaching the count by *removing* public surface is the only
+  // direction §6 has ever gone on its own.
   //
   // The customiser's *state* went to `CharacterAppearance.ts` and its persistence
   // to `NewGameConfig.ts` rather than onto this class. Measured, keeping them here
@@ -120,18 +124,18 @@ describe("RogueGame's measured surface", () => {
   // `HandleNewCharacterDetails`) plus three private helpers. That happened
   // by deleting screens rather than by hiding them behind `private` — the
   // measurement cannot tell those apart, which is the caveat.
-  expect(m.members).toBe(842);
-  expect(m.methods).toBe(756);
+  expect(m.members).toBe(843);
+  expect(m.methods).toBe(757);
   // The *reachable* surface is unchanged at 113, which is the number that matters
   // — nothing new is called from outside.
   expect(m.external).toBe(113);
   // §6.4: "567 of 584 methods are public — only 17 are `private`. The
   // `private` boundary is effectively absent." That is now *more* true, and the
   // direction is worth pinning: the public count grew, and so did the private
-  // one, from 17 to 89. A naive reading of §6.4 would say the file has become
+  // one, from 17 to 90. A naive reading of §6.4 would say the file has become
   // better encapsulated in a way it has not.
-  expect(m.public).toBe(753);
-  expect(m.private).toBe(89);
+  expect(m.public).toBe(752);
+  expect(m.private).toBe(91);
 	});
 
 	it("§6's stop condition is not met: nothing private is reached from outside", () => {

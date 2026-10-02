@@ -105,6 +105,40 @@
 > and still fails with exactly one offender when the shield `EQUIP` gate is
 > replaced with `true`. A gate that cannot be made to fail is not a gate.
 >
+> **Six defects found by playing the character customiser, 2026-10-02.** None were
+> visible to `tsc` or to the headless simulator, which is the argument for having
+> driven this by hand rather than trusting the suite:
+>
+> - **The six layers shared one `DiceRoller`, re-consumed every redraw.** Changing
+>   the skin moved the hair, changing the pants moved the eyes, changing the shirt
+>   moved the pants, and *moving the cursor on an unrelated row* changed
+>   everything. `CharacterAppearance.resolve` now derives each layer from the
+>   session seed and the layer's own name, so a layer depends on nothing the
+>   player has touched and nothing about how many frames have been drawn. The same
+>   fix makes the preview and creation agree, because both call it with the same
+>   seed — they rolled separately before, so what was previewed was not what was
+>   worn. Verified by reinstating the shared roller: 9 of 19 tests fail, and the
+>   tests walk a *frame sequence*, because a one-frame assertion passes against
+>   the broken version.
+> - **Undead previews were off by one** (`typeEntries` is `*Random*` plus the five
+>   models, so entry 1 is the *first* model), **half a sprite left of centre**
+>   (`UI_DrawImageTransform` scales about the sprite's own centre, so the drawn
+>   width is irrelevant), and **the zombified pair drew nothing** — they are
+>   `imageId`-less models that inherit the victim's clothes and gain blood
+>   (`makeZombified`). Keying the dressing on `imageId == null` alone put blood on
+>   every *human*, because living actors are `imageId`-less too.
+> - **Three crashes of one shape** — a C# invariant copied over where it does not
+>   hold: `jasonMyers!.isDead` when the ruleset never spawns him (every Still
+>   Alive run, turn one); `unique.theActor!.isDead` on exactly the branch where
+>   `isSpawned` makes it null; and `game.rules.euclideanDistance`, which does not
+>   exist and type-checked anyway because `rules` is typed loosely. A scan of all
+>   95 `rules.*` call sites found no other gap.
+>
+> **Known-slow:** `tests/idle-district-sim.test.ts` runs a full district
+> simulation per case and dominates the suite's wall clock. Not yet investigated;
+> it may deserve a smaller fixture or an opt-in tag rather than deletion, since it
+> covers the idle catch-up that replaced a blocking burst on district entry.
+>
 > **Numbers in this file were stale by a wide margin until 2026-10-02** — the test
 > count alone was quoted as 1 542 in eight places when it was over 2 800, and
 > `RogueGame.ts` was described as 27 722 lines when it is 36 116. Re-measure
