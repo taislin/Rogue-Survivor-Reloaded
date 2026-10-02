@@ -176,17 +176,23 @@ describe("Feature registry is wired", () => {
     // "has a reader" check comes to disagree with the code it is checking, which is
     // the one failure mode a multiset is supposed to rule out.
     expect(sites.map((s) => s.feature).sort())
-      .toEqual(["Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "AmbientAudio", "AmbientAudio", "AmbientAudio",
-   "AmbientAudio", "AmbientAudio", "AmbientAudio", "AnimalShelter", "AnimalShelter", "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank",
-   "Bar", "Bar", "BlackOpsRaid", "Butchering", "Butchering", "CHARResearchRaid", "Church", "Clinic", "Clinic", "Cooking",
-   "Cooking", "Cooking", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessGating", "DifficultyAtCreation", "DifficultyAtCreation", "ExtendedAudio", "ExtendedAudio",
-   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "Farm", "Farm", "FireBarrels", "FireBarrels", "FireExtinguishers", "FireStation",
-   "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-   "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FuelStation", "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue",
-   "HelicopterRescue", "ItemDespawn", "ItemDespawn", "Junkyard", "Junkyard", "Library", "Library", "LightPriority", "ResourcesAvailability", "ResourcesAvailability",
-   "ResourcesAvailability", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
-   "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShoppingMall",
-   "ShoppingMall", "ShoppingMall", "SiphonFuel", "SiphonFuel", "SportsCourts", "SportsCourts", "TileFires", "TileFires", "TileFires", "TileFires", "WeaponWeight"]);
+      .toEqual([
+         "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "AmbientAudio", "AmbientAudio", "AmbientAudio",
+            "AmbientAudio", "AmbientAudio", "AmbientAudio", "AnimalShelter", "AnimalShelter", "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank",
+            "Bar", "Bar", "BlackOpsRaid", "Butchering", "Butchering", "CHARResearchRaid", "Church", "Clinic", "Clinic", "Cooking",
+            "Cooking", "Cooking", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov",
+            "DarknessGating", "DifficultyAtCreation", "DifficultyAtCreation", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",
+            "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "Farm", "Farm", "FireBarrels", "FireBarrels", "FireBarrels", "FireExtinguishers", "FireStation",
+            "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
+            "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FuelStation", "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue",
+            "HelicopterRescue", "ItemDespawn", "ItemDespawn", "Junkyard", "Junkyard", "Library", "Library", "LightPriority", "ResourcesAvailability", "ResourcesAvailability",
+            "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
+            "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShoppingMall", "ShoppingMall", "ShoppingMall", "SiphonFuel", "SiphonFuel", "SportsCourts", "SportsCourts",
+            "TileFires", "TileFires", "TileFires", "TileFires", "TileFires", "WeaponWeight",
+      ]);
+      // 116 call sites across 37 features
+
+
 
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     // `Alcohol`'s *first* reader is now in `RogueGame` (the per-turn decay), and
@@ -225,14 +231,32 @@ describe("Feature registry is wired", () => {
     expect(alc.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(4);
     expect(alc.filter((s) => /HeadlessRunner\.ts/.test(s.at))).toHaveLength(1);
 
-    // ResourcesAvailability is three readers in three files: the options row and
-    // its arrow keys, the difficulty rating multiplier, and the starting kit.
+    // ResourcesAvailability is seven readers in five files: the options row and
+    // its arrow keys, the difficulty rating multiplier, the starting kit,
+    // `BaseTownGenerator.makeCHARStorageRoom` -- the CHAR underground's loot
+    // gate, Release 7-4 (`BaseTownGenerator.cs:8531` and `:8547`), which is the
+    // first *generator* reader of the option and the first one a world generates
+    // with rather than a session that starts with -- and the three sleeping-bag
+    // readers.
     // The Butchering meat quantity reads it too, but through a helper rather
     // than inline, so it is counted at its one caller.
+    //
+    // **The sleeping bag is why the flag has three `RogueGame`/`BaseAI` readers, and
+    // it is the argument for putting it on this flag at all.** There is no sleep flag
+    // in the registry and there should not be one -- sleeping on a couch is a Classic
+    // mechanic with its own `SLEEP_COUCH_SLEEPING_REGEN` constant, and any flag that
+    // switched *that* off would be wrong. What the flag has to cover is the bag
+    // itself, in all three places that can notice one: the `DoUseItem` arm that
+    // unrolls it, the sleep-regen OR in the turn loop, and `BaseAI.behaviorSleep`'s
+    // `couchPos` scan. Three readers in two files because the AI's copy is in
+    // `BaseAI` and the other two are in `RogueGame` -- so this is the first feature
+    // whose split is "engine and AI" rather than "engine and UI".
     const res = sites.filter((s) => s.feature === "ResourcesAvailability");
     expect(res.filter((s) => /OptionsScreen\.ts/.test(s.at))).toHaveLength(1);
     expect(res.filter((s) => /Scoring\.ts/.test(s.at))).toHaveLength(1);
-    expect(res.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(1);
+    expect(res.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(3);
+    expect(res.filter((s) => /BaseTownGenerator\.ts/.test(s.at))).toHaveLength(1);
+    expect(res.filter((s) => /ai\/BaseAI\.ts/.test(s.at))).toHaveLength(1);
 
     // DifficultyAtCreation is two readers in two files, and the split is the
     // feature: a screen nobody can reach, and a screen that leaves the same rows
@@ -296,7 +320,7 @@ describe("Feature registry is wired", () => {
     // that could not change anything.
     expect(fishing.find((s) => /Rules\.ts/.test(s.at))!.at).toMatch(/Rules\.ts:\d+$/);
 
-    // TileFires has two readers, and the second is `Actor.isOnFire` arriving.
+    // TileFires has five readers, and the fifth is `DoUseItem`'s molotov arm.
     //
     // It was deliberately ONE until the per-actor fire subsystem landed: the spread
     // loop, the burn damage and the ignite/put-out primitives were one indivisible
@@ -306,12 +330,22 @@ describe("Feature registry is wired", () => {
     // (the per-turn alight pass, `DoWait`'s stop-drop-and-roll, and the fire
     // extinguisher's actor target), so the count is 2 *methods* rather than 1.
     //
+    // **The fifth is a different kind of gate from the other four and says so in its
+    // own header.** The first four guard *behaviour* — a fire spreads or does not. The
+    // molotov arm guards an *offer*: whether the player is invited to turn a bottle of
+    // liquor into the one item in the game whose whole job is to set fire. It is the
+    // only site on this flag that is not a hazard simulation, and the reasoning for
+    // putting it here rather than on `Cooking` or `FireBarrels` is written out at
+    // `RogueGame.DoMakeMolotov`. Note what it is not: a thrown molotov under a
+    // `TileFires`-off ruleset still ignites, because `ApplyExplosionDamage`'s seeding
+    // call is not itself gated.
+    //
     // The four *sites* below are two early returns plus two `&&` guards in `DoWait`.
     // The `&&` guards are not extra independent switches — they guard a public
     // entry point, exactly as `stepTileFires`'s early return guards its own — so
     // they are counted here rather than collapsed, because a gate nobody counts is
     // a gate nobody notices deleting.
-    expect(sites.filter((s) => s.feature === "TileFires")).toHaveLength(4);
+    expect(sites.filter((s) => s.feature === "TileFires")).toHaveLength(5);
     const tileFires = sites.filter((s) => s.feature === "TileFires");
     expect(tileFires.every((s) => /RogueGame\.ts/.test(s.at))).toBe(true);
     // Two of the four are inside `DoWait` (the message guard and the
@@ -326,9 +360,13 @@ describe("Feature registry is wired", () => {
     // first two gates in the file are the two `DoWait` ones because `DoWait` is
     // declared before both step functions; that ordering is a fact about the file's
     // structure and does not move.
+    //
+    // The fifth is *not* in that sequence: it is in `DoUseItem`, which is declared
+    // after both step functions, so it sorts last by line number and by file position
+    // alike. That is why only the first three are asserted as ordered.
     const tileFireLines = tileFires.map((s) => Number(/RogueGame\.ts:(\d+)/.exec(s.at)![1]));
     expect(tileFireLines.every((n) => Number.isInteger(n))).toBe(true);
-    expect(tileFireLines.length, "all four are in RogueGame.ts").toBe(4);
+    expect(tileFireLines.length, "all five are in RogueGame.ts").toBe(5);
     expect(tileFireLines[0] < tileFireLines[1] && tileFireLines[1] < tileFireLines[2], "declared in order")
       .toBe(true);
 
@@ -400,10 +438,14 @@ describe("Feature registry is wired", () => {
     // the scan governs whether a fire two tiles away is visible from anywhere.
     expect(dark.filter((s) => /LOS\.ts/.test(s.at))).toHaveLength(2);
 
-    // FireBarrels is two readers in two different files, and the split is the
-    // point: the generator decides what a barrel *is*, the turn loop decides what
-    // a lit barrel *does*. Collapsing either into a helper would hide the flag
-    // behind an abstraction and make the count the only place it shows up.
+    // FireBarrels is three readers in three different files, and the split is the
+    // point: the generator decides what a barrel *is* (`BaseMapGenerator`), the
+    // turn loop decides what a lit barrel *does* (`RogueGame`), and the CHAR
+    // underground's storage room decides whether the room gets one at all
+    // (`BaseTownGenerator`, Release 7-6, `BaseTownGenerator.cs:8527`) -- gated
+    // before the roll, because `DiceRoller.rollChance` spends a die even at 0%.
+    // Collapsing any of the three into a helper would hide the flag behind an
+    // abstraction and make the count the only place it shows up.
     // ItemDespawn is two readers in two files for the same reason FireBarrels is:
     // the drop decides what becomes litter, the turn loop decides when litter goes.
     const despawn = sites.filter((s) => s.feature === "ItemDespawn");
@@ -411,6 +453,7 @@ describe("Feature registry is wired", () => {
 
     const barrels = sites.filter((s) => s.feature === "FireBarrels");
     expect(barrels.filter((s) => /BaseMapGenerator\.ts/.test(s.at))).toHaveLength(1);
+    expect(barrels.filter((s) => /BaseTownGenerator\.ts/.test(s.at))).toHaveLength(1);
     expect(barrels.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(1);
 
     // FuelStation is one reader, in the building file, and the location is the
@@ -588,13 +631,28 @@ describe("Feature registry is wired", () => {
     // gated on *this* feature rather than on `Cooking`, because it is the fork's
     // recording of the fire and not the fire.
     //
+    // Ten now, and the four that arrived with the Still Alive use paths are the first
+    // ones on this feature that are **more than one id from one `if`**: the throwable
+    // light packs play `FLARE` or `GLOWSTICK` by model (`RogueGame.cs:15067-15070`),
+    // `DoMakeMolotov` plays `MAKE_MOLOTOV` (`:22124`), and `DoUnloadAmmoFromGun` plays
+    // `EQUIP_GUN_PLAYER` (`:22192`). They are counted per gate rather than collapsed to
+    // "the light packs, the molotov and the unload", for the reason the comment four
+    // paragraphs up gives: a gate nobody counts is a gate nobody notices deleting.
+    //
+    // **`EQUIP_GUN_PLAYER` is the interesting one of the four**, because its name is a
+    // lie about its provenance: it reads like a Classic id and is not. It is in the
+    // fork's sound fixture, so it is in `FORK_IDS`, and the first version of
+    // `DoUnloadAmmoFromGun` played it ungated on the assumption that the C#'s use of a
+    // long-standing sound meant it was long-standing. The gate test above is what
+    // caught that, which is precisely the review it exists for.
+    //
     // The remaining tiered families still have no reader, and that is not a hole in
     // the gate: the C#'s `_nearby` / `_far` / `_visible` suffixes need the distance
     // model, and the sfx channel they have to play on did not exist until this
     // change. `tests/extended-audio.test.ts` asserts that no id is named anywhere
     // ungated, so this count can only rise through a decision.
     const extended = sites.filter((s) => s.feature === "ExtendedAudio");
-    expect(extended).toHaveLength(6);
+    expect(extended).toHaveLength(10);
     expect(extended.every((s) => /RogueGame\.ts/.test(s.at))).toBe(true);
   });
 

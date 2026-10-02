@@ -1270,6 +1270,20 @@ export class RogueGame {
 	static readonly CURRENT_SAVE_SLOT = 0;
 
 	/**
+	 * C# `MAX_THROWABLE_DISTANCE` -- `RogueGame.cs:388`, Release 7-1, "for
+	 * non-standard throwables eg flares".
+	 *
+	 * **A flat five, and deliberately not `Rules.ActorMaxThrowRange`.** The grenade
+	 * throw mode scales its reach by the actor's throwing skill
+	 * (`ActorMaxThrowRange(player, grenadeModel.MaxThrowDistance)` at
+	 * `RogueGame.cs:13710`); a flare does not. The reference hard-codes the same
+	 * constant in *both* places it is used -- the reach test and the target-step
+	 * bound -- rather than deriving one from the other, and a flare that obeyed the
+	 * throw skill would be a stronger throw at higher skill than the C# allows.
+	 */
+	static readonly MAX_THROWABLE_DISTANCE = 5;
+
+	/**
 	 * Render-state console logging, enabled with `?debug=1` in the page URL.
 	 *
 	 * Read once at boot in `main.ts`. Off by default; when on, every player
@@ -1352,6 +1366,38 @@ export class RogueGame {
 	];
 	readonly THROW_GRENADE_MODE_TEXT: string[] = [
 		"THROW GRENADE MODE - directions to select, F to fire,  ESC cancels",
+	];
+	/**
+	 * C# `THROW_MODE_TEXT` -- `RogueGame.cs:108`. The *non-grenade* throw mode: the
+	 * one a flare or a glowstick goes through, `HandlePlayerUseThrowableItem`. It is a
+	 * separate string from `THROW_GRENADE_MODE_TEXT` above and a separate method, and
+	 * the only differences are the name and a missing double space -- which is why the
+	 * C# has two of them rather than parameterising one.
+	 */
+	readonly THROW_MODE_TEXT: string[] = [
+		"THROW MODE - directions to select, F to throw, ESC cancels",
+	];
+	/**
+	 * C# `DROP_CANDLES_TEXT` -- `RogueGame.cs:114`, Release 7-1.
+	 *
+	 * The prompt a box of candles raises when it is dropped rather than used. The
+	 * wording is the reference's, including "place (O)ne lit candle or drop (A)ll
+	 * candles" -- `O` is not "one", it is *place one lit candle here*, which is a
+	 * different act from putting the box on the floor.
+	 */
+	readonly DROP_CANDLES_TEXT: string[] = [
+		"DROPPING CANDLES - place (O)ne lit candle or drop (A)ll candles? ESC cancels",
+	];
+	/**
+	 * C# `THROWABLE_LIGHT_TEXT` -- `RogueGame.cs:115`, Release 7-1. `C`arry or
+	 * `T`hrow, for the two kits whose light is manufactured at use time.
+	 *
+	 * Not ported: `DROP_FUEL_TEXT` (`RogueGame.cs:113`), the parallel prompt for a
+	 * stack of fuel cans in `DoDropItem`. It belongs to `AMMO_FUEL` rather than to any
+	 * of the three light kits, and no item in this change asks for it.
+	 */
+	readonly THROWABLE_LIGHT_TEXT: string[] = [
+		"USING THROWABLE LIGHTS - (C)arry or (T)hrow a lit one? ESC cancels",
 	];
 	readonly MARK_ENEMIES_MODE: string[] = [
 		"MARK ENEMIES MODE - E to make enemy, T next actor, ESC cancels",
@@ -1442,6 +1488,16 @@ export class RogueGame {
 		"refuses the deal",
 	);
 	readonly VERB_RELOAD: Verb = new Verb("reload");
+	/**
+	 * C# `VERB_UNLOAD` — `RogueGame.cs:489`, Still Alive Release 7-6. Its own two
+	 * strings, unlike almost every verb here: `new Verb("unload", "unloads")`.
+	 *
+	 * That is not cosmetic. `Conjugate` picks the plural form for a *third-person*
+	 * actor, so this is the only verb in the file where the two differ by an `s` and
+	 * the message "you unload a minigun" would be wrong if the port had written
+	 * `new Verb("unload")` and let the second string default.
+	 */
+	readonly VERB_UNLOAD: Verb = new Verb("unload", "unloads");
 	readonly VERB_RECHARGE: Verb = new Verb("recharge");
 	readonly VERB_REPAIR: Verb = new Verb("repair");
 	readonly VERB_REVIVE: Verb = new Verb("revive");
@@ -5708,7 +5764,40 @@ export class RogueGame {
 						actor.activity = Activity.SLEEPING;
 
 						// regen sleep pts.
-						const sleepRegen = this.m_Rules.actorSleepRegen(actor, isOnCouch);
+						//
+						// **The OR is the whole of the sleeping bag here**, and it is the
+						// C#'s shape at `RogueGame.cs:6373-6378`: read the ground
+						// inventory, ask whether it holds a bag, and fold that into the
+						// single boolean `ActorSleepRegen` already takes. The reference does
+						// *not* widen `ActorSleepRegen` -- its signature is
+						// `ActorSleepRegen(Actor actor, bool isOnCouch)` in the fork's own
+						// `Rules.cs` exactly as it is in vanilla, and the parameter is still
+						// named `isOnCouch` while a bag is being passed into it. Folding at
+						// the call site is what the reference does, so that is what this is,
+						// and `Rules.actorSleepRegen`'s signature is untouched.
+						//
+						// Two details worth naming. The lookup is by *model id* through
+						// `hasItemMatching`, not by class and not by quantity, so one bag
+						// under a stack of sleeping survivors rates all of them. And the
+						// ground inventory is read even when `groundInv` is null -- the C#'s
+						// `if (groundInv != null)` is absorbed by `hasItemMatching`, which is
+						// null-safe here.
+						//
+						// Gated on `Feature.ResourcesAvailability`, the same flag as
+						// `HandlePlayerUseSleepingBag` and `behaviorSleep`, so a bag is off in
+						// all three places or in none. Under Classic nothing can produce a
+						// bag, so the gate is belt-and-braces -- but a *save* can, and a
+						// Classic ruleset loading one should not start paying couch rates.
+						const isOnSleepingBag =
+							hasFeature(this.m_Session.ruleset, Feature.ResourcesAvailability) &&
+							(map.getItemsAt(actor.location.position)?.hasItemMatching(
+								(other) => other.model.id === ItemID.SLEEPING_BAG,
+							) ??
+								false);
+						const sleepRegen = this.m_Rules.actorSleepRegen(
+							actor,
+							isOnCouch || isOnSleepingBag,
+						);
 						actor.sleepPoints += sleepRegen;
 						actor.sleepPoints = Math.min(
 							actor.sleepPoints,
@@ -8373,70 +8462,70 @@ inv.removeAllQuantity(it);
 								loop = false;
 								break;
 							}
-							loop = !this.DoPlayerItemSlot(player, 0, inKey);
+							loop = !(await this.DoPlayerItemSlot(player, 0, inKey));
 							break;
 						case PlayerCommand.ITEM_SLOT_1:
 							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
-							loop = !this.DoPlayerItemSlot(player, 1, inKey);
+							loop = !(await this.DoPlayerItemSlot(player, 1, inKey));
 							break;
 						case PlayerCommand.ITEM_SLOT_2:
 							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
-							loop = !this.DoPlayerItemSlot(player, 2, inKey);
+							loop = !(await this.DoPlayerItemSlot(player, 2, inKey));
 							break;
 						case PlayerCommand.ITEM_SLOT_3:
 							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
-							loop = !this.DoPlayerItemSlot(player, 3, inKey);
+							loop = !(await this.DoPlayerItemSlot(player, 3, inKey));
 							break;
 						case PlayerCommand.ITEM_SLOT_4:
 							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
-							loop = !this.DoPlayerItemSlot(player, 4, inKey);
+							loop = !(await this.DoPlayerItemSlot(player, 4, inKey));
 							break;
 						case PlayerCommand.ITEM_SLOT_5:
 							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
-							loop = !this.DoPlayerItemSlot(player, 5, inKey);
+							loop = !(await this.DoPlayerItemSlot(player, 5, inKey));
 							break;
 						case PlayerCommand.ITEM_SLOT_6:
 							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
-							loop = !this.DoPlayerItemSlot(player, 6, inKey);
+							loop = !(await this.DoPlayerItemSlot(player, 6, inKey));
 							break;
 						case PlayerCommand.ITEM_SLOT_7:
 							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
-							loop = !this.DoPlayerItemSlot(player, 7, inKey);
+							loop = !(await this.DoPlayerItemSlot(player, 7, inKey));
 							break;
 						case PlayerCommand.ITEM_SLOT_8:
 							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
-							loop = !this.DoPlayerItemSlot(player, 8, inKey);
+							loop = !(await this.DoPlayerItemSlot(player, 8, inKey));
 							break;
 						case PlayerCommand.ITEM_SLOT_9:
 							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
-							loop = !this.DoPlayerItemSlot(player, 9, inKey);
+							loop = !(await this.DoPlayerItemSlot(player, 9, inKey));
 							break;
 
 						case PlayerCommand.RUN_TOGGLE:
@@ -8638,7 +8727,7 @@ inv.removeAllQuantity(it);
 				}
 
 				// Inventory?
-				const invRes = this.HandleMouseInventory(mousePos, mouseButtons, false);
+				const invRes = await this.HandleMouseInventory(mousePos, mouseButtons, false);
 				if (invRes.ok) {
 					if (invRes.hasDoneAction) {
 						loop = false;
@@ -9712,12 +9801,30 @@ inv.removeAllQuantity(it);
 		return true;
 	}
 
-	// C# HandleMouseInventory — RogueGame.cs:6656
-	HandleMouseInventory(
+	/**
+	 * C# `HandleMouseInventory` — `RogueGame.cs:6656`.
+	 *
+	 * **async, where the C# is not, and only because of what it now reaches.** Still
+	 * Alive hangs four prompts off the two clicks this dispatches -- `DoDropItem`'s
+	 * candle box (`RogueGame.cs:21207`), `HandlePlayerUseLightPackThrowable`'s
+	 * carry-or-throw (`:15021`), `HandlePlayerUseSleepingBag`'s sleep
+	 * confirmation (`:14873`) -- and each of those blocks the C# on
+	 * `m_UI.UI_WaitKey()`. `UI_WaitKey` is a promise here, so `OnLMBItem` and
+	 * `OnRMBItem` have to be awaitable, and so does this.
+	 *
+	 * The cost of the alternative is recorded because it was the alternative:
+	 * `fireAndForget` at the bottom of the synchronous `DoUseItem`. That puts two
+	 * consumers on the one key queue -- this handler's prompt and the turn loop's
+	 * `WaitKeyOrMouse` -- and the first key after the click would answer both, so a
+	 * player pressing a movement key at the carry-or-throw prompt would be told they
+	 * hit the wrong key *and* walk away from it. `Diagnostics.fireAndForget`'s own
+	 * header says not to use it "when ordering matters"; this is that case.
+	 */
+	async HandleMouseInventory(
 		mousePos: Point,
 		mouseButtons: MouseButton | null,
 		_hasDoneAction: boolean,
-	): { ok: boolean; hasDoneAction: boolean } {
+	): Promise<{ ok: boolean; hasDoneAction: boolean }> {
 		const hit = this.MouseToInventoryItem(mousePos);
 		const inv = hit.inv;
 		if (inv == null) {
@@ -9779,9 +9886,9 @@ inv.removeAllQuantity(it);
 
 			if (mouseButtons != null) {
 				if (mouseButtons === MouseButton.Left)
-					hasDoneAction = this.OnLMBItem(inv, it);
+					hasDoneAction = await this.OnLMBItem(inv, it);
 				else if (mouseButtons === MouseButton.Right)
-					hasDoneAction = this.OnRMBItem(inv, it);
+					hasDoneAction = await this.OnRMBItem(inv, it);
 			}
 		}
 
@@ -9920,7 +10027,9 @@ inv.removeAllQuantity(it);
 	}
 
 	// C# OnLMBItem — RogueGame.cs:6734
-	OnLMBItem(inv: Inventory, it: Item): boolean {
+	// async: `DoUseItem` reaches Still Alive's blocking use prompts. See
+	// `HandleMouseInventory`'s header for why that is awaited rather than fired.
+	async OnLMBItem(inv: Inventory, it: Item): Promise<boolean> {
 		// The bag is not the player's inventory, so it needs its own arm. C#
 		// `RogueGame.cs:11364-11380` plus `:21118` (the `OPEN_BACKPACK` sfx on
 		// unequip, which `Feature.ExtendedAudio` does not wire).
@@ -9962,15 +10071,16 @@ inv.removeAllQuantity(it);
 					return false;
 				}
 			} else {
-				const res = this.m_Rules.canActorUseItem(this.m_Player, it);
-				if (res.ok) {
-					this.DoUseItem(this.m_Player, it);
-					return true;
-				} else {
-					this.AddMessage(
-						this.MakeErrorMessage(`Cannot use ${it.theName} : ${res.reason}.`),
-					);
-				}
+			const res = this.m_Rules.canActorUseItem(this.m_Player, it);
+			if (res.ok) {
+				await this.DoUseItem(this.m_Player, it);
+				return true;
+			} else {
+				this.AddMessage(
+					this.MakeErrorMessage(`Cannot use ${it.theName} : ${res.reason}.`),
+				);
+			}
+
 			}
 		} else {
 			const res = this.m_Rules.canActorGetItem(this.m_Player, it);
@@ -9989,11 +10099,12 @@ inv.removeAllQuantity(it);
 	}
 
 	// C# OnRMBItem — RogueGame.cs:6801
-	OnRMBItem(inv: Inventory, it: Item): boolean {
+	// async: `DoDropItem` reaches Still Alive's candle-box prompt.
+	async OnRMBItem(inv: Inventory, it: Item): Promise<boolean> {
 		if (inv === this.m_Player.inventory) {
 			const res = this.m_Rules.canActorDropItem(this.m_Player, it);
 			if (res.ok) {
-				this.DoDropItem(this.m_Player, it);
+				await this.DoDropItem(this.m_Player, it);
 				return true;
 			} else {
 				this.AddMessage(
@@ -10529,16 +10640,22 @@ inv.removeAllQuantity(it);
 	}
 
 	// C# DoPlayerItemSlot — RogueGame.cs:7157
-	DoPlayerItemSlot(player: Actor, slot: number, key: GameKeyEvent): boolean {
-		if (key.ctrl) return this.DoPlayerItemSlotUse(player, slot);
+	// async: the ctrl and alt arms reach Still Alive's blocking use and drop prompts.
+	async DoPlayerItemSlot(
+		player: Actor,
+		slot: number,
+		key: GameKeyEvent,
+	): Promise<boolean> {
+		if (key.ctrl) return await this.DoPlayerItemSlotUse(player, slot);
 		else if (key.shift) return this.DoPlayerItemSlotTake(player, slot);
-		else if (key.alt) return this.DoPlayerItemSlotDrop(player, slot);
+		else if (key.alt) return await this.DoPlayerItemSlotDrop(player, slot);
 
 		return false;
 	}
 
 	// C# DoPlayerItemSlotUse — RogueGame.cs:7174
-	DoPlayerItemSlotUse(player: Actor, slot: number): boolean {
+	// async: `DoUseItem` reaches Still Alive's blocking use prompts.
+	async DoPlayerItemSlotUse(player: Actor, slot: number): Promise<boolean> {
 		const inv = player.inventory!;
 		const it = inv.getItem(slot);
 
@@ -10576,7 +10693,7 @@ inv.removeAllQuantity(it);
 		} else {
 			const res = this.m_Rules.canActorUseItem(player, it);
 			if (res.ok) {
-				this.DoUseItem(player, it);
+				await this.DoUseItem(player, it);
 				return true;
 			} else {
 				this.AddMessage(
@@ -10619,7 +10736,8 @@ inv.removeAllQuantity(it);
 	}
 
 	// C# DoPlayerItemSlotDrop — RogueGame.cs:7269
-	DoPlayerItemSlotDrop(player: Actor, slot: number): boolean {
+	// async: `DoDropItem` reaches Still Alive's candle-box prompt.
+	async DoPlayerItemSlotDrop(player: Actor, slot: number): Promise<boolean> {
 		const inv = player.inventory!;
 		const it = inv.getItem(slot);
 
@@ -10632,7 +10750,7 @@ inv.removeAllQuantity(it);
 
 		const res = this.m_Rules.canActorDropItem(player, it);
 		if (res.ok) {
-			this.DoDropItem(player, it);
+			await this.DoDropItem(player, it);
 			return true;
 		} else {
 			this.AddMessage(
@@ -11942,6 +12060,305 @@ inv.removeAllQuantity(it);
 			this.m_AmbientSFXManager.stopAll();
 		this.m_MusicManager.playLooping(GameMusics.SLEEP, MusicPriority.EVENT);
 		return true;
+	}
+
+	/**
+	 * C# `HandlePlayerUseSleepingBag` — `RogueGame.cs:14856-14874`, Still Alive
+	 * Release 7-3. Reached by *using* a sleeping bag, not by a `PlayerCommand`.
+	 *
+	 * Three steps, and the order is the C#'s rather than an accident of convenience:
+	 *
+	 * 1. **Refuse if `CanActorSleep` fails** (`:14858`). A bag does not get you a nap you
+	 *    were not entitled to -- a starving survivor still cannot, and the reason string
+	 *    is the same one the sleep command uses.
+	 * 2. **Refuse if a map object is in the way** (`:14864`). This is the only check
+	 *    specific to a bag, and it exists because the bag goes *on the floor*: you
+	 *    cannot unroll one under a parked car. A couch has no equivalent problem
+	 *    because you do not place it.
+	 * 3. **Drop it, then ask to sleep** (`:14872-14873`). The bag is on the ground
+	 *    *before* the "Really sleep there" question, which means a player who answers
+	 *    *no* keeps the bag on the floor and has paid the turn. The C#'s behaviour, kept
+	 *    deliberately: re-asking would mean holding the bag in a hand the reference
+	 *    never puts it in.
+	 *
+	 * **The return value is `HandlePlayerSleep`'s**, not `true`. So declining the
+	 * confirmation returns `false`, and the C#'s caller treats that as "no action done"
+	 * -- which is not quite the same thing, since the bag *was* dropped. Transcribed as
+	 * the C# has it rather than corrected, because the two differ only in what the
+	 * player is told and the reference is what this port is a port of.
+	 *
+	 * **Gated on `Feature.ResourcesAvailability` by its call site in `DoUseItem`**, and
+	 * that mapping needs arguing for because nothing else fits. There is no sleep flag:
+	 * sleeping on a couch is a Classic mechanic with its own `SLEEP_COUCH_SLEEPING_REGEN`
+	 * constant, and this flag must not switch *that* off. What it does switch off is the
+	 * bag, and a bag is a *supply* -- a Still Alive item with no Classic drop site, no
+	 * Classic reader and no Classic flavour for its existence, whose whole content is
+	 * the fork's Resources Availability layer. `Feature.ResourcesAvailability` is the
+	 * flag that owns that layer (`GiveStartingKitForResources`, the underground loot, the
+	 * fruit interval), and using it means one switch turns the bag off everywhere at
+	 * once: the use arm here, the sleep-regen OR in the turn loop, and the AI's
+	 * `behaviorSleep`.
+	 *
+	 * Note what it does *not* need: the despawn exemption for a dropped bag
+	 * (`ApplyItemTurnTracker`, `RogueGame.ts:26841`) is already written and already
+	 * keyed on the id rather than the flag, so it is inert under Classic for the same
+	 * reason -- nothing can get a bag.
+	 */
+	async HandlePlayerUseSleepingBag(player: Actor, it: Item): Promise<boolean> {
+		// C# :14858-14862.
+		const sleep = this.m_Rules.canActorSleep(player);
+		if (!sleep.ok) {
+			this.AddMessage(this.MakeErrorMessage(`Can't sleep : ${sleep.reason}.`));
+			return false;
+		}
+
+		// C# :14864-14869. `AName` is the indefinite form -- "a car" -- which is why the
+		// message reads "Can't place sleeping bag : a car in the way."
+		const mapObj = player.location.map!.getMapObjectAtPoint(player.location.position);
+		if (mapObj !== null) {
+			this.AddMessage(
+				this.MakeErrorMessage(`Can't place sleeping bag : ${mapObj.aName} in the way.`),
+			);
+			return false;
+		}
+
+		// now do it
+		await this.DoDropItem(player, it);
+		return await this.HandlePlayerSleep(player);
+	}
+
+	/**
+	 * C# `HandlePlayerUnloadAmmo` — `RogueGame.cs:14832-14854`, Still Alive Release
+	 * 7-6. The CHANGELOG line is "Players can unload the ammo from their equipped
+	 * ranged weapon."
+	 *
+	 * **Not reachable from a key yet, and that is a gap rather than a decision.** The
+	 * C# dispatches it from `PlayerCommand.UNLOAD_AMMO` (`RogueGame.cs:11078-11082`),
+	 * and that command does not exist in the port's `PlayerCommand` enum -- nor does a
+	 * default binding for it. Both live in files this change may not touch
+	 * (`engine/PlayerCommand.ts`, `engine/Keybindings.ts`), and `PlayerCommand` is
+	 * append-only by save format: inserting the member would silently re-point every
+	 * stored binding above it, which is the reason the file says so at length. **To
+	 * wire it up: append `UNLOAD_AMMO` after `ZOOM_OUT`... `LOOK_RIGHT`, add the
+	 * C#'s default key from `Keybindings.cs`, and add the `case` next to
+	 * `MAKE_COOKING_FIRE` in the turn loop, awaited.**
+	 *
+	 * Everything else is ported and tested: the no-weapon message, the
+	 * `CanActorUnloadAmmoFromGun` gate with its four reasons, and the unload itself.
+	 */
+	HandlePlayerUnloadAmmo(player: Actor): boolean {
+		// get player equipped weapon
+		const item = player.getEquippedRangedWeapon();
+		if (item === null) {
+			this.AddMessage(this.MakeErrorMessage("No weapon equipped to unload."));
+			return false;
+		}
+
+		const res = this.CanActorUnloadAmmoFromGun(player, item);
+		if (res.ok) {
+			this.DoUnloadAmmoFromGun(player, item);
+			return true;
+		} else {
+			this.AddMessage(
+				this.MakeErrorMessage(`Cannot unload ${item.theName} : ${res.reason}.`),
+			);
+			return false;
+		}
+	}
+
+	/**
+	 * C# `DoUnloadAmmoFromGun` — `RogueGame.cs:22131-22195`, Still Alive Release 7-6.
+	 *
+	 * **The only reader of ammunition in the reference**, and that is why this method
+	 * is the thing that makes `AMMO_NAILS`, `AMMO_PRECISION_RIFLE`, `AMMO_MINIGUN`,
+	 * `AMMO_GRENADES` and `AMMO_PLASMA` reachable rather than inert. All five have a
+	 * model, a sprite and a weapon that uses them; nothing in the reference *hands* the
+	 * player any of them, so a minigun's ninety-six rounds and a grenade launcher's ten
+	 * tubes exist only as what a survivor can take back out of the gun. `GameItems.ts`
+	 * says the same about all five (`:1194-1197`, `:1228-1229`).
+	 *
+	 * The mechanic is a unit conversion again, and the same one as `HandlePlayerSiphonFuel`
+	 * in reverse: the gun's magazine becomes an ammo stack, and whatever the inventory
+	 * will not take is put on the ground. It is reached from `HandlePlayerUnloadAmmo`
+	 * rather than from `DoUseItem`, because the thing being used is the *weapon*, not
+	 * anything in the pack.
+	 *
+	 * **The `switch` is exhaustive over the ammo types the reference lists and the port
+	 * throws on anything else** (`:22153-22154`). Both halves are transcribed. The
+	 * reference's ten cases and the port's `AmmoType` enum have the same ten members
+	 * plus `PLASMA`, which the C#'s own switch does *not* name -- so a bio-force gun
+	 * with rounds in it reaches the C#'s `default` and throws. That is the reference's
+	 * state and the throw is kept, with `PLASMA` absent from the port's table for the
+	 * same reason: the reference has no ammo model for it in that arm.
+	 *
+	 * The overflow loop (`:22166-22187`) builds **one** `ItemAmmo` per round and adds it
+	 * individually, then drops the remainder as a single stack. Building one-per-round
+	 * rather than one-of-the-whole-amount is what lets a partly-full inventory take
+	 * *some* of a magazine: `addAll` is all-or-nothing and would refuse the lot.
+	 *
+	 * **The sound and the message are the gun's, not an unload's own**: the C# plays
+	 * `EQUIP_GUN_PLAYER` (`:22192`) and says `VERB_UNLOAD` (`:22193`). `EQUIP_GUN_PLAYER`
+	 * looks like a Classic name and is not -- `tests/extended-audio.test.ts` reads the
+	 * fork's own sound fixture and puts it in `FORK_IDS`, so it needs a
+	 * `Feature.ExtendedAudio` gate like the other 179, and that test is what caught the
+	 * assumption it is correcting.
+	 *
+	 * **Gated on `Feature.ResourcesAvailability` by its call site in
+	 * `HandlePlayerUnloadAmmo`,** and this is the same mapping as the sleeping bag's:
+	 * ammunition as a resource is what the fork's Resources Availability layer governs,
+	 * and unloading a magazine is the only way any of the five Still Alive ammo types
+	 * ever reaches a survivor. `Feature.WeaponWeight` and `Feature.ArmorResist` are the
+	 * other two weapon-shaped flags and both are wrong -- one is a speed term and one is
+	 * an infection roll.
+	 */
+	DoUnloadAmmoFromGun(actor: Actor, weapon: ItemRangedWeapon): void {
+		// spend APs.
+		this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+		const ammoCount = weapon.ammo;
+
+		// work out the type of ammo to unload. The C#'s `AmmoType` values, in its order.
+		const model: ItemAmmoModel | null = RogueGame.AmmoModelForWeaponAmmoType(weapon.ammoType);
+		if (model === null) {
+			// The C#'s `default: throw new InvalidOperationException("unhandled ammo
+			// type")` at `:22153-22154`, reached only by a weapon whose ammo type is not
+			// in the table -- `AmmoType.PLASMA` today, the one the reference's own switch
+			// forgot. Kept rather than returning quietly: an unload that silently did
+			// nothing after spending a turn is worse than a loud failure, and the AP has
+			// already been spent by this point in both.
+			throw new Error("unhandled ammo type");
+		}
+
+		// create a new ammo instance
+		const newAmmo = new ItemAmmo(model);
+		newAmmo.quantity = ammoCount;
+
+		// remove the ammo from the gun
+		weapon.ammo = 0;
+
+		// add to inventory (or drop on ground if inv is full)
+		if (!actor.inventory!.addAll(newAmmo)) {
+			// add as much ammo as possible to the actor inventory.
+			const totalAmmo = ammoCount;
+			let ammoAdded = 0;
+			for (let i = 0; i !== ammoCount; i++) {
+				const singleAmmo = new ItemAmmo(model);
+				singleAmmo.quantity = 1;
+				ammoAdded += actor.inventory!.addAsMuchAsPossible(singleAmmo).quantityAdded;
+			}
+
+			// add any ammo that couldn't fit in the actor's inventory to the ground.
+			const overflowAmmo = totalAmmo - ammoAdded;
+			if (overflowAmmo > 0) {
+				const overflowAmmoItem = new ItemAmmo(model);
+				overflowAmmoItem.quantity = overflowAmmo;
+				this.DropItem(actor, overflowAmmoItem);
+			}
+		}
+
+		// SFX & msg
+		if (actor.isPlayer) {
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.play(GameSounds.EQUIP_GUN_PLAYER);
+			this.AddMessage(
+				this.MakeMessage(actor, this.Conjugate(actor, this.VERB_UNLOAD), weapon),
+			);
+		}
+	}
+
+	/**
+	 * C# `Rules.CanActorUnloadAmmoFromGun` — `_refs/StillAlive-master/.../Engine/Rules.cs:1392`,
+	 * Still Alive Release 7-6, with the "already empty" refusal from Release 7-2
+	 * (`:1449-1454`).
+	 *
+	 * **Inlined into `RogueGame` rather than added to `Rules.ts`,** for ownership:
+	 * `Rules.ts` is not a file this change may touch. Same shape as
+	 * `CanActorThrowItemTo` and `IsItemLiquorForMolotov` beside it. **Move it to
+	 * `Rules` as `canActorUnloadAmmoFromGun` when that file is next edited.**
+	 *
+	 * The C#'s own numbered comment block is wrong — it labels the four checks
+	 * "3. Not a battery powered item" and "4. Already fully charged", which are
+	 * copy-paste leftovers from `CanActorRechargeItemBattery` two methods away. The
+	 * code is "3. Not a weapon that uses ammo" and "4. Already empty of ammo". The
+	 * reasons are transcribed from the code, which is the part that is load-bearing.
+	 *
+	 * The eleven `AmmoType` cases the C# breaks over (`:1432-1442`) are the same set as
+	 * `AmmoModelForWeaponAmmoType` below and for the same reason: `AmmoType.PLASMA` is
+	 * the one member neither names, so a bio-force gun is refused here with "not an item
+	 * with unloadable ammo" and never reaches `DoUnloadAmmoFromGun`'s throw.
+	 */
+	private CanActorUnloadAmmoFromGun(actor: Actor, it: Item): RuleResult {
+		if (!actor) throw new Error("actor");
+		if (!it) throw new Error("item");
+
+		// 1. Actor cant use items.
+		if (!actor.model.abilities.canUseItems)
+			return { ok: false, reason: "no ability to use items" };
+
+		// 2. Item not in inventory. Must pick it up first in order to unload it.
+		if (!it.isEquipped || !actor.inventory?.contains(it))
+			return { ok: false, reason: "item not equipped" };
+
+		// 3. Not a weapon that uses ammo.
+		if (!(it instanceof ItemRangedWeapon) || RogueGame.AmmoModelForWeaponAmmoType(it.ammoType) === null)
+			return { ok: false, reason: "not an item with unloadable ammo" };
+
+		// 4. Already empty of ammo.
+		if (it.ammo <= 0) return { ok: false, reason: "has no ammo loaded" };
+
+		// all clear.
+		return { ok: true, reason: "" };
+	}
+
+	/**
+	 * C# the `switch` at the top of `DoUnloadAmmoFromGun` — `RogueGame.cs:22140-22155` —
+	 * lifted to a free function so the rule and the action agree by construction.
+	 *
+	 * Two things it deliberately does not do. It does not fall back to a default ammo
+	 * model, because the C# throws and `DoUnloadAmmoFromGun` throws. And it does **not**
+	 * include `AmmoType.PLASMA`, which is the member the reference's own switch forgot:
+	 * `AMMO_PLASMA` was added in Release 7-6, the same release as the unload itself,
+	 * and the author wrote the ten cases that existed when the method was drafted. The
+	 * port keeps the omission, and both refusals it causes are asserted in the tests
+	 * rather than left as a surprise.
+	 *
+	 * A `switch` on ten enum members transcribed as an eleven-entry table, keyed by the
+	 * enum rather than by an index, because the C#'s order carries no meaning here and
+	 * a keyed lookup cannot fall off the end.
+	 */
+	private static AmmoModelForWeaponAmmoType(
+		ammoType: AmmoType,
+	): ItemAmmoModel | null {
+		// C# `m_GameItems.AMMO_*`, and the `AmmoType` each belongs to. Built per call
+		// rather than cached: `Models.items` is process-wide state that `LoadData`
+		// re-seeds, and a static table of models captured at class-load time would
+		// outlive the registry it points into.
+		switch (ammoType) {
+			case AmmoType.BOLT:
+				return Models.items.get(ItemID.AMMO_BOLTS) as ItemAmmoModel;
+			case AmmoType.FUEL:
+				return Models.items.get(ItemID.AMMO_FUEL) as ItemAmmoModel;
+			case AmmoType.GRENADES:
+				return Models.items.get(ItemID.AMMO_GRENADES) as ItemAmmoModel;
+			case AmmoType.HEAVY_PISTOL:
+				return Models.items.get(ItemID.AMMO_HEAVY_PISTOL) as ItemAmmoModel;
+			case AmmoType.HEAVY_RIFLE:
+				return Models.items.get(ItemID.AMMO_HEAVY_RIFLE) as ItemAmmoModel;
+			case AmmoType.LIGHT_PISTOL:
+				return Models.items.get(ItemID.AMMO_LIGHT_PISTOL) as ItemAmmoModel;
+			case AmmoType.LIGHT_RIFLE:
+				return Models.items.get(ItemID.AMMO_LIGHT_RIFLE) as ItemAmmoModel;
+			case AmmoType.MINIGUN:
+				return Models.items.get(ItemID.AMMO_MINIGUN) as ItemAmmoModel;
+			case AmmoType.NAIL:
+				return Models.items.get(ItemID.AMMO_NAILS) as ItemAmmoModel;
+			case AmmoType.PRECISION_RIFLE:
+				return Models.items.get(ItemID.AMMO_PRECISION_RIFLE) as ItemAmmoModel;
+			case AmmoType.SHOTGUN:
+				return Models.items.get(ItemID.AMMO_SHOTGUN) as ItemAmmoModel;
+			default:
+				return null;
+		}
 	}
 
 	// C# HandlePlayerSwitchPlace — RogueGame.cs:8446
@@ -21616,10 +22033,55 @@ inv.removeAllQuantity(it);
 		}
 	}
 
-	// C# DoDropItem — RogueGame.cs:15078
-	DoDropItem(actor: Actor, it: Item): void {
-		// spend APs.
-		this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+	/**
+	 * C# `DoDropItem` — classic `RogueGame.cs:15078`, Still Alive `RogueGame.cs:21123`
+	 * (`_refs/StillAlive-master`).
+	 *
+	 * Two Still Alive arms land here, and both are about *what a drop costs and what
+	 * it leaves behind* rather than about the drop itself:
+	 *
+	 * - **The AP spend moved from the top of the method to the bottom**, and a
+	 *   `spendAP` local appeared with it (`RogueGame.cs:21125`). The reference needs
+	 *   that because two of its arms `return` before the spend: the fuel-can prompt and
+	 *   the candle prompt both bail out there, so "place one lit candle" costs *no*
+	 *   turn in the C# while "drop the whole box" costs one. That asymmetry is the
+	 *   reference's and is kept: it is the difference between lighting a room and
+	 *   unpacking a box. `SpendActorActionPoints` is a subtraction and an
+	 *   `lastActionTurn` write (`:5166`) with nothing in it that reads the drop, so
+	 *   moving the call down is otherwise unobservable.
+	 * - **A throwable light dropped by the player is AP-free**
+	 *   (`RogueGame.cs:21153-21157`, Release 7-5). The comment there is "avoid the
+	 *   double-turn hit": `HandlePlayerUseThrowableItem` already spends a turn to throw
+	 *   one, and the light then reaches the ground through the ordinary drop path, so a
+	 *   naive `DoDropItem` charged twice for a single act.
+	 *
+	 * **The C#'s arm order is not copied, and the reason is Classic.** The reference
+	 * chains `trap` → `ItemLight` → `actor.IsPlayer` → `CANDLES_BOX` → `else discard`,
+	 * and because the `actor.IsPlayer` arm is *unconditional* for the player it
+	 * pre-empts the discard tests entirely: in the fork a player can never discard an
+	 * empty spray can or a dead tracker, because the arm that handles fuel cans swallows
+	 * every other player item first. Importing that shape would change behaviour for
+	 * two items Classic *can* produce. The candle arm below is therefore added as a
+	 * sibling of the existing `else` block instead, which leaves every Classic item on
+	 * exactly the path it took before.
+	 *
+	 * **The C#'s fuel prompt is not ported.** `DROP_FUEL_TEXT`
+	 * (`RogueGame.cs:21162-21199`, Release 7-1) is a fourth reader of `AMMO_FUEL` and
+	 * belongs to it, not to any of the light kits; `AMMO_FUEL` and its other three
+	 * readers already existed here.
+	 *
+	 * **async, because one arm blocks.** The candle arm reads a key, so every caller
+	 * of `DoDropItem` above it in the call graph became awaitable -- see
+	 * `HandleMouseInventory`'s header, which is the one that matters. For an NPC, and
+	 * for every item that is not a box of candles, nothing in this body is awaited, so
+	 * the whole method still runs to completion inside the synchronous prefix: which is
+	 * what keeps `ActionDropItem.perform()`, whose signature is `void` in a file this
+	 * change does not own, behaving exactly as it did.
+	 */
+	async DoDropItem(actor: Actor, it: Item): Promise<void> {
+		// Still Alive, Release 7-5: a throwable light the player is dropping has
+		// already spent its turn being thrown. See the header.
+		let spendAP = true;
 
 		// which item to drop (original or a clone)
 		let dropIt: Item = it;
@@ -21641,6 +22103,28 @@ inv.removeAllQuantity(it);
 
 			// make sure source stack is desactivated (activate only activate the stack top item).
 			trap.deactivate(); // alpha10  //trap.isActivated = false;
+		} else if (it instanceof ItemLight && actor.isPlayer && it.model.isThrowable) {
+			spendAP = false; // avoid the double-turn hit
+		} else if (this.IsPlayerCandleBoxDrop(actor, it)) {
+			// The candle arm is the only one that blocks, and it is reached through a
+			// **synchronous** guard rather than by awaiting a predicate. That is not a
+			// style point: `await` suspends even on an already-resolved promise, so a
+			// `DoDropItem` that awaited the candle arm unconditionally would hand every
+			// other drop back to the caller half-finished -- and the caller is
+			// `ActionDropItem.perform()`, whose return type is `void`.
+			// `tests/ai-orders.test.ts` is the test that says so.
+			//
+			// `true` means the drop is fully handled and `DoDropItem` returns without
+			// spending a turn: one lit candle placed, or Escape, or a refused key, or a
+			// tile that already has a candle, or the open air.
+			//
+			// `false` is the `A` key and falls through to the ordinary drop below, which
+			// *does* spend the turn -- and it deliberately skips the discard tests, as the
+			// C# does: its `else if (CANDLES_BOX)` arm swallows a box of candles whole, so
+			// `discardMe` is never computed for one. A box is a plain `Item` and every
+			// discard test would say `false` anyway; this says so once instead of three
+			// times.
+			if (await this.DoDropCandlesPrompt(actor, it)) return;
 		} else {
 			// drop or discard.
 			if (it instanceof ItemTracker) {
@@ -21674,7 +22158,130 @@ inv.removeAllQuantity(it);
 					),
 				);
 		}
+
+		// spend APs. The C#'s `if (spendAP)` — see the header for why it is conditional
+		// and why it is last.
+		if (spendAP) this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
 	}
+
+	/**
+	 * C# the candle arm of `DoDropItem` — `RogueGame.cs:21202-21261`, Still Alive
+	 * Release 7-1.
+	 *
+	 * A box of candles is not a light: it is a plain `ItemModel`, and the light only
+	 * exists as a *decoration on the tile the box is standing on*. So dropping one is
+	 * a prompt, not a drop -- and the two answers are genuinely different acts:
+	 *
+	 * - `O` places **one lit candle**: one candle leaves the box, a `DECO_LIT_CANDLE`
+	 *   decoration goes on the actor's own tile, and a `TaskRemoveDecoration` twelve
+	 *   hours out takes it away again. A candle burns out, and the reference models
+	 *   that as a timer rather than as a battery -- there is no `ItemLight` anywhere in
+	 *   the path, which is why `IsActorStandingInLight` and `LOS.addOtherLitTiles` both
+	 *   read the *decoration* rather than an item.
+	 * - `A` drops the box as an ordinary item, on the floor, and it stops being light.
+	 *
+	 * **Returns `true` when the drop has been fully handled and `DoDropItem` must
+	 * return**, and `false` when the C# falls through to the normal drop -- which is
+	 * the `A` key, an NPC holding a box, and every item that is not a box of candles.
+	 * Every `true` is one of the C#'s five `return`s. The three guards it repeats are
+	 * `IsPlayerCandleBoxDrop`'s, and it re-tests them rather than trusting its caller:
+	 * it is the method a test reaches directly.
+	 *
+	 * **Gated on `Feature.DarknessFov`.** A lit candle is ambient light, and the flag
+	 * is the port's name for the fork's ambient-lighting-and-true-darkness rework --
+	 * the same one `LOS.addOtherLitTiles` and `Rules.fovProfile` answer to. The three
+	 * light kits have no Classic drop site, so under Classic this arm cannot be
+	 * reached by a generated world; the gate is what keeps a hand-placed or
+	 * script-given box from putting a twelve-hour light into a Classic district, where
+	 * nothing reads the decoration for anything but drawing.
+	 *
+	 * **No AP is spent on the `O` and on the refusals**, which is the C#'s behaviour and
+	 * not an oversight here: all five of its early returns are above the
+	 * `if (spendAP)` spend at the end of `DoDropItem`.
+	 *
+	 * **The guard is `it.model.id`, where the C#'s is `it.Model ==` the registered
+	 * instance** (`:21203`). Same question, same answer -- the registry hands out one
+	 * model object per id -- and the id form is what every other identity test in this
+	 * file uses, the riot shield's included.
+	 */
+	private IsPlayerCandleBoxDrop(actor: Actor, it: Item): boolean {
+		if (it.model.id !== ItemID.CANDLES_BOX) return false;
+		// `if (actor.IsPlayer)` at `:21205`, with **no** `else`. So an NPC holding a box
+		// enters this arm and simply falls out of it, reaching the ordinary drop below
+		// with no prompt and no candle -- which is also why `GenerateDrunkAction`'s
+		// carve-out (`:25008`) exists: a survivor must never be handed a question.
+		if (!actor.isPlayer) return false;
+		return hasFeature(this.m_Session.ruleset, Feature.DarknessFov);
+	}
+
+	private async DoDropCandlesPrompt(actor: Actor, it: Item): Promise<boolean> {
+		if (!this.IsPlayerCandleBoxDrop(actor, it)) return false;
+
+		const pt = actor.location.position;
+		const map = actor.location.map!;
+
+		this.AddOverlay(
+			new OverlayPopup(
+				this.DROP_CANDLES_TEXT,
+				this.MODE_TEXTCOLOR,
+				this.MODE_BORDERCOLOR,
+				this.MODE_FILLCOLOR,
+				Point.Zero,
+			),
+		);
+		this.RedrawPlayScreen();
+
+		const inKey = await this.m_UI.UI_WaitKey();
+		const tile = map.getTileAt(pt.x, pt.y);
+
+		if (inKey.key === "Escape") {
+			// C# `:21211-21216`: do nothing but clean the overlay up.
+		} else if (inKey.key === "o" || inKey.key === "O") {
+			// drop only one.
+			const hasCandle = tile?.hasDecoration(GameImages.DECO_LIT_CANDLE) ?? false;
+			if (hasCandle) {
+				this.AddMessage(this.MakeErrorMessage("There's already a lit candle there."));
+			} else if (tile === null || !tile.isInside) {
+				this.AddMessage(
+					this.MakeErrorMessage("Candles are useless outside in the elements."),
+				);
+			} else {
+				// remove a candle from the box, and the whole box if it's now empty.
+				actor.inventory!.consume(it);
+
+				// place a lit candle on the ground, with a task to remove it when it runs
+				// out. The order is the C#'s (`:21243-21245`): the timer is armed
+				// *before* the decoration goes on. `addTimer` is not the C#'s
+				// `Map.AddTimer` -- it is `RogueGame`'s own, which also registers the
+				// pending task against the map's clock -- and `addDecoration` already
+				// dedupes, so the C#'s second `if (!HasDecoration)` guard has no
+				// counterpart and no behaviour.
+				map.addTimer(
+					new TaskRemoveDecoration(
+						WorldTime.TURNS_PER_HOUR * 12,
+						pt.x,
+						pt.y,
+						GameImages.DECO_LIT_CANDLE,
+					),
+				);
+				tile.addDecoration(GameImages.DECO_LIT_CANDLE);
+			}
+		} else if (inKey.key === "a" || inKey.key === "A") {
+			// drop all. The C# (`:21251-21252`) only redraws and falls through to the
+			// normal drop -- so this returns `false` and `DoDropItem` puts the box on
+			// the floor and spends the turn.
+			this.RedrawPlayScreen();
+			return false;
+		} else {
+			this.AddMessage(this.MakeErrorMessage("Unhandled key error when dropping candles."));
+			this.AddMessage(this.MakeErrorMessage("Did you perhaps hit the wrong key?"));
+		}
+
+		this.ClearOverlays();
+		this.RedrawPlayScreen();
+		return true;
+	}
+
 
 	// C# DiscardItem — RogueGame.cs:15147
 	DiscardItem(actor: Actor, it: Item): void {
@@ -21737,19 +22344,23 @@ inv.removeAllQuantity(it);
 	 * That assumption is load-bearing: a brazier two tiles away does not count,
 	 * and that is the fork's behaviour, not a shortcut taken here.
 	 *
-	 * **Two of the C#'s five checks are not ported**, both because what they need
-	 * does not exist yet, and both are the kind of omission that should be a
-	 * comment rather than a silent gap:
+	 * **One of the C#'s five checks was not ported**, because what it needs did not
+	 * exist yet, and it is the kind of omission that should be a comment rather than a
+	 * silent gap:
 	 *
 	 * - `IsAnyTileFireThere` — a *tile* fire (grass, carpet, a burning floor)
 	 *   rather than a burning object. That is `Feature.TileFires`, still pending.
-	 * - `GameImages.DECO_LIT_CANDLE` — a lit candle decoration. The sprite is on
-	 *   disk and the constant is not yet declared, and adding ~420 `GameImages`
-	 *   constants is deliberately deferred (see the sprite commit's note). It
-	 *   arrives with the unused-constants work.
 	 *
 	 * When `TileFires` lands, add the tile-fire check *here*, and the two callers
 	 * below need no change.
+	 *
+	 * **The lit-candle check now *is* here** (`GameImages.DECO_LIT_CANDLE`,
+	 * `RogueGame.cs:33065`, in the C# between the tile-fire test and the actor test).
+	 * It arrived with `DoDropItem`'s candle arm, which is what puts the decoration on
+	 * the tile in the first place: `LOS.addOtherLitTiles` (`LOS.ts:471`) has read the
+	 * same decoration to *draw* the tile lit since the darkness rework, so before this
+	 * a lit candle was visible from up to ten tiles away and still did not count as
+	 * light on the tile you were standing on.
 	 */
 	IsActorStandingInLight(actor: Actor): boolean {
 		const map = actor.location.map!;
@@ -21771,6 +22382,13 @@ inv.removeAllQuantity(it);
 			const mapObj = map.getMapObjectAtPoint(spot);
 			if (mapObj !== null && mapObj.isOnFire) return true;
 
+			// a lit candle, placed by `DoDropItem`'s candle arm. See the header for
+			// why this was the one C# check that waited on a reader rather than on a
+			// sprite. The C# calls `GetTileAt(spot)` without a bounds re-check here
+			// because it is inside the `IsInBounds` loop body above; so is this.
+			if (map.getTileAt(spot.x, spot.y)?.hasDecoration(GameImages.DECO_LIT_CANDLE))
+				return true;
+
 			// actors carrying a working light
 			const other = map.getActorAtPoint(spot);
 			if (other !== null) {
@@ -21789,7 +22407,25 @@ inv.removeAllQuantity(it);
 		return false;
 	}
 
-	DoUseItem(actor: Actor, it: Item): void {
+	/**
+	 * C# `DoUseItem` — classic `RogueGame.cs:15181`, Still Alive `RogueGame.cs:21486-21557`.
+	 *
+	 * **async, and that is the only structural change to a method with four dozen call
+	 * sites' worth of neighbours.** Still Alive hangs five prompts off this chain and
+	 * each one blocks the C# on `UI_WaitKey`; `UI_WaitKey` is a promise here, so the
+	 * four player-facing entry points above it (`OnLMBItem`, `OnRMBItem`,
+	 * `DoPlayerItemSlotUse`, `DoPlayerItemSlotDrop`) and the one turn-loop call site
+	 * became awaitable. `HandleMouseInventory`'s header explains why that was the right
+	 * way round rather than `fireAndForget`.
+	 *
+	 * The one remaining sync entry point is `ActionUseItem.perform()`, whose signature
+	 * is `void` in `Actions.ts` — a file this change does not own. It is harmless,
+	 * because an `async` function runs its whole body inside the synchronous prefix
+	 * when nothing is awaited, and every arm that awaits below is guarded by
+	 * `actor.isPlayer`, which an `ActionUseItem` never satisfies. The NPC path
+	 * therefore executes exactly as it did before this change, to the statement.
+	 */
+	async DoUseItem(actor: Actor, it: Item): Promise<void> {
 		// Still Alive, Release 6-2: it may be too dark to read or to use medicine.
 		// The C# computes this once, here, and consults it from two branches; the
 		// helper is called per branch instead, because the C#'s version is one
@@ -21798,6 +22434,16 @@ inv.removeAllQuantity(it);
 		const absoluteDarkness = this.m_Rules.isActorInAbsoluteDarkness(actor);
 		// alpha10 defrag ai inventories
 		const defragInventory = !actor.isPlayer && it.model.isStackable;
+		// Still Alive's "complex items" block (`:21538-21552`) is guarded by this one
+		// pair of tests for all six of its arms: the light packs, a bare throwable, a
+		// siphon kit, seeds, a box of candles and a sleeping bag. Two of those six --
+		// the siphon kit and the seeds' own handler -- are already in the port, but as
+		// unguarded top-level arms, and moving them inside the C#'s guard would change
+		// what an NPC holding a kit can do. So the guard is applied to the arms this
+		// change adds and the two existing ones are left where they were. Recorded here
+		// rather than tidied, because tidying it is a separate decision about the AI's
+		// item use and not a side effect of landing these four items.
+		const complexItems = actor.isPlayer && !actor.isBotPlayer;
 
 		// concrete use.
 		if (it instanceof ItemFood) this.DoUseFoodItem(actor, it);
@@ -21837,6 +22483,68 @@ inv.removeAllQuantity(it);
 		// answers the same question here and reads better; the two cannot disagree,
 		// because the registry hands out one instance per id.
 		else if (it.model.id === ItemID.POLICE_RIOT_SHIELD) this.DoUseShieldItem(actor, it);
+		// Still Alive, Release 7-1 (C# RogueGame.cs:21536-21537), the first of the
+		// "complex items" and the only one *outside* the player-only block -- the fork
+		// lets an NPC craft a molotov from a bottle too, and it costs it a turn.
+		else if (
+			hasFeature(this.m_Session.ruleset, Feature.TileFires) &&
+			this.IsItemLiquorForMolotov(it)
+		) {
+			await this.DoMakeMolotov(actor, it);
+		}
+		// Still Alive, Release 7-1 (C# RogueGame.cs:21540-21543). The two throwable-light
+		// arms, and the reason `FLARES_KIT` and `GLOWSTICKS_BOX` exist at all: the light
+		// is manufactured at use time, so using the box is what turns it into a light.
+		//
+		// **Gated on `Feature.DarknessFov`.** Both kits exist only to put light in the
+		// dark -- their flavour text says "bright, throwable light" and nothing else --
+		// and the flag is the port's name for the fork's ambient-lighting-and-true-
+		// darkness rework, the same one `LOS.addOtherLitTiles`, `Rules.fovProfile` and
+		// `IsActorStandingInLight` answer to. Neither box has a Classic drop site, so
+		// this gate cannot move a generated Classic world; what it stops is the
+		// *reachable* case the brief asks about -- `GameItems.ts:1159` sets
+		// `isThrowable` on `LIGHT_FLARE` and `LIGHT_GLOWSTICK` **unconditionally**, so
+		// under Classic a player who somehow holds one would otherwise get the fork's
+		// throw mode and its five-tile reach for free.
+		else if (
+			complexItems &&
+			hasFeature(this.m_Session.ruleset, Feature.DarknessFov) &&
+			(it.model.id === ItemID.FLARES_KIT || it.model.id === ItemID.GLOWSTICKS_BOX)
+		) {
+			await this.HandlePlayerUseLightPackThrowable(actor, it);
+		} else if (
+			complexItems &&
+			hasFeature(this.m_Session.ruleset, Feature.DarknessFov) &&
+			it.model.isThrowable
+		) {
+			// A *bare* `LIGHT_FLARE` or `LIGHT_GLOWSTICK`, used out of the pack rather
+			// than made from a box. Same gate, same reason; the C#'s comment here
+			// ("flares and candles") names a candle, which is not throwable, so the
+			// comment is stale in the reference and the flag it tests is not.
+			await this.HandlePlayerUseThrowableItem(actor, it);
+		}
+		// Still Alive, Release 7-2 (C# RogueGame.cs:21548-21549). A box of candles is
+		// "used" by being dropped -- `DoDropItem`'s own arm does the prompting, which
+		// is why this is a plain `DoDropItem` and not a handler of its own. Same gate as
+		// the two above, for the same reason: the thing it leaves behind is ambient
+		// light. (Release 7-2, not 7-1: `:21203`'s arm is marked 7-1 but `CANDLES_BOX`
+		// is registered at `GameItems.cs:2996`, and the dispatch line is 7-2.)
+		else if (
+			complexItems &&
+			hasFeature(this.m_Session.ruleset, Feature.DarknessFov) &&
+			it.model.id === ItemID.CANDLES_BOX
+		) {
+			await this.DoDropItem(actor, it);
+		}
+		// Still Alive, Release 7-3 (C# RogueGame.cs:21550-21551), the last of the block.
+		// Gated on `Feature.ResourcesAvailability` -- see `HandlePlayerUseSleepingBag`.
+		else if (
+			complexItems &&
+			hasFeature(this.m_Session.ruleset, Feature.ResourcesAvailability) &&
+			it.model.id === ItemID.SLEEPING_BAG
+		) {
+			await this.HandlePlayerUseSleepingBag(actor, it);
+		}
 		// Still Alive, Release 7-1: using a siphon kit drains an adjacent car.
 		// Placed before the fallthrough so a kit is never silently consumed.
 		else if (
@@ -21874,6 +22582,133 @@ inv.removeAllQuantity(it);
 
 		// alpha10 defrag ai inventories
 		if (defragInventory) actor.inventory!.defrag();
+	}
+
+	/**
+	 * C# `Rules.IsItemLiquorForMolotov` — `_refs/StillAlive-master/.../Engine/Rules.cs:1297`,
+	 * Still Alive Release 4 (made static in 5-7).
+	 *
+	 * **Inlined into `RogueGame` rather than added to `Rules.ts`**, for ownership:
+	 * `Rules.ts` is not a file this change may touch. It is a two-id test with no
+	 * `GameMode` question in it, so the `Rules` layer buys nothing here, and the port
+	 * already keeps rules-shaped predicates on `RogueGame` when they arrive with the
+	 * method that reads them (`BarricadeLegality`, `BreakLegality`, `CanTag`, and
+	 * `CanActorThrowItemTo` beside this one). **Move it to `Rules` as
+	 * `isItemLiquorForMolotov` when that file is next edited.**
+	 *
+	 * Two ids and nothing else, which is the whole reason the two liquors are two
+	 * models rather than one: `makeItemLiquorForMolotov` (`BarBuilding.ts:616`) draws
+	 * between them, so a survivor holding "the wrong" bottle is a real state.
+	 */
+	private IsItemLiquorForMolotov(item: Item): boolean {
+		if (item === null) return false;
+		return (
+			item.model.id === ItemID.LIQUOR_AMBER ||
+			item.model.id === ItemID.LIQUOR_CLEAR
+		);
+	}
+
+	/**
+	 * C# `DoMakeMolotov` — `RogueGame.cs:22092-22129`, Still Alive Release 7-1, over a
+	 * Release 4 predicate. Reached from `DoUseItem` by *using* a bottle of liquor.
+	 *
+	 * The mechanic is a one-for-one conversion with an overflow rule: the bottle stack
+	 * leaves the inventory whole, one primed molotov is built per bottle, and whatever
+	 * the inventory will not take is put on the ground (`:22112-22121`, Release 7-5).
+	 * The AP spend is Release 7-6 (`:22097`) and is the reason an NPC may do this too --
+	 * see the arm in `DoUseItem`.
+	 *
+	 * **The quantity is read *after* the removal, which is the C#'s order and it
+	 * matters.** `:22099-22102` is `RemoveAllQuantity(it)` and then
+	 * `int liquorQuantity = it.Quantity`, and `RemoveAllQuantity` -- both here and in
+	 * the reference -- does not zero the item's own `Quantity`, it only takes the
+	 * object out of the inventory. So the count survives and the loop builds one
+	 * molotov per bottle. Read it before the removal instead and the conversion would
+	 * build nothing at all; `still-alive-misc-items.test.ts` pins that a bar's bottle
+	 * arrives as a stack of six over a limit of three, which is the case that makes the
+	 * difference visible.
+	 *
+	 * **The overflow goes to the ground rather than vanishing** (`:22113-22121`), one
+	 * `DropItem` per molotov, and each of those drops *one* item rather than the whole
+	 * stack -- the loop constructs a fresh `ItemGrenade` each pass, so there is nothing
+	 * to over-drop.
+	 *
+	 * **Gated on `Feature.TileFires` by its call site**, and the mapping is the one
+	 * judgement call in this change worth arguing for. The molotov's only
+	 * distinguishing property in this port is `causesTileFires` on its model
+	 * (`GameItems.ts:940`, the C#'s `CausesTileFires` at `:2315`); its blast differs
+	 * from a grenade's in nothing else. So `TileFires` -- "spread, extinguish, rain,
+	 * damage to actors/corpses/crops", the flag that decides whether fire is a hazard
+	 * in a ruleset at all -- is the switch that decides whether the player is *offered*
+	 * the one item whose whole job is to make fire. The two obvious alternatives are
+	 * worse: `Feature.Cooking` is about food on a heat source, `Feature.FireBarrels` is
+	 * about fixed fixtures you build, and `Feature.Alcohol` is about drinking -- which
+	 * these two models never reach, because they are plain `ItemModel`s rather than
+	 * `ItemMedicine`s and `makeItemAlcohol` in `BarBuilding.ts` says so explicitly.
+	 *
+	 * Note what the gate is *not*: it does not make a thrown molotov harmless under a
+	 * `TileFires`-off ruleset. `ApplyExplosionDamage`'s seeding call
+	 * (`RogueGame.ts:20592`) is not itself gated. The gate is about not offering the
+	 * craft, and it is recorded here rather than asserted as more than that.
+	 *
+	 * The sound (`MAKE_MOLOTOV`, `:22124`) is `Feature.ExtendedAudio`-gated: it is one
+	 * of the fork's 180 effects and not a Classic asset. The port has the id and the
+	 * file; the gate is what keeps the fork's audio out of a Classic district.
+	 */
+	async DoMakeMolotov(actor: Actor, it: Item): Promise<void> {
+		// The C# re-tests the predicate at the top of its own body (`:22094`), so this
+		// is a second call rather than a redundant one: `DoUseItem` needs it to route,
+		// and this is what makes the method safe to call on its own.
+		if (!this.IsItemLiquorForMolotov(it)) return;
+
+		// spend ap. Release 7-6.
+		this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+		// remove the liquor.
+		actor.inventory!.removeAllQuantity(it);
+
+		// add as many molotovs as possible to the actor inventory.
+		const liquorQuantity = it.quantity;
+		let molotovsAdded = 0;
+		for (let i = 0; i !== liquorQuantity; i++) {
+			const molotov = this.NewMolotov();
+			molotovsAdded += actor.inventory!.addAsMuchAsPossible(molotov).quantityAdded;
+		}
+
+		// add any molotovs that couldn't fit in the actor's inventory to the ground.
+		const overflowMolotovs = liquorQuantity - molotovsAdded;
+		for (let i = 0; i !== overflowMolotovs; i++) {
+			this.DropItem(actor, this.NewMolotov());
+		}
+
+		if (actor.isPlayer) {
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.play(GameSounds.MAKE_MOLOTOV);
+		}
+
+		if (this.IsVisibleToPlayer(actor)) {
+			this.AddMessage(
+				this.MakeMessage(actor, "crafted a molotov from liquor."),
+			);
+		}
+	}
+
+	/**
+	 * C# `new ItemGrenade(GameItems.MOLOTOV, GameItems.MOLOTOV_PRIMED)` — written out
+	 * at two sites in `DoMakeMolotov` (`:22106`, `:22118`) rather than factored out.
+	 *
+	 * Factored out here because the C# repeats it and a transcription that repeats a
+	 * two-argument constructor call is a transcription that can get one of the two
+	 * wrong. `MOLOTOV_PRIMED` is a *separate* id from `MOLOTOV` and both are needed:
+	 * `ItemGrenadePrimedModel`'s constructor reads `grenadeModel.blastAttack` and
+	 * `fuseDelay` off the unprimed model, so the primed sprite cannot be found without
+	 * it.
+	 */
+	private NewMolotov(): ItemGrenade {
+		return new ItemGrenade(
+			this.m_GameItems.get(ItemID.EXPLOSIVE_MOLOTOV),
+			this.m_GameItems.get(ItemID.EXPLOSIVE_MOLOTOV_PRIMED),
+		);
 	}
 
 	// C# DoEatFoodFromGround — RogueGame.cs:15205
@@ -26489,6 +27324,346 @@ inv.removeAllQuantity(it);
 	}
 
 	/**
+	 * C# `HandlePlayerUseThrowableItem` — `RogueGame.cs:14912-15009`, Still Alive
+	 * Release 7-1. The C#'s own header calls this "for non-grenades eg ItemLight".
+	 *
+	 * A throw-mode loop, and the *second* one in the file: `HandlePlayerThrowGrenade`
+	 * (`:13688`) is the grenade version and reads the equipped weapon rather than an
+	 * argument. The two are near-identical and are kept as two methods, for the same
+	 * reason `THROW_MODE_TEXT` and `THROW_GRENADE_MODE_TEXT` are two strings.
+	 *
+	 * Three differences from the grenade mode, all of them the C#'s:
+	 *
+	 * - **The reach is `MAX_THROWABLE_DISTANCE`, flat** (`:14918`), where the grenade
+	 *   mode scales by `Rules.ActorMaxThrowRange`. See the constant's header.
+	 * - **No blast-radius confirmation.** A grenade asks "You are in the blast
+	 *   radius!" before it goes off (`:13770`); a flare is not a grenade and does not.
+	 * - **The item is dropped on the tile and then `Consume`d**, rather than thrown as
+	 *   an equipped grenade: `:14963-14966` is `map.DropItemAt(item, targetThrow)`
+	 *   followed by `player.Inventory.Consume(item)`.
+	 *
+	 * **The `Consume` is a C# oddity and is reproduced.** The item handed in was
+	 * manufactured a moment earlier by `HandlePlayerUseLightPackThrowable` and was
+	 * never in the player's inventory, so `Consume` decrements its quantity from one to
+	 * zero and then fails to find it in the inventory to remove. The result on the
+	 * ground is a flare at quantity 0. That is invisible today -- `ItemLight` draws no
+	 * quantity and `DescribeItemLight` never prints one -- but it is the C#'s state and
+	 * a ground pile it stacks into is the C#'s pile. Transcribed rather than tidied.
+	 *
+	 * The unreachable local the C# declares just above this call
+	 * (`Point pt = new Point(player.Location.Position.X, ...)` at `:15032`, in the
+	 * *caller*) is not reproduced: it is a dead statement, not a behaviour.
+	 *
+	 * **Gated on `Feature.DarknessFov`** by its two call sites in `DoUseItem` rather
+	 * than here, so that the flag is asked once, where the item identity is known. The
+	 * reasoning is the same as for the kits themselves: the only items this can ever
+	 * throw are `LIGHT_FLARE` and `LIGHT_GLOWSTICK`, and both exist to make light in
+	 * the dark.
+	 */
+	async HandlePlayerUseThrowableItem(
+		player: Actor,
+		item: Item,
+	): Promise<boolean> {
+		let loop = true;
+		let actionDone = false;
+		const map = player.location.map!;
+		let targetThrow = player.location.position;
+		const maxThrowDist = RogueGame.MAX_THROWABLE_DISTANCE;
+
+		// Loop.
+		const lot: Point[] = [];
+		do {
+			lot.length = 0;
+			const res = this.CanActorThrowItemTo(player, targetThrow, lot, item, maxThrowDist);
+
+			// 1. Redraw
+			this.ClearOverlays();
+			this.AddOverlay(
+				new OverlayPopup(
+					this.THROW_MODE_TEXT,
+					this.MODE_TEXTCOLOR,
+					this.MODE_BORDERCOLOR,
+					this.MODE_FILLCOLOR,
+					new Point(0, 0),
+				),
+			);
+			const lineImage = res.ok
+				? GameImages.ICON_LINE_CLEAR
+				: GameImages.ICON_LINE_BLOCKED;
+			for (const pt of lot) {
+				this.AddOverlay(new OverlayImage(this.MapToScreen(pt), lineImage));
+			}
+			this.RedrawPlayScreen();
+
+			// 2. Get input.
+			const key = await this.m_UI.UI_WaitKey();
+			const command = InputTranslator.keyToCommand(
+				RogueGame.KeyBindings(),
+				key.key,
+				key.ctrl,
+				key.alt,
+				key.shift,
+				key.code,
+			);
+
+			// 3. Handle input
+			if (key.key === "Escape") {
+				loop = false;
+			} else if (key.key === "f" || key.key === "F") {
+				// do throw.
+				if (res.ok) {
+					// spend AP.
+					this.SpendActorActionPoints(player, Rules.BASE_ACTION_COST);
+
+					// drop item at target position.
+					map.dropItemAt(item, targetThrow);
+
+					// consume item. See the header: the C# consumes an item that is
+					// not in the inventory, and the ground pile keeps quantity 0.
+					player.inventory!.consume(item);
+
+					// message about throwing.
+					const isVisible =
+						this.IsVisibleToPlayer(player) || this.IsVisibleToPlayer(map, targetThrow);
+					if (isVisible) {
+						this.AddOverlay(
+							new OverlayRect(
+								Color.Yellow,
+								new Rect(
+									this.MapToScreen(player.location.position).x,
+									this.MapToScreen(player.location.position).y,
+									TILE_SIZE,
+									TILE_SIZE,
+								),
+							),
+						);
+						this.AddOverlay(
+							new OverlayRect(
+								Color.Red,
+								new Rect(
+									this.MapToScreen(targetThrow).x,
+									this.MapToScreen(targetThrow).y,
+									TILE_SIZE,
+									TILE_SIZE,
+								),
+							),
+						);
+						this.AddMessage(
+							this.MakeMessage(
+								player,
+								`${this.Conjugate(player, this.VERB_THROW)} a ${item.model.singleName}!`,
+							),
+						);
+						this.RedrawPlayScreen();
+						await this.AnimDelay(DELAY_SHORT);
+						this.ClearOverlays();
+						this.RedrawPlayScreen();
+					}
+
+					this.RedrawPlayScreen();
+					loop = false;
+					actionDone = true;
+				} else {
+					this.AddMessage(
+						this.MakeErrorMessage(`Can't throw there : ${res.reason}.`),
+					);
+				}
+			} else {
+				// direction?
+				const dir = this.CommandToDirection(command);
+				if (dir != null) {
+					const pos = targetThrow.add(new Point(dir.dx, dir.dy));
+					if (
+						map.isInBoundsPoint(pos) &&
+						this.m_Rules.gridDistance(player.location.position, pos) <= maxThrowDist
+					)
+						targetThrow = pos;
+				}
+			}
+		} while (loop);
+
+		// cleanup.
+		this.ClearOverlays();
+
+		// return if we did an action.
+		return actionDone;
+	}
+
+	/**
+	 * C# `Rules.CanActorThrowItemTo` — `_refs/StillAlive-master/.../Engine/Rules.cs:3371`,
+	 * Still Alive Release 7-1.
+	 *
+	 * **Inlined into `RogueGame` rather than added to `Rules.ts`**, and the reason is
+	 * ownership rather than design: `Rules` is the `GameMode` layer and this is not a
+	 * `GameMode` question, but `Rules.ts` is not a file this change may touch. The
+	 * port already has this shape -- `BarricadeLegality`, `BreakLegality` and `CanTag`
+	 * are all rules-shaped predicates living on `RogueGame` and returning `RuleResult`
+	 * -- so it is the local convention and not an improvisation. **Move it to
+	 * `Rules` as `canActorThrowItemTo` when that file is next edited.**
+	 *
+	 * Note that this is *not* `Rules.canActorThrowTo`, which is already ported: that
+	 * one is the grenade's, it reads the actor's *equipped* weapon to get
+	 * `ActorMaxThrowRange`, and its first refusal is "no grenade equiped". This one
+	 * takes the item and the range as arguments, refuses with "no throwable item",
+	 * and does not consult the actor's skill at all.
+	 */
+	private CanActorThrowItemTo(
+		actor: Actor,
+		pos: Point,
+		lof: Point[],
+		item: Item,
+		maxThrowDist: number,
+	): RuleResult {
+		// The C# clears the caller's `List<Point>` in place (`if (LoF != null) LoF.Clear()`)
+		// rather than filling it, and the caller reuses one list across the whole loop.
+		lof.length = 0;
+
+		// 1. No throwable item.
+		if (item === null || !item.model.isThrowable)
+			return { ok: false, reason: "no throwable item" };
+
+		// 2. Out of range.
+		if (this.m_Rules.gridDistance(actor.location.position, pos) > maxThrowDist)
+			return { ok: false, reason: "out of throwing range" };
+
+		// 3. No LoT.
+		if (!LOS.canTraceThrowLine(actor.location.map!, actor.location.position, pos, maxThrowDist, lof))
+			return { ok: false, reason: "no line of throwing" };
+
+		// all clear.
+		return { ok: true, reason: "" };
+	}
+
+	/**
+	 * C# `HandlePlayerUseLightPackThrowable` — `RogueGame.cs:15011-15085`, Still Alive
+	 * Release 7-1.
+	 *
+	 * The reader that makes `FLARES_KIT` and `GLOWSTICKS_BOX` anything at all, and it
+	 * is unusual in a way worth stating first: **neither box is a light.** Both are
+	 * plain `ItemModel`s, and the light is manufactured here, one item at a time, as
+	 * `new ItemLight(LIGHT_FLARE)` or `new ItemLight(LIGHT_GLOWSTICK)`. Nothing in
+	 * `GameItems` gives either box a battery, an `fovBonus` or a sprite of its own that
+	 * lights anything, and adding one would be inventing a mechanism the reference does
+	 * not have. (`GameItems.ts:1348-1358` says the same about all three kits and names
+	 * this method as the site.)
+	 *
+	 * So the two answers are:
+	 *
+	 * - **`C`arry** — one lit light is added to the inventory and *equipped*, and one
+	 *   flare or glowstick is taken out of the box. Three guards, all the C#'s:
+	 *   a full inventory refuses (`:15038`), an already-equipped `ItemLight` refuses
+	 *   (`:15046`) so the player does not silently lose a torch, and the box is
+	 *   consumed *first* when its quantity was one (`:15055-15059`) so the new light
+	 *   can reuse the slot. That last one is why the C# has a `consumedAlready` flag
+	 *   rather than just consuming at the end.
+	 * - **`T`hrow** — `HandlePlayerUseThrowableItem` aims it, and the box loses one only
+	 *   if the throw actually happened (`:15033-15034`).
+	 *
+	 * **The throw arm spends its own turn and the carry arm spends none**, which is the
+	 * reference's asymmetry and not an oversight: `HandlePlayerUseThrowableItem` calls
+	 * `SpendActorActionPoints` itself (`:14960`), and nothing here spends for a carried
+	 * light. A flare in the hand is free; a flare on the floor is a turn.
+	 *
+	 * **The sound is `Feature.ExtendedAudio`-gated** (`FLARE` / `GLOWSTICK`, `:15067-15070`),
+	 * because both ids are from the fork's 180-effect set and neither is a Classic
+	 * asset. The port has the constants and the files; gating is what keeps the fork's
+	 * audio out of a Classic district.
+	 *
+	 * **Gated on `Feature.DarknessFov` by its call site in `DoUseItem`**, not here, so
+	 * the flag is asked where the item identity is known and this method is the same
+	 * shape as the C#'s.
+	 */
+	async HandlePlayerUseLightPackThrowable(
+		player: Actor,
+		pack: Item,
+	): Promise<void> {
+		let item: ItemLight;
+		if (pack.model.id === ItemID.FLARES_KIT) {
+			item = new ItemLight(this.m_GameItems.get(ItemID.LIGHT_FLARE));
+		} else if (pack.model.id === ItemID.GLOWSTICKS_BOX) {
+			item = new ItemLight(this.m_GameItems.get(ItemID.LIGHT_GLOWSTICK));
+		} else {
+			// The C# throws `InvalidOperationException("unhandled item pack type")`
+			// (`:15019`). Kept: this method has exactly two callers and both test the
+			// model first, so the throw is unreachable by construction rather than by
+			// luck, and a hand-written third caller should fail loudly rather than drop
+			// a null light.
+			throw new Error("unhandled item pack type");
+		}
+
+		this.AddOverlay(
+			new OverlayPopup(
+				this.THROWABLE_LIGHT_TEXT,
+				this.MODE_TEXTCOLOR,
+				this.MODE_BORDERCOLOR,
+				this.MODE_FILLCOLOR,
+				Point.Zero,
+			),
+		);
+		this.RedrawPlayScreen();
+
+		const inKey = await this.m_UI.UI_WaitKey();
+		if (inKey.key === "Escape") {
+			// C# `:15025-15028`: `;` -- do nothing. The fall-through past the whole
+			// chain then reaches the two cleanup lines, which is all that happens.
+		} else if (inKey.key === "t" || inKey.key === "T") {
+			// throw.
+			if (await this.HandlePlayerUseThrowableItem(player, item)) {
+				player.inventory!.consume(pack);
+			}
+		} else if (inKey.key === "c" || inKey.key === "C") {
+			// carry.
+			if (player.inventory!.isFull && pack.quantity > 1) {
+				this.AddMessage(this.MakeErrorMessage("No inventory space available."));
+				this.ClearOverlays();
+				this.RedrawPlayScreen();
+				return;
+			}
+
+			for (const i of player.inventory!.items) {
+				if (i.equippedPart !== DollPart.NONE && i instanceof ItemLight) {
+					this.AddMessage(this.MakeErrorMessage("You already have a light equipped."));
+					this.ClearOverlays();
+					this.RedrawPlayScreen();
+					return;
+				}
+			}
+
+			// Clear the light pack if it's the last item, as we may reuse that
+			// inventory slot.
+			let consumedAlready = false;
+			if (pack.quantity === 1) {
+				player.inventory!.consume(pack);
+				consumedAlready = true;
+			}
+
+			// Add a lit one.
+			const quantityAdded = player.inventory!.addAsMuchAsPossible(item).quantityAdded;
+			// remove one from the pack, and the whole pack if it's now empty
+			if (quantityAdded > 0) {
+				if (pack.model.id === ItemID.FLARES_KIT) {
+					if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+						this.m_SoundManager.play(GameSounds.FLARE);
+				} else if (pack.model.id === ItemID.GLOWSTICKS_BOX) {
+					if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+						this.m_SoundManager.play(GameSounds.GLOWSTICK);
+				}
+				this.DoEquipItem(player, item);
+
+				if (!consumedAlready) player.inventory!.consume(pack);
+			}
+		} else {
+			this.AddMessage(
+				this.MakeErrorMessage("Unhandled key error when using throwable light."),
+			);
+			this.AddMessage(this.MakeErrorMessage("Did you perhaps hit the wrong key?"));
+		}
+
+		this.ClearOverlays();
+		this.RedrawPlayScreen();
+	}
+
+	/**
 	 * Siphon fuel out of an adjacent wrecked car.
 	 *
 	 * Still Alive, Release 7-1 (`RogueGame.cs:14248`), plus the Release 7-3 fuel
@@ -26644,7 +27819,16 @@ inv.removeAllQuantity(it);
 	 * Note the fourth case has a carve-out: a box of candles, flares or glowsticks
 	 * would otherwise be dropped, and those prompt the player to drop one or all
 	 * -- so a drunken survivor shouts instead. The C# carries that as an inline
-	 * list of three item ids.
+	 * list of three item ids (`RogueGame.cs:25008`), and the port's version of that
+	 * arm used to say the three did not exist and to drop the exclusion. They exist
+	 * now, so the exclusion is there.
+	 *
+	 * **The incapacitated AI's copy of this arm is still not ported**, and it is the
+	 * other half of what the brief calls out. `GenerateIncapacitatedAction`
+	 * (`RogueGame.cs:25042-25076`, Release 7-2) has no counterpart in this port at
+	 * all -- its three other arms need `DeploySmokeScreen` and `DetonateFlashbang`,
+	 * which `RogueGame.ts:20161` records as absent -- so there is nothing to add the
+	 * `:25068` carve-out to. It arrives with that method.
 	 */
 	GenerateDrunkAction(actor: Actor): ActorAction | null {
 		switch (this.m_Rules.roll(0, 6)) {
@@ -26667,11 +27851,29 @@ inv.removeAllQuantity(it);
 				// The C# excludes a box of candles, a flare kit and a box of
 				// glowsticks from being dropped here, because those three prompt the
 				// player to drop one or all -- so a drunken survivor would be asked
-				// a question instead of simply fumbling. **None of the three exists
-				// as an item in the port**, so the exclusion is dropped rather than
-				// faked against the nearest ids (the port has single `LIGHT_FLARE`
-				// and `LIGHT_GLOWSTICK` items, which are different things and do not
-				// prompt). When the boxes arrive, this is the site to revisit.
+				// a question instead of simply fumbling. `RogueGame.cs:25008`.
+				//
+				// **The exclusion is the reference's, and its reason is a prompt that
+				// only a human can answer.** `ActionDropItem.perform()` reaches
+				// `DoDropItem`, which now blocks on the candle prompt, and a survivor
+				// has nobody to press `O`. The shout is the C#'s substitute and is
+				// kept as-is, right down to the "DAMN IT!!!" that is also the
+				// incapacitated AI's catch-all (`:25074`).
+				//
+				// The three ids are gated on `Feature.DarknessFov` for the same reason
+				// every other reader of the kits is: under Classic none of them is a
+				// light source and none of them prompts, so a survivor must be free to
+				// drop one. `LIGHT_FLARE` and `LIGHT_GLOWSTICK` are *not* in this list
+				// and never were -- dropping a bare flare does not prompt, which is the
+				// distinction the earlier note here used to get wrong.
+				if (
+					hasFeature(this.m_Session.ruleset, Feature.DarknessFov) &&
+					(it.model.id === ItemID.CANDLES_BOX ||
+						it.model.id === ItemID.FLARES_KIT ||
+						it.model.id === ItemID.GLOWSTICKS_BOX)
+				) {
+					return new ActionShout(actor, this, "DAMN IT!!!");
+				}
 				return new ActionDropItem(actor, this, it);
 			}
 
@@ -34348,9 +35550,19 @@ inv.removeAllQuantity(it);
 		this.DoCloseDoor(actor, door);
 	}
 
-	/** camelCase alias for `game.doDropItem()` — C# `DoDropItem`. */
-	doDropItem(actor: Actor, it: Item): void {
-		this.DoDropItem(actor, it);
+	/**
+	 * camelCase alias for `game.doDropItem()` — C# `DoDropItem`.
+	 *
+	 * async, because `DoDropItem` is: see its header. **`ActionDropItem.perform()`
+	 * calls this and does not await it** -- its return type is `void` in
+	 * `engine/actions/Actions.ts`, which this change does not own. That is harmless
+	 * and not by luck: for an NPC, and for every item that is not a box of candles,
+	 * `DoDropItem`'s body contains no `await`, so an `async` method runs it to
+	 * completion before returning the promise and the action behaves exactly as
+	 * before.
+	 */
+	async doDropItem(actor: Actor, it: Item): Promise<void> {
+		await this.DoDropItem(actor, it);
 	}
 
 	/** camelCase alias for `game.doEatCorpse()` — C# `DoEatCorpse`. */
@@ -34525,9 +35737,16 @@ inv.removeAllQuantity(it);
 		return await this.DoUseExit(actor, exitPoint);
 	}
 
-	/** camelCase alias for `game.doUseItem()` — C# `DoUseItem`. */
-	doUseItem(actor: Actor, it: Item): void {
-		this.DoUseItem(actor, it);
+	/**
+	 * camelCase alias for `game.doUseItem()` — C# `DoUseItem`.
+	 *
+	 * async, and `ActionUseItem.perform()` does not await it -- `void` in
+	 * `engine/actions/Actions.ts`. Harmless for the reason `doDropItem`'s note gives:
+	 * every arm of `DoUseItem` that awaits is guarded by `actor.isPlayer`, so an NPC's
+	 * use runs to completion inside the synchronous prefix.
+	 */
+	async doUseItem(actor: Actor, it: Item): Promise<void> {
+		await this.DoUseItem(actor, it);
 	}
 
 	/** camelCase alias for `game.doWait()` — C# `DoWait`. */

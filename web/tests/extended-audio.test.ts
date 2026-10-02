@@ -622,7 +622,27 @@ describe("the gate", () => {
     expect(
       gated.filter((id) => !WEAPON_SOUND_IDS.has(id) && !BULK_SOUND_IDS.has(id)).sort(),
       "and the non-weapon effects are all still wired",
-    ).toEqual(["FISHING_CAST_PLAYER", "FISHING_REEL_PLAYER", "MATCH_STRIKE_START_FIRE_PLAYER", "UNDEAD_EAT_PLAYER"]);
+      // Sorted, and by hand, because a *fourth* standalone reader is a decision this
+      // list is meant to force rather than absorb. The four Still Alive use paths added
+      // in one pass and are the reason this line is nine and not four:
+      //
+      // - the throwable light packs' `FLARE` and `GLOWSTICK`, one gate each because
+      //   the C# picks between two ids (`RogueGame.cs:15067-15070`);
+      // - `MAKE_MOLOTOV`, from `DoMakeMolotov` (`:22124`);
+      // - `EQUIP_GUN_PLAYER`, from `DoUnloadAmmoFromGun` (`:22192`) -- the one whose
+      //   name is a lie about its provenance. It reads like a long-standing Classic id
+      //   and is in the fork's fixture, and the first version of that method played it
+      //   ungated on exactly that assumption. This assertion is the review.
+    ).toEqual([
+      "EQUIP_GUN_PLAYER",
+      "FISHING_CAST_PLAYER",
+      "FISHING_REEL_PLAYER",
+      "FLARE",
+      "GLOWSTICK",
+      "MAKE_MOLOTOV",
+      "MATCH_STRIKE_START_FIRE_PLAYER",
+      "UNDEAD_EAT_PLAYER",
+    ]);
   });
 });
 

@@ -17,7 +17,7 @@ import { TileModel } from '@data/TileModel';
 import { Zone } from '@data/Zone';
 import { DiceRoller } from '@engine/DiceRoller';
 import { Direction } from '@engine/Direction';
-import { Options } from '@engine/GameOptions';
+import { GameOptions, Options } from '@engine/GameOptions';
 import { Point } from '@engine/Point';
 import { Rect } from '@engine/Rect';
 import { Rules } from '@engine/Rules';
@@ -116,6 +116,28 @@ const PARK_SHED_WIDTH = 5; // alpha10
 const PARK_SHED_HEIGHT = 5; // alpha10
 
 const MAX_CHAR_GUARDS_PER_OFFICE = 3;
+
+/**
+ * C# `:8525` -- how often a bare CHAR storage-room tile carries junk or barrels.
+ *
+ * **47, and not the 50 this port had.** The C# writes a bare `RollChance(47)` with
+ * no `//@@MP` marker and no release tag, so unlike the fire barrel and the two
+ * Resources Availability gates there is nothing to hang a feature on and nothing
+ * suggesting the number was ever tuned. It is applied as written, in both rulesets:
+ * keeping a Classic-only 50 would be the port inventing a divergence from the
+ * reference rather than recording one. It is **not** a free change -- this threshold
+ * cascades into the bare-tile count and the loop's dice -- so the cost is measured
+ * and recorded in this method's header rather than glossed here.
+ */
+const CHAR_STORAGE_JUNK_CHANCE = 47;
+/**
+ * C# `:8527` -- `else if (m_DiceRoller.RollChance(3)) //@@MP (Release 7-6)`.
+ *
+ * Still Alive only. Gated on `Feature.FireBarrels` *and* gated before the roll,
+ * because consuming a die shifts every roll after it -- the same argument
+ * `BaseMapGenerator.makeObjWreckedCar` (`:757-760`) makes for its fuel tank.
+ */
+const CHAR_STORAGE_FIRE_BARREL_CHANCE = 3;
 
 const SEWERS_ITEM_CHANCE = 1;
 const SEWERS_JUNK_CHANCE = 10;
@@ -5177,7 +5199,115 @@ export class BaseTownGenerator extends BaseMapGenerator {
     });
   }
 
+  /**
+   * C# `MakeCHARStorageRoom(Map, Rectangle)` -- `BaseTownGenerator.cs:8508-8550`
+   * (signature at `:8508`, closing brace at `:8550`, both verified by grep).
+   *
+   * The method itself is vanilla -- CHAR exists in Rogue Survivor proper -- but two
+   * of its five arms are Still Alive, and both were missing here:
+   *
+   *  - `//@@MP (Release 7-6)` at `:8527`: a 3% **fire barrel** arm. An unlit, walkable,
+   *    cookable barrel among the unlit drums, which is the whole point of it: the
+   *    storage room is the one room in the base where you can cook.
+   *  - `//@@MP - Resources Availability option (Release 7-4)` at `:8531` and again at
+   *    `:8547`: the **canned food** the old `else` arm drops, and the gate on the
+   *    construction-item loop.
+   *
+   * Four divergences found against the reference. Fixed three, left one on purpose:
+   *
+   * 1. **Fixed.** `rollChance(50)` -> `rollChance(47)` (`:8525`). See
+   *    `CHAR_STORAGE_JUNK_CHANCE`.
+   * 2. **Fixed.** The fire-barrel `else if` arm (`:8527-8528`), absent entirely.
+   * 3. **Fixed.** The `else` arm, which was a bare `return null` where the C# drops
+   *    canned food on a Resources Availability roll first (`:8531-8534`).
+   * 4. **Fixed, and the premise corrected.** The construction-item loop is *not*
+   *    something "the fork does not have" -- the C# has it at `:8539-8549`, this
+   *    port had it too, and what was missing was its **gate**: the C# rolls
+   *    `ResourcesAvailabilityToInt(Options.ResourcesAvailability)` per tile at
+   *    `:8547` and the port dropped unconditionally. See the loop for why the fix is
+   *    not simply "add the roll".
+   *
+   * ## Why this room cannot move the Classic district fingerprint
+   *
+   * `e097b9d976ffac15` is a digest of one **surface district entry map**
+   * (`tests/bank-building.test.ts:89-113`, `:599-614`). This method is reached only
+   * from `generateUniqueMap_CHARUnderground`, which builds a *separate* secret map
+   * stored as `uniqueMaps.charUndergroundFacility`
+   * (`RogueGame.ts:31860-31871`). That runs from `GenerateWorld`
+   * (`RogueGame.ts:30903-30912`), after the district loop that ends at `:30888`, so
+   * no district is generated after this one and no district digest covers it.
+   * `tests/char-storage-room.test.ts` proves that end to end by generating a real
+   * Classic district and finding no `Storage` zone, no concrete floor and no fire
+   * barrel on it.
+   *
+   * **What does change under Classic is this map, and it is worth being exact about
+   * how much.** Taking `:8525`'s `47` instead of `50` is not a same-roll-different-
+   * value edit. 47 places *fewer* junk-and-barrels objects than 50 does, which leaves
+   * *more* tiles bare, which makes the construction loop below walk more tiles and
+   * spend more dice there -- a cascade, not a single differing value. Measured at
+   * seed 1 on a 32x32 room: 2185 rolls against the pre-change 2176. That is confined
+   * to the underground map, which nothing downstream reads, and it is the cost of
+   * matching the reference; but it is a cost, and this paragraph is where it lives
+   * rather than in a test nobody reads.
+   *
+   * The two *gated* arms cost a Classic world nothing at all, and that is arranged
+   * rather than lucky: `DiceRoller.rollChance` delegates to `roll`
+   * (`DiceRoller.ts:40-42`) and spends a die even at 0%, so both readers short-circuit
+   * on their feature flag *before* asking the roller. A still-alive-method-with-both-
+   * features-off spends exactly what a 47%-only transcription spends, which is the
+   * assertion that keeps the gating honest.
+   *
+   * ## Why none of this is behind `Feature.CHARResearchRaid` or `Feature.ArmyBase`
+   *
+   * Neither flag governs the CHAR underground, and the reference says so plainly:
+   * `CreateUniqueMap_CHARUndegroundFacility` is called unconditionally at
+   * `RogueGame.cs:4292`, with no `hasFeature` and no option, immediately after the
+   * equally ungated `CreateUniqueMap_ArmyUndegroundBase` at `:4289`. In the port,
+   * `Feature.ArmyBase` gates only the *surface* army office pass
+   * (`makeArmyOffices`, `:2643`) and `Feature.CHARResearchRaid` gates only the day-21
+   * raid event (`RogueGame.ts:7097`) -- neither is a gate on the underground map in
+   * the C# or in the port, so inventing one here would be a divergence in the other
+   * direction. The two flags that *do* belong to the lines changed are
+   * `Feature.FireBarrels` and `Feature.ResourcesAvailability`, and both are applied
+   * before the roll rather than after it.
+   *
+   * ## The six CHAR documents are **not** here
+   *
+   * Recorded here because this method is where they are usually expected. They are
+   * not in `MakeCHARStorageRoom`: the reference's only `placedCHARdocument` latch is
+   * in `MakeCHARLabRoom` (`BaseTownGenerator.cs:8552-8659` -- latch declared at
+   * `:8554`, tested at `:8606`, set at `:8634`, the `Roll(0, 5)` at `:8609` and the
+   * six `new Item(...) { IsUnique = true, IsForbiddenToAI = true }` at `:8612-8629`),
+   * and `MakeCHARLabRoom` replaces the *living* room, not the storage room: the C#'s
+   * room-role 2 branch is commented out at `:8356-8357` and calls
+   * `MakeCHARLabRoom` at `:8359` with `ref placedBioForceGun`.
+   *
+   * The port has no `makeCHARLabRoom` at all -- `:5080` still calls
+   * `makeCHARLivingRoom`, the method the C# marks `//@@MP - no longer used
+   * (Release 3)` at `:8661`. Porting the lab room needs `MakeObjCHARvat`
+   * (`BaseMapGenerator.cs:803`), `MakeObjWorkstation` (`:811`) and
+   * `MakeObjCHARtrolley` (`:1290`) plus `GameImages.OBJ_CHAR_VAT`,
+   * `OBJ_CHAR_DESKTOP` and `OBJ_CHAR_TROLLEY` (`GameImages.cs:673-675`), none of
+   * which exist in the port. Until that lands, `UNIQUE_CHAR_DOCUMENT1..6` stay
+   * registered and unplaced, which is where they were before this change.
+   */
   makeCHARStorageRoom(map: GameMap, roomRect: Rect): void {
+    const fireBarrels = hasFeature(Session.get().ruleset, Feature.FireBarrels);
+    // C# `:8531` and `:8547`, both `//@@MP - Resources Availability option
+    // (Release 7-4)`. `GameOptions.resourcesAvailabilityToInt` is 33/54/75 for
+    // LOW/MED/HIGH (`GameOptions.ts:1524-1535`); the default option is MED, so the
+    // C#'s own default world drops construction items on 54% of the bare tiles.
+    //
+    // `resourcesAvailable` is the gate and `resourcesChance` is only ever *rolled*
+    // behind it, because `DiceRoller.rollChance` delegates to `roll`
+    // (`DiceRoller.ts:40-42`) and therefore spends a die even at 0%. Both readers
+    // below short-circuit on the flag rather than rolling a sentinel 0, so a
+    // Classic room spends no die on either Resources Availability arm.
+    const resourcesAvailable = hasFeature(Session.get().ruleset, Feature.ResourcesAvailability);
+    const resourcesChance = resourcesAvailable
+      ? GameOptions.resourcesAvailabilityToInt(Options.resourcesAvailability)
+      : 0;
+
     // Replace floor with concrete.
     this.tileFill(map, Models.tiles.get(TileID.FLOOR_CONCRETE)!, roomRect);
 
@@ -5188,12 +5318,21 @@ export class BaseTownGenerator extends BaseMapGenerator {
       // dont block exits!
       if (map.getExitAt(pt) !== null) return null;
 
-      // barrels/junk?
-      if (this.m_DiceRoller.rollChance(50))
+      // barrels/junk? C# `:8525-8526`.
+      if (this.m_DiceRoller.rollChance(CHAR_STORAGE_JUNK_CHANCE))
         return this.m_DiceRoller.rollChance(50)
           ? this.makeObjJunk(GameImages.OBJ_JUNK)
           : this.makeObjBarrels(GameImages.OBJ_BARRELS);
-      else return null;
+      // C# `:8527-8528`. The `else if` matters: a fire barrel is *not* junk or
+      // barrels, and the C# asks for it on a tile that has already failed the 47%.
+      if (fireBarrels && this.m_DiceRoller.rollChance(CHAR_STORAGE_FIRE_BARREL_CHANCE))
+        return this.makeObjFireBarrel(GameImages.OBJ_EMPTY_BARREL);
+      // C# `:8530-8534`. The old arm was `else return null`, which is the `else` of
+      // a room that had nothing left to offer; the C# puts canned food on the floor
+      // of the same tiles the barrels would have gone on.
+      if (resourcesAvailable && this.m_DiceRoller.rollChance(resourcesChance))
+        map.dropItemAt(this.makeItemCannedFood(), pt);
+      return null;
     });
 
     // Items.
@@ -5203,7 +5342,19 @@ export class BaseTownGenerator extends BaseMapGenerator {
         if (this.countAdjWalls(map, x, y) > 0) continue;
         if (map.getMapObjectAt(x, y) !== null) continue;
 
-        map.dropItemAt(this.makeShopConstructionItem(), new Point(x, y));
+        // C# `:8547-8548`. **The gate the port was missing** -- and the one place
+        // here where "fix the divergence" is not the same as "add the roll".
+        //
+        // The C# rolls per tile and drops on a pass. Vanilla had no Resources
+        // Availability option at all, so its loop was unconditional, and that is
+        // what this port has been generating: a construction item on *every* bare
+        // floor tile of every Classic CHAR storage room. Gating the roll alone would
+        // leave Classic dropping nothing, which is a far bigger change than the
+        // three-point junk-density shift above and is not what either ruleset wants.
+        // So the Classic branch keeps the unconditional drop and spends no die, and
+        // the Still Alive branch is the C#'s roll.
+        if (!resourcesAvailable || this.m_DiceRoller.rollChance(resourcesChance))
+          map.dropItemAt(this.makeShopConstructionItem(), new Point(x, y));
       }
   }
 

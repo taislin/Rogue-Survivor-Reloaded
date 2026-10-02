@@ -263,31 +263,39 @@ describe("Feature.Fishing: the equip gate", () => {
     expect(res.reason).toBe("not a fishing rod");
   });
 
-  it("is reached by the player's equip path, with the C#'s message", () => {
+  it("is reached by the player's equip path, with the C#'s message", async () => {
     // The C# special-cases the rod at `OnLMBItem` (`RogueGame.cs:11395`) and again
     // at `DoPlayerItemSlotUse` (`RogueGame.cs:11996`). The port folds both into
     // `canActorEquipItem`, so the *paths* are asserted here rather than the two
     // duplicated rules.
+    //
+    // **Both are `await`ed because both became `async`**, which they had to: Still
+    // Alive hangs five blocking prompts off `DoUseItem` and one off `DoDropItem`, and
+    // `UI_WaitKey` is a promise here. The four player-facing entry points and the turn
+    // loop's ten `DoPlayerItemSlot` call sites were made awaitable with them. Neither
+    // of these two paths reaches a prompt for a rod, so the behaviour is unchanged --
+    // but the call has to be awaited for the test to see it, and asserting on the
+    // promise instead would be a green test that proves nothing.
     const rod = new Item(Models.items.get(ItemID.FISHING_ROD));
     player.inventory!.addAll(rod);
-    game.OnLMBItem(player.inventory!, rod);
+    await game.OnLMBItem(player.inventory!, rod);
     expect(messages()).toContain("Cannot equip the fishing rod");
     expect(messages()).toContain("not next to a body of water");
 
     putWater(1, 0);
-    game.OnLMBItem(player.inventory!, rod);
+    await game.OnLMBItem(player.inventory!, rod);
     expect(rod.equippedPart, "and beside water it goes on").toBe(DollPart.LEFT_HAND);
   });
 
-  it("is reached by the ctrl-slot equip path too", () => {
+  it("is reached by the ctrl-slot equip path too", async () => {
     const rod = new Item(Models.items.get(ItemID.FISHING_ROD));
     player.inventory!.addAll(rod);
     const slot = player.inventory!.items.indexOf(rod);
-    expect(game.DoPlayerItemSlotUse(player, slot)).toBe(false);
+    expect(await game.DoPlayerItemSlotUse(player, slot)).toBe(false);
     expect(rod.equippedPart, "not equipped away from water").toBe(DollPart.NONE);
 
     putWater(1, 0);
-    expect(game.DoPlayerItemSlotUse(player, slot)).toBe(false);
+    expect(await game.DoPlayerItemSlotUse(player, slot)).toBe(false);
     expect(rod.equippedPart, "equipped beside it").toBe(DollPart.LEFT_HAND);
   });
 });

@@ -1795,6 +1795,29 @@ export abstract class BaseAI extends AIController {
         if (dist < nearestDist) {
           nearestDist = dist;
           couchPos = p;
+          //@@MP (Release 7-3)
+        }
+      }
+
+      // Still Alive, Release 7-3 (`BaseAI.cs:2524-2536`): a sleeping bag dropped on
+      // an empty tile is a couch. This is one `else if`'s worth of the reference's
+      // `if` block -- the C# runs the couch test and then, *regardless of its
+      // outcome*, looks at the tile's ground inventory, guarded by `mapObj == null`
+      // so a bag cannot be chosen underneath a parked car.
+      //
+      // Gated on `Feature.ResourcesAvailability`, the same flag as
+      // `RogueGame.HandlePlayerUseSleepingBag` and the sleep-regen OR in the turn
+      // loop, so a bag rates as a bed in all three places or in none.
+      const groundInv = hasFeature(Session.get().ruleset, Feature.ResourcesAvailability)
+        ? map.getItemsAt(p)
+        : null;
+      if (mapObj == null && groundInv != null) {
+        if (groundInv.hasItemMatching((it) => it.model.id === ItemID.SLEEPING_BAG)) {
+          const dist = game.rules.stdDistance(this.controlledActor.location.position, p);
+          if (dist < nearestDist) {
+            nearestDist = dist;
+            couchPos = p;
+          }
         }
       }
     }
