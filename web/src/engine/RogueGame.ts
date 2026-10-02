@@ -23,7 +23,7 @@ import { Attack, AttackKind, FireMode } from "@data/Attack";
 import type { BlastAttack } from "@data/BlastAttack";
 import { Corpse } from "@data/Corpse";
 import { District, DistrictKind } from "@data/District";
-import { DollPart } from "@data/Doll";
+import { Doll, DollPart } from "@data/Doll";
 import type { Faction } from "@data/Faction";
 import { Inventory } from "@data/Inventory";
 import { Item } from "@data/Item";
@@ -250,7 +250,7 @@ type TimeSpan = number;
  * from the other direction. Duplicated rather than shared because the C# keeps
  * one `SetupConfig` constant and this port has no equivalent module to put it in.
  */
-const GAME_VERSION = "0.9.1";
+const GAME_VERSION = "0.9.2";
 
 /** C# numeric/string format alignment: `{0,3}`, `{0,6}` (right aligned). */
 export function padLeft(s: string | number, width: number): string {
@@ -297,15 +297,18 @@ export const TILE_SIZE: number = 32;
 export const ACTOR_SIZE: number = 32;
 
 /**
- * Where the character customiser's two columns split, and how big the preview is.
+ * Where the customiser's preview sits, and how big it is.
  *
- * Split at 620 rather than half the 1366px canvas: the left column's longest row
- * is SHIRT: <Shirt 1> <Shirt 2> <Shirt 3> <Shirt 4> <Shirt 5>, which overruns
- * the midpoint at the bold font's width. The right column then has ~740px, and a
- * 3x figure is 96px, so the preview is centred in more space than it needs -
- * which is why it is drawn at the column's left edge rather than its middle.
+ * **Below the rows, not beside them.** Every option row on this screen spans the
+ * full 1366px canvas — the skill list alone runs to its right edge — so there is no
+ * column to put a preview in, and the first attempt at a two-column layout drew it
+ * straight over the text. The lower half of the screen is empty, so it goes there,
+ * horizontally centred.
+ *
+ * `PREVIEW_TOP_Y` clears the longest screen: title, hint, race, sex/type, skill,
+ * six appearance rows, the `*Random*` note and up to three detail lines.
  */
-export const PREVIEW_COLUMN_X: number = 620;
+export const PREVIEW_TOP_Y: number = 378;
 /** 3x. Enough to read a face; 4x starts to show the sprite's own pixel grid. */
 export const PREVIEW_SCALE: number = 3;
 export const ACTOR_OFFSET: number = (TILE_SIZE - ACTOR_SIZE) / 2;
@@ -2935,7 +2938,16 @@ export class RogueGame {
 		const isMale = player.model.dollBody.isMale;
 		const [eyes, skins, heads, torsos, legs, shoes] =
 			this.m_CharGen.appearance.asDressArgs(outfitChoices(isMale));
-		BaseMapGenerator.dressActorDoll(roller, player, eyes, skins, heads, torsos, legs, shoes);
+		BaseMapGenerator.dressActorDoll(
+		roller,
+		player.doll,
+		eyes,
+		skins,
+		heads,
+		torsos,
+		legs,
+		shoes,
+	);
 	}
 
 /**
@@ -3118,7 +3130,11 @@ export class RogueGame {
 			const isUndead = raceIdx === 1;
 			// Switching race can leave `row` past the end (2 -> 1 rows for undead).
 			const baseRows = isUndead ? 2 : 3;
-			const rows = baseRows + APPEARANCE_LAYERS.length;
+			// Undead get no appearance rows at all. They have whole-body sprites and
+			// nothing to choose: offering a zombie a shirt produced a zombie in a
+			// shirt, and the six rows of options that changed nothing were worse than
+			// no rows.
+			const rows = baseRows + (isUndead ? 0 : APPEARANCE_LAYERS.length);
 			if (row >= rows) row = rows - 1;
 
 			const n = isUndead ? typeEntries.length : sexEntries.length;
@@ -3130,7 +3146,7 @@ export class RogueGame {
 			// change than one that reshuffles on every frame.
 			const choices: OutfitChoices = outfitChoices(isUndead ? true : catalogueIsMale);
 			const activeLayer: AppearanceLayer | null =
-				row >= baseRows ? APPEARANCE_LAYERS[row - baseRows] : null;
+				!isUndead && row >= baseRows ? APPEARANCE_LAYERS[row - baseRows] : null;
 
 			this.m_UI.UI_Clear(Color.Black);
 			let gy = 0;
@@ -3164,7 +3180,10 @@ export class RogueGame {
 			// All six appearance rows at once, as asked: the point of a customiser is
 			// seeing the whole look, and hiding half of it behind a sub-screen is what
 			// made the three original screens unpleasant to use.
-			for (const layer of APPEARANCE_LAYERS) {
+			//
+			// At x=0, full width: every one of these rows runs to the right edge of
+			// the canvas, so there is no column to lay them out in.
+			for (const layer of isUndead ? [] : APPEARANCE_LAYERS) {
 				const catalogue = choices[layer];
 				// Index 0 is `*Random*`; the rest are the catalogue in order.
 				const entries = ["*Random*", ...catalogue.map(describeAppearanceImage)];
@@ -3174,20 +3193,22 @@ export class RogueGame {
 					APPEARANCE_LAYER_LABELS[layer],
 					entries,
 					idx,
-					PREVIEW_COLUMN_X,
+					0,
 					gy,
-					row >= baseRows && layer === activeLayer,
+					layer === activeLayer,
 				);
 				gy += MENU_BOLD_LINE_SPACING;
 			}
 
-			this.m_UI.UI_DrawStringBoldLarge(
-				Color.DimGray,
-				"*Random* = rolled at creation",
-				PREVIEW_COLUMN_X,
-				gy,
-			);
-			gy += 2 * MENU_BOLD_LINE_SPACING;
+			if (!isUndead) {
+				this.m_UI.UI_DrawStringBoldLarge(
+					Color.DimGray,
+					"*Random* = rolled at creation",
+					0,
+					gy,
+				);
+				gy += 2 * MENU_BOLD_LINE_SPACING;
+			}
 
 			// Stat lines for whatever the active row offers, carried over from the
 			// screens this replaces, so each choice stays an informed one.
@@ -30040,17 +30061,17 @@ inv.removeAllQuantity(it);
 		);
 	}
 
-	/**
-	 * Draws the character preview in the customiser's right column.
-	 *
-	 * A **throwaway actor**, rebuilt each frame rather than kept: it has to exist to
-	 * own a doll, and an actor that outlived the screen would be one more thing to
-	 * unregister. It is never added to the world, so nothing can observe it — no
-	 * faction, no turn, no save.
-	 *
-	 * `body` is 0 for a random-sex male preview, 1 male, 2 female, and an undead
-	 * type index otherwise; the caller resolves `*Random*` so this does not roll.
-	 */
+		/**
+		 * Draws the character preview in the customiser's right column.
+		 *
+		 * A **throwaway actor**, rebuilt each frame rather than kept: it has to exist to
+		 * own a doll, and an actor that outlived the screen would be one more thing to
+		 * unregister. It is never added to the world, so nothing can observe it — no
+		 * faction, no turn, no save.
+		 *
+		 * `body` is 0 for a random-sex male preview, 1 male, 2 female, and an undead
+		 * type index otherwise; the caller resolves `*Random*` so this does not roll.
+		 */
 	private DrawCharacterPreview(
 		isUndead: boolean,
 		body: number,
@@ -30065,54 +30086,89 @@ inv.removeAllQuantity(it);
 			ActorID.UNDEAD_ZOMBIE_MASTER,
 		];
 		const isMale = body !== 2;
+		// `*Random*` undead (body 0) previews the first type rather than rolling: a
+		// preview that reshuffles every frame is worse than one that is stable and
+		// might change on Enter.
 		const model = isUndead
-			? this.gameActors.get(undeadIds[Math.max(0, Math.min(undeadIds.length - 1, body))])
+			? this.gameActors.get(
+					undeadIds[Math.max(0, Math.min(undeadIds.length - 1, body))],
+				)
 			: this.gameActors.get(isMale ? ActorID.MALE_CIVILIAN : ActorID.FEMALE_CIVILIAN);
+		if (model == null) return;
 
-		let actor: Actor;
-		try {
-			actor = model.createAnonymous(
-				this.gameFactions.get(isUndead ? FactionID.TheUndeads : FactionID.TheCivilians),
-				0,
-			);
-		} catch (e) {
-			reportSwallowed("RogueGame.DrawCharacterPreview (no model)", e);
-			return;
+		// **A doll, not an `Actor`.** The first version of this built a throwaway
+		// actor with `createAnonymous` every frame, which is how it reached game state
+		// at all: the model's `createdCount` went up on every redraw, and constructing
+		// an `Actor` outside a map is not something the draw path should be doing —
+		// it crashed on `isDead` of null as soon as the player moved a row. Nothing in
+		// a preview needs an actor; it needs a `DollBody` and an image id, and both
+		// belong to the model.
+		const doll = new Doll(model.dollBody);
+
+		if (!isUndead) {
+			// The *real* dressing code, so the preview cannot drift from what creation
+			// actually produces.
+			const [eyes, skins, heads, torsos, legs, shoes] =
+				appearance.asDressArgs(outfitChoices(isMale));
+			BaseMapGenerator.dressActorDoll(roller, doll, eyes, skins, heads, torsos, legs, shoes);
 		}
+		// Undead are left alone: they have whole-body sprites (`Actors/skeleton`,
+		// `Actors/zombie`, `Actors/zombie_master`) and no customisation is offered for
+		// them, so dressing one would show a zombie in a shirt.
 
-		// Dressed through the *real* dressing code, so the preview cannot drift from
-		// what creation actually produces. Static precisely because this has no `Game`
-		// to construct one with.
-		const choices = outfitChoices(isMale);
-		const [eyes, skins, heads, torsos, legs, shoes] = appearance.asDressArgs(choices);
-		if (isUndead) BaseMapGenerator.skinActorDoll(roller, actor, eyes, skins, heads);
-		else BaseMapGenerator.dressActorDoll(roller, actor, eyes, skins, heads, torsos, legs, shoes);
-
-		// `UI_DrawImageTransform` scales about each sprite's own centre, so the figure
-		// sits on the point the map would put it, just bigger.
-		this.DrawActorPreview(actor, PREVIEW_COLUMN_X + 48, 6 * MENU_BOLD_LINE_SPACING, PREVIEW_SCALE);
+		// Centred under the rows rather than beside them: every option row here spans
+		// the full canvas -- the skill list alone runs to its right edge -- so there is
+		// no column to put a preview in, and the lower half is empty.
+		const gx = Math.round((CANVAS_WIDTH - ACTOR_SIZE * PREVIEW_SCALE) / 2);
+		this.DrawDollPreview(model.imageId, doll, gx, PREVIEW_TOP_Y, PREVIEW_SCALE);
 
 		this.m_UI.UI_DrawStringBoldLarge(
 			Color.Gray,
 			isUndead ? model.name : isMale ? "Male civilian" : "Female civilian",
-			PREVIEW_COLUMN_X,
-			6 * MENU_BOLD_LINE_SPACING + ACTOR_SIZE * PREVIEW_SCALE + MENU_BOLD_LINE_SPACING,
+			gx - ACTOR_SIZE * PREVIEW_SCALE,
+			PREVIEW_TOP_Y + ACTOR_SIZE * PREVIEW_SCALE + MENU_BOLD_LINE_SPACING,
 		);
 	}
 
-	DrawActorPreview(actor: Actor, gx: number, gy: number, scale: number): void {
-	  const px = gx + ACTOR_OFFSET;
-	  const py = gy + ACTOR_OFFSET;
+	/**
+	 * Draws a doll, magnified, for the customiser.
+	 *
+	 * The scaled decoration draw already exists for `DrawCorpse`, so this is a layer
+	 * list rather than a second renderer to keep in step with the doll. The order is
+	 * the C#'s and is load-bearing: clothes go on in that order or a sprite covers the
+	 * one beneath it.
+	 *
+	 * **`TORSO` is drawn once, where `DrawCorpse` draws it twice.** That doubling is
+	 * in the reference and is invisible in game — the corpse is drawn once and the
+	 * second pass composites the same sprite over itself — but a preview is inspected
+	 * closely, and twice is visibly darker on any sprite with alpha. New UI is not
+	 * obliged to reproduce a compositing artefact.
+	 */
+	private DrawDollPreview(
+		imageId: string | null,
+		doll: Doll,
+		gx: number,
+		gy: number,
+		scale: number,
+	): void {
+		const px = gx + ACTOR_OFFSET;
+		const py = gy + ACTOR_OFFSET;
 
-	  if (actor.model.imageId != null)
-	    this.m_UI.UI_DrawImageTransform(actor.model.imageId, px, py, 0, scale);
+		if (imageId != null) this.m_UI.UI_DrawImageTransform(imageId, px, py, 0, scale);
 
-	  this.DrawActorDecoration(actor, px, py, DollPart.SKIN, 0, scale);
-	  this.DrawActorDecoration(actor, px, py, DollPart.FEET, 0, scale);
-	  this.DrawActorDecoration(actor, px, py, DollPart.LEGS, 0, scale);
-	  this.DrawActorDecoration(actor, px, py, DollPart.TORSO, 0, scale);
-	  this.DrawActorDecoration(actor, px, py, DollPart.EYES, 0, scale);
-	  this.DrawActorDecoration(actor, px, py, DollPart.HEAD, 0, scale);
+		const layer = (part: DollPart): void => {
+			const decos = doll.getDecorations(part);
+			if (decos == null) return;
+			for (const imageID of decos)
+				this.m_UI.UI_DrawImageTransform(imageID, px, py, 0, scale);
+		};
+
+		layer(DollPart.SKIN);
+		layer(DollPart.FEET);
+		layer(DollPart.LEGS);
+		layer(DollPart.TORSO);
+		layer(DollPart.EYES);
+		layer(DollPart.HEAD);
 	}
 
 // C# DrawActorEquipment — RogueGame.cs:18777

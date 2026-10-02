@@ -64,10 +64,19 @@
 >   separate layers, so this is a choice over sprites that were always there.
 >   `*Random*` — the default — expands to the whole catalogue, which is the
 >   distribution the generator produced before this existed.
-> - **The preview reuses the scaled decoration overload that `DrawCorpse` already
->   uses**, so it is a layer list rather than a second renderer to keep in step.
->   `TORSO` is drawn once where `DrawCorpse` draws it twice: that doubling is
->   invisible in game but visibly darker in something a player inspects closely.
+> - **The preview draws a `Doll`, not an `Actor`.** The first version built a
+>   throwaway actor with `createAnonymous` on every frame, which reached game state
+>   from the draw path: the model's `createdCount` rose on every redraw, and moving
+>   any row crashed on `isDead` of null. A preview needs a `DollBody` and an image
+>   id, and both belong to the model — `dressActorDoll` therefore takes a `Doll`
+>   rather than an `Actor`.
+> - **The preview is below the rows, not beside them.** Every option row spans the
+>   full canvas — the skill list alone runs to its right edge — so a two-column
+>   layout drew the figure straight over the text. The lower half is empty.
+> - **Undead get no customisation rows.** They have whole-body sprites
+>   (`Actors/skeleton`, `Actors/zombie`, `Actors/zombie_master`) and nothing to
+>   choose; offering a zombie a shirt produced a zombie in a shirt. Six rows that
+>   changed nothing were worse than no rows.
 > - **Persistence was free.** The doll's `decorations` array is already encoded and
 >   decoded by the `doll` codec in `serialization/specs.ts`, so a chosen look
 >   survives a save with nothing added to the save schema. The *choices* are also

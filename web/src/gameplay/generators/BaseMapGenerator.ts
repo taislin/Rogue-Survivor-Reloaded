@@ -7,7 +7,7 @@
  */
 
 import type { Actor } from '@data/Actor';
-import { DollPart } from '@data/Doll';
+import { Doll, DollPart } from '@data/Doll';
 import { Item } from '@data/Item';
 import { Models } from '@data/Models';
 import { Map as GameMap } from '@data/Map';
@@ -199,7 +199,7 @@ private static readonly BIKER_HEADS = [GameImages.BIKER_HAIR1, GameImages.BIKER_
       const male = actor.model.dollBody.isMale;
       BaseMapGenerator.dressActorDoll(
         roller,
-        actor,
+        actor.doll,
         male ? BaseMapGenerator.MALE_EYES : BaseMapGenerator.FEMALE_EYES,
         male ? BaseMapGenerator.MALE_SKINS : BaseMapGenerator.FEMALE_SKINS,
         male ? BaseMapGenerator.MALE_HEADS : BaseMapGenerator.FEMALE_HEADS,
@@ -209,21 +209,21 @@ private static readonly BIKER_HEADS = [GameImages.BIKER_HAIR1, GameImages.BIKER_
       );
       return;
     }
-    BaseMapGenerator.dressActorDoll(roller, actor, eyes, skins, heads, torsos, legs, shoes);
+    BaseMapGenerator.dressActorDoll(roller, actor.doll, eyes, skins, heads, torsos, legs, shoes);
   }
 
   /**
    * The six layers, rolled from the given candidates and written to the doll.
    *
-   * **Static, and the instance method above delegates to it**, because none of
-   * this needs a `Game` and the constructor demands one. That matters for the
-   * character customiser: it has to dress a throwaway actor to draw a preview, and
-   * being able to reach the real dressing code without building a whole game is
-   * what keeps the preview from being a second, drifting copy of it.
+   * **Static, takes a `Doll`, and the instance methods above delegate to it**,
+   * because none of this needs a `Game` — and the constructor demands one. That is
+   * what lets the character customiser dress something to draw without building a
+   * whole game, and it keeps the preview from becoming a second, drifting copy of
+   * the dressing code.
    */
   static dressActorDoll(
     roller: DiceRoller,
-    actor: Actor,
+    doll: Doll,
     eyes: string[],
     skins: string[],
     heads: string[],
@@ -231,13 +231,13 @@ private static readonly BIKER_HEADS = [GameImages.BIKER_HAIR1, GameImages.BIKER_
     legs: string[],
     shoes: string[],
   ): void {
-    actor.doll.removeAllDecorations();
-    actor.doll.addDecoration(DollPart.EYES, eyes[roller.roll(0, eyes.length)]);
-    actor.doll.addDecoration(DollPart.SKIN, skins[roller.roll(0, skins.length)]);
-    actor.doll.addDecoration(DollPart.HEAD, heads[roller.roll(0, heads.length)]);
-    actor.doll.addDecoration(DollPart.TORSO, torsos[roller.roll(0, torsos.length)]);
-    actor.doll.addDecoration(DollPart.LEGS, legs[roller.roll(0, legs.length)]);
-    actor.doll.addDecoration(DollPart.FEET, shoes[roller.roll(0, shoes.length)]);
+    doll.removeAllDecorations();
+    doll.addDecoration(DollPart.EYES, eyes[roller.roll(0, eyes.length)]);
+    doll.addDecoration(DollPart.SKIN, skins[roller.roll(0, skins.length)]);
+    doll.addDecoration(DollPart.HEAD, heads[roller.roll(0, heads.length)]);
+    doll.addDecoration(DollPart.TORSO, torsos[roller.roll(0, torsos.length)]);
+    doll.addDecoration(DollPart.LEGS, legs[roller.roll(0, legs.length)]);
+    doll.addDecoration(DollPart.FEET, shoes[roller.roll(0, shoes.length)]);
   }
 
   skinNakedHuman(roller: DiceRoller, actor: Actor, eyes?: string[], skins?: string[], heads?: string[]): void {
@@ -245,28 +245,28 @@ private static readonly BIKER_HEADS = [GameImages.BIKER_HAIR1, GameImages.BIKER_
       const male = actor.model.dollBody.isMale;
       BaseMapGenerator.skinActorDoll(
         roller,
-        actor,
+        actor.doll,
         male ? BaseMapGenerator.MALE_EYES : BaseMapGenerator.FEMALE_EYES,
         male ? BaseMapGenerator.MALE_SKINS : BaseMapGenerator.FEMALE_SKINS,
         male ? BaseMapGenerator.MALE_HEADS : BaseMapGenerator.FEMALE_HEADS
       );
       return;
     }
-    BaseMapGenerator.skinActorDoll(roller, actor, eyes, skins, heads);
+    BaseMapGenerator.skinActorDoll(roller, actor.doll, eyes, skins, heads);
   }
 
   /** `skinNakedHuman`'s body, static for the reason `dressActorDoll` is. */
   static skinActorDoll(
     roller: DiceRoller,
-    actor: Actor,
+    doll: Doll,
     eyes: string[],
     skins: string[],
     heads: string[],
   ): void {
-    actor.doll.removeAllDecorations();
-    actor.doll.addDecoration(DollPart.EYES, eyes[roller.roll(0, eyes.length)]);
-    actor.doll.addDecoration(DollPart.SKIN, skins[roller.roll(0, skins.length)]);
-    actor.doll.addDecoration(DollPart.HEAD, heads[roller.roll(0, heads.length)]);
+    doll.removeAllDecorations();
+    doll.addDecoration(DollPart.EYES, eyes[roller.roll(0, eyes.length)]);
+    doll.addDecoration(DollPart.SKIN, skins[roller.roll(0, skins.length)]);
+    doll.addDecoration(DollPart.HEAD, heads[roller.roll(0, heads.length)]);
   }
 
   skinDog(roller: DiceRoller, actor: Actor): void {

@@ -1,10 +1,10 @@
+import type { IAmbientManager } from "@engine/audio/IAmbientManager";
 import type { IMusicManager } from "@engine/audio/IMusicManager";
 import type { ISoundManager } from "@engine/audio/ISoundManager";
-import type { IAmbientManager } from "@engine/audio/IAmbientManager";
 import {
 	AudioPreview,
-	previewAudioAdjustment,
 	type AudioPreviewValue,
+	previewAudioAdjustment,
 } from "@engine/audio/OptionsAudioPreview";
 import { Color } from "@engine/Color";
 import { Feature, hasFeature } from "@engine/FeatureFlags";
@@ -46,9 +46,9 @@ const RIGHT_PADDING = 400;
 
 // C# `SetupConfig.GAME_VERSION`. The other half of the pair: the same constant
 // also lives in `engine/RogueGame.ts`, which says why it is duplicated rather
-// than shared. Both must read 0.9.1, and both must agree with
+// than shared. Both must read the same, and both must agree with
 // `web/package.json`'s `version`.
-const GAME_VERSION = "0.9.1";
+const GAME_VERSION = "0.9.2";
 
 /**
  * Browser port of `RogueGame.HandleOptions(bool ingame)` (RogueGame.cs ≈ line 2294).
@@ -718,14 +718,15 @@ export class OptionsScreen {
 	 * part that belongs next to the row list.
 	 */
 	private audioAdjustment(option: OptionIDs): void {
-		const AUDIO_ROWS: Readonly<Partial<Record<OptionIDs, AudioPreviewValue>>> = {
-			[OptionIDs.UI_MUSIC]: AudioPreview.MUSIC_ENABLE,
-			[OptionIDs.UI_SFXS]: AudioPreview.SFX_ENABLE,
-			[OptionIDs.UI_AMBIENTSFXS]: AudioPreview.AMBIENT_ENABLE,
-			[OptionIDs.UI_MUSIC_VOLUME]: AudioPreview.MUSIC_VOLUME,
-			[OptionIDs.UI_SFXS_VOLUME]: AudioPreview.SFX_VOLUME,
-			[OptionIDs.UI_AMBIENTSFXS_VOLUME]: AudioPreview.AMBIENT_VOLUME,
-		};
+		const AUDIO_ROWS: Readonly<Partial<Record<OptionIDs, AudioPreviewValue>>> =
+			{
+				[OptionIDs.UI_MUSIC]: AudioPreview.MUSIC_ENABLE,
+				[OptionIDs.UI_SFXS]: AudioPreview.SFX_ENABLE,
+				[OptionIDs.UI_AMBIENTSFXS]: AudioPreview.AMBIENT_ENABLE,
+				[OptionIDs.UI_MUSIC_VOLUME]: AudioPreview.MUSIC_VOLUME,
+				[OptionIDs.UI_SFXS_VOLUME]: AudioPreview.SFX_VOLUME,
+				[OptionIDs.UI_AMBIENTSFXS_VOLUME]: AudioPreview.AMBIENT_VOLUME,
+			};
 		previewAudioAdjustment(AUDIO_ROWS[option] ?? AudioPreview.NONE, {
 			music: this.music,
 			sfx: this.sfx,
