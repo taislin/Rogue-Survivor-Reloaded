@@ -146,7 +146,79 @@ class NeutralinoStorage extends MemoryStorage {
       // during the read is safe to perform — it is a merge, not a replacement.
       if (this.m_WriteOwed) this.schedulePersist();
     };
-    this.m_Ready = this.initAsync();
+    this.m_Ready = this.initWithDeadline();
+  }
+
+  /**
+   * How long `initAsync` gets before the backend is abandoned for the session.
+   *
+   * Generous, because a cold desktop start really does have to open AppData and
+   * read `storage.json`; short, because until it resolves **nothing is drawn** —
+   * `LoadOptions` is the first thing `Run()` awaits after `InitDirectories`, and
+   * it paints nothing before it. So an unanswered call here is not a slow start,
+   * it is a black screen.
+   */
+  private static readonly INIT_TIMEOUT_MS = 5_000;
+
+  /**
+   * `initAsync`, under a deadline.
+   *
+   * **This exists because `awaitClientLibrary` cannot do this job.** It proves
+   * the client library's *API surface* is present — and `index.html` loads
+   * `/js/neutralino.js` unconditionally, in the browser build as well as the
+   * packaged one, so `Neutralino.os` and `Neutralino.filesystem` are always
+   * defined when that script parses. The probe therefore passes in a plain
+   * browser where no Neutralino server exists at all, and the first real call,
+   * `getPath("data")`, waits for a reply that is never coming. That await had no
+   * timeout, so `m_Ready` stayed pending, `whenStorageReady()` never returned,
+   * and `Run()` sat in `LoadOptions` with nothing painted: a black screen, in
+   * both the desktop app and the browser, with no error anywhere.
+   *
+   * On a timeout the backend is abandoned rather than assumed good:
+   *
+   * - `m_FilePath` stays null, so `performFlush` takes its existing
+   *   "no path: writes are being discarded" branch and reports. Nothing is
+   *   written, which is the point — a `storage.json` that was never read must not
+   *   be overwritten with defaults.
+   * - `m_ReadyResolved` stays **false**, because `initAsync`'s `finally` never
+   *   ran, so `schedulePersist` keeps short-circuiting. Belt and braces with the
+   *   null path, and for the same reason.
+   * - `m_LastWriteError` is set, so `GameSaveManager.saveGame` refuses to report
+   *   success for a save that went nowhere.
+   *
+   * So the cost of a server that will not answer is that the session does not
+   * persist, loudly, instead of the game not starting, silently.
+   *
+   * Resolves rather than rejects, deliberately: every caller is boot code, and a
+   * rejection here would take the whole `Run()` down over a missing save file.
+   */
+  private async initWithDeadline(): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        reject(
+          new Error(
+            `Neutralino storage did not initialise within ${NeutralinoStorage.INIT_TIMEOUT_MS}ms`,
+          ),
+        );
+      }, NeutralinoStorage.INIT_TIMEOUT_MS);
+    });
+
+    try {
+      await Promise.race([this.initAsync(), deadline]);
+    } catch (e) {
+      // `initAsync` handles its own failures, so reaching here means the race was
+      // lost: `initAsync` is still in flight, and whatever it is awaiting is never
+      // going to answer.
+      this.m_FilePath = null;
+      this.m_LastWriteError = e;
+      reportSwallowed(
+        "NeutralinoStorage.init (no answer from the Neutralino server; progress will not be saved)",
+        e,
+      );
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
   }
 
   /** Resolves when the on-disk state has been read, so a caller can be sure. */
@@ -163,6 +235,15 @@ class NeutralinoStorage extends MemoryStorage {
    * packaged build won. Polling for a short while is the honest fix; the timeout
    * is what turns "the library never arrives" into a reported failure rather than
    * a hang.
+   *
+   * **What it does *not* prove is that anything is listening.** `index.html`
+   * loads `/js/neutralino.js` unconditionally, in the browser build as well as
+   * the packaged one, and the client library defines `Neutralino.os` and
+   * `Neutralino.filesystem` as part of its own surface. So this returns `true` in
+   * a plain browser with no Neutralino server behind it, and the first real call
+   * then waits forever. That is why `initWithDeadline` exists and why it wraps
+   * the whole read rather than only this probe: the probe cannot tell "library
+   * loaded" from "server answered", and only the second one matters.
    */
   private static async awaitClientLibrary(ms = 2_000): Promise<boolean> {
     const deadline = Date.now() + ms;

@@ -407,6 +407,45 @@ describe("GameSaveManager reports a desktop save that did not land", () => {
     expect(String(warn.mock.calls.flat().join(" "))).toContain("storage.json");
   });
 
+  // The bug this pins down black-screened the game in both the desktop app and
+  // the browser, with no error logged anywhere. `index.html` loads
+  // `/js/neutralino.js` unconditionally, so the client library's `os` and
+  // `filesystem` are always defined - even in a browser with no Neutralino server
+  // behind them - and `awaitClientLibrary` therefore returns `true`. The first
+  // real call then waited for a reply that never came. Nothing in `Run()` is
+  // painted before `LoadOptions` awaits readiness, so that await was the whole
+  // screen: black, silent, forever.
+  //
+  // `readDelayMs` is reused as the hang. It models a server that accepts the
+  // connection and then goes quiet, which is the case that is indistinguishable
+  // from "still loading" without a deadline.
+  it("becomes ready even when the Neutralino server never answers", async () => {
+    fake.content = JSON.stringify({ seed: "0" });
+    fake.readDelayMs = 60_000;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const mod = await loadModule();
+    const storage = mod.storage as unknown as { whenReady(): Promise<void> };
+
+    // The deadline is 5s, so allow generous headroom for a slow CI box while
+    // still failing fast if the fix is ever reverted - which is the point.
+    await expect(
+      Promise.race([
+        storage.whenReady(),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("whenReady() never settled")), 20_000),
+        ),
+      ]),
+    ).resolves.toBeUndefined();
+
+    // And it must say so, rather than pretending the read landed. This is the
+    // load-bearing half of the fix: resolving is only safe because the backend
+    // is abandoned, not assumed good.
+    const said = String(warn.mock.calls.flat().join(" "));
+    expect(said).toContain("no answer from the Neutralino server");
+    expect(said).toContain("progress will not be saved");
+  }, 25_000);
+
   it("returns true on a backend that saved", async () => {
     fake.content = JSON.stringify({ seed: "0" });
     const mod = await loadModule();
