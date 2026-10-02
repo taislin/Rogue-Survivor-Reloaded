@@ -4053,7 +4053,71 @@ done.
 
 ## 6. `RogueGame.ts` decomposition
 
-> **Status: planned 2026-09-29, not started.** This is a refactor of the port
+> ## 6.0 Re-measured 2026-10-02 — Wave 0's gate, answered
+>
+> **Status: Wave 0 started. Waves 1–3 still not started, and §6.2–§6.9's
+> `file:line` citations are stale.** They were taken on 2026-09-29 at 27,722 lines;
+> the file is **35,961**. It did not grow at the end — ported content landed in
+> the middle — so a line range no longer identifies a region. Re-running §6.2's
+> own table against the current file puts `DoSay` (`:21697`) and `DoUseItem`
+> (`:22557`) in the "render cluster" it describes as a leaf with 11 outbound
+> edges. Both are hub action methods.
+>
+> `scripts/measure-roguegame.mjs` classifies **by member name**, which is what
+> §6's prose always described, and `tests/roguegame-surface.test.ts` pins its
+> output so the numbers below cannot rot unnoticed.
+>
+> | | §6 (2026-09-29) | measured (2026-10-02) |
+> |---|---|---|
+> | file | 27,722 lines | **35,961** |
+> | members | 584 | **836** |
+> | methods | 595 | **751** |
+> | public | 567 of 584 | **755 of 836** |
+> | private | 17 | **81** |
+> | reached from outside the class | *(not measured)* | **110** |
+> | … in a region §6 moves | *(assumed ~0)* | **83** |
+> | … in a hub, which never moves | — | **27** |
+> | … **private** members reached from outside | — | **0** |
+> | … in **no region §6 names** | — | **68** |
+>
+> **§6.10's stop condition is not met.** *"Stop if Wave 0 turns out to require
+> changing a public signature that a test or `HeadlessRunner` depends on."* Nothing
+> private is reached from outside the class: the two tests that need to be inside
+> it do it through `prototype as any` (`gender-helpers.test.ts:41`,
+> `minimap-cache.test.ts:162`) and one hand-builds a structural double
+> (`panel-hitboxes.test.ts:96`), none of which is a public signature and none of
+> which a wave can break. So the absent `private` boundary that §6.4 worries about
+> costs nothing *at the seam*, which is the only place it would have cost
+> anything.
+>
+> **The deferral's cost estimate is wrong, favourably.** §6.1 quotes the 2024
+> deferral: "a split would … thread a `game` reference through ~500 call sites."
+> The measured figure is **110 names** — every one a signature a wave must
+> preserve. §6.4's `GameContext` was to name about sixteen ("the 11 service
+> fields … plus `m_Player`, `m_PlayerFOV`, `m_MapViewRect`, `m_Overlays`,
+> `m_FirstPersonFacing`"); the real figure is nearly seven times that. That is the
+> answer to the question §6.4 deferred "until the game runs and the real
+> cross-method dependencies are known".
+>
+> **And the region table is incomplete, which is the blocker.** 68 of the 110 are
+> in no region §6 names — and they are not neutral leftovers. They include
+> `AddMessage`, `AdvancePlay`, `KillActor`, `UpdatePlayerFOV`, `SpawnActorNear`,
+> `RefreshPlayer`, `ApplyOptions`, `LoadGame`, the whole map-zoom triple
+> (`MapZoom`/`SetMapZoom`/`StepMapZoom`) and the first-person pair
+> (`TurnFirstPerson`/`ToggleViewMode`) — plus the state `GameContext` exists to
+> carry: `m_PlayerFOV`, `m_PlayerWasRescued`, `m_CharGen`, `m_IsGameRunning`,
+> `player`, `rules`, `keyBindings`, `options`, `gameItems`, `gameFactions`.
+> **68 is larger than Wave 1's entire 2,079-line budget.** "Extract the leaves,
+> keep the hubs" is right about the hubs and silent about the majority, so the
+> §6.5–6.7 sequencing ("cheapest first") rests on a line budget that no longer
+> describes the file.
+>
+> **Therefore: re-derive §6.2's regions by name before Wave 1, not after.** The
+> gate §6.10 sets is answered and the answer is *proceed*; the work it gates is
+> not the work §6.5 describes.
+
+> **Status: planned 2026-09-29.** *(Superseded in part — see §6.0 above: Wave 0
+> has started, and every `file:line` below is stale.)* This is a refactor of the port
 > itself, not a Still Alive feature. It is a **prerequisite for §5.6 Stages 4–5**,
 > and it is what makes §5.6g's "stop and refactor before Stage 5" an instruction
 > rather than a shrug. Stages 1–3 of that plan do **not** need it: Stage 3 is data
