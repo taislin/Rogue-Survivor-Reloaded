@@ -21,11 +21,15 @@
  * `BaseTownGenerator.generate()` — real blocks, real dice, real stairwell — and
  * not a building function called with a hand-built context.
  *
- * **The seeds were re-swept when the business region was re-merged into one loop
- * again** (C# `:472-536`; see `BaseTownGenerator.generate`). The shelter's rate
- * did not change — it is the *green* region's die, not the business one — but the
- * stream the green region reads from did, so 24 and 47 stopped producing one and
- * the pair above took their place.
+ * **The seeds have been re-swept twice**, and the second time is the interesting
+ * one. The first was when the business region was re-merged into one loop again
+ * (C# `:472-536`). The second was when the parks region was merged the same way:
+ * the shelter's rate did not change — it is the *green* region's die — but the port
+ * had been spending **two** `RollChance(ParkBuildingChance)` per block where the C#
+ * spends one, so the green cascade was being offered half as many blocks as it
+ * should. Halving the gates doubled the shelter's rate and moved every seed again.
+ * Sweeping `1..300` now finds thirteen: 12, 33, 35, 36, 74, 88, 94, 109, 143, 190,
+ * 231, 261, 299.
  *
  * What is asserted, and why each one is not the obvious one:
  *
@@ -87,13 +91,12 @@ const MAP = 40;
  * A seed whose 40x40 district contains an animal shelter, and a second one that
  * must not look like it. Swept, not chosen — see the header.
  *
- * 59 and 63 are the two lowest that work, and they are adjacent on purpose: they
- * come off one sweep, so the claim "a different district gets a different coat on
- * the same ten dogs" is not resting on a pair picked from opposite ends of a
- * range for looking different.
+ * 12 and 33 are the two lowest that work. `SEED` is left alone for the Classic
+ * no-trace tests at the bottom of the file, which are about a district that has no
+ * shelter and so do not care which.
  */
-const SEED = 59;
-const OTHER_SEED = 63;
+const SEED = 12;
+const OTHER_SEED = 33;
 
 /** The kennel level's own name, C# `:4198` `new Map(seed, "Animal shelter", …)`. */
 const KENNELS_NAME = "Animal shelter";

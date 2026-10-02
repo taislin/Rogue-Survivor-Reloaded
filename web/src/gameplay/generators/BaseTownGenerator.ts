@@ -414,6 +414,33 @@ export class BaseTownGenerator extends BaseMapGenerator {
       if (index !== -1) emptyBlocks.splice(index, 1);
     }
 
+    // Army base. C# `:429-452`, and it is a **separate pass ahead of the shops and
+    // ahead of the business cascade**, which is where it used to sit here too --
+    // it ran after the business region, which is not where the C# has it.
+    //
+    // Two conditions, both of which matter:
+    //
+    //  * `DistrictKind.GREEN` only. The C# has the `|| DistrictKind.GENERAL`
+    //   commented out at `:430`, so a general district does *not* get one -- and the
+    //   port follows the comment rather than the ambition, because enabling it would
+    //   put a guaranteed eight-zombie garrison in most districts.
+    //  * **One per district.** `armyOfficesCount == 0` gates the attempt and the
+    //   increment happens only when one was actually built, so a district whose
+    //   blocks are all too small gets none rather than retrying forever.
+    //
+    // The C#'s `foreach` has no `break` and relies on that counter, which is why the
+    // loop can look wasteful and is not: after the first success the `if` is false
+    // for every later block.
+    //
+    // **Moving it is not free, and the reason it was worth doing is the pool.** The
+    // C# runs this at `:429-452`, *before* the shops at `:457-465` and the business
+    // region at `:467`; the port ran it after both, so it was offered only the
+    // leftovers -- blocks that had already lost the shops roll and the CHAR loop. An
+    // army base on a block is a whole block consumed, and a GREEN district has few
+    // enough of them that "which pool" is the difference between one and none.
+    // GREEN-only, so no GENERAL district and no Classic fingerprint is affected.
+    this.makeArmyOffices(map, emptyBlocks);
+
     // shops.
     completedBlocks.length = 0;
     for (const b of emptyBlocks) {
@@ -451,18 +478,22 @@ export class BaseTownGenerator extends BaseMapGenerator {
     // districts). `TOWN_BUILDING_PASSES` is offered 38 blocks again instead of 0,
     // which it had come to depend on.
     //
-    // **Housing did not follow, and the reason is a different missing generator.**
-    // It is 0.8/district before and after, against the ~4.3 this region's arithmetic
-    // predicts, because the C#'s housing tail has an arm the port does not:
-    // `if (!completed) MakeNarrowPark(map, b)` at `:604-605`. `MakeNarrowPark`
-    // itself is ported -- it is in `buildings/makeShoppingMall.ts`, for the mall's
-    // degenerate quads -- but the port's housing loop calls `makeHousingBuilding`
-    // unconditionally and never falls back, so every block too small to house is
-    // left bare. That was ~1.4 bare blocks per district before this merge and is
-    // ~2.4 after, because the pool reaching the tail went from ~2.5 blocks to ~4.9.
-    // Fixing it means exporting `makeNarrowPark` and calling it, which is small --
-    // but it spends dice under CLASSIC too, so it moves both pinned Classic digests
-    // and is a decision, not a drive-by. Left for its own commit.
+    // **Housing did not follow, and it does not need to.** An earlier version of this
+    // comment blamed it on the C#'s housing tail having an arm the port lacks --
+    // `if (!completed) MakeNarrowPark(map, b)` at `:604-605` -- and put the shortfall
+    // at "~2.4 bare blocks per district". That was measured wrong, twice: it was
+    // inferred from zone counts rather than counted, and it was wrong because
+    // `makeHousingBuilding` **never declines**. Over 4,158 calls across two rulesets
+    // and three district sizes it returned false zero times, because
+    // `MakeVanillaHousingBuilding`'s floor is a 4x4 inside rect (`:5673`) and
+    // `MinBlockSize` is 11 (`:296`), so the smallest block `makeBlocks` can cut has a
+    // 7x7 inside rect. The C#'s fallback is a safety net for a case its own generator
+    // cannot produce, and the port inherits that, so there is nothing bare to fix and
+    // wiring `MakeNarrowPark` here would be dead code.
+    //
+    // Housing at 0.8/district is therefore not a bug in this region: with the pool
+    // inversion fixed, the blocks that reach the tail are the *parks region's*
+    // rejects, and at 40x40 the district simply does not cut many more of them.
     //
     // **`rolled` is gated on `cascadeEnabled`, and that is a deliberate divergence.**
     // In the C# the `Roll(0, 99)` sits outside every feature gate, so a faithful
@@ -568,77 +599,95 @@ export class BaseTownGenerator extends BaseMapGenerator {
       if (index !== -1) emptyBlocks.splice(index, 1);
     }
 
-    // Army base. C# `:429-452`, and it is a **separate pass ahead of the business
-    // cascade**, not an arm of it. Two conditions, both of which matter:
+    // ── The C#'s parks region, `BaseTownGenerator.cs:546-591`, as one loop ──────
     //
-    //  * `DistrictKind.GREEN` only. The C# has the `|| DistrictKind.GENERAL`
-    //   commented out at `:430`, so a general district does *not* get one -- and the
-    //   port follows the comment rather than the ambition, because enabling it would
-    //   put a guaranteed eight-zombie garrison in most districts.
-    //  * **One per district.** `armyOfficesCount == 0` gates the attempt and the
-    //   increment happens only when one was actually built, so a district whose
-    //   blocks are all too small gets none rather than retrying forever.
+    // ```
+    // if (m_DiceRoller.RollChance(m_Params.ParkBuildingChance))
+    // {
+    //     bool greenSuccess = true;
+    //     if (!MakeTennisCourt(map, b) && !MakeBasketballCourt(map, b))
+    //     {
+    //         if (MakeFuelStation(map, b, fuelStationsPlaced)) { ++fuel; goto Completed; }
+    //         if (!fireStationPlaced && MakeFireStation(map, b)) { … goto Completed; }
+    //         int rolled = m_DiceRoller.Roll(0, 99);
+    //         if (rolled >= 65)      greenSuccess = MakeParkBuilding(map, b, false);      // 35%
+    //         else if (rolled < 64)  greenSuccess = MakeFarmBuilding(map, b);            // 35%
+    //         else if (rolled < 29)  greenSuccess = MakeAnimalShelterBuilding(map, b);  // 10%
+    //         else if (rolled < 19)  greenSuccess = MakeParkBuilding(map, b, true);      // 10%
+    //         else                   greenSuccess = MakeJunkyard(map, b);               // 10%
+    //     }
+    //     Completed: if (greenSuccess) completedBlocks.Add(b);
+    // }
+    // ```
     //
-    // The C#'s `foreach` has no `break` and relies on that counter, which is why the
-    // loop below can look wasteful and is not: after the first success the `if` is
-    // false for every later block.
+    // **This was two passes and is now one, because two passes cannot express it.**
+    // The port had a loop doing courts/fuel/fire/ordinary-park behind one
+    // `rollChance(parkBuildingChance)`, and then `makeJunkyards` doing
+    // graveyard/shelter/farm/junkyard behind a *second* one plus the `roll(0, 99)`.
+    // Two `RollChance` where the C# has one, and the ordinary park on no die at all.
     //
-    // **It sits here and not where the C# has it, which is a recorded deviation.** The
-    // C# runs the army base before the shops, so it is offered the whole pool; here it
-    // runs after the business region, so it is offered only the blocks that fell
-    // through to the parks. GREEN-only, and the two districts it can fire in are
-    // measured nowhere else, but it is a difference and not a transcription.
-    this.makeArmyOffices(map, emptyBlocks);
-
-    // parks.
+    // The consequences that were measurable, over 40 x 40 districts:
     //
-// The C#'s parks region (`BaseTownGenerator.cs:546-591`) is a `foreach` whose
-    // *one* `RollChance(m_Params.ParkBuildingChance)` per block gates four things
-    // in order: the two sports courts, the fuel station, the fire station, and
-    // then a `Roll(0, 99)` cascade over park/farm/shelter/graveyard/junkyard.
-    // The courts are `Feature.SportsCourts` and still pending, so the fuel station
-    // is the first arm that exists, then the fire station -- folded in *ahead* of
-    // the cascade, so a block the C# would have given a fire station is not given
-    // to a park first.
+    //   * **The green arms ran at half rate.** A block had to pass two independent 10%
+    //      gates to reach the `roll(0, 99)`, so ~1% of blocks became shelter/farm/
+    //      graveyard/junkyard where the C# has ~10%.
+    //   * **The ordinary park had no arm.** It was the tail of the *first* loop, so
+    //      it was built for every block that passed the gate and lost the courts, the
+    //      fuel station and the fire station -- and then the `roll(0, 99)` could not
+    //      reach it again. In the C# it is the `rolled >= 65` arm, **35% of the die**,
+    //      and the port built it at ~100%. So the port had far too many ordinary parks
+    //      and none of the C#'s band discipline.
     //
-    // **They are folded in rather than given passes of their own at the seam, and
-    // the reason is the shared die.** A pass that rolled `parkBuildingChance` for
-    // itself would spend a second one per block, and would be offered the blocks
-    // that *lost* the first one -- the C# never offers it those. The rewrite below
-    // is the same number of `rollChance` calls in the same order as the `&&` it
-    // replaces, so the district's dice stream is untouched; see
-    // `makeFireStationBuilding`'s header for the C# side of this.
+    // The cascade itself is `makeGreenBuilding(map, b, rolled)`, a per-block `protected`
+    // method like its five siblings, which replaces the `makeJunkyards(map, emptyBlocks)`
+    // pass that used to live here.
+    //
+    // **The `roll(0, 99)` is spent only when an arm that needs it exists.** Under
+    // CLASSIC the courts, fuel station, fire station, farm, shelter, graveyard and
+    // junkyard are all Still Alive, so of the five bands only the ordinary park is
+    // reachable — and the C# would reach it by drawing 65-99. Spending a die to then
+    // take an arm the port already took unconditionally would move both pinned
+    // Classic digests for no behavioural gain, so Classic takes the park directly and
+    // pays nothing. That is the same trade as the business region's `rolled`, and it
+    // is the third such gate in this one region: see the handover.
+    const greenArmsExist =
+      hasFeature(Session.get().ruleset, Feature.Farm) ||
+      hasFeature(Session.get().ruleset, Feature.AnimalShelter) ||
+      hasFeature(Session.get().ruleset, Feature.Graveyard) ||
+      hasFeature(Session.get().ruleset, Feature.Junkyard);
     completedBlocks.length = 0;
     for (const b of emptyBlocks) {
       if (!this.m_DiceRoller.rollChance(this.m_Params.parkBuildingChance)) continue;
-// The sports courts are the first arm of the C#'s `&&` chain, ahead of the
-      // fuel station and the fire station. They are here for the same shared-die
-      // reason: `if (!MakeTennisCourt(map, b) && !MakeBasketballCourt(map, b))`
-      // at `:555` means both are reached for every block that passed this loop's
-      // `rollChance`, and a pass of their own would roll for itself and be offered
-      // the blocks that lost it.
-      //
-      // **Their two gates are exact `buildingRect` equality** -- 8x10 and 10x8 --
-      // the only such gates among the C#'s fourteen, and mutually exclusive by
-      // shape, so the chain never chooses between them. Neither spends a die before
-      // its size return, so a block that fails both costs the district nothing.
-      if (this.makeTennisCourt(map, b)) completedBlocks.push(b);
-      else if (this.makeBasketballCourt(map, b)) completedBlocks.push(b);
-      else if (this.makeFuelStation(map, b)) completedBlocks.push(b);
-      else if (this.makeFireStation(map, b)) completedBlocks.push(b);
-      else if (this.makeParkBuilding(map, b)) completedBlocks.push(b);
+
+      // The courts are the first arm of the C#'s `&&` chain, ahead of the fuel
+      // station and the fire station. **Their two gates are exact `buildingRect`
+      // equality** -- 8x10 and 10x8 -- mutually exclusive by shape, so the chain
+      // never chooses between them, and neither spends a die before its size return.
+      let greenSuccess = true;
+      if (this.makeTennisCourt(map, b)) {
+        greenSuccess = true;
+      } else if (this.makeBasketballCourt(map, b)) {
+        greenSuccess = true;
+      } else if (this.makeFuelStation(map, b)) {
+        greenSuccess = true;
+      } else if (this.makeFireStation(map, b)) {
+        greenSuccess = true;
+      } else if (!greenArmsExist) {
+        // CLASSIC: only the ordinary park is reachable, and the port reached it
+        // without a die before this merge. See the note above.
+        greenSuccess = this.makeParkBuilding(map, b, false);
+      } else {
+        // `:572`. **The one `roll(0, 99)` the whole green cascade shares**, spent here
+        // and not inside any arm, because one die picks between five mutually
+        // exclusive buildings and a die spent per arm would be five.
+        greenSuccess = this.makeGreenBuilding(map, b, this.m_DiceRoller.roll(0, 99));
+      }
+      if (greenSuccess) completedBlocks.push(b);
     }
     for (const b of completedBlocks) {
       const index = emptyBlocks.indexOf(b);
       if (index !== -1) emptyBlocks.splice(index, 1);
     }
-
-    // The junkyard, `BaseTownGenerator.cs:580` -- the tail of the same parks
-    // region, the arm below the `roll(0, 99)` cascade the other four green
-    // buildings share. Its own pass, and not a line in the loop above, because it
-    // is a *content* arm (`Feature.Junkyard`) and the loop above is the C#'s
-    // unrolled `&&`; see the header on `makeJunkyards`.
-    this.makeJunkyards(map, emptyBlocks);
 
     // Building generators registered in `./TownBuilding` (currently none shipped --
     // see TOWN_BUILDING_PASSES). Sits between the parks and the churches, which is
@@ -770,6 +819,83 @@ export class BaseTownGenerator extends BaseMapGenerator {
     return makeFuelStationBuilding(this.buildingContext(map, b));
   }
 
+  // ── Farm ───────────────────────────────────────────────────────────────────
+
+  /**
+   * `MakeFarmBuilding` — `BaseTownGenerator.cs:3685` — the `rolled >= 30 && rolled <
+   * 64` band of the parks region's `roll(0, 99)`, and the **widest** of its five arms
+   * at 34%.
+   *
+   * A `protected` method for the reason `makeFireStation` is one: the gate has to be
+   * *testable as a no-op*, and a band test that lives inline in `generate()` cannot
+   * be overridden away without overriding the whole loop. It takes **no roll of its
+   * own** — the `roll(0, 99)` is the parks region's and is spent before this is
+   * called — so a block that fails the band's shape check costs the district nothing
+   * here.
+   *
+   * The band test is in the call site rather than in here, which is a departure from
+   * the shelter and the junkyard: those two take the `dispatchRoll` and decline bands
+   * themselves, and the farm does not. One shared die, five arms, and the ordering
+   * requirement is only that the farm precedes the junkyard -- which is the `else`.
+   */
+  protected makeFarm(map: GameMap, b: Block): boolean {
+    if (!hasFeature(Session.get().ruleset, Feature.Farm)) return false;
+    return makeFarmBuilding(this.buildingContext(map, b));
+  }
+
+  // ── The green cascade ──────────────────────────────────────────────────────
+
+  /**
+   * C# `BaseTownGenerator.cs:570-581` -- the parks region's `Roll(0, 99)` and the
+   * five mutually exclusive arms behind it.
+   *
+   * ```csharp
+   * int rolled = m_DiceRoller.Roll(0, 99);
+   * if (rolled >= 65)     greenSuccess = MakeParkBuilding(map, b, false);   // ordinary park
+   * else if (rolled >= 30 && rolled < 64) greenSuccess = MakeFarmBuilding(map, b);
+   * else if (rolled >= 20 && rolled < 29) greenSuccess = MakeAnimalShelterBuilding(map, b);
+   * else if (rolled >= 10 && rolled < 19) greenSuccess = MakeParkBuilding(map, b, true);  // graveyard
+   * else                  greenSuccess = MakeJunkyard(map, b);
+   * ```
+   *
+   * **It takes the roll as a parameter and spends none of its own**, for the reason
+   * every other arm in this region does: the die is the region's, and an arm that
+   * rolled for itself would spend a second one per block and be offered the blocks
+   * that lost the first. It is also what makes this method a *seam* -- a test can
+   * override the whole cascade away and be certain no die was spent, which is the
+   * property `tests/junkyard-building.test.ts` asserts.
+   *
+   * **The band boundaries are the C#'s, gaps included.** `rolled < 64` against
+   * `rolled >= 65` leaves 64 matching no arm and falling to the junkyard; see
+   * `JUNKYARD_ROLL_FARM_GAP` in `./buildings/makeJunkyard`. The arms are in the C#'s
+   * order and the bands are disjoint apart from that, so the order is not load-bearing
+   * -- which is worth saying because the graveyard sits *below* the shelter here and
+   * *above* it in the C#.
+   *
+   * This replaces `makeJunkyards(map, emptyBlocks)`, which was a second pass over the
+   * pool with its own `rollChance(parkBuildingChance)` -- so the green arms were being
+   * offered only the blocks that had already lost the parks region's one gate, at
+   * roughly half the C#'s rate.
+   */
+  protected makeGreenBuilding(map: GameMap, b: Block, rolled: number): boolean {
+    // `:574`, `>= 65`: the ordinary park. Vanilla, and the only arm of the five that
+    // is -- which is why the call site can reach it without spending the die under
+    // Classic.
+    if (rolled >= 65) return this.makeParkBuilding(map, b, false);
+    // `:575`, `30..63`. **34%, not the 35% its comment claims** -- 64 goes past it.
+    if (rolled >= 30 && rolled < 64) return this.makeFarm(map, b);
+    // `:577`, band `20..29`. The generator declines every other band itself, for the
+    // reason `makeJunkyard` does -- one shared die, five arms -- so this arm carries
+    // no gate and no bound of its own.
+    if (makeAnimalShelterBuilding(this.buildingContext(map, b), rolled)) return true;
+    // `:579`, band `10..19`: the graveyard is a park with `isgraveyard` set.
+    if (rolled >= 10 && rolled < 20 && hasFeature(Session.get().ruleset, Feature.Graveyard)) {
+      return this.makeParkBuilding(map, b, true);
+    }
+    // `:580`, the trailing `else`: bands `0..9` and the reference's own 64.
+    return makeJunkyard(this.buildingContext(map, b), rolled);
+  }
+
   // ── Sports courts ──────────────────────────────────────────────────────────
 
   /**
@@ -799,144 +925,6 @@ export class BaseTownGenerator extends BaseMapGenerator {
   /** C# `MakeBasketballCourt(map, b)` — `BaseTownGenerator.cs:5968`, the second operand. */
   protected makeBasketballCourt(map: GameMap, b: Block): boolean {
     return makeBasketballCourtBuilding(this.buildingContext(map, b));
-  }
-
-  // ── Junkyard ──────────────────────────────────────────────────────────────
-
-  /**
-   * One junkyard per ten blocks the parks stage rolls for, and a rolled attempt
-   * for every one of them. C# `BaseTownGenerator.cs:546-591`, the tail of the
-   * parks region:
-   *
-   * ```csharp
-   * foreach (Block b in emptyBlocks)
-   * {
-   *     if (m_DiceRoller.RollChance(m_Params.ParkBuildingChance))   // :547
-   *     {
-   *         if (!MakeTennisCourt(map, b) && !MakeBasketballCourt(map, b))
-   *         {
-   *             if (MakeFuelStation(map, b, fuelStationsPlaced)) goto Completed;
-   *             if (!fireStationPlaced && MakeFireStation(map, b)) goto Completed;
-   *             int rolled = m_DiceRoller.Roll(0, 99);              // :570
-   *             if (rolled >= 65)      greenSuccess = MakeParkBuilding(map, b, false);
-   *             else if (rolled < 64)  greenSuccess = MakeFarmBuilding(map, b);
-   *             else if (rolled < 29)  greenSuccess = MakeAnimalShelterBuilding(map, b);
-   *             else if (rolled < 19)  greenSuccess = MakeParkBuilding(map, b, true);
-   *             else                   greenSuccess = MakeJunkyard(map, b);  // :581
-   *         }
-   *         Completed: …
-   *     }
-   * }
-   * ```
-   *
-   * A `protected` method and not an inline `if` in `generate()` for the reason
-   * `makeChurchBuildings` is one: the gate has to be *testable as a no-op*.
-   * Overriding this method away is a generator with the building genuinely
-   * removed, and a Classic district generated by one has to be byte-identical to
-   * a Classic district from the real class -- which can only happen if nothing
-   * here, rolls included, runs under Classic. See `tests/junkyard-building.test.ts`.
-   *
-   * **Both rolls are inside the gate, and that is why the pass re-rolls
-   * `parkBuildingChance`.** The C# spends one `RollChance(ParkBuildingChance)` per
-   * block for the *whole* green region, and the loop above is that roll. A pass
-   * that did not spend a second one would offer the junkyard every block the park
-   * declined and roll 10% of them, so junkyards would be roughly nine times more
-   * common than in the reference (1% of blocks there, 9% here). The second roll
-   * is a deliberate divergence and it costs the C#'s arithmetic rather than its
-   * dice order: a junkyard here is 0.9% of blocks, against 1% in the reference.
-   * The alternative is the C#'s own shape -- a fifth arm inside that loop -- and
-   * taking it would leave the park reachable only for `rolled >= 65`, i.e. it would
-   * change the still-alive park frequency for a reason that has nothing to do with
-   * junkyards.
-   *
-   * **The generator takes the cascade's die as a parameter** for the reason
-   * `makeBankBuilding` does: `rolled < 10` is the trailing `else` of a five-way
-   * cascade, so the farm, the shelter and the graveyard all want the same die and
-   * rolling inside a generator would let two of them claim the same block. See the
-   * header in `./buildings/makeJunkyard` and, for the third arm, in
-   * `./buildings/makeAnimalShelterBuilding`. The farm is still pending, which is
-   * why the band table in `tests/graveyard.test.ts` still leaves 64 unclaimed.
-   */
-  protected makeJunkyards(map: GameMap, emptyBlocks: Block[]): void {
-    //
-    // **This is the C#'s green region**, `BaseTownGenerator.cs:570-582`, and it is
-    // five buildings sharing one die:
-    //
-    //   int rolled = m_DiceRoller.Roll(0, 99);
-    //   if (rolled >= 65)                          MakeParkBuilding(map, b, false);  // park, 35%
-    //   else if (rolled >= 30 && rolled < 64)       MakeFarmBuilding(map, b);        // farm, 35%
-    //   else if (rolled >= 20 && rolled < 29)       MakeAnimalShelterBuilding(map, b); // 10%
-    //   else if (rolled >= 10 && rolled < 19)       MakeParkBuilding(map, b, true);   // graveyard, 10%
-    //   else                                       MakeJunkyard(map, b);             // 10%
-    //
-    // **The 64 is a C# bug and it is ported as written.** The farm's upper bound
-    // should be 65; at 64 the value 64 falls through every arm and lands in the
-    // junkyard, so the junkyard gets 11% and the farm 34% against the comments'
-    // "35% / 10%". Transcribed rather than corrected: the bands are a hand-tuned
-    // distribution and a one-point "fix" is invisible in a test and unarguable in a
-    // diff. **Decided when `Feature.Farm` landed**, and decided as the C# has it:
-    // the farm's band is `30..63`, so 64 still falls through to the junkyard and the
-    // distribution is still 35/34/10/10/11 against the comments' 35/35/10/10/10.
-    //
-    // The gate is ahead of both rolls, for the reason `makeChurchBuildings` puts
-    // its gate there: a roll that is taken and thrown away still moves every roll
-    // after it. `Feature.Graveyard` is not a separate pass and does not roll
-    // anything — it is `isgraveyard = true` on the park arm, which is what the
-    // C# does, and why this feature needed no new method. `Feature.AnimalShelter`
-    // and `Feature.Junkyard` each have a generator that gates itself as well; the
-    // check here is the one that keeps a ruleset with neither of them off the
-    // roller entirely.
-    if (
-      !hasFeature(Session.get().ruleset, Feature.Junkyard) &&
-      !hasFeature(Session.get().ruleset, Feature.Graveyard) &&
-      !hasFeature(Session.get().ruleset, Feature.AnimalShelter)
-    ) {
-      return;
-    }
-
-    const built: Block[] = [];
-    for (const b of emptyBlocks) {
-      // C# `:547` — the green region's own per-block gate. See the note above on
-      // why this pass spends a second one.
-      if (!this.m_DiceRoller.rollChance(this.m_Params.parkBuildingChance)) continue;
-      // C# `:570` — the one die the five green buildings share.
-      const rolled = this.m_DiceRoller.roll(0, 99);
-      // The arms are spelled as the C# spells them, in the C#'s order, so a reader
-      // checking against `:572-581` is checking against the same list. Disjoint
-      // bands are what make the order irrelevant: the graveyard sits *above* the
-      // shelter here and *below* it at `:576`, and the two answers are the same.
-      if (rolled >= 10 && rolled < 20 && hasFeature(Session.get().ruleset, Feature.Graveyard)) {
-        if (this.makeParkBuilding(map, b, true)) built.push(b);
-      } else if (makeAnimalShelterBuilding(this.buildingContext(map, b), rolled)) {
-        // C# `:577`, band `20..29`. The generator declines every other band itself,
-        // for the reason `makeJunkyard` does - one shared die, five mutually
-        // exclusive arms - so this arm carries no gate and no bound of its own.
-        built.push(b);
-      } else if (
-        // C# `:575`, band `30..63`. **The band test is here and not inside
-        // `makeFarmBuilding`,** which is a departure from the shelter and the
-        // junkyard: those two take the `dispatchRoll` and decline bands themselves,
-        // and the farm does not. One shared die, five arms, and the ordering
-        // requirement is only that the farm precedes the junkyard -- which is the
-        // `else`, so anything not claimed above lands there. The bands are disjoint,
-        // so the farm's position relative to the shelter and the graveyard does not
-        // matter.
-        rolled >= 30 &&
-        rolled < 64 &&
-        hasFeature(Session.get().ruleset, Feature.Farm) &&
-        makeFarmBuilding(this.buildingContext(map, b))
-      ) {
-        built.push(b);
-      } else if (makeJunkyard(this.buildingContext(map, b), rolled)) {
-        built.push(b);
-      }
-    }
-    // C# `:584-585`: the region's completed blocks come out after the whole loop,
-    // not inside it, so the pool a later stage sees is the C#'s.
-    for (const b of built) {
-      const index = emptyBlocks.indexOf(b);
-      if (index !== -1) emptyBlocks.splice(index, 1);
-    }
   }
 
   // ── Library ───────────────────────────────────────────────────────────────

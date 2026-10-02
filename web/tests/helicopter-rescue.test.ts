@@ -637,29 +637,45 @@ describe("Feature.HelicopterRescue: spawn and despawn", () => {
 		setDay(game, game.session.armyHelicopterRescueDay);
 
 		// C# `:28820-28833`. Put something in the way of all three tiles.
+		//
+		// **The two occupied tiles are chosen from the square, not hardcoded.**
+		// `placeActor` throws on an occupied tile, and the district has since gained
+		// actors where this test used to find bare walkway -- the parks region is fed
+		// properly again, so a tile the test assumed was empty is not. Parking a
+		// bystander on a fixed offset asserts a property of the *dice*.
+		//
+		// They have to stay *inside* the square, though, which is the point of the
+		// test: the C# clears three tiles and nothing else, so a bystander one tile
+		// further right would neither be crushed nor have its items removed, and the
+		// test would pass for the wrong reason -- or fail, having measured nothing.
+		const square = [0, 1, 2].map((dx) => new Point(site.x + dx, site.y));
+		const free = square.filter((p) => map.getActorAtPoint(p) === null);
+		expect(
+			free.length,
+			`only ${free.length} of the three rescue tiles at ${square.join(", ")} are free`
+		).toBeGreaterThanOrEqual(2);
+		const fenceTile = free[0]!;
+		const third = free[1]!;
 		const fence = new MapObject("fence", GameImages.OBJ_FENCE);
-		map.placeMapObject(fence, new Point(site.x + 1, site.y));
-		map.dropItemAt(
-			new ItemFood(Models.items.get(ItemID.FOOD_SNACK_BAR)!),
-			new Point(site.x + 2, site.y),
-		);
+		map.placeMapObject(fence, fenceTile);
+		map.dropItemAt(new ItemFood(Models.items.get(ItemID.FOOD_SNACK_BAR)!), third);
 		const victim = new Actor(
 			Models.actors.get(ActorID.MALE_CIVILIAN)!,
 			game.gameFactions.get(FactionID.TheCivilians),
 			"bystander",
 		);
-		map.placeActor(victim, new Point(site.x + 2, site.y));
-		expect(map.getActorAtPoint(new Point(site.x + 2, site.y))).toBe(victim);
+		map.placeActor(victim, third);
+		expect(map.getActorAtPoint(third)).toBe(victim);
 
 		await game.OnNewDay();
 
 		// The fence was removed, not survived: the helicopter sprites are there.
 		expect(heliObjects(map)).toHaveLength(3);
 		// The item on the third tile is gone (C# `RemoveAllItemsAt`).
-		expect(map.getItemsAt(new Point(site.x + 2, site.y))).toBeNull();
+		expect(map.getItemsAt(third)).toBeNull();
 		// The NPC is dead rather than relocated, and left no loot (C# `:28831`).
 		expect(victim.isDead).toBe(true);
-		expect(map.getItemsAt(new Point(site.x + 2, site.y))).toBeNull();
+		expect(map.getItemsAt(third), "and the body dropped nothing").toBeNull();
 	}, 60_000);
 
 	it("moves the player off the rescue square instead of crushing them", async () => {

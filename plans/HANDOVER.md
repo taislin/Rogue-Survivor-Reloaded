@@ -34,7 +34,8 @@ in this backlog is recorded in §"The recurring defect".
 | Item tables | ✅ `9561a3e` — hunting shop + bedroom, 10 pins re-based |
 | **Business-region pool** | ✅ **merged into one C#-shaped loop; office dispatched** |
 | Coverage gate | ✅ re-measured on 138 files / 2,955 tests; thresholds 67/55/78/68 |
-| **`MakeNarrowPark` housing fallback** | 🔴 **new — blocks too small to house are left bare** |
+| Parks region | ✅ merged into one gate; ordinary-park arm added; army base moved |
+| `MakeNarrowPark` | ⚪ **not missing** — `makeHousingBuilding` never declines, so it is unreachable |
 | Sounds, non-tier | ⏸ ~60 ids untouched |
 | Sounds, tier | ⏸ 29 ids — throwables, traps, dog, BFG, fishing |
 | Army-base *dispatch* | ⏸ still not wired; a decision about minimum city size |
@@ -178,33 +179,59 @@ and leaving `MAP`/`SEED` alone for the Classic digest tests — that fingerprint
 seed-1 value seven suites assert. **If a suite here grows a "no X appeared" failure, check
 the district size before the seed.**
 
-### What the re-merge uncovered
+### What the re-merge uncovered — all four closed
 
-**`MakeNarrowPark` is ported but never called.** C# `:604-605`, in the housing tail:
+**1. `MakeNarrowPark` was never missing. It is unreachable, in the port and in the C#.**
+C# `:604-605` has `if (!completed) MakeNarrowPark(map, b)` in the housing tail, and the
+port has no such arm. That looked like the explanation for housing sitting at 0.8/district
+against the region's ~4.3 arithmetic. **It was measured wrong, twice** — the shortfall was
+inferred from zone counts rather than counted, and the reason it was wrong is that
+`makeHousingBuilding` *never declines*: 0 failures in **4,158 calls** across two rulesets
+and three district sizes. `MakeVanillaHousingBuilding`'s floor is a 4×4 inside rect
+(`:5673`) and `MinBlockSize` is 11 (`:296`), so the smallest block `makeBlocks` can cut has
+a 7×7 inside rect. The C#'s fallback is a safety net for a case its own generator cannot
+produce. Wiring it would have been dead code, so it is recorded and not wired.
 
-```csharp
-if (!completed) MakeNarrowPark(map, b);
-```
+**2. The port spent two `RollChance(ParkBuildingChance)` per block where the C# spends one.**
+The parks loop spent one; `makeJunkyards` — a misleading name, it ran the
+graveyard/shelter/farm/junkyard arms too — spent a second behind the same pool. So the
+green arms were reached at **half** the C#'s rate. One loop now, one gate, one
+`roll(0, 99)`.
 
-The function exists in `buildings/makeShoppingMall.ts` (for the mall's degenerate quads) as
-a module-private. The port's housing loop calls `makeHousingBuilding` unconditionally, so
-every block too small to house is **left bare** — no grass, no trees, no zone. The re-merge
-made this worse: the pool reaching the tail went from ~2.5 blocks to ~4.9 per district, so
-bare blocks went from ~1.4 to ~2.4. Housing itself did not move (0.8/district against the
-~4.3 the region's arithmetic predicts) for exactly this reason.
+**3. The ordinary park had no arm at all.** It was the tail of the *first* loop, so it was
+built for every block that passed the gate and lost the courts, fuel station and fire
+station — and the `roll(0, 99)` could not reach it again. In the C# it is the
+`rolled >= 65` arm, **35% of the die**. Measured after: all five green arms land at
+0.5–1.2% of blocks, which is what ~10% behind a 10% gate gives.
 
-The fix is small — export `makeNarrowPark`, call it — but it spends dice under CLASSIC too,
-so it moves both digests. **It is a decision, not a drive-by, and it is the next item.**
+**4. The army base ran in the wrong place.** After the business region instead of before
+the shops, so it was offered only leftovers. An army base consumes a whole block and a
+GREEN district has few, so "which pool" is the difference between one and none. GREEN-only,
+so no Classic fingerprint moved.
 
-Also recorded, both in the same region and neither urgent:
+A fifth thing surfaced while doing these, and it is the interesting one:
 
-- The port spends **two** `RollChance(ParkBuildingChance)` per block where the C# spends
-  one: the parks loop (`generate()`) and the green cascade inside `makeJunkyards` (a
-  misleading name — it runs the graveyard/shelter/farm/junkyard arms too). The C# has one
-  gate and one `roll(0, 99)` behind it.
-- The green cascade has no arm for `rolled >= 64`, which in the C# is the ordinary park
-  (35%). The port does it in the *other* pass, on a different die.
-- The army base runs **after** the business region; the C# runs it before the shops.
+**`graveyard.test.ts` and `animal-shelter-building.test.ts` each had a dice probe that
+could not fail.** Both wrap `makeGreenBuilding` to count the rolls it spends and assert
+Classic spends none — and both accumulated `this.greenPassRolls += rolls` *after* a `try`
+whose body `return`s, so the line was dead code. The probe read 0 under **both** rulesets,
+and the Classic expectation of 0 agreed with it. The Still Alive sanity assertion is what
+caught it, and only once the cascade became reachable on the seed in use. A test that
+cannot fail is not a test, and this one had a green tick for a reason that had nothing to
+do with the gate.
+
+### Still recorded, not urgent
+
+- The green cascade's bands are the C#'s, gaps included: the farm's `< 64` against the
+  park's `>= 65` leaves **64** matching no arm above, so it falls to the junkyard with
+  bands 0–9. The port's junkyard gate rejected 64, so one value in a hundred built
+  nothing; it now accepts it (`JUNKYARD_ROLL_FARM_GAP`).
+- The green cascade is `makeGreenBuilding(map, b, rolled)` — a per-block `protected`
+  method, replacing the `makeJunkyards(map, emptyBlocks)` pass. Tests that spied on the
+  pass now count blocks.
+- `makeMechanicWorkshop` (`:2670`, `roll2 === 3`) is still unported, so a quarter of the
+  business cascade's die falls through to the store or the office. That is the same gap
+  §"How rare the interior actually is" describes.
 
 ## The recurring defect — read this before fixing any of the above
 
@@ -353,15 +380,15 @@ sound and message on separate gates; **the door ladder** is ordered so `givesWoo
 
 ## Suggested order
 
-1. **`MakeNarrowPark` in the housing tail** — ~2.4 bare blocks per district, and the fix
-   is ~5 lines. Take the Classic-digest decision first; it is the same one the `rolled`
-   gate dodged, and dodging it twice in one region is a pattern.
+1. **Make Classic faithful in the two regions it is currently frozen out of**, and
+   re-pin the digests in the seven suites that assert them. The `rolled` gate and the
+   parks `greenArmsExist` gate are two dodges of the same decision inside one region,
+   and each one is a `?:` that a reader has to know about.
 2. The throwables, scoped as their own piece (explosion presentation, not audio).
 3. Traps, then the fishing NPC arm.
 4. Non-tier sounds, which have never been looked at.
-5. The three parks-region items at the end of §"What the re-merge uncovered" — one
-   `RollChance(ParkBuildingChance)` instead of two, the `rolled >= 64` park arm, and the
-   army base's position.
+5. `MakeMechanicWorkshop` (`:2670`), which is a quarter of the business cascade's die and
+   the reason the office arm almost never fires.
 
 **Check `df -h /` before any coverage run.** Commit per step, green before every commit.
 The office dispatch is the case that proves why: it was green-able by re-basing 22 seeds,

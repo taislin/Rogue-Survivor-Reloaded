@@ -110,26 +110,42 @@ function newGenerator(params = newParams()): BaseTownGenerator {
  * them, so "the fuel station is the second arm" is measured rather than assumed.
  */
 class FuelStationSpy extends BaseTownGenerator {
-  /** One entry per block the parks roll accepted: `F`uel, fire `S`tation, `P`ark. */
+  /**
+   * One entry per arm that **built** something: `F`uel, fire `S`tation, `P`ark, keyed
+   * by the block it built on.
+   *
+   * The block is in the entry because that is what makes the chain's exclusivity
+   * checkable. It used to be a bare tag and the assertion was
+   * `order.length === fuelOffers`, which reads as "one offer, one building" and is
+   * really "every offer eventually built" -- true only while the last arm of the
+   * chain could not decline. It can now: the chain ends in the green cascade, whose
+   * bands decline on size, so a block the fuel station turned down may end up with
+   * nothing at all, and the old assertion failed for that rather than for the
+   * property it names.
+   */
   order: string[] = [];
   fuelOffers = 0;
+
+  private tag(letter: string, b: Block): string {
+    return `${letter}@${b.rectangle.left},${b.rectangle.top}`;
+  }
 
   protected override makeFuelStation(map: GameMap, b: Block): boolean {
     this.fuelOffers++;
     const done = super.makeFuelStation(map, b);
-    if (done) this.order.push("F");
+    if (done) this.order.push(this.tag("F", b));
     return done;
   }
 
   protected override makeFireStation(map: GameMap, b: Block): boolean {
     const done = super.makeFireStation(map, b);
-    if (done) this.order.push("S");
+    if (done) this.order.push(this.tag("S", b));
     return done;
   }
 
   override makeParkBuilding(map: GameMap, b: Block): boolean {
     const done = super.makeParkBuilding(map, b);
-    if (done) this.order.push("P");
+    if (done) this.order.push(this.tag("P", b));
     return done;
   }
 }
@@ -251,10 +267,11 @@ describe("Feature.FuelStation: the dispatch", () => {
     const always = newSpy(newParams(MAP, MAP, { parkBuildingChance: 100 }));
     always.generate(SEED);
     expect(always.fuelOffers, "parkBuildingChance = 100 must offer it every block").toBeGreaterThan(0);
-    // One offer per block the parks roll accepted, and never a second offer for a
-    // block an earlier arm already took: the chain is an if/else-if, not four
-    // independent `if`s.
-    expect(always.fuelOffers).toBe(always.order.length);
+    // **At most one arm builds per block**, which is the exclusivity the chain's
+    // `if / else if` shape exists to provide. Every entry carries its block, so the
+    // check is that no block appears twice.
+    const blocks = always.order.map((e) => e.slice(2));
+    expect(new Set(blocks).size, `two arms built on one block: ${always.order.join(" ")}`).toBe(blocks.length);
   });
 
   it("is the first arm of the parks chain, ahead of the fire station and the park", () => {
@@ -262,14 +279,23 @@ describe("Feature.FuelStation: the dispatch", () => {
     const spy = newSpy(newParams(MAP, MAP, { parkBuildingChance: 100 }));
     spy.generate(SEED);
 
-    // Whatever mix of buildings came out, the fuel station must never follow a
-    // fire station or a park on the same block -- which the `order` list cannot
-    // show directly, since one entry is pushed per block. What it *can* show is
-    // that the chain short-circuits: with a size window of 8..11 inside rects, a
-    // 40x40 district cut at the default block size has no eligible block at all,
-    // so the parks fall through to the fire station and the park.
+    // Whatever mix of buildings came out, the fuel station must never share a block
+    // with the fire station or the park. `order` carries the block with each arm, so
+    // this says exactly that rather than counting.
+    //
+    // With a size window of 8..11 on inside rects, a 40x40 district cut at the
+    // default block size has no eligible block at all, so the chain falls through to
+    // the fire station and the park -- which is why `order.length` being small is
+    // the expected shape and not a wiring failure.
     expect(spy.order.length).toBeGreaterThan(0);
-    expect(spy.fuelOffers).toBe(spy.order.length);
+    const byBlock = new Map<string, string[]>();
+    for (const entry of spy.order) {
+      const block = entry.slice(2);
+      byBlock.set(block, [...(byBlock.get(block) ?? []), entry[0]]);
+    }
+    for (const [block, tags] of byBlock) {
+      expect(tags.length, `block ${block} built ${tags.join(" and ")}`).toBe(1);
+    }
   });
 
   it("builds none under CLASSIC and leaves the committed fingerprint alone", () => {
