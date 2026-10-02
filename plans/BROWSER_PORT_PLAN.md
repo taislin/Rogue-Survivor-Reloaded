@@ -134,10 +134,19 @@
 >   exist and type-checked anyway because `rules` is typed loosely. A scan of all
 >   95 `rules.*` call sites found no other gap.
 >
-> **Known-slow:** `tests/idle-district-sim.test.ts` runs a full district
-> simulation per case and dominates the suite's wall clock. Not yet investigated;
-> it may deserve a smaller fixture or an opt-in tag rather than deletion, since it
-> covers the idle catch-up that replaced a blocking burst on district entry.
+> **Known-slow, now opt-in:** `tests/idle-district-sim.test.ts` and
+> `tests/idle-auto-advance.test.ts` boot the real world generator with district
+> simulation at FULL and play real turns several times over, so they are measured
+> in minutes and dominated the suite's wall clock. They are **excluded from `npm
+> test` and run by `npm run test:slow`**, not deleted: they cover the idle catch-up
+> that replaced a blocking burst on district entry (274 ms after 60 turns before
+> it), which is exactly the quiet regression worth a test. Default run: 138 files /
+> 2 955 tests in ~60 s, down from 2+ minutes.
+>
+> Excluded by *file* rather than by an in-file `slow()` marker, so the default run
+> does not pay to collect and transform a fixture it will never execute. The opt-in
+> is `--mode slow` rather than an environment variable because npm scripts cannot
+> set one portably on Windows without a helper dependency.
 >
 > **Numbers in this file were stale by a wide margin until 2026-10-02** — the test
 > count alone was quoted as 1 542 in eight places when it was over 2 800, and

@@ -1,6 +1,24 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 import { resolve } from "path";
 import { BASE_PATH } from "./base-path";
+
+/**
+ * Simulation tests that dominate the suite's wall clock.
+ *
+ * These boot the real world generator with district simulation at FULL and play
+ * real turns, several times over, so each one is measured in minutes rather than
+ * seconds. They are **excluded from `npm test` and run by `npm run test:slow`**,
+ * not deleted: they cover the idle catch-up that replaced a blocking burst on
+ * district entry (measured at 274 ms after 60 turns before it), which is exactly
+ * the kind of quiet regression worth keeping a test for.
+ *
+ * Excluded by *file* rather than by a `slow()` marker inside them, so the default
+ * run does not pay to collect or transform a fixture it will never execute.
+ */
+const SLOW_TESTS = [
+  "tests/idle-district-sim.test.ts",
+  "tests/idle-auto-advance.test.ts",
+];
 
 /**
  * Vitest config.
@@ -21,7 +39,7 @@ import { BASE_PATH } from "./base-path";
  * asserting `/assets/...` while the Pages build emits `/Rogue-Survivor-Reloaded/
  * game/assets/...` — passing, and shipping a game that cannot load a sprite.
  */
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   base: BASE_PATH,
   resolve: {
     alias: {
@@ -34,6 +52,13 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["tests/**/*.test.ts"],
+    // `npm run test:slow` sets `--mode slow`, which puts them back. Appending to
+    // `configDefaults.exclude` rather than replacing it keeps Vitest's own
+    // node_modules dist exclusion, which is easy to lose by accident.
+    exclude:
+      mode === "slow"
+        ? configDefaults.exclude
+        : [...configDefaults.exclude, ...SLOW_TESTS],
     // The integration tests boot the real world generator and play real turns.
     // A single 1x1 world is ~250 ms to generate, so keep the budget generous
     // but finite: a genuine hang should fail rather than wedge CI forever.
@@ -98,4 +123,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));
