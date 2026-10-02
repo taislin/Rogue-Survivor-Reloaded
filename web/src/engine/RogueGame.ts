@@ -23600,14 +23600,36 @@ inv.removeAllQuantity(it);
 		);
 
 		// message.
+		//
+		//@@MP (Release 3 + Release 7-4): a **visible / `MODERATE`-audible** ladder, and
+		// the two arms carry *different messages* as well as different sounds -- the
+		// audible one is player-centric ("You hear some sort of construction work")
+		// because the player cannot see who is hammering. The port had the visible arm
+		// only, so barricading a door out of earshot or in the dark happened in silence.
+		//
+		// `MODERATE`, not `QUIET`: hammering a door carries further than a shove, and the
+		// fork chose the wider radius for exactly that reason. Both arms use
+		// `playIfNotAlreadyPlaying`, so nailing the same door twice in a turn is one
+		// hammer.
 		const isVisible =
 			this.IsVisibleToPlayer(actor) || this.IsVisibleToPlayer(door);
 		if (isVisible) {
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.BUILDING_PLAYER);
 			this.AddMessage(
 				this.MakeMessage(
 					actor,
 					this.Conjugate(actor, this.VERB_BARRICADE),
 					door,
+				),
+			);
+		} else if (this.isAudibleToPlayer(door.location, NOISE_RADII.MODERATE)) {
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.BUILDING_NEARBY);
+			this.AddMessage(
+				this.MakePlayerCentricMessage(
+					"You hear some sort of construction work",
+					door.location.position,
 				),
 			);
 		}
