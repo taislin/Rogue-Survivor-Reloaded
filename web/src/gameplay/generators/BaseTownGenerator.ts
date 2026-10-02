@@ -24,6 +24,7 @@ import { Rules } from '@engine/Rules';
 import { Session, GameMode, UniqueActor, UniqueMap } from '@engine/Session';
 import { WorldTime } from '@engine/WorldTime';
 import { Feature, hasFeature } from '@engine/FeatureFlags';
+import { makeBackpack } from '@gameplay/Backpacks';
 import { DoorWindow } from '@engine/mapobjects/MapObjects';
 import { GangAI } from '@gameplay/ai/GangAI';
 import { ActorID } from '@gameplay/GameActors';
@@ -3699,6 +3700,27 @@ export class BaseTownGenerator extends BaseMapGenerator {
           // add item.
           map.dropItemAt(this.makeShopConstructionItem(), pt);
 
+          // Still Alive, Release 8-2: a bag on some of the tables. C# `:6612-6618`,
+          // 5% and then 75/25, dropped *before* the table object is placed on the
+          // same tile.
+          //
+          // **The feature gate is ahead of the roll, not behind it.** `rollChance`
+          // delegates to `roll` and so spends a die even at 0%, so a Classic room
+          // that rolled a sentinel chance would move every subsequent district roll
+          // — and the Classic district digest (`e097b9d976ffac15`, asserted in seven
+          // suites) is the thing that would notice. This is the same short-circuit
+          // `resourcesChance` uses two hundred lines down, for the same reason.
+          if (hasFeature(Session.get().ruleset, Feature.ShelterBackpacks)) {
+            if (this.m_DiceRoller.rollChance(5)) {
+              map.dropItemAt(
+                this.m_DiceRoller.rollChance(75)
+                  ? makeBackpack(ItemID.BACKPACK_WAIST_POUCH)!
+                  : makeBackpack(ItemID.BACKPACK_SATCHEL)!,
+                pt
+              );
+            }
+          }
+
           // add table.
           return this.makeObjTable(GameImages.OBJ_TABLE);
         }
@@ -3907,6 +3929,28 @@ export class BaseTownGenerator extends BaseMapGenerator {
       // - iron benches in platform.
       for (let bx = platformRect.left; bx < platformRect.right; bx++) {
         if (this.countAdjWalls(map, bx, benchesLine) < 3) continue;
+
+        // Still Alive, Release 8-2: a bag on 1% of the bench tiles. C# `:6920-6926`,
+        // 1% and then 75/25, dropped before the bench goes on the same tile.
+        //
+        // The port's bench loop is not the C#'s — the C# scans the whole inside rect
+        // in two dimensions behind four guards (adjacent doors, corners, exits, and
+        // a two-tile exclusion around the entry stairs) and the port scans one line
+        // behind one. So the eligible-tile set differs, and this is the reference's
+        // roll placed at the port's corresponding point rather than a claim that the
+        // two agree. Gated ahead of the roll for the Classic-digest reason spelled
+        // out in the sewers maintenance building above.
+        if (hasFeature(Session.get().ruleset, Feature.ShelterBackpacks)) {
+          if (this.m_DiceRoller.rollChance(1)) {
+            map.dropItemAt(
+              this.m_DiceRoller.rollChance(75)
+                ? makeBackpack(ItemID.BACKPACK_WAIST_POUCH)!
+                : makeBackpack(ItemID.BACKPACK_SATCHEL)!,
+              new Point(bx, benchesLine)
+            );
+          }
+        }
+
         this.mapObjectPlace(map, bx, benchesLine, this.makeObjIronBench(GameImages.OBJ_IRON_BENCH));
       }
 
@@ -4654,6 +4698,23 @@ export class BaseTownGenerator extends BaseMapGenerator {
           return this.makeItemMedikit();
         }
       case 3:
+        // Still Alive, Release 8-2: C# `:7761-7765` puts a daypack here behind a
+        // 20% roll, with `MakeItemMatches` as the preserved `else`. The port's
+        // `case 3` returns canned food with no roll at all, so the backpack needs
+        // one inserted rather than re-routed — and the port's value is kept as the
+        // `else` on both sides, because the C#'s matches and the port's canned food
+        // are the same *slot* filled by different content, and only one of the two
+        // is a backpack.
+        //
+        // The gate is ahead of the roll: `&&` short-circuits, so a Classic office
+        // spends no die and the Classic district digest is untouched. See the
+        // sewers maintenance building for the full argument.
+        if (
+          hasFeature(Session.get().ruleset, Feature.ShelterBackpacks) &&
+          this.m_DiceRoller.rollChance(20)
+        ) {
+          return makeBackpack(ItemID.BACKPACK_DAYPACK)!;
+        }
         return this.makeItemCannedFood();
       case 4: // rare tracker items
         if (this.m_DiceRoller.rollChance(50)) {
@@ -4688,6 +4749,17 @@ export class BaseTownGenerator extends BaseMapGenerator {
       case 6:
         return this.makeItemCellPhone();
       case 7:
+        // Still Alive, Release 8-2: C# `:7825-7829` replaces this case outright with
+        // a 75/25 waist pouch / satchel — there is no preserved `else`, so the
+        // plank the port returns here is genuinely *replaced* under Still Alive
+        // rather than kept as a fallback. The gate carries the difference: under
+        // Classic the plank stands and no die is spent, under Still Alive the
+        // reference's roll runs and the plank is gone.
+        if (hasFeature(Session.get().ruleset, Feature.ShelterBackpacks)) {
+          return this.m_DiceRoller.rollChance(75)
+            ? makeBackpack(ItemID.BACKPACK_WAIST_POUCH)!
+            : makeBackpack(ItemID.BACKPACK_SATCHEL)!;
+        }
         return this.makeItemWoodenPlank();
       default:
         throw new RangeError('unhandled item roll');

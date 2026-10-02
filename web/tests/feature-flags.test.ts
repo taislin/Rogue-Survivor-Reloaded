@@ -188,10 +188,10 @@ describe("Feature registry is wired", () => {
    "FoodPoisoning", "FuelStation", "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "ItemDespawn",                                          
    "ItemDespawn", "Junkyard", "Junkyard", "Library", "Library", "LightPriority", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability",                                     
    "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
-   "ShelterBackpacks", "ShoppingMall", "ShoppingMall", "ShoppingMall", "SiphonFuel", "SiphonFuel", "SportsCourts", "SportsCourts", "TileFires", "TileFires",                                                             
-   "TileFires", "TileFires", "TileFires", "WeaponWeight",
+   "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShoppingMall", "ShoppingMall", "ShoppingMall", "SiphonFuel",                                 
+   "SiphonFuel", "SportsCourts", "SportsCourts", "TileFires", "TileFires", "TileFires", "TileFires", "TileFires", "WeaponWeight",
       ]);
-      // 124 call sites across 38 features
+      // 129 call sites across 38 features
 
 
 
@@ -412,11 +412,27 @@ describe("Feature registry is wired", () => {
     // `Y` has no `PlayerCommand` binding under CLASSIC, so a description that
     // mentioned it would be naming a key the player cannot press. That is why this
     // gate exists at all rather than being cosmetic.
+    //
+    // Thirteen, not eight: the five above, plus the five the *placement* work added
+    // in `BaseTownGenerator` (the sewers maintenance table, the subway bench, the
+    // CHAR office roll and the park roll — five gates, and the park roll is in two
+    // files because the mall re-derives it), and the mall's own copy.
+    //
+    // **Every one of those five is ahead of its roll rather than behind it**, and
+    // that is the load-bearing part. `DiceRoller.rollChance` delegates to `roll`, so
+    // it spends a die even at 0%; a gate that let the roll happen and then threw the
+    // result away would move every subsequent district roll, and the Classic
+    // district digest `e097b9d976ffac15` — asserted in seven suites — is what
+    // notices. The placement sites are asserted to be short-circuiting in
+    // `shelter-backpacks-placement.test.ts`; this count is what stops a *new*
+    // ungated reader appearing here without anyone looking.
     const packs = sites.filter((s) => s.feature === "ShelterBackpacks");
-    expect(packs).toHaveLength(8);
+    expect(packs).toHaveLength(13);
     expect(packs.filter((s) => /Rules\.ts/.test(s.at))).toHaveLength(2);
     expect(packs.filter((s) => /gameplay\/Backpacks\.ts/.test(s.at))).toHaveLength(5);
     expect(packs.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(1);
+    expect(packs.filter((s) => /BaseTownGenerator\.ts/.test(s.at))).toHaveLength(4);
+    expect(packs.filter((s) => /makeShoppingMall\.ts/.test(s.at))).toHaveLength(1);
 
     // DarknessGating has exactly one reader, in Rules, and that is the design
     // rather than an accident: five separate behaviours refuse in the dark

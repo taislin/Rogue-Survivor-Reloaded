@@ -1883,14 +1883,23 @@ export abstract class BaseMapGenerator extends MapGenerator {
   // sword you win from a unique NPC, spawned by a factory that means to hand
   // out a shop katana. Every field was a valid item and it was the wrong one.
   //
-  // Absent, because the item does not exist in the port yet: the 6 Ammo ids
-  // and the 5 backpacks (Stage 4), plus the still-Alive-only items with no
+  // Absent, because the item does not exist in the port yet: the still-Alive-only
+  // items with no
   // merged CSV row -- matches, sleeping bag,
   // flares kit, glowstick box, candle box, vegetable seeds,
   // police riot shield. Also the four
   // roll-and-branch bodies (beer, alcohol, liquor-for-molotov and the two
   // random-weapon pickers), which are content decisions about what a
   // "random antique weapon" is rather than transliterations.
+  //
+  // The 6 Ammo ids and the 5 backpacks were on that list and are not any more.
+  // The ammo landed with the factories that make them (the callers in
+  // `BaseTownGenerator` are still absent, which is the narrower truth now), and
+  // the backpacks are made by `makeBackpack` in `gameplay/Backpacks.ts` rather
+  // than by five factories here — a deliberate collapse, so there is one place a
+  // pack can come into being and that place answers `null` under Classic. Three of
+  // the five models now have a placement site; the hiking pack and the army
+  // rucksack do not, and `tests/shelter-backpacks-placement.test.ts` says why.
   //
   // Nothing calls most of these yet: the town generators still place only the
   // vanilla set. They exist so the spawn wiring is a one-line change per item.

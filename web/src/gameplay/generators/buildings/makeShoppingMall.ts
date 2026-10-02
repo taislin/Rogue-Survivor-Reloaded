@@ -187,6 +187,7 @@ import { ItemMeleeWeapon } from '@engine/items/ItemWeapon';
 import { GameImages } from '@gameplay/GameImages';
 import type { TileModel } from '@data/TileModel';
 import { ItemID } from '@gameplay/GameItems';
+import { makeBackpack } from '@gameplay/Backpacks';
 import { GameMusics } from '@gameplay/GameSounds';
 import { GameTiles, TileID } from '@gameplay/GameTiles';
 import type { TownBuildingContext } from '../TownBuilding';
@@ -1940,7 +1941,15 @@ const PARK_ITEM_CHANCE = 5;
 /** C# `BaseMapGenerator.cs:528` `PARK_TREES`, Release 7-3. */
 const PARK_TREES: readonly string[] = [GameImages.OBJ_TREE1, GameImages.OBJ_TREE2, GameImages.OBJ_TREE3, GameImages.OBJ_TREE4];
 
-/** C# `BaseTownGenerator.cs:4589-4609` `MakeRandomParkItem`. District roller. */
+/**
+ * C# `BaseTownGenerator.cs:4589-4609` `MakeRandomParkItem`. District roller.
+ *
+ * **A second copy of `BaseTownGenerator.makeRandomParkItem`**, which is the shape
+ * this file's own doc header warns about: a per-building generator that re-derives
+ * a shared roll instead of calling it. It is why `Feature.ShelterBackpacks`'s
+ * Release 8-2 park case had to be added in *two* places, and a third reader would
+ * have found only one.
+ */
 function makeRandomParkItem(ctx: TownBuildingContext): Item {
   const randomItem = ctx.roller.roll(0, 8);
   switch (randomItem) {
@@ -1951,7 +1960,17 @@ function makeRandomParkItem(ctx: TownBuildingContext): Item {
     case 4: return new ItemMedicine(Models.items.get(ItemID.MEDICINE_PILLS_SAN)!);
     case 5: return new ItemLight(Models.items.get(ItemID.LIGHT_FLASHLIGHT)!);
     case 6: return makeItemCellPhone();
-    case 7: return new ItemBarricadeMaterial(Models.items.get(ItemID.BAR_WOODEN_PLANK)!);
+    // Still Alive, Release 8-2, exactly as in `BaseTownGenerator.makeRandomParkItem`
+    // and for the same two reasons: the reference *replaces* this case rather than
+    // keeping a fallback, and the gate is ahead of the roll so a Classic park spends
+    // no die and the Classic district digest is untouched.
+    case 7:
+      if (hasFeature(Session.get().ruleset, Feature.ShelterBackpacks)) {
+        return ctx.roller.rollChance(75)
+          ? makeBackpack(ItemID.BACKPACK_WAIST_POUCH)!
+          : makeBackpack(ItemID.BACKPACK_SATCHEL)!;
+      }
+      return new ItemBarricadeMaterial(Models.items.get(ItemID.BAR_WOODEN_PLANK)!);
     default: throw new RangeError('unhandled item roll');
   }
 }

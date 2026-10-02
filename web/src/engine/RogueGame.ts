@@ -28187,6 +28187,16 @@ inv.removeAllQuantity(it);
 	 *   caller's outer guard is `worldTurn > days * TURNS_PER_DAY`. So an item
 	 *   stamped exactly `days` days ago is removed only on the *next* sweep, which
 	 *   is a day later than the number in the option suggests.
+	 * - **Backpacks are exempt** (`RogueGame.cs:9076`, Release 8-2:
+	 *   `&& !(it is ItemBackpack)`), and the reason is scarcity rather than
+	 *   sentiment. There are eight places a bag can spawn, most of them a
+	 *   percentage of one tile in one building, and a survivor who finds one and
+	 *   walks away from it would otherwise come back a week later to find it
+	 *   despawned. The exemption was previously unreachable — nothing in the port
+	 *   produced an `ItemBackpack`, so the guard had nothing to apply to and its
+	 *   absence was invisible. It is here because the placement now exists, and a
+	 *   guard that only lands after the thing it guards is a bug waiting for the
+	 *   next reader to assume it is unnecessary.
 	 *
 	 * Iterating a copy of the item list matters: `removeItemAt` mutates the
 	 * inventory this loop is walking.
@@ -28201,6 +28211,8 @@ inv.removeAllQuantity(it);
 				if (inv === null) continue;
 				for (const it of inv.items.slice()) {
 					if (it.droppedOnTurnNumber === null) continue;
+					// `!(it is ItemBackpack)`, Release 8-2. See above.
+					if (it instanceof ItemBackpack) continue;
 					const idleTurns = currentTurn - it.droppedOnTurnNumber;
 					if (idleTurns >= days * WorldTime.TURNS_PER_DAY) {
 						map.removeItemAt(it, new Point(x, y));
