@@ -138,9 +138,10 @@ their original. That is deliberate: it is what makes a regression traceable.
 
 ## Assets
 
-Sprites are **lossless WebP**, 32×32, 1124 files across three sprite sets
-(`classic`, `genesis_classic_1.4`, `deonapocalypse_v9_r1`) plus 27 `.ogg` audio
-tracks — about 25 MB total.
+Sprites are **lossless WebP**, 32×32, 2,175 files across four sprite sets
+(`classic` 1,108, `genesis_classic_1.4` 337, `deonapocalypse_v9_r1` 390,
+`dafttiles_b1` 340) plus 185 `.ogg` sound effects, 27 music tracks and 13 ambient
+beds — about 50 MB in `public/assets`.
 
 ```
 web/public/assets/images/<set>/<Category>/<name>.webp
@@ -163,7 +164,7 @@ without the preload the map paints itself in progressively as files arrive.
 
 - **1366×768 (16:9)**, upscaled with smooth filtering to fit the viewport. C#
   was 1024×768 (4:3).
-- The extra width goes to the map: 31 tiles across instead of 21. Height, the
+- The extra width goes to the map: 27 tiles across instead of 21. Height, the
   right-hand panel, the message area and the minimap are unchanged.
 - Text comes in two sizes: the dense in-game HUD at C#'s 8.25pt, and full-screen
   menus (main menu, character creation, help, manual, options, keybindings,
@@ -180,7 +181,7 @@ triageable without attaching a debugger to someone's browser.
 
 ```bash
 cd web
-npm run verify     # type-check + 409 tests + build
+npm run verify     # type-check + 2,869 tests + build
 npm run sim        # play a full game headless
 ```
 
@@ -271,7 +272,7 @@ keeps every existing mouse behaviour and adds:
 ### Platform
 
 - **1366×768 (16:9)** instead of the C# 1024×768 (4:3). The extra width goes to
-  the map: 31 tiles across instead of 21. See [Display](#display).
+  the map: 27 tiles across instead of 21. See [Display](#display).
 - **Desktop build.** `npm run build:release` produces zipped per-platform
   archives — Windows, Linux, macOS — via Neutralino. See `scripts/build-release.mjs`.
   It runs `neu update` first, which is a prerequisite rather than a nicety:
@@ -296,7 +297,7 @@ keeps every existing mouse behaviour and adds:
 
 - **`tests/integration/reproducibility.test.ts` fails on Windows** with
   `spawnSync npx ENOENT`. `execFileSync` cannot spawn `npx.ps1`. Pre-existing
-  and unrelated to engine behaviour; the rest of the suite (409 tests) passes.
+  and unrelated to engine behaviour; the rest of the suite (2,869 tests) passes.
 - Death screenshots default to **off**. C# defaults them on, but there it is a
   silent file write while in a browser it is a download prompt on every death.
   The option is still on the options screen.
@@ -376,7 +377,7 @@ renaming the repository moves the base with it.
 
 **The base path is the part that is easy to get wrong, and the failure is
 silent.** A hardcoded `/assets` under a subdirectory does not fail a test — it
-ships a black screen, because the port preloads all 1 124 sprites before the
+ships a black screen, because the port preloads all 1,009 sprite ids before the
 first frame and cannot draw one it has not fetched. So two things guard it, both
 run in CI:
 

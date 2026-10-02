@@ -304,9 +304,21 @@ export class Keybindings {
      * physical key code because `Keybindings` is a browser table throughout.
      *
      * `Y` is unclaimed, which is the only reason this is safe: the C# picked it
-     * for the same reason. The command is *not* dispatched here -- nothing under
-     * `PlayerCommand.SWAP_INVENTORY` is wired into `RogueGame` yet, and a binding
-     * with no handler is inert rather than wrong.
+     * for the same reason.
+     *
+     * **It is dispatched**, and this comment used to say it was not — "nothing
+     * under `PlayerCommand.SWAP_INVENTORY` is wired into `RogueGame` yet, and a
+     * binding with no handler is inert rather than wrong". That was written when
+     * the binding landed and the handler did not, and the handler arrived later
+     * without the sentence being revisited: `RogueGame`'s turn loop dispatches
+     * `PlayerCommand.SWAP_INVENTORY` to `HandlePlayerSwapItemInventory`, the
+     * rebind screen has a row for it, and two help strings name the key.
+     *
+     * It is kept as a correction rather than quietly deleted because the claim was
+     * load-bearing once: it is what a reader would have checked to decide the
+     * feature was half-landed, and a comment that says a thing is inert when it
+     * is live is worse than no comment — it sends a reader looking for a missing
+     * piece that is present.
      */
     this.set(PlayerCommand.SWAP_INVENTORY, 'Y');
   }

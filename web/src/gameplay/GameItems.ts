@@ -351,9 +351,17 @@ export enum ItemID {
    * six draw `ITEM_CHAR_DOCUMENT`; the only thing that distinguishes one from
    * another is its `FlavorDescription`, and each is a different page of the same
    * experiment log. So they are six models and six ids here rather than one model
-   * with six names: `MakeCHARStorageRoom` (`BaseTownGenerator.cs:8609-8632`) picks
-   * one of the six on a `Roll(0, 5)` and the roll is only half the story -- a save
-   * has to be able to say *which page* a survivor is carrying.
+   * with six names: `MakeCHARLabRoom` (`BaseTownGenerator.cs:8606-8634`, **not**
+   * the storage room -- the lab room replaced the living room in Release 3 and
+   * that is where the drop lives) picks one of the six on a `Roll(0, 5)` and the
+   * roll is only half the story -- a save has to be able to say *which page* a
+   * survivor is carrying.
+   *
+   * It said `MakeCHARStorageRoom` and `:8609-8632`, and both were wrong. The port
+   * transcribes the storage room at vanilla fidelity, which is why the drop looked
+   * like it belonged to it -- and the line range named a block that is not the
+   * document switch at all. The roll itself is ported, as
+   * `BaseTownGenerator.makeCHARDocument`; the room that calls it is not.
    *
    * `IsUnique = true` is set per drop rather than on the model, because the C#
    * sets it on the six `new Item(...)` calls and not on the six models, and a
@@ -1494,7 +1502,7 @@ export class GameItems implements ItemModelDB {
     // C#'s `new Item(...)`), forbidden to the AI so no survivor hoards the
     // only flavour text in the game into a backpack.
     //
-    // The C#'s `CanGoInBackpacks` (Release 8-2) is one of the 111 ids in
+    // The C#'s `CanGoInBackpacks` (Release 8-2) is one of the 121 ids in
     // `CAN_GO_IN_BACKPACKS`; it is not set here because the port's construction is
     // table-driven and that flag is applied in `postProcess` instead.
     const bookOfArmaments = new ItemModel(

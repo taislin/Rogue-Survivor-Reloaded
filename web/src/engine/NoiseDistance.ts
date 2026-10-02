@@ -5,11 +5,24 @@
  * Still Alive splits every loud effect into three or four recordings of the same
  * event at different distances — `PISTOL_SINGLE_SHOT_PLAYER` / `_NEARBY` / `_FAR`
  * are one gunshot, and which one you hear is a function of how far the shooter
- * is. The port carries all 180 of those pairs as files and plays three of them.
- * The missing piece was never the audio, it was the decision: with no radius
- * constants and no audibility predicate, there is nothing to select a tier with,
- * so the other 177 ids are inert. `Feature.HelicopterRescue` and five
- * `Feature.AmbientAudio` tracks are blocked on the same decision.
+ * is.
+ *
+ * The port declares 181 of the fork's ids and plays 76 of them. **78 of those 181
+ * are distance variants** — a `_NEARBY` / `_FAR` / `_AUDIBLE` / `_VISIBLE` /
+ * `_SOMEWHERE` suffix is a tier, not a separate event — and **39 of the 78 are now
+ * played**, through the two centralised readers in `RogueGame` that the ladder
+ * below feeds. The other 39 are inert: declared, tabled and on disk, with nothing
+ * to select their tier.
+ *
+ * It used to say "all 180 of those pairs as files and plays three of them" and
+ * "the other 177 ids are inert", which was the port's state when the ladder did
+ * not exist. The claim that is still true, and is the one worth keeping, is the
+ * next sentence: **the missing piece was never the audio, it was the decision.**
+ * With no radius constants and no audibility predicate there is nothing to select
+ * a tier with, so every tier is inert however many files ship. That is why the
+ * remaining 39 are a missing-callsite problem and not a missing-audio one, and why
+ * `Feature.HelicopterRescue` and one `Feature.AmbientAudio` track were blocked on
+ * the same decision.
  *
  * ## Ported from
  *

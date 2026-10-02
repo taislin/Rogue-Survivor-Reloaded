@@ -969,7 +969,14 @@ export class GameImages {
   // The fork's GameImages.cs spells this "Items\\item_bio_force_gun", but the
   // file it ships is `item_Bio_Force_Gun.png`. That works on Windows, whose
   // filesystem is case-insensitive, and 404s here. The only such mismatch of
-  // 1051 constants in the fork -- checked, not assumed.
+  // 1050 constants in the fork -- checked, not assumed.
+  //
+  // It said 1051, and the off-by-one is worth keeping in mind rather than
+  // quietly rounding: `grep -c 'public const string' GameImages.cs` is 1050
+  // *live* lines plus one commented-out declaration at `GameImages.cs:77`
+  // (`//public const string ICON_SCENT_LIVING_SUPRESSOR`). A count that takes the
+  // commented line with the live ones is not a smaller error, it is a different
+  // question, and "1051" was the answer to it.
   static readonly ITEM_BIO_FORCE_GUN = "Items/item_Bio_Force_Gun";
   static readonly ITEM_BONESAW = "Items/item_bonesaw";
   static readonly ITEM_BRASS_KNUCKLES = "Items/item_brass_knuckles";
@@ -1359,9 +1366,22 @@ export class GameImages {
   // the one that matters. Note `MakeObjFarmPlant` is handed the name *without* an
   // article -- `"berry bush"`, not `"a berry bush"` -- because `MapObject` adds
   // the article itself and the fruiting code matches on the result.
-  static readonly OBJ_FARM_FENCE_EW = "MapObjects/farm_fence_ew";
-  static readonly OBJ_FARM_FENCE_NS_RIGHT = "MapObjects/farm_fence_ns_right";
-  static readonly OBJ_FARM_FENCE_NS_LEFT = "MapObjects/farm_fence_ns_left";
+  // The C# spells these `farm_fence_EW`, `farm_fence_NS_right` and
+  // `farm_fence_NS_left` — `GameImages.cs:619-621` — and the fork ships the files
+  // with that capitalisation. The port had them lowercased, which works on Windows
+  // and 404s on every filesystem the browser and the desktop build actually run
+  // on, so the farm's fence posts rendered as nothing.
+  //
+  // **This is the same defect as `ITEM_BIO_FORCE_GUN` above, twice over**: a
+  // transcription that is a faithful *string* and an unfaithful *file*. That one
+  // is caught by `sprite-assets.test.ts`, and so is this — which is how the three
+  // ids below were found sitting in the tree with no file, declared by the farm
+  // building that arrived in the same commit. Two of five sprite paths being
+  // mis-cased is a strong argument for the check being the rule rather than the
+  // exception.
+  static readonly OBJ_FARM_FENCE_EW = "MapObjects/farm_fence_EW";
+  static readonly OBJ_FARM_FENCE_NS_RIGHT = "MapObjects/farm_fence_NS_right";
+  static readonly OBJ_FARM_FENCE_NS_LEFT = "MapObjects/farm_fence_NS_left";
   static readonly OBJ_BERRY_BUSH = "MapObjects/berry_bush";
   static readonly OBJ_PEANUT_PLANT = "MapObjects/peanut_plant";
   static readonly OBJ_GRAPE_VINE = "MapObjects/grape_vine";
@@ -1490,12 +1510,15 @@ export class GameImages {
   //
   // One sprite for `UNIQUE_CHAR_DOCUMENT1..6` (`GameItems.cs:2886-2916`), which is
   // the C#'s own arrangement: six items, six flavour texts, one page of art. It is
-  // here rather than in a feature block because nothing in the port draws it yet --
-  // the only thing that has ever placed one is the CHAR underground's storage room
-  // (`BaseTownGenerator.cs:8613`), and `makeCHARStorageRoom` is transcribed at
-  // vanilla fidelity, with none of the `placedCHARdocument` latch. The models exist
-  // and are registered; the drop does not, and inventing one is not this change's
-  // job. See the report on `ItemID.UNIQUE_CHAR_DOCUMENT1`.
+  // here rather than in a feature block because nothing in the port draws it yet.
+  // The one place that has ever dropped one is `MakeCHARLabRoom`
+  // (`BaseTownGenerator.cs:8613`) -- the **lab** room, which Release 3 added to
+  // replace the CHAR living room, and not the storage room, which is what two
+  // comments in this port used to say. The port has a living room and no lab, so
+  // the room is missing; the roll and the six models are not, and are
+  // `BaseTownGenerator.makeCHARDocument`. Only five of the six are reachable: the
+  // C# rolls `Roll(0, 5)` half-open, so `UNIQUE_CHAR_DOCUMENT6` never appears.
+  // See the report on `ItemID.UNIQUE_CHAR_DOCUMENT1`.
   static readonly ITEM_CHAR_DOCUMENT = "Items/item_CHAR_document";
 
   // ── Effects & Misc ────────────────────────────────────────────────────────

@@ -127,13 +127,21 @@ export class GameActors implements ActorModelDB {
     };
 
     // Rows must be bound to models by their ID, not by position. The C# does
-    // exactly that: 27 explicit `GetDataFromCSVTable(ui, table, IDs.X)` calls
-    // (GameActors.cs:1017-1056), each resolving a row through
+    // exactly that: 30 explicit `GetDataFromCSVTable(table, IDs.X)` calls
+    // (GameActors.cs:1113-1158), each resolving a row through
     // `FindLineForModel`, which matches the ID *string*.
     //
+    // It said 27 and cited `:1017-1056`, which is the CHICKEN / DERANGED_PATIENT
+    // *model* block and not the CSV reader at all. A count with the wrong line
+    // range under it is worse than a wrong count, because a reader who checks the
+    // range concludes the count was checked too.
+    //
     // Binding positionally happened to work for rows 0-17 and then broke:
-    // `Actors.csv` lists FERAL_DOG last (row 26) while the enum has it at 18,
-    // so **9 of 27 actors were reading someone else's entire stat block** --
+    // `Actors.csv` lists FERAL_DOG at row 26 while the enum has it at 18, so
+    // **9 of the then-27 actors were reading someone else's entire stat block**
+    // -- and FERAL_DOG is no longer the last row, there are four after it, and
+    // the population is 31 (`ActorID._COUNT`). The 9 and the two indices are
+    // still right; the "of 27" and "last" are not.
     // the Sewers Thing spawned with 30 HP instead of 400, Jason Myers with the
     // dog's 15, BlackOps soldiers with the boss's 400 HP and STA 99, and every
     // name and score value from CHAR guard onward was off by one.
@@ -262,7 +270,8 @@ export class GameActors implements ActorModelDB {
 
   /**
    * Per-actor abilities, transcribed from the C#'s `new Abilities() { … }`
-   * block for each of the 27 models (GameActors.cs, `#region Init`).
+   * block for each of the 31 models the port builds (`GameActors.cs`,
+   * `#region Init`).
    *
    * This used to be inferred from `isLiving` / `isUndead`, which is wrong in
    * both directions and cost the player most of the game. Every `Abilities`

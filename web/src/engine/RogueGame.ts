@@ -26486,11 +26486,27 @@ inv.removeAllQuantity(it);
 		//
 		// Two differences from the C# list, both recorded rather than smoothed over:
 		// `hospital_Admissions` is added (the C# silences the other four hospital
-		// levels and leaves the ground floor audible), and `armyBase` is absent
-		// because the C#'s `UniqueMaps.ArmyBase` does not exist in the port — that
-		// is `Feature.ArmyBase`, still pending, and its absence is silent rather
-		// than wrong. The police-station and CHAR levels are both present in the
-		// port's `UniqueMaps`, so they are here.
+		// levels and leaves the ground floor audible), and `armyBase` is absent.
+		//
+		// The army base's *reason* used to be given as "the C#'s
+		// `UniqueMaps.ArmyBase` does not exist in the port — that is
+		// `Feature.ArmyBase`, still pending". The first half is still true; the
+		// second stopped being true when the feature landed, and it is the half a
+		// reader would act on. `Feature.ArmyBase` is wired: `BaseTownGenerator`
+		// has `makeArmyOffices` and `populateArmyOfficeBuilding`, both gated on it,
+		// and the plan records it as DONE.
+		//
+		// The reason it is still absent here is the narrower one: the army base is a
+		// *town* building generator with **no underground level of its own**, so the
+		// port's `UniqueMaps` has no `armyBase` map to name and there is no band to
+		// silence. That is a different statement from "pending" — it says the level
+		// does not exist in the reference's shape either, rather than that the port
+		// has not got to it yet.
+		//
+		// The omission is silent rather than wrong either way: a survivor in a
+		// surface army office hears weather, which is the C#'s behaviour for a map
+		// it also has no underground name for. The police-station and CHAR levels are
+		// both present in the port's `UniqueMaps`, so they are here.
 		//
 		// The C# reads the *session's* map name here (`m_Session.CurrentMap.Name`,
 		// `:10425`) and the map it was handed for everything else. Every one of its

@@ -160,12 +160,17 @@ describe("Feature registry is wired", () => {
     // fails here rather than quietly leaving the partition below.
     const sites = hasFeatureCallSites();
     expect(sites.length).toBeGreaterThan(0);
-    // The list is per *call site*, not per feature. `FoodPoisoning` has four,
-    // which is the interesting one: two in `Rules` (the contraction roll and the
-    // recovery roll, each gated where it lives) and two in the turn loop -- the
-    // per-actor sweep and the antiviral cure. The sweep's gate is not redundant
-    // with the recovery function's, because without it the loop walks every actor
-    // on the map calling a function that immediately returns.
+    // The list is per *call site*, not per feature. `FoodPoisoning` has six, which
+    // is the interesting one: two in `Rules` (the contraction roll and the
+    // recovery roll, each gated where it lives) and four in the turn loop -- the
+    // per-actor sweep, the antiviral cure, and the two eating paths. The sweep's
+    // gate is not redundant with the recovery function's, because without it the
+    // loop walks every actor on the map calling a function that immediately
+    // returns.
+    //
+    // It said "four ... and two in the turn loop" and the same file got it right
+    // fifty lines later, so the file carried both numbers at once. The multiset
+    // below is the authority and it had been saying six the whole time.
     //
     // Asserting the exact multiset means a new reader has to be added here, which
     // is the point: a reader is a decision, not an accident.
@@ -198,7 +203,7 @@ describe("Feature registry is wired", () => {
 
     const at = (feature: string) => sites.find((s) => s.feature === feature)!.at;
     // `Alcohol`'s *first* reader is now in `RogueGame` (the per-turn decay), and
-    // the harness line is one of six rather than the only one.
+    // the harness line is one of seven rather than the only one.
     expect(at("Alcohol")).toMatch(/RogueGame\.ts:\d+$/);
     expect(sites.some((s) => s.feature === "Alcohol" && /HeadlessRunner\.ts/.test(s.at))).toBe(true);
     expect(at("WeaponWeight")).toMatch(/Rules\.ts:\d+$/);

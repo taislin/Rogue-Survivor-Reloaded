@@ -511,6 +511,74 @@ describe("the six CHAR documents", () => {
   });
 });
 
+/**
+ * The roll itself, which is ported even though the room that calls it is not.
+ *
+ * The drop is `MakeCHARLabRoom:8606-8634` -- the **lab** room, which Release 3
+ * added to replace the CHAR living room. The port has a living room and no lab,
+ * so the drop site is missing, and putting the documents in the *storage* room
+ * (which two comments in this port used to name) would be inventing a placement
+ * the reference does not have.
+ *
+ * So `BaseTownGenerator.makeCHARDocument` is a bare, tested function, and the room
+ * that calls it is a one-line change when it lands. The test above -- "drops none
+ * in this room, on any seed, in either ruleset" -- is the half that stays true
+ * meanwhile, and it is the half that would catch the documents being invented into
+ * the wrong room.
+ */
+describe("makeCHARDocument: the roll, without a room to drop it in", () => {
+  it("produces one of the five reachable documents, and never the sixth", () => {
+    // The C# rolls `Roll(0, 5)` and switches six ways. **`roll(0, 5)` is
+    // half-open** -- `min + floor(next() * (max - min))` -- so it yields 0..4 and
+    // `case 5` is unreachable. Release 3 added six documents and rolled five.
+    //
+    // The same shape as the bedroom's backpack, and the same decision: the port
+    // plays five and says so, rather than widening the bound and being *more
+    // correct than the reference*. Asserted as arithmetic on the roller so the
+    // claim is a property and not a reading of the C#.
+    const seen = new Set<number>();
+    for (const seed of [1, 2, 3, 7, 4242, 20250929, 777, 31337]) {
+      const gen = newGenerator(seed);
+      for (let i = 0; i < 200; i++) seen.add(gen.makeCHARDocument().model.id);
+    }
+    expect([...seen].sort()).toEqual([
+      ItemID.UNIQUE_CHAR_DOCUMENT1,
+      ItemID.UNIQUE_CHAR_DOCUMENT2,
+      ItemID.UNIQUE_CHAR_DOCUMENT3,
+      ItemID.UNIQUE_CHAR_DOCUMENT4,
+      ItemID.UNIQUE_CHAR_DOCUMENT5,
+    ]);
+  });
+
+  it("sets both flags per drop, as the C# does on its six `new Item(...)` calls", () => {
+    // The room is missing, so this is the only place the flags are observable —
+    // and they are the reason all six documents are mutually exclusive while
+    // drawing one sprite.
+    const gen = newGenerator(4242);
+    for (let i = 0; i < 50; i++) {
+      const doc = gen.makeCHARDocument();
+      expect(doc.isUnique, "a document is one that will not spawn twice").toBe(true);
+      expect(doc.isForbiddenToAI, "so no survivor hoards the only page of it").toBe(true);
+    }
+  });
+
+  it("draws the one sprite, and is a save-visible id rather than a name", () => {
+    // All six models draw `ITEM_CHAR_DOCUMENT`, so the id is the only thing that
+    // tells a save which page a survivor is carrying. If the six collapsed to one
+    // model the six distinct flavour texts would go with them.
+    const gen = newGenerator(99);
+    const ids = new Set<number>();
+    const images = new Set<string>();
+    for (let i = 0; i < 300; i++) {
+      const doc = gen.makeCHARDocument();
+      ids.add(doc.model.id);
+      images.add(doc.model.imageId);
+    }
+    expect(ids.size, "more than one page is reachable").toBe(5);
+    expect(images.size, "and they share one sprite").toBe(1);
+  });
+});
+
 // ── Determinism and the floor ──────────────────────────────────────────────
 
 describe("the CHAR storage room", () => {

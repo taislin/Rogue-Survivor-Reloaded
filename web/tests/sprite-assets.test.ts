@@ -9,11 +9,17 @@ import { BASE, publicFilePath } from "./helpers/assetPath";
  * Every sprite id the game can ask for resolves to a file that exists.
  *
  * This is the test that makes the PNG -> WebP migration safe to keep making.
- * `imagePath()` derives a URL from a `GameImages` id string, and there are 395
+ * `imagePath()` derives a URL from a `GameImages` id string, and there are 1009
  * of those constants; a rename or an extension change breaks all of them
  * silently -- the type-checker is happy, the build succeeds, and the game draws
  * invisible tiles at runtime. That is the same failure shape as the nine runtime
  * bugs in §1.1 of the port plan.
+ *
+ * The 1009 was 395 when this test was written and grew by 614 as the fork's
+ * constants were transcribed, which is the point: the count is in a *test*, so a
+ * stale one is caught by nothing, and this comment sat at 395 for the whole of
+ * that growth. The guard below it is `toBeGreaterThan(200)`, so it passed the
+ * entire time.
  *
  * `GameImages` is a class of static readonly id strings, not a bag of named
  * exports, so the ids come off the constructor itself.

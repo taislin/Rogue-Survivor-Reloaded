@@ -5450,6 +5450,71 @@ export class BaseTownGenerator extends BaseMapGenerator {
       }
   }
 
+  /**
+   * One CHAR document, or `null` — the sixth of six, the C#'s `Roll(0, 5)` and
+   * its six cases.
+   *
+   * Still Alive, Release 3. C# `MakeCHARLabRoom:8606-8634` — **the lab room, not
+   * the storage room**, which is what two comments in this port got wrong before
+   * this one: the storage room is where the port's *floor* comes from, and the
+   * document latch is a floor-space `else` arm in the lab room that replaced the
+   * living room.
+   *
+   * So this is deliberately a bare function and not a call from anywhere. The lab
+   * room is the C#'s replacement for the CHAR living room (`//@@MP - added labs to
+   * replace CHAR living rooms`), and the port has a living room and no lab, so
+   * there is no site to attach it to. Putting the documents in the *storage* room
+   * would be inventing a placement the reference does not have; leaving the roll
+   * as prose leaves the one piece that can be transcribed untested. This is the
+   * middle: the roll and the six models are real and exercised, and the room that
+   * calls it is a one-line change when it lands.
+   *
+   * ## `UNIQUE_CHAR_DOCUMENT6` never appears
+   *
+   * The C# rolls `Roll(0, 5)` and switches six ways. **`roll(0, 5)` is half-open**
+   * — `min + floor(next() * (max - min))` — so it yields 0..4 and `case 5` is
+   * unreachable. Release 3 added six documents and rolled five. The same shape as
+   * the bedroom's backpack (`MakeRandomBedroomItem`'s `case 20` under
+   * `Roll(0, 20)`), and the same decision: the port plays five and says so
+   * rather than widening the bound and being *more correct than the reference*.
+   *
+   * `IsUnique` and `IsForbiddenToAI` are set per drop rather than on the models,
+   * because that is where the C# sets them: a unique item is one that will not
+   * spawn twice rather than a kind of item, and all six models draw the same
+   * sprite, so a model-level flag would make all six mutually exclusive.
+   */
+  makeCHARDocument(): Item {
+    const roll = this.m_DiceRoller.roll(0, 5);
+    let modelId: ItemID;
+    switch (roll) {
+      case 0:
+        modelId = ItemID.UNIQUE_CHAR_DOCUMENT1;
+        break;
+      case 1:
+        modelId = ItemID.UNIQUE_CHAR_DOCUMENT2;
+        break;
+      case 2:
+        modelId = ItemID.UNIQUE_CHAR_DOCUMENT3;
+        break;
+      case 3:
+        modelId = ItemID.UNIQUE_CHAR_DOCUMENT4;
+        break;
+      case 4:
+        modelId = ItemID.UNIQUE_CHAR_DOCUMENT5;
+        break;
+      default:
+        // Unreachable for `roll(0, 5)`, and kept because the C# keeps its
+        // `InvalidOperationException` -- a `switch` over a number with no
+        // `default` is a silent fallthrough, which is the failure this whole
+        // repo's silent-failure rule exists to prevent.
+        throw new RangeError('unhandled roll');
+    }
+    const it = new Item(Models.items.get(modelId));
+    it.isUnique = true;
+    it.isForbiddenToAI = true;
+    return it;
+  }
+
   makeCHARLivingRoom(map: GameMap, roomRect: Rect): void {
     // Replace floor with wood with painted logo.
     this.tileFill(map, Models.tiles.get(TileID.FLOOR_PLANKS)!, roomRect, (tile) => {
