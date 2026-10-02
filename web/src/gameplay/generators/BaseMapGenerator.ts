@@ -967,6 +967,51 @@ export abstract class BaseMapGenerator extends MapGenerator {
     return isDoor(0, 1) || isDoor(0, -1) || isDoor(1, 0) || isDoor(-1, 0);
   }
 
+  /**
+   * C# `MakeObjCouch` — `BaseMapGenerator.cs:927`.
+   *
+   * The port had this in two places already, privately: `makeShoppingMall.ts` and
+   * `BarBuilding.ts` each declare their own. Rather than a third copy, it lives here
+   * where the C# has it, and the two building modules can keep theirs until they are
+   * next edited — this is not a refactor of them.
+   *
+   * `isCouch` is `@@MP (Release 6-6)` and is the field that matters: `Rules` reads it
+   * to decide whether sleeping on this tile restores SLP faster, so an office full of
+   * couches is a real gameplay difference and not furniture.
+   */
+  protected makeObjCouch(couchImageID: string): MapObject {
+    const couch = new MapObject(
+      'couch',
+      couchImageID,
+      MapObjectBreak.BREAKABLE,
+      MapObjectFire.BURNABLE,
+      DoorWindow.BASE_HITPOINTS * 4
+    );
+    couch.isMaterialTransparent = true;
+    couch.jumpLevel = 1;
+    couch.givesWood = true;
+    couch.isMovable = true;
+    couch.isCouch = true; //@@MP (Release 6-6)
+    couch.weight = 3;
+    return couch;
+  }
+
+  /**
+   * C# `MakeObjReceptionDesk` — `BaseMapGenerator.cs:1038`.
+   *
+   * A container with no break or fire data in the initialiser, which is the C#: a
+   * three-argument `MapObject` gets the defaults and nothing else. `isContainer` is
+   * `@@MP (Release 5-3)`.
+   */
+  protected makeObjReceptionDesk(receptionDeskImageID: string): MapObject {
+    const desk = new MapObject('reception desk', receptionDeskImageID);
+    desk.isContainer = true; //@@MP (Release 5-3)
+    desk.jumpLevel = 1;
+    desk.isMaterialTransparent = true;
+    desk.standOnFovBonus = true;
+    return desk;
+  }
+
   protected makeObjChair(chairImageID: string): MapObject {
     const chair = new MapObject(
       'chair',
@@ -1299,6 +1344,28 @@ export abstract class BaseMapGenerator extends MapGenerator {
    */
   makeItemHikingPack(): Item {
     return this.makeUngatedBackpack(ItemID.BACKPACK_HIKING_PACK);
+  }
+
+  /**
+   * C# `MakeItemDaypack` — `BaseMapGenerator.cs:2392`.
+   *
+   * The fourth of the five backpack factories, and the one the ordinary office's
+   * `case 5` names at 25%. Ungated, for the reason the other three are: the C#'s
+   * factory has no feature check and the gate belongs on the roll sites.
+   */
+  makeItemDaypack(): Item {
+    return this.makeUngatedBackpack(ItemID.BACKPACK_DAYPACK);
+  }
+
+  /**
+   * C# `MakeItemMatches` — `BaseMapGenerator.cs:2308`. A box of twenty.
+   *
+   * Needed by the ordinary office's item table, which the port had no version of.
+   */
+  makeItemMatches(): Item {
+    const item = new Item(Models.items.get(ItemID.MATCHES));
+    item.quantity = 20;
+    return item;
   }
 
   /** C# `MakeItemSatchel`. */

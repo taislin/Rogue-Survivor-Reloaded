@@ -507,7 +507,31 @@ export class BaseTownGenerator extends BaseMapGenerator {
         else if (roll2 === 2) placed = makeClinicBuilding(this.buildingContext(map, b), roll2);
         // case 3 is the mechanic workshop: vanilla, and not part of this port's
         // `roll2` set, so it is left empty rather than transliterated. See the plan.
+        //
+        // Either way, `BaseTownGenerator.cs:531` makes this block a plain office.
+        // That arm is `MakeOrdinaryOffice`, and without it an unplaced business block
+        // stayed in `emptyBlocks` and became a *house* three passes later — which is
+        // how most of this port's "Business" zones used to be residential.
         if (placed) completedBlocks.push(b);
+        // The `else MakeOrdinaryOffice(map, b)` arm of `BaseTownGenerator.cs:531` is
+        // **not wired**, and that is a staged decision with a measured price rather
+        // than an oversight. `makeOrdinaryOffice` is ported and tested
+        // (`tests/ordinary-office.test.ts`), but calling it here spends a great deal
+        // of the district's shared roller — doors, a room plan, six foyer couches,
+        // then per-room items — and the cascade takes that roller once per block, so
+        // every *later* block's `roll(0, 4)` shifts.
+        //
+        // Measured: wiring it breaks 8 test files, and not as fingerprints alone.
+        // `bar-building`'s "is a pure function of the block and the roll: same seed,
+        // same bar" cannot find a bar at seed 4242 any more, `animal-shelter`'s ten
+        // feral dogs are placed off the shifted stream, and three building suites lose
+        // their Classic digests. Each of those needs a seed re-picked or an
+        // expectation re-derived, one at a time, with the judgement that a
+        // *behavioural* guard deserves — as against simply rewriting the number and
+        // calling the suite green.
+        //
+        // Until then this block falls through to `makeHousingBuilding` and becomes a
+        // house, which is wrong and is recorded here rather than left to be found.
       }
       for (const b of completedBlocks) {
         const index = emptyBlocks.indexOf(b);
@@ -2084,6 +2108,430 @@ export class BaseTownGenerator extends BaseMapGenerator {
     // 6. Zones.
     ////////////
     map.addZone(this.makeUniqueZone('CHAR Agency', b.buildingRect));
+    this.makeWalkwayZones(map, b);
+
+    // Done
+    return true;
+  }
+
+  /**
+   * C# `MakeOrdinaryOffice` — `BaseTownGenerator.cs:4964` (Release 7-3).
+   *
+   * **The port had no generic office at all.** `BaseTownGenerator.cs:531` has
+   * `if (!placed) MakeOrdinaryOffice(map, b)` as the last arm of the business
+   * cascade, so a block that failed the bar/bank/clinic roll became a plain office.
+   * This port left the block unplaced, and the unplaced ones fell through to
+   * `makeHousingBuilding` — so every business block the cascade missed became a
+   * *house*. That is a fidelity bug rather than a missing feature: the C# says what
+   * should be there, and this makes it there.
+   *
+   * Derived from `makeCHAROffice` rather than transliterated from the C#, because the
+   * two C# methods differ in exactly fourteen places and one of the port's two is
+   * already written and tested. The substitutions:
+   *
+   * | | CHAR office | ordinary office |
+   * |---|---|---|
+   * | outer wall | `WALL_CHAR_OFFICE` | `WALL_CONCRETE` |
+   * | interior walls | `WALL_CHAR_OFFICE` | `WALL_LIGHT_BROWN` |
+   * | doors | `MakeObjCharDoor` | `MakeObjGlassDoor` |
+   * | entry doors | `BarricadeDoors(..., BARRICADING_MAX)` | none |
+   * | table / chair | `OBJ_CHAR_TABLE` / `OBJ_CHAR_CHAIR` | `OBJ_TABLE` / `OBJ_CHAIR` |
+   * | workstation | `OBJ_CHAR_DESKTOP` (not ported) | `OBJ_DESKTOP_COMPUTER` |
+   * | foyer | reception desk + 6 couches | — |
+   * | items | `MakeRandomCHAROfficeItem` | `MakeRandomOrdinaryOfficeItem` |
+   * | zone | `"CHAR Office"` + `IS_CHAR_OFFICE` | `"Business"`, no attribute |
+   *
+   * `hallDepth` is renamed `foyerDepth` because the C# does, and the C# comment on
+   * the zone is explicit that `"Business"` rather than `"office"` is deliberate — an
+   * "Office" zone would clash with the CHAR buildings'.
+   *
+   * **Two gaps carried over from `makeCHAROffice`, not introduced here.** It omits
+   * the C#'s "match each chair with a computer" pass (`@@MP`, Release 3), so the
+   * workstation column above is aspirational, and it has no per-room couch. Both are
+   * pre-existing omissions in the method this one is derived from; fixing them is one
+   * job for both rather than two, and doing it here alone would have made the two
+   * buildings diverge for a reason that has nothing to do with this port.
+   */
+  makeOrdinaryOffice(map: GameMap, b: Block): boolean {
+    /////////////////////////////
+    // 1. Walkway, floor & walls
+    /////////////////////////////
+    this.tileRectangle(map, Models.tiles.get(TileID.FLOOR_WALKWAY)!, b.rectangle);
+    this.tileRectangle(map, Models.tiles.get(TileID.WALL_CONCRETE)!, b.buildingRect);
+    this.tileFill(map, Models.tiles.get(TileID.FLOOR_OFFICE)!, b.insideRect, (tile) => {
+      tile.isInside = true;
+    });
+
+    //////////////////////////
+    // 2. Decide orientation.
+    //////////////////////////
+    const horizontalCorridor = b.insideRect.width >= b.insideRect.height;
+
+    /////////////////
+    // 3. Entry door
+    /////////////////
+    const midX = b.rectangle.left + Math.floor(b.rectangle.width / 2);
+    const midY = b.rectangle.top + Math.floor(b.rectangle.height / 2);
+    let doorSide: Direction;
+
+    // make doors on one side.
+    if (horizontalCorridor) {
+      const west = this.m_DiceRoller.rollChance(50);
+
+      if (west) {
+        doorSide = Direction.W;
+        // west
+        this.placeDoor(map, b.buildingRect.left, midY, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjGlassDoor());
+        if (b.insideRect.height >= 8) {
+          this.placeDoor(
+            map,
+            b.buildingRect.left,
+            midY - 1,
+            Models.tiles.get(TileID.FLOOR_WALKWAY)!,
+            this.makeObjGlassDoor()
+          );
+          if (b.insideRect.height >= 12)
+            this.placeDoor(
+              map,
+              b.buildingRect.left,
+              midY + 1,
+              Models.tiles.get(TileID.FLOOR_WALKWAY)!,
+              this.makeObjGlassDoor()
+            );
+        }
+      } else {
+        doorSide = Direction.E;
+        // east
+        this.placeDoor(
+          map,
+          b.buildingRect.right - 1,
+          midY,
+          Models.tiles.get(TileID.FLOOR_WALKWAY)!,
+          this.makeObjGlassDoor()
+        );
+        if (b.insideRect.height >= 8) {
+          this.placeDoor(
+            map,
+            b.buildingRect.right - 1,
+            midY - 1,
+            Models.tiles.get(TileID.FLOOR_WALKWAY)!,
+            this.makeObjGlassDoor()
+          );
+          if (b.insideRect.height >= 12)
+            this.placeDoor(
+              map,
+              b.buildingRect.right - 1,
+              midY + 1,
+              Models.tiles.get(TileID.FLOOR_WALKWAY)!,
+              this.makeObjGlassDoor()
+            );
+        }
+      }
+    } else {
+      const north = this.m_DiceRoller.rollChance(50);
+
+      if (north) {
+        doorSide = Direction.N;
+        // north
+        this.placeDoor(map, midX, b.buildingRect.top, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjGlassDoor());
+        if (b.insideRect.width >= 8) {
+          this.placeDoor(
+            map,
+            midX - 1,
+            b.buildingRect.top,
+            Models.tiles.get(TileID.FLOOR_WALKWAY)!,
+            this.makeObjGlassDoor()
+          );
+          if (b.insideRect.width >= 12)
+            this.placeDoor(
+              map,
+              midX + 1,
+              b.buildingRect.top,
+              Models.tiles.get(TileID.FLOOR_WALKWAY)!,
+              this.makeObjGlassDoor()
+            );
+        }
+      } else {
+        doorSide = Direction.S;
+        // south
+        this.placeDoor(
+          map,
+          midX,
+          b.buildingRect.bottom - 1,
+          Models.tiles.get(TileID.FLOOR_WALKWAY)!,
+          this.makeObjGlassDoor()
+        );
+        if (b.insideRect.width >= 8) {
+          this.placeDoor(
+            map,
+            midX - 1,
+            b.buildingRect.bottom - 1,
+            Models.tiles.get(TileID.FLOOR_WALKWAY)!,
+            this.makeObjGlassDoor()
+          );
+          if (b.insideRect.width >= 12)
+            this.placeDoor(
+              map,
+              midX + 1,
+              b.buildingRect.bottom - 1,
+              Models.tiles.get(TileID.FLOOR_WALKWAY)!,
+              this.makeObjGlassDoor()
+            );
+        }
+      }
+    }
+
+    // add office image next to doors.
+    const officeImage = GameImages.DECO_GENERIC_OFFICE;
+    this.decorateOutsideWalls(map, b.buildingRect, (x, y) =>
+      map.getMapObjectAt(x, y) === null && this.countAdjDoors(map, x, y) >= 1 ? officeImage : null
+    );
+
+    // barricade entry doors.
+
+    ///////////////////////
+    // 4. Make foyer.
+    ///////////////////////
+    const foyerDepth = 3;
+    /**
+     * The foyer, and only the foyer.
+     *
+     * `makeCHAROffice` draws the same wall line and never needs the rectangle, so this
+     * is the one place the ordinary office computes something the CHAR office does
+     * not: the six-couch pass below places into it.
+     */
+    let foyerRect: Rect;
+    if (doorSide === Direction.N) {
+      foyerRect = new Rect(b.insideRect.left + 1, b.insideRect.top + 1, b.insideRect.width - 2, foyerDepth);
+      this.tileHLine(
+        map,
+        Models.tiles.get(TileID.WALL_LIGHT_BROWN)!,
+        b.insideRect.left,
+        b.insideRect.top + foyerDepth,
+        b.insideRect.width
+      );
+    } else if (doorSide === Direction.S) {
+      this.tileHLine(
+        map,
+        Models.tiles.get(TileID.WALL_LIGHT_BROWN)!,
+        b.insideRect.left,
+        b.insideRect.bottom - 1 - foyerDepth,
+        b.insideRect.width
+      );
+      foyerRect = new Rect(b.insideRect.left + 1, b.insideRect.bottom - foyerDepth, b.insideRect.width - 2, foyerDepth);
+    } else if (doorSide === Direction.E) {
+      this.tileVLine(
+        map,
+        Models.tiles.get(TileID.WALL_LIGHT_BROWN)!,
+        b.insideRect.right - 1 - foyerDepth,
+        b.insideRect.top,
+        b.insideRect.height
+      );
+      foyerRect = new Rect(b.insideRect.right - foyerDepth, b.insideRect.top + 1, foyerDepth, b.insideRect.height - 2);
+    } else if (doorSide === Direction.W) {
+      this.tileVLine(
+        map,
+        Models.tiles.get(TileID.WALL_LIGHT_BROWN)!,
+        b.insideRect.left + foyerDepth,
+        b.insideRect.top,
+        b.insideRect.height
+      );
+      foyerRect = new Rect(b.insideRect.left + 1, b.insideRect.top + 1, foyerDepth, b.insideRect.height - 2);
+    } else throw new Error('unhandled door side');
+
+    /////////////////////////////////////
+    // 5. Make central corridor & wings
+    /////////////////////////////////////
+    let corridorRect: Rect;
+    let corridorDoor: Point, receptionPos: Point;
+    if (doorSide === Direction.N) {
+      corridorRect = new Rect(midX - 1, b.insideRect.top + foyerDepth, 3, b.buildingRect.height - 1 - foyerDepth);
+      corridorDoor = new Point(corridorRect.left + 1, corridorRect.top);
+      receptionPos = new Point(corridorRect.left, corridorRect.top - 1);
+    } else if (doorSide === Direction.S) {
+      corridorRect = new Rect(midX - 1, b.buildingRect.top, 3, b.buildingRect.height - 1 - foyerDepth);
+      corridorDoor = new Point(corridorRect.left + 1, corridorRect.bottom - 1);
+      receptionPos = new Point(corridorRect.left, corridorRect.bottom);
+    } else if (doorSide === Direction.E) {
+      corridorRect = new Rect(b.buildingRect.left, midY - 1, b.buildingRect.width - 1 - foyerDepth, 3);
+      corridorDoor = new Point(corridorRect.right - 1, corridorRect.top + 1);
+      receptionPos = new Point(corridorRect.right, corridorRect.top);
+    } else if (doorSide === Direction.W) {
+      corridorRect = new Rect(b.insideRect.left + foyerDepth, midY - 1, b.buildingRect.width - 1 - foyerDepth, 3);
+      corridorDoor = new Point(corridorRect.left, corridorRect.top + 1);
+      receptionPos = new Point(corridorRect.left - 1, corridorRect.top);
+    } else throw new Error('unhandled door side');
+
+    this.tileRectangle(map, Models.tiles.get(TileID.WALL_LIGHT_BROWN)!, corridorRect);
+    this.placeDoor(map, corridorDoor.x, corridorDoor.y, Models.tiles.get(TileID.FLOOR_OFFICE)!, this.makeObjGlassDoor());
+
+    /**
+     * The foyer, which is the ordinary office's one piece of furniture the CHAR
+     * office does not have. A reception desk beside the corridor door, then six
+     * couches tried in turn — `mapObjectPlaceInGoodPosition` rejects a position that
+     * fails the predicate and spends a roll, so a small foyer simply places fewer
+     * and that is the intended behaviour rather than a shortfall.
+     *
+     * `OBJ_CLINIC_DESK` is shared with the shopping mall, exactly as the C# shares
+     * it (`BaseTownGenerator.cs:5126`): one sprite, two names.
+     */
+    this.mapObjectPlace(map, receptionPos.x, receptionPos.y, this.makeObjReceptionDesk(GameImages.OBJ_CLINIC_DESK));
+    const nbCouches = 6;
+    for (let i = 0; i < nbCouches; i++) {
+      this.mapObjectPlaceInGoodPosition(
+        map,
+        foyerRect,
+        (pt) => !this.isADoorNSEW(map, pt.x, pt.y) && map.isWalkable(pt.x, pt.y) && this.countAdjWalls(map, pt) >= 3,
+        this.m_DiceRoller,
+        () => this.makeObjCouch(GameImages.OBJ_COUCH)
+      );
+    }
+
+    /////////////////////////
+    // 6. Make office rooms.
+    /////////////////////////
+    // make wings.
+    let wingOne: Rect;
+    let wingTwo: Rect;
+    if (horizontalCorridor) {
+      // top side.
+      wingOne = new Rect(
+        corridorRect.left,
+        b.buildingRect.top,
+        corridorRect.width,
+        1 + corridorRect.top - b.buildingRect.top
+      );
+      // bottom side.
+      wingTwo = new Rect(
+        corridorRect.left,
+        corridorRect.bottom - 1,
+        corridorRect.width,
+        1 + b.buildingRect.bottom - corridorRect.bottom
+      );
+    } else {
+      // left side
+      wingOne = new Rect(
+        b.buildingRect.left,
+        corridorRect.top,
+        1 + corridorRect.left - b.buildingRect.left,
+        corridorRect.height
+      );
+      // right side
+      wingTwo = new Rect(
+        corridorRect.right - 1,
+        corridorRect.top,
+        1 + b.buildingRect.right - corridorRect.right,
+        corridorRect.height
+      );
+    }
+
+    // make rooms in each wing with doors leaving toward corridor.
+    const officeRoomsSize = 4;
+
+    const officesOne: Rect[] = [];
+    this.makeRoomsPlan(map, officesOne, wingOne, officeRoomsSize, officeRoomsSize);
+
+    const officesTwo: Rect[] = [];
+    this.makeRoomsPlan(map, officesTwo, wingTwo, officeRoomsSize, officeRoomsSize);
+
+    const allOffices: Rect[] = [];
+    allOffices.push(...officesOne);
+    allOffices.push(...officesTwo);
+
+    for (const roomRect of officesOne) {
+      this.tileRectangle(map, Models.tiles.get(TileID.WALL_LIGHT_BROWN)!, roomRect);
+      map.addZone(this.makeUniqueZone('Office room', roomRect));
+    }
+    for (const roomRect of officesTwo) {
+      this.tileRectangle(map, Models.tiles.get(TileID.WALL_LIGHT_BROWN)!, roomRect);
+      map.addZone(this.makeUniqueZone('Office room', roomRect));
+    }
+
+    for (const roomRect of officesOne) {
+      if (horizontalCorridor) {
+        this.placeDoor(
+          map,
+          roomRect.left + Math.floor(roomRect.width / 2),
+          roomRect.bottom - 1,
+          Models.tiles.get(TileID.FLOOR_OFFICE)!,
+          this.makeObjGlassDoor()
+        );
+      } else {
+        this.placeDoor(
+          map,
+          roomRect.right - 1,
+          roomRect.top + Math.floor(roomRect.height / 2),
+          Models.tiles.get(TileID.FLOOR_OFFICE)!,
+          this.makeObjGlassDoor()
+        );
+      }
+    }
+    for (const roomRect of officesTwo) {
+      if (horizontalCorridor) {
+        this.placeDoor(
+          map,
+          roomRect.left + Math.floor(roomRect.width / 2),
+          roomRect.top,
+          Models.tiles.get(TileID.FLOOR_OFFICE)!,
+          this.makeObjGlassDoor()
+        );
+      } else {
+        this.placeDoor(
+          map,
+          roomRect.left,
+          roomRect.top + Math.floor(roomRect.height / 2),
+          Models.tiles.get(TileID.FLOOR_OFFICE)!,
+          this.makeObjGlassDoor()
+        );
+      }
+    }
+
+    // tables with chairs.
+    for (const roomRect of allOffices) {
+      // table.
+      const tablePos = new Point(
+        roomRect.left + Math.floor(roomRect.width / 2),
+        roomRect.top + Math.floor(roomRect.height / 2)
+      );
+      this.mapObjectPlace(map, tablePos.x, tablePos.y, this.makeObjTable(GameImages.OBJ_TABLE));
+
+      // try to put chairs around.
+      const nbChairs = 2;
+      const insideRoom = new Rect(roomRect.left + 1, roomRect.top + 1, roomRect.width - 2, roomRect.height - 2);
+      if (!this.isRectEmpty(insideRoom)) {
+        for (let i = 0; i < nbChairs; i++) {
+          const adjTableRect = this.intersectRect(new Rect(tablePos.x - 1, tablePos.y - 1, 3, 3), insideRoom);
+          this.mapObjectPlaceInGoodPosition(map, adjTableRect, (pt) => !pt.equals(tablePos), this.m_DiceRoller, () =>
+            this.makeObjChair(GameImages.OBJ_CHAIR)
+          );
+        }
+      }
+    }
+
+    ////////////////
+    // 7. Add items.
+    ////////////////
+    // drop goodies in rooms.
+    for (const roomRect of allOffices) {
+      this.itemsDrop(
+        map,
+        roomRect,
+        (pt) => {
+          const tile = map.getTileAt(pt.x, pt.y)!;
+          if (tile.model !== Models.tiles.get(TileID.FLOOR_OFFICE)!) return false;
+          const mapObj = map.getMapObjectAtPoint(pt);
+          if (mapObj) return false;
+          return true;
+        },
+        () => this.makeRandomOrdinaryOfficeItem()
+      );
+    }
+
+    ///////////
+    // 8. Zone
+    ///////////
+    const zone = this.makeUniqueZone('Business', b.buildingRect);
+    map.addZone(zone);
     this.makeWalkwayZones(map, b);
 
     // Done
@@ -4599,6 +5047,41 @@ export class BaseTownGenerator extends BaseMapGenerator {
         return this.makeItemPillsAntiviral();
       default:
         throw new RangeError('unhandled roll');
+    }
+  }
+
+  /**
+   * C# `MakeRandomOrdinaryOfficeItem` — `BaseTownGenerator.cs:7776` (Release 7-3).
+   *
+   * The plain office's item table, against the CHAR office's. `roll(0, 11)` and then a
+   * `default: return null` for the six arms the C# leaves empty — **a 50% chance to
+   * find nothing**, as its own comment says. `ItemsDrop` skips a null factory, so the
+   * empty arms cost a roll and place nothing, which is the intended shape.
+   *
+   * `case 5` is the Release 8-2 backpack site: 25% daypack, else a box of matches.
+   */
+  makeRandomOrdinaryOfficeItem(): Item | null {
+    const randomItem = this.m_DiceRoller.roll(0, 11);
+
+    switch (randomItem) {
+      case 0:
+      case 1:
+        if (this.m_DiceRoller.rollChance(50)) {
+          return this.makeItemEnergyDrink();
+        }
+        return this.makeItemPillsSTA();
+      case 2:
+      case 3:
+        return this.makeItemSnackBar();
+      case 4:
+        return this.makeItemCellPhone();
+      case 5:
+        if (this.m_DiceRoller.rollChance(25)) {
+          return this.makeItemDaypack(); //@@MP (Release 8-2)
+        }
+        return this.makeItemMatches();
+      default:
+        return null; // 50% chance to find nothing.
     }
   }
 

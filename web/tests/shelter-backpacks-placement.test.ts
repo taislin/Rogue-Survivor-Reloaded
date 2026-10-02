@@ -230,18 +230,29 @@ describe("the four sites that did not land", () => {
 		expect(townSource).not.toMatch(/makeHuntingShopItem[\s\S]{0,2000}?BACKPACK_/);
 	});
 
-	it("the ordinary office and the army rec room are unported methods, so their sites have nowhere to go", () => {
-		// `MakeRandomOrdinaryOfficeItem` has no port counterpart, and neither does
-		// `MakeArmyRecRoom` or the army base underground they belong to. So the
-		// daypack-from-an-office and the army rucksack are not "not done", they are
-		// "not reachable", and a reader looking for the gap should be looking for
-		// `MakeOrdinaryOffice` and `GenerateUniqueMap_ArmyBase` instead.
-		expect(townSource).not.toMatch(/makeRandomOrdinaryOfficeItem/);
+	it("the ordinary office site has landed; the army rec room's is still unreachable", () => {
+		// **Inverted.** This used to assert `makeRandomOrdinaryOfficeItem` was absent
+		// from the port, on the reasoning that it had "nowhere to go" without
+		// `MakeOrdinaryOffice`. Both of those are ported now, along with the item
+		// table's backpack arm — so the daypack-from-an-office site exists as code and
+		// is tested by `tests/ordinary-office.test.ts`.
+		//
+		// What is *not* reachable is the ordinary office's **dispatch**: the
+		// `else MakeOrdinaryOffice(map, b)` arm of `BaseTownGenerator.cs:531` is
+		// deliberately unwired, because wiring it shifts every later block's dice in
+		// the business cascade and breaks eight suites. The call site carries the
+		// measured list. So the distinction this test now draws is between *ported* and
+		// *reached*, which are different claims and were being conflated.
+		expect(townSource).toMatch(/makeRandomOrdinaryOfficeItem/);
+		expect(townSource).toMatch(/makeOrdinaryOffice/);
+		// `MakeArmyRecRoom` is still unported, and so is the army base underground it
+		// belongs to — that site is genuinely not reachable.
 		expect(townSource).not.toMatch(/makeArmyRecRoom/);
-		// Which is why two of the five models still have no producer in the tree.
-		// Said out loud rather than left to the unused-constant audit: the hiking
-		// pack and the army rucksack are declared, tabled, on disk and unplaceable.
-		expect(BACKPACK_IDS).toContain(ItemID.BACKPACK_HIKING_PACK);
+		// And the dispatch really is off, rather than merely unwired in a comment.
+		expect(townSource).not.toMatch(/else this\.makeOrdinaryOffice\(map, b\)/);
+		// Which leaves one of the five models with no reachable producer. Said out
+		// loud rather than left to the unused-constant audit: the army rucksack is
+		// declared, tabled, on disk and unplaceable.
 		expect(BACKPACK_IDS).toContain(ItemID.BACKPACK_ARMY_RUCKSACK);
 	});
 });

@@ -242,6 +242,13 @@ export class GameImages {
   /** `Feature.FuelStation`. C# `GameImages.cs`, the two `midX +/- 2` signboards. */
   static readonly DECO_SHOP_FUEL_STATION = "Tiles/Decoration/shop_fuel_station";
   static readonly DECO_CHAR_OFFICE = "Tiles/Decoration/char_office";
+  /**
+   * `GameImages.cs:368` — the generic office's outside-wall decoration, against
+   * `DECO_CHAR_OFFICE` (`:244`). The file name really is `generic_offices`, plural:
+   * the C# constant is singular and the sprite is not, and both spellings are kept as
+   * they are rather than reconciled.
+   */
+  static readonly DECO_GENERIC_OFFICE = "Tiles/Decoration/generic_offices";
   static readonly DECO_CHAR_FLOOR_LOGO = "Tiles/Decoration/char_floor_logo";
   static readonly DECO_CHAR_POSTER1 = "Tiles/Decoration/char_poster1";
   static readonly DECO_CHAR_POSTER2 = "Tiles/Decoration/char_poster2";
@@ -600,6 +607,13 @@ export class GameImages {
   static readonly OBJ_CHAIR = "MapObjects/chair";
   static readonly OBJ_NIGHT_TABLE = "MapObjects/nighttable";
   static readonly OBJ_CHAR_CHAIR = "MapObjects/char_chair";
+  /**
+   * Still Alive, `GameImages.cs:744`. The plain office's workstation, against
+   * `OBJ_CHAR_DESKTOP` (`:673`, Release 3) which the CHAR office uses. Both files are
+   * shipped, and both are the Release 3 pair that split "a computer" into "a CHAR
+   * computer" and "a normal one".
+   */
+  static readonly OBJ_DESKTOP_COMPUTER = "MapObjects/desktop_computer";
   static readonly OBJ_CHAR_TABLE = "MapObjects/char_table";
   static readonly OBJ_IRON_BENCH = "MapObjects/iron_bench";
   static readonly OBJ_IRON_DOOR_OPEN = "MapObjects/iron_door_open";
