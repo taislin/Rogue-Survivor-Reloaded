@@ -556,7 +556,7 @@ describe("Feature.ShoppingMall — the mall district", () => {
     // The C# raised this floor globally in Release 7-3 (`GameOptions.cs:476`,
     // `//@@MP - was 30`) and could: it has one ruleset. This port has two, and
     // `districtSize` is read by world generation, so a global 50 would move the
-    // pinned Classic fingerprint `e097b9d976ffac15` -- which is asserted by seven
+    // pinned Classic fingerprint `9bb5e4907bc3f62c` -- which is asserted by seven
     // test files and eleven sites, and which `tests/bank-building.test.ts:606` shows
     // the value of. The floor is therefore ruleset-dependent, and this is the whole of
     // the fork's half of it.

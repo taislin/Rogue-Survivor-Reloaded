@@ -4980,43 +4980,94 @@ export class BaseTownGenerator extends BaseMapGenerator {
     }
   }
 
+  /**
+   * C# `MakeHuntingShopItem` -- `BaseTownGenerator.cs:7547`, with the fork's Releases
+   * 1, 3, 7-1, 7-6 and 8-2.
+   *
+   * The vanilla table is a 50/50 split and two `roll(0, 2)` ladders, giving four
+   * distinct items. The fork widens **both** rolls to `roll(0, 4)` and rebalances the
+   * top-level split to 60/40, so the shop carries ten items and the *odds* of each
+   * change as well as the contents.
+   *
+   * ## The odd entries are the point, not noise
+   *
+   * - **the ammo ladder returns two of each.** `Bolts, Bolts, LightRifleAmmo,
+   *   LightRifleAmmo` (Release 8-2) -- no fourth distinct stack, so `case 2` and
+   *   `case 3` are duplicates of `case 1` and `case 0`. This is deliberate: the fork
+   *   wanted bolt and rifle ammo equally likely and made it so by weighting, not by
+   *   adding an item. Transcribing it as "two entries, `roll(0, 2)`" would look like a
+   *   tidy-up and would halve both stacks' odds.
+   * - **`case 3` of the outfits ladder is two rolls deep** (Release 8-2): a 25% gate,
+   *   then a 50/50 between binoculars and a **hiking pack**. So the hiking pack is
+   *   10% of the outfits 40%, i.e. **4% of the whole shop** -- one backpack in twenty-five
+   *   hunting shops. That is the last of the five backpack models to get a producer,
+   *   and it arrives here rather than in one of the more obvious places.
+   * - **the 25% gate's `else` is a fishing rod**, so the rod is 75% of `case 3` and
+   *   also `case 2` of the weapons ladder (Release 7-6). One item, two doors.
+   *
+   * ## What this costs
+   *
+   * Every roll here is a `m_DiceRoller` draw on the district stream, and widening
+   * `roll(0, 2)` to `roll(0, 4)` does **not** consume the same number of dice. So
+   * every district after the first hunting shop diverges, which moves the Classic
+   * district fingerprints and every seed-sensitive assertion downstream. That is why
+   * this was reverted once and re-attempted deliberately rather than slipped in.
+   */
   makeHuntingShopItem(): Item {
-    // Weapons/Ammo (50%) Outfits&Traps (50%)
-    if (this.m_DiceRoller.rollChance(50)) {
+    // Weapons/Ammo (60%) Outfits&Traps (40%)
+    if (this.m_DiceRoller.rollChance(60)) {
+      //@@MP (Release 3) -- was 50.
       // Weapons(40) Ammo(60)
       if (this.m_DiceRoller.rollChance(40)) {
-        const roll = this.m_DiceRoller.roll(0, 2);
+        const roll = this.m_DiceRoller.roll(0, 4);
 
         switch (roll) {
           case 0:
             return this.makeItemHuntingRifle();
           case 1:
             return this.makeItemHuntingCrossbow();
+          case 2:
+            return this.makeItemFishingRod(); //@@MP (Release 7-6)
+          case 3:
+            return this.makeItemCombatKnife(); //@@MP (Release 8-2)
           default:
-            return null!; // unreachable, roll is [0, 2)
+            return null!; // unreachable, roll is [0, 4)
         }
       } else {
-        const roll = this.m_DiceRoller.roll(0, 2);
+        const roll = this.m_DiceRoller.roll(0, 4);
 
         switch (roll) {
           case 0:
             return this.makeItemLightRifleAmmo();
           case 1:
             return this.makeItemBoltsAmmo();
+          case 2:
+            return this.makeItemBoltsAmmo(); //@@MP (Release 8-2)
+          case 3:
+            return this.makeItemLightRifleAmmo(); //@@MP (Release 8-2)
           default:
-            return null!; // unreachable, roll is [0, 2)
+            return null!; // unreachable, roll is [0, 4)
         }
       }
     } else {
       // Outfits&Traps
-      const roll = this.m_DiceRoller.roll(0, 2);
+      const roll = this.m_DiceRoller.roll(0, 4);
       switch (roll) {
         case 0:
           return this.makeItemHunterVest();
         case 1:
           return this.makeItemBearTrap();
+        case 2:
+          return this.makeItemStenchKiller(); //@@MP added (Release 1)
+        case 3:
+          // Two rolls, and the second one is where the last backpack model comes from.
+          if (this.m_DiceRoller.rollChance(25)) {
+            if (this.m_DiceRoller.rollChance(50))
+              return this.makeItemBinoculars(); //@@MP added (Release 7-1)
+            else return this.makeItemHikingPack(); //@@MP added (Release 8-2)
+          } else return this.makeItemFishingRod();
         default:
-          return null!; // unreachable, roll is [0, 2)
+          return null!; // unreachable, roll is [0, 4)
       }
     }
   }
@@ -5098,62 +5149,120 @@ export class BaseTownGenerator extends BaseMapGenerator {
     }
   }
 
+  /**
+   * C# `MakeRandomBedroomItem` -- `BaseTownGenerator.cs:7657`, with Releases 1, 3, 4,
+   * 5-2, 7-6 and 8-2.
+   *
+   * The port had vanilla's `roll(0, 24)` and a different item at almost every index.
+   * The fork's table is **`roll(0, 20)`** with 21 cases -- and that is not a typo to be
+   * tidied, it is the whole reason this method is interesting.
+   *
+   * ## `case 20` is unreachable, and is left that way
+   *
+   * `roll(0, 20)` is half-open, so it yields 0..19 and `case 20` never runs. The `case
+   * 20` arm is where Release 8-2 put the **waist pouch** and **satchel**:
+   *
+   *     case 20:
+   *         if (RollChance(75)) return MakeItemWaistPouch();
+   *         else return MakeItemSatchel();
+   *
+   * So the bedroom is *not* a backpack site in the fork. That is the eighth backpack
+   * location resolved: not by wiring it, but by measuring the roll and finding the arm
+   * unreachable. Widening the roll to `roll(0, 21)` to "fix" it would invent a backpack
+   * spawn the reference does not have, and the satchel and waist pouch get their real
+   * producers from the sewers and the subway.
+   *
+   * The arm is transcribed anyway, with `default` still throwing: if the roll ever
+   * widens, the case is there and correct rather than silently falling through.
+   *
+   * ## The one C# branch not ported
+   *
+   * `case 3` and `case 17` branch on `RogueGame.Options.IsSanityEnabled`, which the
+   * port has no way to see -- the same divergence `makeLibraryBuilding` and
+   * `makeShoppingMall` already document, and resolved the same way: take the option's
+   * **default**, which is ON. So `case 3` is always `PillsSAN` and `case 17` is the
+   * book/magazine pair rather than a large medikit.
+   *
+   * Note that this is the *opposite* choice from the port's old table, which put
+   * `PillsSLP` at `case 3` and `PillsSAN` at `case 4` unconditionally. Taking the
+   * default is not a no-op here; it swaps which pill a bedroom gives.
+   *
+   * ## The cost
+   *
+   * `roll(0, 24)` -> `roll(0, 20)` consumes the same one die but maps it to a different
+   * item, and the four nested `rollChance` calls that survive the retune land on
+   * different values. Every district containing a bedroom therefore diverges, which is
+   * what moves the Classic fingerprints.
+   */
   makeRandomBedroomItem(): Item {
-    const randomItem = this.m_DiceRoller.roll(0, 24);
+    const randomItem = this.m_DiceRoller.roll(0, 20);
 
     switch (randomItem) {
       case 0:
       case 1:
-        return this.makeItemBandages();
+        return this.makeItemSmallMedikit();
       case 2:
-        return this.makeItemPillsSTA();
+        return this.makeItemCandlesBox(); //@@MP
       case 3:
-        return this.makeItemPillsSLP();
-      case 4:
+        //@MP - fixed crappy implem (Release 5-2). `IsSanityEnabled` is not portable; the
+        // default is ON, so this is always SAN and never SLP. See the header.
         return this.makeItemPillsSAN();
+      case 4:
+        return this.makeItemTennisRacket(); //@@MP (Release 3)
       case 5:
+        return this.makeItemIronGolfClub(); //@@MP (Release 3)
       case 6:
-      case 7:
-      case 8:
         return this.makeItemBaseballBat();
-      case 9:
+      case 7:
         return this.makeItemRandomPistol();
-      case 10: // rare fire weapon
-        if (this.m_DiceRoller.rollChance(30)) {
-          if (this.m_DiceRoller.rollChance(50)) {
-            return this.makeItemShotgun();
-          } else {
-            return this.makeItemHuntingRifle();
-          }
+      case 8: // rare fire weapon
+        // One `rollChance(50)`, not the port's `30` then `50`/`50` four-way. The fork
+        // dropped the ammo arm entirely: a bedroom yields a gun or never.
+        if (this.m_DiceRoller.rollChance(50)) {
+          return this.makeItemShotgun();
         } else {
-          if (this.m_DiceRoller.rollChance(50)) {
-            return this.makeItemShotgunAmmo();
-          } else {
-            return this.makeItemLightRifleAmmo();
-          }
+          return this.makeItemHuntingRifle();
         }
+      case 9:
+      case 10:
       case 11:
-      case 12:
-      case 13:
         return this.makeItemCellPhone();
+      case 12:
+        return this.makeItemFlashlight();
+      case 13:
+        return this.makeItemHockeyStick(); //@@MP (Release 3)
       case 14:
       case 15:
-        return this.makeItemFlashlight();
-      case 16:
-      case 17:
-        return this.makeItemLightPistolAmmo();
-      case 18:
-      case 19:
         return this.makeItemStenchKiller();
-      case 20:
-        return this.makeItemHunterVest();
-      case 21:
-      case 22:
-      case 23:
-        if (this.m_DiceRoller.rollChance(50)) {
+      case 16:
+        return this.makeItemCigarettes(); //@@MP (Release 4)
+      case 17:
+        //@@MP - added check (Release 7-6). `IsSanityEnabled` again, same resolution.
+        if (this.m_DiceRoller.rollChance(25)) {
           return this.makeItemBook();
         } else {
           return this.makeItemMagazines();
+        }
+      case 18:
+        if (this.m_DiceRoller.rollChance(10)) {
+          return this.makeItemNunchaku();
+        } else {
+          return this.makeItemHunterVest();
+        }
+      case 19:
+        if (this.m_DiceRoller.rollChance(15)) {
+          return this.makeItemFishingRod();
+        } else {
+          return this.makeItemBigFlashlight();
+        }
+      case 20:
+        // **Unreachable.** `roll(0, 20)` is half-open. Transcribed, not fixed -- see
+        // the header. This is where Release 8-2 put the waist pouch and the satchel.
+        if (this.m_DiceRoller.rollChance(75)) {
+          //@@MP (Release 8-2)
+          return this.makeItemWaistPouch();
+        } else {
+          return this.makeItemSatchel();
         }
       default:
         throw new RangeError('unhandled roll');

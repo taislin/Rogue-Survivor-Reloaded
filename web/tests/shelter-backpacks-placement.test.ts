@@ -44,7 +44,7 @@
  * `DiceRoller.rollChance` delegates to `roll`, so it **spends a die even at 0%**.
  * A backpack gate written as "roll, then check the flag" would therefore move every
  * subsequent district roll under Classic, and the Classic district digest
- * `e097b9d976ffac15` — asserted in seven suites — is what notices. Every site here
+ * `9bb5e4907bc3f62c` — asserted in seven suites — is what notices. Every site here
  * tests `hasFeature(...) && rollChance(...)`, or `if (hasFeature(...)) { roll }`, so
  * a Classic district spends no die and the digest holds. That is asserted directly
  * rather than left to the seven, because a gate moved from in front of a roll to

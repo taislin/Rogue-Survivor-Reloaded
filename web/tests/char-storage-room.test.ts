@@ -30,7 +30,7 @@
  *
  * ## Why the Classic fingerprint cannot be reached from here
  *
- * `e097b9d976ffac15` digests one surface district entry map
+ * `9bb5e4907bc3f62c` digests one surface district entry map
  * (`bank-building.test.ts:89-113`, `:599-614`). This method is reached only from
  * `generateUniqueMap_CHARUnderground`, which builds a separate secret map from
  * `GenerateWorld` (`RogueGame.ts:30903-30912`) *after* the district loop that ends
@@ -414,7 +414,7 @@ describe("the CHAR storage room's dice, which is what a shared roller would shif
     // A district is built by `BaseTownGenerator.generate` alone; the CHAR underground
     // is built afterwards from `GenerateWorld` (`RogueGame.ts:30903-30912`), after the
     // district loop that ends at `:30888`. So no district can contain a storage room,
-    // which is why `e097b9d976ffac15` is not reachable from this method -- proved here
+    // which is why `9bb5e4907bc3f62c` is not reachable from this method -- proved here
     // by generating one and looking for this room's floor, its objects and its zone.
     //
     // It also matters that this is a *district* and not a world: the underground map

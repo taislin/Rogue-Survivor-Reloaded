@@ -87,7 +87,7 @@ beforeAll(() => {
 const MAP = 40;
 const SEED = 1;
 /** The same value `tests/fire-station-building.test.ts` and `bank-building` commit. */
-const CLASSIC_FINGERPRINT = "e097b9d976ffac15";
+const CLASSIC_FINGERPRINT = "9bb5e4907bc3f62c";
 
 type ParamsPatch = { minBlockSize?: number; parkBuildingChance?: number };
 
@@ -275,7 +275,7 @@ describe("Feature.FuelStation: the dispatch", () => {
   it("builds none under CLASSIC and leaves the committed fingerprint alone", () => {
     Session.get().ruleset = Ruleset.CLASSIC;
 
-    // Default parameters, deliberately: `e097b9d976ffac15` is the digest of a
+    // Default parameters, deliberately: `9bb5e4907bc3f62c` is the digest of a
     // 40x40 district at seed 1 with `Parameters()` untouched, and overriding
     // `parkBuildingChance` changes the district and would miss the claim entirely.
     const real = newGenerator(newParams());
@@ -303,7 +303,7 @@ describe("Feature.FuelStation: the dispatch", () => {
  * The shared district fingerprint, copied verbatim from
  * `fire-station-building.test.ts:335` rather than reinvented.
  *
- * It has to be *that* function and not an equivalent one: `e097b9d976ffac15` is
+ * It has to be *that* function and not an equivalent one: `9bb5e4907bc3f62c` is
  * the committed Classic digest of a 40x40 district at seed 1, and `bank-building`,
  * `bar-building`, `clinic-building`, `junkyard-building`, `library-building` and
  * `fire-station-building` all assert the same constant against the same

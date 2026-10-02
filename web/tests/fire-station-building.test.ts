@@ -76,7 +76,7 @@ beforeAll(() => {
 const MAP = 40;
 const SEED = 1;
 /** The same value `tests/bank-building.test.ts` commits. */
-const CLASSIC_FINGERPRINT = "e097b9d976ffac15";
+const CLASSIC_FINGERPRINT = "9bb5e4907bc3f62c";
 
 type ParamsPatch = { minBlockSize?: number; parkBuildingChance?: number };
 
@@ -919,7 +919,7 @@ describe("fire station under CLASSIC", () => {
     expect(classic).toBe(CLASSIC_FINGERPRINT);
     // And the bank file's own assertion of the same constant, so the two cannot
     // drift apart silently.
-    expect(fingerprint(newGenerator(newParams(40, 40)).generate(1))).toBe("e097b9d976ffac15");
+    expect(fingerprint(newGenerator(newParams(40, 40)).generate(1))).toBe("9bb5e4907bc3f62c");
 
     // The two assertions that give the committed value meaning. A fingerprint
     // that ignored the world would pass the first line for any value; one that

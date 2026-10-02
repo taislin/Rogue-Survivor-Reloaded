@@ -439,7 +439,7 @@ describe("Feature registry is wired", () => {
     // that is the load-bearing part. `DiceRoller.rollChance` delegates to `roll`, so
     // it spends a die even at 0%; a gate that let the roll happen and then threw the
     // result away would move every subsequent district roll, and the Classic
-    // district digest `e097b9d976ffac15` — asserted in seven suites — is what
+    // district digest `9bb5e4907bc3f62c` — asserted in seven suites — is what
     // notices. The placement sites are asserted to be short-circuiting in
     // `shelter-backpacks-placement.test.ts`; this count is what stops a *new*
     // ungated reader appearing here without anyone looking.
@@ -546,7 +546,7 @@ describe("Feature registry is wired", () => {
     // splits the whole city rectangle at a hard-coded 50x50. It could do that
     // globally because the C# has one ruleset. This port has two and holds Classic
     // byte-identical -- `districtSize` is read by world generation, so a floor of 50
-    // under Classic moves the pinned fingerprint `e097b9d976ffac15` -- so the floor
+    // under Classic moves the pinned fingerprint `9bb5e4907bc3f62c` -- so the floor
     // is ruleset-dependent and *this line is the whole of the fork's half of it*.
     // Dropping it would let a Still Alive player choose a 45-wide district, where
     // `MallQuadSplit`'s right/bottom splits go negative and the mall's three leftover

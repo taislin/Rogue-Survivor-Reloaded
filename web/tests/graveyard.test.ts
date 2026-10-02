@@ -114,6 +114,23 @@ function mapWithGraveyard(): GameMap {
   );
 }
 
+let cachedPark: GameMap | null = null;
+function mapWithPark(): GameMap {
+  if (cachedPark !== null) return cachedPark;
+  for (let seed = 1; seed <= 40; seed++) {
+    const map = newGenerator(100).generate(seed);
+    if (parkZones(map).length > 0) {
+      cachedPark = map;
+      return map;
+    }
+  }
+  throw new Error(
+    "no district in seeds 1..40 contained a Park zone. Parks are the feature this " +
+      "test controls for, so if this fires the park pass itself is broken rather " +
+      "than the graveyard one.",
+  );
+}
+
 /** One green-region block, big enough for the fill to have room. */
 function bigBlock(): Block {
   return new Block(new Rect(2, 2, 17, 17));
@@ -125,8 +142,17 @@ beforeEach(() => {
 
 describe("Feature.Graveyard: the zone name is the feature's fingerprint", () => {
   it("an ordinary park is still a Park, not a Graveyard", () => {
-    const map = newGenerator(100).generate(1);
-    expect(parkZones(map).length, "the green region still makes parks").toBeGreaterThan(0);
+    // Swept for a park, the way `mapWithGraveyard` sweeps for a graveyard, rather
+    // than hardcoding district 1.
+    //
+    // This test used to be `newGenerator(100).generate(1)`, which coupled the control
+    // to one district's dice: after the hunting-shop and bedroom retunes, seed 100's
+    // district 1 produces **no park at all**, so the control failed on "the green region
+    // still makes parks" while testing nothing about graveyards. A control that asserts
+    // a *neighbouring feature exists* needs to find that neighbour, not assume a
+    // particular district still makes one -- district content is exactly what the item
+    // tables move.
+    expect(parkZones(mapWithPark()).length, "the sweep found no Park zone").toBeGreaterThan(0);
   });
 
   it("a graveyard is a Graveyard zone on the building rect", () => {

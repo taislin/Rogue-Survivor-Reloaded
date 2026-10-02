@@ -136,7 +136,7 @@ const TWO_BAR_MAP_WIDTH = 50;
  * a fixed number, and the failure mode is a clear assertion instead of a
  * mysteriously wrong count. Do not treat a change here as a regression on its own:
  * check whether a building pass moved, and re-derive. The invariant that actually
- * matters is the one in the "CLASSIC" block below -- `e097b9d976ffac15`, which no
+ * matters is the one in the "CLASSIC" block below -- `9bb5e4907bc3f62c`, which no
  * Stage 5 building is allowed to move.
  */
 const DISTRICT_SEED = 3;

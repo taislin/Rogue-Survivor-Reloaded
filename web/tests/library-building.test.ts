@@ -857,7 +857,7 @@ describe("library building under CLASSIC", () => {
     // Classic world can be unchanged.
     Session.get().ruleset = Ruleset.CLASSIC;
     const classic = fingerprint(newGenerator().generate(SEED));
-    expect(classic).toBe("f0232a05574e2f2f");
+    expect(classic).toBe("edfe94f97003996a");
 
     // The two assertions that give the committed value meaning. A fingerprint
     // that ignored the world would pass the first line for any value; one that
@@ -868,13 +868,13 @@ describe("library building under CLASSIC", () => {
   });
 
   it("leaves the 40x40 CLASSIC world the bank test committed untouched", () => {
-    // `e097b9d976ffac15` is `tests/bank-building.test.ts`'s constant for a 40x40
+    // `9bb5e4907bc3f62c` is `tests/bank-building.test.ts`'s constant for a 40x40
     // district at seed 1. It is restated here because the library sits in the same
     // business stage as the bank: if this building's pass moved a die, or took one
     // a Classic district should not pay, that constant would change and the bank
     // test would fail for a reason that has nothing to do with the bank.
     Session.get().ruleset = Ruleset.CLASSIC;
-    expect(fingerprint(newGenerator(newParams(40, 40)).generate(1))).toBe("e097b9d976ffac15");
+    expect(fingerprint(newGenerator(newParams(40, 40)).generate(1))).toBe("9bb5e4907bc3f62c");
   });
 });
 

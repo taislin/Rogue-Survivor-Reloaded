@@ -669,7 +669,7 @@ describe("clinic building under CLASSIC", () => {
 		// is the one line this port had to add to `BaseTownGenerator.generate()`.
 		Session.get().ruleset = Ruleset.CLASSIC;
 		const classic = fingerprint(newGenerator().generate(SEED));
-		expect(classic).toBe("e097b9d976ffac15");
+		expect(classic).toBe("9bb5e4907bc3f62c");
 
 		// The two assertions that give the committed value meaning. A fingerprint
 		// that ignored the world would pass the first line for any value; one that
