@@ -52,7 +52,7 @@ export default defineConfig({
       // is deterministic (seeded sim, no wall-clock assertions on behaviour), so
       // the numbers do not drift run to run.
       //
-      // Re-measured on 58 files / 867 tests, sitting ~2-3.5 points below actual
+      // Re-measured on 139 files / 2,960 tests, sitting ~2.5 points below actual
       // so ordinary edits do not flap the build while a real drop still fails CI.
       //
       // **Measure coverage with `--no-file-parallelism`.** The default parallel
@@ -63,7 +63,14 @@ export default defineConfig({
       // stable throughout; only the aggregate moves. Serial runs are bit-identical
       // across repeats, and that is the number recorded here:
       //
-      //   statements 59.90%  branches 49.71%  functions 72.55%  lines 61.13%
+      //   statements 69.88%  branches 57.94%  functions 80.64%  lines 71.30%
+      //
+      // That is the first measurement since 58 files / 867 tests, and the suite grew
+      // coverage by ~10 points on every axis, so the old gates were sitting ~12
+      // points under the tree and no longer gating anything. They are re-pinned
+      // ~2.5 below the new actual, which is the same policy as before applied to a
+      // much larger suite: all four rise, so the gate is stricter than the one it
+      // replaces.
       //
       // The wobble is ~0.05 points, so the gates are not *at* risk of flapping —
       // but a per-file improvement smaller than that is invisible globally, and
@@ -84,10 +91,10 @@ export default defineConfig({
       // denominator would not change the verdict, and a file being invisible to
       // the harness is worth knowing about rather than hiding.
       thresholds: {
-        statements: 58,
-        branches: 48,
-        functions: 69,
-        lines: 59,
+        statements: 67,
+        branches: 55,
+        functions: 78,
+        lines: 68,
       },
     },
   },
