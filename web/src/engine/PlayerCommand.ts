@@ -107,4 +107,22 @@ export enum PlayerCommand {
   LOOK_LEFT,
   LOOK_RIGHT,
   VIEW_MODE_TOGGLE,
+
+  /**
+   * C# `UNLOAD_AMMO` -- `PlayerCommand.cs:59`, Release 7-6.
+   *
+   * Appended at the end for the reason the header of this file gives at length: a
+   * stored `Keybindings` pair is `[commandNumber, key]`, so a command's number is
+   * part of the save format and inserting one silently re-points every binding
+   * above it. This is last, not next to `MAKE_COOKING_FIRE` where the C# has it,
+   * and that costs nothing: nothing outside `Keybindings` and the turn loop
+   * switches on a `PlayerCommand` by ordinal, and the turn loop switches on the
+   * member.
+   *
+   * It is the seventh key in the fork's own inventory-management set -- unload the
+   * ammunition from the equipped gun into the pack -- and it is the only reader of
+   * ammunition in the reference. See `Keybindings` for why its key is `Shift+U`
+   * rather than the C#'s bare `U`.
+   */
+  UNLOAD_AMMO,
 }

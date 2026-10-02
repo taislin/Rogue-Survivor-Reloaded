@@ -223,6 +223,24 @@ export class Keybindings {
     this.set(PlayerCommand.WAIT_LONG, 'Shift+W');
 
     /*
+     * Still Alive, Release 7-6. C# `Keybindings.cs:90` binds `UNLOAD_AMMO` to a
+     * bare `Keys.U`.
+     *
+     * **The bare `U` is SHOUT's**, and has been since the movement grid took `S`
+     * off it — see the displacement note above, which is where the C#'s `S` for
+     * SHOUT became this port's `U`. So the command takes `Shift+U`: one chord from
+     * the key the reference uses, and the same trade the other displaced commands
+     * made. `WAIT_LONG` kept its letter as `Shift+W` and `LOOK_RIGHT` as `Shift+C`,
+     * for the same reason and with the same reasoning written down — a chord
+     * preserves the muscle memory, whereas the one free bare letter (`J`) would
+     * have taught the player a key the reference never used.
+     *
+     * A `Shift+` letter needs no `shouldPreventDefault` handling, unlike the `Ctrl+`
+     * five, because the browser has no action of its own for it.
+     */
+    this.set(PlayerCommand.UNLOAD_AMMO, 'Shift+U');
+
+    /*
      * Waiting a turn is on `X` and on `Num 5`, the C#'s `NumPad5`
      * (`Keybindings.cs:93`), which this port had dropped in favour of `.` alone —
      * while `manual.txt` kept advertising the numpad key. Both are back: `X` is

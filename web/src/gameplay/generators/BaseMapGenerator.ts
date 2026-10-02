@@ -1240,6 +1240,11 @@ export abstract class BaseMapGenerator extends MapGenerator {
     return new ItemRangedWeapon(Models.items.get(ItemID.RANGED_PRECISION_RIFLE));
   }
 
+  //@@MP (Release 6-6)
+  makeItemPrecisionRifleAmmo(): Item {
+    return new ItemAmmo(Models.items.get(ItemID.AMMO_PRECISION_RIFLE));
+  }
+
   makeItemHeavyRifleAmmo(): Item {
     return new ItemAmmo(Models.items.get(ItemID.AMMO_HEAVY_RIFLE));
   }
@@ -1351,6 +1356,16 @@ export abstract class BaseMapGenerator extends MapGenerator {
     return item;
   }
 
+  makeItemBioForceGunAmmo(): Item {
+    const item = new ItemAmmo(Models.items.get(ItemID.AMMO_PLASMA));
+    // because there is only 1 BFG per game
+    item.isForbiddenToAI = true;
+    // only ever spawn one at a time, to avoid it being too plentiful.
+    // it must be super rare
+    item.quantity = 1;
+    return item;
+  }
+
   makeItemBiohazardSuit(): Item {
     const item = new ItemBodyArmor(Models.items.get(ItemID.ARMOR_BIOHAZARD_SUIT));
     return item;
@@ -1365,6 +1380,10 @@ export abstract class BaseMapGenerator extends MapGenerator {
     const item = new ItemExplosive(Models.items.get(ItemID.EXPLOSIVE_C4), Models.items.get(ItemID.EXPLOSIVE_C4_PRIMED));
     item.isForbiddenToAI = true;
     return item;
+  }
+
+  makeItemFuelAmmo(): Item {
+    return new ItemAmmo(Models.items.get(ItemID.AMMO_FUEL));
   }
 
   makeItemChainsaw(): Item {
@@ -1509,6 +1528,38 @@ export abstract class BaseMapGenerator extends MapGenerator {
     return item;
   }
 
+  makeItemGrenadeLauncherAmmo(): Item {
+    const item = new ItemAmmo(Models.items.get(ItemID.AMMO_GRENADES));
+    // because there is only 1 launcher per game
+    item.isForbiddenToAI = true;
+    return item;
+  }
+
+  makeItemRandomCommonAmmo(): Item {
+    // The six common ammo types, in the C#'s order and off one `Roll(0, 6)`.
+    // The order is the C#'s and is load-bearing: it is a seeded generator, so
+    // reordering the cases would move every common-ammo spawn in every run
+    // generated from here on. The `default` throw is the C#'s
+    // `InvalidOperationException` and is unreachable for a `Roll(0, 6)`.
+    const roll = this.m_Game.rules.roll(0, 6);
+    switch (roll) {
+      case 0:
+        return this.makeItemHeavyRifleAmmo();
+      case 1:
+        return this.makeItemPrecisionRifleAmmo();
+      case 2:
+        return this.makeItemLightPistolAmmo();
+      case 3:
+        return this.makeItemLightRifleAmmo();
+      case 4:
+        return this.makeItemHeavyPistolAmmo();
+      case 5:
+        return this.makeItemShotgunAmmo();
+      default:
+        throw new Error('unhandled roll');
+    }
+  }
+
   makeItemHockeyStick(): Item {
     const item = new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_HOCKEY_STICK));
     return item;
@@ -1567,6 +1618,13 @@ export abstract class BaseMapGenerator extends MapGenerator {
     return item;
   }
 
+  makeItemMinigunAmmo(): Item {
+    const item = new ItemAmmo(Models.items.get(ItemID.AMMO_MINIGUN));
+    // because there is only 1 minigun per game
+    item.isForbiddenToAI = true;
+    return item;
+  }
+
   makeItemMolotov(): Item {
     const item = new ItemGrenade(Models.items.get(ItemID.EXPLOSIVE_MOLOTOV), Models.items.get(ItemID.EXPLOSIVE_MOLOTOV_PRIMED));
     return item;
@@ -1575,6 +1633,10 @@ export abstract class BaseMapGenerator extends MapGenerator {
   makeItemNailGun(): Item {
     const item = new ItemRangedWeapon(Models.items.get(ItemID.RANGED_NAIL_GUN));
     return item;
+  }
+
+  makeItemNailGunAmmo(): Item {
+    return new ItemAmmo(Models.items.get(ItemID.AMMO_NAILS));
   }
 
   makeItemNightVisionGoggles(): Item {

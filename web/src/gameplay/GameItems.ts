@@ -1190,11 +1190,15 @@ export class GameItems implements ItemModelDB {
       // `rangedMap` above names `AmmoType.NAIL`, `PRECISION_RIFLE`, `MINIGUN` and
       // `GRENADES` for the nail gun, the army precision rifle, the minigun and the
       // grenade launcher, and `Items_RangedWeapons.csv` has a row for each, so what
-      // was missing was the other half of the pair and not the gun. They still add
-      // no behaviour, because nothing drops them: the port has no
-      // `MakeItemNailGunAmmo` / `MakeItemRandomCommonAmmo` / `MakeItemMinigunAmmo` /
-      // `MakeItemGrenadeLauncherAmmo`, and the C#'s one reader for them is
-      // `DoUnloadAmmoFromGun` (`RogueGame.cs:22132`), which is not ported either.
+      // was missing was the other half of the pair and not the gun. The factories
+      // that make them are ported now -- `makeItemNailGunAmmo`,
+      // `makeItemPrecisionRifleAmmo`, `makeItemMinigunAmmo`,
+      // `makeItemGrenadeLauncherAmmo` and `makeItemRandomCommonAmmo` -- and so is
+      // their one reader, `DoUnloadAmmoFromGun` (`RogueGame.cs:22132`), now reachable
+      // from `PlayerCommand.UNLOAD_AMMO`. What is still missing is the *callers*:
+      // the reference drops them from `BaseTownGenerator` and `RogueGame.cs:28314`,
+      // and none of those call sites is ported, so they add no behaviour in play
+      // yet.
       //
       // Still Alive, Release 5-1. Stack limit 99, and `ITEM_AMMO_NAILS` is
       // `Items/item_ammo_nail_gun` -- the gun's own sprite, which is the reference's
@@ -1225,8 +1229,11 @@ export class GameItems implements ItemModelDB {
     // Five rounds to a stack. `AMMO_PLASMA` is the bio-force gun's ammunition and
     // the weapon *is* ported (`RANGED_BIO_FORCE_GUN`, `AmmoType.PLASMA` in the
     // `rangedMap` above), so as with the four above it is the row that was missing
-    // rather than the gun -- and as with them, nothing spawns it, because
-    // `MakeItemBioForceGunAmmo` (`BaseMapGenerator.cs:2323`) is not ported.
+    // rather than the gun -- and as with them, nothing spawns it yet, because the
+    // reference's caller is `BaseTownGenerator.cs:8473` and that is not ported.
+    // `MakeItemBioForceGunAmmo` (`BaseMapGenerator.cs:2324`) is, and it is the one
+    // of the five that also pins `Quantity = 1` and `IsForbiddenToAI`, so even a
+    // ported caller would spawn exactly one.
     const ammoPlasma = new ItemAmmoModel(
       "bio force plasma",
       "bio force plasma",

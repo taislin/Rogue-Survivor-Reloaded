@@ -4494,6 +4494,10 @@ export class RogueGame {
 			{ label: "Shout", command: PlayerCommand.SHOUT },
 			{ label: "Sleep", command: PlayerCommand.SLEEP },
 			{
+				label: "Unload ammo",
+				command: PlayerCommand.UNLOAD_AMMO,
+			},
+			{
 				label: "Swap Inventory",
 				command: PlayerCommand.SWAP_INVENTORY,
 			},
@@ -8673,6 +8677,14 @@ inv.removeAllQuantity(it);
 							loop = !(await this.HandlePlayerMakeFireForCooking(player));
 							break;
 
+						case PlayerCommand.UNLOAD_AMMO: //@@MP (Release 7-6)
+							if (await this.TryPlayerUnwell()) {
+								loop = false;
+								break;
+							}
+							loop = !this.HandlePlayerUnloadAmmo(player);
+							break;
+
 						case PlayerCommand.LEAD_MODE:
 							if (await this.TryPlayerUnwell()) {
 								loop = false;
@@ -12154,19 +12166,16 @@ inv.removeAllQuantity(it);
 	 * 7-6. The CHANGELOG line is "Players can unload the ammo from their equipped
 	 * ranged weapon."
 	 *
-	 * **Not reachable from a key yet, and that is a gap rather than a decision.** The
-	 * C# dispatches it from `PlayerCommand.UNLOAD_AMMO` (`RogueGame.cs:11078-11082`),
-	 * and that command does not exist in the port's `PlayerCommand` enum -- nor does a
-	 * default binding for it. Both live in files this change may not touch
-	 * (`engine/PlayerCommand.ts`, `engine/Keybindings.ts`), and `PlayerCommand` is
-	 * append-only by save format: inserting the member would silently re-point every
-	 * stored binding above it, which is the reason the file says so at length. **To
-	 * wire it up: append `UNLOAD_AMMO` after `ZOOM_OUT`... `LOOK_RIGHT`, add the
-	 * C#'s default key from `Keybindings.cs`, and add the `case` next to
-	 * `MAKE_COOKING_FIRE` in the turn loop, awaited.**
+	 * **Reachable from a key.** The C# dispatches it from `PlayerCommand.UNLOAD_AMMO`
+	 * (`RogueGame.cs:11078-11082`); that command is now in the port's `PlayerCommand`
+	 * enum, appended at the end by save format, bound to `Shift+U` in `Keybindings`
+	 * (the C#'s bare `U` is this port's SHOUT), given a row in `HandleRedefineKeys`
+	 * and a `case` in the turn loop next to `MAKE_COOKING_FIRE`, awaited.
 	 *
-	 * Everything else is ported and tested: the no-weapon message, the
-	 * `CanActorUnloadAmmoFromGun` gate with its four reasons, and the unload itself.
+	 * That the *last* piece was the binding and not the method is worth stating,
+	 * because the method was complete and tested for a long time while being
+	 * unreachable — a whole unload mechanic, gated and unit-converted and
+	 * message-complete, that no input could reach.
 	 */
 	HandlePlayerUnloadAmmo(player: Actor): boolean {
 		// get player equipped weapon
@@ -12194,10 +12203,21 @@ inv.removeAllQuantity(it);
 	 * **The only reader of ammunition in the reference**, and that is why this method
 	 * is the thing that makes `AMMO_NAILS`, `AMMO_PRECISION_RIFLE`, `AMMO_MINIGUN`,
 	 * `AMMO_GRENADES` and `AMMO_PLASMA` reachable rather than inert. All five have a
-	 * model, a sprite and a weapon that uses them; nothing in the reference *hands* the
-	 * player any of them, so a minigun's ninety-six rounds and a grenade launcher's ten
-	 * tubes exist only as what a survivor can take back out of the gun. `GameItems.ts`
-	 * says the same about all five (`:1194-1197`, `:1228-1229`).
+	 * model, a sprite and a weapon that uses them. They now also have a *source* --
+	 * `BaseMapGenerator`'s `makeItemNailGunAmmo`, `makeItemPrecisionRifleAmmo`,
+	 * `makeItemMinigunAmmo`, `makeItemGrenadeLauncherAmmo` and
+	 * `makeItemBioForceGunAmmo` were the missing half, and `makeItemRandomCommonAmmo`
+	 * (the six-way roll) with them -- so the claim below needed checking rather than
+	 * repeating, and it is now narrower than it was.
+	 *
+	 * What is still true: **nothing in the port yet *calls* those factories.** The
+	 * reference calls them from `BaseTownGenerator` (the police station, the army base,
+	 * the gun shops) and from `RogueGame.cs:28314`, and those call sites are a
+	 * separate piece of work. So a minigun's ninety-six rounds and a grenade
+	 * launcher's ten tubes are still not something a survivor will find lying about:
+	 * they are what a survivor can take back out of the gun. `GameItems.ts` says the
+	 * same about all five (`:1194-1197`, `:1228-1229`), and that is now the whole
+	 * of it.
 	 *
 	 * The mechanic is a unit conversion again, and the same one as `HandlePlayerSiphonFuel`
 	 * in reverse: the gun's magazine becomes an ammo stack, and whatever the inventory
@@ -17364,7 +17384,23 @@ inv.removeAllQuantity(it);
 			lines.push(...this.DescribeItemWeapon(it));
 			if (it instanceof ItemRangedWeapon) {
 				isDefaultUse = false;
+				// C# `:32019-32023`, transcribed including the part that looks like a
+				// mistake. The C# assigns "to fire" and then, on the very next line,
+				// assigns "to unload ammo" over it — with the guard that would have
+				// limited the second to an *equipped* gun commented out
+				// (`//if (rwp.IsEquipped) //@@MP (Release 7-6)`). So the reference shows
+				// every ranged weapon's additional description as "to unload ammo",
+				// and the "to fire" line is dead code that can never be read.
+				//
+				// Kept rather than repaired, for the reason the rest of this port's
+				// reference quirks are kept: this is a second copy of the string table
+				// to hold correct, and a repair here would be a divergence nobody
+				// asked for. It does cost something real — the player is never told
+				// that LMB fires, on any gun — so it is written down here rather than
+				// left to be discovered. `isDefaultUse = false` above is the C#'s and
+				// is unaffected: left-click still fires.
 				inInvAdditionalDesc = `to fire : <${key(PlayerCommand.FIRE_MODE)}>`;
+				inInvAdditionalDesc = `to unload ammo : <${key(PlayerCommand.UNLOAD_AMMO)}>`;
 			}
 		} else if (it instanceof ItemFood) {
 			lines.push(...this.DescribeItemFood(it));
