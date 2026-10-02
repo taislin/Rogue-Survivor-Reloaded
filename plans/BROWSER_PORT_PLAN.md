@@ -76,14 +76,25 @@
 >   changes: the catalogues are per-sex, so `male_hair3` means nothing to a female
 >   body and is dropped back to random *with a line on screen saying so*.
 >
-> Known-broken: `extended-audio.test.ts`'s fork-sound gate now reports
-> `RogueGame.ts:22110 EQUIP` as ungated. That line is a **comment** explaining the
-> shield-block `EQUIP` gate, which is correctly gated three lines above its call
-> site. It passes at `49f2582` and fails with any insertion above it, so it is a
-> pre-existing fragility in a source-scanning test that this work merely exposed —
-> not a sound that lost its gate. Its comment stripper was made correct (block
-> comments too) and the report did not change, so the mechanism is still not
-> understood and it is left alone rather than papered over.
+> Known-fixed, and worth knowing about: adding this feature made
+> `extended-audio.test.ts`'s fork-sound gate report `RogueGame.ts:22110 EQUIP` as
+> an ungated call site. It was **not** a sound that lost its gate — 22110 is a
+> *comment* explaining the shield-block `EQUIP` gate, and the real call site below
+> it was correctly gated. Two separate weaknesses in that scan were involved, both
+> found by neutering the gate and confirming the test still fails:
+>
+> 1. **Bulk-table membership was compared in character offsets.** Inserting a line
+>    anywhere above a span shifts the offset of everything below it, so whether a
+>    given line stayed *inside* the span depended on where the insertion fell
+>    relative to the span's own start and end. Both sides are now measured in
+>    lines, which makes insertions above a span inert.
+> 2. **Comment stripping did not strip.** `raw.replace(/\/\/.*$/, "")` left the
+>    prose in scope, so an id named in a comment about a gate was read as a call
+>    to it. Now strips line *and* block comments.
+>
+> The test was verified in both directions after the fix: 20/20 on the real source,
+> and still fails with exactly one offender when the shield `EQUIP` gate is
+> replaced with `true`. A gate that cannot be made to fail is not a gate.
 >
 > **Numbers in this file were stale by a wide margin until 2026-10-02** — the test
 > count alone was quoted as 1 542 in eight places when it was over 2 800, and

@@ -584,6 +584,22 @@ describe("the gate", () => {
       const text = readFileSync(path, "utf-8");
       const lines = text.split("\n");
 
+      /**
+       * The code on a line, with comments removed.
+       *
+       * A gate scan reads *code*. An id inside a comment is prose about a sound,
+       * not a call to it, and the shield-block `EQUIP` comment at line ~22110
+       * proved the old `raw.replace(/\/\/.*$/, "")` did not achieve that: with the
+       * real call site correctly gated, the comment was still reported as an
+       * ungated call site.
+       *
+       * Block comments are stripped too, for the same reason. A string literal
+       * containing `//` would be over-stripped; no id is named inside one, and a
+       * gate that a comment can trip is not a gate.
+       */
+      const stripComments = (l: string): string =>
+        l.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[\s\S]*$/, "");
+
       // **Bulk tables are a second legitimate shape**, and the exemption is
       // deliberately narrow rather than a widening of the three-line window.
       //
@@ -603,7 +619,7 @@ describe("the gate", () => {
       // the line the declaration closes. It has to start at the declaration, not the
       // docblock above it, because the docblock names ids in prose and prose is not a
       // declaration.
-      const bulkSpans = BULK_TABLES.map(({ name, from }) => {
+const bulkSpans = BULK_TABLES.map(({ name, from }) => {
         const at = text.indexOf(`const ${name}`);
         const docFrom = text.indexOf(from);
         const start = docFrom === -1 ? at : docFrom;
@@ -612,7 +628,7 @@ describe("the gate", () => {
         // the docblock belongs to a type alias in the middle of the section.
         const closes = [text.indexOf("\n};", at), text.indexOf("\n]);", at)].filter((n) => n !== -1);
         const end = closes.length === 0 ? -1 : Math.min(...closes);
-        // "Gated" means two things at once: the file contains an
+        // "Gated" means two things at once: the file contains a
         // `Feature.ExtendedAudio` gate, *and* the table's name occurs more than once
         // -- once at its declaration and once at a read.
         //
@@ -626,14 +642,40 @@ describe("the gate", () => {
         const gated = at !== -1 && occurrences >= 2 && /Feature\.ExtendedAudio/.test(text);
         return { start, end: end === -1 ? text.length : end, gated };
       });
-      const inBulkTable = (offset: number): boolean =>
-        bulkSpans.some((s) => s.gated && offset >= s.start && offset <= s.end);
 
-      let offset = 0;
+      /**
+       * The 0-based line index containing a character offset.
+       *
+       * **The spans above are character offsets; membership has to be decided in
+       * lines.** Comparing a line's own character offset against a span measured
+       * in characters looks equivalent and is not: inserting a line anywhere above
+       * a span shifts the offset of everything below it, and whether a given line
+       * stays inside the span then depends on *where* the insertion fell relative
+       * to the span's own start and end. Adding an import at the top of the file
+       * moved one line across a boundary and this test began reporting a line it
+       * had passed for months -- a line that turned out to be a comment, so it
+       * could not have been the thing that moved at all. Measuring both sides in
+       * lines makes insertions above a span inert, which is the only property that
+       * matters for a scan whose input is a file people edit.
+       */
+      const lineOf = (charOffset: number): number => {
+        let n = 0;
+        const limit = Math.max(0, Math.min(charOffset, text.length));
+        for (let k = 0; k < limit; k++) if (text.charCodeAt(k) === 10) n++;
+        return n;
+      };
+      const bulkSpanLines = bulkSpans.map((s) => ({
+        startLine: lineOf(s.start),
+        endLine: s.end === text.length ? Infinity : lineOf(s.end),
+        gated: s.gated,
+      }));
+      const inBulkTable = (lineIndex: number): boolean =>
+        bulkSpanLines.some(
+          (s) => s.gated && lineIndex >= s.startLine && lineIndex <= s.endLine,
+        );
+
       lines.forEach((raw, i) => {
-        const at = offset;
-        offset += raw.length + 1;
-        const code = raw.replace(/\/\/.*$/, "");
+        const code = stripComments(raw);
         // **Every** id on the line, not the first. The scanner used `String.match`,
         // which sees one, and that was invisible until a line carried two -- the
         // weapon table's `{ single: A, rapid: B }` is eleven of them. A scanner that
@@ -644,8 +686,8 @@ describe("the gate", () => {
           if (!FORK_IDS.has(DECLARED[id] ?? "")) continue;
           const window = lines
             .slice(Math.max(0, i - 3), i + 1)
-            .map((l) => l.replace(/\/\/.*$/, ""));
-          if (window.some((l) => /Feature\.ExtendedAudio/.test(l)) || inBulkTable(at)) {
+            .map(stripComments);
+          if (window.some((l) => /Feature\.ExtendedAudio/.test(l)) || inBulkTable(i)) {
             gated.push(id);
           } else {
             offenders.push(`${path}:${i + 1}  ${id}`);
