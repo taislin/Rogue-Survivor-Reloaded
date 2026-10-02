@@ -4,6 +4,7 @@ import { StdTownGenerator } from "@gameplay/generators/StdTownGenerator";
 import { Parameters as TownParameters } from "@gameplay/generators/BaseTownGenerator";
 import { Item } from "@data/Item";
 import { ItemID } from "@gameplay/GameItems";
+import { ItemLight } from "@engine/items/ItemLight";
 import { Models } from "@data/Models";
 import { imagePath } from "@engine/AssetPaths";
 import { publicFilePath } from "./helpers/assetPath";
@@ -73,6 +74,36 @@ describe("makeItem factories", () => {
     // Guards everything below from passing on an empty list, which a rename or a
     // prototype change would otherwise produce silently.
     expect(FACTORIES.length).toBeGreaterThan(100);
+  });
+
+  it("builds the three backpack factories ungated, as the C# has them", () => {
+    // `MakeItemHikingPack`, `MakeItemSatchel` and `MakeItemWaistPouch` are bare
+    // `new ItemBackpack(...) { IsForbiddenToAI = true }` in the C#
+    // (`BaseMapGenerator.cs:2394-2405`) with no `Feature` check, and the port follows
+    // that: the `Feature.ShelterBackpacks` gate lives on the eight *roll sites*, not on
+    // the factories.
+    //
+    // Which means "returns null under CLASSIC" is the *wrong* answer here, and the
+    // per-factory tests above — which run under whatever ruleset the harness leaves
+    // behind — are what said so. This asserts the boundary directly rather than
+    // inferring it: a factory that returned null would fail on `model.id`.
+    for (const name of ["makeItemHikingPack", "makeItemSatchel", "makeItemWaistPouch"]) {
+      const item = factoryFor(name)();
+      expect(item, `${name} returned nothing`).not.toBeNull();
+      expect(item.model, `${name} has no model`).toBeDefined();
+      expect(item.isForbiddenToAI, `${name} must be forbidden to the AI`).toBe(true);
+    }
+  });
+
+  it("builds a candles box as a plain item, not a light", () => {
+    // `makeItemCandlesBox` is needed by the C#'s bedroom table (`case 2`). Its model
+    // is a plain `ItemModel` — the light comes from a `DECO_LIT_CANDLE` decoration
+    // placed on drop (`RogueGame.cs:21203`), a path not yet ported — so
+    // `new ItemLight(...)` throws on it. Asserted because that throw is the whole
+    // reason this factory looks the way it does.
+    const item = factoryFor("makeItemCandlesBox")();
+    expect(item.model.id).toBe(ItemID.CANDLES_BOX);
+    expect(item).not.toBeInstanceOf(ItemLight);
   });
 
   it("collects the parameterised factories instead of calling them wrongly", () => {

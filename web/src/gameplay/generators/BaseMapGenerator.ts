@@ -25,6 +25,7 @@ import { ItemBarricadeMaterial, ItemEntertainment, ItemSprayPaint, ItemSprayPain
 import { ItemFood, ItemFoodModel } from '@engine/items/ItemFood';
 import { ItemGrenade, ItemExplosive } from '@engine/items/ItemExplosive';
 import { ItemLight } from '@engine/items/ItemLight';
+import { ItemBackpack } from '@engine/items/ItemBackpack';
 import { ItemMedicine } from '@engine/items/ItemMedicine';
 import { ItemTracker } from '@engine/items/ItemTracker';
 import { ItemTrap } from '@engine/items/ItemTrap';
@@ -1275,6 +1276,68 @@ export abstract class BaseMapGenerator extends MapGenerator {
 
   makeItemStenchKiller(): Item {
     return new ItemSprayScent(Models.items.get(ItemID.SCENT_SPRAY_STENCH_KILLER));
+  }
+
+  /**
+   * C# `MakeItemHikingPack` — `BaseMapGenerator.cs:2400` — the Release 8-2 half of
+   * the hunting shop's `case 3`, and one of three backpack models the port had no
+   * factory for at all.
+   *
+   * **Ungated**, and the C# is the reason. `MakeItemHikingPack` there is a bare
+   * `new ItemBackpack(m_Game.GameItems.HIKING_PACK) { IsForbiddenToAI = true }` with
+   * no `Feature` check, and neither is `MakeItemSatchel`, `MakeItemWaistPouch` or
+   * `MakeItemDaypack`. The `Feature.ShelterBackpacks` gate lives on the *roll sites*
+   * — the eight places that decide whether a backpack spawns in the world — which is
+   * why `makeBackpack` in `gameplay/Backpacks.ts` is gated and this is not.
+   *
+   * Gating the factory instead was the first attempt and it is wrong twice over: it
+   * makes these three return `null` under CLASSIC, and it would have put the gate in
+   * two places, so a future site that forgets the feature check would silently ship
+   * a pack. `item-factories.test.ts` enumerates the prototype chain, so the gated
+   * version failed it with "returns an item with no real model" — which is the guard
+   * working, and is the reason this comment is here rather than a shorter one.
+   */
+  makeItemHikingPack(): Item {
+    return this.makeUngatedBackpack(ItemID.BACKPACK_HIKING_PACK);
+  }
+
+  /** C# `MakeItemSatchel`. */
+  makeItemSatchel(): Item {
+    return this.makeUngatedBackpack(ItemID.BACKPACK_SATCHEL);
+  }
+
+  /** C# `MakeItemWaistPouch`. */
+  makeItemWaistPouch(): Item {
+    return this.makeUngatedBackpack(ItemID.BACKPACK_WAIST_POUCH);
+  }
+
+  /**
+   * A backpack, with the C#'s `IsForbiddenToAI` and without the feature gate.
+   *
+   * Private rather than a fourth copy of the two-line initialiser, and separate from
+   * the exported `makeBackpack` in `gameplay/Backpacks.ts`, which *is* gated. The
+   * two look alike and mean different things: this one builds the item, that one
+   * builds the item *if the feature is on*.
+   */
+  private makeUngatedBackpack(modelId: ItemID): Item {
+    const pack = new ItemBackpack(Models.items.get(modelId));
+    pack.isForbiddenToAI = true;
+    return pack;
+  }
+
+  /**
+   * C# `MakeItemCandlesBox` — the bedroom's `case 2`.
+   *
+   * A plain `ItemModel`, deliberately, and *not* an `ItemLight`. The model docblock
+   * in `GameItems` explains it at length: the flavour text promises light, and the
+   * C# has no light field on the initialiser at all. A candles box is light because
+   * dropping one places a `DECO_LIT_CANDLE` decoration (`RogueGame.cs:21203`) —
+   * a path not yet ported — so here it is a box of nothing, which is recorded on
+   * the model rather than invented around. `new ItemLight(...)` throws on this model,
+   * which is the correct outcome and the reason this is worth a comment.
+   */
+  makeItemCandlesBox(): Item {
+    return new Item(Models.items.get(ItemID.CANDLES_BOX));
   }
 
   makeItemArmyRifle(): Item {
