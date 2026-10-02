@@ -142,7 +142,31 @@ export abstract class BaseMapGenerator extends MapGenerator {
     GameImages.FEMALE_EYES6,
   ];
 
-  private static readonly BIKER_HEADS = [GameImages.BIKER_HAIR1, GameImages.BIKER_HAIR2, GameImages.BIKER_HAIR3];
+  /**
+ * The six outfit layers available to a body, as the choices on offer.
+ *
+ * The character customiser offers exactly the set `dressCivilian` would have
+ * rolled from, so a player cannot pick a look the generator cannot produce.
+ *
+ * **Copies, not the arrays themselves.** These are the catalogue every random
+ * civilian in the game is dressed from, and a caller that sorted or spliced one
+ * would change which sprite a survivor turns up in — a menu reaching into
+ * generator state is exactly the coupling worth closing with a copy.
+ */
+static civilianOutfitChoices(isMale: boolean): Readonly<
+  Record<"eyes" | "skin" | "head" | "torso" | "legs" | "shoes", readonly string[]>
+> {
+  return {
+    eyes: [...(isMale ? BaseMapGenerator.MALE_EYES : BaseMapGenerator.FEMALE_EYES)],
+    skin: [...(isMale ? BaseMapGenerator.MALE_SKINS : BaseMapGenerator.FEMALE_SKINS)],
+    head: [...(isMale ? BaseMapGenerator.MALE_HEADS : BaseMapGenerator.FEMALE_HEADS)],
+    torso: [...(isMale ? BaseMapGenerator.MALE_TORSOS : BaseMapGenerator.FEMALE_TORSOS)],
+    legs: [...(isMale ? BaseMapGenerator.MALE_LEGS : BaseMapGenerator.FEMALE_LEGS)],
+    shoes: [...(isMale ? BaseMapGenerator.MALE_SHOES : BaseMapGenerator.FEMALE_SHOES)],
+  };
+}
+
+private static readonly BIKER_HEADS = [GameImages.BIKER_HAIR1, GameImages.BIKER_HAIR2, GameImages.BIKER_HAIR3];
   private static readonly BIKER_LEGS = [GameImages.BIKER_PANTS];
   private static readonly BIKER_SHOES = [GameImages.BIKER_SHOES];
 
@@ -173,7 +197,7 @@ export abstract class BaseMapGenerator extends MapGenerator {
   ): void {
     if (!eyes || !skins || !heads || !torsos || !legs || !shoes) {
       const male = actor.model.dollBody.isMale;
-      this.dressCivilian(
+      BaseMapGenerator.dressActorDoll(
         roller,
         actor,
         male ? BaseMapGenerator.MALE_EYES : BaseMapGenerator.FEMALE_EYES,
@@ -185,6 +209,28 @@ export abstract class BaseMapGenerator extends MapGenerator {
       );
       return;
     }
+    BaseMapGenerator.dressActorDoll(roller, actor, eyes, skins, heads, torsos, legs, shoes);
+  }
+
+  /**
+   * The six layers, rolled from the given candidates and written to the doll.
+   *
+   * **Static, and the instance method above delegates to it**, because none of
+   * this needs a `Game` and the constructor demands one. That matters for the
+   * character customiser: it has to dress a throwaway actor to draw a preview, and
+   * being able to reach the real dressing code without building a whole game is
+   * what keeps the preview from being a second, drifting copy of it.
+   */
+  static dressActorDoll(
+    roller: DiceRoller,
+    actor: Actor,
+    eyes: string[],
+    skins: string[],
+    heads: string[],
+    torsos: string[],
+    legs: string[],
+    shoes: string[],
+  ): void {
     actor.doll.removeAllDecorations();
     actor.doll.addDecoration(DollPart.EYES, eyes[roller.roll(0, eyes.length)]);
     actor.doll.addDecoration(DollPart.SKIN, skins[roller.roll(0, skins.length)]);
@@ -197,7 +243,7 @@ export abstract class BaseMapGenerator extends MapGenerator {
   skinNakedHuman(roller: DiceRoller, actor: Actor, eyes?: string[], skins?: string[], heads?: string[]): void {
     if (!eyes || !skins || !heads) {
       const male = actor.model.dollBody.isMale;
-      this.skinNakedHuman(
+      BaseMapGenerator.skinActorDoll(
         roller,
         actor,
         male ? BaseMapGenerator.MALE_EYES : BaseMapGenerator.FEMALE_EYES,
@@ -206,6 +252,17 @@ export abstract class BaseMapGenerator extends MapGenerator {
       );
       return;
     }
+    BaseMapGenerator.skinActorDoll(roller, actor, eyes, skins, heads);
+  }
+
+  /** `skinNakedHuman`'s body, static for the reason `dressActorDoll` is. */
+  static skinActorDoll(
+    roller: DiceRoller,
+    actor: Actor,
+    eyes: string[],
+    skins: string[],
+    heads: string[],
+  ): void {
     actor.doll.removeAllDecorations();
     actor.doll.addDecoration(DollPart.EYES, eyes[roller.roll(0, eyes.length)]);
     actor.doll.addDecoration(DollPart.SKIN, skins[roller.roll(0, skins.length)]);

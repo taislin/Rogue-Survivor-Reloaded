@@ -1,6 +1,7 @@
 import { storage } from "@engine/storage";
 import { GameMode, Ruleset, Session } from "@engine/Session";
 import { reportSwallowed } from "@engine/Diagnostics";
+import { CharacterAppearance } from "@engine/CharacterAppearance";
 
 /**
  * The ruleset and game mode the player last confirmed, so the new-game quick start
@@ -73,6 +74,39 @@ function loadIndices(): { rulesetIdx: number; modeIdx: number } | null {
     // convenience rather than something to fail on.
     reportSwallowed("NewGameConfig.load", e);
     return null;
+  }
+}
+
+/**
+ * Remembers the chosen look, so the customiser reopens on it.
+ *
+ * Separate key from the ruleset pair because the two are remembered for different
+ * reasons and are cleared differently: the pair is "what did I last play", while
+ * this is "what did I last make my character look like". Keeping them apart means
+ * a player who randomises their look each run does not also lose their settings.
+ */
+export const LAST_APPEARANCE_KEY = "lastCharacterAppearance";
+
+/** Loads the remembered look, or an all-random one. Never throws. */
+export function loadAppearance(): CharacterAppearance {
+  try {
+    const raw = storage.getItem(LAST_APPEARANCE_KEY);
+    if (!raw) return new CharacterAppearance();
+    return CharacterAppearance.fromJSON(JSON.parse(raw));
+  } catch (e) {
+    reportSwallowed("NewGameConfig.loadAppearance", e);
+    return new CharacterAppearance();
+  }
+}
+
+/** Records the chosen look. Best-effort, like `saveNewGameConfig`. */
+export function saveAppearance(appearance: CharacterAppearance): void {
+  try {
+    const record = appearance.toJSON();
+    if (Object.keys(record).length === 0) storage.removeItem(LAST_APPEARANCE_KEY);
+    else storage.setItem(LAST_APPEARANCE_KEY, JSON.stringify(record));
+  } catch (e) {
+    reportSwallowed("NewGameConfig.saveAppearance", e);
   }
 }
 

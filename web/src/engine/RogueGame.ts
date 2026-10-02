@@ -67,6 +67,7 @@ import { NullMusicManager } from "@engine/audio/NullMusicManager";
 import { Color } from "@engine/Color";
 import { fireAndForget, reportSwallowed } from "@engine/Diagnostics";
 import { DiceRoller } from "@engine/DiceRoller";
+import { BaseMapGenerator } from "@gameplay/generators/BaseMapGenerator";
 import { Direction } from "@engine/Direction";
 import {
 	remapForView,
@@ -179,12 +180,23 @@ import {
 import { reattachPlayer } from "@engine/serialization/sessionGraphRoot";
 import { storage, whenStorageReady } from "@engine/storage";
   import {
+    APPEARANCE_LAYERS,
+    APPEARANCE_LAYER_LABELS,
+    CharacterAppearance,
+    describeAppearanceImage,
+    outfitChoices,
+    type AppearanceLayer,
+    type OutfitChoices,
+  } from "@engine/CharacterAppearance";
+  import {
     applyLastNewGameConfig,
     saveNewGameConfig,
     RULESET_ENTRIES,
     RULESET_VALUES,
     MODE_ENTRIES,
     MODE_VALUES,
+    loadAppearance,
+    saveAppearance,
   } from "@engine/NewGameConfig";
 import { TextFile } from "@engine/TextFile";
 import { TaskRemoveDecoration } from "@engine/tasks/TaskRemoveDecoration";
@@ -283,6 +295,19 @@ export const MAP_MAX_HEIGHT: number = 100;
 export const MAP_MAX_WIDTH: number = 100;
 export const TILE_SIZE: number = 32;
 export const ACTOR_SIZE: number = 32;
+
+/**
+ * Where the character customiser's two columns split, and how big the preview is.
+ *
+ * Split at 620 rather than half the 1366px canvas: the left column's longest row
+ * is SHIRT: <Shirt 1> <Shirt 2> <Shirt 3> <Shirt 4> <Shirt 5>, which overruns
+ * the midpoint at the bold font's width. The right column then has ~740px, and a
+ * 3x figure is 96px, so the preview is centred in more space than it needs -
+ * which is why it is drawn at the column's left edge rather than its middle.
+ */
+export const PREVIEW_COLUMN_X: number = 620;
+/** 3x. Enough to read a face; 4x starts to show the sprite's own pixel grid. */
+export const PREVIEW_SCALE: number = 3;
 export const ACTOR_OFFSET: number = (TILE_SIZE - ACTOR_SIZE) / 2;
 /**
  * 16:9 widescreen canvas (1366x768, the common HD panel size) instead of C#'s
@@ -756,6 +781,17 @@ export class CharGen {
 	undeadModel: ActorID = ActorID.MALE_CIVILIAN;
 	isMale = true;
 	startingSkill: SkillID = SkillID.AGILE;
+
+	/**
+	 * The player's chosen look, all layers random until they say otherwise.
+	 *
+	 * Port-only: the C# has no appearance screen, so there is nothing here to
+	 * mirror. It is applied to the created player's doll, which the save
+	 * serialises whole (see the `doll` codec in `serialization/specs.ts`), so a
+	 * chosen look survives a save and reload without appearing in the save schema
+	 * at all.
+	 */
+	appearance: CharacterAppearance = new CharacterAppearance();
 }
 
 // ── C# `#region Overlays` (RogueGame.cs:452) ────────────────────────────────
@@ -2658,6 +2694,9 @@ export class RogueGame {
 		// they made. Applying it once, after the reset, gives the picker that for
 		// free and leaves it the single source of truth.
 		applyLastNewGameConfig(this.m_Session);
+		// The remembered look, so the customiser reopens on the last character made
+		// rather than on all-random every single run.
+		this.m_CharGen.appearance = loadAppearance();
 
 		// C# allocates an unseeded `new DiceRoller()` here (RogueGame.cs:1417),
 		// which rolls off the clock. We seed it from the session instead so a run
@@ -2878,7 +2917,29 @@ export class RogueGame {
 	private m_QuickStartRequested = false;
 
 	/**
-	 * `Shift+Enter`: a random human, of random sex, with a random skill.
+	 * Dresses the newly created player from the look the customiser chose.
+	 *
+	 * **The same static the preview draws with**, so what was previewed is what is
+	 * worn — the alternative, a second dressing path, would drift from the first the
+	 * moment a layer was added to one of them.
+	 *
+	 * An all-random look expands to the whole catalogue per layer, which is exactly
+	 * what the generator rolled from before this existed, so an untouched screen
+	 * produces the same distribution of survivors it always did.
+	 *
+	 * The zombified branches pass through here too, dressed as living first and then
+	 * `Zombify`d, which is the reference's order and the reason the zombified player
+	 * keeps a chosen shirt.
+	 */
+	private dressPlayerFromCharGen(roller: DiceRoller, player: Actor): void {
+		const isMale = player.model.dollBody.isMale;
+		const [eyes, skins, heads, torsos, legs, shoes] =
+			this.m_CharGen.appearance.asDressArgs(outfitChoices(isMale));
+		BaseMapGenerator.dressActorDoll(roller, player, eyes, skins, heads, torsos, legs, shoes);
+	}
+
+/**
+ * `Shift+Enter`: a random human, of random sex, with a random skill.
 	 *
 	 * Shared by both quick starts so the two cannot drift apart. Roll semantics
 	 * are the C#'s, from the screens window 2 replaced: `rollChance(50)` for sex
@@ -3024,23 +3085,52 @@ export class RogueGame {
 		}
 
 		// Rows depend on the race, so the count is derived: 0 = race,
-		// 1 = sex or type, 2 = skill (human only).
+		// 1 = sex or type, 2 = skill (human only), then one row per appearance
+		// layer. The appearance rows are the same for both races, so they live
+		// *above* the split count rather than being renumbered when it changes.
 		let row = 0;
 		let raceIdx = 0;
 		let sexIdx = 0;
 		let typeIdx = 0;
 		let skillIdx = 0;
 
+		// The look is edited live, on a copy, so ESC can leave `m_CharGen`
+		// untouched. It is only committed on Enter, like every other row here.
+		const appearance = this.m_CharGen.appearance.clone();
+
+		// Which body the catalogue is drawn from. Sex is what selects it, and it is
+		// the row above, so it is derived each frame rather than stored twice.
+		let catalogueIsMale = true;
+		// Set when switching sex had to drop a choice, so the frame can say so
+		// instead of the player's hair quietly changing under the cursor.
+		let droppedNote: string[] = [];
+
+		// The customiser's own roller. A *dedicated* one, because a random layer has
+		// to land on the same sprite every frame or the preview flickers between
+		// five skins while the player reads the rows above it. Seeded from the
+		// session, so a run is still reproducible, and it is the roller the *chosen*
+		// appearance is later resolved with, so what was previewed is what is worn.
+		const previewRoller = new DiceRoller(this.m_Session.seed ^ 0x5eed);
+
 		let loop = true;
 		let ok = false;
 		do {
 			const isUndead = raceIdx === 1;
 			// Switching race can leave `row` past the end (2 -> 1 rows for undead).
-			const rows = isUndead ? 2 : 3;
+			const baseRows = isUndead ? 2 : 3;
+			const rows = baseRows + APPEARANCE_LAYERS.length;
 			if (row >= rows) row = rows - 1;
 
 			const n = isUndead ? typeEntries.length : sexEntries.length;
 			const cur = isUndead ? typeIdx : sexIdx;
+
+			// `*Random*` sex still has to offer a body to draw, so the catalogue
+			// follows the *row*, not the roll: a random-sex character previews male
+			// until the roller picks at creation. Better a stable preview that might
+			// change than one that reshuffles on every frame.
+			const choices: OutfitChoices = outfitChoices(isUndead ? true : catalogueIsMale);
+			const activeLayer: AppearanceLayer | null =
+				row >= baseRows ? APPEARANCE_LAYERS[row - baseRows] : null;
 
 			this.m_UI.UI_Clear(Color.Black);
 			let gy = 0;
@@ -3071,6 +3161,34 @@ export class RogueGame {
 			}
 			gy += MENU_BOLD_LINE_SPACING;
 
+			// All six appearance rows at once, as asked: the point of a customiser is
+			// seeing the whole look, and hiding half of it behind a sub-screen is what
+			// made the three original screens unpleasant to use.
+			for (const layer of APPEARANCE_LAYERS) {
+				const catalogue = choices[layer];
+				// Index 0 is `*Random*`; the rest are the catalogue in order.
+				const entries = ["*Random*", ...catalogue.map(describeAppearanceImage)];
+				const chosen = appearance[layer];
+				const idx = chosen === null ? 0 : catalogue.indexOf(chosen) + 1;
+				this.DrawOptionRow(
+					APPEARANCE_LAYER_LABELS[layer],
+					entries,
+					idx,
+					PREVIEW_COLUMN_X,
+					gy,
+					row >= baseRows && layer === activeLayer,
+				);
+				gy += MENU_BOLD_LINE_SPACING;
+			}
+
+			this.m_UI.UI_DrawStringBoldLarge(
+				Color.DimGray,
+				"*Random* = rolled at creation",
+				PREVIEW_COLUMN_X,
+				gy,
+			);
+			gy += 2 * MENU_BOLD_LINE_SPACING;
+
 			// Stat lines for whatever the active row offers, carried over from the
 			// screens this replaces, so each choice stays an informed one.
 			const details: string[] = [];
@@ -3078,13 +3196,13 @@ export class RogueGame {
 				details.push(
 					isUndead ? "Undead: eat brains, and die again." : "Human: try to survive.",
 				);
-			} else if (isUndead) {
+			} else if (isUndead && row === 1) {
 				details.push(
 					typeIdx === 0
 						? "(a type will be picked at random)"
 						: this.DescribeUndeadModelStatLine(undeadModels[typeIdx - 1]),
 				);
-			} else if (row === 1) {
+			} else if (!isUndead && row === 1) {
 				if (sexIdx === 0) details.push("(a sex will be picked at random)");
 				else {
 					const m = sexIdx === 1 ? maleModel : femaleModel;
@@ -3092,18 +3210,36 @@ export class RogueGame {
 						`HP:${padZero(m.startingSheet.baseHitPoints, 2)}  Def:${padZero(m.startingSheet.baseDefence.value, 2)}  Dmg:${m.startingSheet.unarmedAttack.damageValue}`,
 					);
 				}
-			} else if (skillIdx === 0) {
-				details.push("(a skill will be picked at random)");
-			} else {
-				const sk = skillIdx as SkillID;
+			} else if (!isUndead && row === 2) {
+				if (skillIdx === 0) details.push("(a skill will be picked at random)");
+				else {
+					const sk = skillIdx as SkillID;
+					details.push(
+						`${Skills.maxSkillLevel(sk)} max - ${this.DescribeSkillShort(sk)}`,
+					);
+				}
+			} else if (activeLayer !== null) {
+				const chosen = appearance[activeLayer];
 				details.push(
-					`${Skills.maxSkillLevel(sk)} max - ${this.DescribeSkillShort(sk)}`,
+					chosen === null
+						? `(${APPEARANCE_LAYER_LABELS[activeLayer].trim().toLowerCase()} will be picked at random)`
+						: describeAppearanceImage(chosen),
 				);
 			}
+			for (const note of droppedNote) details.push(note);
 			for (const line of details) {
 				this.m_UI.UI_DrawStringBoldLarge(Color.Gray, line, 0, gy);
 				gy += MENU_BOLD_LINE_SPACING;
 			}
+
+			// The preview, right column. Drawn after the rows because the doll is
+			// rebuilt each frame from the current selections.
+			this.DrawCharacterPreview(
+				isUndead,
+				isUndead ? typeIdx : sexIdx === 0 ? 0 : catalogueIsMale ? 1 : 2,
+				appearance,
+				previewRoller,
+			);
 
 			this.DrawFootnote(
 				Color.White,
@@ -3134,15 +3270,33 @@ export class RogueGame {
 					break;
 				case "ArrowLeft":
 					if (row === 0) raceIdx = step(raceIdx, raceEntries.length, -1);
-					else if (isUndead) typeIdx = step(cur, n, -1);
-					else if (row === 1) sexIdx = step(cur, n, -1);
-					else skillIdx = step(skillIdx, skillEntries.length, -1);
+					else if (isUndead && row === 1) typeIdx = step(cur, n, -1);
+					else if (!isUndead && row === 1) {
+						sexIdx = step(cur, n, -1);
+						catalogueIsMale = sexIdx === 2 ? false : sexIdx === 1;
+						this.noteDroppedAppearance(appearance, catalogueIsMale, droppedNote);
+					} else if (!isUndead && row === 2) skillIdx = step(skillIdx, skillEntries.length, -1);
+					else if (activeLayer !== null) {
+						const catalogue = choices[activeLayer];
+						const at = appearance[activeLayer] === null ? 0 : catalogue.indexOf(appearance[activeLayer]!) + 1;
+						const next = step(at, catalogue.length + 1, -1);
+						appearance[activeLayer] = next === 0 ? null : catalogue[next - 1];
+					}
 					break;
 				case "ArrowRight":
 					if (row === 0) raceIdx = step(raceIdx, raceEntries.length, 1);
-					else if (isUndead) typeIdx = step(cur, n, 1);
-					else if (row === 1) sexIdx = step(cur, n, 1);
-					else skillIdx = step(skillIdx, skillEntries.length, 1);
+					else if (isUndead && row === 1) typeIdx = step(cur, n, 1);
+					else if (!isUndead && row === 1) {
+						sexIdx = step(cur, n, 1);
+						catalogueIsMale = sexIdx === 1;
+						this.noteDroppedAppearance(appearance, catalogueIsMale, droppedNote);
+					} else if (!isUndead && row === 2) skillIdx = step(skillIdx, skillEntries.length, 1);
+					else if (activeLayer !== null) {
+						const catalogue = choices[activeLayer];
+						const at = appearance[activeLayer] === null ? 0 : catalogue.indexOf(appearance[activeLayer]!) + 1;
+						const next = step(at, catalogue.length + 1, 1);
+						appearance[activeLayer] = next === 0 ? null : catalogue[next - 1];
+					}
 					break;
 				case "Escape":
 					ok = false;
@@ -3163,6 +3317,11 @@ export class RogueGame {
 						// scoring : starting skill.
 						this.m_Session.scoring.startingSkill = skID;
 					}
+					// Only on Enter, so ESC leaves the last run's look alone. The
+					// catalogue the choices were validated against is the one the
+					// player is leaving the screen on.
+					this.m_CharGen.appearance = appearance;
+					saveAppearance(appearance);
 					ok = true;
 					loop = false;
 					break;
@@ -29843,7 +30002,120 @@ inv.removeAllQuantity(it);
 		}
 	}
 
-	// C# DrawActorEquipment — RogueGame.cs:18777
+		/**
+	 * Draws an actor magnified, for the character customiser's preview.
+	 *
+	 * The scaled `DrawActorDecoration` overload already exists for `DrawCorpse`, so
+	 * this is a layer list rather than a second renderer to keep in step with the
+	 * doll. The order is the C#'s and is load-bearing: clothes go on in that order or
+	 * a sprite covers the one beneath it.
+	 *
+	 * **`TORSO` is drawn once, where `DrawCorpse` draws it twice.** That doubling is
+	 * in the reference and is invisible in game — the corpse is drawn once and the
+	 * second pass composites the same sprite over itself — but a preview is
+	 * inspected closely, and twice is visibly darker on any sprite with alpha. New UI
+	 * is not obliged to reproduce a compositing artefact.
+	 *
+	 * No `tint`: nothing tints the player, and the scaled overload does not take one.
+	 */
+	/**
+	 * Reports, in one line, any appearance choice that the body on offer cannot
+	 * honour — which happens exactly when the player switches sex, because the
+	 * catalogues are per-sex.
+	 *
+	 * Returns nothing and writes into `cleared` so the screen can keep the note on
+	 * screen until the next row change, rather than having it vanish the moment the
+	 * arrow key is released. A silently dropped choice is the kind of thing a player
+	 * discovers three runs later.
+	 */
+	private noteDroppedAppearance(
+		appearance: CharacterAppearance,
+		isMale: boolean,
+		cleared: string[],
+	): void {
+		const dropped = appearance.revalidate(outfitChoices(isMale));
+		if (dropped.length === 0) return;
+		cleared.push(
+			`Switched body: ${dropped.map((l) => APPEARANCE_LAYER_LABELS[l].trim().toLowerCase()).join(", ")} back to random.`,
+		);
+	}
+
+	/**
+	 * Draws the character preview in the customiser's right column.
+	 *
+	 * A **throwaway actor**, rebuilt each frame rather than kept: it has to exist to
+	 * own a doll, and an actor that outlived the screen would be one more thing to
+	 * unregister. It is never added to the world, so nothing can observe it — no
+	 * faction, no turn, no save.
+	 *
+	 * `body` is 0 for a random-sex male preview, 1 male, 2 female, and an undead
+	 * type index otherwise; the caller resolves `*Random*` so this does not roll.
+	 */
+	private DrawCharacterPreview(
+		isUndead: boolean,
+		body: number,
+		appearance: CharacterAppearance,
+		roller: DiceRoller,
+	): void {
+		const undeadIds = [
+			ActorID.UNDEAD_SKELETON,
+			ActorID.UNDEAD_ZOMBIE,
+			ActorID.UNDEAD_MALE_ZOMBIFIED,
+			ActorID.UNDEAD_FEMALE_ZOMBIFIED,
+			ActorID.UNDEAD_ZOMBIE_MASTER,
+		];
+		const isMale = body !== 2;
+		const model = isUndead
+			? this.gameActors.get(undeadIds[Math.max(0, Math.min(undeadIds.length - 1, body))])
+			: this.gameActors.get(isMale ? ActorID.MALE_CIVILIAN : ActorID.FEMALE_CIVILIAN);
+
+		let actor: Actor;
+		try {
+			actor = model.createAnonymous(
+				this.gameFactions.get(isUndead ? FactionID.TheUndeads : FactionID.TheCivilians),
+				0,
+			);
+		} catch (e) {
+			reportSwallowed("RogueGame.DrawCharacterPreview (no model)", e);
+			return;
+		}
+
+		// Dressed through the *real* dressing code, so the preview cannot drift from
+		// what creation actually produces. Static precisely because this has no `Game`
+		// to construct one with.
+		const choices = outfitChoices(isMale);
+		const [eyes, skins, heads, torsos, legs, shoes] = appearance.asDressArgs(choices);
+		if (isUndead) BaseMapGenerator.skinActorDoll(roller, actor, eyes, skins, heads);
+		else BaseMapGenerator.dressActorDoll(roller, actor, eyes, skins, heads, torsos, legs, shoes);
+
+		// `UI_DrawImageTransform` scales about each sprite's own centre, so the figure
+		// sits on the point the map would put it, just bigger.
+		this.DrawActorPreview(actor, PREVIEW_COLUMN_X + 48, 6 * MENU_BOLD_LINE_SPACING, PREVIEW_SCALE);
+
+		this.m_UI.UI_DrawStringBoldLarge(
+			Color.Gray,
+			isUndead ? model.name : isMale ? "Male civilian" : "Female civilian",
+			PREVIEW_COLUMN_X,
+			6 * MENU_BOLD_LINE_SPACING + ACTOR_SIZE * PREVIEW_SCALE + MENU_BOLD_LINE_SPACING,
+		);
+	}
+
+	DrawActorPreview(actor: Actor, gx: number, gy: number, scale: number): void {
+	  const px = gx + ACTOR_OFFSET;
+	  const py = gy + ACTOR_OFFSET;
+
+	  if (actor.model.imageId != null)
+	    this.m_UI.UI_DrawImageTransform(actor.model.imageId, px, py, 0, scale);
+
+	  this.DrawActorDecoration(actor, px, py, DollPart.SKIN, 0, scale);
+	  this.DrawActorDecoration(actor, px, py, DollPart.FEET, 0, scale);
+	  this.DrawActorDecoration(actor, px, py, DollPart.LEGS, 0, scale);
+	  this.DrawActorDecoration(actor, px, py, DollPart.TORSO, 0, scale);
+	  this.DrawActorDecoration(actor, px, py, DollPart.EYES, 0, scale);
+	  this.DrawActorDecoration(actor, px, py, DollPart.HEAD, 0, scale);
+	}
+
+// C# DrawActorEquipment — RogueGame.cs:18777
 	DrawActorEquipment(
 		actor: Actor,
 		gx: number,
@@ -33517,7 +33789,7 @@ inv.removeAllQuantity(it);
 						this.gameFactions.get(FactionID.TheCivilians),
 						0,
 					);
-					townGen.dressCivilian(roller, player);
+					this.dressPlayerFromCharGen(roller, player);
 					townGen.giveNameToActor(roller, player);
 					// Then zombify.
 					player = this.Zombify(null, player, true);
@@ -33547,7 +33819,7 @@ inv.removeAllQuantity(it);
 				this.gameFactions.get(FactionID.TheCivilians),
 				0,
 			);
-			townGen.dressCivilian(roller, player);
+			this.dressPlayerFromCharGen(roller, player);
 			townGen.giveNameToActor(roller, player);
 			player.sheet.skillTable.addOrIncreaseSkill(this.m_CharGen.startingSkill);
 

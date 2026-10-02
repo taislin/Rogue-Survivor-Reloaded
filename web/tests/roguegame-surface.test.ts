@@ -101,35 +101,37 @@ describe("RogueGame's measured surface", () => {
 		// §6.2 calls this "the god object", and the argument for splitting is the
 		// ratio rather than the size. Pinned so the ratio has a history.
 		//
-// **838 / 752 with the quick start**: the new-game shortcut added exactly two
-  // members — `applyQuickStartCharacter` and the `m_QuickStartRequested` flag
-  // between the two screens. Its persistence went to `NewGameConfig.ts` instead,
-  // because measured on the class it cost ten private members (six fields and
-  // three methods) for a self-contained read/validate/write of one JSON record,
-  // and §6 is about taking members *off* this class. `public` and the reachable
-  // surface are both unchanged, which is the number §6.10 actually stops on.
+// **842 / 756 with the character customiser**: four members, of which one is
+  // public — `DrawActorPreview`, which is public for the same reason
+  // `DrawActorSprite` and `DrawCorpse` are, being a drawing primitive. The other
+  // three are private: the note about a dropped choice, the preview itself, and
+  // dressing the player from it.
+  //
+  // The customiser's *state* went to `CharacterAppearance.ts` and its persistence
+  // to `NewGameConfig.ts` rather than onto this class. Measured, keeping them here
+  // cost ten private members for a self-contained read/validate/write of one JSON
+  // record, and §6 is about taking members *off* this class. `external` is
+  // unchanged at 113, which is what §6.10 actually stops on.
   //
   // The history below is why this number is worth reading rather than just
-  // bumping: the last time it moved, six public picker methods
+  // bumping: the last time the public count went *down*, six public picker methods
   // (`HandleSelectRuleset`, `HandleNewGameMode`, and the race / sex / skill /
   // undead-type screens) became two (`HandleSelectRulesetAndMode`,
-  // `HandleNewCharacterDetails`) plus three private helpers, so the public
-  // count *fell* by four and the private count rose by three. That is the only
-  // time in this file's history the public count has gone down, and it happened
+  // `HandleNewCharacterDetails`) plus three private helpers. That happened
   // by deleting screens rather than by hiding them behind `private` — the
   // measurement cannot tell those apart, which is the caveat.
-  expect(m.members).toBe(838);
-  expect(m.methods).toBe(752);
+  expect(m.members).toBe(842);
+  expect(m.methods).toBe(756);
   // The *reachable* surface is unchanged at 113, which is the number that matters
   // — nothing new is called from outside.
   expect(m.external).toBe(113);
   // §6.4: "567 of 584 methods are public — only 17 are `private`. The
   // `private` boundary is effectively absent." That is now *more* true, and the
   // direction is worth pinning: the public count grew, and so did the private
-  // one, from 17 to 86. A naive reading of §6.4 would say the file has become
+  // one, from 17 to 89. A naive reading of §6.4 would say the file has become
   // better encapsulated in a way it has not.
-  expect(m.public).toBe(752);
-  expect(m.private).toBe(86);
+  expect(m.public).toBe(753);
+  expect(m.private).toBe(89);
 	});
 
 	it("§6's stop condition is not met: nothing private is reached from outside", () => {

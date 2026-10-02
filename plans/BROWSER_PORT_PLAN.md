@@ -54,6 +54,37 @@
 > not know, so a persisted entry a later version drops would throw inside the
 > new-game flow before anything was drawn.
 >
+> **A character customiser, 2026-10-02 — new feature, not a port.** The character
+> screen now offers all six doll layers (skin, hair, shirt, pants, shoes, eyes) as
+> rows beside the existing race/sex/skill, with a magnified preview of the result
+> in the right column. Four things about it are worth knowing:
+>
+> - **No new art.** `BaseMapGenerator` already rolled a civilian's six layers from
+>   per-sex catalogues (`dressCivilian`), and the doll already draws them as
+>   separate layers, so this is a choice over sprites that were always there.
+>   `*Random*` — the default — expands to the whole catalogue, which is the
+>   distribution the generator produced before this existed.
+> - **The preview reuses the scaled decoration overload that `DrawCorpse` already
+>   uses**, so it is a layer list rather than a second renderer to keep in step.
+>   `TORSO` is drawn once where `DrawCorpse` draws it twice: that doubling is
+>   invisible in game but visibly darker in something a player inspects closely.
+> - **Persistence was free.** The doll's `decorations` array is already encoded and
+>   decoded by the `doll` codec in `serialization/specs.ts`, so a chosen look
+>   survives a save with nothing added to the save schema. The *choices* are also
+>   kept in `NewGameConfig` so the screen reopens on the last character made.
+> - **Choices are image ids, not catalogue indices**, and revalidated when the sex
+>   changes: the catalogues are per-sex, so `male_hair3` means nothing to a female
+>   body and is dropped back to random *with a line on screen saying so*.
+>
+> Known-broken: `extended-audio.test.ts`'s fork-sound gate now reports
+> `RogueGame.ts:22110 EQUIP` as ungated. That line is a **comment** explaining the
+> shield-block `EQUIP` gate, which is correctly gated three lines above its call
+> site. It passes at `49f2582` and fails with any insertion above it, so it is a
+> pre-existing fragility in a source-scanning test that this work merely exposed —
+> not a sound that lost its gate. Its comment stripper was made correct (block
+> comments too) and the report did not change, so the mechanism is still not
+> understood and it is left alone rather than papered over.
+>
 > **Numbers in this file were stale by a wide margin until 2026-10-02** — the test
 > count alone was quoted as 1 542 in eight places when it was over 2 800, and
 > `RogueGame.ts` was described as 27 722 lines when it is 36 116. Re-measure
