@@ -11,13 +11,25 @@
  * written while the spawn did not exist: what is actually *living* one storey
  * down, and whether it is reproducible.
  *
- * **A shelter is not in every district, so the seeds below are chosen, not
- * swept for.** Band `20..29` of the green region's one shared die, taken only
- * after a `RollChance(ParkBuildingChance)`, means roughly one block in a hundred
- * becomes a shelter; seed 24 and seed 47 do, and seeds 3, 5 and 8 do not. Each of
- * the two that do costs about 45ms to generate, so this is a real district from
+ * **A shelter is not in every district, so the seeds below are swept for.** Band
+ * `20..29` of the green region's one shared die, taken only after a
+ * `RollChance(ParkBuildingChance)`, means roughly one block in a hundred becomes
+ * a shelter, and a 40x40 district cuts about five blocks — so one seed in
+ * twenty-odd has one. Sweeping `1..300` finds eleven: 59, 63, 106, 123, 137, 139,
+ * 167, 226, 232, 244, 294, and seeds 3, 5 and 8 do not. Each one that does costs
+ * about 45ms to generate, so this is a real district from
  * `BaseTownGenerator.generate()` — real blocks, real dice, real stairwell — and
  * not a building function called with a hand-built context.
+ *
+ * **The seeds have been re-swept twice**, and the second time is the interesting
+ * one. The first was when the business region was re-merged into one loop again
+ * (C# `:472-536`). The second was when the parks region was merged the same way:
+ * the shelter's rate did not change — it is the *green* region's die — but the port
+ * had been spending **two** `RollChance(ParkBuildingChance)` per block where the C#
+ * spends one, so the green cascade was being offered half as many blocks as it
+ * should. Halving the gates doubled the shelter's rate and moved every seed again.
+ * Sweeping `1..300` now finds thirteen: 12, 33, 35, 36, 74, 88, 94, 109, 143, 190,
+ * 231, 261, 299.
  *
  * What is asserted, and why each one is not the obvious one:
  *
@@ -75,10 +87,16 @@ new GameItems();
 /** A 40x40 district: the size this repo's fingerprint tests generate at. */
 const MAP = 40;
 
-/** A seed whose 40x40 district contains an animal shelter. See the header. */
-const SEED = 24;
-/** A second one, also a shelter — and the one that must not look like the first. */
-const OTHER_SEED = 47;
+/**
+ * A seed whose 40x40 district contains an animal shelter, and a second one that
+ * must not look like it. Swept, not chosen — see the header.
+ *
+ * 12 and 33 are the two lowest that work. `SEED` is left alone for the Classic
+ * no-trace tests at the bottom of the file, which are about a district that has no
+ * shelter and so do not care which.
+ */
+const SEED = 12;
+const OTHER_SEED = 33;
 
 /** The kennel level's own name, C# `:4198` `new Map(seed, "Animal shelter", …)`. */
 const KENNELS_NAME = "Animal shelter";

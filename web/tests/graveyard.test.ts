@@ -187,8 +187,28 @@ describe("Feature.Graveyard: what fills it", () => {
   });
 
   it("a park places a bench and no tombstones", () => {
-    const map = newGenerator(100).generate(11);
-    const images = imagesInside(map, parkZones(map));
+    // **Swept, not pinned.** A bench is a 5%-per-tile roll inside the park's own
+    // rect, so "this district's park has a bench" is a dice outcome and pinning a
+    // seed for it is a claim about a stream. It is also newly load-bearing: the
+    // ordinary park is the `rolled >= 65` arm of the green cascade and so appears
+    // far less often than it did when the port built one for every block that
+    // reached the parks gate, and a district with one small park is a coin flip
+    // where a district with three was not.
+    //
+    // The sweep looks for a district whose parks have a bench and no headstone --
+    // which is the property -- rather than for a seed and hoping.
+    let map: GameMap | null = null;
+    for (let s = 1; s <= 60 && map === null; s++) {
+      const candidate = newGenerator(100).generate(s);
+      const parks = parkZones(candidate);
+      if (parks.length === 0) continue;
+      const images = imagesInside(candidate, parks);
+      if (images.some((id) => id.includes("bench")) && !images.some((id) => id.includes("tombstone"))) {
+        map = candidate;
+      }
+    }
+    expect(map, "no district in 1..60 had an ordinary park with a bench in it").not.toBeNull();
+    const images = imagesInside(map!, parkZones(map!));
     expect(
       images.some((id) => id.includes("bench")),
       "sanity: the scoped scan can see park furniture at all",
@@ -242,7 +262,7 @@ describe("Feature.Graveyard: the gate", () => {
     // count is exactly the pass's own and nothing else leaks in.
     class DiceProbe extends BaseTownGenerator {
       greenPassRolls = 0;
-      protected override makeJunkyards(map: GameMap, emptyBlocks: Block[]): void {
+      protected override makeGreenBuilding(map: GameMap, b: Block, rolled: number): boolean {
         // `DiceRoller` keeps only its private PRNG state, so there is no public
         // position to read. Counting the calls is the same measurement and does not
         // need one -- and wrapping rather than replacing is the point: the gate
@@ -255,11 +275,16 @@ describe("Feature.Graveyard: the gate", () => {
           return real(a, b);
         };
         try {
-          super.makeJunkyards(map, emptyBlocks);
+          return super.makeGreenBuilding(map, b, rolled);
         } finally {
           roller.roll = real;
+          // **In the `finally`, not after the `try`.** It was after, and the `try`
+          // returns, so the accumulation was dead code: the probe read 0 under *both*
+          // rulesets and the Classic expectation of 0 agreed with it. A test that
+          // cannot fail is not a test, and this one had a green tick for a reason
+          // that had nothing to do with the gate.
+          this.greenPassRolls += rolls;
         }
-        this.greenPassRolls += rolls;
       }
     }
     const rollCounter = (ruleset: Ruleset): number => {

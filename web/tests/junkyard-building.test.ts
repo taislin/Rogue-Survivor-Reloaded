@@ -90,13 +90,21 @@ function newGenerator(params = newParams()): BaseTownGenerator {
   return new BaseTownGenerator({ rules, ApplyOnFire: () => undefined } as never, params);
 }
 
-/** Counts the dispatch calls, so "the seam is live" is measured rather than assumed. */
+/**
+ * Counts the dispatch calls, so "the seam is live" is measured rather than assumed.
+ *
+ * **It counts blocks now, not a stage.** `makeJunkyards(map, emptyBlocks)` was a
+ * second pass over the pool with its own `rollChance(parkBuildingChance)`; the green
+ * cascade is now `makeGreenBuilding(map, b, rolled)`, one call per block that reached
+ * the parks region's gate, so "the cascade ran" is a block count and not a stage
+ * count. See `BaseTownGenerator.generate`.
+ */
 class JunkyardSpy extends BaseTownGenerator {
-  junkyardStageCalls = 0;
+  greenBlocks = 0;
 
-  protected override makeJunkyards(map: GameMap, emptyBlocks: Block[]): void {
-    ++this.junkyardStageCalls;
-    super.makeJunkyards(map, emptyBlocks);
+  protected override makeGreenBuilding(map: GameMap, b: Block, rolled: number): boolean {
+    ++this.greenBlocks;
+    return super.makeGreenBuilding(map, b, rolled);
   }
 }
 
@@ -107,8 +115,10 @@ class JunkyardSpy extends BaseTownGenerator {
  * class, and the only way that can fail is something in the stage running anyway.
  */
 class NoJunkyards extends BaseTownGenerator {
-  protected override makeJunkyards(): void {
-    // no roll, no build
+  protected override makeGreenBuilding(): boolean {
+    // no build, and no roll either: the `roll(0, 99)` is the parks region's and is
+    // spent by the caller, not by an arm.
+    return false;
   }
 }
 
@@ -396,6 +406,21 @@ function sweptJunkyards(): Array<{ map: GameMap; zone: GameMap["zones"][number] 
   ).toBeGreaterThan(0);
   return swept;
 }
+/**
+ * The first seed the sweep found a junkyard on.
+ *
+ * For the two tests that assert the *cascade* was reached rather than that a
+ * junkyard was built. The cascade used to be a pass, so it ran once per district
+ * whatever the dice; it is now `makeGreenBuilding`, one call per block that survives
+ * `RollChance(ParkBuildingChance)`, and a 40x40 district can offer it nothing at all
+ * -- `SEED` is one of those. Rather than pin a second seed, this reuses the sweep the
+ * suite already does at `BIG`.
+ */
+function firstSweptSeed(): number {
+  sweptJunkyards();
+  return sweptSeedsList[0];
+}
+
 /** The first swept junkyard, for the tests that only need one. */
 function aJunkyard(): { map: GameMap; zone: GameMap["zones"][number] } {
   return sweptJunkyards()[0];
@@ -420,70 +445,71 @@ function blockOf(zone: { bounds: Rect }): Block {
  *
  * The two rolls are told apart by range, which is what they are: the pass's
  * `RollChance(ParkBuildingChance)` is a `roll(0, 100)` and the parks cascade is a
- * `roll(0, 99)`. Answering the chance with `min` offers the pass every block, and
- * answering the cascade with `band` chooses the arm. The junkyard's own contents
- * also draw a `roll(0, 99)` (`:3644`) and are therefore forced to the same answer,
- * which decides whether the yard fills with drums or with junk piles; nothing
- * asserted here depends on which.
+ * `roll(0, 99)`, so the band is forced by overriding the arm and handing it a
+ * different value than the one it was given.
+ *
+ * **It used to patch `DiceRoller.prototype.roll` instead**, which worked while the
+ * cascade was a pass and spent its own two rolls. It does not any more, and the
+ * failure was silent: the `roll(0, 99)` is drawn by `generate()` -- the parks region
+ * owns that die and the arm only spends its own -- so a flag set inside the arm was
+ * never set at the moment the draw happened, every "forced" band produced the *same*
+ * natural district, and the test asserted a property of that one district six times.
+ * Substituting the argument is both simpler and actually forcing something.
  */
 class ForcedJunkyards extends JunkyardSpy {
-  constructor(game: never, params: Parameters, band: number) {
+  constructor(game: never, params: Parameters, private readonly band: number) {
     super(game, params);
-    // Read by the module-level `roll` below, which is the only thing that can
-    // reach the roller's prototype from inside a `generate()` call.
-    forcedJunkyardBand = band;
   }
 
-  protected override makeJunkyards(map: GameMap, emptyBlocks: Block[]): void {
-    forcingJunkyardRolls = true;
-    try {
-      super.makeJunkyards(map, emptyBlocks);
-    } finally {
-      forcingJunkyardRolls = false;
-    }
+  protected override makeGreenBuilding(map: GameMap, b: Block, _rolled: number): boolean {
+    return super.makeGreenBuilding(map, b, this.band);
   }
 }
-
-let forcingJunkyardRolls = false;
-let forcedJunkyardBand = 0;
-const realRoll = DiceRoller.prototype.roll;
-DiceRoller.prototype.roll = function (min: number, max: number): number {
-  if (!forcingJunkyardRolls) return realRoll.call(this, min, max);
-  if (max === 100) return min; // the pass's RollChance(parkBuildingChance)
-  if (max === 99) return forcedJunkyardBand; // the parks cascade, and the junk fill
-  return realRoll.call(this, min, max);
-};
-afterEach(() => {
-  forcingJunkyardRolls = false;
-});
 
 // ── Reached from the district generator ─────────────────────────────────────
 
 describe("junkyard building, from BaseTownGenerator.generate()", () => {
-  it("runs the junkyard stage exactly once", () => {
+  it("offers the cascade the blocks that passed the parks gate", () => {
     // Counted rather than assumed: a junkyard generator wired to nothing compiles,
-    // looks right, and does nothing. One call because the stage is a single loop
-    // over the blocks the parks stage left, not a per-block hook.
-    const spy = newSpy();
-    spy.generate(SEED);
-    expect(spy.junkyardStageCalls, "generate() ran the junkyard stage once").toBe(1);
+    // looks right, and does nothing.
+    //
+    // **Blocks now, not stages.** The cascade used to be a pass of its own and was
+    // called once per district; it is now `makeGreenBuilding`, one call per block
+    // that survived `RollChance(ParkBuildingChance)`, which is what the C#'s single
+    // gate implies. So the assertion is that it was reached *more than once* — a
+    // district that offers it exactly one block could not tell a per-block hook from
+    // a pass that ran once.
+    Session.get().ruleset = Ruleset.STILL_ALIVE;
+    // At `BIG`, because `firstSweptSeed()` is a seed swept at `BIG` -- asking a 40x40
+    // district to reproduce a 100x100 district's dice is asking for a different
+    // world, and at that size the cascade can be offered nothing at all.
+    const spy = newSpy(newParams(BIG, BIG));
+    spy.generate(firstSweptSeed());
+    expect(spy.greenBlocks, "generate() offered the green cascade some blocks").toBeGreaterThan(0);
   });
 
   it("reaches the generator on a roll in the junkyard's own band, and on no other", () => {
     // The C#'s parks cascade (`:570-581`) spends ONE `Roll(0, 99)` over five arms
-    // and the junkyard is the trailing `else`, so the band is 0..9. Rather than
-    // wait for a seed, the two rolls the pass spends are forced while the stage
+    // and the junkyard is the trailing `else`, so its band is 0..9 **and 64** — the
+    // farm's `< 64` against the park's `>= 65` leaves that one value matching no arm
+    // above. Rather than wait for a seed, the cascade's roll is forced while the arm
     // runs (see `ForcedJunkyards`) and left real everywhere else.
     Session.get().ruleset = Ruleset.STILL_ALIVE;
     for (const [band, builds] of [
       [0, true],
       [9, true],
       [10, false],
+      [63, false],
+      [64, true],
       [99, false]
     ] as const) {
-      const gen = new ForcedJunkyards({ rules, ApplyOnFire: () => undefined } as never, newParams(), band);
-      const map = gen.generate(SEED);
-      expect(gen.junkyardStageCalls, `band ${band}: the stage ran`).toBe(1);
+      const gen = new ForcedJunkyards(
+        { rules, ApplyOnFire: () => undefined } as never,
+        newParams(BIG, BIG),
+        band
+      );
+      const map = gen.generate(firstSweptSeed());
+      expect(gen.greenBlocks, `band ${band}: the cascade ran`).toBeGreaterThan(0);
       expect(junkyardZones(map).length > 0, `band ${band} builds`).toBe(builds);
     }
   });
@@ -617,7 +643,7 @@ describe("makeJunkyard", () => {
     // (10..19) — three of them `Feature.*` and none of them ported.
     expect(JUNKYARD_ROLL_MAX).toBe(10);
     const map = plot();
-    for (const otherArm of [10, 19, 20, 29, 30, 64, 65, 99]) {
+    for (const otherArm of [10, 19, 20, 29, 30, 63, 65, 99]) {
       const zonesBefore = map.zones.length;
       expect(makeJunkyard(contextFor(map, new Block(ARM), junkyardRoller()), otherArm), `roll ${otherArm}`).toBe(false);
       expect(map.zones, `roll ${otherArm} added no zone`).toHaveLength(zonesBefore);

@@ -139,12 +139,27 @@ import type { TownBuildingContext } from '../TownBuilding';
 // ── Constants ───────────────────────────────────────────────────────────────
 
 /**
- * C# `:580`, the junkyard's band of the green cascade's `Roll(0, 99)`: the
- * trailing `else`, so everything below 10. The four arms above it are an ordinary
- * park (`>= 65`), a farm (`30..64`), a dog pound (`20..29`) and a graveyard
- * (`10..19`), and none of the four is ported — see the module header.
+ * C# `:580`, the junkyard's band of the green cascade's `Roll(0, 99)`: the trailing
+ * `else`. The four arms above it are an ordinary park (`>= 65`), a farm (`30..63`), a
+ * dog pound (`20..29`) and a graveyard (`10..19`).
  */
 export const JUNKYARD_ROLL_MAX = 10;
+
+/**
+ * …and the band the reference's own arithmetic hands it as well.
+ *
+ * **The C#'s farm bound is `< 64`, not `<= 64`** (`:575`,
+ * `else if (rolled >= 30 && rolled < 64)`), while its park bound is `>= 65` (`:574`).
+ * So 64 matches *neither*, falls off the end of the chain, and lands in this `else`
+ * beside 0..9. The two comments either side of the chain claim 35% each for the park
+ * and the farm; the arithmetic gives 35% and 34%, and the missing point is here.
+ *
+ * Without this the green die has a hole: one value in a hundred reaches the tail of
+ * the cascade and builds nothing at all. That is a faithful transcription of a wart,
+ * not a feature — it is the same class of thing as the `fireStationPlaced = true` that
+ * makes `MakeFireStation` dead, and the port keeps those too.
+ */
+export const JUNKYARD_ROLL_FARM_GAP = 64;
 
 /** C# `:3638` — the per-tile chance that a yard tile holds anything at all. */
 const JUNK_PER_TILE_CHANCE = 60;
@@ -197,8 +212,9 @@ export function makeJunkyard(ctx: TownBuildingContext, dispatchRoll: number): bo
   if (!hasFeature(Session.get().ruleset, Feature.Junkyard)) return false;
 
   // The trailing `else` of the green cascade. Spelled as the C# spells it, so a
-  // roll that is some other arm's is declined here and nowhere else.
-  if (dispatchRoll >= JUNKYARD_ROLL_MAX) return false;
+  // roll that is some other arm's is declined here and nowhere else -- with the
+  // reference's own gap at 64, which falls through to here rather than to the farm.
+  if (dispatchRoll >= JUNKYARD_ROLL_MAX && dispatchRoll !== JUNKYARD_ROLL_FARM_GAP) return false;
 
   const { map, block: b, roller } = ctx;
 

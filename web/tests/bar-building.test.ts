@@ -139,8 +139,34 @@ const TWO_BAR_MAP_WIDTH = 50;
  * matters is the one in the "CLASSIC" block below -- `9bb5e4907bc3f62c`, which no
  * Stage 5 building is allowed to move.
  */
-const DISTRICT_SEED = 3;
-const DISTRICT_WIDTH = 40;
+const DISTRICT_SEED = 8;
+/**
+ * The reference's own minimum district (`districtsSizeFloor`, Release 7-3 -- the C#
+ * raised `DistrictSize` from 30 to 50 when it added `GenerateShoppingMall`), so 50 is
+ * the smallest size a player ever sees and 40 was always a test-only district.
+ *
+ * **It has to be 50 now, and not for the seed's sake.** The C#'s business interior
+ * at `BaseTownGenerator.cs:496` is reached only for a block whose `rolled` is 30 or
+ * more, and `:479`'s `|| charOfficesCount == 0` forces a CHAR attempt on the
+ * district's *first* business-region block, which `MakeCHARBuilding` does not
+ * decline. So the interior wants a district with at least two business-region
+ * blocks, and one in ten blocks qualifies for that region at all. A 40x40 district
+ * cuts about five blocks: over 60 seeds no bar, no bank and no clinic appeared in
+ * one, and this file's district-level tests were passing on empty sets. At 50x50
+ * they are reachable, and `DISTRICT_SEED` is swept for one that builds two bars --
+ * which is also the per-district cap at this width, so the cap assertion below has
+ * something to reach.
+ */
+const DISTRICT_WIDTH = 50;
+/**
+ * A 100-wide seed that builds bars, for the wide-district half of the cap test.
+ *
+ * Separate from `DISTRICT_SEED` because a 100-wide district cuts a different set of
+ * blocks: it reaches the cap of 4 on some seeds (28 builds 3) and builds nothing at
+ * all on others, and pinning one number for both widths would be a claim about a
+ * stream rather than about the cap.
+ */
+const WIDE_SEED = 28;
 
 function newParams(width = DISTRICT_WIDTH): Parameters {
   const params = new Parameters();
@@ -446,7 +472,7 @@ describe("Feature.Bar: registration and dispatch", () => {
     // what stops it -- and the bars are still real rooms.
     TOWN_BUILDING_PASSES.length = 0;
     TOWN_BUILDING_PASSES.push(BAR_PASS);
-    const wide = newGenerator(newParams(100)).generate(DISTRICT_SEED);
+    const wide = newGenerator(newParams(100)).generate(WIDE_SEED);
     const wideBars = zoneNames(wide).filter((n) => n.startsWith("Bar@"));
     expect(wideBars.length).toBeGreaterThan(0);
     expect(wideBars.length).toBeLessThanOrEqual(4);

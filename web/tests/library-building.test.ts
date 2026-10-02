@@ -78,6 +78,27 @@ beforeAll(() => {
 const MAP = 60;
 const SEED = 1;
 
+/**
+ * A 60x60 Still Alive seed that builds a library, for the tests that assert on a
+ * library's *contents* and so cannot sweep.
+ *
+ * `SEED` still drives the Classic digest pins and the Classic no-trace test, which
+ * is why this is a second constant rather than a change to `SEED`.
+ *
+ * **It is swept, not chosen.** Since the business region is one loop again (C#
+ * `:472-536`), the library at `:501` is offered only the blocks that entered on
+ * `RollChance(CHARBuildingChance)` — about one in ten — instead of the whole pool
+ * the old library *pass* was handed. At 60x60 only 5 of the first 60 seeds build
+ * one at all, so a pinned seed here is a real pin: the sweep is
+ * `library-building.test.ts` -> "offers the library a block, and a district gets
+ * one library", which reports the seed it used.
+ *
+ * Seed 24 is chosen over the four others that work because it is the only one of
+ * the five that also builds two cascade arms, so "a library's block is never also
+ * a bar, a bank or a clinic" has something to be false about in the same district.
+ */
+const LIBRARY_SEED = 24;
+
 function newParams(width = MAP, height = MAP): Parameters {
   const params = new Parameters();
   params.district = new District(new Point(0, 0), DistrictKind.GENERAL);
@@ -92,21 +113,30 @@ function newGenerator(params = newParams()): BaseTownGenerator {
 }
 
 /**
- * Counts the stage, and the pool it was handed and left. The pool numbers are the
- * measurement for "a library's block is not also charged the cascade's roll": the
- * cascade at `:510` iterates whatever the library pass left, so a library that
- * did *not* leave the pool would show `blocksAfter === blocksBefore`.
+ * Counts the *attempts*, which is what the library is now.
+ *
+ * **It used to count a stage.** `makeLibraryBuildings(map, emptyBlocks)` was a
+ * pool pass of its own, between the CHAR loop and the cascade, and the spy
+ * recorded how many blocks entered it and how many left. Both numbers are gone
+ * with it: the business region is one loop again (C# `:472-536`), so the library
+ * is a per-block attempt at `:501` rather than a stage, and there is no pool
+ * boundary left to observe.
+ *
+ * `blocksAtEntry`/`blocksAfter` were standing in for "a library's block is not
+ * also charged the cascade's `roll(0, 4)`", which the nested `if` now guarantees
+ * structurally. That property is asserted directly, from the map, in
+ * "a library's block is never also a bar, a bank or a clinic" below -- which is
+ * the better test anyway, since it does not care how the control flow is spelled.
  */
 class LibrarySpy extends BaseTownGenerator {
-  stageCalls = 0;
-  blocksAtEntry = -1;
-  blocksAfter = -1;
+  attempts = 0;
+  built = 0;
 
-  protected override makeLibraryBuildings(map: GameMap, emptyBlocks: Block[]): void {
-    ++this.stageCalls;
-    this.blocksAtEntry = emptyBlocks.length;
-    super.makeLibraryBuildings(map, emptyBlocks);
-    this.blocksAfter = emptyBlocks.length;
+  protected override tryMakeLibrary(map: GameMap, b: Block): boolean {
+    ++this.attempts;
+    const placed = super.tryMakeLibrary(map, b);
+    if (placed) ++this.built;
+    return placed;
   }
 }
 
@@ -115,14 +145,15 @@ function newSpy(params = newParams()): LibrarySpy {
 }
 
 /**
- * A generator with the feature *removed*, not merely gated off: the stage is
+ * A generator with the feature *removed*, not merely gated off: the attempt is
  * overridden away, so no roll is taken and no building is built. A Classic
  * district from this must be byte-identical to a Classic district from the real
  * class, and the only way that can fail is something in the stage running anyway.
  */
 class NoLibraries extends BaseTownGenerator {
-  protected override makeLibraryBuildings(): void {
+  protected override tryMakeLibrary(): boolean {
     // no build, and no roll to throw away either
+    return false;
   }
 }
 
@@ -341,36 +372,73 @@ afterEach(() => {
 // ── Reached from the district generator ─────────────────────────────────────
 
 describe("library building, from BaseTownGenerator.generate()", () => {
-  it("runs the library stage once, and a district gets a library", () => {
+  it("offers the library a block, and a district gets one library", () => {
+    // **The district is swept, not pinned.** The library is now reached only from
+    // inside the business region (C# `:501`), so it is offered only the blocks that
+    // entered on `RollChance(CHARBuildingChance)` -- about one in ten. A 60x60 cuts
+    // a handful of blocks, so which *seed* yields a library is a property of the
+    // dice and not of the feature, and pinning one turns "the pass is reached" into
+    // a claim about a stream. The sweep reports the seed it used.
     Session.get().ruleset = Ruleset.STILL_ALIVE;
-    const spy = newSpy();
-    const map = spy.generate(SEED);
+    let seed = 0;
+    let map: GameMap | null = null;
+    let spy: LibrarySpy | null = null;
+    for (let s = 1; s <= 60; s++) {
+      const attempt = newSpy();
+      const candidate = attempt.generate(s);
+      if (map === null || libraryZones(candidate).length > libraryZones(map).length) {
+        seed = s;
+        spy = attempt;
+        map = candidate;
+      }
+      if (libraryZones(candidate).length) break;
+    }
+    expect(spy, "no district in the sweep offered the library a block it could take").not.toBeNull();
+    expect(spy!.attempts, "generate() offered the library at least one block").toBeGreaterThan(0);
 
-    expect(spy.stageCalls, "generate() ran the library stage once").toBe(1);
-    // C# `:501`'s `hasLibrary` cap: one per district, however many eligible
-    // blocks a 60x60 cuts (this one cuts several with a 10-tall inside rect).
-    const names = libraryZones(map);
-    expect(names).toHaveLength(1);
+    // C# `:501`'s `hasLibrary` cap: one per district, however many eligible blocks
+    // the district cuts.
+    const names = libraryZones(map!);
+    expect(names, `seed ${seed}`).toHaveLength(1);
     // Named `Library` by the C# at `:2035` and made unique by `makeUniqueZone`,
     // which appends the block's centre as `Library@x-y`.
     expect(names[0]).toMatch(/^Library@\d+-\d+$/);
   });
 
-  it("takes the block out of the pool, so the cascade is not charged a die for it", () => {
-    // C# `:499-509`. The library is the `if` above the cascade's `Roll(0, 4)`, so
-    // a block it takes is a block the switch's roll is never spent on. The port
-    // reproduces that with pool membership rather than with a nested `if`, and
-    // this is the assertion that says it did.
+  it("a library's block is never also a bar, a bank or a clinic", () => {
+    // C# `:499-509`. The library is the `if` *above* the cascade's `Roll(0, 4)`:
+    // a block it takes is a block whose dispatch die is never spent, so it cannot
+    // also become one of the switch's four arms.
+    //
+    // **This used to be asserted as pool arithmetic** — how many blocks entered the
+    // library stage and how many left it — back when the library was a pass and the
+    // cascade iterated whatever it left behind. It is now a nested `if`, so the
+    // property is visible on the map: the library's rect carries a `Library@` zone
+    // and none of the arms' zones. That holds however the control flow is spelled,
+    // which the pool version did not.
     Session.get().ruleset = Ruleset.STILL_ALIVE;
-    const spy = newSpy();
-    spy.generate(SEED);
-    expect(spy.blocksAtEntry).toBeGreaterThan(1);
-    expect(spy.blocksAfter, "the library left the pool").toBe(spy.blocksAtEntry - 1);
+    const ARMS = ["Bar@", "Bank@", "Clinic@", "GeneralStore@", "Business@"];
+    let checked = 0;
+    for (let s = 1; s <= 60; s++) {
+      const map = newGenerator().generate(s);
+      for (const zone of map.zones.filter((z) => z.name.startsWith("Library@"))) {
+        ++checked;
+        for (const other of map.zones) {
+          if (!ARMS.some((p) => other.name.startsWith(p))) continue;
+          expect(
+            other.bounds.equals(zone.bounds),
+            `seed ${s}: ${zone.name} shares its rect with ${other.name}`
+          ).toBe(false);
+        }
+      }
+    }
+    expect(checked, "no library was built in the sweep, so nothing was checked").toBeGreaterThan(0);
   });
 
   it("walls the building rect, carpets the inside, and leaves the room reachable from its door", () => {
     Session.get().ruleset = Ruleset.STILL_ALIVE;
-    const map = newGenerator().generate(SEED);
+    const map = newGenerator().generate(LIBRARY_SEED);
+    expect(libraryZones(map), `seed ${LIBRARY_SEED} builds no library`).not.toEqual([]);
     const walkway = Models.tiles.get(TileID.FLOOR_WALKWAY)!;
     const wall = Models.tiles.get(TileID.WALL_LIGHT_BROWN)!;
     const carpet = Models.tiles.get(TileID.FLOOR_BLUE_CARPET)!;
@@ -451,7 +519,7 @@ describe("library building, from BaseTownGenerator.generate()", () => {
 
   it("names the zone with the C#'s MakeUniqueZone formula, and adds that block's four walkways", () => {
     Session.get().ruleset = Ruleset.STILL_ALIVE;
-    for (const map of [newGenerator().generate(SEED), newGenerator().generate(7), newGenerator().generate(42)]) {
+    for (const map of [newGenerator().generate(LIBRARY_SEED), newGenerator().generate(7), newGenerator().generate(42)]) {
       for (const zone of map.zones.filter((z) => z.name.startsWith("Library@"))) {
         const b = zone.bounds;
         // C# `:2178`: `MakeUniqueZone("Library", b.BuildingRect)`, and
@@ -469,7 +537,7 @@ describe("library building, from BaseTownGenerator.generate()", () => {
 
   it("gives the library its bookcases, a book on each of them, its counter and its sign", () => {
     Session.get().ruleset = Ruleset.STILL_ALIVE;
-    const map = newGenerator().generate(SEED);
+    const map = newGenerator().generate(LIBRARY_SEED);
     const zone = map.zones.find((z) => z.name.startsWith("Library@"))!;
     const b = blockOf(zone);
 

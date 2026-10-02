@@ -837,15 +837,30 @@ describe("makeFireStationBuilding", () => {
       expect(makeFireStationBuilding(contextFor(map, b, fireRoller({ seed })))).toBe(true);
       expect(objectsIn(map, b).filter((o) => o.includes("fuel_pump"))).toEqual([]);
     }
-    // And on a whole district, where the C# would have put a fuel station's pumps.
+    // And on whole districts, where the C# would have put a fuel station's pumps.
+    //
+    // **The scan is the fire station's own rect, not the district.** It used to walk
+    // every tile of the map, which asserted that the *district* has no pump -- and
+    // that is a different claim, and a false one: `MakeFuelStation` is a separate
+    // arm of the same parks region and puts pumps on its own block. The district is
+    // generated here with `parkBuildingChance: 100` so both arms are live, so once
+    // the parks region started being fed enough blocks to matter, a district could
+    // hold a fire station *and* a fuel station and this failed on the fuel
+    // station's pump. What is being claimed is that `MakeFireStation` places none.
     let checked = 0;
     for (let seed = 1; seed <= 20 && checked < 2; seed++) {
       const map = newGenerator(newParams(50, 50, { parkBuildingChance: 100 })).generate(seed);
       if (fireStationZones(map).length === 0) continue;
       ++checked;
-      for (let x = 0; x < map.width; x++) {
-        for (let y = 0; y < map.height; y++) {
-          expect(map.getMapObjectAt(x, y)?.imageId, `a fuel pump at ${x},${y}`).not.toBe(GameImages.OBJ_FUEL_PUMP);
+      const rects = map.zones.filter((z) => z.name.startsWith("Fire station")).map((z) => z.bounds);
+      expect(rects.length).toBeGreaterThan(0);
+      for (const r of rects) {
+        for (let x = r.left; x < r.right; x++) {
+          for (let y = r.top; y < r.bottom; y++) {
+            expect(map.getMapObjectAt(x, y)?.imageId, `a fuel pump at ${x},${y} in the fire station`).not.toBe(
+              GameImages.OBJ_FUEL_PUMP
+            );
+          }
         }
       }
     }

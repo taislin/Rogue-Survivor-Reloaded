@@ -282,7 +282,7 @@ describe("Feature.AnimalShelter: the gate", () => {
     // bugs in this cascade.
     class DiceProbe extends BaseTownGenerator {
       greenPassRolls = 0;
-      protected override makeJunkyards(map: GameMap, emptyBlocks: Block[]): void {
+      protected override makeGreenBuilding(map: GameMap, b: Block, rolled: number): boolean {
         const roller = this.m_DiceRoller as unknown as {
           roll: (a: number, b: number) => number;
         };
@@ -293,24 +293,38 @@ describe("Feature.AnimalShelter: the gate", () => {
           return real(a, b);
         };
         try {
-          super.makeJunkyards(map, emptyBlocks);
+          return super.makeGreenBuilding(map, b, rolled);
         } finally {
           roller.roll = real;
+          // **In the `finally`, not after the `try`** -- see the same probe in
+          // `tests/graveyard.test.ts`, where the accumulation sat after a `try` that
+          // returns and so never ran. It read 0 under both rulesets, and the Classic
+          // expectation of 0 agreed with it.
+          this.greenPassRolls += rolls;
         }
-        this.greenPassRolls += rolls;
       }
     }
-    const run = (ruleset: Ruleset): number => {
+    // **The seed is swept, and it has to be.** The cascade is per-block now, so a
+    // district can offer it nothing, and seed 7 at 60x60 is one of those -- which is
+    // why the sanity assertion below used to be the only thing failing. The sweep
+    // looks for a seed that reaches an arm at all, which is the precondition for
+    // measuring anything about what that arm spends.
+    const run = (ruleset: Ruleset, seed: number): number => {
       Session.get().ruleset = ruleset;
       const probe = new DiceProbe(
         { rules, ApplyOnFire: () => undefined } as never,
         newParams(60),
       );
-      probe.generate(7);
+      probe.generate(seed);
       return probe.greenPassRolls;
     };
-    expect(run(Ruleset.STILL_ALIVE), "sanity: the probe sees the pass spend").toBeGreaterThan(0);
-    expect(run(Ruleset.CLASSIC), "classic enters no arm and spends nothing").toBe(0);
+    let seed = 0;
+    for (let s = 1; s <= 60 && seed === 0; s++) {
+      if (run(Ruleset.STILL_ALIVE, s) > 0) seed = s;
+    }
+    expect(seed, "no district in 1..60 reached the green cascade").toBeGreaterThan(0);
+    expect(run(Ruleset.STILL_ALIVE, seed), "sanity: the probe sees the pass spend").toBeGreaterThan(0);
+    expect(run(Ruleset.CLASSIC, seed), "classic enters no arm and spends nothing").toBe(0);
   });
 });
 
