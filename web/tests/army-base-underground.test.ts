@@ -37,6 +37,8 @@ import { District, DistrictKind } from "@data/District";
 import { Point } from "@engine/Point";
 import { Rect } from "@engine/Rect";
 import { Lighting, Map as GameMap } from "@data/Map";
+import { Zone } from "@data/Zone";
+import { ZoneAttributes } from "@gameplay/ZoneAttributes";
 import { GameItems, ItemID } from "@gameplay/GameItems";
 import { ActorID, GameActors } from "@gameplay/GameActors";
 import { GameFactions } from "@gameplay/GameFactions";
@@ -95,14 +97,16 @@ function newGenerator(seed: number): BaseTownGenerator {
 }
 
 /**
- * A green district with an army office already built on it.
+ * A green district with an army office already built on it, and that office's zone.
  *
- * `makeArmyOffices` first, because the base hangs under one and `armyOfficeZone`
- * looks for exactly the zone that pass leaves. The C# receives the zone as a
- * parameter; the port looks it up, and this fixture is what makes that lookup
- * exerciseable.
+ * `makeArmyOffices` runs first, and the zone it leaves is handed to
+ * `createUniqueMap_ArmyBase` **as a parameter** — which is the C#'s shape
+ * (`GenerateUniqueMap_ArmyBase(chosenDistrict.EntryMap, chosenOffice, ...)`). That is
+ * not a detail: the caller rolls for the district and then for the office inside it, so
+ * a green district with three army offices is three times as likely to be chosen. Having
+ * the generator find "an army office" itself would make the second roll decorative.
  */
-function surface(seed = 20251004): GameMap {
+function surface(seed = 20251004): { map: GameMap; zone: Zone } {
 	const gen = newGenerator(seed);
 	const map = new GameMap(seed, "surface", MAP, MAP);
 	const tiles = new GameTiles();
@@ -114,13 +118,15 @@ function surface(seed = 20251004): GameMap {
 	// test reaching past the public surface to set up the *link*, not to test the pass
 	// itself (which `army-base-building.test.ts` does).
 	(gen as unknown as { makeArmyOffices(m: GameMap, b: Block[]): void }).makeArmyOffices(map, [block]);
-	return map;
+	const zone = map.zones.find((z) => z.hasGameAttribute(ZoneAttributes.IS_ARMY_OFFICE));
+	if (zone === undefined) throw new Error("makeArmyOffices placed no army office");
+	return { map, zone };
 }
 
 function build(seed = 20251004) {
 	const gen = newGenerator(seed);
-	const map = surface(seed);
-	const built = gen.createUniqueMap_ArmyBase(map, MAP);
+	const { map, zone } = surface(seed);
+	const built = gen.createUniqueMap_ArmyBase(map, zone, MAP);
 	return { gen, surfaceMap: map, built };
 }
 
@@ -168,17 +174,31 @@ describe("createUniqueMap_ArmyBase", () => {
 		expect(logos, "no army floor logo around the stairs").toBeGreaterThan(0);
 	});
 
-	it("returns null when there is no army office to hang under", () => {
-		// The C#'s own failure path: `RogueGame.cs:4290` returns false from NewGame with
-		// "the army base coulould be generated for some reason". Reachable in the port
-		// because the zone is looked up rather than passed in.
+	it("fails in the caller, not the generator, when no district has an office", () => {
+		// A green district with no army office is a legal world: the office pass is behind
+		// `roll(0, 99)` per block, and `Feature.ArmyBase` is off under Classic. The C#'s
+		// `CreateUniqueMap_ArmyUndegroundBase` returns null at `:4238` — *before* the
+		// generator is called — and `NewGame` bails at `:4290`.
+		//
+		// So this is a test of the selection, not of the map: there is no zone to pass, and
+		// the generator is never reached. Asserting it the other way round would have been
+		// testing a parameter the C# cannot supply.
 		const gen = newGenerator(20251004);
 		const bare = new GameMap(1, "no offices", MAP, MAP);
 		const tiles = new GameTiles();
 		for (let x = 0; x < MAP; x++) {
 			for (let y = 0; y < MAP; y++) bare.setTileModelAt(x, y, tiles.get(TileID.FLOOR_GRASS)!);
 		}
-		expect(gen.createUniqueMap_ArmyBase(bare, MAP)).toBeNull();
+		expect(
+			bare.zones.some((z) => z.hasGameAttribute(ZoneAttributes.IS_ARMY_OFFICE)),
+			"the fixture accidentally grew an army office"
+		).toBe(false);
+		// And the generator itself is *not* what fails: handed any walkable zone on an
+		// open map it builds happily. The first attempt at this test asserted null here
+		// and got a map, which was the assertion being wrong rather than the code —
+		// there is nothing to fail, because the C#'s failure is the district scan.
+		const orphan = new Zone("Army Office@orphan", new Rect(0, 0, 6, 6));
+		expect(gen.createUniqueMap_ArmyBase(bare, orphan, MAP)).not.toBeNull();
 	});
 });
 

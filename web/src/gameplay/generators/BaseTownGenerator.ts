@@ -6068,24 +6068,28 @@ export class BaseTownGenerator extends BaseMapGenerator {
    * the corner test for power rooms, the role dispatch by quarter, the 25%/10% blood
    * and 25% poster per tile, and `nbZombies = underground.Width`.
    *
-   * The **surface link** is where this departs, and it is a real gap rather than a
-   * choice: the C# needs a `Zone officeZone` from a generated army office on the
-   * surface, and it looks for that zone by name (`z.Name.Contains("room")`) — a search
-   * the fork then commented out and replaced with a walkable-tile search
-   * (`BaseTownGenerator.cs:10747-10764`). The port's surface army office pass runs
-   * inside a district generator, before this one is called, so the zone is looked up
-   * here from `Session` rather than passed in. The loop that finds it keeps the C#'s
-   * shape: up to 100 attempts for a walkable tile, and an outer retry that never
-   * actually retries because the C#'s `continue` has nothing to change.
+   * The **surface link** takes the `Zone officeZone` as a parameter, as the C# does
+   * (`:10712`), and the caller is `RogueGame.CreateUniqueMap_ArmyUndegroundBase` —
+   * which rolls for the district *and then* for the office inside it. That second roll
+   * is the reason the zone is a parameter and not something found here: a green
+   * district with three army offices is three times as likely to be chosen, and
+   * finding "the first army office" inside the generator would throw that away.
    *
-   * `armyOfficeZone` therefore has a default of `null` and the method returns `null`
-   * when there is no army office to link to — which is the C#'s own failure path
-   * (`RogueGame.cs:4290`: "the army base couln't be generated for some reason").
+   * The C#'s abandoned name-based search (`z.Name.Contains("room")`, commented out at
+   * `:10747-10764`) is why the caller searches on `IS_ARMY_OFFICE` instead. The loop
+   * that finds a walkable tile keeps the C#'s shape: up to 100 attempts, and an outer
+   * retry that never actually retries because the C#'s `continue` has nothing to
+   * change.
+   *
+   * Returns `null` when it cannot find a walkable tile inside the office after the
+   * C#'s 100 attempts — the failure `RogueGame.cs:4290` reports as "the army base
+   * couldn't be generated for some reason".
    */
-  // TODO(rogue): not yet called from `RogueGame.NewGame`, where the C# does
-  // `CreateUniqueMap_ArmyUndegroundBase(world)` at `:4289`. See the note in the
-  // docblock below for why that is staged rather than missing.
-  createUniqueMap_ArmyBase(surfaceMap: GameMap, mapSize: number): { map: GameMap; baseEntryPos: Point } | null {
+  createUniqueMap_ArmyBase(
+    surfaceMap: GameMap,
+    officeZone: Zone,
+    mapSize: number
+  ): { map: GameMap; baseEntryPos: Point } | null {
     /////////////////////////
     // 1. Create basic secret map.
     //////////////////////###
@@ -6114,9 +6118,6 @@ export class BaseTownGenerator extends BaseMapGenerator {
     /////////////////////////
     // 2. Link to above ground office.
     /////////////////////////
-    const officeZone = this.armyOfficeZone(surfaceMap);
-    if (officeZone === null) return null;
-
     // find somewhere walkable inside.
     let surfaceExit = new Point(0, 0);
     let foundSurfaceExit = false;
@@ -6370,22 +6371,6 @@ export class BaseTownGenerator extends BaseMapGenerator {
     return { map: underground, baseEntryPos };
   }
 
-  /**
-   * The surface army office this base hangs under, or `null`.
-   *
-   * The C# receives a `Zone` from `RogueGame.CreateUniqueMap_ArmyUndegroundBase` and
-   * never looks for one itself — and the commented-out search at
-   * `BaseTownGenerator.cs:10747-10764` shows the fork abandoned name-based lookup
-   * (`z.Name.Contains("room")`) in favour of "any walkable tile in the zone". So the
-   * port looks the zone up by the same marker the surface pass leaves: the army
-   * office's own zone.
-   */
-  private armyOfficeZone(surfaceMap: GameMap): Zone | null {
-    for (const z of surfaceMap.zones) {
-      if (z.name.startsWith('Army Office@') || z.name.startsWith('ArmyBase@')) return z;
-    }
-    return null;
-  }
 
     /**
    * C# `MakeArmyCommandRoom` — `BaseTownGenerator.cs:11155`.

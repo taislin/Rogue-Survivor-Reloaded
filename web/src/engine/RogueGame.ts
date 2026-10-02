@@ -32321,6 +32321,32 @@ inv.removeAllQuantity(it);
 			);
 			this.m_UI.UI_Repaint();
 		}
+		// `CreateUniqueMap_ArmyUndegroundBase(world)` belongs here — the C# calls it at
+		// `:4289`, *before* the CHAR facility, and bails out of `NewGame` if either is
+		// missing (`:4290-4291`). **It is not called, and that is a finding rather than
+		// an oversight.**
+		//
+		// The port does have the method and it is tested end-to-end
+		// (`tests/army-base-underground.test.ts`). Wiring it makes `NewGame` return false
+		// for most of this repository's own test worlds, with
+		//
+		//   "could not generate a world in 12 attempts; no business district with a CHAR
+		//    office, and no green district with a park to land a helicopter in, in a 3x3
+		//    city"
+		//
+		// because a green district with an army office requires a block that survives the
+		// office pass, and a 3x3 city has almost no green blocks. The C# has the same
+		// early-out and would fail identically on a world that small — which means the
+		// early-out is a **real fragility of the fork**, not a transcription error, and
+		// reproducing it faithfully means this port cannot start a small world at all.
+		//
+		// That is a decision about the port's own minimum city size, not a detail to
+		// settle inside a wiring change. The call, its ordering and its two-roll
+		// district-and-office selection are all in place above; what is missing is a
+		// decision on whether a world without an army base should be unplayable.
+		// Until that is made, `m_Session.uniqueMaps.armyBase` stays null and the map is
+		// reachable only from tests.
+
 		const charUnderground =
 			this.CreateUniqueMap_CHARUndegroundFacility(world);
 		if (charUnderground === null) {
@@ -33236,6 +33262,82 @@ inv.removeAllQuantity(it);
 	}
 
 	// C# CreateUniqueMap_CHARUndegroundFacility — RogueGame.cs:20887
+	/**
+	 * C# `CreateUniqueMap_ArmyUndegroundBase` — `RogueGame.cs:4226` (Release 6-3).
+	 *
+	 * Three steps, in the C#'s order: find every green district with an army office,
+	 * pick one at random, generate the base under it.
+	 *
+	 * ## Two details that are easy to lose
+	 *
+	 * **Two separate rolls, not one.** `goodDistricts[...]` picks the *district* and
+	 * then `offices[...]` picks the *office inside it* — so a green district with three
+	 * army offices is three times as likely to be chosen as one with a single office,
+	 * because the second roll is over the office list rather than the district list.
+	 * Collapsing them into "pick a district, take its first office" would be a
+	 * different distribution and would show up as a map at a different coordinate.
+	 *
+	 * **The map is renamed and re-parented after generation.** `map.Name` becomes
+	 * `"Army Base @{x}-{y}"` from the entry position, `map.District` is set to the
+	 * chosen district, and `chosenDistrict.AddUniqueMap(map)` registers it. The rename
+	 * happens *after* `GenerateUniqueMap_ArmyBase`, which had already set the name to
+	 * `"Army Base"` — so the two names are not a conflict, they are sequential.
+	 *
+	 * A district with no army office is a legal world: `makeArmyOffices` is behind
+	 * `roll(0, 99)` per green block, and `Feature.ArmyBase` is off under Classic. So
+	 * `null` here is an expected outcome, and the C# returns it to abort `NewGame`.
+	 */
+	CreateUniqueMap_ArmyUndegroundBase(world: World): UniqueMap | null {
+		///////////////////////////////////////////////
+		// 1. Find all green districts with army offices.
+		// 2. Pick one green district at random.
+		// 3. Generate underground map there.
+		///////////////////////////////////////////////
+
+		// 1. Find all green districts with offices.
+		const goodDistricts: District[] = [];
+		for (let x = 0; x < world.size; x++) {
+			for (let y = 0; y < world.size; y++) {
+				const district = world.getDistrict(x, y)!;
+				// The C# has `// || world[x, y].Kind == DistrictKind.GENERAL`
+				// commented out at `:4243`, so only GREEN qualifies. Left that way: the
+				// commented line is a record of a decision not taken, not a request.
+				if (district.kind !== DistrictKind.GREEN) continue;
+				const hasOffice = district.entryMap!.zones.some((z) =>
+					z.hasGameAttribute(ZoneAttributes.IS_ARMY_OFFICE)
+				);
+				if (hasOffice) goodDistricts.push(district);
+			}
+		}
+
+		// 2. Pick one green district at random.
+		if (goodDistricts.length === 0) {
+			// No `Logger` in the port; `logInit` is what world generation uses.
+			logInit("world generation failure: no green districts with army offices");
+			return null;
+		}
+		const chosenDistrict = goodDistricts[this.m_Rules.roll(0, goodDistricts.length)]!;
+
+		// 3. Generate underground map there.
+		const offices = chosenDistrict.entryMap!.zones.filter((z) =>
+			z.hasGameAttribute(ZoneAttributes.IS_ARMY_OFFICE)
+		);
+		const chosenOffice = offices[this.m_Rules.roll(0, offices.length)]!;
+		const built = this.m_TownGenerator.createUniqueMap_ArmyBase(
+			chosenDistrict.entryMap!,
+			chosenOffice,
+			s_Options.districtSize
+		);
+		if (built === null) return null;
+		const map = built.map;
+		map.district = chosenDistrict;
+		map.name = `Army Base @${built.baseEntryPos.x}-${built.baseEntryPos.y}`;
+		chosenDistrict.addUniqueMap(map);
+		const um = new UniqueMap();
+		um.theMap = map;
+		return um;
+	}
+
 	CreateUniqueMap_CHARUndegroundFacility(world: World): UniqueMap | null {
 		////////////////////////////////////////////////
 		// 1. Find all business districts with offices.

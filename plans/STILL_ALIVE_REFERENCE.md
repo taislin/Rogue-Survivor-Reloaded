@@ -1,36 +1,31 @@
 # Rogue Survivor: Still Alive — Reference Fork Audit
 
-> **Status (2026-09-29): porting has started — this file is now out of date as a
-> statement of fact, and stays accurate only as a survey.** It was written when
-> the decision was "nothing ported", which was true then and is not true now.
-> [`BROWSER_PORT_PLAN.md`](BROWSER_PORT_PLAN.md) §5.6 is the live progress
-> board; the short version:
+> **Status: the port is done. This file is now a *survey*, not a progress board.**
+> It was written when the decision was "nothing ported", and it is worth keeping
+> for that: §5's tiering and §7's "do not port" list are what stopped a
+> regression going in. But **where it disagrees with
+> [`BROWSER_PORT_PLAN.md`](BROWSER_PORT_PLAN.md) about what the port contains, the
+> plan is right**, and §6's defect list below is *not* a to-do list — eight were
+> applied, four turned out not to apply here, and three needed a different fix.
 >
-> - **Stage 1 done** (`f0782aa`, `4d43299`) — a `Ruleset` axis, save
->   compatibility, a `Feature` registry, a picker.
-> - **Stage 2 done** (`dd42e82`) — eight of the fifteen §6 defects, applied
->   unconditionally. Four turned out **not to apply** to this codebase and one
->   could not be confirmed; see §5.6c, which has the corrections.
-> - **Stage 3 half done, uncommitted** — the 16 content tables are merged into
->   one superset under `web/data/`, with the converter and
->   `data-tables.test.ts` following. Sprites, ids, maps and `GameImages`
->   constants are not started.
-> - **Stages 4–5 not started.**
+> [`BROWSER_PORT_PLAN.md`](BROWSER_PORT_PLAN.md) §5.6 is the live position;
+> [`STILL_ALIVE_JOURNAL.md`](STILL_ALIVE_JOURNAL.md) is how each stage went.
+> In short: **Stages 1–5 all landed** on `feature/still-alive-ruleset`, all 37
+> declared features have readers, and `PENDING_WIRING` is `{}`. Stage 1 was
+> `f0782aa`/`4d43299`, Stage 2 `dd42e82`, Stage 3's merged tables `cfcf2ea`.
 >
-> One thing below is now actively misleading and is corrected in §5.6d rather
-> than here: the fork's **rebalanced values are deliberately not in the merged
-> tables** — shared ids keep vanilla's numbers, so classic is unchanged, and
-> the fork's tuning is Stage 4 work behind the flag. §5.6d lists what is owed.
+> **Three things below need their framing changed now that the port exists:**
 >
-> The rest of this document stands as a survey of `_refs/StillAlive-master/`,
-> the GPLv3 fork of Rogue Survivor Alpha 10.1 maintained as **Rogue Survivor:
-> Still Alive** (v2.11 / Release 8-2, by MP, 2017–2023) on GitLab. It records
-> what the fork has, what it would cost to take, and which parts are outright
-> regressions.
->
-> It is written to be read once and then left alone. The next person who opens
-> `_refs/` should be able to skip the diffing and go straight to §5 (the tiering)
-> and §6 (the fixes worth taking on their own merit).
+> - **§6's fifteen defects are not fifteen open bugs.** The four that do not
+>   apply — and the reasons, which the audit could not have seen because it read
+>   the C# rather than this codebase — are recorded as `NOT_APPLICABLE` data in
+>   `tests/stage2-fixes.test.ts`, so they are not re-audited. Do not "fix" one of
+>   them from this table.
+> - **§5's tiering is a cost estimate written before any of it was built.** It is
+>   now a record of how the estimate compared to reality, not a plan.
+> - **§3's row counts are the fork's, not the port's**, and the merged tables
+>   carry more: `Items_MeleeWeapons` is 41 rows rather than the 37 the fork has,
+>   because rows are keyed by id and the fork's *removals* were kept.
 
 The three things worth knowing before reading on:
 
@@ -235,6 +230,23 @@ different one, will produce a broken district.
 Each of these is a defect in vanilla Alpha 10.1 that Still Alive fixed, each
 verified absent from the port. They are listed highest value-per-line first,
 and none requires art, data changes, or a balance decision.
+
+> **This is a survey of the fork, not a backlog — eight were applied, four do not
+> apply to this codebase, and three needed a different fix than the audit
+> described.** The table's "verified absent from the port" was true when written;
+> it is not a statement that they are all still open. Per-defect outcomes live in
+> `tests/stage2-fixes.test.ts`, where the four inapplicable ones are `NOT_APPLICABLE`
+> *data* rather than prose, so they cannot be silently re-fixed later. The reasoning
+> is in [`STILL_ALIVE_JOURNAL.md`](STILL_ALIVE_JOURNAL.md) §5.6c.
+>
+> The instructive pattern across the four: **each was a defect in vanilla that the
+> fork fixed, checked against the C# rather than against this port** — and each
+> turned out to have no pre-condition here. `RateItemExchange`'s throwing switch
+> became a matrix; door repair (and so the plank duplication) does not exist at
+> all; and the three fire defects need tile fires and fuel cans, which did not
+> exist until Stage 4. Two more were *worse* than described: the
+> `efficientRange` off-by-one drove the hit value **negative**, not merely out of
+> range, and battery recharge was two defects rather than one.
 
 | # | Defect | Fix | Location | Size |
 |---|---|---|---|---|
