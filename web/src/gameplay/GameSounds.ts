@@ -23,24 +23,42 @@ import { BASE_URL } from "@engine/BaseUrl";
  * A call site should pass the **id**, never the `*_FILE`, and that is a correctness
  * rule rather than a style one.
  *
- * `AssetPaths.soundPath` answers an id out of `SOUND_FILES` and appends `.ogg`, but
- * its already-resolved pass-through calls `withOgg`, which only *replaces* an
- * extension and adds none. The C#'s `*_FILE` constants carry no extension, so a
- * `_FILE` comes back extension-less and the fetch 404s. `ambientPath` hit this
- * first and has a second helper for it -- `asOgg`, whose own comment says the
- * sibling helpers "have been fine" because a music id never arrives that way. A
- * sound id can: `RogueGame.ts:19274` and `:19276` are the two call sites in `src/`
- * that do, which is why the shield-block effect has been *wired and silent* since
- * it landed, and why `tests/extended-audio-soundfiles.test.ts` exists.
+ * ## The `*_FILE` rule was not being enforced, and cost a sound
+ *
+ * `AssetPaths.soundPath` had a pass-through for an already-resolved path that only
+ * *replaced* an extension. The C#'s `*_FILE` constants carry none — the C# loader
+ * appends one at load time — so a `_FILE` came back extension-less and the fetch
+ * 404'd. `ambientPath` already had `asOgg` for exactly this, and its comment
+ * claimed the sibling helpers "have been fine" because a music id never arrives
+ * that way.
+ *
+ * A sound id did. `RogueGame`'s shield-block roll handed
+ * `SHIELD_BLOCK_PLAYER_FILE` and `SHIELD_BLOCK_NEARBY_FILE` to a play call, so the
+ * shield effect was *wired and silent* from the day it landed: it type-checked, the
+ * id was in `SOUND_FILES`, the file was on disk, and the fetch 404'd — with
+ * `WebAudioSoundManager` dropping a non-OK response without a word. Those two lines
+ * were also ungated, and `tests/extended-audio.test.ts` could not see that either:
+ * its scan resolves a constant *name* and asks whether the *value* is a fork id,
+ * and a `_FILE`'s value is a path no fixture entry equals, so the line was skipped
+ * as "not a fork id" rather than reported. Both halves are fixed — `soundPath` and
+ * `musicPath` use `asOgg`, and the sites name the ids — but the rule is recorded
+ * here because the failure was invisible from every direction at once, and the
+ * reason it is worth a paragraph rather than a line.
  *
  * ## The table is not a claim about wiring
  *
- * Every id the C# declares is declared, tabled and on disk. **68 of the fork's 180
- * are played**, and the other 112 are here because the reference declares them, not
+ * Every id the C# declares is declared, tabled and on disk. **75 of the fork's 180
+ * are played**, and the other 105 are here because the reference declares them, not
  * because anything reaches them: two centralised methods in `RogueGame.ts` account
- * for 62 of the 68 -- `PlayRangedWeaponSFX` reads 46 and `PlayBashOrBreakSFX` 16 --
- * and six are individual call sites. Two of those six are also ungated, which is the
- * second half of what the same test pins.
+ * for 62 of the 75 -- `PlayRangedWeaponSFX` reads 46 and `PlayBashOrBreakSFX` 16 --
+ * and thirteen more are at individual call sites, across fourteen sites (`EQUIP` is
+ * played twice, by the C# at `:21044` and `:21059`).
+ *
+ * That count is measured rather than estimated, and
+ * `tests/extended-audio.test.ts` is what keeps it honest: it derives the table sets
+ * from the same source text and fails on any id named ungated, so the number can
+ * only move through a decision. It was 70 before the equip sounds landed; the five
+ * that changed it are the item this comment is nearest to.
  *
  * The distance model the `_nearby`/`_far` suffixes imply is the reason the feature
  * was built table-first rather than call-site-first

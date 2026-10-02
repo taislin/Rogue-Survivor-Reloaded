@@ -622,9 +622,9 @@ describe("the gate", () => {
     expect(
       gated.filter((id) => !WEAPON_SOUND_IDS.has(id) && !BULK_SOUND_IDS.has(id)).sort(),
       "and the non-weapon effects are all still wired",
-      // Sorted, and by hand, because a *fourth* standalone reader is a decision this
+      // Sorted, and by hand, because a *new* standalone reader is a decision this
       // list is meant to force rather than absorb. The four Still Alive use paths added
-      // in one pass and are the reason this line is nine and not four:
+      // in one pass and are the reason this line is more than four:
       //
       // - the throwable light packs' `FLARE` and `GLOWSTICK`, one gate each because
       //   the C# picks between two ids (`RogueGame.cs:15067-15070`);
@@ -633,7 +633,25 @@ describe("the gate", () => {
       //   name is a lie about its provenance. It reads like a long-standing Classic id
       //   and is in the fork's fixture, and the first version of that method played it
       //   ungated on exactly that assumption. This assertion is the review.
+      //
+      // The shield-block pair are here because of how they got here rather than
+      // because they are new. `DoMeleeAttack` played `SHIELD_BLOCK_PLAYER_FILE` and
+      // `SHIELD_BLOCK_NEARBY_FILE`, and a `*_FILE`'s *value* is a path, so this scan
+      // -- which asks whether the value is a fork id -- skipped both lines as "not a
+      // fork id" instead of reporting them. They had been ungated, and 404ing, and
+      // invisible to the one check meant to catch exactly that. Spelled as ids they
+      // are ordinary entries like any other, which is the whole point of the rule in
+      // `GameSounds.ts:22-24`.
+      //
+      // The four from `OnEquipItem` are the item's other half. `EQUIP` appears twice
+      // because the C# plays it twice (`:21044` equipping a shield, `:21059`
+      // equipping binoculars) and this list is per *site*, not per id. It is joined
+      // by the two ids that sit either side of the binocular branch: the port had the
+      // battery decrement and none of the three sounds, so a torch was switched on in
+      // silence and its light did not reach the FOV until the next turn.
     ).toEqual([
+      "EQUIP",
+      "EQUIP",
       "EQUIP_GUN_PLAYER",
       "FISHING_CAST_PLAYER",
       "FISHING_REEL_PLAYER",
@@ -641,6 +659,10 @@ describe("the gate", () => {
       "GLOWSTICK",
       "MAKE_MOLOTOV",
       "MATCH_STRIKE_START_FIRE_PLAYER",
+      "NIGHT_VISION",
+      "SHIELD_BLOCK_NEARBY",
+      "SHIELD_BLOCK_PLAYER",
+      "TORCH_CLICK_PLAYER",
       "UNDEAD_EAT_PLAYER",
     ]);
   });

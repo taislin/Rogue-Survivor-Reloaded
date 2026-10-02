@@ -19709,10 +19709,43 @@ inv.removeAllQuantity(it);
 			defender.getEquippedShield() !== null &&
 			this.m_Rules.rollChance(this.m_Rules.actorShieldChanceToBlock(defender))
 		) {
+			// `SHIELD_BLOCK_PLAYER` and `SHIELD_BLOCK_NEARBY`, the **ids** — which is
+			// what the C# plays (`RogueGame.cs:18372`, `:18374`) and what
+			// `GameSounds.ts:22-24` makes the rule: the `*_FILE` twin names a path
+			// and is for the loader, not for playback. These two lines named the
+			// `*_FILE`, and `soundPath` could not resolve one — it *replaces* an
+			// extension and a `_FILE` has none, so the URL came back without a
+			// suffix and 404'd. The block was wired, reached the sfx channel, and
+			// was silent. `AssetPaths.soundPath` is fixed too; naming the id is what
+			// puts these under the gate scan below.
+			//
+			// The gate is new, and the other half of that. Both effects are Release
+			// 7-2 fork-only assets, and under CLASSIC the lines below are unreachable
+			// only because Classic has no shield item — the port was relying on a
+			// coincidence of inventory rather than asking `hasFeature`, which is
+			// what every other ExtendedAudio site does. The `_FILE` spelling had also
+			// been hiding them from that scan: it resolves the constant *name*, and a
+			// `_FILE`'s value is a path, so no fixture entry matched it and the line
+			// was skipped as "not a fork id" rather than reported.
+			//
+			// The C#'s `if (isPlayer) … else if (IsAudibleToPlayer(…))`
+			// (`RogueGame.cs:18371-18374`), with `Feature.ExtendedAudio` folded into
+			// each arm. Both effects are Release 7-2 fork-only assets, and under
+			// CLASSIC these lines are unreachable only because Classic has no shield
+			// item — the port was relying on a coincidence of inventory rather than
+			// asking `hasFeature`, which is what every other ExtendedAudio site
+			// does. The gate is repeated per arm rather than hoisted because it is
+			// what the surrounding code does everywhere else — a gate immediately
+			// above the id it governs — and because a single gate wrapping both arms
+			// sits four lines from the second id, outside the three-line window the
+			// gate scan reads. Two `Set` lookups, on a roll that only happens when a
+			// shield blocks.
 			if (isPlayer) {
-				this.m_SoundManager.play(GameSounds.SHIELD_BLOCK_PLAYER_FILE);
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					this.m_SoundManager.play(GameSounds.SHIELD_BLOCK_PLAYER);
 			} else if (this.isAudibleToPlayer(attacker.location, NOISE_RADII.QUIET)) {
-				this.m_SoundManager.play(GameSounds.SHIELD_BLOCK_NEARBY_FILE);
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					this.m_SoundManager.play(GameSounds.SHIELD_BLOCK_NEARBY);
 			}
 
 			if (isAttVisible || isDefVisible) {
@@ -22024,19 +22057,57 @@ inv.removeAllQuantity(it);
 				if (ranged !== null && !ranged.isOneHanded)
 					this.DoUnequipItem(actor, ranged);
 			}
-			// C# `:21043-21044`. **The EQUIP sound is not ported**: `GameSounds.EQUIP`
-			// arrives with `Feature.ExtendedAudio` and is still pending, the same
-			// gap the fishing rod's cast sound records. Nothing else in this arm is
-			// missing -- the player-only test is the only other thing the C# does,
-			// and it guards nothing but the sound.
+			// C# `:21043-21044`, Release 2.
+			//
+			// The one thing left in this arm, and it was the last: `GameSounds.EQUIP`
+			// arrived with `Feature.ExtendedAudio` and had no call site, so the fork
+			// equipped a shield in silence. The player-only test guards nothing but
+			// the sound, which is the C#'s own comment (`//@@MP (Release 2)`) — there
+			// is no NPC variant of this id.
+			//
+			// Played under the gate rather than beside it, for the same reason the
+			// shield-block roll repeats its gate per arm: one gate wrapping both a
+			// player arm and an `else` sits outside the three-line window the gate
+			// scan reads.
+			if (actor.isPlayer && hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.play(GameSounds.EQUIP);
 		}
 		// Batteries
 		else if (it.model instanceof ItemTrackerModel) {
 			const trIt = it as ItemTracker;
 			--trIt.batteries;
 		} else if (it.model instanceof ItemLightModel) {
-			const ltIt = it as ItemLight;
-			--ltIt.batteries;
+			// C# `:21049-21060`. The port had the battery decrement and none of the
+			// three sounds, so a torch was switched on in silence and — the part with
+			// teeth — no FOV was recomputed, so the light the player just equipped did
+			// not take effect until the next turn. The C# calls `UpdatePlayerFOV`
+			// immediately for that reason (`//@@MP - update FOV now, don't wait until
+			// the next turn`, Release 6-2), and the port's `UpdatePlayerFOV` is the
+			// same function.
+			if (actor.isPlayer) {
+				const ltIt = it as ItemLight;
+				--ltIt.batteries;
+
+				// Three ids, one gate, in the C#'s order. Night vision and binoculars
+				// are Release 6-3/7-1, the torch click is the original Release 2 one.
+				//
+				// Written as three guarded statements rather than the C#'s
+				// `if / else if / else` because the three ids cannot share one gate
+				// and stay inside the gate scan's window — the same constraint the
+				// shield-block roll is written under, and the reason the throwable
+				// light packs carry a gate each.
+				if (this.m_Rules.isItemNightVision(it)) {
+					if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+						this.m_SoundManager.play(GameSounds.NIGHT_VISION);
+				} else if (this.m_Rules.isItemBinoculars(it)) {
+					if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+						this.m_SoundManager.play(GameSounds.EQUIP);
+				} else if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio)) {
+					this.m_SoundManager.play(GameSounds.TORCH_CLICK_PLAYER);
+				}
+
+				this.UpdatePlayerFOV(this.m_Player);
+			}
 		}
 	}
 

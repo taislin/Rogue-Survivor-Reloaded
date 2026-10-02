@@ -178,19 +178,21 @@ describe("Feature registry is wired", () => {
     expect(sites.map((s) => s.feature).sort())
       .toEqual([
          "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "AmbientAudio", "AmbientAudio", "AmbientAudio",
-            "AmbientAudio", "AmbientAudio", "AmbientAudio", "AnimalShelter", "AnimalShelter", "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank",
-            "Bar", "Bar", "BlackOpsRaid", "Butchering", "Butchering", "CHARResearchRaid", "Church", "Clinic", "Clinic", "Cooking",
-            "Cooking", "Cooking", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov",
-            "DarknessGating", "DifficultyAtCreation", "DifficultyAtCreation", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",
-            "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "Farm", "Farm", "FireBarrels", "FireBarrels", "FireBarrels", "FireExtinguishers", "FireStation",
-            "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-            "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FuelStation", "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue",
-            "HelicopterRescue", "ItemDespawn", "ItemDespawn", "Junkyard", "Junkyard", "Library", "Library", "LightPriority", "ResourcesAvailability", "ResourcesAvailability",
-            "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
-            "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShoppingMall", "ShoppingMall", "ShoppingMall", "SiphonFuel", "SiphonFuel", "SportsCourts", "SportsCourts",
-            "TileFires", "TileFires", "TileFires", "TileFires", "TileFires", "WeaponWeight",
+   "AmbientAudio", "AmbientAudio", "AmbientAudio", "AnimalShelter", "AnimalShelter", "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank",                                                                
+   "Bar", "Bar", "BlackOpsRaid", "Butchering", "Butchering", "CHARResearchRaid", "Church", "Clinic", "Clinic", "Cooking",                                                                                  
+   "Cooking", "Cooking", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov",                                                           
+   "DarknessGating", "DifficultyAtCreation", "DifficultyAtCreation", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                
+   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "Farm",                                        
+   "Farm", "FireBarrels", "FireBarrels", "FireBarrels", "FireExtinguishers", "FireStation", "Fishing", "Fishing", "Fishing", "Fishing",                                                                    
+   "Fishing", "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FuelStation",                                                   
+   "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "ItemDespawn", "ItemDespawn", "Junkyard",                                 
+   "Junkyard", "Library", "Library", "LightPriority", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability",
+   "ResourcesAvailability", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShoppingMall",
+   "ShoppingMall", "ShoppingMall", "SiphonFuel", "SiphonFuel", "SportsCourts", "SportsCourts", "TileFires", "TileFires", "TileFires", "TileFires",                                                         
+   "TileFires", "WeaponWeight",
       ]);
-      // 116 call sites across 37 features
+      // 122 call sites across 37 features
+
 
 
 
@@ -652,7 +654,15 @@ describe("Feature registry is wired", () => {
     // change. `tests/extended-audio.test.ts` asserts that no id is named anywhere
     // ungated, so this count can only rise through a decision.
     const extended = sites.filter((s) => s.feature === "ExtendedAudio");
-    expect(extended).toHaveLength(10);
+    // 10 -> 16. Six gates came with the equip sounds: two on the shield-block roll
+    // (`DoMeleeAttack`) and four in `OnEquipItem` -- one on the shield arm and three
+    // across the `ItemLightModel` arm's night-vision / binoculars / torch chain. The
+    // shield-block pair is the interesting one, because those two lines were
+    // ungated *and* spelled `SHIELD_BLOCK_*_FILE`, and a `_FILE`'s value is a path
+    // rather than a fork id -- so this scan counted them as no reader at all, which
+    // is how two ungated fork-only sounds sat under a feature flag test that was
+    // green. Naming them as ids is what put them back on this list.
+    expect(extended).toHaveLength(16);
     expect(extended.every((s) => /RogueGame\.ts/.test(s.at))).toBe(true);
   });
 

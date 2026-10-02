@@ -2879,6 +2879,31 @@ export class Rules {
     return Rules.SHIELD_BASE_BLOCK_CHANCE + actorSkillModifier;
   }
 
+  /**
+   * C# `IsItemNightVision` — `Rules.cs:1376`, Release 6-3.
+   *
+   * An id test and nothing else, transcribed as such. It has three readers in the
+   * C#: the "too bright to equip" rule in `CanActorEquip` (`:883`, commented out
+   * there), the FOV bonus in `ComputeFOV` (`:5125` is its *binoculars* sibling),
+   * and the equip sound in `OnEquipItem` (`:21055`) — which is the one that has
+   * landed, and the reason this exists.
+   */
+  isItemNightVision(it: Item): boolean {
+    return it.model.id === ItemID.LIGHT_NIGHT_VISION;
+  }
+
+  /**
+   * C# `IsItemBinoculars` — `Rules.cs:1384`, Release 7-1.
+   *
+   * Also an id test. Its C# readers are the equip sound (`:21057`) and the FOV
+   * bonus (`:5125`), and the C# notes at `Rules.cs:891` that binoculars are
+   * `IsForbiddenToAI`, which is why there is no AI-side "too dark for binoculars"
+   * rule for it the way night vision has.
+   */
+  isItemBinoculars(it: Item): boolean {
+    return it.model.id === ItemID.LIGHT_BINOCULARS;
+  }
+
   actorMeleeAttack(actor: Actor, baseAttack: Attack, target: Actor | null, objToBreak: MapObject | null = null): Attack {
     let hit = baseAttack.hitValue;
     let dmg = baseAttack.damageValue;

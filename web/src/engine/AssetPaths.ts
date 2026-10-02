@@ -118,7 +118,7 @@ export function imagePathIn(set: ImageSet, imageId: string): string {
 export function musicPath(musicId: string): string {
   const file = MUSIC_FILES[musicId];
   if (file != null) return `${MUSIC_ROOT}/${file}.ogg`;
-  if (musicId.startsWith(ASSETS_ROOT)) return withOgg(musicId);
+  if (musicId.startsWith(ASSETS_ROOT)) return asOgg(musicId);
   return `${MUSIC_ROOT}/${musicId}.ogg`;
 }
 
@@ -126,7 +126,14 @@ export function musicPath(musicId: string): string {
 export function soundPath(soundId: string): string {
   const file = SOUND_FILES[soundId];
   if (file != null) return `${SFX_ROOT}/${file}.ogg`;
-  if (soundId.startsWith(ASSETS_ROOT)) return withOgg(soundId);
+  // `asOgg`, not a replace-only helper, and this line was the whole of a real bug:
+  // see `asOgg`. The shield-block pair is what proved it — `RogueGame`'s
+  // `DoMeleeAttack` played `GameSounds.SHIELD_BLOCK_PLAYER_FILE`, whose value is a
+  // bare path with no extension, so a replace found no suffix to convert and
+  // returned a URL that does not exist. The effect was wired, reached the sfx
+  // channel, got the right gain, and 404'd. `WebAudioSoundManager` dropped the
+  // non-OK response without a word, so the sound was simply silent in play.
+  if (soundId.startsWith(ASSETS_ROOT)) return asOgg(soundId);
   return `${SFX_ROOT}/${soundId}.ogg`;
 }
 
@@ -182,19 +189,30 @@ export function isKnownAudioId(id: string): boolean {
   return MUSIC_FILES[id] != null || SOUND_FILES[id] != null;
 }
 
-function withOgg(path: string): string {
-  return path.replace(/\.(mp3|ogg|wav)$/i, ".ogg");
-}
-
 /**
- * `withOgg`, but it also *adds* the extension.
+ * Normalises a path to `.ogg`, **adding** the extension when there is none.
  *
- * The difference is not cosmetic, and it is why this is not `withOgg`. The C#'s
+ * Adding is the whole point, and the reason this is not a `replace`. The C#'s
  * `*_FILE` constants carry no extension — `GameAmbients.cs:13` is
- * `Resources\Ambients\rain_outside_looped`, and the C# loader appends one — so
- * every `*_FILE` in `GameAmbients` arrives here without a suffix, and `withOgg`
- * (which only *replaces* one) hands back a URL the browser will 404. A music id
- * never arrives that way, which is why the sibling helpers have been fine.
+ * `Resources\Ambients\rain_outside_looped` — and the C# loader appends one at load
+ * time (`MDXSoundManager.cs:48-51`, `return fileName + ".ogg";`). So a `*_FILE`
+ * value reaching this file has no suffix, and a replace-only helper hands back a
+ * URL the browser will 404.
+ *
+ * This was a real bug in `soundPath` and `musicPath`, and it was believed not to
+ * be, on the grounds recorded in the sibling comment that "a music id never
+ * arrives that way". A sound id arrived: `RogueGame`'s shield-block roll played
+ * `SHIELD_BLOCK_PLAYER_FILE` and `SHIELD_BLOCK_NEARBY_FILE`, so the shield effect
+ * was 404ing in play and nothing said so — `WebAudioSoundManager` dropped the
+ * non-OK response without a word. `ambientPath` had it right all along, which is
+ * the only reason anything on that channel was ever heard.
+ *
+ * A replace-only twin used to sit beside this one, for the case of an
+ * already-resolved path that carries `.mp3`/`.wav` and needs converting. Nothing
+ * passes such a path — the C#'s do not carry an extension either — so it is gone
+ * rather than left as a second, weaker way to spell the same step. A helper that
+ * silently fails to add a suffix is a trap, and the only way to keep one out of a
+ * file like this is to not have it.
  */
 function asOgg(path: string): string {
   return `${path.replace(/\.(mp3|ogg|wav)$/i, "")}.ogg`;

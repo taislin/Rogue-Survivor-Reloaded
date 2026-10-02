@@ -57,7 +57,18 @@ export class WebAudioSoundManager implements ISoundManager {
       try {
         const url = soundPath(soundId);
         const response = await fetch(url);
-        if (!response.ok) return;
+        if (!response.ok) {
+          // A bare `return` used to be here, and it is why a wrong URL is
+          // indistinguishable from a silent sound. The shield-block pair resolved
+          // to an extensionless path and 404'd: the effect was wired, reached this
+          // channel, got the right gain, and produced no sound and no log entry.
+          // The C# rethrows — `MDXSoundManager.Load` fails the frame on a bad
+          // name — so a 4xx is a packaging bug here too, and the catch below
+          // exists precisely to say so.
+          throw new Error(
+            `${response.status} ${response.statusText} for ${url}`,
+          );
+        }
         const arrayBuffer = await response.arrayBuffer();
         buffer = await this.ctx.decodeAudioData(arrayBuffer);
         this.buffers.set(soundId, buffer);

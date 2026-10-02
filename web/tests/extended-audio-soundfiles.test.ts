@@ -11,7 +11,7 @@ import { publicFilePath } from "./helpers/assetPath";
 
 /**
  * The two halves of `gameplay/GameSounds.ts` that `tests/extended-audio.test.ts`
- * does not reach, and the two defects on the far side of the gap.
+ * does not reach, and the defect that lived on the far side of the gap.
  *
  * ## What is already covered, and why this is not a copy of it
  *
@@ -32,32 +32,32 @@ import { publicFilePath } from "./helpers/assetPath";
  * exists") and it is images-only; the sound half of that obligation is the first
  * block below.
  *
- * ## The two defects
+ * ## The defect, which is now fixed
  *
- * **`soundPath` cannot resolve a `*_FILE`.** `AssetPaths.soundPath` answers an id
- * from `SOUND_FILES` and appends `.ogg`, but its already-resolved pass-through calls
- * `withOgg`, which *replaces* an existing extension and adds none. The C#'s
- * `*_FILE` constants carry no extension, so the URL comes back
- * `<base>assets/sfx/shield_block_player` and the browser 404s. `ambientPath` hit
- * this already and has a second helper for it -- `asOgg`, whose own comment says a
- * music id "never arrives that way, which is why the sibling helpers have been fine"
- * -- and `soundPath` is that sibling. One line in `engine/AssetPaths.ts`.
+ * **`soundPath` could not resolve a `*_FILE`.** It answered an id from `SOUND_FILES`
+ * and appended `.ogg`, but its already-resolved pass-through only *replaced* an
+ * extension. The C#'s `*_FILE` constants carry none — the loader appends one, at
+ * `MDXSoundManager.cs:48-51` — so the URL came back
+ * `<base>assets/sfx/shield_block_player` and the browser 404'd. `ambientPath` had
+ * `asOgg` for exactly this and its comment said a music id "never arrives that way,
+ * which is why the sibling helpers have been fine". `soundPath` was that sibling.
  *
- * **`RogueGame.ts:19274` and `:19276` are the only callers that notice**, because
- * they are the only two call sites in `src/` that hand a `*_FILE` to a play call
- * rather than an id. So the shield-block sound has been *wired and silent* since it
- * landed: it type-checks, it records, the id is in `SOUND_FILES`, and the fetch
- * fails. They are also ungated, which is a second problem on the same two lines --
- * both files are fork-only Release 7-2 assets -- and `extended-audio.test.ts`'s
- * "names a fork-only id only next to an ExtendedAudio gate" scan cannot see that
- * either, because it looks the constant name up in `DECLARED` and asks whether the
- * *value* is a fork id, and `SHIELD_BLOCK_PLAYER_FILE`'s value is a path.
+ * **`RogueGame`'s shield-block roll was the only caller that noticed**, because it
+ * was the only call site in `src/` handing a `*_FILE` to a play call rather than an
+ * id. The shield-block sound was *wired and silent* from the day it landed: it
+ * type-checked, it recorded, the id was in `SOUND_FILES`, the file was on disk, and
+ * the fetch 404'd. The same two lines were ungated, and
+ * `extended-audio.test.ts`'s gate scan could not see that either — it looks the
+ * constant name up in `DECLARED` and asks whether the *value* is a fork id, and a
+ * `_FILE`'s value is a path. So one wrong spelling hid both a silent sound and an
+ * ungated one from the two checks meant to catch them.
  *
- * Whether a Classic district can produce a `POLICE_RIOT_SHIELD` is a question for
- * the item tables (`data/**` and the generators), not for this file. The gate is
- * the port's rule regardless -- the two landed methods in `RogueGame.ts` and the
- * four other `ExtendedAudio` readers all have one -- so the register below is where
- * the two lines are tracked until their owner fixes them.
+ * All three halves are fixed: `soundPath` and `musicPath` use `asOgg`, the sites
+ * name the plain ids, and the two are now in the gate scan's allow-list where a
+ * future spelling change is a failure. The test below asserts the *fix* — every one
+ * of the 183 resolves to a file that exists — and the register it left behind is
+ * empty and asserted empty, because a `*_FILE` is no longer tolerable on a play
+ * call now that the resolver handles it.
  */
 
 const SRC = join(__dirname, "..", "src");
@@ -160,27 +160,38 @@ describe("every declared sound file is a real file", () => {
     expect(missing, `sound ids that resolve to nothing:\n  ${missing.join("\n  ")}`).toEqual([]);
   });
 
-  it("cannot resolve a `*_FILE`, which is a defect and not a design", () => {
-    // **The tripwire.**
+  it("resolves a `*_FILE` to a real file, which it used not to", () => {
+    // **This was the tripwire, and it has fired.**
     //
-    // `AssetPaths.soundPath`'s already-resolved branch calls `withOgg`, which only
-    // *replaces* an extension, so a `*_FILE` -- which carries none, because the C#'s
-    // do not and the port transcribes them verbatim -- comes back without `.ogg`
-    // and 404s. `ambientPath` has `asOgg` for exactly this and its comment says the
+    // `AssetPaths.soundPath`'s already-resolved branch called `withOgg`, which only
+    // *replaces* an extension, so a `*_FILE` — which carries none, because the C#'s
+    // do not and the port transcribes them verbatim — came back without `.ogg` and
+    // 404'd. `ambientPath` had `asOgg` for exactly this and its comment claimed the
     // sibling helpers "have been fine" because a music id never arrives that way.
-    // A sound id can: `RogueGame.ts:19274` does.
+    // A sound id can: `RogueGame`'s shield-block roll played
+    // `SHIELD_BLOCK_PLAYER_FILE`, so the shield effect was wired, reached the sfx
+    // channel, got the right gain, and was silent. `WebAudioSoundManager` dropped
+    // the non-OK response without a word, so nothing said so either.
     //
-    // The fix is one line in `engine/AssetPaths.ts` -- `asOgg` instead of `withOgg`
-    // in `soundPath`'s pass-through -- and it is not made here because that file is
-    // not this task's. Asserted as "every one of them fails", so the day it is fixed
-    // this fails and says what to delete; asserting it per-name would let a partial
-    // fix pass.
-    const extensionless = FILE_CONSTANTS.filter((name) => !soundPath(DECLARED[name]!).endsWith(".ogg"));
+    // The fix is `asOgg` in `soundPath`'s pass-through (and in `musicPath`'s, which
+    // had the same defect and no caller yet). Asserted over *all* of them rather
+    // than per-name, so a partial fix cannot pass: the branch is a single line, and
+    // 183 constants is what proves it takes that branch for all of them.
+    const unresolved = FILE_CONSTANTS.filter((name) => !soundPath(DECLARED[name]!).endsWith(".ogg"));
     expect(
-      extensionless.length,
-      `soundPath grew an extension for *_FILE -- the fix landed, so delete this test and ` +
-        `FILE_CONSTANTS_HANDED_TO_PLAY. Still extensionless: ${extensionless.join(", ")}`,
-    ).toBe(FILE_CONSTANTS.length);
+      unresolved,
+      `a *_FILE still does not resolve to an .ogg, so it will 404:\n  ${unresolved.join("\n  ")}`,
+    ).toEqual([]);
+
+    // And not merely ends in `.ogg` — a file that exists. This is the half that
+    // catches a pass-through that invented an extension for a name that is not on
+    // disk, which is what "it ends in .ogg" would let through.
+    const missing: string[] = [];
+    for (const name of FILE_CONSTANTS) {
+      const url = soundPath(DECLARED[name]!);
+      if (!existsSync(publicFilePath(url))) missing.push(`${name} -> ${url}`);
+    }
+    expect(missing, `*_FILE values resolving to nothing:\n  ${missing.join("\n  ")}`).toEqual([]);
   });
 
   it("keeps the three Classic effects on the files Classic already ships", () => {
@@ -197,24 +208,28 @@ describe("every declared sound file is a real file", () => {
 });
 
 /**
- * The two `_FILE` constants currently handed straight to a play call.
+ * The `_FILE` constants handed straight to a play call.
  *
- * Keyed by **constant name, not by `file:line`**. A line-anchored register is a
- * false alarm the moment an unrelated edit shifts the file, and more than one agent
- * edits `RogueGame.ts`; a name is stable under any reformat. An entry here is
- * *tracking*, not permission: the scan below checks a name in this list **and** a
- * `*_FILE` within three lines of an `ExtendedAudio` gate, so gating the two sites
- * does not fail this file -- the entry just becomes deletable.
+ * **Empty, and asserted empty.**
  *
- * `EQUIP` is the same mistake waiting to happen and is deliberately *not* listed,
- * because nothing plays it: the shield's equip sound has no ported call site at
- * all, which is why `extended-audio.test.ts` counts four non-table effects rather
- * than five. It is a pending call site, not a wrong one.
+ * It used to hold the shield-block pair, keyed by constant name rather than
+ * `file:line` so that an unrelated edit could not falsify it. Both entries are
+ * gone: the sites now name the plain ids, which is what the C# plays
+ * (`RogueGame.cs:18372`, `:18374`) and what `GameSounds.ts:22-24` makes the rule.
+ *
+ * The empty list is the point, not a leftover. The register existed to *excuse* a
+ * wrong spelling while a file it did not own was fixed; with `soundPath` able to
+ * resolve a `_FILE` there is no longer a reason to tolerate one, and the stale-entry
+ * assertion below means a new arrival fails rather than being registered.
+ *
+ * It also notes what a `*_FILE` did to the *other* scan. `extended-audio.test.ts`
+ * resolves `GameSounds.X` through `DECLARED` and asks whether the value is a fork
+ * id; a `_FILE`'s value is a path, no fixture entry equals it, and the line was
+ * **skipped as "not a fork id" rather than reported**. So the two ungated sound
+ * lines in the tree were invisible to the id-spelling gate scan for as long as
+ * they were spelled wrong. Spelling them as ids is what puts them back under it.
  */
-const FILE_CONSTANTS_HANDED_TO_PLAY: readonly string[] = [
-  "SHIELD_BLOCK_PLAYER_FILE",
-  "SHIELD_BLOCK_NEARBY_FILE",
-];
+const FILE_CONSTANTS_HANDED_TO_PLAY: readonly string[] = [];
 
 describe("no play call is handed a `*_FILE`", () => {
   it("reports none outside the register, and keeps the register honest", () => {

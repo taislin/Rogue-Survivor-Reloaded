@@ -259,7 +259,21 @@ describe("the two throwable light kits: the light is manufactured at use time", 
     expect(lights[0]!.batteries).toBe(flareModel.maxBatteries - 1);
     expect(flareModel.maxBatteries).toBeGreaterThan(0);
     expect(kit.quantity, "one flare left the box").toBe(2);
-    expect(played).toEqual([GameSounds.FLARE]);
+    // **Two** sounds, and this assertion used to be one.
+    //
+    // The C# plays `FLARE` when the kit is opened (`RogueGame.cs:15068`) and then
+    // calls `DoEquipItem(player, item)` on the next line (`:15071`), which routes
+    // into `OnEquipItem`'s `ItemLightModel` arm — where a light that is neither
+    // night vision nor binoculars gets `TORCH_CLICK_PLAYER` (`:21059`). A flare is
+    // an `ItemLightModel`, so the reference makes the torch click when you light a
+    // flare. The port played only the first of the two, because that whole arm was
+    // the battery decrement and nothing else; so the assertion below was recording
+    // the port's gap rather than the reference's behaviour, which is the worst kind
+    // of test to have.
+    //
+    // Both are gated on `Feature.ExtendedAudio` and this runs under STILL_ALIVE, so
+    // both are heard.
+    expect(played).toEqual([GameSounds.FLARE, GameSounds.TORCH_CLICK_PLAYER]);
   });
 
   it("a glowstick box makes a glowstick and plays the other sound", async () => {
@@ -269,7 +283,9 @@ describe("the two throwable light kits: the light is manufactured at use time", 
 
     expect(carriedLights()[0]!.model.id).toBe(ItemID.LIGHT_GLOWSTICK);
     expect(box.quantity).toBe(1);
-    expect(played).toEqual([GameSounds.GLOWSTICK]);
+    // Same shape as the flare above, for the same reason: `GLOWSTICK` from the box
+    // and `TORCH_CLICK_PLAYER` from the equip that follows it.
+    expect(played).toEqual([GameSounds.GLOWSTICK, GameSounds.TORCH_CLICK_PLAYER]);
   });
 
   it("refuses a second light rather than silently losing the first", async () => {
