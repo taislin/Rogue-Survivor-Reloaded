@@ -97,6 +97,23 @@ export enum Feature {
   AmbientAudio,
   /** The 180-fork sound effect set. */
   ExtendedAudio,
+  /**
+   * The deranged patient, and Jason Myers' absence — `Feature` is a *swap*, not
+   * an addition.
+   *
+   * Still Alive, Release 8-1 replaced Jason Myers outright: `GameActors.cs:131`
+   * reads `DerangedPatient { … } //@@MP - was Jason Myers (Release 8-1)`, the
+   * patient moved into the hospital power room with three `HIGH_STAMINA` where
+   * Jason had five, and he carries a bonesaw rather than an axe. `BaseTownGenerator`
+   * in the fork has no `JasonMyers` at all.
+   *
+   * So the flag has to gate *both* halves, and it is the only feature in the set
+   * that is off for the express purpose of turning something **off** in Classic
+   * that the fork turned on somewhere else. Written as one feature rather than two
+   * because there is no state in which the patient exists and Jason does too, and
+   * two flags would permit exactly that.
+   */
+  DerangedPatient,
 }
 
 /**
@@ -143,6 +160,7 @@ const ALL_FEATURES: readonly Feature[] = [
   Feature.ArmyBase,
   Feature.AmbientAudio,
   Feature.ExtendedAudio,
+  Feature.DerangedPatient,
 ];
 
 /**

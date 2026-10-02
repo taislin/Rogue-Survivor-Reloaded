@@ -23,6 +23,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { District, DistrictKind } from "@data/District";
 import { Map as GameMap } from "@data/Map";
+import { MapObject } from "@data/MapObject";
 import { Models } from "@data/Models";
 import { Point } from "@engine/Point";
 import { Rect } from "@engine/Rect";
@@ -218,8 +219,80 @@ describe("Feature.ArmyBase: the office itself", () => {
     // Room furniture is placed through the map-object API, so the ids are checked
     // against the constants rather than by pixel-scanning the map.
     expect(GameImages.OBJ_ARMY_TABLE).toBe("MapObjects/army_table");
-    expect(GameImages.OBJ_ARMY_COMPUTER_STATION).toBe("MapObjects/army_computer_station");
     expect(GameImages.OBJ_ARMY_TABLE).not.toBe(GameImages.OBJ_CHAR_TABLE);
+  });
+
+  it("furnishes each office room with a table and a chair, and no computer station", () => {
+    // **This replaces the tautology.** The constant's only reference used to be the
+    // line above, which asserted that `OBJ_ARMY_COMPUTER_STATION` equals its own
+    // string value — true whether or not a single station has ever been built, which
+    // is how the generator shipped a loop that placed a table and a chair, stopped,
+    // and left the constant with no reader in the project. The comment above that
+    // loop described "a computer station in the rooms that get one" and a
+    // `nbTables` that decided which; neither existed.
+    //
+    // The placement is now written, and it is the C#'s (`:5492-5516`): after the
+    // chair, a second `MapObjectPlaceInGoodPosition` for a workstation in the same
+    // 3x3, excluding the table tile and any tile with a door to the north, south,
+    // east or west (`//@@MP - match each chair with a computer`, Release 3).
+    //
+    // **And it places nothing, which is the reference's answer too.** The office
+    // rooms are 4x4 inside a 3-wide wing, so `insideRoom` is 1x2: two tiles, one of
+    // which is the table. The chair takes the other, and the station's only
+    // remaining candidate is the table it is forbidden to occupy. The C#'s geometry
+    // is the same arithmetic, so the Release-3 "match each chair with a computer"
+    // never fires in the army office — which is why the constant's other two C#
+    // callers (`:11175`, `:11201`, the barracks rooms) are the ones that matter,
+    // and neither is ported.
+    //
+    // Asserted rather than left to be discovered, because the tempting "fix" is to
+    // widen the room, which would change the army office's floor plan to make a
+    // decoration appear.
+    const map = plot();
+    const b = new Block(ARM);
+    stages(newGenerator(newParams())).makeArmyOffice(map, b);
+
+    const byImage = (id: string) => map.mapObjects.filter((o) => o.imageId === id);
+    const tables = byImage(GameImages.OBJ_ARMY_TABLE);
+    const chairs = byImage(GameImages.OBJ_HOSPITAL_CHAIR);
+    const stations = byImage(GameImages.OBJ_ARMY_COMPUTER_STATION);
+
+    // Non-vacuous: the office has rooms, and each has its own table and chair. A
+    // `stations.length === 0` assertion over an empty map would prove nothing.
+    expect(tables.length, "no army tables, so there is nothing to furnish").toBeGreaterThan(0);
+    expect(chairs.length, "the C# puts one chair beside each table").toBe(tables.length);
+    expect(stations, "a station appeared, so the room geometry changed").toEqual([]);
+
+    // The reason, pinned: the rooms are one tile of usable floor either side of the
+    // table, so there is nowhere for a second object to go.
+    const roomZones = map.zones.filter((z) => /office room/i.test(z.name));
+    expect(roomZones.length, "no office rooms to measure").toBeGreaterThan(0);
+    for (const z of roomZones) {
+      expect(z.bounds.width, "an office room wider than 3 would change this").toBeLessThanOrEqual(3);
+    }
+  });
+
+  it("makeObjWorkstation builds the C#'s object, which is a 10-kilo burnable table", () => {
+    // The station is unreachable in the office above, so the factory itself is the
+    // only thing that can be asserted about it here — and it is worth asserting,
+    // because it differs from `makeObjTable` in exactly two fields, both of which
+    // change how the object plays.
+    const gen = newGenerator(newParams()) as unknown as {
+      makeObjWorkstation(id: string): MapObject;
+    };
+    const station = gen.makeObjWorkstation(GameImages.OBJ_ARMY_COMPUTER_STATION);
+    // `aName` rather than `name`: the C#'s `Name` is "workstation" and the port's
+    // `aName` getter adds the article, the same as `a table` and `a chair`. Matching
+    // the tail rather than pinning the whole string keeps this test about the object
+    // and not about the article convention.
+    expect(station.aName).toMatch(/workstation$/);
+    expect(station.name).toBe("workstation");
+    expect(station.imageId).toBe(GameImages.OBJ_ARMY_COMPUTER_STATION);
+    expect(station.weight, "the C#'s workstation is 10, the table's is 2").toBe(10);
+    expect(station.isMovable).toBe(true);
+    expect(station.isMaterialTransparent).toBe(true);
+    expect(station.jumpLevel).toBe(1);
+    expect(station.givesWood).toBe(true);
   });
 });
 

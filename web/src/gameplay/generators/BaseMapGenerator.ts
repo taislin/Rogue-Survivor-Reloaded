@@ -921,6 +921,51 @@ export abstract class BaseMapGenerator extends MapGenerator {
     return table;
   }
 
+  /**
+   * C# `MakeObjWorkstation` — `BaseMapGenerator.cs:811`, Release 3.
+   *
+   * A table with `Weight = 10` rather than the table's 2, and the only thing in
+   * the pair that is *flammable* (the table is `UNINFLAMMABLE`). Those two fields
+   * are the whole difference and both are load-bearing: a workstation a survivor
+   * cannot shift, or that burns the office down when a torch lands on it, is a
+   * different object from the C#'s.
+   */
+  protected makeObjWorkstation(desktopImageID: string): MapObject {
+    const workstation = new MapObject(
+      'workstation',
+      desktopImageID,
+      1 /* BREAKABLE */,
+      1 /* BURNABLE */,
+      DoorWindow.BASE_HITPOINTS
+    );
+    workstation.isMaterialTransparent = true;
+    workstation.jumpLevel = 1;
+    workstation.givesWood = true;
+    workstation.isMovable = true;
+    workstation.weight = 10;
+    return workstation;
+  }
+
+  /**
+   * C# `IsADoorNSEW` — `MapGenerator.cs:450`, Release 3, made static in 5-7.
+   *
+   * Is the tile north, south, east or west of this one a door? Used to keep
+   * furniture out of a doorway's swing, which is why it is a *neighbour* test and
+   * not "is this tile a door": a workstation on the tile in front of a door
+   * blocks the door, and the door is what makes the room enterable.
+   *
+   * Takes the map rather than reaching for a session global, because the C#'s is
+   * `static bool IsADoorNSEW(Map map, int x, int y)` — the map is an argument for
+   * exactly the reason that a generator placing furniture into a map under
+   * construction has no business asking the session which map is current.
+   */
+  protected isADoorNSEW(map: GameMap, x: number, y: number): boolean {
+    const isDoor = (dx: number, dy: number): boolean =>
+      map.getMapObjectAt(x + dx, y + dy) instanceof DoorWindow;
+    // north, south, east, west -- the C#'s order, which is also its comment's.
+    return isDoor(0, 1) || isDoor(0, -1) || isDoor(1, 0) || isDoor(-1, 0);
+  }
+
   protected makeObjChair(chairImageID: string): MapObject {
     const chair = new MapObject(
       'chair',
@@ -1802,6 +1847,16 @@ export abstract class BaseMapGenerator extends MapGenerator {
 
   makeItemVintagePistol(): Item {
     const item = new ItemRangedWeapon(Models.items.get(ItemID.RANGED_VINTAGE_PISTOL));
+    return item;
+  }
+
+  // replaces Jason Myer's axe
+  makeItemBonesaw(): Item {
+    const item = new ItemMeleeWeapon(Models.items.get(ItemID.MELEE_BONESAW));
+    // `IsUnique = true`, as the C# has it. The bonesaw is the deranged patient's
+    // own weapon and there is exactly one of him, so the flag is what stops a second
+    // copy being treated as the unique item it is.
+    item.isUnique = true;
     return item;
   }
 

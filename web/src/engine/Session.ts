@@ -123,6 +123,24 @@ export class UniqueActors {
   roguedjack = new UniqueActor();
   santaman = new UniqueActor();
   theSewersThing = new UniqueActor();
+  /**
+   * Still Alive, Release 8-1 — the fork's replacement for Jason Myers.
+   *
+   * **Appended, and that is the only safe place for it.** `UniqueActors` is
+   * written to a save as a *positional* array (`serialization/specs.ts` reads and
+   * writes through `toArray()` precisely so the two sides cannot disagree), so a
+   * field inserted anywhere else re-points every unique after it — the player
+   * would load a save in which the bear is the sewers thing. Appending leaves
+   * every existing index meaning what it meant, and a save written before this
+   * field simply has no ninth entry, so the new one decodes to its defaults.
+   *
+   * The C# has the mirror problem and solved it the other way: its `ToArray()`
+   * returns only three (`Session.cs:411`, `//@@MP - removed most uniques`), so the
+   * fork dropped the vanilla uniques outright. The port keeps all nine for
+   * Classic's sake and adds this one, which is why the array is ten long here and
+   * three there.
+   */
+  derangedPatient = new UniqueActor();
 
   /** Allocates a new array each call, don't overuse it... */
   toArray(): UniqueActor[] {
@@ -136,6 +154,7 @@ export class UniqueActors {
       this.policeStationPrisoner,
       this.theSewersThing,
       this.jasonMyers, // alpha10
+      this.derangedPatient, // Still Alive 8-1, appended: see the declaration
     ];
   }
 }

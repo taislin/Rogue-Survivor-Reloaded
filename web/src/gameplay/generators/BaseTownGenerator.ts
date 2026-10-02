@@ -2599,9 +2599,16 @@ export class BaseTownGenerator extends BaseMapGenerator {
       }
     }
 
-    // Furniture: an army table, a chair, and -- per the C# `:5514` -- a computer
-    // station in the rooms that get one. `nbChairs` is 1 here against the CHAR
-    // office's 2, and `nbTables` decides which rooms get the station.
+    // Furniture: an army table, a chair, and — per the C# `:5514` — a computer
+    // station matched to each chair. `nbChairs` is 1 here against the CHAR
+    // office's 2.
+    //
+    // **The station was missing, and the comment above this block claimed it was
+    // not** — it described "a computer station in the rooms that get one" and a
+    // `nbTables` that decides which, and neither existed: the loop placed a table
+    // and a chair and stopped. So `GameImages.OBJ_ARMY_COMPUTER_STATION` had no
+    // reader in the whole project, which is what the unused-constant audit turned
+    // up, and the army office rendered as a room with a table in it.
     for (const roomRect of allOffices) {
       const tablePos = new Point(
         roomRect.left + Math.floor(roomRect.width / 2),
@@ -2619,6 +2626,19 @@ export class BaseTownGenerator extends BaseMapGenerator {
           );
           this.mapObjectPlaceInGoodPosition(map, adjTableRect, (pt) => !pt.equals(tablePos), this.m_DiceRoller, () =>
             this.makeObjChair(GameImages.OBJ_HOSPITAL_CHAIR),
+          );
+
+          // `//@@MP - match each chair with a computer (Release 3)` — the second
+          // placement in the same 3x3, and the reason it needs the *door* test the
+          // chair does not: the chair is decoration and a station is 10 kilos of
+          // furniture, and a room whose only walkable tile is the doorway has to
+          // stay walkable.
+          this.mapObjectPlaceInGoodPosition(
+            map,
+            adjTableRect,
+            (pt) => !pt.equals(tablePos) && !this.isADoorNSEW(map, pt.x, pt.y),
+            this.m_DiceRoller,
+            () => this.makeObjWorkstation(GameImages.OBJ_ARMY_COMPUTER_STATION),
           );
         }
       }
@@ -6206,33 +6226,44 @@ export class BaseTownGenerator extends BaseMapGenerator {
     }
     map.setTileModelAt(1, storageSouth.top, Models.tiles.get(TileID.FLOOR_TILES)!);
 
-    // alpha10.1 moved Jason Myers out of power room to storage north corridor
-    // also upped high stamina to 5 (was 3).
-    // Jason Myers
-    const model = Models.actors.get(ActorID.JASON_MYERS)!;
-    const jason = model.createNamed(Models.factions.get(FactionID.ThePsychopaths)!, 'Jason Myers', false, 0);
-    jason.isUnique = true;
-    jason.doll.addDecoration(DollPart.SKIN, GameImages.ACTOR_JASON_MYERS);
-    this.giveStartingSkillToActor(jason, SkillID.TOUGH);
-    this.giveStartingSkillToActor(jason, SkillID.TOUGH);
-    this.giveStartingSkillToActor(jason, SkillID.TOUGH);
-    this.giveStartingSkillToActor(jason, SkillID.STRONG);
-    this.giveStartingSkillToActor(jason, SkillID.STRONG);
-    this.giveStartingSkillToActor(jason, SkillID.STRONG);
-    this.giveStartingSkillToActor(jason, SkillID.AGILE);
-    this.giveStartingSkillToActor(jason, SkillID.AGILE);
-    this.giveStartingSkillToActor(jason, SkillID.AGILE);
-    this.giveStartingSkillToActor(jason, SkillID.HIGH_STAMINA);
-    this.giveStartingSkillToActor(jason, SkillID.HIGH_STAMINA);
-    this.giveStartingSkillToActor(jason, SkillID.HIGH_STAMINA);
-    this.giveStartingSkillToActor(jason, SkillID.HIGH_STAMINA);
-    this.giveStartingSkillToActor(jason, SkillID.HIGH_STAMINA);
-    jason.inventory!.addAll(this.makeItemJasonMyersAxe());
-    map.placeActor(jason, new Point(Math.floor(map.width / 2), 1));
-    const jasonUnique = new UniqueActor();
-    jasonUnique.theActor = jason;
-    jasonUnique.isSpawned = true;
-    Session.get().uniqueActors.jasonMyers = jasonUnique;
+    // Still Alive, Release 8-1: the deranged patient, who replaces Jason Myers.
+    //
+    // The vanilla `Jason Myers` block below is the C#'s *alpha10.1* state, in
+    // which the power room was emptied and Jason moved to this corridor with five
+    // `HIGH_STAMINA`. The fork replaced him: `GameActors.cs:131` reads
+    // `DerangedPatient { … } //@@MP - was Jason Myers (Release 8-1)`, and
+    // `BaseTownGenerator.cs` in the fork contains no `JasonMyers` at all. So the
+    // two are the *same* actor slot and one feature gates both, rather than a new
+    // actor appearing beside the old one.
+    //
+    // `HIGH_STAMINA` five times is the alpha10.1 count, noted on the block below.
+    // The fork's patient gets three, in the power room.
+    if (!hasFeature(Session.get().ruleset, Feature.DerangedPatient)) {
+      const model = Models.actors.get(ActorID.JASON_MYERS)!;
+      const jason = model.createNamed(Models.factions.get(FactionID.ThePsychopaths)!, 'Jason Myers', false, 0);
+      jason.isUnique = true;
+      jason.doll.addDecoration(DollPart.SKIN, GameImages.ACTOR_JASON_MYERS);
+      this.giveStartingSkillToActor(jason, SkillID.TOUGH);
+      this.giveStartingSkillToActor(jason, SkillID.TOUGH);
+      this.giveStartingSkillToActor(jason, SkillID.TOUGH);
+      this.giveStartingSkillToActor(jason, SkillID.STRONG);
+      this.giveStartingSkillToActor(jason, SkillID.STRONG);
+      this.giveStartingSkillToActor(jason, SkillID.STRONG);
+      this.giveStartingSkillToActor(jason, SkillID.AGILE);
+      this.giveStartingSkillToActor(jason, SkillID.AGILE);
+      this.giveStartingSkillToActor(jason, SkillID.AGILE);
+      this.giveStartingSkillToActor(jason, SkillID.HIGH_STAMINA);
+      this.giveStartingSkillToActor(jason, SkillID.HIGH_STAMINA);
+      this.giveStartingSkillToActor(jason, SkillID.HIGH_STAMINA);
+      this.giveStartingSkillToActor(jason, SkillID.HIGH_STAMINA);
+      this.giveStartingSkillToActor(jason, SkillID.HIGH_STAMINA);
+      jason.inventory!.addAll(this.makeItemJasonMyersAxe());
+      map.placeActor(jason, new Point(Math.floor(map.width / 2), 1));
+      const jasonUnique = new UniqueActor();
+      jasonUnique.theActor = jason;
+      jasonUnique.isSpawned = true;
+      Session.get().uniqueActors.jasonMyers = jasonUnique;
+    }
 
     // done.
     return map;
@@ -6278,34 +6309,48 @@ export class BaseTownGenerator extends BaseMapGenerator {
       this.mapObjectPlace(map, pt.x, pt.y, this.makeObjPowerGenerator(GameImages.OBJ_POWERGEN_OFF, GameImages.OBJ_POWERGEN_ON));
     });
 
-    // alpha10.1 moved Jason Myers out of power room to storage north corridor
-    /*
-    // 3. Populate.
-    // enraged patient!
-    ActorModel model = m_Game.GameActors.JasonMyers;
-    Actor jason = model.CreateNamed(m_Game.GameFactions.ThePsychopaths, "Jason Myers", false, 0);
-    jason.IsUnique = true;
-    jason.Doll.AddDecoration(DollPart.SKIN, GameImages.ACTOR_JASON_MYERS);
-    GiveStartingSkillToActor(jason, Skills.IDs.TOUGH);
-    GiveStartingSkillToActor(jason, Skills.IDs.TOUGH);
-    GiveStartingSkillToActor(jason, Skills.IDs.TOUGH);
-    GiveStartingSkillToActor(jason, Skills.IDs.STRONG);
-    GiveStartingSkillToActor(jason, Skills.IDs.STRONG);
-    GiveStartingSkillToActor(jason, Skills.IDs.STRONG);
-    GiveStartingSkillToActor(jason, Skills.IDs.AGILE);
-    GiveStartingSkillToActor(jason, Skills.IDs.AGILE);
-    GiveStartingSkillToActor(jason, Skills.IDs.AGILE);
-    GiveStartingSkillToActor(jason, Skills.IDs.HIGH_STAMINA);
-    GiveStartingSkillToActor(jason, Skills.IDs.HIGH_STAMINA);
-    GiveStartingSkillToActor(jason, Skills.IDs.HIGH_STAMINA);
-    jason.Inventory.AddAll(MakeItemJasonMyersAxe());
-    map.PlaceActorAt(jason, new Point(map.Width / 2, map.Height / 2));
-    m_Game.Session.UniqueActors.JasonMyers = new UniqueActor()
-    {
-        TheActor = jason,
-        IsSpawned = true
-    };
-    */
+    // alpha10.1 emptied this room and moved Jason Myers to the storage north
+    // corridor; the fork put somebody else here instead. Still Alive, Release
+    // 8-1 replaced Jason Myers outright, so this is the same actor slot he
+    // vacated and the same `Feature.DerangedPatient` gate governs both. There is
+    // no state in which both exist, which is why it is one flag.
+    //
+    // The C#'s block is `BaseTownGenerator.cs:9613-9639`. The differences from
+    // Jason's, all of them the reference's:
+    //
+    // - `GameActors.DerangedPatient`, not `JasonMyers`;
+    // - the named actor is "deranged patient", not "Jason Myers" — so the name is
+    //   generated *and* overwritten, and `theName` reads as a description;
+    // - the skin is `ACTOR_DERANGED_PATIENT`, not `ACTOR_JASON_MYERS`;
+    // - three `HIGH_STAMINA`, where the corridor's Jason gets five (alpha10.1
+    //   "also upped high stamina to 5 (was 3)", so the fork's patient is back at
+    //   the pre-10.1 three);
+    // - a bonesaw, not an axe;
+    // - placed at the room's centre, not against the north wall.
+    if (hasFeature(Session.get().ruleset, Feature.DerangedPatient)) {
+      const model = Models.actors.get(ActorID.DERANGED_PATIENT)!;
+      const jason = model.createNamed(Models.factions.get(FactionID.ThePsychopaths)!, 'deranged patient', false, 0);
+      jason.isUnique = true;
+      jason.doll.addDecoration(DollPart.SKIN, GameImages.ACTOR_DERANGED_PATIENT);
+      this.giveStartingSkillToActor(jason, SkillID.TOUGH);
+      this.giveStartingSkillToActor(jason, SkillID.TOUGH);
+      this.giveStartingSkillToActor(jason, SkillID.TOUGH);
+      this.giveStartingSkillToActor(jason, SkillID.STRONG);
+      this.giveStartingSkillToActor(jason, SkillID.STRONG);
+      this.giveStartingSkillToActor(jason, SkillID.STRONG);
+      this.giveStartingSkillToActor(jason, SkillID.AGILE);
+      this.giveStartingSkillToActor(jason, SkillID.AGILE);
+      this.giveStartingSkillToActor(jason, SkillID.AGILE);
+      this.giveStartingSkillToActor(jason, SkillID.HIGH_STAMINA);
+      this.giveStartingSkillToActor(jason, SkillID.HIGH_STAMINA);
+      this.giveStartingSkillToActor(jason, SkillID.HIGH_STAMINA);
+      jason.inventory!.addAll(this.makeItemBonesaw());
+      map.placeActor(jason, new Point(Math.floor(map.width / 2), Math.floor(map.height / 2)));
+      const unique = new UniqueActor();
+      unique.theActor = jason;
+      unique.isSpawned = true;
+      Session.get().uniqueActors.derangedPatient = unique;
+    }
 
     // done.
     return map;
