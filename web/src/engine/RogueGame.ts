@@ -20086,9 +20086,11 @@ inv.removeAllQuantity(it);
 			 * beat before its own sound.
 			 */
 			if (isPlayer) {
-				await this.m_SoundManager.play(GameSounds.MELEE_ATTACK_MISS_PLAYER);
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					await this.m_SoundManager.play(GameSounds.MELEE_ATTACK_MISS_PLAYER);
 			} else if (this.isAudibleToPlayer(attacker.location, NOISE_RADII.QUIET)) {
-				await this.m_SoundManager.play(GameSounds.MELEE_ATTACK_MISS_NEARBY);
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					await this.m_SoundManager.play(GameSounds.MELEE_ATTACK_MISS_NEARBY);
 			}
 			// show
 			if (isAttVisible || isDefVisible) {
@@ -20372,6 +20374,23 @@ inv.removeAllQuantity(it);
 
 		// Hit vs Missed
 		if (hitRoll > defRoll) {
+			//@@MP (Release 2), the **hit** counterpart of the `_MISS` pair above.
+			// `RogueGame.cs:18407-18410`, sitting between the chainsaw sanity block and
+			// the disarm roll -- so it lands on a landed hit only, which is what makes
+			// the pair a ladder rather than two alternatives.
+			//
+			// This is `Play`, not `PlayIfNotAlreadyPlaying`: two landed hits in the same
+			// turn should both be heard, and the C# distinguishes the melee `_NEARBY`
+			// (BGM priority, `play`) from the shout `_NEARBY` (event priority,
+			// `playIfNotAlreadyPlaying`) precisely on that.
+			if (isPlayer) {
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					await this.m_SoundManager.play(GameSounds.MELEE_ATTACK_PLAYER);
+			} else if (this.isAudibleToPlayer(attacker.location, NOISE_RADII.QUIET)) {
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					await this.m_SoundManager.play(GameSounds.MELEE_ATTACK_NEARBY);
+			}
+
 			// roll damage - double potential if def is sleeping.
 			const dmgRoll =
 				this.m_Rules.rollDamage(
@@ -21780,6 +21799,34 @@ inv.removeAllQuantity(it);
 	// C# DoShout — RogueGame.cs:14835
 	// async: C# blocks on AddMessagePressEnter.
 	async DoShout(speaker: Actor, text: string | null): Promise<void> {
+		//@@MP (Release 7-4). Four ids for one shout, chosen by **who shouts and
+		// whether the player can hear them** -- so the ladder is sex-major x audibility,
+		// not distance. Both dimensions are needed because the C# picks the id inside
+		// one ternary (`RogueGame.cs:20592`); splitting it into a distance band would
+		// need a fourth dimension the fork does not have.
+		//
+		// The undead and living animals are excluded with the C#'s own "//just in case",
+		// which is worth keeping verbatim: without it an undead crowd that shouts would
+		// play a human voice, and the comment says the author knew it could and did not
+		// care to prove it.
+		if (
+			!speaker.model.abilities.isUndead &&
+			!speaker.model.abilities.isLivingAnimal
+		) {
+			const male = speaker.doll.body.isMale;
+			if (speaker.isPlayer) {
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					this.m_SoundManager.playIfNotAlreadyPlaying(
+						male ? GameSounds.MALE_SHOUT_PLAYER : GameSounds.FEMALE_SHOUT_PLAYER,
+					);
+			} else if (this.isAudibleToPlayer(speaker.location, NOISE_RADII.QUIET)) {
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					this.m_SoundManager.playIfNotAlreadyPlaying(
+						male ? GameSounds.MALE_SHOUT_NEARBY : GameSounds.FEMALE_SHOUT_NEARBY,
+					);
+			}
+		}
+
 		// spend APs.
 		this.SpendActorActionPoints(speaker, Rules.BASE_ACTION_COST);
 
@@ -23401,11 +23448,58 @@ inv.removeAllQuantity(it);
 		// Do it.
 		door.setState(DoorWindow.STATE_CLOSED);
 
-		// Message.
-		if (this.IsVisibleToPlayer(actor) || this.IsVisibleToPlayer(door)) {
-			this.AddMessage(
-				this.MakeMessage(actor, this.Conjugate(actor, this.VERB_CLOSE), door),
-			);
+		//@@MP (Release 7-4) changed this whole block from **visible** to **audible**,
+		// and the four-way material ladder is a fork addition on top of that
+		// (`RogueGame.cs:22234-22248`). The port had the vanilla shape: no sound, and
+		// a `IsVisibleToPlayer` gate on the message.
+		//
+		// The ladder is ordered, not exhaustive, and the order is the content:
+		// `givesWood` wins over `isMetal`, so a wooden-framed metal door is reported as
+		// wood. That is the C#'s order and not an accident -- `GivesWood` is set by the
+		// door's construction, `IsMetal` by its material, and the fork wanted salvage
+		// to be audible. Reading it the other way round would make every metal door with
+		// a wooden frame ring like metal and silently change which of the two the player
+		// hears.
+		if (
+			actor.isPlayer ||
+			this.isAudibleToPlayer(door.location, NOISE_RADII.QUIET)
+		) {
+			// All four ids are fork additions, so all four are gated. The lookup is
+			// repeated per branch rather than hoisted: `extended-audio.test.ts` requires
+			// a fork id to be named within three lines of a literal
+			// `Feature.ExtendedAudio`, and a hoisted `const` plus this comment block puts
+			// the last two reads four lines out. Repeating a cheap feature lookup is the
+			// cheaper of the two costs.
+			//
+			// The ladder order is the content: `givesWood` wins over `isMetal`, so a
+			// wooden-framed metal door is reported as wood, because the fork wanted
+			// salvage to be audible. Reading it the other way would make every metal door
+			// with a wooden frame ring like metal and silently change which one is heard.
+			if (door.givesWood) {
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					this.m_SoundManager.play(GameSounds.WOODEN_DOOR_CLOSE);
+			} else if (door.isMetal) {
+				//@@MP (Release 7-4)
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					this.m_SoundManager.play(GameSounds.METAL_DOOR_CLOSE);
+			} else if (door.theName === "the roller door") {
+				//@@MP (Release 4). A **name** comparison, not a flag: the fork never added
+				// an `IsRollerDoor`, so this is a string match against the door's name and
+				// will not fire for a roller door the generator named differently.
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					this.m_SoundManager.play(GameSounds.ROLLER_DOOR);
+			} else {
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					this.m_SoundManager.play(GameSounds.GLASS_DOOR);
+			}
+			// The fork also made the message **non-player only** (`:22244`). Vanilla showed
+			// it to everyone who could see the door; the fork shows it only to a non-player
+			// actor, because the player's own action is already obvious.
+			if (!actor.isPlayer) {
+				this.AddMessage(
+					this.MakeMessage(actor, this.Conjugate(actor, this.VERB_CLOSE), door),
+				);
+			}
 			this.RedrawPlayScreen();
 		}
 

@@ -188,6 +188,7 @@ describe("Feature registry is wired", () => {
    "Cooking", "Cooking", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov",                                                                                   
    "DarknessGating", "DerangedPatient", "DerangedPatient", "DifficultyAtCreation", "DifficultyAtCreation", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                    
    "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                       
+   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                       
    "ExtendedAudio", "Farm", "Farm", "FireBarrels", "FireBarrels", "FireBarrels", "FireExtinguishers", "FireStation", "Fishing", "Fishing",                                                                                         
    "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",                                                                                     
    "FoodPoisoning", "FuelStation", "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "ItemDespawn",                                                    
@@ -195,9 +196,9 @@ describe("Feature registry is wired", () => {
    "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
    "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShoppingMall", "ShoppingMall",                                 
    "ShoppingMall", "SiphonFuel", "SiphonFuel", "SportsCourts", "SportsCourts", "TileFires", "TileFires", "TileFires", "TileFires", "TileFires",                                                                                    
-   "WeaponWeight"
+   "WeaponWeight",
       ]);
-      // 131 call sites across 38 features
+      // 141 call sites across 38 features
 
 
 
@@ -684,6 +685,14 @@ describe("Feature registry is wired", () => {
     // model, and the sfx channel they have to play on did not exist until this
     // change. `tests/extended-audio.test.ts` asserts that no id is named anywhere
     // ungated, so this count can only rise through a decision.
+    //
+    // 16 -> 26, and the ten are the first inert distance tiers to be wired. They are
+    // **ten gates for three call sites**, which looks like duplication and is not:
+    // `extended-audio.test.ts` requires a fork id to be *named* within three lines of
+    // a literal `Feature.ExtendedAudio`, so a gate hoisted to the top of a block falls
+    // out of the window by the fourth branch. The door ladder is the case that forces
+    // it -- four ids in four consecutive branches, one of which carries a comment
+    // explaining itself.
     const extended = sites.filter((s) => s.feature === "ExtendedAudio");
     // 10 -> 16. Six gates came with the equip sounds: two on the shield-block roll
     // (`DoMeleeAttack`) and four in `OnEquipItem` -- one on the shield arm and three
@@ -693,7 +702,7 @@ describe("Feature registry is wired", () => {
     // rather than a fork id -- so this scan counted them as no reader at all, which
     // is how two ungated fork-only sounds sat under a feature flag test that was
     // green. Naming them as ids is what put them back on this list.
-    expect(extended).toHaveLength(16);
+    expect(extended).toHaveLength(26);
     expect(extended.every((s) => /RogueGame\.ts/.test(s.at))).toBe(true);
   });
 

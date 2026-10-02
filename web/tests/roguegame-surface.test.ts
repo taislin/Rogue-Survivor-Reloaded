@@ -139,8 +139,18 @@ describe("RogueGame's measured surface", () => {
 		// sites". At 110 names the pessimistic figure is not the real one, and that
 		// is the answer to the question §6.4 deferred until "the game runs and the
 		// real cross-method dependencies are known".
+		//
+		// 112 since the inert sound tiers were wired: `DoShout` and `DoCloseDoor` were
+		// reachable but untested, and the test that drives them is what made them
+		// reachable *as named members* (`DoCloseDoor`'s camelCase alias was already
+		// called from elsewhere).
+		//
+		// Note what did **not** move: `moving` is still 83. Both new names are `Do*`,
+		// so both landed in HUB 1 -- which §6.8 says never moves. Adding tests grew the
+		// surface that must be kept signature-compatible without growing the surface a
+		// wave has to relocate, which is the good direction for this number to go.
 		const m = measure();
-		expect(m.external).toBe(110);
+		expect(m.external).toBe(112);
 		expect(m.external).toBeGreaterThan(83);
 	});
 
@@ -161,14 +171,16 @@ describe("RogueGame's measured surface", () => {
 		expect(m.buckets.get("STATE")?.length ?? 0).toBeLessThan(30);
 	});
 
-	it("splits the reachable surface into 27 hub and 83 movable, and the hubs stay", () => {
+	it("splits the reachable surface into 29 hub and 83 movable, and the hubs stay", () => {
 		// §6.8: the two hubs "are the reason the split is worth doing rather than the
 		// reason it fails". Still true, and now measured on the current file.
 		const m = measure();
 		expect(m.moving).toBe(83);
-		expect(m.hubs).toBe(27);
+		expect(m.hubs).toBe(29);
 		expect(m.moving + m.hubs).toBe(m.external);
-		expect(m.buckets.get("HUB 1  Do*/On* action primitives")?.length ?? m.buckets.get("HUB 1")?.length).toBe(20);
+		// HUB 1 is 22 of the 29: `DoShout` and `DoCloseDoor` joined it when the sound
+		// tiers they host were wired and tested. HUB 2 is unchanged at 7.
+		expect(m.buckets.get("HUB 1  Do*/On* action primitives")?.length ?? m.buckets.get("HUB 1")?.length).toBe(22);
 	});
 
 	it("names 23 members GameContext has to carry, not 11", () => {
@@ -220,7 +232,7 @@ describe("RogueGame's measured surface", () => {
 		const m = measure();
 		const hubs = new Set(m.buckets.get("HUB 1") ?? []);
 		for (const name of m.buckets.get("HUB 2") ?? []) hubs.add(name);
-		expect(hubs.size).toBe(27);
+		expect(hubs.size).toBe(29);
 		for (const [region, list] of m.buckets) {
 			if (region.startsWith("HUB")) continue;
 			for (const name of list) expect(hubs.has(name), `${name} is in two regions`).toBe(false);

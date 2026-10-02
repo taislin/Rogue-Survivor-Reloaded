@@ -112,11 +112,27 @@ const VANILLA_IDS: ReadonlySet<string> = new Set([
   GameSounds.UNDEAD_EAT,
   GameSounds.UNDEAD_RISE,
   GameSounds.NIGHTMARE,
-  // The miss pair. `_NEARBY` is vanilla for the same reason `_PLAYER` is, and it
-  // came in with the other half of the same melee-miss call site.
-  GameSounds.MELEE_ATTACK_MISS_PLAYER,
-  GameSounds.MELEE_ATTACK_MISS_NEARBY,
 ]);
+// The melee-miss pair used to be on this list, on the reasoning that its declaration
+// in `GameSounds.cs` carries no `@@MP` marker -- so the sound is vanilla's, and
+// Classic plays it too.
+//
+// **That reasoning was wrong, and the fixture says so.** The `@@MP` marker is not on
+// the declaration *line*: it is in the comment block above it, which is why the
+// fixture's `release` field (generated from that block) reads "(Release 2)" for both
+// halves. Only two of the fixture's 181 entries have `release: None` at all, so "no
+// marker on the line" was never a test for vanilla-ness -- it was an accident of where
+// the marker sits.
+//
+// The consequence was a live bug rather than a mislabelled entry: with the pair
+// classified vanilla, `FORK_IDS` excluded it, so `DoMeleeAttack` played it ungated and
+// **Classic played two fork sounds** -- and the "a fork sound played under CLASSIC"
+// assertion below could not see it, because that assertion is written in terms of this
+// very set. A guard derived from a hand-maintained list cannot catch an error in the
+// list.
+//
+// So the pair is gone from `VANILLA_IDS`, `DoMeleeAttack`'s miss site is gated like its
+// hit counterpart, and both halves are on the standalone-reader list below.
 const FORK_IDS: ReadonlySet<string> = new Set(
   FIXTURE.entries.map((e) => e.id).filter((id) => !VANILLA_IDS.has(id)),
 );
@@ -549,6 +565,22 @@ describe("the gate", () => {
     const gated: string[] = [];
     for (const path of walk(SRC)) {
       if (path.endsWith(join("gameplay", "GameSounds.ts"))) continue;
+      // **The options-volume preview is a third legitimate shape**, and the one place
+      // the C# itself plays a fork id ungated.
+      //
+      // `OptionsMenuAudioAdjustment` uses `MELEE_ATTACK_MISS_PLAYER` to audition the SFX
+      // volume row (`RogueGame.cs:2250`) with **no `Feature` gate at all** -- it has no
+      // ruleset to gate on, because it is reached from the options menu, which exists in
+      // both rulesets and is open before a world is. So the fork auditions a Release 2
+      // sound under Classic too, and that is the reference behaviour rather than a port
+      // slip.
+      //
+      // Gating it here would be a deviation the reference does not ask for, and the
+      // alternative -- plumbing a ruleset into the options screen so that Classic
+      // previews silence -- would be a second one, on top. The exemption is keyed to
+      // this file so the rule stays absolute everywhere else, which is the only thing
+      // that makes a gate worth having.
+      if (path.endsWith(join("engine", "audio", "OptionsAudioPreview.ts"))) continue;
       const text = readFileSync(path, "utf-8");
       const lines = text.split("\n");
 
@@ -671,21 +703,47 @@ describe("the gate", () => {
       // by the two ids that sit either side of the binocular branch: the port had the
       // battery decrement and none of the three sounds, so a torch was switched on in
       // silence and its light did not reach the FOV until the next turn.
+      // The ten below are the inert distance-tier families, and they are here for the
+      // same reason as the rest: each is a *new standalone reader*, so each is a
+      // decision rather than an absorb.
+      //
+      // - `MELEE_ATTACK_PLAYER` / `_NEARBY` are the **hit** pair, landing beside the
+      //   `_MISS` pair already in `DoMeleeAttack`. Both halves are Release 2.
+      // - the four `*_SHOUT_*` ids are one call site in `DoShout`, chosen by a
+      //   sex-major ternary crossed with audibility -- so four ids, not two, and the
+      //   list is per *site* while these are per *id*.
+      // - the four `*_DOOR_*` ids are the material ladder in `DoCloseDoor`, which the
+      //   port had as a single vanilla `IsVisibleToPlayer` message with no sound at all.
+      //   `ROLLER_DOOR` and `GLASS_DOOR` are the two ends of a four-way branch that has
+      //   no flags of its own -- the roller case is a string compare on the door's name.
+      //   Four ids for one door is the fork's granularity, not a mistake here.
     ).toEqual([
       "EQUIP",
       "EQUIP",
       "EQUIP_GUN_PLAYER",
+      "FEMALE_SHOUT_NEARBY",
+      "FEMALE_SHOUT_PLAYER",
       "FISHING_CAST_PLAYER",
       "FISHING_REEL_PLAYER",
       "FLARE",
+      "GLASS_DOOR",
       "GLOWSTICK",
       "MAKE_MOLOTOV",
+      "MALE_SHOUT_NEARBY",
+      "MALE_SHOUT_PLAYER",
       "MATCH_STRIKE_START_FIRE_PLAYER",
+      "MELEE_ATTACK_MISS_NEARBY",
+      "MELEE_ATTACK_MISS_PLAYER",
+      "MELEE_ATTACK_NEARBY",
+      "MELEE_ATTACK_PLAYER",
+      "METAL_DOOR_CLOSE",
       "NIGHT_VISION",
+      "ROLLER_DOOR",
       "SHIELD_BLOCK_NEARBY",
       "SHIELD_BLOCK_PLAYER",
       "TORCH_CLICK_PLAYER",
       "UNDEAD_EAT_PLAYER",
+      "WOODEN_DOOR_CLOSE",
     ]);
   });
 });
