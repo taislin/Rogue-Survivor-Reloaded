@@ -1012,6 +1012,35 @@ export abstract class BaseMapGenerator extends MapGenerator {
     return desk;
   }
 
+  /**
+   * C# `MakeObjCHARvat` — `BaseMapGenerator.cs:803` (Release 3).
+   *
+   * A bare two-argument `MapObject`: unbreakable, not flammable, and nothing else
+   * set. The lab's vats line the walls and a breakable one would be a hole in the
+   * room's silhouette rather than furniture, which is presumably why.
+   */
+  protected makeObjCHARvat(vatImageID: string): MapObject {
+    const vat = new MapObject('CHAR vat', vatImageID);
+    vat.isMaterialTransparent = true; //@@MP (Release 6-5)
+    return vat;
+  }
+
+  /** C# `MakeObjCHARtrolley` — `BaseMapGenerator.cs:1290`. Metal and movable. */
+  protected makeObjCHARtrolley(trolleyImageID: string): MapObject {
+    const trolley = new MapObject(
+      'CHAR trolley',
+      trolleyImageID,
+      MapObjectBreak.BREAKABLE,
+      MapObjectFire.UNINFLAMMABLE,
+      DoorWindow.BASE_HITPOINTS
+    );
+    trolley.isMaterialTransparent = true;
+    trolley.jumpLevel = 1;
+    trolley.isMetal = true;
+    trolley.isMovable = true;
+    return trolley;
+  }
+
   protected makeObjChair(chairImageID: string): MapObject {
     const chair = new MapObject(
       'chair',

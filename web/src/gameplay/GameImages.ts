@@ -608,6 +608,15 @@ export class GameImages {
   static readonly OBJ_NIGHT_TABLE = "MapObjects/nighttable";
   static readonly OBJ_CHAR_CHAIR = "MapObjects/char_chair";
   /**
+   * `GameImages.cs:674` — `//@@MP (Release 3)`. The lab's vat. The constant is named
+   * `OBJ_CHAR_VAT` and the file is `piped_vat`; both spellings are the C#'s.
+   */
+  static readonly OBJ_CHAR_VAT = "MapObjects/piped_vat";
+  /** The lab's trolley. `GameImages.cs`, unmarked, so it is not fork-only. */
+  static readonly OBJ_CHAR_TROLLEY = "MapObjects/char_trolley";
+  /** The lab's workstation. `GameImages.cs:673` — `//@@MP (Release 3)`. */
+  static readonly OBJ_CHAR_DESKTOP = "MapObjects/char_desktop";
+  /**
    * Still Alive, `GameImages.cs:744`. The plain office's workstation, against
    * `OBJ_CHAR_DESKTOP` (`:673`, Release 3) which the CHAR office uses. Both files are
    * shipped, and both are the Release 3 pair that split "a computer" into "a CHAR

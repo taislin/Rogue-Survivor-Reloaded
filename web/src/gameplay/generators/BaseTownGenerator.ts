@@ -5642,6 +5642,13 @@ export class BaseTownGenerator extends BaseMapGenerator {
               : roomRect.left < halfWidth && roomRect.top >= halfHeight
                 ? 2
                 : 3;
+        // `//@@MP - a special new weapon. only 1 per game (Release 7-6)`. A local of
+        // `GenerateUniqueMap_CHARUnderground` in the C# (`BaseTownGenerator.cs:8139`),
+        // so it is a local here too and *not* a field: a field would make the gun
+        // once-per-`BaseTownGenerator` rather than once-per-underground, which is a
+        // different rule on a district with two.
+        const placedBioForceGun = { value: false };
+
         switch (roomRole) {
           case 0: // armory room.
             roomName = 'Armory';
@@ -5652,8 +5659,13 @@ export class BaseTownGenerator extends BaseMapGenerator {
             this.makeCHARStorageRoom(underground, insideRoomRect);
             break;
           case 2: // living room.
-            roomName = 'Living';
-            this.makeCHARLivingRoom(underground, insideRoomRect);
+            // C# `:8357` has `MakeCHARLivingRoom` **commented out** and calls
+            // `MakeCHARLabRoom(underground, insideRoomRect, ref placedBioForceGun)`
+            // instead, with `roomName = "Lab"; //@@MP - more thematic (Release 3)`.
+            // Both spellings of the C# are kept: the comment says why the arm is a
+            // lab, and the variable keeps its C# name because that is what it was.
+            roomName = 'Lab';
+            this.makeCHARLabRoom(underground, insideRoomRect, placedBioForceGun);
             break;
           case 3: // pharmacy.
             roomName = 'Pharmacy';
@@ -5996,6 +6008,111 @@ export class BaseTownGenerator extends BaseMapGenerator {
     it.isUnique = true;
     it.isForbiddenToAI = true;
     return it;
+  }
+
+  /**
+   * C# `MakeCHARLabRoom` — `BaseTownGenerator.cs:8552` (Release 3).
+   *
+   * Replaces the living room, and the C# says so in the dispatch itself: `case 2` at
+   * `:8357` has `MakeCHARLivingRoom` **commented out** and calls this instead, with
+   * `roomName = "Lab" //@@MP - more thematic`. So there is no living room to port and
+   * no substitution to choose between — this port was generating a room the fork
+   * deleted.
+   *
+   * The two halves are the C#'s:
+   *
+   * 1. `MapObjectFill` over the wall tiles (`CountAdjWalls >= 3`): 50% something, then
+   *    75% a vat and else a workstation. A vat is a bare unbreakable `MapObject` —
+   *    the C# sets nothing but `IsMaterialTransparent`.
+   * 2. `MapObjectFill` over the bare middle tiles (`CountAdjWalls == 0`): 30% furniture,
+   *    and in the *else* the room's one `UNIQUE_CHAR_DOCUMENT`.
+   *
+   * **Two C# quirks kept.**
+   *
+   * The document roll is `Roll(0, 5)` and the switch runs to `case 5`, so
+   * `UNIQUE_CHAR_DOCUMENT6` is unreachable — the same off-by-one
+   * `makeCHARDocument` already documents, and it is not widened here either.
+   *
+   * The floor logo decoration is *commented out* in the C# (`TileFill(...//,
+   * (tile, model, x, y) => tile.AddDecoration(GameImages.DECO_CHAR_FLOOR_LOGO))`), so
+   * the lab is plain `FLOOR_TILES` where the living room draws the logo. Left
+   * uncommented: a commented line is not a description of a released build.
+   *
+   * `placedBioForceGun` is the C#'s `ref bool` and stays a `ref`: it is one gun per
+   * *game*, not per room, so it cannot be a field of this class without saying so.
+   */
+  makeCHARLabRoom(map: GameMap, roomRect: Rect, placedBioForceGun: { value: boolean }): void {
+    let placedCHARdocument = false;
+    // Replace floor with tiles with painted logo.
+    this.tileFill(map, Models.tiles.get(TileID.FLOOR_TILES)!, roomRect);
+
+    // Objects.
+    // vats along walls.
+    this.mapObjectFill(map, roomRect, (pt) => {
+      if (this.countAdjWalls(map, pt.x, pt.y) < 3) return null;
+      // dont block exits!
+      if (map.getExitAt(pt) !== null) return null;
+
+      // bed/fridge?
+      if (this.m_DiceRoller.rollChance(50)) {
+        if (this.m_DiceRoller.rollChance(75)) {
+          return this.makeObjCHARvat(GameImages.OBJ_CHAR_VAT);
+        }
+        return this.makeObjWorkstation(GameImages.OBJ_CHAR_DESKTOP);
+      }
+      return null;
+    });
+
+    // desktops and tables in the middle of the room
+    const resourcesAvailable = hasFeature(Session.get().ruleset, Feature.ResourcesAvailability);
+    const resourcesChance = resourcesAvailable
+      ? GameOptions.resourcesAvailabilityToInt(Options.resourcesAvailability)
+      : 0;
+    this.mapObjectFill(map, roomRect, (pt) => {
+      if (this.countAdjWalls(map, pt.x, pt.y) > 0) return null;
+      // dont block exits!
+      if (map.getExitAt(pt) !== null) return null;
+
+      // tables/chairs.
+      if (this.m_DiceRoller.rollChance(30)) {
+        if (this.m_DiceRoller.rollChance(50)) {
+          return this.makeObjWorkstation(GameImages.OBJ_CHAR_DESKTOP);
+        }
+        // The C# computes `armorChance` and then leaves the `armorChance / 3` line
+        // commented out (`BaseTownGenerator.cs:8600`), so the chance is the raw
+        // Resources Availability number and not a third of it.
+        if (this.m_DiceRoller.rollChance(resourcesChance)) {
+          map.dropItemAt(this.makeItemBiohazardSuit(), pt); //@@MP (Release 7-6)
+        }
+        return this.makeObjTable(GameImages.OBJ_CHAR_TABLE);
+      }
+
+      if (!placedCHARdocument) {
+        // `makeCHARDocument()` spends the `roll(0, 5)` itself -- it documents that
+        // bound and why `case 5` is dead -- so the roll is not repeated here.
+        map.dropItemAt(this.makeCHARDocument(), pt);
+        placedCHARdocument = true; //@@MP - only drop one per room
+      }
+      return null;
+    });
+
+    if (!placedBioForceGun.value) {
+      //@@MP - added (Release 7-6)
+      let placed = false;
+      this.mapObjectPlaceInGoodPosition(
+        map,
+        roomRect,
+        (pt) => map.getMapObjectAt(pt.x, pt.y) === null,
+        this.m_DiceRoller,
+        (pt) => {
+          map.dropItemAt(this.makeItemBioForceGun(), pt);
+          placed = true;
+          // trolley.
+          return this.makeObjCHARtrolley(GameImages.OBJ_CHAR_TROLLEY);
+        }
+      );
+      placedBioForceGun.value = placed; //@@MP - only drop one per game
+    }
   }
 
   makeCHARLivingRoom(map: GameMap, roomRect: Rect): void {
