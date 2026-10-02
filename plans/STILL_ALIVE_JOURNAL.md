@@ -20,6 +20,16 @@
 
 ---
 
+> **Two rows below are stale, because work landed after this was extracted.** The
+> `ShoppingMall` row still reads **PARTIAL** with the `+1` upper level and the
+> `-1` car park unported and the car park "blocked on a `GameTiles.ts` change":
+> `8df6e2b` ("mall: the upper level's fit-out and the parking level") landed
+> both, and `PARKING_ASPHALT_NS`/`_EW` have models. Also `MakeOrdinaryOffice` was
+> ported in `beb822d`, so the "two C# generators never ported" note below is down
+> to `MakeMechanicWorkshop` alone. The current position is the table in
+> `BROWSER_PORT_PLAN.md` §5.6; this file is the diary, and a diary is allowed to
+> be behind.
+
 #### 5.6c Stage 2 — the fifteen bug fixes
 
 `STILL_ALIVE_REFERENCE.md` §6 lists fifteen defects in vanilla Alpha 10.1 that

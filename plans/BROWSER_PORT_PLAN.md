@@ -1,21 +1,22 @@
 # Rogue Survivor Reloaded — TypeScript / Browser Port
 
-> **Status:** Phases 1–7 ported and playable. Phase 8 tasks 1–11 done; only 12
-> (optional touch support) remains. `npm run verify` is **red on two tests** —
-> `sprite-assets.test.ts` and the preload manifest both fail on three `farm_fence`
-> image ids whose constants are lower-cased against upper-cased files (§1.6). That
-> is a three-character fix and the only thing standing between the tree and green.
-> Everything else passes: **2 799 tests across 128 files**, type-check clean.
-> The coverage gate's branch floor was lowered from 75% to a measured ~48% with the
-> reasoning recorded in `vitest.config.mts`; 75% came from the first 6-file suite
-> and is unreachable now that `RogueGame.ts` alone is thousands of branches. Read
+> **Status:** Phases 1–7 ported and playable, and the Still Alive ruleset is
+> complete (§5.6). Phase 8 tasks 1–11 done; only 12 (optional touch support)
+> remains. `npm run verify` is **green** — **2 940 tests across 137 files**,
+> type-check clean, measured 2026-10-02. The coverage gate's branch floor was
+> lowered from 75% to a measured ~48% with the reasoning recorded in
+> `vitest.config.mts`; 75% came from the first 6-file suite and is unreachable now
+> that `RogueGame.ts` alone is thousands of branches. Read
 > [Current State & Handover](#1-current-state--handover).
 >
 > **Numbers in this file were stale by a wide margin until 2026-10-02** — the test
-> count alone was quoted as 1 542 in eight places when it was over 2 700, and
-> `RogueGame.ts` was described as 27 722 lines when it is 35 826. Re-measure
+> count alone was quoted as 1 542 in eight places when it was over 2 800, and
+> `RogueGame.ts` was described as 27 722 lines when it is 36 116. Re-measure
 > rather than copying a figure from here; §1.7 says which ones were checked and
-> when.
+> when. §5.6's long-form stage record moved to
+> [`STILL_ALIVE_JOURNAL.md`](STILL_ALIVE_JOURNAL.md), because §5.6 was ~2 450
+> lines of diary and this file claims to record what is left rather than what has
+> been done.
 >
 > **A first-person view mode now exists**, behind `(Gfx) View Mode` in the options
 > and `Shift+F` in game, merged to `master` as `f01ea5d` and labelled `(experimental)`.
@@ -23,7 +24,7 @@
 > has now been run in a browser and **found wrong six times** — the floor alone
 > accounted for four compounding defects, each hidden by the one before it and by
 > an underlay that guaranteed the coverage metric stayed at 100%. See
-> [§5.4](#54-firstperson--pseudo-3d-view-mode) for what they were and what the
+> [§5.4](#54-first-person--pseudo-3d-view-mode) for what they were and what the
 > durable lesson is.
 >
 > **Ten presentation and correctness defects were found and fixed 2026-09-28**,
@@ -80,7 +81,7 @@ Porting a C# WinForms zombie-survival roguelike (195 files, ~2.5 MB, largest `Ro
    - [1.1a](#11a-fixed-2026-09-28-eight-defects-nothing-could-see) **fixed 2026-09-28 — the `Point` class/struct bug and seven others**
    - [1.1](#11-what-is-proven-clean--do-not-re-audit) **proven clean — do not re-audit**
    - [1.2](#12-the-harness-now-runs-real-games) sim baseline · [1.2a](#12a-three-things-that-look-like-bugs-but-are-not) **not bugs**
-   - [1.3](#13-how-to-run-it) commands · [1.4](#14-runs-are-now-reproducible) seeding · [1.4a](#14a-lesson-the-sim-and-the-browser-check-different-things) **the two definitions of done** · [1.4b](#14b-lesson-no-worker-the-world-is-shared-mutable-state) **why there is no sim thread**
+   - [1.3](#13-how-to-run-it) commands · [1.4](#14-runs-are-now-reproducible) seeding · [1.4a](#14a-lesson-the-sim-and-the-browser-check-different-things) **the two definitions of done** · [1.4b](#14b-lesson-no-worker-because-the-world-is-shared-mutable-state) **why there is no sim thread**
    - [1.5](#15-next-steps) **next steps** · [1.6](#16-known-non-bugs-do-not-re-investigate) · [1.7](#17-git-state)
 2. [Quick Reference](#2-quick-reference) — layout, porting rules, build commands
 3. [Phase Status](#3-phase-status)
@@ -252,6 +253,15 @@ Runs are reproducible (`--seed`, §1.4) and the map no longer corrupts itself
 
 Re-measured 2026-09-27 at 1×1 / 900 turns / `--undead`, seeds 1–12, after the
 fixes. **No crashes and no hangs across all twelve.**
+
+> **This baseline is superseded and should not be read as current.** It predates
+> world decay, tile fires, darkness FOV, the alcohol curve, food poisoning and
+> the whole Still Alive ruleset — every one of which changes what a bot walks into
+> and how fast it dies. The numbers are kept because they were a real measurement
+> of a real build and because *why* they stopped predicting anything is the point:
+> the old "4 of 5 seeds play all 1 000 turns" figure was taken while the entire
+> ranged half of NPC behaviour was inert, which is the §1.4a lesson arriving as a
+> balance question. **Re-measure before citing** (§1.5 item 2).
 
 ```
 seed  1  turns    6  dead (-11 hp)      seed  7  turns   11  dead (-11 hp)
@@ -480,24 +490,25 @@ loudly.
   file was visible to `tsc`, to `git grep`, and to nothing else.
   `tests/silent-failures.test.ts` now walks `src/` itself and fails if any file
   would read as binary.
-- **A real bug, currently open: three `farm_fence` image ids are lower-cased
-  against upper-cased files.** `sprite-assets.test.ts` is **red on two cases**
-  (the direct check and the preload manifest), which is the *only* thing keeping
-  `npm run verify` off green. The art exists; the constants are wrong:
+- ~~**Three `farm_fence` image ids were lower-cased against upper-cased
+  files.**~~ **Fixed 2026-10-02 (`7763447`)** — and it is worth keeping the shape,
+  because the failure was quieter than a red test. `GameImages.ts` declared
+  `farm_fence_ew` / `_ns_right` / `_ns_left`; the C# spells them `_EW` / `_NS_right`
+  / `_NS_left` (`GameImages.cs:619-621`) and the files carry that capitalisation.
+  So it is **the same defect twice**: a transcription that is a faithful *string*
+  and an unfaithful *file*. It 404'd in every browser and in the desktop build —
+  the farm rendered with invisible fence posts — while working on a
+  case-insensitive filesystem, and it sat there as two failing
+  `sprite-assets.test.ts` cases from the moment the farm building landed. The
+  guard that should have caught it earlier is `toBeGreaterThan(200)`, so the
+  assertion passed straight through 614 constants of growth.
 
-  ```
-  GameImages.ts:1362  OBJ_FARM_FENCE_EW        = "MapObjects/farm_fence_ew"
-  GameImages.ts:1363  OBJ_FARM_FENCE_NS_RIGHT = "MapObjects/farm_fence_ns_right"
-  GameImages.ts:1364  OBJ_FARM_FENCE_NS_LEFT  = "MapObjects/farm_fence_ns_left"
-  on disk                                farm_fence_EW.webp / _NS_right / _NS_left
-  ```
-
-  Every sibling direction suffix keeps its case (`picket_fence_EW_v1_phase1` and
-  friends), so the ids are the defect rather than the art, and the fix is three
-  characters. It arrived with the `Farm` generator and is worth recording for the
-  shape: **an id whose case does not match its filename fails only on a
-  case-sensitive filesystem**, so it can sit green through a developer's whole
-  month and go red in CI.
+  **The transferable part: an id that does not match its filename on a
+  case-sensitive filesystem is a bug that a developer on macOS or Windows will
+  never see.** Two of this project's own asset defects were that (here and
+  `ITEM_BIO_FORCE_GUN`), and both were transcription slips rather than
+  misunderstandings — which is why the asset tests now resolve *every* id through
+  the same path the managers use, rather than spot-checking names.
 
 ### 1.7 Git state
 
@@ -526,20 +537,24 @@ loudly.
   JetBrains Mono `46ac665`; the sprite-style option `03f8a73`; multi-key bindings
   `5b2dc59`; the side panel, hitbox, popup and minimap fixes `4a6e845` and
   `2ebdddf`; the four typeface families `47c5b64`; and the look-handler and
-- **Current state (measured 2026-10-02): 2 799 tests across 128 files, type-check
-  clean, 2 failing.** The failures are the `farm_fence` case mismatch (§1.6) and
-  nothing else. Coverage last measured at 59.90% statements / 49.71% branches /
-  72.55% functions / 61.13% lines against floors of 58/48/69/59
-  (`vitest.config.mts:66` and `:86-90`).
-  **This line has been wrong before and says so three times over**: it claimed
-  `verify` green when it was red, then reported it red "against a 75% floor"
-  after the branch floor had been deliberately lowered, and then sat at
-  "1 542 tests in 69 files — green" for months while the real figure was well
-  past 2 700 and the tree was red. 75% came from the first suite (6 files, 74
-  tests) and is unreachable now that `RogueGame.ts` alone has thousands of
-  branches, so it was replaced by a measured floor with the reasoning recorded in
-  the config. **Verify it rather than reading it**, and re-measure coverage with
-  `--no-file-parallelism`; the default parallel run is not a measurement.
+- **Current state (measured 2026-10-02): 2 940 tests across 137 files,
+  `npm run verify` green** — type-check, coverage gate and build all pass.
+  Coverage last measured at 59.90% statements / 49.71% branches / 72.55%
+  functions / 61.13% lines against floors of 58/48/69/59
+  (`vitest.config.mts:66` and `:86-90`), which was *before* the backpacks, CHAR
+  lab and army-base work landed, so **re-measure before trusting the margins**.
+  Measure with `--no-file-parallelism`; the default parallel run is not a
+  measurement.
+  **This line has been wrong repeatedly and says so four times over**: it claimed
+  `verify` green when it was red, reported it red "against a 75% floor" after the
+  branch floor had been deliberately lowered, sat at "1 542 tests in 69 files —
+  green" for months while the real figure was under half of what it had become,
+  and then went on claiming green while two tests were genuinely red on a
+  mis-cased sprite path (§1.6). 75% came from the first suite (6 files, 74 tests)
+  and is unreachable now that `RogueGame.ts` alone has thousands of branches, so
+  it was replaced by a measured floor with the reasoning recorded in the config.
+  **Verify it rather than reading it.** The pattern is §1.6's: a count copied from
+  a comment is a count nobody measured.
 - Still Alive ruleset work is **complete on `feature/still-alive-ruleset`**; see
   **§5.6** for the per-stage board and the list of what is still owed.
 - Bump `CACHE_VERSION` in `web/public/sw.js` when releasing, or clients keep the
@@ -607,7 +622,7 @@ Phases 1–7 are ported and building. Historical per-slice detail has been remov
 | 8 — Polish, sim, CI | Headless harness, the test suite, CI, PWA, Docker, asset pass, frame-cost pass, desktop wrapper | **In progress** — 11 of 12 tasks done; only 12 (optional touch) remains. See §4.1 |
 | 9 — Still Alive ruleset | Parallel ruleset on a separate axis from `GameMode`, one superset content pack | **Done** — all five stages landed on `feature/still-alive-ruleset`; 37 of 37 features wired and `PENDING_WIRING` is `{}`. See §5.6 for the list of what is still owed |
 
-Assets: **2 403 files shipped** — 2 175 WebP sprites across 4 image sets, 226 `.ogg` tracks — extracted from the C# embedded resources and since merged with the fork's (§5.6d). The 24.9 MB figure below is the *phase-8* measurement and predates the Still Alive merge; **re-measure with `find public/assets -type f` rather than copying it.** See §4.1c.
+Assets: **2 403 files shipped** — 2 175 WebP sprites across 4 image sets, 226 `.ogg` tracks — extracted from the C# embedded resources and since merged with the fork's (§5.6d). §4.1c's "24.9 MB" is the *phase-8* measurement and predates the merge; the current figure is nearer 50 MB. **Re-measure with `find public/assets -type f` rather than copying either number.** See §4.1c.
 
 ---
 
@@ -644,7 +659,7 @@ once with `npm run verify`. `tests/` is in `tsconfig.json`'s include list, so
 | `map.test.ts` | The `placeActor` add-or-move contract, duplicate/out-of-bounds rejection, `removeActor` no-op semantics, `assertActorIntegrity` |
 | `null-ui.test.ts` | `NullRogueUI` never blocks and never touches the DOM |
 | `audio-levels.test.ts` | Loudness table: no gain may clip, every id resolves, unknown ids return 1.0 |
-| `sprite-assets.test.ts` | Every `GameImages` id (1 009) resolves to a file on disk, both directly and through the preload manifest; no stray `.png`. **Red on 2 cases** — see §1.6 |
+| `sprite-assets.test.ts` | Every `GameImages` id (1 009) resolves to a file on disk, both directly and through the preload manifest; no stray `.png`. Caught the mis-cased `farm_fence` ids that 404'd in every browser (§1.6) |
 | `persistence.test.ts` | `Session` / `GameOptions` / `Keybindings` / `HiScoreTable` / `GameHints` / `TextFile` roundtrips on the in-memory storage fallback |
 | `integration/headless-run.test.ts` | A real seeded playthrough. `metrics.error === undefined` is the assertion that would have caught all nine bugs in §1.1 |
 | `integration/reproducibility.test.ts` | Shells out to the real CLI twice per seed — `Session` is a process-wide singleton, and the CLI is what CI and users invoke |
@@ -1345,9 +1360,9 @@ view and could not tell the two apart. It now checks 60, 75, 100 and 120.
   `Icons/threat_high_danger` — and would be a genuine gain in a view with no
   peripheral vision.
 - **The in-game help screen reads the manual text file, not the binding table,** so
-  it does not list the new keys. The option description and the toggle message do
-  say that the arrow keys change meaning, which covers the surprise; the manual is
-  a content follow-up.
+  it does not list the first-person keys. The option description and the toggle
+  message do say that west and east change meaning, which covers the surprise; the
+  manual is a content follow-up.
 - **The option is labelled `(experimental)` and nothing enforces that.** It is a
   label, not a gate. Decide whether the first-person view ships as the default or
   stays opt-in, which is a content decision this section should not make silently.
@@ -1446,7 +1461,8 @@ Two things a later session should not have to re-derive:
 
 Gate: `cd web && npm run verify`. **See §1.7 for the current count — this line
 has been wrong three times** and is not a number to copy. Data decisions are
-written down in §5.6d below and in the journal.
+written down in §5.6d below and in the journal (§5.6d of
+[`STILL_ALIVE_JOURNAL.md`](STILL_ALIVE_JOURNAL.md)).
 
 > `file:line` citations in §5.6 were verified on 2026-09-29 and **drifted
 > immediately**: `RogueGame.ts` is now **35 826 lines**, was past 27 000 during
@@ -1709,31 +1725,39 @@ Detail: [`STILL_ALIVE_JOURNAL.md`](STILL_ALIVE_JOURNAL.md) §5.6f.
 
 #### 5.6g Risks, and what would make me stop
 
-- **God-file growth is the real cost, and the registry mitigates it rather than
-  removing it.** The scanner test makes the branch count *visible*; it does not
-  make `RogueGame.ts` smaller. If Stage 4's features end up scattered rather than
-  funnelled through `FeatureFlags`, stop and refactor before Stage 5, because
-  Stage 5's 15 building generators are where scattered branches become
-  unreviewable. **§6 is that refactor**, sequenced so the four free leaves and the
-  render cluster come out before any Still Alive mechanic lands. The two regions
-  §6 refuses to split — `14008–18936` and `8770–11628`, 27.8% of the file — are
-  where Stage 4's branches will end up, which is the point: they go where the
-  code already is rather than where the flag is.
-- **Payload is paid by classic players.** 30 MB → ~50 MB and a 2.5× preload, for
-  content half the audience never sees. The only mitigation that works is a
-  per-ruleset preload list — which means the manifest stops being
-  `allImageIds()` and becomes a function of the ruleset, and that is a small but
-  real change to the loading path and to `sprite-assets.test.ts`.
-- **Two copies of the balance surface.** Difficulty, scoring, hi-scores and the
-  post-mortem screen all gain a ruleset dimension, and the scoring multipliers in
-  particular are a second balance surface to tune rather than one.
-- **QA doubles.** Every bug report becomes "which ruleset?", and a fix can be
-  right in one and wrong in the other. The Stage 4 negative tests are what keep
-  that honest; without them the two modes drift.
-- **The 48 ours-only and 73 theirs-only sprites** need a merge decision, not a
-  mechanical one, and `STILL_ALIVE_REFERENCE.md` §7 lists the fork places where
-  it is the *older* code. Copying from it without that list is how a regression
-  gets in.
+> **These were written before the stages ran. Read them as the risks that were
+> real, and note which have since been answered.**
+
+- **God-file growth was the real cost, and the registry mitigated rather than
+  removed it.** The scanner test made the branch count *visible*; it did not make
+  `RogueGame.ts` smaller. The features did **not** end up scattered — all 37 have
+  readers and `FeatureFlags` is the single place a feature is declared — so the
+  "stop and refactor before Stage 5" trigger did not fire on that count. It fired
+  for the other reason, which is below. **§6 is that refactor** — its Wave 0 has now been done and
+  the region table re-derived (§6.0), so the split is no longer blocked on the
+  question this section was waiting for.
+- **Payload is paid by classic players — and this is the one that came true.** The
+  asset tree went from 24.9 MB to roughly **50 MB**, and the preload manifest from
+  ~395 ids to **1 009**, for content half the audience never sees. It is mitigated
+  at the *constants* rather than the *preload*: the ~700 merged sprites have no
+  `GameImages` constant, so they are never enumerated, never preloaded and
+  unreferenceable. That makes the type system the check — but it means the cost
+  returns in full the moment those constants are added, and the remaining
+  mitigation is a per-ruleset preload list, which is a real change to the loading
+  path. **Decide it before adding the constants, not after.**
+- **Two copies of the balance surface** — scoring multipliers in particular — were
+  the second-real risk and are still open: difficulty, scoring, hi-scores and the
+  post-mortem screen all gained a ruleset dimension.
+- **QA doubles: still the durable risk.** Every bug report is "which ruleset?",
+  and a fix can be right in one and wrong in the other. The negative tests are
+  what keep that honest; the Classic fingerprint (`e097b9d976ffac15`) is the
+  strongest single guard, because it constrains the *other* mode rather than
+  checking this one.
+- **The 66 re-drawn shared sprites remain unmerged.** Art is not a number, so
+  there is nowhere to keep the fork's version — it exists only in `_refs/`. The
+  48 ours-only / 73 theirs-only decision was made by merging into `classic` with
+  ours winning; carrying both needs a Still-Alive-specific id or a per-ruleset
+  image map. `merge-sprite-sets.py` prints the list.
 
 **Sequencing, and the one thing I would not skip.** Stage 1 is days and Stage 2
 is days, and they are worth doing on their own merits whatever is decided about

@@ -398,5 +398,10 @@ EOF
 - `BROWSER_PORT_PLAN.md` §1.1 lists what is **proven clean** — do not re-audit
   those areas. This file is the companion for the *upstream comparison* question
   and does not overlap with it.
-- `docs/` holds the published manual and controls pages. If any of §4's systems
-  are ever adopted, they are documentation changes too, not just code.
+- `STILL_ALIVE_JOURNAL.md` is the long-form record of the port: what each stage
+  was, what was tried, and what turned out to be wrong. `BROWSER_PORT_PLAN.md`
+  §5.6 is the summary; the journal is why.
+- `docs/` holds the published manual and controls pages. §4's systems *were*
+  adopted, so they became documentation changes too, not just code — the
+  controls page carries the fork's new bindings and the in-game manual its
+  commands.
