@@ -1547,6 +1547,22 @@ export class RogueGame {
 	 *
 	 * False in every run that has no rescue site, so the loop behaves exactly as
 	 * before for CLASSIC and for a Still Alive run that never got a helicopter.
+	 *
+	 * **Browser port: cleared in `StartNewGame`, which the C# does not do.** The C#
+	 * has the same three occurrences and the same missing reset (`RogueGame.cs:716`,
+	 * `:5517`, `:7447`), so this is an inherited upstream bug and not a
+	 * transcription slip — but it is a one-way latch on the only loop that plays the
+	 * game, and the port is a long-lived process rather than a console session you
+	 * quit. A rescued run sets the flag, `GameLoop` returns to the menu, and every
+	 * run *after* that one builds a live player that `GameLoop` then refuses to play:
+	 * the condition is still false, the loop body never runs, and the menu comes
+	 * straight back. Forever, in one process.
+	 *
+	 * The reset belongs in `StartNewGame` and not in `PlayerWasRescued`, because the
+	 * flag has to stay set for the rest of the run that set it: it is the *only*
+	 * thing stopping `GameLoop`'s loop once the rescued player has been removed from
+	 * the map, and clearing it inside the ending would hand control back to a
+	 * district the player is no longer in.
 	 */
 	m_PlayerWasRescued: boolean = false;
 	m_Overlays: Overlay[] = [];
@@ -4066,9 +4082,16 @@ export class RogueGame {
 		// It is an instance field rather than a module global precisely so this is
 		// the only place it needs resetting — but a seeded sim run twice in one
 		// process would otherwise inherit the heading of the previous run, and two
-		// runs that differ only in a remembered heading are the hardest kind of
+		// runs that differ only by a remembered heading are the hardest kind of
 		// non-determinism to notice. Pinned by a test.
+		//
+		// `m_PlayerWasRescued` sits here for the same reason and rather less
+		// benignly: the world regenerates, and so does every per-run flag that is not
+		// on the session. It is set by the rescue ending and read by `GameLoop`'s
+		// play-loop condition, so leaving it set would make this run — and every run
+		// after it in this process — unplayable. See its declaration.
 		this.m_FirstPersonFacing = Direction.N;
+		this.m_PlayerWasRescued = false;
 
 		// generate world.
 		//
@@ -4374,121 +4397,110 @@ export class RogueGame {
 
 	// C# HandleRedefineKeys — RogueGame.cs:2570
 	async HandleRedefineKeys(): Promise<void> {
-		const menuEntries: string[] = [
-			"Move N",
-			"Move NE",
-			"Move E",
-			"Move SE",
-			"Move S",
-			"Move SW",
-			"Move W",
-			"Move NW",
-			"Wait",
-			"Wait 1 hour",
-			"Abandon Game",
-			"Advisor Hint",
-			"Barricade",
-			"Break",
-			"Build Large Fortification",
-			"Build Small Fortification",
-			"City Info",
-			"Close",
-			"Fire",
-			"Give",
-			"Help",
-			"Hints screen",
-			"Negociate Trade",
-			"Make fire (matches)",
-			"Item 1 slot",
-			"Item 2 slot",
-			"Item 3 slot",
-			"Item 4 slot",
-			"Item 5 slot",
-			"Item 6 slot",
-			"Item 7 slot",
-			"Item 8 slot",
-			"Item 9 slot",
-			"Item 10 slot",
-			"Lead",
-			"Load Game",
-			"Mark Enemies",
-			"Messages Log",
-			"Options",
-			"Order",
-			"Pull", // alpha10
-			"Push",
-			"Quit Game",
-			"Redefine Keys",
-			"Run",
-			"Save Game",
-			"Screenshot",
-			"Shout",
-			"Sleep",
-			"Switch Place",
-			"Use Exit",
-			"Use Spray",
-			"Zoom in", // browser port
-			"Zoom out", // browser port
+		//
+		// One array of `{label, command}` rows, not the C#'s three parallel lists.
+		//
+		// The C# has `menuEntries`, a set of `O_*` index constants, and an
+		// `O_*`-keyed `values` built from `GetFriendlyFormat`; the port had collapsed
+		// that to a `string[]` of labels beside a `PlayerCommand[]`, correlated
+		// *positionally* and checked only for equal length. That is a shape in which
+		// a permutation is invisible: two arrays of 54 pass a length check and
+		// display every row from the first mismatch to the resynchronisation one row
+		// off, while staying the right length throughout.
+		//
+		// It was. `"Make fire (matches)"` sat at label index 23 while
+		// `MAKE_COOKING_FIRE` sat at command index 51, so every row from 23 to 51
+		// printed its *neighbour's* binding — 29 of 54 rows, and the reported symptom
+		// was one of them: the "Use Exit" row showed `M`, because index 50 held
+		// `USE_SPRAY`, while `USE_EXIT`'s real `.` was printed one row up under
+		// "Switch Place". The keys were right and only the screen was wrong, which is
+		// why arrow keys and `.` both played correctly while the menu lied about it.
+		//
+		// `addKey` and `removeLastKey` indexed the same wrong array, so this was not
+		// only a display bug: rebinding from the "Use Exit" row bound the new key to
+		// spray, stealing `.` from the stairs. A pair per row makes that impossible
+		// rather than merely fixed — there is no second list to keep in step.
+		//
+		// Every command with a default binding is listed. Six were not: the C# has
+		// rows for `EAT_CORPSE` and `REVIVE_CORPSE` that the port's list had dropped,
+		// and the fork's own `SWAP_INVENTORY`, `LOOK_LEFT`, `LOOK_RIGHT` and
+		// `VIEW_MODE_TOGGLE` were never added. A key the game reads but the key menu
+		// does not offer is a key the player cannot change, which is the one thing
+		// this screen exists to prevent.
+		const rows: { label: string; command: PlayerCommand }[] = [
+			{ label: "Move N", command: PlayerCommand.MOVE_N },
+			{ label: "Move NE", command: PlayerCommand.MOVE_NE },
+			{ label: "Move E", command: PlayerCommand.MOVE_E },
+			{ label: "Move SE", command: PlayerCommand.MOVE_SE },
+			{ label: "Move S", command: PlayerCommand.MOVE_S },
+			{ label: "Move SW", command: PlayerCommand.MOVE_SW },
+			{ label: "Move W", command: PlayerCommand.MOVE_W },
+			{ label: "Move NW", command: PlayerCommand.MOVE_NW },
+			{ label: "Wait", command: PlayerCommand.WAIT_OR_SELF },
+			{ label: "Wait 1 hour", command: PlayerCommand.WAIT_LONG },
+			{ label: "Abandon Game", command: PlayerCommand.ABANDON_GAME },
+			{ label: "Advisor Hint", command: PlayerCommand.ADVISOR },
+			{ label: "Barricade", command: PlayerCommand.BARRICADE_MODE },
+			{ label: "Break", command: PlayerCommand.BREAK_MODE },
+			{
+				label: "Build Large Fortification",
+				command: PlayerCommand.BUILD_LARGE_FORTIFICATION,
+			},
+			{
+				label: "Build Small Fortification",
+				command: PlayerCommand.BUILD_SMALL_FORTIFICATION,
+			},
+			{ label: "City Info", command: PlayerCommand.CITY_INFO },
+			{ label: "Close", command: PlayerCommand.CLOSE_DOOR },
+			{ label: "Eat Corpse", command: PlayerCommand.EAT_CORPSE },
+			{ label: "Fire", command: PlayerCommand.FIRE_MODE },
+			{ label: "Give", command: PlayerCommand.GIVE_ITEM },
+			{ label: "Help", command: PlayerCommand.HELP_MODE },
+			{ label: "Hints screen", command: PlayerCommand.HINTS_SCREEN_MODE },
+			{ label: "Negotiate Trade", command: PlayerCommand.NEGOCIATE_TRADE },
+			{ label: "Make fire (matches)", command: PlayerCommand.MAKE_COOKING_FIRE },
+			{ label: "Item 1 slot", command: PlayerCommand.ITEM_SLOT_0 },
+			{ label: "Item 2 slot", command: PlayerCommand.ITEM_SLOT_1 },
+			{ label: "Item 3 slot", command: PlayerCommand.ITEM_SLOT_2 },
+			{ label: "Item 4 slot", command: PlayerCommand.ITEM_SLOT_3 },
+			{ label: "Item 5 slot", command: PlayerCommand.ITEM_SLOT_4 },
+			{ label: "Item 6 slot", command: PlayerCommand.ITEM_SLOT_5 },
+			{ label: "Item 7 slot", command: PlayerCommand.ITEM_SLOT_6 },
+			{ label: "Item 8 slot", command: PlayerCommand.ITEM_SLOT_7 },
+			{ label: "Item 9 slot", command: PlayerCommand.ITEM_SLOT_8 },
+			{ label: "Item 10 slot", command: PlayerCommand.ITEM_SLOT_9 },
+			{ label: "Lead", command: PlayerCommand.LEAD_MODE },
+			{ label: "Load Game", command: PlayerCommand.LOAD_GAME },
+			{ label: "Mark Enemies", command: PlayerCommand.MARK_ENEMIES_MODE },
+			{ label: "Messages Log", command: PlayerCommand.MESSAGE_LOG },
+			{ label: "Options", command: PlayerCommand.OPTIONS_MODE },
+			{ label: "Order", command: PlayerCommand.ORDER_MODE },
+			{ label: "Pull", command: PlayerCommand.PULL_MODE }, // alpha10
+			{ label: "Push", command: PlayerCommand.PUSH_MODE },
+			{ label: "Quit Game", command: PlayerCommand.QUIT_GAME },
+			{ label: "Redefine Keys", command: PlayerCommand.KEYBINDING_MODE },
+			{ label: "Revive Corpse", command: PlayerCommand.REVIVE_CORPSE },
+			{ label: "Run", command: PlayerCommand.RUN_TOGGLE },
+			{ label: "Save Game", command: PlayerCommand.SAVE_GAME },
+			{ label: "Screenshot", command: PlayerCommand.SCREENSHOT },
+			{ label: "Shout", command: PlayerCommand.SHOUT },
+			{ label: "Sleep", command: PlayerCommand.SLEEP },
+			{
+				label: "Swap Inventory",
+				command: PlayerCommand.SWAP_INVENTORY,
+			},
+			{ label: "Switch Place", command: PlayerCommand.SWITCH_PLACE },
+			{ label: "Use Exit", command: PlayerCommand.USE_EXIT },
+			{ label: "Use Spray", command: PlayerCommand.USE_SPRAY },
+			// Browser port: the 3x3 movement grid displaced the first-person turning
+			// keys, and the fork's view toggle has no C# row at all.
+			{ label: "Turn Left (first person)", command: PlayerCommand.LOOK_LEFT },
+			{ label: "Turn Right (first person)", command: PlayerCommand.LOOK_RIGHT },
+			{ label: "Toggle View Mode", command: PlayerCommand.VIEW_MODE_TOGGLE },
+			{ label: "Zoom in", command: PlayerCommand.ZOOM_IN },
+			{ label: "Zoom out", command: PlayerCommand.ZOOM_OUT },
 		];
-		// C#'s O_* index constants — one command per menu entry, same order.
-		const commands: PlayerCommand[] = [
-			PlayerCommand.MOVE_N,
-			PlayerCommand.MOVE_NE,
-			PlayerCommand.MOVE_E,
-			PlayerCommand.MOVE_SE,
-			PlayerCommand.MOVE_S,
-			PlayerCommand.MOVE_SW,
-			PlayerCommand.MOVE_W,
-			PlayerCommand.MOVE_NW,
-			PlayerCommand.WAIT_OR_SELF,
-			PlayerCommand.WAIT_LONG,
-			PlayerCommand.ABANDON_GAME,
-			PlayerCommand.ADVISOR,
-			PlayerCommand.BARRICADE_MODE,
-			PlayerCommand.BREAK_MODE,
-			PlayerCommand.BUILD_LARGE_FORTIFICATION,
-			PlayerCommand.BUILD_SMALL_FORTIFICATION,
-			PlayerCommand.CITY_INFO,
-			PlayerCommand.CLOSE_DOOR,
-			PlayerCommand.FIRE_MODE,
-			PlayerCommand.GIVE_ITEM,
-			PlayerCommand.HELP_MODE,
-			PlayerCommand.HINTS_SCREEN_MODE,
-			PlayerCommand.NEGOCIATE_TRADE,
-			PlayerCommand.ITEM_SLOT_0,
-			PlayerCommand.ITEM_SLOT_1,
-			PlayerCommand.ITEM_SLOT_2,
-			PlayerCommand.ITEM_SLOT_3,
-			PlayerCommand.ITEM_SLOT_4,
-			PlayerCommand.ITEM_SLOT_5,
-			PlayerCommand.ITEM_SLOT_6,
-			PlayerCommand.ITEM_SLOT_7,
-			PlayerCommand.ITEM_SLOT_8,
-			PlayerCommand.ITEM_SLOT_9,
-			PlayerCommand.LEAD_MODE,
-			PlayerCommand.LOAD_GAME,
-			PlayerCommand.MARK_ENEMIES_MODE,
-			PlayerCommand.MESSAGE_LOG,
-			PlayerCommand.OPTIONS_MODE,
-			PlayerCommand.ORDER_MODE,
-			PlayerCommand.PULL_MODE,
-			PlayerCommand.PUSH_MODE,
-			PlayerCommand.QUIT_GAME,
-			PlayerCommand.KEYBINDING_MODE,
-			PlayerCommand.RUN_TOGGLE,
-			PlayerCommand.SAVE_GAME,
-			PlayerCommand.SCREENSHOT,
-			PlayerCommand.SHOUT,
-			PlayerCommand.SLEEP,
-			PlayerCommand.SWITCH_PLACE,
-			PlayerCommand.USE_EXIT,
-			PlayerCommand.USE_SPRAY,
-			PlayerCommand.MAKE_COOKING_FIRE,
-			PlayerCommand.ZOOM_IN,
-			PlayerCommand.ZOOM_OUT,
-		];
-		if (commands.length !== menuEntries.length)
-			throw new RangeError("commands/menuEntries length mismatch");
+		const menuEntries: string[] = rows.map((r) => r.label);
 
 		let loop = true;
 		let selected = 0;
@@ -4500,9 +4512,10 @@ export class RogueGame {
 			// draw
 			// Every key, not just the primary: a command can have several, and the
 			// point of the screen is to see what a command answers to.
-			const values: string[] = commands.map((cmd) =>
-				s_KeyBindings.getAll(cmd).join(" / "),
+			const values: string[] = rows.map((r) =>
+				s_KeyBindings.getAll(r.command).join(" / "),
 			);
+
 
 			const gx = 0;
 			let gy = 0;
@@ -4512,8 +4525,9 @@ export class RogueGame {
 			this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Redefine keys", 0, gy);
 			gy += MENU_BOLD_LINE_SPACING;
 			const gyRef = { value: gy };
-			// 53 entries (51 in C# plus the two zoom binds): scroll a window that
-			// fits above the footnote.
+			// The key list is longer than one screen, so scroll a window that fits
+			// above the footnote. Driven off the row count rather than a number typed
+			// in here, so adding a command cannot silently overflow the footnote.
 			const keysRows = Math.max(
 				5,
 				Math.floor(
@@ -4574,7 +4588,7 @@ export class RogueGame {
 					// everything. The C# cannot have more than one key per command, so there
 					// is no equivalent to port here.
 					//
-					s_KeyBindings.removeLastKey(commands[selected]);
+					s_KeyBindings.removeLastKey(rows[selected].command);
 					break;
 				}
 
@@ -4612,7 +4626,7 @@ export class RogueGame {
 					// Bind it, *in addition to* whatever the command already answers
 					// to. Replacing would make "more than one key per command" unreachable
 					// from this screen, which is the only place a player can set one.
-					s_KeyBindings.addKey(commands[selected], newKeyData);
+					s_KeyBindings.addKey(rows[selected].command, newKeyData);
 
 					break;
 				}
