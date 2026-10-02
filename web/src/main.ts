@@ -2,10 +2,13 @@ import { CanvasUI }             from "@ui/CanvasUI";
 import { InputHandler }         from "@ui/InputHandler";
 import { Color }                from "@engine/Color";
 import { RogueGame }            from "@engine/RogueGame";
+import { WebAudioAmbientManager } from "@engine/audio/WebAudioAmbientManager";
 import { WebAudioMusicManager } from "@engine/audio/WebAudioMusicManager";
+import { WebAudioSoundManager } from "@engine/audio/WebAudioSoundManager";
 import { loadGameFonts }        from "@ui/fonts";
 import { InputTranslator }      from "@engine/Keybindings";
 import { PlayerCommand }        from "@engine/PlayerCommand";
+import { storage }              from "@engine/storage";
 
 async function main(): Promise<void> {
   // ── Bootstrap ──────────────────────────────────────────────────────────────
@@ -16,6 +19,8 @@ async function main(): Promise<void> {
       console.warn("[Neutralino] init failed:", e);
     }
   }
+
+  registerStorageExitFlush();
 
   registerServiceWorker();
 
@@ -69,13 +74,65 @@ async function main(): Promise<void> {
 
   // Phase 4: real game boot — loads data/options/keys/hints/manual/hiscores,
   // then runs the main menu → character creation → game loop.
-  const game = new RogueGame(ui, new WebAudioMusicManager());
+  // The third channel, built here for the same reason the second is: `RogueGame`
+  // defaults both managers to their null implementations so the headless harness
+  // and the tests never touch a browser audio API, and the browser passes the
+  // real ones. C# does the same at `RogueGame.cs:861` — a *second* manager
+  // instance, not a second kind of manager.
+  // Three channels, because they are three different things: music and ambients are
+  // streamed beds and sound effects are one-shots. The third is the only one that
+  // applies the measured per-effect gains in `AudioLevels.SFX_GAINS` -- see
+  // `RogueGame`'s constructor for why every effect was quietly playing too quietly
+  // before it existed.
+  const game = new RogueGame(
+    ui,
+    new WebAudioMusicManager(),
+    new WebAudioAmbientManager(),
+    new WebAudioSoundManager(),
+  );
   try {
     await game.Run();
   } catch (e) {
     // Phase 4 lands slice by slice: show which method is still missing instead
     // of dying silently in the console.
     drawError(ui, e as Error);
+  }
+}
+
+/**
+ * Best-effort write-out when the page goes away.
+ *
+ * The desktop backend writes through an async RPC to the Neutralino server, and a
+ * process that exits with one in flight loses it. Every `setItem` schedules a
+ * write on a microtask, so the window is small — but small is not zero, and it is
+ * exactly the window a player hits by quitting right after changing an option.
+ *
+ * The DOM events are the ones a Neutralino webview actually fires; the
+ * `Neutralino.events` names are registered as well because a server-side exit
+ * never reaches the page at all, and a handler that does not fire costs nothing.
+ * There is no guarantee any of them runs long enough for the RPC — that is
+ * inherent to writing over a socket, and the reason the write is scheduled on
+ * every change rather than only at exit.
+ */
+function registerStorageExitFlush(): void {
+  const flush = () => {
+    // Not awaited: nothing can await during unload. A rejection here means the
+    // write did not land, and `flush` already reported it.
+    void storage.flush?.().catch(() => undefined);
+  };
+  for (const ev of ["pagehide", "beforeunload", "visibilitychange"]) {
+    window.addEventListener(ev, flush);
+  }
+  const events = (window as any).Neutralino?.events;
+  if (events && typeof events.on === "function") {
+    for (const ev of ["windowExit", "windowClose", "appExit"]) {
+      try {
+        events.on(ev, flush);
+      } catch {
+        // An event name this client does not know. The DOM handlers above are the
+        // ones that matter; this is belt and braces.
+      }
+    }
   }
 }
 
@@ -102,39 +159,69 @@ function registerServiceWorker(): void {
 }
 
 /** Explains an unported slice-4 method (or any boot error) on the canvas. */
-function drawError(ui: CanvasUI, e: Error): void {
+function drawError(ui: CanvasUI, e: unknown): void {
   console.error("[RogueSurvivor]", e);
 
-  const notYetPorted = e.message.includes("not yet ported");
-  ui.UI_Clear(Color.Black);
+  // **Nothing in here may throw.** This runs from a `catch`, so a fault in the
+  // error reporter is a fault nobody can see: the canvas keeps whatever the boot
+  // left on it — which, for a failure before the first draw, is nothing at all.
+  // That is a black screen with no message, which is the least diagnosable
+  // outcome available and strictly worse than the error it was hiding.
+  //
+  // Two ways that used to happen, both now closed:
+  //   - `e.message` on a thrown *string*, `null` or `undefined`. `undefined.message`
+  //     throws, and it threw *before* `UI_Clear`, so not even the red heading was
+  //     painted.
+  //   - the paint itself throwing, e.g. before the font finished loading.
+  const message =
+    e instanceof Error
+      ? e.message
+      : typeof e === "string"
+        ? e
+        : (() => {
+            try {
+              return String(e);
+            } catch {
+              return "an unknown value was thrown";
+            }
+          })();
+  const notYetPorted = message.includes("not yet ported");
 
-  let y = 120;
-  ui.UI_DrawStringBold(
-    notYetPorted ? Color.Yellow : Color.Red,
-    notYetPorted ? "Rogue Survivor Reloaded — Phase 4 in progress" : "Rogue Survivor Reloaded — error",
-    40,
-    y
-  );
-  y += 40;
+  try {
+    ui.UI_Clear(Color.Black);
 
-  ui.UI_DrawString(Color.White, e.message, 40, y);
-  y += 40;
+    let y = 120;
+    ui.UI_DrawStringBold(
+      notYetPorted ? Color.Yellow : Color.Red,
+      notYetPorted ? "Rogue Survivor Reloaded — Phase 4 in progress" : "Rogue Survivor Reloaded — error",
+      40,
+      y
+    );
+    y += 40;
 
-  if (notYetPorted) {
-    const lines = [
-      "The main menu, loading screens and character creation already work.",
-      "The next Phase 4 slices port world generation, player commands and",
-      "the play-screen renderer, then this boots into the game itself.",
-    ];
-    for (const line of lines) {
-      ui.UI_DrawString(Color.LightGray, line, 40, y);
-      y += 20;
+    ui.UI_DrawString(Color.White, message, 40, y);
+    y += 40;
+
+    if (notYetPorted) {
+      const lines = [
+        "The main menu, loading screens and character creation already work.",
+        "The next Phase 4 slices port world generation, player commands and",
+        "the play-screen renderer, then this boots into the game itself.",
+      ];
+      for (const line of lines) {
+        ui.UI_DrawString(Color.LightGray, line, 40, y);
+        y += 20;
+      }
+    } else {
+      ui.UI_DrawString(Color.LightGray, "See the browser console for the stack trace.", 40, y);
     }
-  } else {
-    ui.UI_DrawString(Color.LightGray, "See the browser console for the stack trace.", 40, y);
-  }
 
-  ui.UI_Repaint();
+    ui.UI_Repaint();
+  } catch (drawFailure) {
+    // The console line above is the last resort and it has already happened, so
+    // this only has to not make things worse.
+    console.error("[RogueSurvivor] drawError could not paint:", drawFailure);
+  }
 }
 
 main().catch(console.error);

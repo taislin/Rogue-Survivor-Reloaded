@@ -14,5 +14,37 @@
     "FOV": 2,
     "BATTERIES": 8,
     "FLAVOR": "Let There Be MORE Light!"
+  },
+  {
+    "ID": "LIGHT_NIGHT_VISION",
+    "NAME": "night vision",
+    "PLURAL": "night vision",
+    "FOV": 5,
+    "BATTERIES": 18,
+    "FLAVOR": "It's all so green."
+  },
+  {
+    "ID": "LIGHT_BINOCULARS",
+    "NAME": "binoculars",
+    "PLURAL": "binoculars",
+    "FOV": 22,
+    "BATTERIES": 0,
+    "FLAVOR": "Look yonder."
+  },
+  {
+    "ID": "LIGHT_FLARE",
+    "NAME": "flare",
+    "PLURAL": "flares",
+    "FOV": 2,
+    "BATTERIES": 6,
+    "FLAVOR": "Face downwind before lighting."
+  },
+  {
+    "ID": "LIGHT_GLOWSTICK",
+    "NAME": "glowstick",
+    "PLURAL": "glowsticks",
+    "FOV": 1,
+    "BATTERIES": 12,
+    "FLAVOR": "Ready for the rave."
   }
 ]

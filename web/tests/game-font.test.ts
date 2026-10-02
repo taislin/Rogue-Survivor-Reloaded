@@ -127,6 +127,30 @@ describe("every selectable typeface is really vendored", () => {
         expect(stack, choice).toContain("Lucida Console");
         expect(stack, choice).toContain("monospace");
       });
+
+      it("has the advance width the menu layout assumes", () => {
+        // The invariant behind the "0.6 em by design" claim in `fonts.ts`, which is
+        // what `MENU_CHAR_WIDTH` is derived from: 0.6 * 16px = 9.6, rounded up to
+        // 10 so a column placed *before* it is drawn cannot overlap.
+        //
+        // This asserts the recorded figure, not the woff2 — see the header of
+        // `fonts.ts` for why reading the binary is a worse trade than a field that
+        // has to be updated when a face is swapped. The value was measured with
+        // fontTools and 0.6021 for Hack is its true 1233/2048, accepted because the
+        // constant carries slack by design.
+        //
+        // It is here because **this assertion would have caught the bug it was
+        // written for.** The Iosevka that shipped until this suite's subject was
+        // replaced was Iosevka *Term* Slab, which is 0.5 em: every menu column was
+        // placed 2px right of where its glyphs started, and on a 40-column row that
+        // is 80px of overlap. Nothing caught it, because "monospace" was read as
+        // "0.6 em" and the two are not the same claim.
+        expect(font.advanceEm, font.label).toBeCloseTo(0.6, 2);
+        // And it must be the same for both weights, or a bold heading row drifts
+        // against the regular one above it.
+        const faces = font.faces;
+        expect(faces.length, font.label).toBe(2);
+      });
     });
   }
 

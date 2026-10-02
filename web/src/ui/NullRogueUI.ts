@@ -16,17 +16,31 @@ import type { SceneRendererStats } from "@engine/firstperson/Types";
  * Phase 8, "Headless Simulation & Advanced Testing Plan".
  */
 export class NullRogueUI implements IRogueUI {
-  /**
-   * Keys the engine blocks on, cycled through when the queue is empty.
-   *
-   * `RogueGame`'s input helpers each spin until one *specific* key arrives:
-   * `WaitEnter` wants "Enter", `WaitEscape` wants "Escape", and
-   * `WaitYesOrNo` wants "y"/"n"/"Escape". A single synthetic key would
-   * therefore wedge two of the three in an infinite loop, so an unattended
-   * run hands back each of these in turn — every waiter is satisfied within
-   * one cycle and the simulation keeps moving.
-   */
-  private static readonly IDLE_KEYS: readonly GameKeyEvent[] = [
+	/**
+	 * Keys the engine blocks on, cycled through when the queue is empty.
+	 *
+	 * `RogueGame`'s input helpers each spin until one *specific* key arrives:
+	 * `WaitEnter` wants "Enter", `WaitEscape` wants "Escape", and
+	 * `WaitYesOrNo` wants "y"/"n"/"Escape". A single synthetic key would
+	 * therefore wedge two of the three in an infinite loop, so an unattended
+	 * run hands back each of these in turn.
+	 *
+	 * **This is enough to answer a prompt that is *asked*, and not enough to
+	 * answer one that is *nested*.** Four of the character-creation screens
+	 * (`HandleSelectUndeadType`, the gender picker, the undead-type picker and
+	 * the skill picker) put a `WaitYesOrNo` *inside* their own menu loop: row 0
+	 * is `*Random*`, so choosing it draws "Is that OK? Y to confirm, N to
+	 * cancel." and waits before the loop redraws. The confirm therefore reads
+	 * the very next key, which on an unattended run is the cycle's `Escape` —
+	 * and `Escape` means *no*. `no` returns to the same menu, the next `Enter`
+	 * picks `*Random*` again, and the pair loops forever.
+	 *
+	 * So a test that walks character creation has to say `y` at the confirm
+	 * itself. `pushKeys` is the seam for that: `Enter, y` repeated once per
+	 * screen gets through all four, because a `y` landing on a menu instead of
+	 * a confirm is swallowed and costs nothing.
+	 */
+	private static readonly IDLE_KEYS: readonly GameKeyEvent[] = [
     { key: "Enter", keyCode: 13, shift: false, ctrl: false, alt: false },
     { key: "Escape", keyCode: 27, shift: false, ctrl: false, alt: false },
     { key: "n", keyCode: 78, shift: false, ctrl: false, alt: false },
@@ -65,6 +79,48 @@ export class NullRogueUI implements IRogueUI {
     return this.keyQueue[0];
   }
 
+  /**
+   * Queue keys to be returned before the idle cycle resumes.
+   *
+   * The new-game screens — `HandleSelectRuleset`, `HandleNewGameMode`, the race,
+   * gender, undead-type and skill pickers — are modal `do { draw; wait }` loops,
+   * and the idle cycle alone can only ever hand back Enter, Escape, `n`, `y`. That
+   * is enough for an unattended run to fall through them, and not enough to
+   * drive one: there was no way to reach the second row of any of them, so the
+   * menus had no behavioural test at all.
+   *
+   * This is the seam for that. It takes key *names* rather than
+   * `GameKeyEvent`s so a test reads as the keys a player would press.
+   */
+  pushKeys(...keys: string[]): void {
+    for (const key of keys) {
+      this.keyQueue.push({
+        key,
+        keyCode: key.length === 1 ? key.toUpperCase().charCodeAt(0) : 0,
+        shift: false,
+        ctrl: false,
+        alt: false,
+      });
+    }
+  }
+
+  /**
+   * Queues one key with Shift held.
+   *
+   * `pushKeys` hard-codes `shift: false`, which was fine until the quick-start
+   * shortcuts: `Shift+Enter` is the *only* way to reach them, so a test for that
+   * behaviour cannot get there without this.
+   */
+  pushShiftKey(key: string): void {
+    this.keyQueue.push({
+      key,
+      keyCode: key.length === 1 ? key.toUpperCase().charCodeAt(0) : 0,
+      shift: true,
+      ctrl: false,
+      alt: false,
+    });
+  }
+
   // ── Input ──────────────────────────────────────────────────────────────────
 
   async UI_WaitKey(): Promise<GameKeyEvent> {
@@ -76,7 +132,21 @@ export class NullRogueUI implements IRogueUI {
   UI_PeekKey(): GameKeyEvent | null {
     // Deliberately not a bare `length > 0` check: an unattended run has to
     // satisfy polling waiters too, or they spin forever.
-    return this.ensureKey();
+    //
+    // **It consumes, and it has to.** `IRogueUI.UI_PeekKey` is the C#
+    // `UI_PeekKey`, and C# clears `m_HasKey` before returning — the contract
+    // `InputHandler.peekKey` documents at length, and `WaitKeyOrMouse` and the
+    // sim's abort check both poll in a loop and depend on it. Returning the head
+    // of the queue without shifting it hands the same keystroke to every caller
+    // forever, which is not a stall but a runaway: `WaitMenuInput` reads one key
+    // per redraw, so `HandleMainMenu` re-applied `ArrowDown` until the selection
+    // wrapped back to the top and the menu could never be left. Any test that
+    // pushed `ArrowDown, ..., Enter` at a `WaitMenuInput` screen hung in it, and
+    // `ensureKey`'s synthesised keys made it worse rather than better, since a
+    // starvated run then got one unchanging key rather than none.
+    const key = this.ensureKey();
+    this.keyQueue.shift();
+    return key;
   }
 
   UI_PostKey(e: GameKeyEvent): void {

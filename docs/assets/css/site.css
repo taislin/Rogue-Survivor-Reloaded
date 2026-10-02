@@ -47,6 +47,32 @@
   font-display: swap;
 }
 
+/* Storm Gust, self-hosted from assets/fonts/, and used only for headings.
+
+   It is a *display* face and a proportional one: 218 glyphs, no fixed pitch,
+   and one weight. Two consequences the heading rules below depend on:
+
+   - **Only 400 is declared, and headings must ask for 400.** JetBrains Mono
+     ships a real 700 and the h1-h4 rule asks for bold, which it gets for free.
+     Storm Gust has no bold face, so leaving the 700 in place would make the
+     browser *synthesise* a bold by smearing the outline -- the same smeared
+     intermediate weight the JetBrains block above explicitly avoids by
+     declaring both real weights. Hence `font-weight: 400` on the heading rule.
+   - **It is proportional**, so it cannot be used for the mono token. Nothing
+     tabular here: headings are prose.
+
+   `swap` for the same reason as below -- and here it matters more, because a
+   proportional face falling back to a monospace one changes the shape of every
+   heading rather than just its weight. */
+@font-face {
+  font-family: "Storm Gust";
+  src: url("../fonts/StormGust.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+
 /* --- Design tokens ------------------------------------------------------ */
 
 :root {
@@ -97,6 +123,13 @@
      JetBrains Mono, which reads as a mistake rather than as emphasis. */
   --font-mono:   "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono",
                  Menlo, Consolas, "Liberation Mono", monospace;
+  /* Headings only. Falls back to the body stack on purpose: if the woff2 fails
+     to load, a heading in JetBrains Mono still reads as a heading, whereas a
+     missing proportional display face should not leave the h1 in a generic
+     serif. Same order as --font-body after the family, so the fallback is the
+     body face and not a system font. */
+  --font-display: "Storm Gust", "JetBrains Mono", ui-monospace,
+                  SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 
   --wrap:        1080px;
   --radius:      6px;
@@ -131,14 +164,18 @@ a:hover { text-decoration: underline; }
 
 h1, h2, h3, h4 {
   line-height: 1.25;
-  margin: 0 0 0.6em;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  margin: 0.6em 0 0.6em;
+  /* 400, not the 700 the body face would take. Storm Gust ships no bold face,
+     so a 700 here is a synthesised smear rather than a real weight -- see the
+     @font-face note. This is the whole reason the heading rule cannot just
+     inherit the site's bold convention. */
+  font-weight: 400;
+  letter-spacing: -0.005em;
 }
-h1 { font-size: clamp(1.9rem, 4.5vw, 2.9rem); }
-h2 { font-size: clamp(1.4rem, 3vw, 1.85rem); }
-h3 { font-size: 1.15rem; }
-h4 { font-size: 1rem; }
+h1 { font-size: clamp(1.9rem, 4.5vw, 2.9rem); font-family: var(--font-display);}
+h2 { font-size: clamp(1.4rem, 3vw, 1.85rem); font-family: var(--font-display);}
+h3 { font-size: 1.15rem; font-family: var(--font-mono); font-weight: bold;}
+h4 { font-size: 1rem; font-family: var(--font-mono); font-weight: bold;}
 
 p { margin: 0 0 1em; }
 ul, ol { margin: 0 0 1em; padding-left: 1.4em; }
@@ -307,10 +344,11 @@ hr {
 .hero__title-accent {
   display: block;
   color: var(--ember);
-  font: 700 clamp(0.8rem, 2vw, 1rem)/1 var(--font-mono);
+  font-family: var(--font-display);
   letter-spacing: 0.2em;
   text-transform: uppercase;
   margin-bottom: 0.8rem;
+  font-size: 2em;
 }
 
 .hero__meta {
@@ -528,6 +566,19 @@ td:first-child kbd { margin-right: 0.15rem; }
 .callout--warn { border-left-color: var(--amber); }
 .callout--tip  { border-left-color: var(--rust); }
 .callout--note { border-left-color: var(--blue); }
+
+/* A keyboard layout, printed as preformatted text. Mono and tight so the grid
+   lines up, with the direction names spaced far enough right to read as a second
+   column rather than as part of the key sequence. */
+pre.keys {
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  line-height: 1.5;
+  margin: 0.6rem 0 0;
+  color: var(--text-dim);
+  white-space: pre;
+  overflow-x: auto;
+}
 
 .callout__label {
   display: block;

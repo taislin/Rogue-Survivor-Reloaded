@@ -39,6 +39,12 @@ const GRANTED_KEYS: Array<keyof Abilities> = [
   "canUseItems", "canTrade", "canBarricade", "canPush", "canJumpStumble",
   "isLawEnforcer", "isIntelligent", "isRotting", "aiCanUseAIExits",
   "aiNotInterestedInRangedWeapons", "zombieAIExplore",
+  // Still Alive, Release 7-5. `isLivingAnimal` is what Butchering reads to decide
+  // that a corpse is food rather than a horror, and it is absent from the list
+  // above, which is how it stayed invisible to this file: `granted()` filters
+  // through `GRANTED_KEYS`, so a granted flag it does not name is not a failure,
+  // it is simply not checked.
+  "isLivingAnimal",
 ];
 
 function granted(a: Abilities): string[] {
@@ -131,12 +137,42 @@ const EXPECTED: Array<[string, ActorID, string[]]> = [
   ["FERAL_DOG", ActorID.FERAL_DOG, [
     "aiCanUseAIExits", "canBreakObjects", "canJump", "canRun", "canTire",
     "hasInventory", "hasToEat", "hasToSleep",
+    // Release 7-5: the C# sets IsLivingAnimal on the feral dog as well. The port
+    // had it missing, so a dog corpse took the human meat branch and yielded
+    // human flesh -- which is the bug, and the reason Butchering's switch is keyed
+    // on this flag rather than on a list of animal ids.
+    "isLivingAnimal",
   ]],
   // RAGE: no eating, no sleeping, no sanity.
   ["JASON_MYERS", ActorID.JASON_MYERS, [
     "aiCanUseAIExits", "canBarricade", "canBreakObjects", "canJump",
     "canPush", "canRun", "canTalk", "canTire", "canUseItems",
     "canUseMapObjects", "hasInventory",
+  ]],
+  // Still Alive's deranged patient, commented "was Jason Myers" upstream
+  // (GameActors.cs:1045-1062) and given the identical fourteen flags: RAGE
+  // again, so still no eating and no sleeping.
+  ["DERANGED_PATIENT", ActorID.DERANGED_PATIENT, [
+    "aiCanUseAIExits", "canBarricade", "canBreakObjects", "canJump",
+    "canPush", "canRun", "canTalk", "canTire", "canUseItems",
+    "canUseMapObjects", "hasInventory",
+  ]],
+  // Still Alive's CHAR scientist: a second CHAR guard (GameActors.cs:766-782),
+  // so the CHAR quirk of no `hasToEat` comes with it.
+  ["CHAR_SCIENTIST", ActorID.CHAR_SCIENTIST, [
+    "canBarricade", "canBreakObjects", "canJump", "canPush", "canRun",
+    "canTalk", "canTire", "canUseItems", "canUseMapObjects", "hasInventory",
+    "hasSanity", "hasToSleep", "isIntelligent",
+  ]],
+  // Still Alive's two food animals (GameActors.cs:988-1039). `isSmall` because
+  // they fit through gaps a person does not, and `isLivingAnimal` because that is
+  // the flag Butchering keys on -- the C# sets it on FERAL_DOG too (Release 7-5),
+  // which the port had been missing entirely.
+  ["RABBIT", ActorID.RABBIT, [
+    "canRun", "canTire", "isLivingAnimal", "isSmall",
+  ]],
+  ["CHICKEN", ActorID.CHICKEN, [
+    "canRun", "canTire", "isLivingAnimal", "isSmall",
   ]],
 ];
 

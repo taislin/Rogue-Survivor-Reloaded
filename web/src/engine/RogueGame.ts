@@ -1,7 +1,7 @@
 /**
  * RogueGame — browser port of `src/Engine/RogueGame.cs` (23 233 lines).
  *
- * Phase 4 of the BROWSER_PORT_PLAN. Ported as ONE class (see the plan's
+ * Phase 4 of the plans/BROWSER_PORT_PLAN. Ported as ONE class (see the plan's
  * "As implemented" section): the C# regions share a single set of private
  * fields and input → actions → rendering call each other, so splitting into
  * modules would mean making most of that state public and creating circular
@@ -23,12 +23,14 @@ import { Attack, AttackKind, FireMode } from "@data/Attack";
 import type { BlastAttack } from "@data/BlastAttack";
 import { Corpse } from "@data/Corpse";
 import { District, DistrictKind } from "@data/District";
-import { DollPart } from "@data/Doll";
+import { Doll, DollPart } from "@data/Doll";
 import type { Faction } from "@data/Faction";
 import { Inventory } from "@data/Inventory";
 import { Item } from "@data/Item";
+import type { ItemModel } from "@data/ItemModel";
 import { Location } from "@data/Location";
 import { Exit, Lighting, Map } from "@data/Map";
+import { Barrel, Campfire, Car } from "@engine/mapobjects/MapObjects";
 import { MapObject, MapObjectBreak, MapObjectFire } from "@data/MapObject";
 import { Message } from "@data/Message";
 import { Models } from "@data/Models";
@@ -56,11 +58,16 @@ import {
 	ActionWait,
 	SayFlags,
 } from "@engine/actions/Actions";
+import { AMBIENT_SFX_VOLUME, type IAmbientManager } from "@engine/audio/IAmbientManager";
 import { type IMusicManager, MusicPriority } from "@engine/audio/IMusicManager";
+import { NullAmbientManager } from "@engine/audio/NullAmbientManager";
+import { NullSoundManager } from "@engine/audio/NullSoundManager";
+import type { ISoundManager } from "@engine/audio/ISoundManager";
 import { NullMusicManager } from "@engine/audio/NullMusicManager";
 import { Color } from "@engine/Color";
 import { fireAndForget, reportSwallowed } from "@engine/Diagnostics";
 import { DiceRoller } from "@engine/DiceRoller";
+import { BaseMapGenerator } from "@gameplay/generators/BaseMapGenerator";
 import { Direction } from "@engine/Direction";
 import {
 	remapForView,
@@ -71,15 +78,37 @@ import { daylightFor, LOS_DISTANCE_FACTOR } from "@engine/firstperson/Daylight";
 import { buildScene } from "@engine/firstperson/SceneBuilder";
 import { AdvisorHint, GameHintsStatus } from "@engine/GameHints";
 import {
+	DIFFICULTY_OPTIONS,
 	GameOptions,
 	idleAdvanceMs,
 	OptionIDs,
 	Options,
+	OptionsCategory,
 	ReincMode,
+	RESCUE_DAY_RANDOM,
+	RESCUE_DAY_RANDOM_MAX,
+	RESCUE_DAY_RANDOM_MIN,
+	Resources,
 	SimRatio,
+	stepGameOption,
 	ZupDays,
 } from "@engine/GameOptions";
 import { GameSaveManager } from "@engine/GameSave";
+import {
+	autoCloseBackpack,
+	firstBackpack,
+	moveItemToBackpack,
+	moveItemToInventory,
+	moveRefusalMessage,
+	openBackpack,
+} from "@gameplay/Backpacks";
+import { ItemBackpack } from "@engine/items/ItemBackpack";
+import {
+	BACKPACK_PANEL_TITLE,
+	BACKPACK_PANEL_Y as backpackPanelY,
+	backpackHidesGroundPanel,
+	describeItemInBackpack,
+} from "@ui/BackpackPanel";
 import { HiScore, HiScoreTable } from "@engine/HiScoreTable";
 import {
 	type GameKeyEvent,
@@ -92,12 +121,12 @@ import {
 	ItemExplosive,
 	type ItemExplosiveModel,
 	ItemGrenade,
-	type ItemGrenadeModel,
+	ItemGrenadeModel,
 	ItemGrenadePrimed,
 	type ItemGrenadePrimedModel,
 	ItemPrimedExplosive,
 } from "@engine/items/ItemExplosive";
-import { ItemFood } from "@engine/items/ItemFood";
+import { ItemFood, type ItemFoodModel } from "@engine/items/ItemFood";
 import { ItemLight, ItemLightModel } from "@engine/items/ItemLight";
 import { ItemMedicine } from "@engine/items/ItemMedicine";
 import {
@@ -114,6 +143,7 @@ import { ItemTrap } from "@engine/items/ItemTrap";
 import {
 	AmmoType,
 	ItemAmmo,
+	type ItemAmmoModel,
 	ItemMeleeWeapon,
 	ItemMeleeWeaponModel,
 	ItemRangedWeapon,
@@ -123,6 +153,7 @@ import {
 } from "@engine/items/ItemWeapon";
 import { InputTranslator, Keybindings } from "@engine/Keybindings";
 import { type FOV, LOS } from "@engine/LOS";
+import { coordKey } from "@engine/CoordKey";
 import { MessageManager } from "@engine/MessageManager";
 import {
 	Board,
@@ -133,6 +164,7 @@ import {
 import { PlayerCommand } from "@engine/PlayerCommand";
 import { Point } from "@engine/Point";
 import { Rect } from "@engine/Rect";
+import { Feature, featureCount, hasFeature } from "@engine/FeatureFlags";
 import type { RuleResult } from "@engine/Rules";
 import { Rules } from "@engine/Rules";
 import { AchievementIDs, DifficultySide, Scoring } from "@engine/Scoring";
@@ -146,10 +178,37 @@ import {
 	UniqueMap,
 } from "@engine/Session";
 import { reattachPlayer } from "@engine/serialization/sessionGraphRoot";
-import { storage } from "@engine/storage";
+import { storage, whenStorageReady } from "@engine/storage";
+  import {
+    APPEARANCE_LAYERS,
+    APPEARANCE_LAYER_LABELS,
+    CharacterAppearance,
+    describeAppearanceImage,
+    outfitChoices,
+    type AppearanceLayer,
+    type OutfitChoices,
+  } from "@engine/CharacterAppearance";
+  import {
+    applyLastNewGameConfig,
+    saveNewGameConfig,
+    RULESET_ENTRIES,
+    RULESET_VALUES,
+    MODE_ENTRIES,
+    MODE_VALUES,
+    loadAppearance,
+    saveAppearance,
+  } from "@engine/NewGameConfig";
 import { TextFile } from "@engine/TextFile";
 import { TaskRemoveDecoration } from "@engine/tasks/TaskRemoveDecoration";
 import { DayPhase, WorldTime } from "@engine/WorldTime";
+import {
+	NO_NOISE_RADIUS,
+	NOISE_RADII,
+	NoiseBand,
+	bandForDistance,
+	isAudibleTo,
+	isWithinBand,
+} from "@engine/NoiseDistance";
 import {
 	BaseAI,
 	ItemRating,
@@ -160,6 +219,7 @@ import { OrderableAI } from "@gameplay/ai/OrderableAI";
 import { ActorID, GameActors } from "@gameplay/GameActors";
 import { FactionID, GameFactions } from "@gameplay/GameFactions";
 import { GameGangs, type GangID } from "@gameplay/GameGangs";
+import { GameAmbients } from "@gameplay/GameAmbients";
 import { allImageIds, GameImages } from "@gameplay/GameImages";
 import { GameItems, ItemID } from "@gameplay/GameItems";
 import { GameMusics, GameSounds } from "@gameplay/GameSounds";
@@ -176,12 +236,48 @@ import { OptionsScreen } from "@ui/OptionsScreen";
 /** C# `System.TimeSpan` — not ported yet; `TimeSpanToString` gets it in Phase 4 slice 6. */
 type TimeSpan = number;
 
-/** C# `SetupConfig.GAME_VERSION` (also duplicated in `ui/OptionsScreen.ts`). */
-const GAME_VERSION = "0.3.0";
+/**
+ * C# `SetupConfig.GAME_VERSION` (also duplicated in `ui/OptionsScreen.ts`).
+ *
+ * The user-facing version: the window title, the options screen's heading, the
+ * graveyard lines, and the header of the high-score *text export*. That last one
+ * is the only place this string reaches storage-adjacent state, and it is
+ * write-only -- `HiScoreTable.load()` reads JSON and never parses the header, so
+ * bumping this cannot orphan anyone's scores. The C# also builds a docs path
+ * from it (`RogueGame.cs:2531`), which has no equivalent in a browser port.
+ *
+ * Must stay equal to `web/package.json`'s `version`, which is the same number
+ * from the other direction. Duplicated rather than shared because the C# keeps
+ * one `SetupConfig` constant and this port has no equivalent module to put it in.
+ */
+const GAME_VERSION = "0.9.2";
 
 /** C# numeric/string format alignment: `{0,3}`, `{0,6}` (right aligned). */
 export function padLeft(s: string | number, width: number): string {
 	return String(s).padStart(width, " ");
+}
+
+/**
+ * The three zone-name tokens a helicopter is allowed to land in.
+ *
+ * C# `RogueGame.cs:4533`: `z.Name.Contains("Park") || z.Name.Contains("Graveyard")
+ * || z.Name.Contains("court")`. Exported and shared so the test can state the
+ * exclusion against the same list the picker uses rather than restating it — the
+ * whole exclusion *is* these three strings, and a fourth one added here would
+ * silently widen what a rescue square can be.
+ *
+ * Case-sensitive, as the C# is: `"Tennis court"` and `"Basketball court"` match
+ * on `court`, `"Park"` and `"Graveyard"` on themselves (`BaseTownGenerator`'s
+ * `makeParkBuilding`, `BaseTownGenerator.ts:2410`).
+ */
+export const HELICOPTER_LANDING_ZONE_TOKENS = ["Park", "Graveyard", "court"] as const;
+
+/** See {@link HELICOPTER_LANDING_ZONE_TOKENS}. */
+export function isHelicopterLandingZoneName(zoneName: string): boolean {
+	for (const token of HELICOPTER_LANDING_ZONE_TOKENS) {
+		if (zoneName.includes(token)) return true;
+	}
+	return false;
 }
 
 /** C# numeric/string format alignment: `{0,-25}` (left aligned). */
@@ -199,6 +295,22 @@ export const MAP_MAX_HEIGHT: number = 100;
 export const MAP_MAX_WIDTH: number = 100;
 export const TILE_SIZE: number = 32;
 export const ACTOR_SIZE: number = 32;
+
+/**
+ * Where the customiser's preview sits, and how big it is.
+ *
+ * **Below the rows, not beside them.** Every option row on this screen spans the
+ * full 1366px canvas — the skill list alone runs to its right edge — so there is no
+ * column to put a preview in, and the first attempt at a two-column layout drew it
+ * straight over the text. The lower half of the screen is empty, so it goes there,
+ * horizontally centred.
+ *
+ * `PREVIEW_TOP_Y` clears the longest screen: title, hint, race, sex/type, skill,
+ * six appearance rows, the `*Random*` note and up to three detail lines.
+ */
+export const PREVIEW_TOP_Y: number = 378;
+/** 3x. Enough to read a face; 4x starts to show the sprite's own pixel grid. */
+export const PREVIEW_SCALE: number = 3;
 export const ACTOR_OFFSET: number = (TILE_SIZE - ACTOR_SIZE) / 2;
 /**
  * 16:9 widescreen canvas (1366x768, the common HD panel size) instead of C#'s
@@ -228,23 +340,6 @@ export const TILE_VIEW_HEIGHT: number = 21;
  */
 export const HALF_VIEW_WIDTH: number = 13;
 export const HALF_VIEW_HEIGHT: number = 10;
-/**
- * The map panel in pixels — the fixed viewport the map is drawn into, at any
- * zoom. The zoom changes how many tiles fill it, never its size: that is what
- * lets the side panel, message area and minimap keep their C# positions.
- */
-export const MAP_PANEL_WIDTH: number = TILE_SIZE * TILE_VIEW_WIDTH;
-export const MAP_PANEL_HEIGHT: number = TILE_SIZE * TILE_VIEW_HEIGHT;
-export const CANVAS_WIDTH: number = 1366;
-export const CANVAS_HEIGHT: number = 768;
-export const DAMAGE_DX: number = 10;
-export const DAMAGE_DY: number = 10;
-export const RIGHTPANEL_X: number = TILE_SIZE * TILE_VIEW_WIDTH + 4;
-export const RIGHTPANEL_Y: number = 0;
-export const RIGHTPANEL_TEXT_X: number = RIGHTPANEL_X + 4;
-export const RIGHTPANEL_TEXT_Y: number = RIGHTPANEL_Y + 4;
-export const INVENTORYPANEL_X: number = RIGHTPANEL_TEXT_X;
-export const INVENTORYPANEL_Y: number = RIGHTPANEL_TEXT_Y + 170;
 /**
  * Side-panel leading, raised from C#'s 12/14 to match the 10 pt HUD font.
  *
@@ -291,6 +386,25 @@ export const SIDEPANEL_TITLE_LEADING: number = LINE_SPACING;
  * the panel below. The test `hud-layout.test.ts` encoded the same incomplete
  * arithmetic, which is why it passed.
  */
+/** Side panel left edge, from the C#'s `RIGHTPANEL_X`. */
+/**
+ * The map panel in pixels -- the fixed viewport the map is drawn into, at any
+ * zoom. The zoom changes how many tiles fill it, never its size: that is what
+ * lets the side panel, message area and minimap keep their C# positions.
+ */
+export const MAP_PANEL_WIDTH: number = TILE_SIZE * TILE_VIEW_WIDTH;
+export const MAP_PANEL_HEIGHT: number = TILE_SIZE * TILE_VIEW_HEIGHT;
+export const CANVAS_WIDTH: number = 1366;
+export const CANVAS_HEIGHT: number = 768;
+export const DAMAGE_DX: number = 10;
+export const DAMAGE_DY: number = 10;
+export const RIGHTPANEL_X: number = TILE_SIZE * TILE_VIEW_WIDTH + 4;
+export const RIGHTPANEL_Y: number = 0;
+export const RIGHTPANEL_TEXT_X: number = RIGHTPANEL_X + 4;
+export const RIGHTPANEL_TEXT_Y: number = RIGHTPANEL_Y + 4;
+export const INVENTORYPANEL_X: number = RIGHTPANEL_TEXT_X;
+export const INVENTORYPANEL_Y: number = RIGHTPANEL_TEXT_Y + 170;
+
 export const SIDEPANEL_SECTION_HEIGHT: number = 60;
 export const GROUNDINVENTORYPANEL_Y: number =
 	INVENTORYPANEL_Y + SIDEPANEL_SECTION_HEIGHT;
@@ -447,6 +561,137 @@ export const CREDIT_CHAR_SPACING: number = 8;
 export const CREDIT_LINE_SPACING: number = LINE_SPACING;
 export const TEXTFILE_CHARS_PER_LINE: number = 120;
 export const TEXTFILE_LINES_PER_PAGE: number = 50;
+
+/**
+ * The credits screen's top and bottom rules, framing the readable block.
+ *
+ * 120 glyphs at `MENU_CHAR_WIDTH` is 1200 of the 1366 px canvas, so the rule is
+ * as wide as the widest line `TEXTFILE_CHARS_PER_LINE` allows — which is the
+ * point of keeping that number at 120 rather than raising it to the canvas: a
+ * line that overruns the rule reads as broken even when it is only too long.
+ * Same string the manual reader draws (`HandleHelpMode`), for the same reason.
+ */
+export const CREDITS_RULE: string =
+	"---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+";
+
+/**
+ * How many lines of `CREDITS_LINES` the credits screen shows at once.
+ *
+ * Derived from the geometry rather than counted by hand: the header is three bold
+ * steps tall, the footer claims two more, and the reader draws while `gy` is
+ * short of `CANVAS_HEIGHT - 2 * MENU_BOLD_LINE_SPACING`. That is 38 at the
+ * shipped constants.
+ *
+ * **Less than `TEXTFILE_LINES_PER_PAGE` (50), and that gap is why this exists.**
+ * The manual reader clamps its cursor against the page size, which is sound for a
+ * manual that is longer than a page and quietly wrong for one that is not: for a
+ * file of fewer than 50 lines the clamp pins the cursor to 0 on every pass, so
+ * the arrow keys and the page keys all become no-ops and the screen only ever
+ * moves when a number key is pressed. The credits are 42 lines, so they have to
+ * be clamped against what *fits*. Asserted in the test suite, because the number
+ * silently becoming wrong would not break anything - it would just start cropping
+ * lines off the bottom again.
+ */
+export const CREDITS_LINES_PER_SCREEN: number = Math.max(
+	1,
+	Math.floor(
+		(CANVAS_HEIGHT -
+			2 * MENU_BOLD_LINE_SPACING -
+			1 -
+			3 * MENU_BOLD_LINE_SPACING) /
+			MENU_BOLD_LINE_SPACING,
+	) + 1,
+);
+
+/**
+ * Keeps the credits reader's cursor inside the lines it can actually show.
+ *
+ * The last legal cursor is `length - CREDITS_LINES_PER_SCREEN`, not
+ * `length - 1`: from `length - 1` there is one line of text left to draw and
+ * 37 lines of black. A file shorter than a screen clamps to 0 and simply does
+ * not scroll, which is correct - there is nothing to scroll to - and is the
+ * reason this takes the length as an argument rather than reading a module
+ * constant: it is the reader's rule, and it has to hold for any list length.
+ */
+export function clampCreditsLine(line: number, length: number): number {
+	return Math.max(0, Math.min(line, Math.max(0, length - CREDITS_LINES_PER_SCREEN)));
+}
+
+/**
+ * The credits screen's lines, in reading order.
+ *
+ * This was a wall of `UI_DrawStringBold` calls in C# (`RogueGame.cs:2258-2288`)
+ * and stayed one through the first port, because until now it only had to hold
+ * the original author's name. It no longer fits on a 768 px canvas: crediting
+ * the *Still Alive* fork and the four sprite styles adds twenty-odd lines, and
+ * the ones that were on screen would fall off the bottom. So the screen became
+ * the paged reader `HandleHelpMode` already is, and these lines are its source —
+ * which is also what lets a section be addressed by number rather than scrolled
+ * to.
+ *
+ * `<SECTION>` is a marker, not text: the reader skips it when drawing, and the
+ * number keys jump to the Nth one. Section *order* is therefore the jump order
+ * (0 is the top of the file, 1 the first marker, and so on), so adding a section
+ * in the middle renumbers every later one — that is the reader's behaviour, not
+ * a bug to work around.
+ *
+ * The attribution that is not optional and has to be somewhere a player can
+ * read is the licence one. The fork states in its own `CREDITS.txt` that its
+ * third-party media are CC0 or CC-BY 3.0 and that *every* file in them has been
+ * modified, which makes CC-BY attribution a condition rather than a courtesy
+ * (`plans/STILL_ALIVE_REFERENCE.md` §8). Those files are merged into this port's
+ * `classic` sprite set and its audio tables, so they are ours to credit.
+ */
+export const CREDITS_LINES: readonly string[] = [
+	"",
+	"ROGUE SURVIVOR - the original game",
+	"Programming, graphics & music by Jacques Ruiz (roguedjack), 2012-2018.",
+	"",
+	"  Programming           : C# .NET 3.5, Microsoft Visual Studio Community 2017",
+	"  Graphic software      : Inkscape, Paint.NET",
+	"  Sound & music software: GuitarPro 7, Audacity",
+	"  Sound samples         : sound-fishing.net, soundsnap.com",
+	"  Blog                  : http://roguesurvivor.blogspot.com/",
+	"  Fans forum            : http://roguesurvivor.proboards.com/",
+	"<SECTION>",
+	"",
+	"ROGUE SURVIVOR: STILL ALIVE - the modifications and extra content",
+	"Programming by Mark Pryor (MP).",
+	"",
+	"  Source                : https://gitlab.com/RogueSurvivor-StillAlive/",
+	"  Forum                 : http://roguesurvivor.proboards.com/user/180",
+	"  Images                : opengameart.org",
+	"  Sounds                : freesound.org, pixabay.com",
+	"",
+	"  That mod ships the full list of the files it borrowed, and every one of",
+	"  them is public domain (CC0) or CC-BY 3.0, and every one of them has been",
+	"  modified. Thank you to the artists and sound designers named there.",
+	"<SECTION>",
+	"",
+	"ROGUE SURVIVOR: RELOADED - this port",
+	"Porting, sprite styles and fixes by Taislin.",
+	"",
+	"  Source                : https://github.com/taislin/Rogue-Survivor-Reloaded",
+	"  Licence               : GNU GPL v3, inherited from the original game",
+	"",
+	"  Not affiliated with or endorsed by the original author. Please keep these",
+	"  credits and the licence intact if you redistribute the game.",
+	"<SECTION>",
+	"",
+	"SPRITE STYLES - Options, (Gfx) Sprite Style",
+	"",
+	// Labels are the options-screen names verbatim, folder case and all, so a
+	// player who picked a style can find the line that credits it. The proper name
+	// of the work goes in the value column, where "Daft Tiles b1" can be both.
+	"  classic              : Jacques Ruiz (roguedjack) - the original artwork",
+	"  deonapocalypse v9 r1 : Deon - \"DEONAPOCALYPSE\" Rogue Survivor mod 1.2",
+	"  genesis classic 1.4  : Deon - \"Genesis Classic\" Rogue Survivor mod 1.4",
+	"  dafttiles b1         : daftigod - \"Daft Tiles\", on the Rogue Survivor forum",
+	"",
+	"  The two Deon mods and the Daft Tiles pack are on dffd.bay12games.com and",
+	"  on roguesurvivor.proboards.com. Thanks to all of them, and to the players",
+	"  for their feedback and eagerness to die!",
+];
 export const NAME_SUBWAY_STATION: string = "Subway Station";
 export const NAME_SEWERS_MAINTENANCE: string = "Sewers Maintenance";
 export const NAME_SUBWAY_RAILS: string = "rails";
@@ -488,6 +733,17 @@ export const SURVIVORS_BAND_DAY: number = 21;
 export const SURVIVORS_BAND_SIZE: number = 5;
 export const SURVIVORS_BAND_CHANCE_PER_TURN: number = 1;
 export const SURVIVORS_BAND_DAY_GAP: number = 5;
+// C# `RogueGame.cs:339-343`, Release 8-1. The CHAR research team. `SCIENTISTS` is
+// the *total* squad and `GUARDS` is the total guard count, and both are used as
+// `SIZE - 1` in `FireEvent_CHARScientists` because the leader is spawned separately
+// -- which is why the raid fields one leader plus three colleagues but only *two*
+// guards. The subtraction is the reference's asymmetry and is transcribed as-is; see
+// the note on the guard loop.
+export const SCIENTISTS_TEAM_DAY: number = 21;
+export const SCIENTISTS_TEAM_SCIENTISTS: number = 4;
+export const SCIENTISTS_TEAM_GUARDS: number = 3;
+export const SCIENTISTS_TEAM_CHANCE_PER_TURN: number = 1;
+export const SCIENTISTS_TEAM_DAY_GAP: number = 5;
 export const ZOMBIE_LORD_EVOLUTION_MIN_DAY: number = 7;
 export const DISCIPLE_EVOLUTION_MIN_DAY: number = 7;
 export const PLAYER_HEAR_FIGHT_CHANCE: number = 25;
@@ -528,6 +784,17 @@ export class CharGen {
 	undeadModel: ActorID = ActorID.MALE_CIVILIAN;
 	isMale = true;
 	startingSkill: SkillID = SkillID.AGILE;
+
+	/**
+	 * The player's chosen look, all layers random until they say otherwise.
+	 *
+	 * Port-only: the C# has no appearance screen, so there is nothing here to
+	 * mirror. It is applied to the created player's doll, which the save
+	 * serialises whole (see the `doll` codec in `serialization/specs.ts`), so a
+	 * chosen look survives a save and reload without appearing in the save schema
+	 * at all.
+	 */
+	appearance: CharacterAppearance = new CharacterAppearance();
 }
 
 // ── C# `#region Overlays` (RogueGame.cs:452) ────────────────────────────────
@@ -805,9 +1072,262 @@ function logInit(text: string): void {
 	console.log(`[RogueGame] ${text}`);
 }
 
+/**
+ * The ranged-weapon sound families -- C# `PlayRangedWeaponSFX`
+ * (`RogueGame.cs:19008-19187`, Release 7-1).
+ *
+ * The C# writes this as **three `switch` statements**, one per distance band, each
+ * switching on `weapon.TheName.ToString()` -- the weapon's *display name*, string
+ * matched, added in Release 7-2. That is 180 lines to express fourteen families
+ * across three bands, and it means a rename in `Items_RangedWeapons.csv` silently
+ * stops a gun being audible.
+ *
+ * **This table is keyed by `ItemID` instead**, which is the same mapping without the
+ * string matching: every C# `case` label is quoted beside the id it resolves to, so
+ * the correspondence is checkable against the reference and the C#'s fragility is
+ * not inherited. The bands are not symmetric -- six families have no `_FAR` and two
+ * have no `_NEARBY` -- so the absent entries are absent here too rather than
+ * defaulted.
+ *
+ * ## `single` and `rapid`
+ *
+ * Six families have two ids per band, chosen on `shots == 1`. That is not a
+ * stylistic choice in the C#: a pistol fired once and a pistol fired in rapid fire
+ * are different sounds because the second is a burst and the noise model treats it
+ * as one. The five automatics are pistol, army rifle, revolver, SMG and minigun;
+ * the minigun has only a rapid id in the C#, and firing it once plays the rapid
+ * sound, which is what the reference does.
+ *
+ * ## The flamethrower's odd one out
+ *
+ * `FLAMETHROWER_VISIBLE` in the `_PLAYER` band and `FLAMETHROWER_AUDIBLE` in
+ * `_NEARBY`. Neither is `_NEARBY`, and that is the C#'s own naming: this is the one
+ * family whose suffixes come from `GameImages.cs:334-336`'s "visible"/"audible"
+ * vocabulary rather than the `_PLAYER`/`_NEARBY`/`_FAR` one. Kept verbatim --
+ * renaming them to fit the pattern would lose the evidence that the pattern is not
+ * universal.
+ */
+type SoundFamilyBand = {
+	/** `shots == 1`. Absent where the C# has only a rapid id. */
+	single?: string;
+	/** `shots > 1`, or the C#'s only id for this band. */
+	rapid?: string;
+};
+
+type SoundFamily = {
+	/** The C#'s `case` labels, verbatim, for checking against the reference. */
+	readonly csharpNames: readonly string[];
+	readonly player?: SoundFamilyBand;
+	readonly nearby?: SoundFamilyBand;
+	readonly far?: SoundFamilyBand;
+};
+
+const PISTOL: SoundFamily = {
+	csharpNames: ["the pistol"],
+	player: { single: GameSounds.PISTOL_SINGLE_SHOT_PLAYER, rapid: GameSounds.PISTOL_RAPID_FIRE_PLAYER },
+	nearby: { single: GameSounds.PISTOL_SINGLE_SHOT_NEARBY, rapid: GameSounds.PISTOL_RAPID_FIRE_NEARBY },
+	far: { single: GameSounds.PISTOL_SINGLE_SHOT_FAR, rapid: GameSounds.PISTOL_RAPID_FIRE_FAR },
+};
+const PRECISION: SoundFamily = {
+	csharpNames: ["the precision rifle"],
+	player: { single: GameSounds.PRECISION_RIFLE_FIRE_PLAYER },
+	nearby: { single: GameSounds.PRECISION_RIFLE_FIRE_NEARBY },
+	far: { single: GameSounds.PRECISION_RIFLE_FIRE_FAR },
+};
+const SHOTGUN: SoundFamily = {
+	csharpNames: ["the shotgun"],
+	player: { single: GameSounds.SHOTGUN_FIRE_PLAYER },
+	nearby: { single: GameSounds.SHOTGUN_FIRE_NEARBY },
+	far: { single: GameSounds.SHOTGUN_FIRE_FAR },
+};
+const REVOLVER: SoundFamily = {
+	csharpNames: ["the revolver"],
+	player: { single: GameSounds.REVOLVER_SINGLE_SHOT_PLAYER, rapid: GameSounds.REVOLVER_RAPID_FIRE_PLAYER },
+	nearby: { single: GameSounds.REVOLVER_SINGLE_SHOT_NEARBY, rapid: GameSounds.REVOLVER_RAPID_FIRE_NEARBY },
+	far: { single: GameSounds.REVOLVER_SINGLE_SHOT_FAR, rapid: GameSounds.REVOLVER_RAPID_FIRE_FAR },
+};
+
+/** The twenty `ItemID`s covering fourteen families, keyed by the port's id. */
+// `globalThis.Map`, because this file imports the game's `Map` class -- which is
+// the right shadowing to get caught by the compiler and the wrong one here.
+const RANGED_WEAPON_SOUND_FAMILIES: ReadonlyMap<number, SoundFamily> = new globalThis.Map([
+	[ItemID.RANGED_PISTOL, PISTOL],
+	[ItemID.UNIQUE_HANS_VON_HANZ_PISTOL, { ...PISTOL, csharpNames: ["Hans von Hanz pistol"] }],
+	[
+		ItemID.RANGED_HUNTING_RIFLE,
+		{
+			csharpNames: ["the hunting rifle"],
+			player: { single: GameSounds.HUNTING_RIFLE_FIRE_PLAYER },
+			nearby: { single: GameSounds.HUNTING_RIFLE_FIRE_NEARBY },
+			far: { single: GameSounds.HUNTING_RIFLE_FIRE_FAR },
+		},
+	],
+	[ItemID.RANGED_PRECISION_RIFLE, PRECISION],
+	[ItemID.RANGED_ARMY_PRECISION_RIFLE, { ...PRECISION, csharpNames: ["the army precision rifle"] }],
+	[
+		ItemID.RANGED_ARMY_RIFLE,
+		{
+			csharpNames: ["the army rifle"],
+			player: { single: GameSounds.ARMY_RIFLE_SINGLE_SHOT_PLAYER, rapid: GameSounds.ARMY_RIFLE_RAPID_FIRE_PLAYER },
+			nearby: { single: GameSounds.ARMY_RIFLE_SINGLE_SHOT_NEARBY, rapid: GameSounds.ARMY_RIFLE_RAPID_FIRE_NEARBY },
+			far: { single: GameSounds.ARMY_RIFLE_SINGLE_SHOT_FAR, rapid: GameSounds.ARMY_RIFLE_RAPID_FIRE_FAR },
+		},
+	],
+	[ItemID.RANGED_SHOTGUN, SHOTGUN],
+	[ItemID.RANGED_TACTICAL_SHOTGUN, { ...SHOTGUN, csharpNames: ["the tactical shotgun"] }],
+	[ItemID.RANGED_DOUBLE_BARREL, { ...SHOTGUN, csharpNames: ["the double barrel"] }],
+	[ItemID.UNIQUE_SANTAMAN_SHOTGUN, { ...SHOTGUN, csharpNames: ["Santaman shotgun"] }],
+	[
+		ItemID.RANGED_HUNTING_CROSSBOW,
+		{
+			csharpNames: ["the hunting crossbow"],
+			player: { single: GameSounds.CROSSBOW_FIRE_PLAYER },
+			nearby: { single: GameSounds.CROSSBOW_FIRE_NEARBY },
+			// No `_FAR` in the C# either. The crossbow is quiet at any distance, which
+			// is a design statement and not an omission in the transcription.
+		},
+	],
+	[
+		ItemID.RANGED_NAIL_GUN,
+		{
+			csharpNames: ["the nail gun"],
+			// Player band only, and it is a `rapid` slot for a weapon that fires one
+			// nail at a time -- which is the C#'s own arrangement, so a single shot
+			// plays `NAIL_GUN` rather than falling through to nothing.
+			player: { rapid: GameSounds.NAIL_GUN },
+		},
+	],
+	[ItemID.RANGED_REVOLVER, REVOLVER],
+	[ItemID.RANGED_ARMY_PISTOL, { ...REVOLVER, csharpNames: ["the army pistol"] }],
+	[
+		ItemID.RANGED_FLAMETHROWER,
+		{
+			csharpNames: ["the flame thrower"],
+			// `_VISIBLE` / `_AUDIBLE`, not `_PLAYER` / `_NEARBY`. See the module comment.
+			player: { single: GameSounds.FLAMETHROWER_VISIBLE },
+			nearby: { single: GameSounds.FLAMETHROWER_AUDIBLE },
+		},
+	],
+	[
+		ItemID.RANGED_STUN_GUN,
+		{
+			csharpNames: ["the stun gun"],
+			player: { single: GameSounds.STUN_GUN_PLAYER },
+			nearby: { single: GameSounds.STUN_GUN_NEARBY },
+		},
+	],
+	[
+		ItemID.RANGED_SMG,
+		{
+			csharpNames: ["the SMG"],
+			player: { single: GameSounds.SMG_SINGLE_SHOT_PLAYER, rapid: GameSounds.SMG_RAPID_FIRE_PLAYER },
+			nearby: { single: GameSounds.SMG_SINGLE_SHOT_NEARBY, rapid: GameSounds.SMG_RAPID_FIRE_NEARBY },
+			far: { single: GameSounds.SMG_SINGLE_SHOT_FAR, rapid: GameSounds.SMG_RAPID_FIRE_FAR },
+		},
+	],
+	[
+		ItemID.RANGED_MINIGUN,
+		{
+			csharpNames: ["the minigun"],
+			// Rapid-only in every band: the C# has no single-shot minigun id, so
+			// firing it once plays the rapid sound.
+			player: { rapid: GameSounds.MINIGUN_RAPID_FIRE_PLAYER },
+			nearby: { rapid: GameSounds.MINIGUN_RAPID_FIRE_NEARBY },
+			far: { rapid: GameSounds.MINIGUN_RAPID_FIRE_FAR },
+		},
+	],
+	[
+		ItemID.RANGED_GRENADE_LAUNCHER,
+		{
+			csharpNames: ["the grenade launcher"],
+			player: { single: GameSounds.GRENADE_LAUNCHER_SINGLE_SHOT_PLAYER },
+			nearby: { single: GameSounds.GRENADE_LAUNCHER_SINGLE_SHOT_NEARBY },
+		},
+	],
+	[
+		ItemID.RANGED_BIO_FORCE_GUN,
+		{
+			csharpNames: ["the bio force gun"],
+			// Player band only. The one weapon the C# gives a bespoke id to rather
+			// than a weapon-family suffix, because it is not a projectile.
+			player: { single: GameSounds.BIO_FORCE_GUN_PLAYER },
+		},
+	],
+]);
+
+/**
+ * The bash/break sound ladder -- C# `PlayBashOrBreakSFX` (`RogueGame.cs:22597-22672`).
+ *
+ * A **material** ladder, not a distance one: work out what is being hit, then pick a
+ * sound from `isBroken` x { visible, audible-not-visible }. Two bands, not three --
+ * there is no `_FAR` variant of a bash, which is the C#'s own arrangement.
+ *
+ * A table rather than the C#'s four `switch`es for the same reason the weapon
+ * families are: four nested ternaries per band is sixteen branch evaluations to read
+ * and one edit to make when a material is added.
+ *
+ * ## The `default` differs between the two ladders
+ *
+ * Breaking an unknown material defaults to **woodendoor**; bashing one defaults to
+ * **other objects**. That asymmetry is the C#'s (`:22612` vs `:22648`) and it is
+ * transcribed rather than normalised -- "you broke a thing and it sounded like a
+ * door" is a real answer for a barricade plank, and normalising it would lose that.
+ *
+ * ## `CLIMB_FENCE` appears in both
+ *
+ * Chain fence has its own material but reuses the climb recording for a bash and for
+ * a break alike. The C# does the same, and it is the one place where the two ladders
+ * share an id.
+ */
+type BreakSound = { visible: string; audible: string };
+type BashSound = { visible: string; audible: string };
+
+/** Material -> sound, keyed by the C#'s own `objectMaterial` strings. */
+const BREAK_BY_MATERIAL: Readonly<Record<string, BreakSound>> = {
+  glass: { visible: GameSounds.BREAK_GLASSDOOR_PLAYER, audible: GameSounds.BREAK_GLASSDOOR_NEARBY },
+  metal: { visible: GameSounds.BREAK_METALDOOR_PLAYER, audible: GameSounds.BREAK_METALDOOR_NEARBY },
+  "chain fence": { visible: GameSounds.CLIMB_FENCE_PLAYER, audible: GameSounds.CLIMB_FENCE_NEARBY },
+  // `_VISIBLE` in both bands: the C# names it that way (`:22618`, `:22630`) and does
+  // not derive a nearby variant.
+  ceramic: { visible: GameSounds.BREAK_CERAMIC_VISIBLE, audible: GameSounds.BREAK_CERAMIC_VISIBLE },
+  wood: { visible: GameSounds.BREAK_WOODENDOOR_PLAYER, audible: GameSounds.BREAK_WOODENDOOR_NEARBY },
+};
+
+const BASH_BY_MATERIAL: Readonly<Record<string, BashSound>> = {
+  metal: { visible: GameSounds.BASH_METALDOOR_PLAYER, audible: GameSounds.BASH_METALDOOR_NEARBY },
+  "chain fence": { visible: GameSounds.CLIMB_FENCE_PLAYER, audible: GameSounds.CLIMB_FENCE_NEARBY },
+  ceramic: { visible: GameSounds.BASH_CERAMIC_VISIBLE, audible: GameSounds.BASH_CERAMIC_VISIBLE },
+  wood: { visible: GameSounds.BASH_WOOD_PLAYER, audible: GameSounds.BASH_WOOD_NEARBY },
+  // glass is absent, so it falls to the bash ladder's default.
+};
+
+/** The C#'s `wood`/`default` for a break, and `glass`/`default` for a bash. */
+const BREAK_DEFAULT: BreakSound = {
+  visible: GameSounds.BREAK_WOODENDOOR_PLAYER,
+  audible: GameSounds.BREAK_WOODENDOOR_NEARBY,
+};
+const BASH_DEFAULT: BashSound = {
+  visible: GameSounds.BASH_OTHER_OBJECTS_PLAYER,
+  audible: GameSounds.BASH_OTHER_OBJECTS_NEARBY,
+};
+
 export class RogueGame {
 	/** Browser save slot used by the C# "current save file" (`GetUserSave`). */
 	static readonly CURRENT_SAVE_SLOT = 0;
+
+	/**
+	 * C# `MAX_THROWABLE_DISTANCE` -- `RogueGame.cs:388`, Release 7-1, "for
+	 * non-standard throwables eg flares".
+	 *
+	 * **A flat five, and deliberately not `Rules.ActorMaxThrowRange`.** The grenade
+	 * throw mode scales its reach by the actor's throwing skill
+	 * (`ActorMaxThrowRange(player, grenadeModel.MaxThrowDistance)` at
+	 * `RogueGame.cs:13710`); a flare does not. The reference hard-codes the same
+	 * constant in *both* places it is used -- the reach test and the target-step
+	 * bound -- rather than deriving one from the other, and a flare that obeyed the
+	 * throw skill would be a stronger throw at higher skill than the C# allows.
+	 */
+	static readonly MAX_THROWABLE_DISTANCE = 5;
 
 	/**
 	 * Render-state console logging, enabled with `?debug=1` in the page URL.
@@ -820,6 +1340,14 @@ export class RogueGame {
 	static debugRender = false;
 
 	readonly POPUP_FILLCOLOR: Color = Color.withAlpha(192, Color.CornflowerBlue);
+	/**
+	 * C# `START_FIRE_MODE_TEXT` -- `RogueGame.cs:100`, Release 7-6. The C#'s own
+	 * wording, including that the fire is for "cooking/light" -- it is the only hint
+	 * that matches work as well as fire, and the command is not called "light torch".
+	 */
+	readonly START_FIRE_MODE_TEXT: string[] = [
+		"MATCHES MODE - directions to start a fire for cooking/light, ESC cancels",
+	];
 	readonly CLOSE_DOOR_MODE_TEXT: string[] = [
 		"CLOSE MODE - directions to close, ESC cancels",
 	];
@@ -884,6 +1412,38 @@ export class RogueGame {
 	];
 	readonly THROW_GRENADE_MODE_TEXT: string[] = [
 		"THROW GRENADE MODE - directions to select, F to fire,  ESC cancels",
+	];
+	/**
+	 * C# `THROW_MODE_TEXT` -- `RogueGame.cs:108`. The *non-grenade* throw mode: the
+	 * one a flare or a glowstick goes through, `HandlePlayerUseThrowableItem`. It is a
+	 * separate string from `THROW_GRENADE_MODE_TEXT` above and a separate method, and
+	 * the only differences are the name and a missing double space -- which is why the
+	 * C# has two of them rather than parameterising one.
+	 */
+	readonly THROW_MODE_TEXT: string[] = [
+		"THROW MODE - directions to select, F to throw, ESC cancels",
+	];
+	/**
+	 * C# `DROP_CANDLES_TEXT` -- `RogueGame.cs:114`, Release 7-1.
+	 *
+	 * The prompt a box of candles raises when it is dropped rather than used. The
+	 * wording is the reference's, including "place (O)ne lit candle or drop (A)ll
+	 * candles" -- `O` is not "one", it is *place one lit candle here*, which is a
+	 * different act from putting the box on the floor.
+	 */
+	readonly DROP_CANDLES_TEXT: string[] = [
+		"DROPPING CANDLES - place (O)ne lit candle or drop (A)ll candles? ESC cancels",
+	];
+	/**
+	 * C# `THROWABLE_LIGHT_TEXT` -- `RogueGame.cs:115`, Release 7-1. `C`arry or
+	 * `T`hrow, for the two kits whose light is manufactured at use time.
+	 *
+	 * Not ported: `DROP_FUEL_TEXT` (`RogueGame.cs:113`), the parallel prompt for a
+	 * stack of fuel cans in `DoDropItem`. It belongs to `AMMO_FUEL` rather than to any
+	 * of the three light kits, and no item in this change asks for it.
+	 */
+	readonly THROWABLE_LIGHT_TEXT: string[] = [
+		"USING THROWABLE LIGHTS - (C)arry or (T)hrow a lit one? ESC cancels",
 	];
 	readonly MARK_ENEMIES_MODE: string[] = [
 		"MARK ENEMIES MODE - E to make enemy, T next actor, ESC cancels",
@@ -974,6 +1534,16 @@ export class RogueGame {
 		"refuses the deal",
 	);
 	readonly VERB_RELOAD: Verb = new Verb("reload");
+	/**
+	 * C# `VERB_UNLOAD` — `RogueGame.cs:489`, Still Alive Release 7-6. Its own two
+	 * strings, unlike almost every verb here: `new Verb("unload", "unloads")`.
+	 *
+	 * That is not cosmetic. `Conjugate` picks the plural form for a *third-person*
+	 * actor, so this is the only verb in the file where the two differ by an `s` and
+	 * the message "you unload a minigun" would be wrong if the port had written
+	 * `new Verb("unload")` and let the second string default.
+	 */
+	readonly VERB_UNLOAD: Verb = new Verb("unload", "unloads");
 	readonly VERB_RECHARGE: Verb = new Verb("recharge");
 	readonly VERB_REPAIR: Verb = new Verb("repair");
 	readonly VERB_REVIVE: Verb = new Verb("revive");
@@ -990,6 +1560,10 @@ export class RogueGame {
 		"switch place with",
 		"switches place with",
 	);
+	/** Still Alive, Release 7-1: \, used when a drink finishes you. */
+	readonly VERB_BLACK_OUT: Verb = new Verb("black out on");
+	/** Still Alive, Release 7-6: \, used by the extinguisher. */
+	readonly VERB_REMOVE: Verb = new Verb("remove", "removes");
 	readonly VERB_TAKE: Verb = new Verb("take");
 	readonly VERB_THROW: Verb = new Verb("throw");
 	readonly VERB_TRADE: Verb = new Verb("trade");
@@ -1008,6 +1582,35 @@ export class RogueGame {
 	m_MessageManager!: MessageManager;
 	m_IsGameRunning: boolean = true;
 	m_HasLoadedGame: boolean = false;
+	/**
+	 * C# `m_PlayerWasRescued` — `RogueGame.cs:716`, Release 6-4.
+	 *
+	 * A separate flag from "the player is dead" because the C# needs both: it
+	 * removes the player from the map when they are rescued
+	 * (`RogueGame.cs:7449`), and removing the player does not stop the world —
+	 * `GameLoop`'s condition is `!m_Player.IsDead && ... && !m_PlayerWasRescued`
+	 * (`:5517`). The port's condition is the same shape.
+	 *
+	 * False in every run that has no rescue site, so the loop behaves exactly as
+	 * before for CLASSIC and for a Still Alive run that never got a helicopter.
+	 *
+	 * **Browser port: cleared in `StartNewGame`, which the C# does not do.** The C#
+	 * has the same three occurrences and the same missing reset (`RogueGame.cs:716`,
+	 * `:5517`, `:7447`), so this is an inherited upstream bug and not a
+	 * transcription slip — but it is a one-way latch on the only loop that plays the
+	 * game, and the port is a long-lived process rather than a console session you
+	 * quit. A rescued run sets the flag, `GameLoop` returns to the menu, and every
+	 * run *after* that one builds a live player that `GameLoop` then refuses to play:
+	 * the condition is still false, the loop body never runs, and the menu comes
+	 * straight back. Forever, in one process.
+	 *
+	 * The reset belongs in `StartNewGame` and not in `PlayerWasRescued`, because the
+	 * flag has to stay set for the rest of the run that set it: it is the *only*
+	 * thing stopping `GameLoop`'s loop once the rescued player has been removed from
+	 * the map, and clearing it inside the ending would hand control back to a
+	 * district the player is no longer in.
+	 */
+	m_PlayerWasRescued: boolean = false;
 	m_Overlays: Overlay[] = [];
 	m_Player!: Actor;
 	/**
@@ -1178,10 +1781,38 @@ export class RogueGame {
 	m_TownGenerator!: BaseTownGenerator;
 	m_PlayedIntro!: boolean;
 	m_MusicManager!: IMusicManager;
+	/**
+	 * C# `m_AmbientSFXManager` — the *second* sound-manager instance the fork
+	 * builds for ambient beds (`RogueGame.cs:734`, assigned at `:861`). A separate
+	 * player with a separate volume, so a rain loop sits under the map's theme
+	 * rather than replacing it.
+	 */
+	m_AmbientSFXManager!: IAmbientManager;
+
+	/**
+	 * C# `m_SFXManager` -- the sound-effects channel (`RogueGame.cs:833`).
+	 *
+	 * One-shots, and the only manager that applies the *measured* per-effect gains in
+	 * `AudioLevels.SFX_GAINS`. Music and ambients have their own managers and their
+	 * own gain tables; sending an effect through either of those loses the
+	 * measurement, which is how every one of the port's 183 effects was playing at
+	 * unity gain until this field existed.
+	 */
+	m_SoundManager!: ISoundManager;
 	/** C# `struct CharGen` — a struct is zero-initialized, so the field starts out filled. */
 	m_CharGen: CharGen = new CharGen();
 	m_Manual: TextFile | null = null;
 	m_ManualLine!: number;
+	/**
+	 * First line of `CREDITS_LINES` the credits screen is showing.
+	 *
+	 * A field rather than a local for the reason `m_ManualLine` is one: the
+	 * reader is a `do`/`while`, so a local would be re-initialised every time the
+	 * player left the screen, and every visit would open on page one. It is
+	 * initialised where the manual's is (`Init`) and clamped to
+	 * `CREDITS_LINES.length` on the way in.
+	 */
+	m_CreditsLine: number = 0;
 	m_GameFactions!: GameFactions;
 	m_GameActors!: GameActors;
 	m_GameItems!: GameItems;
@@ -1300,7 +1931,12 @@ export class RogueGame {
 
 	// ── C# `#region Init` (RogueGame.cs:781) ──────────────────────────────────
 
-	constructor(UI: IRogueUI, music: IMusicManager = new NullMusicManager()) {
+	constructor(
+		UI: IRogueUI,
+		music: IMusicManager = new NullMusicManager(),
+		ambients: IAmbientManager = new NullAmbientManager(),
+		sound: ISoundManager = new NullSoundManager(),
+	) {
 		logInit("RogueGame()");
 
 		this.m_UI = UI;
@@ -1308,6 +1944,39 @@ export class RogueGame {
 		// C# picks MDX/SFML/NullSoundManager (the C# Null implements both sound+music).
 		// The browser passes `WebAudioMusicManager` from main.ts.
 		this.m_MusicManager = music;
+
+		logInit("creating Sound Manager");
+		// C# `RogueGame.cs:833` -- the *third* manager, and the reason the port has
+		// three interfaces where the C# arguably has two. The C#'s own comment on the
+		// ambient manager ("the music manager is good for long tracks, as they are
+		// streamed from disk rather than kept in memory") is the same argument one
+		// level down: music and ambients are beds, sound effects are one-shots.
+		//
+		// **This was the last thing `Feature.ExtendedAudio` was missing, and it was
+		// not cosmetic.** Every effect the port played went through
+		// `m_MusicManager.play`, which applies `musicGain(id)` -- a lookup that
+		// returns 1.0 for anything not in `MUSIC_FILES`. So all 180 fork effects, and
+		// the three vanilla ones, were playing at unity gain while their measured
+		// levels sat unused in `AudioLevels.SFX_GAINS`: `sfx - undead eat` was
+		// measured at a peak of 0.39 against 1.0 for "nightmare" and given a gain of
+		// **2.446** precisely so it would be audible at all, and the port was playing
+		// it a sixth too quietly. `WebAudioSoundManager` applies `sfxGain` correctly
+		// and nothing was constructing it.
+		this.m_SoundManager = sound;
+
+		logInit("creating Ambient Sound Manager");
+		// C# `RogueGame.cs:857-868` builds a *second* manager here, not a third kind
+		// of one — the same sentence in the C# says why ("the music manager is good
+		// for long tracks, as they are streamed from disk rather than kept in
+		// memory"). In the port it is a distinct interface, because the C#'s ambients
+		// are per-track (`StopAllAmbientsExcept`) where the port's one-element music
+		// manager cannot be; see `engine/audio/IAmbientManager.ts`.
+		this.m_AmbientSFXManager = ambients;
+		// The mix. The C# reads it from `Options.AmbientSFXVolume` in `ApplyOptions`
+		// (`RogueGame.cs:2703`), which is now ported (`UI_AMBIENTSFXS_VOLUME`). This
+		// is only the pre-options level for a title that goes straight to a game
+		// without an `ApplyOptions` call; `ApplyOptions` is what a player means.
+		this.m_AmbientSFXManager.setVolume(AMBIENT_SFX_VOLUME);
 
 		logInit("creating MessageManager");
 		this.m_MessageManager = new MessageManager(
@@ -1357,7 +2026,48 @@ export class RogueGame {
 		return s_KeyBindings;
 	}
 
-	// ── Method stubs (filled in by later slices) ─────────────────────────
+		// ── Still Alive, Release 5-2: tile fire ───────────────────────────────
+	/**
+	 * Damage to anything standing in a burning tile. 1.
+	 *
+	 * Deliberately half of the C#'s `BASE_ISONFIRE_FIRE_DAMAGE` (2): standing in
+	 * fire is worse than being on fire, and the C#'s comment says why -- flame
+	 * weapons deal their own impact damage and the per-turn figure must not
+	 * double-count it.
+	 */
+	private static readonly BASE_TILE_FIRE_DAMAGE = 1;
+
+	/** C# `FIRE_FUEL_PER_WOOD_PLANK` -- `RogueGame.cs:393`, Release 7-6. */
+	private static readonly FIRE_FUEL_PER_WOOD_PLANK = 90;
+	/**
+	 * Percent chance per adjacent flammable tile that a fire spreads.
+	 *
+	 * The C#'s own note: "even tiny increases make fire spread significantly". It
+	 * went 6 -> 5 for that reason. At 5%, with eight neighbours and no memory of
+	 * what has already burnt, a fire eats a carpeted room in a few turns -- which
+	 * is the point, and the reason `isScorched` exists.
+	 */
+	private static readonly TILE_FIRE_SPREAD_CHANCE = 5;
+	/** Rain accelerates a fire's death; clear weather is the slow case. */
+	/** C# `:378`, Release 5-7. Per-turn damage to an actor that is *on fire*. */
+	private static readonly BASE_ISONFIRE_FIRE_DAMAGE = 2;
+	/**
+	 * C# `:380`, Release 6-6. Standing in a burning tile gives the actor a small
+	 * chance of *becoming* fire, which is a different and much longer-lived state
+	 * than the tile fire it came from. This is `Feature.TileFires`'s last arm.
+	 */
+	private static readonly CATCH_ONFIRE_FROM_TILE_CHANCE = 25;
+	/**
+	 * C# `:385`, Release 7-6. Stop-drop-and-roll on Wait. 50% -- and unlike the
+	 * weather extinguishments this one applies to *everyone*, undeads included, since
+	 * it is a deliberate action rather than a change in the environment.
+	 */
+	private static readonly ON_WAIT_EXTINGUISH_FIRE_CHANCE = 50;
+	private static readonly CLEAR_WEATHER_FIRE_EXTINGUISH_CHANCE = 33;
+	private static readonly LIGHT_RAIN_FIRE_EXTINGUISH_CHANCE = 70;
+	private static readonly HEAVY_RAIN_FIRE_EXTINGUISH_CHANCE = 80;
+
+// ── Method stubs (filled in by later slices) ─────────────────────────
 
 	// C# AddMessage — RogueGame.cs:833
 	AddMessage(msg: Message): void {
@@ -1723,7 +2433,8 @@ export class RogueGame {
 		while (
 			this.m_Player != null &&
 			!this.m_Player.isDead &&
-			this.m_IsGameRunning
+			this.m_IsGameRunning &&
+			!this.m_PlayerWasRescued //@@MP (Release 6-4)
 		) {
 			// timer.
 			const timeBefore = Date.now();
@@ -1974,430 +2685,713 @@ export class RogueGame {
 		// Reset session
 		this.m_Session.reset();
 
+		// Cleared before anything can set it: a run cancelled part-way through the
+		// new-game flow would otherwise leave the flag set for the next attempt,
+		// which would silently skip the character screen with a stale "quick start".
+		this.m_QuickStartRequested = false;
+
+		// Seeds the session from the last confirmed pair, *here* rather than in the
+		// picker. The picker must keep showing the session, because returning to it
+		// after a cancel has to show what this run chose - a screen that opened on
+		// the stored pair would offer to undo a choice the player can still see
+		// they made. Applying it once, after the reset, gives the picker that for
+		// free and leaves it the single source of truth.
+		applyLastNewGameConfig(this.m_Session);
+		// The remembered look, so the customiser reopens on the last character made
+		// rather than on all-random every single run.
+		this.m_CharGen.appearance = loadAppearance();
+
 		// C# allocates an unseeded `new DiceRoller()` here (RogueGame.cs:1417),
 		// which rolls off the clock. We seed it from the session instead so a run
 		// is reproducible; the session reset above has to come first for that seed
 		// to be the one the roller uses.
 		const roller = new DiceRoller(this.m_Session.seed);
 
-		// Game Mode
-		if (!(await this.HandleNewGameMode())) return false;
+		// Ruleset and game mode on one screen. They compose, and the ruleset is the
+		// coarser question, so putting them on one screen answers both without
+		// sending the player away and back to change the first after realising the
+		// second is wrong.
+		if (!(await this.HandleSelectRulesetAndMode())) return false;
 
-		// Choose living/undead
-		const race = await this.HandleNewCharacterRace(roller, false);
-		if (!race.ok) return false;
-		this.m_CharGen.isUndead = race.isUndead;
-
-		// Choose gender/undead type
-		if (race.isUndead) {
-			const undead = await this.HandleNewCharacterUndeadType(
-				roller,
-				ActorID.UNDEAD_MALE_ZOMBIFIED,
-			);
-			if (!undead.ok) return false;
-			this.m_CharGen.undeadModel = undead.modelID;
-		} else {
-			const gender = await this.HandleNewCharacterGender(roller, true);
-			if (!gender.ok) return false;
-			this.m_CharGen.isMale = gender.isMale;
+		// Character details on one screen too, or a quick start. This replaced three
+		// screens (race, then sex-or-undead-type, then skill) whose row set depended
+		// on the answer to the previous one.
+		//
+		// `Shift+Enter` on *this* screen asks for no character at all, so the
+		// shortcut skips straight past this one. The difficulty screen below is
+		// still shown: it is gated on the ruleset rather than on the character, and
+		// silently dropping a Still Alive rescue-day choice would be worse than one
+		// more keypress.
+		if (this.m_QuickStartRequested) {
+			this.m_QuickStartRequested = false;
+			this.applyQuickStartCharacter(roller);
+		} else if (!(await this.HandleNewCharacterDetails(roller))) {
+			return false;
 		}
 
-		// Choose skill (living only)
-		if (!race.isUndead) {
-			const skill = await this.HandleNewCharacterSkill(roller, SkillID.AGILE);
-			if (!skill.ok) return false;
-			this.m_CharGen.startingSkill = skill.skID;
-			// scoring : starting skill.
-			this.m_Session.scoring.startingSkill = skill.skID;
-		} else {
-			// undead.
+		// Choose difficulty, including the helicopter rescue day.
+		// C# RogueGame.cs:2881-2887 — the screen is *not* gated on the player
+		// being living, so an undead run picks its difficulty too.
+		if (hasFeature(this.m_Session.ruleset, Feature.DifficultyAtCreation)) {
+			const difficulty = await this.HandleNewCharacterDifficulty(roller);
+			if (!difficulty.ok) return false;
+			this.m_Session.armyHelicopterRescueDay = difficulty.rescueDay;
 		}
 
 		// done
 		return true;
 	}
 
-	// C# HandleNewGameMode — RogueGame.cs:1477
-	async HandleNewGameMode(): Promise<boolean> {
-		const menuEntries: string[] = [
-			Session.descGameMode(GameMode.GM_STANDARD),
-			Session.descGameMode(GameMode.GM_CORPSES_INFECTION),
-			Session.descGameMode(GameMode.GM_VINTAGE),
-		];
-		const descs: string[] = [
-			"Rogue Survivor standard game.",
-			"Don't get a cold. Keep an eye on your deceased diseased friends.",
-			"The classic zombies next door.",
-		];
+/**
+	 * One horizontal row of mutually exclusive options: `Label :  a  < b >  c`.
+	 *
+	 * Every other menu screen in the game is a vertical list drawn by
+	 * `DrawMenuOrOptions`, where up/down picks a row and Enter takes it. A row
+	 * whose entries are *peers* rather than *alternatives to confirm* wants
+	 * left/right instead: changing one then costs a single keypress and shows, on
+	 * every frame, what is currently chosen. Drawn as a vertical list it would
+	 * hide the choice until Enter, and a later left/right would be ambiguous about
+	 * which row it moves. So this is a separate primitive, not a mode of the old.
+	 *
+	 * The selected entry is bracketed as well as coloured. `active` and inactive
+	 * are close enough shades on a black canvas that colour alone would be the
+	 * only cue for which row the left/right keys are about to affect.
+	 */
+	private DrawOptionRow(
+		label: string,
+		options: readonly string[],
+		selected: number,
+		gx: number,
+		gy: number,
+		active: boolean,
+	): void {
+		this.m_UI.UI_DrawStringBoldLarge(
+			active ? Color.White : Color.LightGray,
+			`${label} :`,
+			gx,
+			gy,
+		);
+		let x = gx + (label.length + 3) * MENU_CHAR_WIDTH;
+		for (let i = 0; i < options.length; i++) {
+			const text = i === selected ? `< ${options[i]} >` : `  ${options[i]}  `;
+			const color =
+				i === selected
+					? active
+						? Color.Yellow
+						: Color.White
+					: active
+						? Color.LightGray
+						: Color.Gray;
+			this.m_UI.UI_DrawStringBoldLarge(color, text, x, gy);
+			x += text.length * MENU_CHAR_WIDTH;
+		}
+	}
+
+	/**
+	 * Ruleset and game mode on one screen: two rows of two.
+	 *
+	 * These were two screens and are now two rows of one. The reason is a round
+	 * trip, not a preference -- the two compose, so a player who picks Vintage and
+	 * then realises they wanted the Still Alive content set had to back out of one
+	 * screen to change the other, and the mode screen's own text describes undeads
+	 * that the ruleset decides whether exist at all.
+	 *
+	 * Up/down picks the row, left/right changes that row's value without leaving
+	 * it, and Enter commits **both**. Neither is applied as it changes: a screen
+	 * that mutated the session on every left/right would leave the ruleset already
+	 * changed if Escape were pressed afterwards.
+	 *
+	 * No C# original for the ruleset half -- this axis is the port's own, because
+	 * `GameMode` has no Still Alive equivalent to hang it on. The mode half is C#
+	 * `HandleNewGameMode` (`RogueGame.cs:1477`), whose option list and text are
+	 * carried over verbatim into `modeDescription`.
+	 */
+	async HandleSelectRulesetAndMode(): Promise<boolean> {
+		const rulesetEntries = RULESET_ENTRIES;
+		const modeEntries = MODE_ENTRIES;
+
+		// Seed both rows from the session, not from zero, so returning to this
+		// screen (Escape on the next one) shows what is actually set instead of
+		// silently offering Classic/Standard again.
+		//
+		// **The ruleset row is seeded through `featureCount`, not by comparing the
+		// session's ruleset to `Ruleset.STILL_ALIVE`.** `feature-flags.test.ts`
+		// forbids any file outside the registry from comparing against a `Ruleset`
+		// member, and it is right to: a direct comparison is the shape that lets
+		// fork behaviour leak past `Feature`. Asking the registry "does this ruleset
+		// enable anything" is the same question the picker is actually asking --
+		// Classic enables nothing, Still Alive enables everything -- and it is the
+		// question that stays true if a third ruleset ever appears, which a
+		// two-way comparison would not.
+		let row = 0;
+		let rulesetIdx = featureCount(this.m_Session.ruleset) > 0 ? 1 : 0;
+		let modeIdx =
+			this.m_Session.gameMode === GameMode.GM_CORPSES_INFECTION
+				? 1
+				: this.m_Session.gameMode === GameMode.GM_VINTAGE
+					? 2
+					: 0;
 
 		let loop = true;
-		let choiceDone = false;
-		let selected = 0;
+		let ok = false;
 		do {
-			// display.
 			this.m_UI.UI_Clear(Color.Black);
-			const gx = 0;
 			let gy = 0;
+			this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "New Game", 0, gy);
+			gy += 2 * MENU_BOLD_LINE_SPACING;
+
+			// A dedicated line rather than a longer footnote: `DrawFootnote` is one
+			// un-wrapped line pinned to the bottom of the canvas, and this is already
+			// close to its width. Window 2 sets the precedent for the same shortcut.
 			this.m_UI.UI_DrawStringBoldLarge(
-				Color.Yellow,
-				"New Game - Choose Game Mode",
-				gx,
+				Color.LightGray,
+				"SHIFT+ENTER quick start: these settings, random character.",
+				0,
 				gy,
 			);
 			gy += 2 * MENU_BOLD_LINE_SPACING;
-			const gyRef = { value: gy };
-			this.DrawMenuOrOptions(
-				selected,
-				Color.White,
-				menuEntries,
-				Color.LightGray,
-				descs,
-				gx,
-				gyRef,
-			);
-			gy = gyRef.value;
-			gy += 2 * BOLD_LINE_SPACING;
 
-			let descMode: string[] = [];
-			switch (selected) {
-				case 0:
-					descMode = [
-						"This is the standard game setting.",
-						"Recommended for beginners.",
-						"- All the kinds of undeads.",
-						"- Undeads can evolve to stronger forms.",
-						"- Livings can zombify instantly when dead.",
-						"- No infection.",
-						"- No corpses.",
-					];
-					break;
-				case 1:
-					descMode = [
-						"This is the standard game setting plus corpses and infection.",
-						"Recommended to experience all the features of the game.",
-						"- All the kinds of undeads.",
-						"- Undeads can evolve to stronger forms.",
-						"- Infection:",
-						"  - some undeads can infect livings when biting them.",
-						"  - infected livings can become ill and die.",
-						"  - infected corpses have more chances to rise as zombies.",
-						"- Corpses:",
-						"  - livings that die drop corpses that will rot away.",
-						"  - corpses may rise as zombies.",
-						"  - undeads can eat corpses.",
-						"  - livings can eat corpses if desperate.",
-					];
-					break;
-				case 2:
-					descMode = [
-						"This is the classic zombies for hardcore zombie fans.",
-						"Recommended if you want classic movies zombies.",
-						"- Undeads are only zombified men and women.",
-						"- Undeads don't evolve to stronger forms.",
-						"- Infection:",
-						"  - some undeads can infect livings when biting them.",
-						"  - infected livings can become ill and die.",
-						"  - infected corpses have more chances to rise as zombies.",
-						"- Corpses:",
-						"  - livings that die drop corpses that will rot away.",
-						"  - corpses may rise as zombies.",
-						"  - undeads can eat corpses.",
-						"  - livings can eat corpses if desperate.",
-						"",
-						"NOTE:",
-						"This mode force some options OFF.",
-						"Remember to set them back ON again when you play other modes!",
-					];
-					break;
-			}
-			for (const str of descMode) {
-				this.m_UI.UI_DrawStringBoldLarge(Color.Gray, str, gx, gy);
+			this.DrawOptionRow("Ruleset  ", rulesetEntries, rulesetIdx, 0, gy, row === 0);
+			gy += MENU_BOLD_LINE_SPACING;
+			this.DrawOptionRow("Game mode", modeEntries, modeIdx, 0, gy, row === 1);
+			gy += 2 * MENU_BOLD_LINE_SPACING;
+
+			// Only the active row's text. Both blocks are long -- the mode one is
+			// twenty lines -- and printing both overflowed the canvas.
+			const lines =
+				row === 0 ? this.rulesetDescription(rulesetIdx) : this.modeDescription(modeIdx);
+			for (const line of lines) {
+				this.m_UI.UI_DrawStringBoldLarge(Color.Gray, line, 0, gy);
 				gy += MENU_BOLD_LINE_SPACING;
 			}
 
 			this.DrawFootnote(
 				Color.White,
-				"cursor to move, ENTER to select, ESC to cancel",
+				"UP/DOWN picks a row, LEFT/RIGHT changes it, ENTER confirms both, ESC cancels",
 			);
 			this.m_UI.UI_Repaint();
 
-			// get menu action.
 			const key = await this.m_UI.UI_WaitKey();
 			switch (key.key) {
-				case "ArrowUp": // move up
-					if (selected > 0) --selected;
-					else selected = menuEntries.length - 1;
+				case "ArrowUp":
+					row = 1 - row;
 					break;
-				case "ArrowDown": // move down
-					selected = (selected + 1) % menuEntries.length;
+				case "ArrowDown":
+					row = 1 - row;
 					break;
-
+				case "ArrowLeft":
+					if (row === 0) rulesetIdx = (rulesetIdx + 1) % 2;
+					else modeIdx = (modeIdx + modeEntries.length - 1) % modeEntries.length;
+					break;
+				case "ArrowRight":
+					if (row === 0) rulesetIdx = (rulesetIdx + 1) % 2;
+					else modeIdx = (modeIdx + 1) % modeEntries.length;
+					break;
 				case "Escape":
-					choiceDone = false;
+					ok = false;
 					loop = false;
 					break;
-
 				case "Enter":
-					// validate
-					switch (selected) {
-						case 0: // standard
-							this.m_Session.gameMode = GameMode.GM_STANDARD;
-							choiceDone = true;
-							loop = false;
-							break;
-
-						case 1: // corpses & infection
-							this.m_Session.gameMode = GameMode.GM_CORPSES_INFECTION;
-							choiceDone = true;
-							loop = false;
-							break;
-
-						case 2: // vintage
-							this.m_Session.gameMode = GameMode.GM_VINTAGE;
-
-							// force some options off.
-							s_Options.allowUndeadsEvolution = false;
-							s_Options.shamblersUpgrade = false;
-							s_Options.ratsUpgrade = false;
-							s_Options.skeletonsUpgrade = false;
-							this.ApplyOptions(false);
-
-							choiceDone = true;
-							loop = false;
-							break;
-					}
+					this.m_Session.ruleset = RULESET_VALUES[rulesetIdx];
+					this.m_Session.gameMode = MODE_VALUES[modeIdx];
+					// Recorded on both paths, so the shortcut repeats what was just
+					// played rather than what was played last time.
+					saveNewGameConfig(this.m_Session.ruleset, this.m_Session.gameMode);
+					// Tested before the switch's `case "Enter"` could swallow it: the
+					// UI reports the key as "Enter" with a separate modifier flag.
+					this.m_QuickStartRequested = key.shift === true;
+					ok = true;
+					loop = false;
 					break;
 			}
 		} while (loop);
 
-		// done.
-		return choiceDone;
+		return ok;
 	}
 
-	// C# HandleNewCharacterRace — RogueGame.cs:1627
-	async HandleNewCharacterRace(
-		roller: DiceRoller,
-		isUndead: boolean,
-	): Promise<{ ok: boolean; isUndead: boolean }> {
-		const menuEntries: string[] = ["*Random*", "Living", "Undead"];
-		const descs: string[] = [
-			"(picks a race at random for you)",
-			"Try to survive.",
-			"Eat brains and die again.",
-		];
+	/**
+	 * Set by `HandleSelectRulesetAndMode` when the confirm key was `Shift+Enter`,
+	 * and consumed by the caller to skip the character screen.
+	 *
+	 * A field rather than a wider return type because that method is pinned to
+	 * `Promise<boolean>` by `ruleset-picker.test.ts`, and because the flag is
+	 * strictly a message between two adjacent steps.
+	 */
+	private m_QuickStartRequested = false;
 
-		// C# `out bool isUndead` — seeded with the caller's value (C# assigns `false` first).
-		let undead = isUndead;
-		let loop = true;
-		let choiceDone = false;
-		let selected = 0;
-		do {
-			// display.
-			this.m_UI.UI_Clear(Color.Black);
-			const gx = 0;
-			let gy = 0;
-			this.m_UI.UI_DrawStringBoldLarge(
-				Color.Yellow,
-				`[${Session.descGameMode(this.m_Session.gameMode)}] New Character - Choose Race`,
-				gx,
-				gy,
-			);
-			gy += 2 * MENU_BOLD_LINE_SPACING;
-			const gyRef = { value: gy };
-			this.DrawMenuOrOptions(
-				selected,
-				Color.White,
-				menuEntries,
-				Color.LightGray,
-				descs,
-				gx,
-				gyRef,
-			);
-			gy = gyRef.value;
-			gy += 2 * BOLD_LINE_SPACING;
-
-			this.DrawFootnote(
-				Color.White,
-				"cursor to move, ENTER to select, ESC to cancel",
-			);
-			this.m_UI.UI_Repaint();
-
-			// get menu action.
-			const key = await this.m_UI.UI_WaitKey();
-			switch (key.key) {
-				case "ArrowUp": // move up
-					if (selected > 0) --selected;
-					else selected = menuEntries.length - 1;
-					break;
-				case "ArrowDown": // move down
-					selected = (selected + 1) % menuEntries.length;
-					break;
-
-				case "Escape":
-					choiceDone = false;
-					loop = false;
-					break;
-
-				case "Enter":
-					// validate
-					switch (selected) {
-						case 0: // random
-							undead = roller.rollChance(50);
-
-							gy += MENU_BOLD_LINE_SPACING;
-							this.m_UI.UI_DrawStringBoldLarge(
-								Color.White,
-								`Race : ${undead ? "Undead" : "Living"}.`,
-								gx,
-								gy,
-							);
-							gy += MENU_BOLD_LINE_SPACING;
-							this.m_UI.UI_DrawStringBoldLarge(
-								Color.Yellow,
-								"Is that OK? Y to confirm, N to cancel.",
-								gx,
-								gy,
-							);
-							this.m_UI.UI_Repaint();
-							if (await this.WaitYesOrNo()) {
-								choiceDone = true;
-								loop = false;
-							}
-							break;
-
-						case 1: // living
-							undead = false;
-							choiceDone = true;
-							loop = false;
-							break;
-
-						case 2: // undead
-							undead = true;
-							choiceDone = true;
-							loop = false;
-							break;
-					}
-					break;
-			}
-		} while (loop);
-
-		// done.
-		return { ok: choiceDone, isUndead: undead };
+	/**
+	 * Dresses the newly created player from the look the customiser chose.
+	 *
+	 * **The same static the preview draws with**, so what was previewed is what is
+	 * worn — the alternative, a second dressing path, would drift from the first the
+	 * moment a layer was added to one of them.
+	 *
+	 * An all-random look expands to the whole catalogue per layer, which is exactly
+	 * what the generator rolled from before this existed, so an untouched screen
+	 * produces the same distribution of survivors it always did.
+	 *
+	 * The zombified branches pass through here too, dressed as living first and then
+	 * `Zombify`d, which is the reference's order and the reason the zombified player
+	 * keeps a chosen shirt.
+	 */
+/**
+	 * Seeds the look from the session seed, never from a roller.
+	 *
+	 * A roller here was the bug being fixed: one shared across the six layers and
+	 * consumed on every redraw, so changing the skin moved the hair, moving the
+	 * cursor moved the pants, and the preview did not match what was worn. Both the
+	 * preview and creation call `resolve` with this seed, which is what makes the
+	 * two agree.
+	 */
+	private get appearanceSeed(): number {
+		return this.m_Session.seed;
 	}
 
-	// C# HandleNewCharacterGender — RogueGame.cs:1719
-	async HandleNewCharacterGender(
-		roller: DiceRoller,
-		isMale: boolean,
-	): Promise<{ ok: boolean; isMale: boolean }> {
+	/**
+	 * Dresses the newly created player from the look the customiser chose.
+	 *
+	 * **The same `resolve` the preview draws with, on the same seed**, so what was
+	 * previewed is what is worn. The first version rolled each layer from a shared
+	 * `DiceRoller`, which meant the six layers were entangled: changing the skin
+	 * moved the hair, and moving the cursor moved the pants, because every redraw
+	 * consumed six more rolls. Randomness is now *derived* per layer rather than
+	 * *drawn in sequence*.
+	 *
+	 * The arrays handed to `dressActorDoll` are one element long, so the roller it
+	 * still takes has nothing to decide — which is how this stays the same
+	 * layering code the NPC path uses rather than a second implementation.
+	 *
+	 * An all-random look resolves to a stable per-seed look, so a run is still
+	 * reproducible: the session seed decides it, exactly as it decides the map.
+	 */
+	private dressPlayerFromCharGen(player: Actor): void {
+		const isMale = player.model.dollBody.isMale;
+		const [eyes, skins, heads, torsos, legs, shoes] =
+			this.m_CharGen.appearance.asDressArgs(
+				outfitChoices(isMale),
+				this.appearanceSeed,
+			);
+		BaseMapGenerator.dressActorDoll(
+			new DiceRoller(this.appearanceSeed),
+			player.doll,
+			eyes,
+			skins,
+			heads,
+			torsos,
+			legs,
+			shoes,
+		);
+	}
+
+/**
+ * `Shift+Enter`: a random human, of random sex, with a random skill.
+	 *
+	 * Shared by both quick starts so the two cannot drift apart. Roll semantics
+	 * are the C#'s, from the screens window 2 replaced: `rollChance(50)` for sex
+	 * (`RogueGame.cs:1719`) and `Skills.rollLiving` for the skill. The race has
+	 * **no** random entry - quick start is how you get a random character, and it
+	 * is always human - which is why the C#'s `WaitYesOrNo` "Is that OK?" after a
+	 * random race roll has nothing left to confirm.
+	 */
+	private applyQuickStartCharacter(roller: DiceRoller): void {
+		this.m_CharGen.isUndead = false;
+		this.m_CharGen.isMale = roller.rollChance(50);
+		const skID = Skills.rollLiving(roller);
+		this.m_CharGen.startingSkill = skID;
+		// scoring : starting skill.
+		this.m_Session.scoring.startingSkill = skID;
+	}
+
+	/** The two ruleset blurbs, carried over from `HandleSelectRuleset`. */
+	private rulesetDescription(idx: number): string[] {
+		return idx === 1
+			? [
+					"Still Alive - the Rogue Survivor: Still Alive fork.",
+					"",
+					"More weapons, more buildings, and a harder world.",
+					"",
+					"- More weapons, armour, food and explosives.",
+					"- Churches, banks, bars, clinics, farms, fuel stations,",
+					"  fire stations, animal shelters, junkyards and more.",
+					"- Alcohol, cooking, fishing and butchering.",
+					"- Darker nights, and fire that spreads.",
+					"",
+					"Most of this is not implemented yet. Choosing it today",
+					"plays the same game as Classic - see the project plan.",
+				]
+			: [
+					"Classic - Rogue Survivor Alpha 10.1.",
+					"",
+					"The original rules, unchanged. This is what the port has",
+					"been running since the start, and the default.",
+					"",
+					"- The original weapons, items and buildings.",
+					"- The original light, sound and scoring.",
+				];
+	}
+
+	/** The three mode blurbs, carried over from `HandleNewGameMode`. */
+	private modeDescription(idx: number): string[] {
+		switch (idx) {
+			case 1:
+				return [
+					"This is the standard game setting plus corpses and infection.",
+					"Recommended to experience all the features of the game.",
+					"- All the kinds of undeads.",
+					"- Undeads can evolve to stronger forms.",
+					"- Infection:",
+					"  - some undeads can infect livings when biting them.",
+					"  - infected livings can become ill and die.",
+					"  - infected corpses have more chances to rise as zombies.",
+					"- Corpses:",
+					"  - livings that die drop corpses that will rot away.",
+					"  - corpses may rise as zombies.",
+					"  - undeads can eat corpses.",
+					"  - livings can eat corpses if desperate.",
+				];
+			case 2:
+				return [
+					"This is the classic zombies for hardcore zombie fans.",
+					"Recommended if you want classic movies zombies.",
+					"- Undeads are only zombified men and women.",
+					"- Undeads don't evolve to stronger forms.",
+					"- Infection:",
+					"  - some undeads can infect livings when biting them.",
+					"  - infected livings can become ill and die.",
+					"  - infected corpses have more chances to rise as zombies.",
+					"- Corpses:",
+					"  - livings that die drop corpses that will rot away.",
+					"  - corpses may rise as zombies.",
+					"  - undeads can eat corpses.",
+					"  - livings can eat corpses if desperate.",
+					"",
+					"NOTE:",
+					"This mode force some options OFF.",
+					"Remember to set them back ON again when you play other modes!",
+				];
+			default:
+				return [
+					"This is the standard game setting.",
+					"Recommended for beginners.",
+					"- All the kinds of undeads.",
+					"- Undeads can evolve to stronger forms.",
+					"- Livings can zombify instantly when dead.",
+					"- No infection.",
+					"- No corpses.",
+				];
+		}
+	}
+
+	/**
+	 * Character details on one screen, or a quick start.
+	 *
+	 * Folds what were three further screens - race, then sex-or-undead-type, then
+	 * skill - into one, because they are one decision with three parts and the
+	 * parts change each other: choosing Undead removes the sex and skill rows, so
+	 * on separate screens the player confirmed the race, was sent to a screen whose
+	 * shape had just changed, and answered a Yes/No for a race they never picked.
+	 *
+	 * The sub-options therefore **refresh in place** instead of being a
+	 * consequence of a later Enter. That is the point of the layout: you can see
+	 * that Undead offers a type and Human offers a sex and a skill *before*
+	 * committing to either.
+	 *
+	 * `Shift+Enter` is the quick start -- random human, random sex, random skill --
+	 * resolved immediately without drawing a frame. It is the shortcut for "just
+	 * play", which used to cost three screens and a confirmation per random.
+	 *
+	 * Roll semantics are the C#'s, from the screens this replaces: `rollChance(50)`
+	 * for sex (`RogueGame.cs:1719`) and `Skills.rollLiving` for the skill. The race
+	 * has **no** random entry here -- quick start is how you get a random character
+	 * and it is always human -- which is why the C#'s `WaitYesOrNo` "Is that OK?"
+	 * after a random race roll has nothing left to confirm.
+	 *
+	 * The undead list is the C#'s five (`HandleNewCharacterUndeadType`), with
+	 * `roll(0, 5)` exclusive at the top end exactly as the reference rolls it.
+	 */
+	async HandleNewCharacterDetails(roller: DiceRoller): Promise<boolean> {
 		const maleModel = this.gameActors.get(ActorID.MALE_CIVILIAN);
 		const femaleModel = this.gameActors.get(ActorID.FEMALE_CIVILIAN);
-
-		const menuEntries: string[] = ["*Random*", "Male", "Female"];
-		const descs: string[] = [
-			"(picks a gender at random for you)",
-			`HP:${padZero(maleModel.startingSheet.baseHitPoints, 2)}  Def:${padZero(maleModel.startingSheet.baseDefence.value, 2)}  Dmg:${maleModel.startingSheet.unarmedAttack.damageValue}`,
-			`HP:${padZero(femaleModel.startingSheet.baseHitPoints, 2)}  Def:${padZero(femaleModel.startingSheet.baseDefence.value, 2)}  Dmg:${femaleModel.startingSheet.unarmedAttack.damageValue}`,
+		const undeadIds = [
+			ActorID.UNDEAD_SKELETON,
+			ActorID.UNDEAD_ZOMBIE,
+			ActorID.UNDEAD_MALE_ZOMBIFIED,
+			ActorID.UNDEAD_FEMALE_ZOMBIFIED,
+			ActorID.UNDEAD_ZOMBIE_MASTER,
 		];
+		const undeadModels = undeadIds.map((id) => this.gameActors.get(id));
 
-		// C# `out bool isMale` — seeded with the caller's value (C# assigns `true` first).
-		let male = isMale;
+		const raceEntries = ["Human", "Undead"];
+		const sexEntries = ["*Random*", maleModel.name, femaleModel.name];
+		const typeEntries = ["*Random*", ...undeadModels.map((m) => m.name)];
+		const skillEntries = ["*Random*"];
+		for (let i = Skills.FIRST_LIVING; i <= Skills.LAST_LIVING; i++) {
+			skillEntries.push(Skills.name(i));
+		}
+
+		// Rows depend on the race, so the count is derived: 0 = race,
+		// 1 = sex or type, 2 = skill (human only), then one row per appearance
+		// layer. The appearance rows are the same for both races, so they live
+		// *above* the split count rather than being renumbered when it changes.
+		let row = 0;
+		let raceIdx = 0;
+		let sexIdx = 0;
+		let typeIdx = 0;
+		let skillIdx = 0;
+
+		// The look is edited live, on a copy, so ESC can leave `m_CharGen`
+		// untouched. It is only committed on Enter, like every other row here.
+		const appearance = this.m_CharGen.appearance.clone();
+
+		// Which body the catalogue is drawn from. Sex is what selects it, and it is
+		// the row above, so it is derived each frame rather than stored twice.
+		let catalogueIsMale = true;
+		// Set when switching sex had to drop a choice, so the frame can say so
+		// instead of the player's hair quietly changing under the cursor.
+		let droppedNote: string[] = [];
+
+		// **No roller here, on purpose.** The first version kept a dedicated
+		// `DiceRoller` for the preview so a random layer would land on the same sprite
+		// every frame — and it still flickered, because that roller was shared across
+		// all six layers and re-consumed on every redraw. Changing one layer advanced
+		// it and reshuffled the rest; so did moving the cursor on an unrelated row.
+		// `CharacterAppearance.resolve` derives each layer from the session seed and
+		// the layer's own name instead, so stability and independence both come for
+		// free and nothing needs to remember anything between frames.
+
 		let loop = true;
-		let choiceDone = false;
-		let selected = 0;
+		let ok = false;
 		do {
-			// display.
+			const isUndead = raceIdx === 1;
+			// Switching race can leave `row` past the end (2 -> 1 rows for undead).
+			const baseRows = isUndead ? 2 : 3;
+			// Undead get no appearance rows at all. They have whole-body sprites and
+			// nothing to choose: offering a zombie a shirt produced a zombie in a
+			// shirt, and the six rows of options that changed nothing were worse than
+			// no rows.
+			const rows = baseRows + (isUndead ? 0 : APPEARANCE_LAYERS.length);
+			if (row >= rows) row = rows - 1;
+
+			const n = isUndead ? typeEntries.length : sexEntries.length;
+			const cur = isUndead ? typeIdx : sexIdx;
+
+			// `*Random*` sex still has to offer a body to draw, so the catalogue
+			// follows the *row*, not the roll: a random-sex character previews male
+			// until the roller picks at creation. Better a stable preview that might
+			// change than one that reshuffles on every frame.
+			const choices: OutfitChoices = outfitChoices(isUndead ? true : catalogueIsMale);
+			const activeLayer: AppearanceLayer | null =
+				!isUndead && row >= baseRows ? APPEARANCE_LAYERS[row - baseRows] : null;
+
 			this.m_UI.UI_Clear(Color.Black);
-			const gx = 0;
 			let gy = 0;
 			this.m_UI.UI_DrawStringBoldLarge(
 				Color.Yellow,
-				`[${Session.descGameMode(this.m_Session.gameMode)}] New Living - Choose Gender`,
-				gx,
+				`[${Session.descGameMode(this.m_Session.gameMode)} / ${Session.descShortRuleset(this.m_Session.ruleset)}] New Character`,
+				0,
 				gy,
 			);
 			gy += 2 * MENU_BOLD_LINE_SPACING;
-			const gyRef = { value: gy };
-			this.DrawMenuOrOptions(
-				selected,
-				Color.White,
-				menuEntries,
+
+			this.m_UI.UI_DrawStringBoldLarge(
 				Color.LightGray,
-				descs,
-				gx,
-				gyRef,
+				"SHIFT+ENTER quick start: random human, random sex, random skill.",
+				0,
+				gy,
 			);
-			gy = gyRef.value;
+			gy += 2 * MENU_BOLD_LINE_SPACING;
+
+			this.DrawOptionRow("Race  ", raceEntries, raceIdx, 0, gy, row === 0);
+			gy += MENU_BOLD_LINE_SPACING;
+			if (isUndead) {
+				this.DrawOptionRow("Type  ", typeEntries, typeIdx, 0, gy, row === 1);
+			} else {
+				this.DrawOptionRow("Sex   ", sexEntries, sexIdx, 0, gy, row === 1);
+				gy += MENU_BOLD_LINE_SPACING;
+				this.DrawOptionRow("Skill ", skillEntries, skillIdx, 0, gy, row === 2);
+			}
+			gy += MENU_BOLD_LINE_SPACING;
+
+			// All six appearance rows at once, as asked: the point of a customiser is
+			// seeing the whole look, and hiding half of it behind a sub-screen is what
+			// made the three original screens unpleasant to use.
+			//
+			// At x=0, full width: every one of these rows runs to the right edge of
+			// the canvas, so there is no column to lay them out in.
+			for (const layer of isUndead ? [] : APPEARANCE_LAYERS) {
+				const catalogue = choices[layer];
+				// Index 0 is `*Random*`; the rest are the catalogue in order.
+				const entries = ["*Random*", ...catalogue.map(describeAppearanceImage)];
+				const chosen = appearance[layer];
+				const idx = chosen === null ? 0 : catalogue.indexOf(chosen) + 1;
+				this.DrawOptionRow(
+					APPEARANCE_LAYER_LABELS[layer],
+					entries,
+					idx,
+					0,
+					gy,
+					layer === activeLayer,
+				);
+				gy += MENU_BOLD_LINE_SPACING;
+			}
+
+			if (!isUndead) {
+				this.m_UI.UI_DrawStringBoldLarge(
+					Color.DimGray,
+					"*Random* = rolled at creation",
+					0,
+					gy,
+				);
+				gy += 2 * MENU_BOLD_LINE_SPACING;
+			}
+
+			// Stat lines for whatever the active row offers, carried over from the
+			// screens this replaces, so each choice stays an informed one.
+			const details: string[] = [];
+			if (row === 0) {
+				details.push(
+					isUndead ? "Undead: eat brains, and die again." : "Human: try to survive.",
+				);
+			} else if (isUndead && row === 1) {
+				details.push(
+					typeIdx === 0
+						? "(a type will be picked at random)"
+						: this.DescribeUndeadModelStatLine(undeadModels[typeIdx - 1]),
+				);
+			} else if (!isUndead && row === 1) {
+				if (sexIdx === 0) details.push("(a sex will be picked at random)");
+				else {
+					const m = sexIdx === 1 ? maleModel : femaleModel;
+					details.push(
+						`HP:${padZero(m.startingSheet.baseHitPoints, 2)}  Def:${padZero(m.startingSheet.baseDefence.value, 2)}  Dmg:${m.startingSheet.unarmedAttack.damageValue}`,
+					);
+				}
+			} else if (!isUndead && row === 2) {
+				if (skillIdx === 0) details.push("(a skill will be picked at random)");
+				else {
+					const sk = skillIdx as SkillID;
+					details.push(
+						`${Skills.maxSkillLevel(sk)} max - ${this.DescribeSkillShort(sk)}`,
+					);
+				}
+			} else if (activeLayer !== null) {
+				const chosen = appearance[activeLayer];
+				details.push(
+					chosen === null
+						? `(${APPEARANCE_LAYER_LABELS[activeLayer].trim().toLowerCase()} will be picked at random)`
+						: describeAppearanceImage(chosen),
+				);
+			}
+			for (const note of droppedNote) details.push(note);
+			for (const line of details) {
+				this.m_UI.UI_DrawStringBoldLarge(Color.Gray, line, 0, gy);
+				gy += MENU_BOLD_LINE_SPACING;
+			}
+
+			// The preview, right column. Drawn after the rows because the doll is
+			// rebuilt each frame from the current selections.
+			this.DrawCharacterPreview(
+				isUndead,
+				// `typeEntries` is `*Random*` followed by the five models, so entry 1
+				// is the *first* model. Passing `typeIdx` straight through showed the
+				// one after the one picked -- selecting Skeleton drew a shambler, and
+				// the last entry fell off the end. `0` stays `0`, which previews the
+				// first model for a random pick rather than rolling and flickering.
+				isUndead ? (typeIdx === 0 ? 0 : typeIdx - 1) : sexIdx === 0 ? 0 : catalogueIsMale ? 1 : 2,
+				appearance,
+			);
+
 			this.DrawFootnote(
 				Color.White,
-				"cursor to move, ENTER to select, ESC to cancel",
+				"UP/DOWN picks a row, LEFT/RIGHT changes it, ENTER starts, ESC cancels",
 			);
 			this.m_UI.UI_Repaint();
 
-			// get menu action.
 			const key = await this.m_UI.UI_WaitKey();
-			switch (key.key) {
-				case "ArrowUp": // move up
-					if (selected > 0) --selected;
-					else selected = menuEntries.length - 1;
-					break;
-				case "ArrowDown": // move down
-					selected = (selected + 1) % menuEntries.length;
-					break;
 
+			// Shift+Enter is tested before Enter: the UI reports the key as "Enter"
+			// with a separate modifier flag, so a plain Enter would swallow it.
+			if (key.key === "Enter" && key.shift) {
+				this.applyQuickStartCharacter(roller);
+				ok = true;
+				loop = false;
+				continue;
+			}
+
+			const step = (v: number, count: number, delta: number): number =>
+				(v + delta + count * 2) % count;
+
+			switch (key.key) {
+				case "ArrowUp":
+					row = (row + rows - 1) % rows;
+					break;
+				case "ArrowDown":
+					row = (row + 1) % rows;
+					break;
+				case "ArrowLeft":
+					if (row === 0) raceIdx = step(raceIdx, raceEntries.length, -1);
+					else if (isUndead && row === 1) typeIdx = step(cur, n, -1);
+					else if (!isUndead && row === 1) {
+						sexIdx = step(cur, n, -1);
+						catalogueIsMale = sexIdx === 2 ? false : sexIdx === 1;
+						this.noteDroppedAppearance(appearance, catalogueIsMale, droppedNote);
+					} else if (!isUndead && row === 2) skillIdx = step(skillIdx, skillEntries.length, -1);
+					else if (activeLayer !== null) {
+						const catalogue = choices[activeLayer];
+						const at = appearance[activeLayer] === null ? 0 : catalogue.indexOf(appearance[activeLayer]!) + 1;
+						const next = step(at, catalogue.length + 1, -1);
+						appearance[activeLayer] = next === 0 ? null : catalogue[next - 1];
+					}
+					break;
+				case "ArrowRight":
+					if (row === 0) raceIdx = step(raceIdx, raceEntries.length, 1);
+					else if (isUndead && row === 1) typeIdx = step(cur, n, 1);
+					else if (!isUndead && row === 1) {
+						sexIdx = step(cur, n, 1);
+						catalogueIsMale = sexIdx === 1;
+						this.noteDroppedAppearance(appearance, catalogueIsMale, droppedNote);
+					} else if (!isUndead && row === 2) skillIdx = step(skillIdx, skillEntries.length, 1);
+					else if (activeLayer !== null) {
+						const catalogue = choices[activeLayer];
+						const at = appearance[activeLayer] === null ? 0 : catalogue.indexOf(appearance[activeLayer]!) + 1;
+						const next = step(at, catalogue.length + 1, 1);
+						appearance[activeLayer] = next === 0 ? null : catalogue[next - 1];
+					}
+					break;
 				case "Escape":
-					choiceDone = false;
+					ok = false;
 					loop = false;
 					break;
-
 				case "Enter":
-					// validate
-					switch (selected) {
-						case 0: // random
-							male = roller.rollChance(50);
-
-							gy += MENU_BOLD_LINE_SPACING;
-							this.m_UI.UI_DrawStringBoldLarge(
-								Color.White,
-								`Gender : ${male ? "Male" : "Female"}.`,
-								gx,
-								gy,
-							);
-							gy += MENU_BOLD_LINE_SPACING;
-							this.m_UI.UI_DrawStringBoldLarge(
-								Color.Yellow,
-								"Is that OK? Y to confirm, N to cancel.",
-								gx,
-								gy,
-							);
-							this.m_UI.UI_Repaint();
-							if (await this.WaitYesOrNo()) {
-								choiceDone = true;
-								loop = false;
-							}
-							break;
-
-						case 1: // male
-							male = true;
-							choiceDone = true;
-							loop = false;
-							break;
-
-						case 2: // female
-							male = false;
-							choiceDone = true;
-							loop = false;
-							break;
+					if (isUndead) {
+						this.m_CharGen.isUndead = true;
+						this.m_CharGen.undeadModel =
+							typeIdx === 0
+								? undeadIds[roller.roll(0, undeadIds.length)]
+								: undeadIds[typeIdx - 1];
+					} else {
+						this.m_CharGen.isUndead = false;
+						this.m_CharGen.isMale = sexIdx === 0 ? roller.rollChance(50) : sexIdx === 1;
+						const skID = skillIdx === 0 ? Skills.rollLiving(roller) : (skillIdx as SkillID);
+						this.m_CharGen.startingSkill = skID;
+						// scoring : starting skill.
+						this.m_Session.scoring.startingSkill = skID;
 					}
+					// Only on Enter, so ESC leaves the last run's look alone. The
+					// catalogue the choices were validated against is the one the
+					// player is leaving the screen on.
+					this.m_CharGen.appearance = appearance;
+					saveAppearance(appearance);
+					ok = true;
+					loop = false;
 					break;
 			}
 		} while (loop);
 
-		// done.
-		return { ok: choiceDone, isMale: male };
+		return ok;
 	}
 
-	// C# DescribeUndeadModelStatLine — RogueGame.cs:1812
+	// C# DescribeUndeadModelStatLine ÔÇö RogueGame.cs:1812
 	DescribeUndeadModelStatLine(m: ActorModel): string {
 		const sheet = m.startingSheet;
 		return (
@@ -2407,70 +3401,175 @@ export class RogueGame {
 			`  Sml:${sheet.baseSmellRating.toFixed(2)}`
 		);
 	}
-
-	// C# HandleNewCharacterUndeadType — RogueGame.cs:1820
-	async HandleNewCharacterUndeadType(
+	/**
+	 * C# `HandleNewCharacterDifficulty(out int chosenDay)` — `RogueGame.cs:3782`,
+	 * called from `RogueGame.cs:2884`. The fork's answer to "a player should not be
+	 * able to change how hard the run is once it has started", and the other half
+	 * of this feature is the mid-game options screen giving these rows up
+	 * (`ui/OptionsScreen.ts`, which drops every `DIFFICULTY_OPTIONS` member).
+	 *
+	 * Two behaviours here are the C#'s and are not what the shape of the code
+	 * suggests:
+	 *
+	 * - **`R` resets to the shipped defaults, not to the values the screen was
+	 *   entered with.** The C# says so in a comment on the line itself
+	 *   ("`prevOptions; //@@MP - used to restore changes in this session, now
+	 *   resets defaults`", `RogueGame.cs:3930`) — it is a deliberate change and
+	 *   not an unfinished one. So `R` here is `resetToDefaultValues(DIFFICULTY)`
+	 *   and *not* the `Options.clone()` the mid-game screen keeps for its own `R`.
+	 * - **Escape discards everything changed on the screen**, by reloading the
+	 *   stored options (`RogueGame.cs:4046`). That is load-bearing rather than
+	 *   tidy: the C#'s own comment is that it stops a player tweaking difficulty
+	 *   and then loading a save that was started with different settings.
+	 *
+	 * The `ingame`-style lock the C# *does not* have is worth saying plainly,
+	 * because the feature is named for it: neither `HandleOptions` nor this screen
+	 * tests its `ingame` parameter — the C# comments the parameter as unused
+	 * (`RogueGame.cs:1509`, `:1503`) and the whole mechanism is a deleted block
+	 * of the mid-game option list. So the rows are gone from the mid-game screen
+	 * for Still Alive and the screen is not offered mid-game at all, but no
+	 * runtime check refuses an edit. See plans/BROWSER_PORT_PLAN §5.6e.
+	 *
+	 * The mode filters (Release 7-6) are the C#'s: two rows are STD-only, three
+	 * are dropped in VTG, and one — antiviral pills — is VTG-only *and* is not an
+	 * option this build has, so that filter has nothing to remove. The port asks
+	 * `Rules.hasImmediateZombification` / `Rules.hasEvolution` rather than
+	 * comparing the mode itself, because those are the `GameMode`-layer predicates
+	 * and a `GameMode` comparison here would be a second place to keep in step.
+	 */
+	async HandleNewCharacterDifficulty(
 		roller: DiceRoller,
-		modelID: ActorID,
-	): Promise<{ ok: boolean; modelID: ActorID }> {
-		const skeletonModel = this.gameActors.get(ActorID.UNDEAD_SKELETON);
-		const shamblerModel = this.gameActors.get(ActorID.UNDEAD_ZOMBIE);
-		const maleModel = this.gameActors.get(ActorID.UNDEAD_MALE_ZOMBIFIED);
-		const femaleModel = this.gameActors.get(ActorID.UNDEAD_FEMALE_ZOMBIFIED);
-		const masterModel = this.gameActors.get(ActorID.UNDEAD_ZOMBIE_MASTER);
+	): Promise<{ ok: boolean; rescueDay: number }> {
+		const list = this.difficultyOptionList(this.m_Session.gameMode);
+		const menuEntries = list.map((id) => GameOptions.optionName(id));
 
-		const menuEntries: string[] = [
-			"*Random*",
-			skeletonModel.name,
-			shamblerModel.name,
-			maleModel.name,
-			femaleModel.name,
-			masterModel.name,
-		];
-		const descs: string[] = [
-			"(picks a type at random for you)",
-			this.DescribeUndeadModelStatLine(skeletonModel),
-			this.DescribeUndeadModelStatLine(shamblerModel),
-			this.DescribeUndeadModelStatLine(maleModel),
-			this.DescribeUndeadModelStatLine(femaleModel),
-			this.DescribeUndeadModelStatLine(masterModel),
-		];
-
-		// C# `out ActorID modelID` — seeded with the caller's value (C# assigns UNDEAD_MALE_ZOMBIFIED).
-		let model = modelID;
 		let loop = true;
 		let choiceDone = false;
 		let selected = 0;
 		do {
+			// Recomputed every frame, not once outside the loop: an arrow key
+			// changes the value it displays, so a hoisted array would show the
+			// numbers as they were when the screen opened.
+			const values = list.map((id) =>
+				s_Options.describeValue(this.m_Session.gameMode, id),
+			);
+
 			// display.
 			this.m_UI.UI_Clear(Color.Black);
 			const gx = 0;
 			let gy = 0;
 			this.m_UI.UI_DrawStringBoldLarge(
 				Color.Yellow,
-				`[${Session.descGameMode(this.m_Session.gameMode)}] New Undead - Choose Type`,
+				`[${Session.descGameMode(this.m_Session.gameMode)}] Set Difficulty Options`,
 				gx,
 				gy,
 			);
+
+			// intro.
+			gy += 2 * MENU_BOLD_LINE_SPACING;
+			this.m_UI.UI_DrawStringBoldLarge(
+				Color.White,
+				"The army have established a safe zone and are evacuating towns all around the region.",
+				gx,
+				gy,
+			);
+			gy += MENU_BOLD_LINE_SPACING;
+			this.m_UI.UI_DrawStringBoldLarge(
+				Color.White,
+				"You must find a way to survive until helicopter rescue arrives (choose the day below).",
+				gx,
+				gy,
+			);
+			gy += MENU_BOLD_LINE_SPACING;
+			this.m_UI.UI_DrawStringBoldLarge(
+				Color.White,
+				"You don't have to make it to the helicopter, but after that point you'll be on your own...",
+				gx,
+				gy,
+			);
+
+			// the options.
 			gy += 2 * MENU_BOLD_LINE_SPACING;
 			const gyRef = { value: gy };
+			// Windowed at 20 rows: 17 options plus the description block, the
+			// rating and the caution line, with the heading and intro above.
 			this.DrawMenuOrOptions(
 				selected,
 				Color.White,
 				menuEntries,
-				Color.LightGray,
-				descs,
+				Color.LightGreen,
+				values,
 				gx,
 				gyRef,
+				false,
+				400,
+				20,
 			);
 			gy = gyRef.value;
+
+			// describe current option.
+			gy += MENU_BOLD_LINE_SPACING;
+			this.m_UI.UI_DrawStringBoldLarge(
+				Color.White,
+				menuEntries[selected].trimStart(),
+				gx,
+				gy,
+			);
+			gy += MENU_BOLD_LINE_SPACING;
+			for (const line of GameOptions.describe(list[selected]).split("\n")) {
+				this.m_UI.UI_DrawStringLarge(Color.White, `  ${line}`, gx, gy);
+				gy += MENU_LINE_SPACING;
+			}
+
+			// difficulty rating.
+			gy += MENU_BOLD_LINE_SPACING;
+			const diffForSurvivor = Math.floor(
+				100 *
+					Scoring.computeDifficultyRating(
+						s_Options,
+						DifficultySide.FOR_SURVIVOR,
+						0,
+					),
+			);
+			const diffForUndead = Math.floor(
+				100 *
+					Scoring.computeDifficultyRating(
+						s_Options,
+						DifficultySide.FOR_UNDEAD,
+						0,
+					),
+			);
+			this.m_UI.UI_DrawStringBoldLarge(
+				Color.Yellow,
+				`Difficulty Rating : ${diffForSurvivor}% as survivor / ${diffForUndead}% as undead.`,
+				gx,
+				gy,
+			);
+			gy += MENU_BOLD_LINE_SPACING;
+			this.m_UI.UI_DrawStringBoldLarge(
+				Color.White,
+				"Note: your game score decreases with each reincarnation.",
+				gx,
+				gy,
+			);
+
+			// caution.
+			gy += MENU_BOLD_LINE_SPACING;
+			this.m_UI.UI_DrawStringBoldLarge(
+				Color.Red,
+				"* Caution : increasing these values can make the game run slower and saving/loading longer.",
+				gx,
+				gy,
+			);
+
+			// footnote.
 			this.DrawFootnote(
 				Color.White,
-				"cursor to move, ENTER to select, ESC to cancel",
+				"Move cursor then left/right to change values, R to restore defaults, ENTER to proceed, ESC to cancel",
 			);
 			this.m_UI.UI_Repaint();
 
-			// get menu action.
+			// handle.
 			const key = await this.m_UI.UI_WaitKey();
 			switch (key.key) {
 				case "ArrowUp": // move up
@@ -2481,198 +3580,92 @@ export class RogueGame {
 					selected = (selected + 1) % menuEntries.length;
 					break;
 
-				case "Escape":
-					choiceDone = false;
+				case "r":
+				case "R":
+					// Defaults, not the values this session was entered with — see
+					// the method comment.
+					s_Options.resetToDefaultValues(OptionsCategory.DIFFICULTY);
+					break;
+
+				case "Escape": // cancel
 					loop = false;
+					choiceDone = false;
 					break;
 
 				case "Enter":
-					// validate
-					switch (selected) {
-						case 0: // random
-							selected = roller.roll(0, 5);
-							switch (selected) {
-								case 0:
-									model = ActorID.UNDEAD_SKELETON;
-									break;
-								case 1:
-									model = ActorID.UNDEAD_ZOMBIE;
-									break;
-								case 2:
-									model = ActorID.UNDEAD_MALE_ZOMBIFIED;
-									break;
-								case 3:
-									model = ActorID.UNDEAD_FEMALE_ZOMBIFIED;
-									break;
-								case 4:
-									model = ActorID.UNDEAD_ZOMBIE_MASTER;
-									break;
-								default:
-									throw new RangeError("unhandled select " + selected);
-							}
+					loop = false;
+					choiceDone = true;
+					break;
 
-							gy += MENU_BOLD_LINE_SPACING;
-							this.m_UI.UI_DrawStringBoldLarge(
-								Color.White,
-								`Type : ${this.gameActors.get(model).name}.`,
-								gx,
-								gy,
-							);
-							gy += MENU_BOLD_LINE_SPACING;
-							this.m_UI.UI_DrawStringBoldLarge(
-								Color.Yellow,
-								"Is that OK? Y to confirm, N to cancel.",
-								gx,
-								gy,
-							);
-							this.m_UI.UI_Repaint();
-							if (await this.WaitYesOrNo()) {
-								choiceDone = true;
-								loop = false;
-							}
-							break;
-
-						case 1: // skeleton
-							model = ActorID.UNDEAD_SKELETON;
-							choiceDone = true;
-							loop = false;
-							break;
-
-						case 2: // shambler
-							model = ActorID.UNDEAD_ZOMBIE;
-							choiceDone = true;
-							loop = false;
-							break;
-
-						case 3: // male zombified
-							model = ActorID.UNDEAD_MALE_ZOMBIFIED;
-							this.m_CharGen.isMale = true;
-							choiceDone = true;
-							loop = false;
-							break;
-
-						case 4: // female zombified
-							model = ActorID.UNDEAD_FEMALE_ZOMBIFIED;
-							this.m_CharGen.isMale = false;
-							choiceDone = true;
-							loop = false;
-							break;
-
-						case 5: // zm
-							model = ActorID.UNDEAD_ZOMBIE_MASTER;
-							choiceDone = true;
-							loop = false;
-							break;
-					}
+				case "ArrowLeft":
+					stepGameOption(list[selected], -1);
+					break;
+				case "ArrowRight":
+					stepGameOption(list[selected], 1);
 					break;
 			}
 		} while (loop);
 
-		// done.
-		return { ok: choiceDone, modelID: model };
-	}
-
-	// C# HandleNewCharacterSkill — RogueGame.cs:1952
-	async HandleNewCharacterSkill(
-		roller: DiceRoller,
-		skID: SkillID,
-	): Promise<{ ok: boolean; skID: SkillID }> {
-		// Make table of all skills.
-		const allSkills: SkillID[] = new Array<SkillID>(Skills.LAST_LIVING + 1);
-		const menuEntries: string[] = new Array<string>(allSkills.length + 1);
-		const skillDesc: string[] = new Array<string>(allSkills.length + 1);
-		menuEntries[0] = "*Random*";
-		skillDesc[0] = "(picks a skill at random for you)";
-		for (let i = Skills.FIRST_LIVING; i < Skills.LAST_LIVING + 1; i++) {
-			allSkills[i] = i as SkillID;
-			menuEntries[i + 1] = Skills.name(allSkills[i]);
-			skillDesc[i + 1] =
-				`${Skills.maxSkillLevel(allSkills[i])} max - ${this.DescribeSkillShort(allSkills[i])}`;
+		// apply options.
+		if (choiceDone) {
+			// Lock in the day the player chose. "random" is resolved here rather
+			// than when the arrow was pressed, so a player who pressed R after
+			// picking random gets a *fresh* roll of the same choice instead of the
+			// day they rolled and then discarded — which is what the C#'s
+			// `HiddenRescueDay` split is for (`RogueGame.cs:4038-4042`).
+			//
+			// The C# rolls with `new Random()`, which makes a "random" rescue day
+			// different on every run and unseedable. The port rolls with the game's
+			// own roller so a seeded run stays reproducible, which is the same
+			// reason `HandleNewCharacter` seeds its roller from the session.
+			s_Options.hiddenRescueDay =
+				s_Options.visibleRescueDay === RESCUE_DAY_RANDOM
+					? roller.roll(RESCUE_DAY_RANDOM_MIN, RESCUE_DAY_RANDOM_MAX)
+					: s_Options.visibleRescueDay;
+			this.ApplyOptions(false);
+			this.SaveOptions();
+		} else {
+			// Drop the changes. `LoadOptions` reads the stored blob back into the
+			// singleton, which is what makes cancelling safe rather than merely
+			// tidy.
+			await this.LoadOptions();
 		}
 
-		// Loop until choice done
-		// C# `out Skills.IDs skID` — seeded with the caller's value (C# assigns _FIRST).
-		let skill = skID;
-		let loop = true;
-		let choiceDone = false;
-		let selected = 0;
-		do {
-			// display.
-			this.m_UI.UI_Clear(Color.Black);
-			const gx = 0;
-			let gy = 0;
-			this.m_UI.UI_DrawStringBoldLarge(
-				Color.Yellow,
-				`[${Session.descGameMode(this.m_Session.gameMode)}] New ${this.m_CharGen.isMale ? "Male" : "Female"} Character - Choose Starting Skill`,
-				gx,
-				gy,
-			);
-			gy += 2 * MENU_BOLD_LINE_SPACING;
-			const gyRef = { value: gy };
-			this.DrawMenuOrOptions(
-				selected,
-				Color.White,
-				menuEntries,
-				Color.LightGray,
-				skillDesc,
-				gx,
-				gyRef,
-			);
-			gy = gyRef.value;
-			this.DrawFootnote(
-				Color.White,
-				"cursor to move, ENTER to select, ESC to cancel",
-			);
-			this.m_UI.UI_Repaint();
+		return {
+			ok: choiceDone,
+			rescueDay: s_Options.hiddenRescueDay,
+		};
+	}
 
-			// get menu action.
-			const key = await this.m_UI.UI_WaitKey();
-			switch (key.key) {
-				case "ArrowUp": // move up
-					if (selected > 0) --selected;
-					else selected = menuEntries.length - 1;
-					break;
-				case "ArrowDown": // move down
-					selected = (selected + 1) % menuEntries.length;
-					break;
-
-				case "Escape":
-					choiceDone = false;
-					loop = false;
-					break;
-
-				case "Enter":
-					// validate
-					if (selected === 0)
-						// random
-						skill = Skills.rollLiving(roller);
-					else skill = (selected - 1 + Skills.FIRST_LIVING) as SkillID;
-
-					gy += MENU_BOLD_LINE_SPACING;
-					this.m_UI.UI_DrawStringBoldLarge(
-						Color.White,
-						`Skill : ${Skills.name(skill)}.`,
-						gx,
-						gy,
-					);
-					gy += MENU_BOLD_LINE_SPACING;
-					this.m_UI.UI_DrawStringBoldLarge(
-						Color.Yellow,
-						"Is that OK? Y to confirm, N to cancel.",
-						gx,
-						gy,
-					);
-					this.m_UI.UI_Repaint();
-					if (await this.WaitYesOrNo()) {
-						choiceDone = true;
-						loop = false;
-					}
-					break;
+	/**
+	 * The difficulty rows for `mode`, in screen order.
+	 *
+	 * `DIFFICULTY_OPTIONS` is the whole set; this applies the two mode filters
+	 * from `RogueGame.cs:3805-3820` and drops the rats row for the C#'s reason
+	 * (`RogueGame.cs:3790` — Release 5 removed rats upgrades upstream, and this
+	 * port still has the option from classic's list).
+	 *
+	 * A filter over a constant rather than anything stateful — it is called once
+	 * per frame of the screen, and the result depends only on `mode`.
+	 */
+	private difficultyOptionList(mode: GameMode): OptionIDs[] {
+		return DIFFICULTY_OPTIONS.filter((id) => {
+			switch (id) {
+				case OptionIDs.GAME_RATS_UPGRADE:
+					return false;
+				// "=S" in the mid-game screen's legend: standard mode only.
+				case OptionIDs.GAME_ZOMBIFICATION_CHANCE:
+				case OptionIDs.GAME_STARVED_ZOMBIFICATION_CHANCE:
+					return Rules.hasImmediateZombification(mode);
+				// "-V": never offered in vintage.
+				case OptionIDs.GAME_ALLOW_UNDEADS_EVOLUTION:
+				case OptionIDs.GAME_SHAMBLERS_UPGRADE:
+				case OptionIDs.GAME_SKELETONS_UPGRADE:
+					return Rules.hasEvolution(mode);
+				default:
+					return true;
 			}
-		} while (loop);
-
-		// done.
-		return { ok: choiceDone, skID: skill };
+		});
 	}
 
 	// C# LoadManual — RogueGame.cs:2034
@@ -2928,6 +3921,14 @@ export class RogueGame {
 
 	// C# LoadHiScoreTable — RogueGame.cs:2146
 	async LoadHiScoreTable(): Promise<void> {
+		// Before the read, not after: on the desktop backend the file is read
+		// asynchronously, and these three loaders were the only readers of it. They
+		// were `async` in signature only, so on a cold desktop start they read an
+		// empty map, took the defaults, and wrote them back over the player's real
+		// scores. `storage.ts` documents the race; awaiting the read is this half of
+		// it, and `whenStorageReady` is a no-op on the two synchronous backends.
+		await whenStorageReady();
+
 		this.m_UI.UI_Clear(Color.Black);
 		this.m_UI.UI_DrawStringBoldLarge(
 			Color.White,
@@ -2973,6 +3974,46 @@ export class RogueGame {
 		this.m_UI.UI_Repaint();
 	}
 
+	/**
+	 * Still Alive, Release 7-4: what the player is holding on turn one.
+	 *
+	 * Gated, and the gate is the whole point: CLASSIC starts you with nothing,
+	 * which is what every classic speedrun and every classic test fixture assumes.
+	 * The C# guards this with `#if DEBUG`/`#else` and its release build grants
+	 * the big flashlight unconditionally. The port follows the *ruleset* rather
+	 * than the C#'s build flag, because the distinction that matters is which
+	 * game you are playing, not whether assertions were compiled in.
+	 *
+	 * Note the HIGH arm builds an improvised club and then never adds it to the
+	 * inventory. That is a bug in the C# -- `Item melee = ...` with no `AddAll`
+	 * -- and it is preserved deliberately. A scavenged world handing you a free
+	 * club is a balance change, and fixing it here would mean the port and the
+	 * fork disagree about difficulty in a way nobody asked for. Recorded in the
+	 * plan as a known C# bug.
+	 */
+	GiveStartingKitForResources(): void {
+		if (!hasFeature(this.m_Session.ruleset, Feature.ResourcesAvailability)) return;
+		const player = this.m_Player;
+		if (player?.inventory == null) return;
+		switch (s_Options.resourcesAvailability) {
+			case Resources.HIGH: {
+				player.inventory.addAll(new ItemFood(this.m_GameItems.get(ItemID.FOOD_GROCERIES)));
+				// Built and discarded, exactly as the C# does. See the note above.
+				void new ItemMeleeWeapon(this.m_GameItems.get(ItemID.MELEE_IMPROVISED_CLUB));
+				break;
+			}
+			case Resources.MED: {
+				const snack = new ItemFood(this.m_GameItems.get(ItemID.FOOD_SNACK_BAR));
+				snack.quantity = 2;
+				player.inventory.addAll(snack);
+				break;
+			}
+			case Resources.LOW:
+				// nothing. You start with your hands.
+				break;
+		}
+	}
+
 	// C# StartNewGame — RogueGame.cs:2178
 	async StartNewGame(): Promise<void> {
 		const isUndead = this.m_CharGen.isUndead;
@@ -2983,12 +4024,71 @@ export class RogueGame {
 		// It is an instance field rather than a module global precisely so this is
 		// the only place it needs resetting — but a seeded sim run twice in one
 		// process would otherwise inherit the heading of the previous run, and two
-		// runs that differ only in a remembered heading are the hardest kind of
+		// runs that differ only by a remembered heading are the hardest kind of
 		// non-determinism to notice. Pinned by a test.
+		//
+		// `m_PlayerWasRescued` sits here for the same reason and rather less
+		// benignly: the world regenerates, and so does every per-run flag that is not
+		// on the session. It is set by the rescue ending and read by `GameLoop`'s
+		// play-loop condition, so leaving it set would make this run — and every run
+		// after it in this process — unplayable. See its declaration.
 		this.m_FirstPersonFacing = Direction.N;
+		this.m_PlayerWasRescued = false;
 
 		// generate world.
-		this.GenerateWorld(true, s_Options.citySize);
+		//
+		// Retry on a fresh seed rather than letting a failed roll kill the game.
+		// `GenerateWorld` returns false when a required unique map could not be
+		// placed — the CHAR underground needs a business district with an office in
+		// it, and the office sits behind a `RollChance`, so a quarter with none is
+		// a legal roll. The C# threw out of the factory with an unreachable catch
+		// above it, so the player got a dead game and no explanation. The fork
+		// wrapped this in `do { ... } while (!worldMade)`; the bound is the part it
+		// is missing, and without it a city size too small to hold a business
+		// district spins forever instead of failing once with a usable message.
+		//
+		// There are now *two* ways an attempt can fail: that one, and
+		// `PickHelicopterRescueSite` finding no green district with a park in it, or
+		// no three clear tiles in any of them (`Feature.HelicopterRescue`). The
+		// bound covers both, and so does the message below — naming only the CHAR
+		// office when the helicopter was the site that could not be placed would
+		// send whoever reads it looking in the wrong place.
+		const MAX_WORLD_GEN_ATTEMPTS = 12;
+		let worldMade = false;
+		for (let attempt = 1; !worldMade; attempt++) {
+			if (attempt > 1) {
+				// New seed, and a fresh session, because `GenerateWorld` reuses
+				// whatever the previous attempt left behind. `reset()` covers the
+				// seed and the world; nothing else this loop needs clearing.
+				//
+				// Except the rescue day, which `reset()` does cover and which must
+				// not: `HandleNewCharacterDifficulty` committed the player's choice
+				// to it before this method was entered, so a failed first attempt
+				// would silently hand back the option's default — a player who chose
+				// day 14 to escape on day 21, because the world rolled a city with
+				// no park in it. It is preserved explicitly rather than by exempting
+				// the whole field from `reset()` (`load()` restores it from the save
+				// over the top, and a run that has not chosen one must still get the
+				// default).
+				const rescueDay = this.m_Session.armyHelicopterRescueDay;
+				this.m_Session.reset();
+				this.m_Session.armyHelicopterRescueDay = rescueDay;
+			}
+			worldMade = this.GenerateWorld(true, s_Options.citySize);
+			if (!worldMade && attempt >= MAX_WORLD_GEN_ATTEMPTS) {
+				throw new Error(
+					`could not generate a world in ${MAX_WORLD_GEN_ATTEMPTS} attempts; ` +
+						`no business district with a CHAR office, and no green district with a ` +
+						`park to land a helicopter in, in a ${s_Options.citySize}x${s_Options.citySize} city`,
+				);
+			}
+		}
+
+		// C# `CheckAmbientSFX(m_Player.Location.Map)` — RogueGame.cs:4060, right
+		// after world generation. A new game in the rain is audible from turn 0.
+		this.CheckAmbientAudio(this.m_Player.location.map!);
+
+		this.GiveStartingKitForResources();
 
 		// scoring : hello there.
 		this.m_Session.scoring.addVisit(
@@ -3123,229 +4223,238 @@ export class RogueGame {
 	}
 
 	// C# HandleCredits — RogueGame.cs:2248
+	//
+	// The C# draws one screenful of hardcoded strings and waits for Escape. This
+	// is the fork's shape instead (`_refs/StillAlive-master/.../RogueGame.cs:2114`),
+	// a reader over CREDITS_LINES: the C# block no longer fits on the canvas now
+	// that the Still Alive fork and the four sprite styles are credited, and a
+	// credits screen whose bottom is unreachable is not a credits screen.
 	async HandleCredits(): Promise<void> {
-		const left = 0;
-		const right = 256;
-		let gy = 0;
-
 		// music.
 		this.m_MusicManager.stop();
 		this.m_MusicManager.playLooping(GameMusics.SLEEP, MusicPriority.BGM);
 
-		// draw.
-		this.m_UI.UI_Clear(Color.Black);
-		this.DrawHeader();
-		gy += MENU_BOLD_LINE_SPACING;
-		this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Credits", 0, gy);
-		gy += 2 * MENU_BOLD_LINE_SPACING;
-		this.m_UI.UI_DrawStringBoldLarge(
-			Color.White,
-			"Programming, Graphics & Music by Jacques Ruiz (roguedjack) 2018",
-			0,
-			gy,
-		);
-		gy += 2 * MENU_BOLD_LINE_SPACING;
+		const lines = CREDITS_LINES;
+		// A visit resumes where the last one stopped, which is what the field
+		// rather than a local buys. Clamped on the way in for the same reason it is
+		// clamped at the bottom of the loop: a cursor at the very end draws one
+		// blank screen, which reads as an empty credits file.
+		this.m_CreditsLine = clampCreditsLine(this.m_CreditsLine, lines.length);
 
-		this.m_UI.UI_DrawStringBoldLarge(Color.White, "Programming", left, gy);
-		this.m_UI.UI_DrawStringLarge(
-			Color.White,
-			"- C# NET 3.5, Microsoft Visual Studio Community 2017",
-			right,
-			gy,
-		);
-		gy += MENU_BOLD_LINE_SPACING;
-		this.m_UI.UI_DrawStringBoldLarge(
-			Color.White,
-			"Graphic softwares",
-			left,
-			gy,
-		);
-		this.m_UI.UI_DrawStringLarge(
-			Color.White,
-			"- Inkscape, Paint.NET",
-			right,
-			gy,
-		);
-		gy += MENU_BOLD_LINE_SPACING;
-		this.m_UI.UI_DrawStringBoldLarge(
-			Color.White,
-			"Sound & Music softwares",
-			left,
-			gy,
-		);
-		this.m_UI.UI_DrawStringLarge(
-			Color.White,
-			"- GuitarPro 7, Audacity",
-			right,
-			gy,
-		);
-		gy += MENU_BOLD_LINE_SPACING;
-		this.m_UI.UI_DrawStringBoldLarge(Color.White, "Sound samples", left, gy);
-		this.m_UI.UI_DrawStringLarge(
-			Color.White,
-			"- http://www.sound-fishing.net  http://www.soundsnap.com/",
-			right,
-			gy,
-		);
+		let loop = true;
+		do {
+			// draw header.
+			this.m_UI.UI_Clear(Color.Black);
+			let gy = 0;
+			this.DrawHeader();
+			gy += MENU_BOLD_LINE_SPACING;
+			this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Credits", 0, gy);
+			gy += MENU_BOLD_LINE_SPACING;
+			this.m_UI.UI_DrawStringBoldLarge(Color.White, CREDITS_RULE, 0, gy);
+			gy += MENU_BOLD_LINE_SPACING;
 
-		gy += 2 * MENU_BOLD_LINE_SPACING;
-		this.m_UI.UI_DrawStringBoldLarge(Color.White, "Contact", 0, gy);
-		gy += MENU_BOLD_LINE_SPACING;
-		this.m_UI.UI_DrawStringLarge(
-			Color.White,
-			"Email      : roguedjack@yahoo.fr",
-			0,
-			gy,
-		);
-		gy += MENU_LINE_SPACING;
-		this.m_UI.UI_DrawStringLarge(
-			Color.White,
-			"Blog       : http://roguesurvivor.blogspot.com/",
-			0,
-			gy,
-		);
-		gy += MENU_LINE_SPACING;
-		this.m_UI.UI_DrawStringLarge(
-			Color.White,
-			"Fans Forum : http://roguesurvivor.proboards.com/",
-			0,
-			gy,
-		);
-		gy += MENU_LINE_SPACING;
-		this.m_UI.UI_DrawStringBoldLarge(
-			Color.White,
-			"Thanks to the players for their feedback and eagerness to die!",
-			0,
-			gy,
-		);
-		gy += MENU_BOLD_LINE_SPACING;
+			// draw credits, as many as fit.
+			let iLine = this.m_CreditsLine;
+			do {
+				// ignore commands
+				const ignore = lines[iLine] === "<SECTION>";
 
-		this.DrawFootnote(Color.White, "ESC to leave");
-		this.m_UI.UI_Repaint();
-		await this.WaitEscape();
+				if (!ignore) {
+					this.m_UI.UI_DrawStringBoldLarge(Color.LightGray, lines[iLine], 0, gy);
+					gy += MENU_BOLD_LINE_SPACING;
+				}
+				++iLine;
+			} while (
+				iLine < lines.length &&
+				gy < CANVAS_HEIGHT - 2 * MENU_BOLD_LINE_SPACING
+			);
+
+			// draw foot.
+			this.m_UI.UI_DrawStringBoldLarge(Color.White, CREDITS_RULE, 0, gy);
+			gy += MENU_BOLD_LINE_SPACING;
+			this.DrawFootnote(
+				Color.White,
+				"cursor and PgUp/PgDn to move, numbers to jump to section, ESC to leave",
+			);
+
+			this.m_UI.UI_Repaint();
+
+			// get command. The page keys move by a screenful rather than by
+			// TEXTFILE_LINES_PER_PAGE, because a "page" here has to mean the
+			// screen: 50 lines against a 38-line screen would skip twelve credits
+			// every press and never land on them.
+			const key = await this.m_UI.UI_WaitKey();
+			const choice = this.KeyToChoiceNumber(key);
+
+			if (choice >= 0) {
+				if (choice === 0) {
+					this.m_CreditsLine = 0;
+				} else {
+					// jump to Nth section.
+					const prevLine = this.m_CreditsLine;
+					let sectionCount = 0;
+					this.m_CreditsLine = 0;
+					while (sectionCount < choice && this.m_CreditsLine < lines.length) {
+						if (lines[this.m_CreditsLine] === "<SECTION>") {
+							++sectionCount;
+						}
+						++this.m_CreditsLine;
+					}
+
+					// if section not found, don't move.
+					if (this.m_CreditsLine >= lines.length) {
+						this.m_CreditsLine = prevLine;
+					}
+				}
+			} else {
+				switch (key.key) {
+					case "Escape":
+						loop = false;
+						break;
+
+					case "ArrowUp":
+						--this.m_CreditsLine;
+						break;
+					case "ArrowDown":
+						++this.m_CreditsLine;
+						break;
+					case "PageUp":
+						this.m_CreditsLine -= CREDITS_LINES_PER_SCREEN;
+						break;
+					case "PageDown":
+						this.m_CreditsLine += CREDITS_LINES_PER_SCREEN;
+						break;
+				}
+			}
+
+			this.m_CreditsLine = clampCreditsLine(this.m_CreditsLine, lines.length);
+		} while (loop);
 	}
 
 	// C# HandleOptions — RogueGame.cs:2295
 	// The modal options loop is ported as `ui/OptionsScreen` (Phase 3).
 	async HandleOptions(ingame: boolean): Promise<void> {
-		await new OptionsScreen(this.m_UI, this.m_MusicManager).run(ingame);
+		// All three buses, so the Release 2 / 6-1 sfx and ambient rows take effect
+		// and `optionsMenuAudioAdjustment` can preview them. Passing only the music
+		// manager is what left those four rows inert on screen.
+		await new OptionsScreen(
+			this.m_UI,
+			this.m_MusicManager,
+			this.m_SoundManager,
+			this.m_AmbientSFXManager,
+		).run(ingame);
 	}
 
 	// C# HandleRedefineKeys — RogueGame.cs:2570
 	async HandleRedefineKeys(): Promise<void> {
-		const menuEntries: string[] = [
-			"Move N",
-			"Move NE",
-			"Move E",
-			"Move SE",
-			"Move S",
-			"Move SW",
-			"Move W",
-			"Move NW",
-			"Wait",
-			"Wait 1 hour",
-			"Abandon Game",
-			"Advisor Hint",
-			"Barricade",
-			"Break",
-			"Build Large Fortification",
-			"Build Small Fortification",
-			"City Info",
-			"Close",
-			"Fire",
-			"Give",
-			"Help",
-			"Hints screen",
-			"Negociate Trade",
-			"Item 1 slot",
-			"Item 2 slot",
-			"Item 3 slot",
-			"Item 4 slot",
-			"Item 5 slot",
-			"Item 6 slot",
-			"Item 7 slot",
-			"Item 8 slot",
-			"Item 9 slot",
-			"Item 10 slot",
-			"Lead",
-			"Load Game",
-			"Mark Enemies",
-			"Messages Log",
-			"Options",
-			"Order",
-			"Pull", // alpha10
-			"Push",
-			"Quit Game",
-			"Redefine Keys",
-			"Run",
-			"Save Game",
-			"Screenshot",
-			"Shout",
-			"Sleep",
-			"Switch Place",
-			"Use Exit",
-			"Use Spray",
-			"Zoom in", // browser port
-			"Zoom out", // browser port
+		//
+		// One array of `{label, command}` rows, not the C#'s three parallel lists.
+		//
+		// The C# has `menuEntries`, a set of `O_*` index constants, and an
+		// `O_*`-keyed `values` built from `GetFriendlyFormat`; the port had collapsed
+		// that to a `string[]` of labels beside a `PlayerCommand[]`, correlated
+		// *positionally* and checked only for equal length. That is a shape in which
+		// a permutation is invisible: two arrays of 54 pass a length check and
+		// display every row from the first mismatch to the resynchronisation one row
+		// off, while staying the right length throughout.
+		//
+		// It was. `"Make fire (matches)"` sat at label index 23 while
+		// `MAKE_COOKING_FIRE` sat at command index 51, so every row from 23 to 51
+		// printed its *neighbour's* binding — 29 of 54 rows, and the reported symptom
+		// was one of them: the "Use Exit" row showed `M`, because index 50 held
+		// `USE_SPRAY`, while `USE_EXIT`'s real `.` was printed one row up under
+		// "Switch Place". The keys were right and only the screen was wrong, which is
+		// why arrow keys and `.` both played correctly while the menu lied about it.
+		//
+		// `addKey` and `removeLastKey` indexed the same wrong array, so this was not
+		// only a display bug: rebinding from the "Use Exit" row bound the new key to
+		// spray, stealing `.` from the stairs. A pair per row makes that impossible
+		// rather than merely fixed — there is no second list to keep in step.
+		//
+		// Every command with a default binding is listed. Six were not: the C# has
+		// rows for `EAT_CORPSE` and `REVIVE_CORPSE` that the port's list had dropped,
+		// and the fork's own `SWAP_INVENTORY`, `LOOK_LEFT`, `LOOK_RIGHT` and
+		// `VIEW_MODE_TOGGLE` were never added. A key the game reads but the key menu
+		// does not offer is a key the player cannot change, which is the one thing
+		// this screen exists to prevent.
+		const rows: { label: string; command: PlayerCommand }[] = [
+			{ label: "Move N", command: PlayerCommand.MOVE_N },
+			{ label: "Move NE", command: PlayerCommand.MOVE_NE },
+			{ label: "Move E", command: PlayerCommand.MOVE_E },
+			{ label: "Move SE", command: PlayerCommand.MOVE_SE },
+			{ label: "Move S", command: PlayerCommand.MOVE_S },
+			{ label: "Move SW", command: PlayerCommand.MOVE_SW },
+			{ label: "Move W", command: PlayerCommand.MOVE_W },
+			{ label: "Move NW", command: PlayerCommand.MOVE_NW },
+			{ label: "Wait", command: PlayerCommand.WAIT_OR_SELF },
+			{ label: "Wait 1 hour", command: PlayerCommand.WAIT_LONG },
+			{ label: "Abandon Game", command: PlayerCommand.ABANDON_GAME },
+			{ label: "Advisor Hint", command: PlayerCommand.ADVISOR },
+			{ label: "Barricade", command: PlayerCommand.BARRICADE_MODE },
+			{ label: "Break", command: PlayerCommand.BREAK_MODE },
+			{
+				label: "Build Large Fortification",
+				command: PlayerCommand.BUILD_LARGE_FORTIFICATION,
+			},
+			{
+				label: "Build Small Fortification",
+				command: PlayerCommand.BUILD_SMALL_FORTIFICATION,
+			},
+			{ label: "City Info", command: PlayerCommand.CITY_INFO },
+			{ label: "Close", command: PlayerCommand.CLOSE_DOOR },
+			{ label: "Eat Corpse", command: PlayerCommand.EAT_CORPSE },
+			{ label: "Fire", command: PlayerCommand.FIRE_MODE },
+			{ label: "Give", command: PlayerCommand.GIVE_ITEM },
+			{ label: "Help", command: PlayerCommand.HELP_MODE },
+			{ label: "Hints screen", command: PlayerCommand.HINTS_SCREEN_MODE },
+			{ label: "Negotiate Trade", command: PlayerCommand.NEGOCIATE_TRADE },
+			{ label: "Make fire (matches)", command: PlayerCommand.MAKE_COOKING_FIRE },
+			{ label: "Item 1 slot", command: PlayerCommand.ITEM_SLOT_0 },
+			{ label: "Item 2 slot", command: PlayerCommand.ITEM_SLOT_1 },
+			{ label: "Item 3 slot", command: PlayerCommand.ITEM_SLOT_2 },
+			{ label: "Item 4 slot", command: PlayerCommand.ITEM_SLOT_3 },
+			{ label: "Item 5 slot", command: PlayerCommand.ITEM_SLOT_4 },
+			{ label: "Item 6 slot", command: PlayerCommand.ITEM_SLOT_5 },
+			{ label: "Item 7 slot", command: PlayerCommand.ITEM_SLOT_6 },
+			{ label: "Item 8 slot", command: PlayerCommand.ITEM_SLOT_7 },
+			{ label: "Item 9 slot", command: PlayerCommand.ITEM_SLOT_8 },
+			{ label: "Item 10 slot", command: PlayerCommand.ITEM_SLOT_9 },
+			{ label: "Lead", command: PlayerCommand.LEAD_MODE },
+			{ label: "Load Game", command: PlayerCommand.LOAD_GAME },
+			{ label: "Mark Enemies", command: PlayerCommand.MARK_ENEMIES_MODE },
+			{ label: "Messages Log", command: PlayerCommand.MESSAGE_LOG },
+			{ label: "Options", command: PlayerCommand.OPTIONS_MODE },
+			{ label: "Order", command: PlayerCommand.ORDER_MODE },
+			{ label: "Pull", command: PlayerCommand.PULL_MODE }, // alpha10
+			{ label: "Push", command: PlayerCommand.PUSH_MODE },
+			{ label: "Quit Game", command: PlayerCommand.QUIT_GAME },
+			{ label: "Redefine Keys", command: PlayerCommand.KEYBINDING_MODE },
+			{ label: "Revive Corpse", command: PlayerCommand.REVIVE_CORPSE },
+			{ label: "Run", command: PlayerCommand.RUN_TOGGLE },
+			{ label: "Save Game", command: PlayerCommand.SAVE_GAME },
+			{ label: "Screenshot", command: PlayerCommand.SCREENSHOT },
+			{ label: "Shout", command: PlayerCommand.SHOUT },
+			{ label: "Sleep", command: PlayerCommand.SLEEP },
+			{
+				label: "Unload ammo",
+				command: PlayerCommand.UNLOAD_AMMO,
+			},
+			{
+				label: "Swap Inventory",
+				command: PlayerCommand.SWAP_INVENTORY,
+			},
+			{ label: "Switch Place", command: PlayerCommand.SWITCH_PLACE },
+			{ label: "Use Exit", command: PlayerCommand.USE_EXIT },
+			{ label: "Use Spray", command: PlayerCommand.USE_SPRAY },
+			// Browser port: the 3x3 movement grid displaced the first-person turning
+			// keys, and the fork's view toggle has no C# row at all.
+			{ label: "Turn Left (first person)", command: PlayerCommand.LOOK_LEFT },
+			{ label: "Turn Right (first person)", command: PlayerCommand.LOOK_RIGHT },
+			{ label: "Toggle View Mode", command: PlayerCommand.VIEW_MODE_TOGGLE },
+			{ label: "Zoom in", command: PlayerCommand.ZOOM_IN },
+			{ label: "Zoom out", command: PlayerCommand.ZOOM_OUT },
 		];
-		// C#'s O_* index constants — one command per menu entry, same order.
-		const commands: PlayerCommand[] = [
-			PlayerCommand.MOVE_N,
-			PlayerCommand.MOVE_NE,
-			PlayerCommand.MOVE_E,
-			PlayerCommand.MOVE_SE,
-			PlayerCommand.MOVE_S,
-			PlayerCommand.MOVE_SW,
-			PlayerCommand.MOVE_W,
-			PlayerCommand.MOVE_NW,
-			PlayerCommand.WAIT_OR_SELF,
-			PlayerCommand.WAIT_LONG,
-			PlayerCommand.ABANDON_GAME,
-			PlayerCommand.ADVISOR,
-			PlayerCommand.BARRICADE_MODE,
-			PlayerCommand.BREAK_MODE,
-			PlayerCommand.BUILD_LARGE_FORTIFICATION,
-			PlayerCommand.BUILD_SMALL_FORTIFICATION,
-			PlayerCommand.CITY_INFO,
-			PlayerCommand.CLOSE_DOOR,
-			PlayerCommand.FIRE_MODE,
-			PlayerCommand.GIVE_ITEM,
-			PlayerCommand.HELP_MODE,
-			PlayerCommand.HINTS_SCREEN_MODE,
-			PlayerCommand.NEGOCIATE_TRADE,
-			PlayerCommand.ITEM_SLOT_0,
-			PlayerCommand.ITEM_SLOT_1,
-			PlayerCommand.ITEM_SLOT_2,
-			PlayerCommand.ITEM_SLOT_3,
-			PlayerCommand.ITEM_SLOT_4,
-			PlayerCommand.ITEM_SLOT_5,
-			PlayerCommand.ITEM_SLOT_6,
-			PlayerCommand.ITEM_SLOT_7,
-			PlayerCommand.ITEM_SLOT_8,
-			PlayerCommand.ITEM_SLOT_9,
-			PlayerCommand.LEAD_MODE,
-			PlayerCommand.LOAD_GAME,
-			PlayerCommand.MARK_ENEMIES_MODE,
-			PlayerCommand.MESSAGE_LOG,
-			PlayerCommand.OPTIONS_MODE,
-			PlayerCommand.ORDER_MODE,
-			PlayerCommand.PULL_MODE,
-			PlayerCommand.PUSH_MODE,
-			PlayerCommand.QUIT_GAME,
-			PlayerCommand.KEYBINDING_MODE,
-			PlayerCommand.RUN_TOGGLE,
-			PlayerCommand.SAVE_GAME,
-			PlayerCommand.SCREENSHOT,
-			PlayerCommand.SHOUT,
-			PlayerCommand.SLEEP,
-			PlayerCommand.SWITCH_PLACE,
-			PlayerCommand.USE_EXIT,
-			PlayerCommand.USE_SPRAY,
-			PlayerCommand.ZOOM_IN,
-			PlayerCommand.ZOOM_OUT,
-		];
-		if (commands.length !== menuEntries.length)
-			throw new RangeError("commands/menuEntries length mismatch");
+		const menuEntries: string[] = rows.map((r) => r.label);
 
 		let loop = true;
 		let selected = 0;
@@ -3357,9 +4466,10 @@ export class RogueGame {
 			// draw
 			// Every key, not just the primary: a command can have several, and the
 			// point of the screen is to see what a command answers to.
-			const values: string[] = commands.map((cmd) =>
-				s_KeyBindings.getAll(cmd).join(" / "),
+			const values: string[] = rows.map((r) =>
+				s_KeyBindings.getAll(r.command).join(" / "),
 			);
+
 
 			const gx = 0;
 			let gy = 0;
@@ -3369,8 +4479,9 @@ export class RogueGame {
 			this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Redefine keys", 0, gy);
 			gy += MENU_BOLD_LINE_SPACING;
 			const gyRef = { value: gy };
-			// 53 entries (51 in C# plus the two zoom binds): scroll a window that
-			// fits above the footnote.
+			// The key list is longer than one screen, so scroll a window that fits
+			// above the footnote. Driven off the row count rather than a number typed
+			// in here, so adding a command cannot silently overflow the footnote.
 			const keysRows = Math.max(
 				5,
 				Math.floor(
@@ -3431,7 +4542,7 @@ export class RogueGame {
 					// everything. The C# cannot have more than one key per command, so there
 					// is no equivalent to port here.
 					//
-					s_KeyBindings.removeLastKey(commands[selected]);
+					s_KeyBindings.removeLastKey(rows[selected].command);
 					break;
 				}
 
@@ -3469,7 +4580,7 @@ export class RogueGame {
 					// Bind it, *in addition to* whatever the command already answers
 					// to. Replacing would make "more than one key per command" unreachable
 					// from this screen, which is the only place a player can set one.
-					s_KeyBindings.addKey(commands[selected], newKeyData);
+					s_KeyBindings.addKey(rows[selected].command, newKeyData);
 
 					break;
 				}
@@ -3555,6 +4666,60 @@ export class RogueGame {
 						),
 					);
 				await this.OnNewNight();
+
+				// Still Alive, Release 7-6: age the world. C# `:5617-5626`, inside the
+				// sunset branch and immediately after `OnNewNight()`, verbatim:
+				//
+				// ```csharp
+				// //after a period of time, some objects and tiles around the world show decay        //@@MP (Release 7-6)
+				// if ((s_Options.IsWorldDecayOn) && (m_Session.WorldTime.TurnCounter >= (s_Options.DaysBeforeWorldDecays * WorldTime.TURNS_PER_DAY)))
+				// {
+				//     for (int x = 0; x < m_Session.World.Size; x++)
+				//         for (int y = 0; y < m_Session.World.Size; y++)
+				//         {
+				//             District dist = m_Session.World[x, y];
+				//             CheckIfWorldDecays(dist.EntryMap);
+				//         }
+				// }
+				// ```
+				//
+				// **Sunset, not dawn and not "on any day change".** This sits in the
+				// `wasNight && !isNight` / `!wasNight && isNight` pair, so it fires once
+				// per day on the turn night falls and on no other turn -- which is why
+				// a district the player is nowhere near still ages at the same rate as
+				// the one they are standing in.
+				//
+				// **The day count is read twice, and that is the C#'s.** This outer test
+				// (`turn >= days * TURNS_PER_DAY`) and `CheckIfWorldDecays`'s own
+				// (`day >= days`, then the divisibility test) are the same condition in
+				// two currencies. Keeping both means the option's help text is literally
+				// true -- "If this is Off, the 'Days before the world looks decayed'
+				// setting is ignored" -- because with the master switch off the day count
+				// is never multiplied by anything.
+				//
+				// **The two nulls are the port's and not the C#'s.** `World[x, y]` is a
+				// dense `District[,]` in the C# and `EntryMap` is a non-nullable
+				// property; the port's `World.getDistrict` returns `District | null` and
+				// `District.entryMap` is nullable, and both are legitimately null — the
+				// first for a world grid that was never filled, the second for a district
+				// whose surface map has not been generated yet. Skipping them is the only
+				// answer that does not turn a missing map into a crash at day 7.
+				if (
+					s_Options.isWorldDecayOn &&
+					this.m_Session.worldTime.turnCounter >=
+						s_Options.daysBeforeWorldDecays * WorldTime.TURNS_PER_DAY
+				) {
+					const decayingWorld = this.m_Session.world;
+					if (decayingWorld !== null) {
+						for (let x = 0; x < decayingWorld.size; x++) {
+							for (let y = 0; y < decayingWorld.size; y++) {
+								const dist = decayingWorld.getDistrict(x, y);
+								if (dist === null || dist.entryMap === null) continue;
+								this.CheckIfWorldDecays(dist.entryMap);
+							}
+						}
+					}
+				}
 			} else if (prevPhase !== newPhase) {
 				if (canSeeSky) {
 					this.AddMessage(
@@ -3565,7 +4730,43 @@ export class RogueGame {
 						),
 					);
 				}
+
+				// Still Alive, Release 7-6: age out NPC litter. This fires on
+				// *any* day-phase change -- morning to afternoon, afternoon to
+				// evening, and so on -- not only at dawn, which is what the C# does
+				// and why the sweep runs up to four times a day rather than once.
+				this.DespawnJunkInDistrict(district);
 			}
+
+			// Still Alive, Release 6-6: the church bells, at sunset.
+			//
+			// C# `RogueGame.cs:5635-5641`, inside the same day-phase branch:
+			//
+			// ```csharp
+			// if (newPhase == DayPhase.SUNSET)
+			// {
+			//     if (m_Player.Location.Map.HasChurch && !m_Player.IsSleeping)
+			//         m_AmbientSFXManager.PlayIfNotAlreadyPlaying(GameAmbients.CHURCH_BELLS_WITHIN_MAP, AudioPriority.PRIORITY_BGM);
+			//     else
+			//         m_AmbientSFXManager.PlayIfNotAlreadyPlaying(GameAmbients.CHURCH_BELLS_OUTSIDE_MAP, AudioPriority.PRIORITY_BGM);
+			// }
+			// ```
+			//
+			// It sits in the `prevPhase != newPhase` branch above, so it fires on the
+			// turn the phase becomes sunset -- not once per turn at sunset, and not at
+			// any other phase change.
+			//
+			// **The `else` is doing more work than it looks.** A sleeping player rings
+			// the "outside the map" bells even when they are inside the church, because
+			// the only test is `HasChurch && !IsSleeping` and a sleeping player fails it
+			// whichever map they are on. Transcribed as-is: the C# clearly means "can
+			// the player hear it", and the answer for someone asleep indoors is no --
+			// it just happens to pick the outside recording for that case.
+			//
+			// Both are one-shots (`looping` defaults false, `ISoundManager.cs:52`), so
+			// `playIfNotAlreadyPlaying` only guards a re-trigger within the same
+			// ring's own length.
+			if (newPhase === DayPhase.SUNSET) this.checkChurchBellsSFX();
 
 			// alpha10
 			// if time to change weather do it and roll next change time.
@@ -3611,6 +4812,12 @@ export class RogueGame {
 			// 8 Band of Survivors?
 			if (this.CheckForEvent_BandOfSurvivors(entryMap))
 				await this.FireEvent_BandOfSurvivors(entryMap);
+			// 9 CHAR scientists research team?
+			// C# `:5710-5714`, the ninth and last of the nine. **Order is load-bearing**:
+			// each `CheckForEvent` spends a `RollChance`, so swapping two arms changes
+			// the dice stream and every district's event sequence after it.
+			if (this.CheckForEvent_CHARScientists(entryMap))
+				await this.FireEvent_CHARScientists(entryMap);
 		}
 
 		// Sewers
@@ -3715,6 +4922,10 @@ export class RogueGame {
 		actor.previousFoodPoints = actor.foodPoints;
 		actor.previousSleepPoints = actor.sleepPoints;
 		actor.previousSanity = actor.sanity;
+		// Still Alive, Release 7-1. Taken at the end of the turn, so during the
+		// *next* one `previousBloodAlcohol` holds the value from before this turn's
+		// decay -- which is what makes the drink effects threshold *crossings*.
+		actor.previousBloodAlcohol = actor.bloodAlcohol;
 	}
 
 	// C# NotifyOrderablesAI — RogueGame.cs:3027
@@ -3726,6 +4937,252 @@ export class RogueGame {
 				new Location(map, position),
 				map.localTime.turnCounter,
 			);
+		}
+	}
+
+	// ── Army rescue helicopter ───────────────────────────────────────────────
+	//@@MP - methods supporting the end-goal helicopter rescue (Release 6-4)
+	//
+	// The whole region is `Feature.HelicopterRescue`, and the gate is on the two
+	// day-change call sites (`OnNewDay` / `OnNewNight`) rather than on each method
+	// here: they are the only callers, they are the only ones that know whether
+	// it is the rescue day, and a gate inside a method whose every caller already
+	// decided would be a second answer to a question that has one.
+
+	/**
+	 * C# `SpawnArmyHelicopterOnMap` — `RogueGame.cs:28807-28880`, Release 6-4.
+	 *
+	 * async: the C# blocks on `OnActorEnterTile`, which awaits a trap roll and a
+	 * possible `KillActor`; see `OnActorEnterTile`.
+	 *
+	 * The order is the C#'s and each step depends on the one before it: clear the
+	 * three tiles, *then* place the helicopter on them, *then* tell the AI. Placing
+	 * first and clearing after would delete the helicopter, and notifying first
+	 * would have orderables path to a tile that is then occupied.
+	 *
+	 * ## What is NOT here
+	 *
+	 * - **`CheckLandedHelicopterSFX` and the flyover** (`RogueGame.cs:28869-28877`)
+	 *   are the `Feature.AmbientAudio` follow-up's, not this feature's: they read
+	 *   `m_AmbientSFXManager`, and the five helicopter tracks are gated on that
+	 *   feature so the gates stay separate. `NoiseDistance` now has the four radii
+	 *   those calls need, and `armyHelicopterRescueMap` /
+	 *   `armyHelicopterRescueCoordinates` now exist for them, so that work is
+	 *   unblocked — but it is not done here.
+	 * - **`FireEvent_RescueWave`** (`RogueGame.cs:28132-28158`) is not ported. It
+	 *   tops the district back up to `MaxCivilians` / `MaxAnimals` / `MaxUndeads`,
+	 *   and the port has no `GAME_MAX_ANIMALS` option (`Options.maxAnimals`) and
+	 *   no `SpawnNewFeralDog`, so its middle leg — the feral dogs — cannot be
+	 *   written at all. Two thirds of a wave is not a wave, and the two messages it
+	 *   announces ("The number of undead seems to be increasing!") would be
+	 *   announcing nothing.
+	 */
+	async SpawnArmyHelicopterOnMap(map: Map): Promise<void> {
+		// The heli is a 3x1 tile, so clear its designated space of actors and
+		// objects. C# `:28811-28858`.
+		const heli1 = this.m_Session.armyHelicopterRescueCoordinates!;
+		const heliPoints = [
+			heli1,
+			heli1.add(new Point(1, 0)),
+			heli1.add(new Point(2, 0)),
+		];
+
+		for (const heliPoint of heliPoints) {
+			// Remove objects in the way.
+			const obj = map.getMapObjectAtPoint(heliPoint);
+			if (obj !== null) map.removeMapObject(obj);
+
+			// Remove items in the way. C# `RemoveAllItemsAt`, which the port's
+			// `Map` does not have — `Inventory` is the other agent's file and this is
+			// the one operation of the four that it does not already expose. Done
+			// through the primitives instead, in the same order (the C# iterates
+			// its own copy because it removes while iterating).
+			this.RemoveAllItemsAt(map, heliPoint);
+
+			// Move actors in the way.
+			const actor = map.getActorAtPoint(heliPoint);
+			if (actor === null) continue;
+			if (!actor.isPlayer) {
+				// Kill AI actors. C# `:28829-28833`, Release 7-5: they used to be
+				// removed outright and now are killed *by themselves*, which is what
+				// gives the rescue square its pile of corpses.
+				await this.KillActor(actor, actor, "crushed by a helicopter");
+				this.RemoveAllItemsAt(map, heliPoint); // get rid of their stuff.
+			} else {
+				// Find a suitable location to move the player to.
+				let winningSpot = this.FindNonHelicopterSpotToMovePlayer(map, heliPoint, heliPoints);
+				// If we found absolutely no good spot, widen the search: the
+				// player is on a helicopter tile, so their own neighbours are all
+				// either heli tiles or wherever they were standing a moment ago.
+				if (winningSpot === null) {
+					for (const d of Direction.COMPASS) {
+						const widened = this.FindNonHelicopterSpotToMovePlayer(
+							map,
+							d.applyTo(heliPoint),
+							heliPoints,
+						);
+						if (widened !== null) {
+							winningSpot = widened;
+							break;
+						}
+					}
+					if (winningSpot === null)
+						throw new Error(
+							"Could not find clear point to relocate player to (away from helicopter). " +
+								"Please reload your last save",
+						);
+				}
+
+				// Now move them.
+				map.removeActor(actor);
+				map.placeActor(actor, winningSpot);
+				await this.OnActorEnterTile(actor);
+			}
+		}
+
+		// Now place the helicopter down. C# `:28863-28866`: three objects, one per
+		// third of the sprite, in order.
+		map.placeMapObject(this.m_TownGenerator.makeObjHelicopter(GameImages.OBJ_HELICOPTER1), heli1);
+		map.placeMapObject(
+			this.m_TownGenerator.makeObjHelicopter(GameImages.OBJ_HELICOPTER2),
+			heliPoints[1],
+		);
+		map.placeMapObject(
+			this.m_TownGenerator.makeObjHelicopter(GameImages.OBJ_HELICOPTER3),
+			heliPoints[2],
+		);
+
+		// Audio. C# `RogueGame.cs:28869-28877`, Release 6-4, immediately after the
+		// three hulls are placed and before the AI is told:
+		//
+		// ```csharp
+		// CheckLandedHelicopterSFX(map);
+		// if (!IsPlaying(FARTHEST) && !IsPlaying(FAR) && !IsPlaying(NEAR) && !IsPlaying(VISIBLE))
+		//     PlayIfNotAlreadyPlaying(GameAmbients.HELICOPTER_FLYOVER, AudioPriority.PRIORITY_EVENT);
+		// ```
+		//
+		// The point of the flyover is that it is a **one-shot announcement for a
+		// player who is too far away to have a looping bed yet**. Once
+		// `CheckLandedHelicopterSFX` has started any of the four tiers the player can
+		// hear it properly, so a flyover on top would be a second helicopter. Hence
+		// the four-way "is anything playing" test, which is why the tiers have to be
+		// started first.
+		this.checkLandedHelicopterSFX(map);
+		const heliTiers = [
+			GameAmbients.STATIONARY_HELICOPTER_VISIBLE,
+			GameAmbients.STATIONARY_HELICOPTER_NEAR,
+			GameAmbients.STATIONARY_HELICOPTER_FAR,
+			GameAmbients.STATIONARY_HELICOPTER_FARTHEST,
+		];
+		if (!heliTiers.some((id) => this.m_AmbientSFXManager.isPlaying(id))) {
+			// A one-shot, like the C#: no `looping` argument, so false.
+			this.m_AmbientSFXManager.playIfNotAlreadyPlaying(GameAmbients.HELICOPTER_FLYOVER, false);
+		}
+
+		// Notify AI. //@@MP (Release 7-5)
+		this.NotifyOrderablesAI(
+			map,
+			RaidType.HELICOPTER_RESCUE,
+			heli1,
+		);
+	}
+
+	/**
+	 * `Map.RemoveAllItemsAt(Point)` — C# `RogueGame.cs:28824`.
+	 *
+	 * Exists as a method here rather than on `Map` because `Map` is not this
+	 * feature's file to change, and `Inventory` is another agent's. It is the C#'s
+	 * semantics exactly: every ground item on the tile goes, and the tile's
+	 * inventory is dropped rather than emptied so it does not linger as an empty
+	 * container — which is what `removeItemsAtIfEmpty` would leave behind anyway.
+	 */
+	private RemoveAllItemsAt(map: Map, pos: Point): void {
+		const inv = map.getItemsAt(pos);
+		if (inv === null) return;
+		for (const it of inv.items.slice()) {
+			if (inv.contains(it)) map.removeItemAt(it, pos);
+		}
+		map.removeItemsAtIfEmpty(pos);
+	}
+
+	/**
+	 * C# `FindNonHelicopterSpotToMovePlayer` — `RogueGame.cs:28884-28925`.
+	 *
+	 * **Returns null where the C# returns `Point.Empty`.** `(0, 0)` is a real tile
+	 * — the top-left corner of the map — so the C#'s "no spot" sentinel cannot be
+	 * told from "the top-left corner", and a caller testing `!= Point.Empty` would
+	 * treat the corner as a failure and keep looking. Null is the port's
+	 * `Point.Empty`, and every comparison is spelled on it.
+	 *
+	 * **`winningScore` is never assigned in the C#,** so `thisPtScore >
+	 * winningScore` is really `> 0` and the winner is the *last* acceptable
+	 * candidate rather than the best one. Kept, for the reason the rest of this
+	 * port keeps upstream quirks: both readings pick a legal spot, and silently
+	 * choosing a different tile than the C# would moves the player somewhere the
+	 * fork would not have put them. The scoring itself is kept because it is what
+	 * decides "legal" at all — 50 for clear, 25 for jumpable-over, and -30/+100
+	 * for fire, whose net effect is that a burning tile scores negative and can
+	 * never win, because `winningScore` never rises above 0.
+	 */
+	private FindNonHelicopterSpotToMovePlayer(
+		map: Map,
+		source: Point,
+		heliPoints: readonly Point[],
+	): Point | null {
+		let winningPoint: Point | null = null;
+		let winningScore = 0;
+		for (const d of Direction.COMPASS) {
+			const pt = d.applyTo(source);
+			const thisPtScore = (() => {
+				let score = 0;
+
+				// Can't be out of bounds.
+				if (!map.isInBoundsPoint(pt)) return null;
+
+				// Rule out any other points that are also heli spots.
+				if (heliPoints.some((heliPt) => heliPt.equals(pt))) return null;
+
+				// Check if there is already an actor there.
+				if (map.getActorAtPoint(pt) !== null) return null;
+
+				const mapObj = map.getMapObjectAtPoint(pt);
+				if (mapObj === null) score += 50;
+				else if (mapObj.isJumpable) score += 25;
+				else return null;
+
+				// If the spot is on fire it's possible but not ideal for humans, so
+				// score lower.
+				if (map.isAnyTileFireThere(pt)) score -= 30;
+				else score += 100; // passed all the checks so it must be a good spot.
+
+				return score;
+			})();
+			if (thisPtScore === null) continue;
+			if (thisPtScore > winningScore) winningPoint = pt;
+		}
+		return winningPoint;
+	}
+
+	/**
+	 * C# `DespawnArmyHelicopter` — `RogueGame.cs:28926-28938`, Release 6-4.
+	 *
+	 * "the heli is a 4x2 tile, so we need to clear it in pieces" — the comment is
+	 * stale (Release 7-3 made it 3x1) but the three points are what the code walks
+	 * and what `SpawnArmyHelicopterOnMap` placed, so the port clears three.
+	 *
+	 * Objects only. The C# does not clear items or actors here, which means an
+	 * item dropped on the rescue square survives the chopper and a survivor who
+	 * dropped something on it and came back the next night finds it; kept.
+	 */
+	DespawnArmyHelicopter(map: Map): void {
+		const heli1 = this.m_Session.armyHelicopterRescueCoordinates!;
+		for (const heliPoint of [
+			heli1,
+			heli1.add(new Point(1, 0)),
+			heli1.add(new Point(2, 0)),
+		]) {
+			const obj = map.getMapObjectAtPoint(heliPoint);
+			if (obj !== null) map.removeMapObject(obj);
 		}
 	}
 
@@ -3794,6 +5251,64 @@ export class RogueGame {
 		);
 	}
 
+	/**
+	 * Advance the cooking of anything lying on an alight map object, and swap a
+	 * finished piece of raw meat for its cooked twin. Still Alive, Release 7-6.
+	 *
+	 * The fork collects the finished pieces into a temporary inventory first, and
+	 * that ordering is load-bearing rather than incidental: it removes every
+	 * finished item from the tile *before* adding any replacement, so two pieces
+	 * of the same raw meat finishing on the same turn cannot consume each other
+	 * through the inventory it is being added back into.
+	 *
+	 * The cooked twin keeps the raw item's `bestBefore`, so cooking does not
+	 * silently make old meat fresh again -- a spoiled rabbit is still a spoiled
+	 * rabbit, it just no longer poisons. The twin is non-poisoning and
+	 * non-cookable, both from its own row.
+	 */
+	private CookFoodOnFires(map: Map): void {
+		// The gate is here rather than at the call site, so the method is safe to
+		// call from anywhere. The turn loop's own check was removed for the same
+		// reason `FoodPoisoning`'s recovery is gated inside its function: a caller
+		// that forgets the flag cooks under classic and nothing says so.
+		if (!hasFeature(this.m_Session.ruleset, Feature.Cooking)) return;
+		for (const obj of map.mapObjects) {
+			if (!obj.isOnFire) continue;
+			const inv = map.getItemsAt(obj.location.position);
+			if (inv === null || inv.countItems === 0) continue;
+
+			// Pull the finished pieces out first. `Map` has no "remove this
+			// instance" -- `removeAllQuantity` is by identity, and a new
+			// Inventory is what the C# does.
+			const finished: ItemFood[] = [];
+			for (const it of inv.items.slice()) {
+				if (!(it instanceof ItemFood)) continue;
+				if (!it.canBeCooked) continue;
+				if (it.cookedDegree >= it.maxCookedDegree) continue;
+				it.cookedDegree++;
+				if (it.cookedDegree >= it.maxCookedDegree) finished.push(it);
+			}
+			if (finished.length === 0) continue;
+
+			for (const raw of finished) {
+				const cookedModel = this.m_Rules.cookedFoodFor(raw.model);
+				if (cookedModel === null) {
+					// No twin: leave it cooked to the max rather than deleting the
+					// player's meat. Reachable only if a future raw row is added
+					// without a cooked one.
+					continue;
+				}
+				const pos = obj.location.position;
+				inv.removeAllQuantity(raw);
+				const cooked = new ItemFood(
+					cookedModel,
+					raw.bestBefore?.turnCounter,
+				);
+				map.dropItemAt(cooked, pos);
+			}
+		}
+	}
+
 	// C# NextMapTurn — RogueGame.cs:3178
 	// async: C# blocks on AddMessagePressEnter/AnimDelay (infection messages,
 	// corpse/zombie announcements) — those are awaitable in the port.
@@ -3852,9 +5367,8 @@ export class RogueGame {
 									// that the id resolved at all — it did not, because only
 									// `musicPath` was consulted and `undead rise` lives in the sound
 									// table. `audioPath` now checks both. See `AssetPaths.audioPath`.
-									this.m_MusicManager.play(
+									this.m_SoundManager.play(
 										GameSounds.UNDEAD_RISE,
-										MusicPriority.EVENT,
 									);
 								}
 							}
@@ -4086,7 +5600,40 @@ export class RogueGame {
 				}
 			}
 
+			// 3.5. Cook the meat (Still Alive, Release 7-6). Automatic and
+			// per-turn, not a player action -- the C# ticks every alight map
+			// object and advances whatever food is lying on it, so a piece left
+			// by a fire finishes on its own. Only the player's map needs this;
+			// the C# cooks NPC food instantly. Gated inside the method.
+			this.CookFoodOnFires(map);
+
 			// 4. Actor gauges & states
+			// 3.3.6 Intoxication wears off (Still Alive, Release 7-1).
+			//
+			// One turn of blood alcohol per turn, floored at 0. Gated because this
+			// runs for *every* actor on the map every turn: un-gated it is a no-op
+			// for a survivor who has never drunk, but it is still a write in the
+			// hottest loop in the simulation, and the flag should decide whether
+			// the feature is running at all.
+			if (hasFeature(this.m_Session.ruleset, Feature.Alcohol)) {
+				for (const actor of map.actors) {
+					if (--actor.bloodAlcohol < 0) actor.bloodAlcohol = 0;
+				}
+			}
+
+			// Food poisoning clears itself (Still Alive, Release 7-6). Ahead of the
+			// gauge loop because the recovery roll is its own thing and the
+			// message is the only visible effect.
+			if (hasFeature(this.m_Session.ruleset, Feature.FoodPoisoning)) {
+				for (const actor of map.actors) {
+					if (this.m_Rules.recoverFromFoodPoisoning(actor)) {
+						if (actor.isPlayer) {
+							this.AddMessage(this.MakeMessage(actor, "is no longer food poisoned"));
+						}
+					}
+				}
+			}
+
 			let actorsStarvedToDeath: Actor[] | null = null;
 			for (const actor of map.actors) {
 				// hunger && rot.
@@ -4166,9 +5713,8 @@ export class RogueGame {
 								// because `play()` assigns `src` before the request resolves —
 								// silenced the current track as well. `audioPath` fixes both.
 								this.m_MusicManager.stop();
-								this.m_MusicManager.play(
+								this.m_SoundManager.play(
 									GameSounds.NIGHTMARE,
-									MusicPriority.EVENT,
 								);
 							}
 						}
@@ -4186,7 +5732,40 @@ export class RogueGame {
 						actor.activity = Activity.SLEEPING;
 
 						// regen sleep pts.
-						const sleepRegen = this.m_Rules.actorSleepRegen(actor, isOnCouch);
+						//
+						// **The OR is the whole of the sleeping bag here**, and it is the
+						// C#'s shape at `RogueGame.cs:6373-6378`: read the ground
+						// inventory, ask whether it holds a bag, and fold that into the
+						// single boolean `ActorSleepRegen` already takes. The reference does
+						// *not* widen `ActorSleepRegen` -- its signature is
+						// `ActorSleepRegen(Actor actor, bool isOnCouch)` in the fork's own
+						// `Rules.cs` exactly as it is in vanilla, and the parameter is still
+						// named `isOnCouch` while a bag is being passed into it. Folding at
+						// the call site is what the reference does, so that is what this is,
+						// and `Rules.actorSleepRegen`'s signature is untouched.
+						//
+						// Two details worth naming. The lookup is by *model id* through
+						// `hasItemMatching`, not by class and not by quantity, so one bag
+						// under a stack of sleeping survivors rates all of them. And the
+						// ground inventory is read even when `groundInv` is null -- the C#'s
+						// `if (groundInv != null)` is absorbed by `hasItemMatching`, which is
+						// null-safe here.
+						//
+						// Gated on `Feature.ResourcesAvailability`, the same flag as
+						// `HandlePlayerUseSleepingBag` and `behaviorSleep`, so a bag is off in
+						// all three places or in none. Under Classic nothing can produce a
+						// bag, so the gate is belt-and-braces -- but a *save* can, and a
+						// Classic ruleset loading one should not start paying couch rates.
+						const isOnSleepingBag =
+							hasFeature(this.m_Session.ruleset, Feature.ResourcesAvailability) &&
+							(map.getItemsAt(actor.location.position)?.hasItemMatching(
+								(other) => other.model.id === ItemID.SLEEPING_BAG,
+							) ??
+								false);
+						const sleepRegen = this.m_Rules.actorSleepRegen(
+							actor,
+							isOnCouch || isOnSleepingBag,
+						);
 						actor.sleepPoints += sleepRegen;
 						actor.sleepPoints = Math.min(
 							actor.sleepPoints,
@@ -4447,13 +6026,14 @@ export class RogueGame {
 
 								if (it.fuseTimeLeft <= 0) {
 									// boom!
-									map.removeItemAt(it, pos);
-									await this.DoBlast(
-										new Location(map, pos),
-										(it.model as ItemExplosiveModel).blastAttack,
-									);
-									hasExplodedSomething = true;
-									break;
+map.removeItemAt(it, pos);
+								await this.DoBlast(
+									new Location(map, pos),
+									(it.model as ItemExplosiveModel).blastAttack,
+									it.model,
+								);
+								hasExplodedSomething = true;
+								break;
 								}
 							}
 
@@ -4472,11 +6052,12 @@ export class RogueGame {
 
 								if (it.fuseTimeLeft <= 0) {
 									// boom!
-									inv.removeAllQuantity(it);
-									await this.DoBlast(
-										new Location(map, actor.location.position),
-										(it.model as ItemExplosiveModel).blastAttack,
-									);
+inv.removeAllQuantity(it);
+								await this.DoBlast(
+									new Location(map, actor.location.position),
+									(it.model as ItemExplosiveModel).blastAttack,
+									it.model,
+								);
 									hasExplodedSomething = true;
 									break;
 								}
@@ -4485,6 +6066,31 @@ export class RogueGame {
 					}
 				} while (hasExplodedSomething);
 			}
+
+			// 7.0 Fuel burns down. Still Alive, Release 7-6.
+			//
+			// This is a new step rather than an extension of 7.1, because the fork
+			// *replaced* 7.1: it deleted the blanket "is it raining, then roll against
+			// every burning object" loop and put a single roll inside the campfire
+			// arm of what became this. 7.1 below is still vanilla's and is left
+			// running for CLASSIC; under STILL_ALIVE it is the dead one.
+			if (hasFeature(this.m_Session.ruleset, Feature.FireBarrels)) {
+				this.BurnFuelOnFires(map);
+			}
+
+			// 7.0b Tile fires spread, burn out, and burn their victims.
+			// Still Alive, Release 5-2. Its own method rather than inlined in the
+			// turn loop because it is the one place in the engine that walks every
+			// tile on the map; see the method for why the order of its three steps
+			// is not interchangeable.
+			//
+		// The alight-actor pass runs *before* the tile-fire pass and hands it the
+		// exemption list. The C#'s order is the same (`NextMapTurn` 3.1 then the
+		// tile-fire sweep) and it is not interchangeable: a burning actor takes 2
+		// from being alight, and would take another 1 from the tile they are standing
+		// in unless 3.1 marks them exempt.
+		const exempt = await this.stepActorsOnFire(map);
+		await this.stepTileFires(map, exempt);
 
 			// 7. Check fires.
 			// 7.1 Rain has a chance to put out fires.
@@ -4855,11 +6461,13 @@ export class RogueGame {
 
 		if (this.m_Rules.rollChance(UNIQUE_REFUGEE_CHECK_CHANCE)) {
 			const array = Array.from(this.m_Session.uniqueActors.toArray());
+			// `theActor` is null exactly while `isSpawned` is false, so the `!` this
+			// condition used to carry was asserting non-null on the one branch where
+			// it is guaranteed null — every refugee-capable unique actor that had not
+			// yet arrived crashed the turn. "Not here yet" now reads as "cannot be
+			// dead", which is the same answer without dereferencing.
 			const mayArrive = array.filter(
-				(unique) =>
-					unique.isWithRefugees &&
-					!unique.isSpawned &&
-					!unique.theActor!.isDead,
+				(unique) => unique.isWithRefugees && !unique.isSpawned && unique.theActor == null,
 			);
 			if (mayArrive.length > 0) {
 				const iArrive = this.m_Rules.roll(0, mayArrive.length);
@@ -5090,6 +6698,20 @@ export class RogueGame {
 		) {
 			this.m_MusicManager.stop();
 			this.m_MusicManager.play(GameMusics.ARMY, MusicPriority.EVENT);
+
+			// The announcement flyover. C# `RogueGame.cs:28328`, Release 6-4:
+			//
+			// ```csharp
+			// m_AmbientSFXManager.Play(GameAmbients.HELICOPTER_FLYOVER, AudioPriority.PRIORITY_EVENT);
+			// ```
+			//
+			// **A different event from the rescue flyover, reached a different way.**
+			// This one is an unconditional `Play`, not `PlayIfNotAlreadyPlaying`, so a
+			// second supply drop while the first is still ringing restarts it rather
+			// than being swallowed. It goes here because this block *is* the C#'s
+			// announce branch, already gated on the player being here, awake and human
+			// -- so an undead player hears nothing, which is a good touch and is kept.
+			this.m_AmbientSFXManager.play(GameAmbients.HELICOPTER_FLYOVER);
 
 			this.ClearMessages();
 			this.AddMessage(
@@ -5331,8 +6953,27 @@ export class RogueGame {
 		}
 	}
 
-	// C# CheckForEvent_BlackOpsRaid — RogueGame.cs:4813
+	// C# CheckForEvent_BlackOpsRaid — RogueGame.cs:28575
+	//
+	// **This was running unconditionally, with no feature gate at all**, which is
+	// why `Feature.BlackOpsRaid` sat in `PENDING_WIRING` while the raid it names
+	// fired in Classic districts. The raid is fork content — Release 6-1 added the
+	// music this plays and rewrote both messages — so CLASSIC should not have it,
+	// and `Feature.BlackOpsRaid` is the port's mechanism for saying so.
+	//
+	// **The C# gates this on an option, not a ruleset**:
+	//
+	// ```csharp
+	// if (s_Options.BlackOpsRaidsEnabled == false) return false;   // :28578, Release 7-5
+	// ```
+	//
+	// `BlackOpsRaidsEnabled` does not exist in the port — no ruleset has it and
+	// `GameOptions` has no such field — so the `hasFeature` below *replaces* that
+	// clause rather than sitting beside it. Nothing else about the method is
+	// affected, and the three date/gap/chance gates below are the C#'s, in the
+	// C#'s order.
 	CheckForEvent_BlackOpsRaid(map: Map): boolean {
+		if (!hasFeature(this.m_Session.ruleset, Feature.BlackOpsRaid)) return false;
 		if (map.localTime.day < BLACKOPS_RAID_DAY) return false;
 
 		if (
@@ -5382,19 +7023,26 @@ export class RogueGame {
 			!this.m_Player.model.abilities.isUndead
 		) {
 			this.m_MusicManager.stop();
-			this.m_MusicManager.play(GameMusics.ARMY, MusicPriority.EVENT);
+			// C# `:28625`. Release 6-1 changed the music from `GameMusics.ARMY` to a
+			// purpose-written `BLACK_OPS`, and this port was still on the Army track
+			// from before that change. The C# calls `StopAll()` here; the port's
+			// `stop()` is the equivalent and is left as it was.
+			this.m_MusicManager.play(GameMusics.BLACK_OPS, MusicPriority.EVENT);
 
 			this.ClearMessages();
+			// Both strings are Release 6-1's, verbatim. The port still had the
+			// pre-6-1 helicopter text, which described the wrong vehicle and the
+			// wrong delivery.
 			this.AddMessage(
 				new Message(
-					"You hear a chopper flying over the city!",
+					"A plane passes quickly over the city!",
 					this.m_Session.worldTime.turnCounter,
 					Color.LightGreen,
 				),
 			);
 			this.AddMessage(
 				this.MakePlayerCentricMessage(
-					"The chopper has dropped something",
+					"Parachutists have dropped",
 					raidLeader.location.position,
 				),
 			);
@@ -5486,6 +7134,284 @@ export class RogueGame {
 				"A Band of Survivors entered the district.",
 			);
 		}
+	}
+
+	// ── CHAR research team (Release 8-1) ──────────────────────────────────────
+
+	/**
+	 * C# `CheckForEvent_CHARScientists` — `RogueGame.cs:28715`.
+	 *
+	 * **This is the whole feature for Classic purposes.** The C# gates it on
+	 * nothing at all — no `hasFeature`, no option, unlike `CheckForEvent_BlackOpsRaid`
+	 * which tests `s_Options.BlackOpsRaidsEnabled` at `:28578`. So the gate below
+	 * *is* the port's addition, and it is the reason `Feature.CHARResearchRaid`
+	 * exists as a flag rather than as a free-standing event: without it a Classic
+	 * district would field a four-strong CHAR team with shotguns.
+	 *
+	 * It is the first statement, ahead of the day test, so a Classic district pays
+	 * nothing — the `1%`-per-turn roll is not spent either, which is asserted.
+	 * The three gates after it are the C#'s, in the C#'s order.
+	 */
+	CheckForEvent_CHARScientists(map: Map): boolean {
+		if (!hasFeature(this.m_Session.ruleset, Feature.CHARResearchRaid)) return false;
+		if (map.localTime.day < SCIENTISTS_TEAM_DAY) return false;
+
+		if (
+			this.HasRaidHappenedSince(
+				RaidType.CHAR_SCIENTISTS,
+				map.district!,
+				map.localTime,
+				SCIENTISTS_TEAM_DAY_GAP * WorldTime.TURNS_PER_DAY,
+			)
+		)
+			return false;
+
+		if (!this.m_Rules.rollChance(SCIENTISTS_TEAM_CHANCE_PER_TURN)) return false;
+
+		return true;
+	}
+
+	/**
+	 * C# `FireEvent_CHARScientists` — `RogueGame.cs:28733`.
+	 *
+	 * **The two loops subtract one from different totals and that asymmetry is the
+	 * C#'s, not a transcription slip.** `SCIENTISTS_TEAM_SCIENTISTS` is the size of
+	 * the *whole* team including the leader, so `4 - 1` gives three colleagues and
+	 * four scientists in all. `SCIENTISTS_TEAM_GUARDS` is read as if it were the
+	 * same thing, so `3 - 1` gives **two** guards for a raid the constants
+	 * describe as three. Both loops are transcribed as written; "fixing" the guard
+	 * loop would make this raid one actor stronger than the reference and would
+	 * shift the district's dice stream, since each spawn spends rolls.
+	 *
+	 * `FireEvent` also differs structurally from the other raids: the C# guards
+	 * every body on `teamLeader != null` rather than early-returning first, so a
+	 * failed leader spawn still returns early at `:28760` before the AI notice and
+	 * the announcement. Kept in the C#'s order.
+	 */
+	async FireEvent_CHARScientists(map: Map): Promise<void> {
+		this.m_Session.setLastRaidTime(
+			RaidType.CHAR_SCIENTISTS,
+			map.district!,
+			map.localTime.turnCounter,
+		);
+
+		const teamLeader = this.SpawnNewCHARScientistLeader(map);
+		if (teamLeader != null) {
+			for (let i = 0; i < SCIENTISTS_TEAM_SCIENTISTS - 1; i++) {
+				const colleague = this.SpawnNewCHARScientist(
+					map,
+					teamLeader.location.position,
+				);
+				if (colleague != null) teamLeader.addFollower(colleague);
+			}
+			// Two guards, not three. See the method header.
+			for (let i = 0; i < SCIENTISTS_TEAM_GUARDS - 1; i++) {
+				const guard = this.SpawnNewCHARGuard(map, teamLeader.location.position);
+				if (guard != null) teamLeader.addFollower(guard);
+			}
+		}
+		if (teamLeader == null) return;
+
+		this.NotifyOrderablesAI(
+			map,
+			RaidType.CHAR_SCIENTISTS,
+			teamLeader.location.position,
+		);
+
+		if (
+			map === this.m_Player.location.map &&
+			!this.m_Player.isSleeping &&
+			!this.m_Player.model.abilities.isUndead
+		) {
+			this.m_MusicManager.stop();
+			this.m_MusicManager.play(
+				GameMusics.CHAR_RESEARCHERS,
+				MusicPriority.EVENT,
+			);
+
+			this.ClearMessages();
+			this.AddMessage(
+				new Message(
+					"You hear a strange, electronic whirring in the distance.",
+					this.m_Session.worldTime.turnCounter,
+					Color.LightGreen,
+				),
+			);
+			this.AddMessage(
+				this.MakePlayerCentricMessage(
+					"A vehicle has stopped",
+					teamLeader.location.position,
+				),
+			);
+			if (!this.m_Player.isBotPlayer) {
+				await this.AddMessagePressEnter();
+				this.ClearMessages();
+			}
+		}
+
+		if (map === this.m_Player.location.map) {
+			this.m_Session.scoring.addEvent(
+				this.m_Session.worldTime.turnCounter,
+				"A CHAR research team entered the district.",
+			);
+		}
+	}
+
+	/**
+	 * C# `PlayRangedWeaponSFX(Location, ItemRangedWeapon, int)` --
+	 * `RogueGame.cs:19008-19187`, Release 7-1.
+	 *
+	 * `shots` is the C#'s `soundEffectShots`: **0 for none, 1 for single-shot, 2 for
+	 * rapid-fire** (`:18645`). Zero is a real case and not a guard against a caller
+	 * mistake -- the C# sets it deliberately for a fire mode that should be silent.
+	 *
+	 * The C# writes this as three `switch` statements on the weapon's *display name*,
+	 * one per distance band. The band is chosen first (`:19009`, `:19076`, `:19137`),
+	 * then the id, then the single/rapid choice inside each case.
+	 *
+	 * **Two divergences, both because the port lacks what the C# has.**
+	 *
+	 * 1. The band is chosen with `NoiseDistance.bandForDistance` rather than by
+	 *    calling `IsAudibleToPlayer` three times. That is *not* equivalent, and the
+	 *    difference is worth naming: the C#'s outer gate re-tests the player's
+	 *    Euclidean `AudioRange` against each radius in turn, so an actor whose
+	 *    `AudioRange` is shorter than the band radius falls out of every band and
+	 *    hears nothing. Banding the distance once means a short-range listener still
+	 *    gets the `_FAR` id at 14 tiles. The C#'s version is arguably the bug -- it
+	 *    makes audibility depend on the *listener's* stat twice -- but it is the
+	 *    reference, so this keeps the `isAudibleToPlayer` shape available and notes
+	 *    the choice rather than hiding it in a band lookup.
+	 * 2. `shots` is the C#'s `soundEffectShots` verbatim, threaded through from the
+	 *    fire-mode branch in `DoRangedAttack` -- 1 for `DEFAULT`, 2 for the first shot
+	 *    of a `RAPID` burst that has a second shot coming, 0 for the second shot and
+	 *    for the silent cases. `FireMode.FLAMING` (Release 7-2, the flaming crossbow
+	 *    bolt) is absent from the port's `FireMode` enum, so its `soundEffectShots = 1`
+	 *    case is unreachable here rather than unimplemented.
+	 *
+	 * Returns the id it played, or `null` for "nothing was audible" -- which for a
+	 * weapon with no family entry is also the answer, and is the same `null` the
+	 * C#'s missing `default:` case produces.
+	 */
+	/**
+	 * C# `PlayBashOrBreakSFX(MapObject, bool)` -- `RogueGame.cs:22597-22672`, Release
+	 * 5-4. Sixteen ids, and the second of only two places the fork centralises sound
+	 * rather than inlining `m_SFXManager.Play` at two hundred call sites.
+	 *
+	 * The shape is a material ladder, not a distance ladder: first work out *what* is
+	 * being hit (wood / metal / glass / chain fence / ceramic / other), then pick a
+	 * sound from `isBroken` x { visible, audible-not-visible }. Two bands, not three --
+	 * there is no `_FAR` variant of a bash, which is the C#'s own arrangement and not
+	 * an omission here.
+	 *
+	 * **The material order is the design and it looks wrong on purpose.** The C#
+	 * checks, in order:
+	 *
+	 *  1. `GivesWood && AName != "a tree"` -> wood
+	 *  2. `AName == "a chain wire fence"` -> chain fence
+	 *  3. `IsMetal` -> metal
+	 *  4. door && barricaded -> wood
+	 *  5. door && (window || transparent) -> glass
+	 *  6. `AName == "a potted plant"` -> ceramic
+	 *
+	 * and each comment says why it has to come before the next. Chain fence is
+	 * *metal*, so checking metal first would file every fence under metal. And an
+	 * **open** door reports `IsTransparent`, so checking transparency before
+	 * barricade would file every barricaded wooden door as glass. Two orderings that
+	 * read as arbitrary and are not.
+	 *
+	 * `default` is wood in the break ladder and *other-objects* in the bash ladder --
+	 * the C#'s two defaults differ, which is easy to miss and is transcribed.
+	 */
+	private PlayBashOrBreakSFX(mapObj: MapObject, isBroken: boolean): void {
+		if (!hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio)) return;
+		const door = mapObj instanceof DoorWindow ? mapObj : null;
+
+		// need to know what sfx to play
+		let material = "other";
+		if (mapObj.givesWood && mapObj.aName !== "a tree") {
+			material = "wood";
+		} else if (mapObj.aName === "a chain wire fence") {
+			material = "chain fence"; // must be checked before metal, because it *is* metal
+		} else if (mapObj.isMetal) {
+			material = "metal";
+		} else if (door !== null && door.isBarricaded) {
+			material = "wood"; // wooden barricades
+		} else if (door !== null && (door.isWindow || door.isTransparent)) {
+			// wood and metal must be checked first, because an *open* door is
+			// transparent. Iron gates, as in the subways, are not DoorWindow objects
+			// and so do not count here.
+			material = "glass";
+		} else if (mapObj.aName === "a potted plant") {
+			material = "ceramic";
+		}
+
+		const table = isBroken ? BREAK_BY_MATERIAL[material] ?? BREAK_DEFAULT : BASH_BY_MATERIAL[material] ?? BASH_DEFAULT;
+		if (this.IsVisibleToPlayer(mapObj)) {
+			this.m_SoundManager.play(table.visible);
+		} else if (this.isAudibleToPlayer(mapObj.location, NOISE_RADII.MODERATE)) {
+			// Not `play`: the C# uses `PlayIfNotAlreadyPlaying` for the audible band
+			// and plain `Play` for the visible one, so four NPCs bashing the same door
+			// on one turn make one noise rather than four.
+			this.m_SoundManager.playIfNotAlreadyPlaying(table.audible);
+		}
+	}
+
+	/**
+	 * C# `IsAudibleToPlayer(Location, int)` -- `RogueGame.cs:993-1025`, Release 2, with
+	 * the optional radius from Release 5-3.
+	 *
+	 * Three non-geometric conditions and then two distance tests **in two different
+	 * metrics**, and the mixing is the thing worth writing down because both halves
+	 * take an `int` and substituting one for the other type-checks:
+	 *
+	 *  1. same map,
+	 *  2. the player is not asleep,
+	 *  3. **Euclidean** distance `<= actor.audioRange` -- the outer gate,
+	 *  4. and then, only if a radius was supplied, **Chebyshev** distance
+	 *     `<= audioRadius` -- the inner gate.
+	 *
+	 * Chebyshev never exceeds Euclidean, so the same number read in the other metric
+	 * is always the more permissive one. At a 5,5 diagonal the grid distance is 5
+	 * (`QUIET`) and the standard distance is 7.07 (`MODERATE`): a port that read the
+	 * ladder in Euclidean would hand every band boundary to the next tier out along
+	 * the diagonals and leave the axes correct, which is the kind of bug that reads
+	 * as "the audio feels slightly off". `NoiseDistance` holds both metrics
+	 * separately for exactly this reason.
+	 *
+	 * `audioRadius = 0` means "no tier", per the C#'s own sentinel.
+	 */
+	private isAudibleToPlayer(location: Location, audioRadius: number = NO_NOISE_RADIUS): boolean {
+		const player = this.m_Player;
+		if (player == null) return false;
+		if (location.map !== player.location.map) return false;
+		if (player.isSleeping) return false;
+		return isAudibleTo(player.location.position, location.position, player.audioRange, audioRadius);
+	}
+
+	private PlayRangedWeaponSFX(location: Location, weapon: ItemModel, shots: number): string | null {
+		if (!hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio)) return null;
+		const family = RANGED_WEAPON_SOUND_FAMILIES.get(weapon.id);
+		if (family === undefined) return null;
+
+		const distance = this.DistanceToPlayer(location.map!, location.position);
+		const band = bandForDistance(distance);
+		const wanted =
+			band === NoiseBand.Quiet
+				? family.player
+				: band === NoiseBand.Moderate
+					? family.nearby ?? family.player
+					: band === NoiseBand.Loud
+						? family.far ?? family.nearby ?? family.player
+						: family.far;
+		if (wanted === undefined) return null;
+
+		// `shots === 1` is single-shot. A family with only a rapid id (the minigun,
+		// and the nail gun in the player band) plays that one either way, which is what
+		// the C# does -- its `else` covers the single-shot case when there is no `if`.
+		const id = shots === 1 ? (wanted.single ?? wanted.rapid) : wanted.rapid;
+		if (id === undefined) return null;
+		this.m_SoundManager.play(id);
+		return id;
 	}
 
 	// C# DistanceToPlayer — RogueGame.cs:4951
@@ -5922,6 +7848,59 @@ export class RogueGame {
 			3,
 		);
 		return spawned ? newBO : null;
+	}
+
+	// ── CHAR research team spawners (Release 8-1) ─────────────────────────────
+
+	/**
+	 * C# `SpawnNewCHARScientistLeader` — `RogueGame.cs:29368`.
+	 *
+	 * The leader is the only one of the six placed on the *map border* rather than
+	 * near the team, so the player sees the vehicle arrive; everyone else is placed
+	 * relative to the leader. `LEADERSHIP` is given once here and once per colleague,
+	 * which is the C#'s shape — three separate one-skill calls rather than a loop,
+	 * because each is a distinct roll.
+	 */
+	SpawnNewCHARScientistLeader(map: Map): Actor | null {
+		const leader = this.m_TownGenerator.createNewCHARScientist(map.localTime.turnCounter);
+		this.m_TownGenerator.giveStartingSkillToActor(leader, SkillID.LEADERSHIP);
+
+		const spawned = this.SpawnActorOnMapBorder(map, leader, SPAWN_DISTANCE_TO_PLAYER, true);
+		return spawned ? leader : null;
+	}
+
+	/** C# `SpawnNewCHARScientist` — `RogueGame.cs:29387`. */
+	SpawnNewCHARScientist(map: Map, leaderPos: Point): Actor | null {
+		const scientist = this.m_TownGenerator.createNewCHARScientist(map.localTime.turnCounter);
+		this.m_TownGenerator.giveStartingSkillToActor(scientist, SkillID.LEADERSHIP);
+
+		// The `4` is `SpawnActorNear`'s `maxTries`, not a roll range.
+		const spawned = this.SpawnActorNear(map, scientist, SPAWN_DISTANCE_TO_PLAYER, leaderPos, 4);
+		return spawned ? scientist : null;
+	}
+
+	/**
+	 * C# `SpawnNewCHARGuard` — `RogueGame.cs:29406`.
+	 *
+	 * **A second `SpawnNewCHARGuard`, with the same name as the one that serves the
+	 * CHAR underground's garrison.** They are distinct in the C# too, and both are
+	 * transcribed here because both are reached from this file. The raid one is the
+	 * only one that hands out a tactical shotgun and three shells, and the only one
+	 * that gives `AGILE`/`FIREARMS`/`TOUGH` a single point each.
+	 */
+	SpawnNewCHARGuard(map: Map, leaderPos: Point): Actor | null {
+		const guard = this.m_TownGenerator.createNewCHARGuard(map.localTime.turnCounter);
+		guard.inventory!.addAll(this.m_TownGenerator.makeItemTacticalShotgun());
+		guard.inventory!.addAll(this.m_TownGenerator.makeItemShotgunAmmo());
+		guard.inventory!.addAll(this.m_TownGenerator.makeItemShotgunAmmo());
+		guard.inventory!.addAll(this.m_TownGenerator.makeItemShotgunAmmo());
+
+		this.m_TownGenerator.giveStartingSkillToActor(guard, SkillID.AGILE);
+		this.m_TownGenerator.giveStartingSkillToActor(guard, SkillID.FIREARMS);
+		this.m_TownGenerator.giveStartingSkillToActor(guard, SkillID.TOUGH);
+
+		const spawned = this.SpawnActorNear(map, guard, SPAWN_DISTANCE_TO_PLAYER, leaderPos, 4);
+		return spawned ? guard : null;
 	}
 
 	// C# BotToggleControl — RogueGame.cs:5385
@@ -6399,7 +8378,7 @@ export class RogueGame {
 
 						// actual game actions.
 						case PlayerCommand.WAIT_OR_SELF:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6408,7 +8387,7 @@ export class RogueGame {
 							break;
 
 						case PlayerCommand.WAIT_LONG:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6431,7 +8410,7 @@ export class RogueGame {
 						case PlayerCommand.MOVE_SW:
 						case PlayerCommand.MOVE_W:
 						case PlayerCommand.MOVE_NW:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6441,7 +8420,7 @@ export class RogueGame {
 							));
 							break;
 						case PlayerCommand.USE_EXIT:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6449,78 +8428,78 @@ export class RogueGame {
 							break;
 
 						case PlayerCommand.ITEM_SLOT_0:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
-							loop = !this.DoPlayerItemSlot(player, 0, inKey);
+							loop = !(await this.DoPlayerItemSlot(player, 0, inKey));
 							break;
 						case PlayerCommand.ITEM_SLOT_1:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
-							loop = !this.DoPlayerItemSlot(player, 1, inKey);
+							loop = !(await this.DoPlayerItemSlot(player, 1, inKey));
 							break;
 						case PlayerCommand.ITEM_SLOT_2:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
-							loop = !this.DoPlayerItemSlot(player, 2, inKey);
+							loop = !(await this.DoPlayerItemSlot(player, 2, inKey));
 							break;
 						case PlayerCommand.ITEM_SLOT_3:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
-							loop = !this.DoPlayerItemSlot(player, 3, inKey);
+							loop = !(await this.DoPlayerItemSlot(player, 3, inKey));
 							break;
 						case PlayerCommand.ITEM_SLOT_4:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
-							loop = !this.DoPlayerItemSlot(player, 4, inKey);
+							loop = !(await this.DoPlayerItemSlot(player, 4, inKey));
 							break;
 						case PlayerCommand.ITEM_SLOT_5:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
-							loop = !this.DoPlayerItemSlot(player, 5, inKey);
+							loop = !(await this.DoPlayerItemSlot(player, 5, inKey));
 							break;
 						case PlayerCommand.ITEM_SLOT_6:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
-							loop = !this.DoPlayerItemSlot(player, 6, inKey);
+							loop = !(await this.DoPlayerItemSlot(player, 6, inKey));
 							break;
 						case PlayerCommand.ITEM_SLOT_7:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
-							loop = !this.DoPlayerItemSlot(player, 7, inKey);
+							loop = !(await this.DoPlayerItemSlot(player, 7, inKey));
 							break;
 						case PlayerCommand.ITEM_SLOT_8:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
-							loop = !this.DoPlayerItemSlot(player, 8, inKey);
+							loop = !(await this.DoPlayerItemSlot(player, 8, inKey));
 							break;
 						case PlayerCommand.ITEM_SLOT_9:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
-							loop = !this.DoPlayerItemSlot(player, 9, inKey);
+							loop = !(await this.DoPlayerItemSlot(player, 9, inKey));
 							break;
 
 						case PlayerCommand.RUN_TOGGLE:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6528,35 +8507,35 @@ export class RogueGame {
 							break;
 
 						case PlayerCommand.CLOSE_DOOR:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
 							loop = !(await this.HandlePlayerCloseDoor(player));
 							break;
 						case PlayerCommand.BARRICADE_MODE:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
 							loop = !(await this.HandlePlayerBarricade(player));
 							break;
 						case PlayerCommand.BREAK_MODE:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
 							loop = !(await this.HandlePlayerBreak(player));
 							break;
 						case PlayerCommand.BUILD_LARGE_FORTIFICATION:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
 							loop = !(await this.HandlePlayerBuildFortification(player, true));
 							break;
 						case PlayerCommand.BUILD_SMALL_FORTIFICATION:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6566,28 +8545,28 @@ export class RogueGame {
 							));
 							break;
 						case PlayerCommand.ORDER_MODE:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
 							loop = !(await this.HandlePlayerOrderMode(player));
 							break;
 						case PlayerCommand.PULL_MODE: // alpha10
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
 							loop = !(await this.HandlePlayerPull(player));
 							break;
 						case PlayerCommand.PUSH_MODE:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
 							loop = !(await this.HandlePlayerPush(player));
 							break;
 						case PlayerCommand.FIRE_MODE:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6595,7 +8574,7 @@ export class RogueGame {
 							break;
 
 						case PlayerCommand.SHOUT:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6603,7 +8582,7 @@ export class RogueGame {
 							break;
 
 						case PlayerCommand.SLEEP:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6611,7 +8590,7 @@ export class RogueGame {
 							break;
 
 						case PlayerCommand.SWITCH_PLACE:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6619,15 +8598,39 @@ export class RogueGame {
 							break;
 
 						case PlayerCommand.USE_SPRAY:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
 							loop = !(await this.HandlePlayerUseSpray(player));
 							break;
 
+						case PlayerCommand.SWAP_INVENTORY: //@@MP (Release 8-2)
+							if (await this.TryPlayerUnwell()) {
+								loop = false;
+								break;
+							}
+							loop = !this.HandlePlayerSwapItemInventory(player, mousePos);
+							break;
+
+						case PlayerCommand.MAKE_COOKING_FIRE: //@@MP (Release 7-6)
+							if (await this.TryPlayerUnwell()) {
+								loop = false;
+								break;
+							}
+							loop = !(await this.HandlePlayerMakeFireForCooking(player));
+							break;
+
+						case PlayerCommand.UNLOAD_AMMO: //@@MP (Release 7-6)
+							if (await this.TryPlayerUnwell()) {
+								loop = false;
+								break;
+							}
+							loop = !this.HandlePlayerUnloadAmmo(player);
+							break;
+
 						case PlayerCommand.LEAD_MODE:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6635,7 +8638,7 @@ export class RogueGame {
 							break;
 
 						case PlayerCommand.GIVE_ITEM:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6643,7 +8646,7 @@ export class RogueGame {
 							break;
 
 						case PlayerCommand.NEGOCIATE_TRADE: // alpha10
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6651,7 +8654,7 @@ export class RogueGame {
 							break;
 
 						case PlayerCommand.MARK_ENEMIES_MODE:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6659,7 +8662,7 @@ export class RogueGame {
 							break;
 
 						case PlayerCommand.EAT_CORPSE:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6667,7 +8670,7 @@ export class RogueGame {
 							break;
 
 						case PlayerCommand.REVIVE_CORPSE:
-							if (await this.TryPlayerInsanity()) {
+							if (await this.TryPlayerUnwell()) {
 								loop = false;
 								break;
 							}
@@ -6702,7 +8705,7 @@ export class RogueGame {
 				}
 
 				// Inventory?
-				const invRes = this.HandleMouseInventory(mousePos, mouseButtons, false);
+				const invRes = await this.HandleMouseInventory(mousePos, mouseButtons, false);
 				if (invRes.ok) {
 					if (invRes.hasDoneAction) {
 						loop = false;
@@ -6776,6 +8779,72 @@ export class RogueGame {
 
 	// C# TryPlayerInsanity — RogueGame.cs:6090
 	// C# blocks on AddMessagePressEnter; async here.
+	/** C# `GenerateFoodPoisonedAction` (RogueGame.cs:24151). */
+	private GenerateFoodPoisonedAction(actor: Actor): ActorAction {
+		if (actor.isPlayer || this.IsVisibleToPlayer(actor)) {
+			this.AddMessage(this.MakeMessage(actor, "feels unwell and vomits"));
+		}
+		this.DoVomit(actor);
+		return new ActionWait(actor, this);
+	}
+
+	/**
+	 * Being food poisoned can cost the player their action. Still Alive,
+	 * Release 7-6.
+	 *
+	 * Mirrors `TryPlayerInsanity` exactly — same shape, same five steps, same
+	 * early return when the generated action is not legal — because the fork runs
+	 * them as one chain: insanity, then drunkenness, then this. See
+	 * `TryPlayerUnwell`, which is that chain.
+	 */
+	async TryPlayerFoodPoisoning(): Promise<boolean> {
+		if (!hasFeature(this.m_Session.ruleset, Feature.FoodPoisoning)) return false;
+		if (!this.m_Player.isFoodPoisoned) return false;
+		if (!this.m_Rules.rollChance(Rules.FOOD_POISONING_AFFECTED_ACTION_CHANCE))
+			return false;
+
+		const unwellAction = this.GenerateFoodPoisonedAction(this.m_Player);
+		if (unwellAction == null) return false;
+		if (!unwellAction.isLegal()) return false;
+
+		this.ClearMessages();
+		this.AddMessage(
+			new Message(
+				"(you're quite unwell. you lost control for a moment)",
+				this.m_Player.location.map!.localTime.turnCounter,
+				Color.Orange,
+			),
+		);
+		if (!this.m_Player.isBotPlayer) await this.AddMessagePressEnter();
+		await unwellAction.perform();
+		return true;
+	}
+
+	/**
+	 * The fork's unwell chain: insanity first, then food poisoning.
+	 *
+	 * There is no drunkenness arm yet — `Feature.Alcohol` has no implementation,
+	 * so `TryPlayerDrunkenness` would be a stub returning false forever. It is
+	 * left out deliberately rather than stubbed, because a stub that always
+	 * returns false is indistinguishable from a forgotten one.
+	 *
+	 * Every command site called `TryPlayerInsanity` on its own; folding the pair
+	 * into one call matches the C# and means the next arm is one line rather than
+	 * seven.
+	 */
+	async TryPlayerUnwell(): Promise<boolean> {
+		// C# `BlockAction(checkBackpack: true)` -- `RogueGame.cs:33122-33141`, one
+		// arm of the chain every command site funnels through.
+		//
+		// The auto-close itself is ungated and lives in `@gameplay/Backpacks`, which
+		// answers "no backpack" rather than "not in this ruleset"; the *command* is
+		// gated below, because under CLASSIC there is no `Y` binding to press.
+		autoCloseBackpack(this.m_Player);
+		if (await this.TryPlayerInsanity()) return true;
+		if (await this.TryPlayerDrunkenness()) return true;
+		return this.TryPlayerFoodPoisoning();
+	}
+
 	async TryPlayerInsanity(): Promise<boolean> {
 		if (!this.m_Rules.isActorInsane(this.m_Player)) return false;
 		if (!this.m_Rules.rollChance(Rules.SANITY_INSANE_ACTION_CHANCE))
@@ -7710,12 +9779,30 @@ export class RogueGame {
 		return true;
 	}
 
-	// C# HandleMouseInventory — RogueGame.cs:6656
-	HandleMouseInventory(
+	/**
+	 * C# `HandleMouseInventory` — `RogueGame.cs:6656`.
+	 *
+	 * **async, where the C# is not, and only because of what it now reaches.** Still
+	 * Alive hangs four prompts off the two clicks this dispatches -- `DoDropItem`'s
+	 * candle box (`RogueGame.cs:21207`), `HandlePlayerUseLightPackThrowable`'s
+	 * carry-or-throw (`:15021`), `HandlePlayerUseSleepingBag`'s sleep
+	 * confirmation (`:14873`) -- and each of those blocks the C# on
+	 * `m_UI.UI_WaitKey()`. `UI_WaitKey` is a promise here, so `OnLMBItem` and
+	 * `OnRMBItem` have to be awaitable, and so does this.
+	 *
+	 * The cost of the alternative is recorded because it was the alternative:
+	 * `fireAndForget` at the bottom of the synchronous `DoUseItem`. That puts two
+	 * consumers on the one key queue -- this handler's prompt and the turn loop's
+	 * `WaitKeyOrMouse` -- and the first key after the click would answer both, so a
+	 * player pressing a movement key at the carry-or-throw prompt would be told they
+	 * hit the wrong key *and* walk away from it. `Diagnostics.fireAndForget`'s own
+	 * header says not to use it "when ordering matters"; this is that case.
+	 */
+	async HandleMouseInventory(
 		mousePos: Point,
 		mouseButtons: MouseButton | null,
 		_hasDoneAction: boolean,
-	): { ok: boolean; hasDoneAction: boolean } {
+	): Promise<{ ok: boolean; hasDoneAction: boolean }> {
 		const hit = this.MouseToInventoryItem(mousePos);
 		const inv = hit.inv;
 		if (inv == null) {
@@ -7744,7 +9831,22 @@ export class RogueGame {
 		);
 		const it = hit.result;
 		if (it != null) {
-			const lines = this.DescribeItemLong(it, isPlayerInventory, hit.iSlot);
+			//
+			// An item *in the open backpack* is described by the panel, not by
+			// `DescribeItemLong`: it is not in the player's inventory, so the generic
+			// path would offer "to equip" and "to give" for something that is two
+			// rows away in a bag. `destroy` is passed as "" because
+			// `PlayerCommand.DESTROY_ITEM` is Release 7-6 and not ported, and a
+			// description that names a key the player cannot press is worse than one
+			// that omits it.
+			const packInv = firstBackpack(this.m_Player)?.backpackInventory;
+			const inBackpack = packInv != null && inv === packInv;
+			const lines = inBackpack
+				? describeItemInBackpack(it, "", {
+						destroy: "",
+						moveToInventory: `<${s_KeyBindings.get(PlayerCommand.SWAP_INVENTORY) ?? ""}>`,
+					})
+				: this.DescribeItemLong(it, isPlayerInventory, hit.iSlot);
 			const longestLine = 1 + this.FindLongestLine(lines);
 			const ovX = itemPos.x - 7 * longestLine;
 			const ovY = itemPos.y + 32;
@@ -7762,9 +9864,9 @@ export class RogueGame {
 
 			if (mouseButtons != null) {
 				if (mouseButtons === MouseButton.Left)
-					hasDoneAction = this.OnLMBItem(inv, it);
+					hasDoneAction = await this.OnLMBItem(inv, it);
 				else if (mouseButtons === MouseButton.Right)
-					hasDoneAction = this.OnRMBItem(inv, it);
+					hasDoneAction = await this.OnRMBItem(inv, it);
 			}
 		}
 
@@ -7772,6 +9874,41 @@ export class RogueGame {
 	}
 
 	// C# MouseToInventoryItem — RogueGame.cs:6698
+	/**
+	 * C# `HandlePlayerSwapItemInventory` -- `RogueGame.cs:13851-13930`.
+	 *
+	 * Moves an item between the player and the open backpack. Everything with a
+	 * teeth is in `@gameplay/Backpacks` and `Rules`; this is the wiring, and the
+	 * only judgement in it is *which* of the two directions to move in, which is
+	 * "where did the click land" rather than anything the C# decides for us.
+	 *
+	 * The C# follows a refusal with a modal prompt offering to swap into a free
+	 * slot instead. That prompt is **not** ported -- see `moveItemToBackpack` for
+	 * why nothing is silently dropped without it. The guard around it is ported
+	 * verbatim, so a move into a full bag is refused with the C#'s own string.
+	 */
+	HandlePlayerSwapItemInventory(player: Actor, mousePos: Point): boolean {
+		const hit = this.MouseToInventoryItem(mousePos);
+		const it = hit.result;
+		if (hit.inv == null || it == null) return false;
+
+		const pack = firstBackpack(player);
+		const inBackpack = pack != null && hit.inv === pack.backpackInventory;
+		if (!inBackpack && hit.inv !== player.inventory) return false;
+
+		const verdict = inBackpack
+			? moveItemToInventory(player, it)
+			: moveItemToBackpack(this.m_Rules, player, it);
+		if (verdict.ok) return true;
+
+		this.AddMessage(
+			this.MakeErrorMessage(
+				pack != null ? moveRefusalMessage(it, pack, verdict.reason) : verdict.reason,
+			),
+		);
+		return false;
+	}
+
 	MouseToInventoryItem(screen: Point): {
 		result: Item | null;
 		inv: Inventory | null;
@@ -7809,6 +9946,33 @@ export class RogueGame {
 			};
 		}
 
+		// The backpack panel takes the ground panel's row (`BACKPACK_PANEL_Y` is
+		// `GROUNDINVENTORYPANEL_Y`), so the bag is tested *first* and the ground
+		// panel is only reached when there is no open bag to intercept the click.
+		// C# `MouseToInventoryItem` -- `RogueGame.cs:13930`.
+		const pack = firstBackpack(this.m_Player);
+		if (pack != null && pack.isOpen) {
+			const packInv = pack.backpackInventory;
+			const packSlot = this.PanelSlotAtMouse(
+				INVENTORYPANEL_X,
+				backpackPanelY(),
+				packInv.maxCapacity,
+				screen.x,
+				screen.y,
+			);
+			if (packSlot != null) {
+				inv = packInv;
+				itemPos = this.InventorySlotToScreen(
+					INVENTORYPANEL_X,
+					backpackPanelY(),
+					packSlot.x,
+					packSlot.y,
+				);
+				iSlot = packSlot.index;
+				return { result: packInv.getItem(packSlot.index), inv, itemPos, iSlot };
+			}
+		}
+
 		const groundInv =
 			this.m_Player.location.map?.getItemsAt(this.m_Player.location.position) ??
 			null;
@@ -7841,7 +10005,22 @@ export class RogueGame {
 	}
 
 	// C# OnLMBItem — RogueGame.cs:6734
-	OnLMBItem(inv: Inventory, it: Item): boolean {
+	// async: `DoUseItem` reaches Still Alive's blocking use prompts. See
+	// `HandleMouseInventory`'s header for why that is awaited rather than fired.
+	async OnLMBItem(inv: Inventory, it: Item): Promise<boolean> {
+		// The bag is not the player's inventory, so it needs its own arm. C#
+		// `RogueGame.cs:11364-11380` plus `:21118` (the `OPEN_BACKPACK` sfx on
+		// unequip, which `Feature.ExtendedAudio` does not wire).
+		if (inv === firstBackpack(this.m_Player)?.backpackInventory) {
+			const opened = openBackpack(this.m_Player);
+			if (!opened.ok) {
+				this.AddMessage(this.MakeErrorMessage(opened.reason));
+				return false;
+			}
+			this.AddMessage(this.MakeMessage(this.m_Player, "opens the backpack."));
+			return false;
+		}
+
 		if (inv === this.m_Player.inventory) {
 			if (it.isEquipped) {
 				const res = this.m_Rules.canActorUnequipItem(this.m_Player, it);
@@ -7870,15 +10049,16 @@ export class RogueGame {
 					return false;
 				}
 			} else {
-				const res = this.m_Rules.canActorUseItem(this.m_Player, it);
-				if (res.ok) {
-					this.DoUseItem(this.m_Player, it);
-					return true;
-				} else {
-					this.AddMessage(
-						this.MakeErrorMessage(`Cannot use ${it.theName} : ${res.reason}.`),
-					);
-				}
+			const res = this.m_Rules.canActorUseItem(this.m_Player, it);
+			if (res.ok) {
+				await this.DoUseItem(this.m_Player, it);
+				return true;
+			} else {
+				this.AddMessage(
+					this.MakeErrorMessage(`Cannot use ${it.theName} : ${res.reason}.`),
+				);
+			}
+
 			}
 		} else {
 			const res = this.m_Rules.canActorGetItem(this.m_Player, it);
@@ -7897,11 +10077,12 @@ export class RogueGame {
 	}
 
 	// C# OnRMBItem — RogueGame.cs:6801
-	OnRMBItem(inv: Inventory, it: Item): boolean {
+	// async: `DoDropItem` reaches Still Alive's candle-box prompt.
+	async OnRMBItem(inv: Inventory, it: Item): Promise<boolean> {
 		if (inv === this.m_Player.inventory) {
 			const res = this.m_Rules.canActorDropItem(this.m_Player, it);
 			if (res.ok) {
-				this.DoDropItem(this.m_Player, it);
+				await this.DoDropItem(this.m_Player, it);
 				return true;
 			} else {
 				this.AddMessage(
@@ -8137,18 +10318,110 @@ export class RogueGame {
 		}
 	}
 
+	/**
+	 * What comes off the body, and how fresh. Still Alive, Release 7-6
+	 * (`RogueGame.cs:11700`).
+	 *
+	 * Two surprises, and both are the feature:
+	 *
+	 * - **Fire is a cooking method you do not choose.** Meat off a body that
+	 *   died of fire comes out *cooked*; anything else comes out raw. That is the
+	 *   whole of the `causeOfDeath` field's purpose, and it is why the check is
+	 *   the string `"fire"` rather than a boolean.
+	 * - **Rot shortens the shelf life.** The meat's `bestBefore` is
+	 *   `currentTurn + TURNS_PER_DAY * bestBeforeDays / rotLevel`, so a corpse at
+	 *   rot level 5 ("about to crumble to dust") yields meat good for a fifth of
+	 *   its normal time. The `++rotLevel` avoids dividing by zero, because the
+	 *   C#'s levels start at 0.
+	 *
+	 * **The C# throws on an unrecognised animal name, and that is not ported.**
+	 * Its switch has three cases — rabbit, chicken, feral dog — and a `default`
+	 * that throws. `RABBIT` and `CHICKEN` arrived with `UnintelligentAnimalAI`, so
+	 * every animal the C# names now reaches a case, and the throw is unreachable
+	 * by construction rather than by luck. It stays unported anyway: the models are
+	 * process-wide statics, and a hand-edited one that claimed the flag without
+	 * being a name the switch knows must not be able to take the game down. The
+	 * default arm falls through to "no meat" and a test says so.
+	 *
+	 * The meat *quantity* is the C#'s `ResourcesAvailability` switch — 3 / 2 / 1.
+	 * `Feature.ResourcesAvailability` has since landed, so this reads the real
+	 * option rather than the hardcoded MED default it started as. It is inside
+	 * the C#'s *animal* arm only; a human body is never scaled and stays at 1.
+	 */
+	private ButcherMeat(a: Actor, c: Corpse): void {
+		const map = a.location.map!;
+		const currentTurn = map.localTime.turnCounter;
+		const rotLevel = this.m_Rules.corpseRotLevel(c) + 1;
+		const dead = c.deadGuy;
+		const burntToDeath = dead.causeOfDeath === "fire";
+
+		// (raw, cooked) per species, keyed the way the C# does: by the dead guy's
+		// *model name*, not by an id. That is the C#'s choice and it is a fragile
+		// one -- a rename of "rabbit" silently changes the meat -- so the mapping
+		// is stated here rather than left implicit.
+		const ANIMAL_MEAT: Readonly<Record<string, readonly [ItemID, ItemID]>> = {
+			// rabbit, chicken, feral dog
+			"rabbit": [ItemID.FOOD_RAW_RABBIT, ItemID.FOOD_COOKED_RABBIT],
+			"chicken": [ItemID.FOOD_RAW_CHICKEN, ItemID.FOOD_COOKED_CHICKEN],
+			"feral dog": [ItemID.FOOD_RAW_DOG_MEAT, ItemID.FOOD_COOKED_DOG_MEAT],
+		};
+
+		let meatId: ItemID;
+		let quantity = 1;
+		if (dead.model.abilities.isLivingAnimal) {
+			const pair = ANIMAL_MEAT[dead.model.name];
+			// Not ported: the C# throws here. See the doc comment.
+			if (pair === undefined) return;
+			meatId = burntToDeath ? pair[1] : pair[0];
+			// The C#'s ResourcesAvailability switch: 3 / 2 / 1.
+			quantity = Rules.meatQuantityPerCorpse(s_Options.resourcesAvailability);
+		} else {
+			meatId = burntToDeath
+				? ItemID.FOOD_COOKED_HUMAN_FLESH
+				: ItemID.FOOD_RAW_HUMAN_FLESH;
+			// A human body is *not* scaled. The C#'s ResourcesAvailability switch
+			// sits inside the animal arm only, so a person yields quantity 1 at
+			// every setting. Worth saying out loud, because "why does a rabbit
+			// give more meat than a person" is otherwise a fair question.
+		}
+
+		const model = Models.items.get(meatId) as ItemFoodModel;
+		const bestBefore =
+			currentTurn + ((WorldTime.TURNS_PER_DAY * model.bestBeforeDays) / rotLevel);
+		// The C#'s trailing `new ItemFood(model, bestBefore, true, isRaw)` flags
+		// are `isForbiddenToAI` and `canBeCooked`; the port reads both off the model
+		// (the five raw meats already carry `canCauseFoodPoisoning`, and
+		// `canBeCooked` came in with `Cooking`), so only the turn count is passed.
+		const meat = new ItemFood(model, bestBefore);
+		meat.quantity = quantity;
+		// The C# sets this for both branches, so the meat is not the AI's to take.
+		meat.isForbiddenToAI = true;
+
+		// into the inventory if it fits, else on the ground.
+		if (!a.inventory!.addAll(meat)) this.DropItem(a, meat);
+		this.AddMessage(this.MakeMessage(a, "carved off some raw meat."));
+	}
+
 	// C# DoButcherCorpse — RogueGame.cs:7009
 	DoButcherCorpse(a: Actor, c: Corpse): void {
 		const isVisible = this.IsVisibleToPlayer(a);
 
 		this.SpendActorActionPoints(a, Rules.BASE_ACTION_COST);
 
-		this.SeeingCauseInsanity(
-			a,
-			a.location,
-			Rules.SANITY_HIT_BUTCHERING_CORPSE,
-			`${a.name} butchering ${c.deadGuy.name}`,
-		);
+		// Cause insanity -- but not for an animal. Still Alive, Release 7-6: a
+		// dead rabbit was food anyway, so carving one up is not a horror.
+		if (!c.deadGuy.model.abilities.isLivingAnimal) {
+			this.SeeingCauseInsanity(
+				a,
+				a.location,
+				Rules.SANITY_HIT_BUTCHERING_CORPSE,
+				`${a.name} butchering ${c.deadGuy.name}`,
+			);
+		}
+
+		if (hasFeature(this.m_Session.ruleset, Feature.Butchering)) {
+			this.ButcherMeat(a, c);
+		}
 
 		const dmg = this.m_Rules.actorDamageVsCorpses(a);
 
@@ -8191,7 +10464,23 @@ export class RogueGame {
 				),
 			);
 			this.m_MusicManager.stop();
-			this.m_MusicManager.play(GameSounds.UNDEAD_EAT, MusicPriority.EVENT);
+			// The third `Feature.ExtendedAudio` reader, and the one that is a
+			// *choice* rather than an addition. The fork replaced the vanilla
+			// `UNDEAD_EAT` with a distance-tiered pair and plays the player tier
+			// here (`RogueGame.cs:21582`); the port still plays the vanilla id. So
+			// the gate is over the id, not over whether to make a noise: under
+			// CLASSIC a feast is exactly as loud as it has always been, and under
+			// STILL_ALIVE it is the file the fork shipped for it.
+			//
+			// **Not ported: the NPC arm** (`RogueGame.cs:21584`,
+			// `UNDEAD_EAT_NEARBY` at `QUIET_NOISE_RADIUS`) for the same reason as
+			// the fishing cast's: the port has no radius-bearing audibility
+			// predicate to test.
+			this.m_SoundManager.play(
+				hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio)
+					? GameSounds.UNDEAD_EAT_PLAYER
+					: GameSounds.UNDEAD_EAT,
+			);
 		}
 
 		this.InflictDamageToCorpse(c, dmg);
@@ -8329,16 +10618,22 @@ export class RogueGame {
 	}
 
 	// C# DoPlayerItemSlot — RogueGame.cs:7157
-	DoPlayerItemSlot(player: Actor, slot: number, key: GameKeyEvent): boolean {
-		if (key.ctrl) return this.DoPlayerItemSlotUse(player, slot);
+	// async: the ctrl and alt arms reach Still Alive's blocking use and drop prompts.
+	async DoPlayerItemSlot(
+		player: Actor,
+		slot: number,
+		key: GameKeyEvent,
+	): Promise<boolean> {
+		if (key.ctrl) return await this.DoPlayerItemSlotUse(player, slot);
 		else if (key.shift) return this.DoPlayerItemSlotTake(player, slot);
-		else if (key.alt) return this.DoPlayerItemSlotDrop(player, slot);
+		else if (key.alt) return await this.DoPlayerItemSlotDrop(player, slot);
 
 		return false;
 	}
 
 	// C# DoPlayerItemSlotUse — RogueGame.cs:7174
-	DoPlayerItemSlotUse(player: Actor, slot: number): boolean {
+	// async: `DoUseItem` reaches Still Alive's blocking use prompts.
+	async DoPlayerItemSlotUse(player: Actor, slot: number): Promise<boolean> {
 		const inv = player.inventory!;
 		const it = inv.getItem(slot);
 
@@ -8376,7 +10671,7 @@ export class RogueGame {
 		} else {
 			const res = this.m_Rules.canActorUseItem(player, it);
 			if (res.ok) {
-				this.DoUseItem(player, it);
+				await this.DoUseItem(player, it);
 				return true;
 			} else {
 				this.AddMessage(
@@ -8419,7 +10714,8 @@ export class RogueGame {
 	}
 
 	// C# DoPlayerItemSlotDrop — RogueGame.cs:7269
-	DoPlayerItemSlotDrop(player: Actor, slot: number): boolean {
+	// async: `DoDropItem` reaches Still Alive's candle-box prompt.
+	async DoPlayerItemSlotDrop(player: Actor, slot: number): Promise<boolean> {
 		const inv = player.inventory!;
 		const it = inv.getItem(slot);
 
@@ -8432,7 +10728,7 @@ export class RogueGame {
 
 		const res = this.m_Rules.canActorDropItem(player, it);
 		if (res.ok) {
-			this.DoDropItem(player, it);
+			await this.DoDropItem(player, it);
 			return true;
 		} else {
 			this.AddMessage(
@@ -9405,6 +11701,7 @@ export class RogueGame {
 			player,
 			this.m_Session.worldTime,
 			this.m_Session.world!.weather,
+			true, // Release 6-5: light sources outside the actor's own FOV
 		);
 		const potentialTargets = this.m_Rules.getEnemiesInFov(player, fov);
 
@@ -9735,8 +12032,319 @@ export class RogueGame {
 		this.DoStartSleeping(player);
 		this.RedrawPlayScreen();
 		this.m_MusicManager.stop();
+		// C# `m_AmbientSFXManager.StopAll()` — RogueGame.cs:13845. A separate manager
+		// is why this is its own line: the music stop above would not touch the rain.
+		if (hasFeature(this.m_Session.ruleset, Feature.AmbientAudio))
+			this.m_AmbientSFXManager.stopAll();
 		this.m_MusicManager.playLooping(GameMusics.SLEEP, MusicPriority.EVENT);
 		return true;
+	}
+
+	/**
+	 * C# `HandlePlayerUseSleepingBag` — `RogueGame.cs:14856-14874`, Still Alive
+	 * Release 7-3. Reached by *using* a sleeping bag, not by a `PlayerCommand`.
+	 *
+	 * Three steps, and the order is the C#'s rather than an accident of convenience:
+	 *
+	 * 1. **Refuse if `CanActorSleep` fails** (`:14858`). A bag does not get you a nap you
+	 *    were not entitled to -- a starving survivor still cannot, and the reason string
+	 *    is the same one the sleep command uses.
+	 * 2. **Refuse if a map object is in the way** (`:14864`). This is the only check
+	 *    specific to a bag, and it exists because the bag goes *on the floor*: you
+	 *    cannot unroll one under a parked car. A couch has no equivalent problem
+	 *    because you do not place it.
+	 * 3. **Drop it, then ask to sleep** (`:14872-14873`). The bag is on the ground
+	 *    *before* the "Really sleep there" question, which means a player who answers
+	 *    *no* keeps the bag on the floor and has paid the turn. The C#'s behaviour, kept
+	 *    deliberately: re-asking would mean holding the bag in a hand the reference
+	 *    never puts it in.
+	 *
+	 * **The return value is `HandlePlayerSleep`'s**, not `true`. So declining the
+	 * confirmation returns `false`, and the C#'s caller treats that as "no action done"
+	 * -- which is not quite the same thing, since the bag *was* dropped. Transcribed as
+	 * the C# has it rather than corrected, because the two differ only in what the
+	 * player is told and the reference is what this port is a port of.
+	 *
+	 * **Gated on `Feature.ResourcesAvailability` by its call site in `DoUseItem`**, and
+	 * that mapping needs arguing for because nothing else fits. There is no sleep flag:
+	 * sleeping on a couch is a Classic mechanic with its own `SLEEP_COUCH_SLEEPING_REGEN`
+	 * constant, and this flag must not switch *that* off. What it does switch off is the
+	 * bag, and a bag is a *supply* -- a Still Alive item with no Classic drop site, no
+	 * Classic reader and no Classic flavour for its existence, whose whole content is
+	 * the fork's Resources Availability layer. `Feature.ResourcesAvailability` is the
+	 * flag that owns that layer (`GiveStartingKitForResources`, the underground loot, the
+	 * fruit interval), and using it means one switch turns the bag off everywhere at
+	 * once: the use arm here, the sleep-regen OR in the turn loop, and the AI's
+	 * `behaviorSleep`.
+	 *
+	 * Note what it does *not* need: the despawn exemption for a dropped bag
+	 * (`ApplyItemTurnTracker`, `RogueGame.ts:26841`) is already written and already
+	 * keyed on the id rather than the flag, so it is inert under Classic for the same
+	 * reason -- nothing can get a bag.
+	 */
+	async HandlePlayerUseSleepingBag(player: Actor, it: Item): Promise<boolean> {
+		// C# :14858-14862.
+		const sleep = this.m_Rules.canActorSleep(player);
+		if (!sleep.ok) {
+			this.AddMessage(this.MakeErrorMessage(`Can't sleep : ${sleep.reason}.`));
+			return false;
+		}
+
+		// C# :14864-14869. `AName` is the indefinite form -- "a car" -- which is why the
+		// message reads "Can't place sleeping bag : a car in the way."
+		const mapObj = player.location.map!.getMapObjectAtPoint(player.location.position);
+		if (mapObj !== null) {
+			this.AddMessage(
+				this.MakeErrorMessage(`Can't place sleeping bag : ${mapObj.aName} in the way.`),
+			);
+			return false;
+		}
+
+		// now do it
+		await this.DoDropItem(player, it);
+		return await this.HandlePlayerSleep(player);
+	}
+
+	/**
+	 * C# `HandlePlayerUnloadAmmo` — `RogueGame.cs:14832-14854`, Still Alive Release
+	 * 7-6. The CHANGELOG line is "Players can unload the ammo from their equipped
+	 * ranged weapon."
+	 *
+	 * **Reachable from a key.** The C# dispatches it from `PlayerCommand.UNLOAD_AMMO`
+	 * (`RogueGame.cs:11078-11082`); that command is now in the port's `PlayerCommand`
+	 * enum, appended at the end by save format, bound to `Shift+U` in `Keybindings`
+	 * (the C#'s bare `U` is this port's SHOUT), given a row in `HandleRedefineKeys`
+	 * and a `case` in the turn loop next to `MAKE_COOKING_FIRE`, awaited.
+	 *
+	 * That the *last* piece was the binding and not the method is worth stating,
+	 * because the method was complete and tested for a long time while being
+	 * unreachable — a whole unload mechanic, gated and unit-converted and
+	 * message-complete, that no input could reach.
+	 */
+	HandlePlayerUnloadAmmo(player: Actor): boolean {
+		// get player equipped weapon
+		const item = player.getEquippedRangedWeapon();
+		if (item === null) {
+			this.AddMessage(this.MakeErrorMessage("No weapon equipped to unload."));
+			return false;
+		}
+
+		const res = this.CanActorUnloadAmmoFromGun(player, item);
+		if (res.ok) {
+			this.DoUnloadAmmoFromGun(player, item);
+			return true;
+		} else {
+			this.AddMessage(
+				this.MakeErrorMessage(`Cannot unload ${item.theName} : ${res.reason}.`),
+			);
+			return false;
+		}
+	}
+
+	/**
+	 * C# `DoUnloadAmmoFromGun` — `RogueGame.cs:22131-22195`, Still Alive Release 7-6.
+	 *
+	 * **The only reader of ammunition in the reference**, and that is why this method
+	 * is the thing that makes `AMMO_NAILS`, `AMMO_PRECISION_RIFLE`, `AMMO_MINIGUN`,
+	 * `AMMO_GRENADES` and `AMMO_PLASMA` reachable rather than inert. All five have a
+	 * model, a sprite and a weapon that uses them. They now also have a *source* --
+	 * `BaseMapGenerator`'s `makeItemNailGunAmmo`, `makeItemPrecisionRifleAmmo`,
+	 * `makeItemMinigunAmmo`, `makeItemGrenadeLauncherAmmo` and
+	 * `makeItemBioForceGunAmmo` were the missing half, and `makeItemRandomCommonAmmo`
+	 * (the six-way roll) with them -- so the claim below needed checking rather than
+	 * repeating, and it is now narrower than it was.
+	 *
+	 * What is still true: **nothing in the port yet *calls* those factories.** The
+	 * reference calls them from `BaseTownGenerator` (the police station, the army base,
+	 * the gun shops) and from `RogueGame.cs:28314`, and those call sites are a
+	 * separate piece of work. So a minigun's ninety-six rounds and a grenade
+	 * launcher's ten tubes are still not something a survivor will find lying about:
+	 * they are what a survivor can take back out of the gun. `GameItems.ts` says the
+	 * same about all five (`:1194-1197`, `:1228-1229`), and that is now the whole
+	 * of it.
+	 *
+	 * The mechanic is a unit conversion again, and the same one as `HandlePlayerSiphonFuel`
+	 * in reverse: the gun's magazine becomes an ammo stack, and whatever the inventory
+	 * will not take is put on the ground. It is reached from `HandlePlayerUnloadAmmo`
+	 * rather than from `DoUseItem`, because the thing being used is the *weapon*, not
+	 * anything in the pack.
+	 *
+	 * **The `switch` is exhaustive over the ammo types the reference lists and the port
+	 * throws on anything else** (`:22153-22154`). Both halves are transcribed. The
+	 * reference's ten cases and the port's `AmmoType` enum have the same ten members
+	 * plus `PLASMA`, which the C#'s own switch does *not* name -- so a bio-force gun
+	 * with rounds in it reaches the C#'s `default` and throws. That is the reference's
+	 * state and the throw is kept, with `PLASMA` absent from the port's table for the
+	 * same reason: the reference has no ammo model for it in that arm.
+	 *
+	 * The overflow loop (`:22166-22187`) builds **one** `ItemAmmo` per round and adds it
+	 * individually, then drops the remainder as a single stack. Building one-per-round
+	 * rather than one-of-the-whole-amount is what lets a partly-full inventory take
+	 * *some* of a magazine: `addAll` is all-or-nothing and would refuse the lot.
+	 *
+	 * **The sound and the message are the gun's, not an unload's own**: the C# plays
+	 * `EQUIP_GUN_PLAYER` (`:22192`) and says `VERB_UNLOAD` (`:22193`). `EQUIP_GUN_PLAYER`
+	 * looks like a Classic name and is not -- `tests/extended-audio.test.ts` reads the
+	 * fork's own sound fixture and puts it in `FORK_IDS`, so it needs a
+	 * `Feature.ExtendedAudio` gate like the other 179, and that test is what caught the
+	 * assumption it is correcting.
+	 *
+	 * **Gated on `Feature.ResourcesAvailability` by its call site in
+	 * `HandlePlayerUnloadAmmo`,** and this is the same mapping as the sleeping bag's:
+	 * ammunition as a resource is what the fork's Resources Availability layer governs,
+	 * and unloading a magazine is the only way any of the five Still Alive ammo types
+	 * ever reaches a survivor. `Feature.WeaponWeight` and `Feature.ArmorResist` are the
+	 * other two weapon-shaped flags and both are wrong -- one is a speed term and one is
+	 * an infection roll.
+	 */
+	DoUnloadAmmoFromGun(actor: Actor, weapon: ItemRangedWeapon): void {
+		// spend APs.
+		this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+		const ammoCount = weapon.ammo;
+
+		// work out the type of ammo to unload. The C#'s `AmmoType` values, in its order.
+		const model: ItemAmmoModel | null = RogueGame.AmmoModelForWeaponAmmoType(weapon.ammoType);
+		if (model === null) {
+			// The C#'s `default: throw new InvalidOperationException("unhandled ammo
+			// type")` at `:22153-22154`, reached only by a weapon whose ammo type is not
+			// in the table -- `AmmoType.PLASMA` today, the one the reference's own switch
+			// forgot. Kept rather than returning quietly: an unload that silently did
+			// nothing after spending a turn is worse than a loud failure, and the AP has
+			// already been spent by this point in both.
+			throw new Error("unhandled ammo type");
+		}
+
+		// create a new ammo instance
+		const newAmmo = new ItemAmmo(model);
+		newAmmo.quantity = ammoCount;
+
+		// remove the ammo from the gun
+		weapon.ammo = 0;
+
+		// add to inventory (or drop on ground if inv is full)
+		if (!actor.inventory!.addAll(newAmmo)) {
+			// add as much ammo as possible to the actor inventory.
+			const totalAmmo = ammoCount;
+			let ammoAdded = 0;
+			for (let i = 0; i !== ammoCount; i++) {
+				const singleAmmo = new ItemAmmo(model);
+				singleAmmo.quantity = 1;
+				ammoAdded += actor.inventory!.addAsMuchAsPossible(singleAmmo).quantityAdded;
+			}
+
+			// add any ammo that couldn't fit in the actor's inventory to the ground.
+			const overflowAmmo = totalAmmo - ammoAdded;
+			if (overflowAmmo > 0) {
+				const overflowAmmoItem = new ItemAmmo(model);
+				overflowAmmoItem.quantity = overflowAmmo;
+				this.DropItem(actor, overflowAmmoItem);
+			}
+		}
+
+		// SFX & msg
+		if (actor.isPlayer) {
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.play(GameSounds.EQUIP_GUN_PLAYER);
+			this.AddMessage(
+				this.MakeMessage(actor, this.Conjugate(actor, this.VERB_UNLOAD), weapon),
+			);
+		}
+	}
+
+	/**
+	 * C# `Rules.CanActorUnloadAmmoFromGun` — `_refs/StillAlive-master/.../Engine/Rules.cs:1392`,
+	 * Still Alive Release 7-6, with the "already empty" refusal from Release 7-2
+	 * (`:1449-1454`).
+	 *
+	 * **Inlined into `RogueGame` rather than added to `Rules.ts`,** for ownership:
+	 * `Rules.ts` is not a file this change may touch. Same shape as
+	 * `CanActorThrowItemTo` and `IsItemLiquorForMolotov` beside it. **Move it to
+	 * `Rules` as `canActorUnloadAmmoFromGun` when that file is next edited.**
+	 *
+	 * The C#'s own numbered comment block is wrong — it labels the four checks
+	 * "3. Not a battery powered item" and "4. Already fully charged", which are
+	 * copy-paste leftovers from `CanActorRechargeItemBattery` two methods away. The
+	 * code is "3. Not a weapon that uses ammo" and "4. Already empty of ammo". The
+	 * reasons are transcribed from the code, which is the part that is load-bearing.
+	 *
+	 * The eleven `AmmoType` cases the C# breaks over (`:1432-1442`) are the same set as
+	 * `AmmoModelForWeaponAmmoType` below and for the same reason: `AmmoType.PLASMA` is
+	 * the one member neither names, so a bio-force gun is refused here with "not an item
+	 * with unloadable ammo" and never reaches `DoUnloadAmmoFromGun`'s throw.
+	 */
+	private CanActorUnloadAmmoFromGun(actor: Actor, it: Item): RuleResult {
+		if (!actor) throw new Error("actor");
+		if (!it) throw new Error("item");
+
+		// 1. Actor cant use items.
+		if (!actor.model.abilities.canUseItems)
+			return { ok: false, reason: "no ability to use items" };
+
+		// 2. Item not in inventory. Must pick it up first in order to unload it.
+		if (!it.isEquipped || !actor.inventory?.contains(it))
+			return { ok: false, reason: "item not equipped" };
+
+		// 3. Not a weapon that uses ammo.
+		if (!(it instanceof ItemRangedWeapon) || RogueGame.AmmoModelForWeaponAmmoType(it.ammoType) === null)
+			return { ok: false, reason: "not an item with unloadable ammo" };
+
+		// 4. Already empty of ammo.
+		if (it.ammo <= 0) return { ok: false, reason: "has no ammo loaded" };
+
+		// all clear.
+		return { ok: true, reason: "" };
+	}
+
+	/**
+	 * C# the `switch` at the top of `DoUnloadAmmoFromGun` — `RogueGame.cs:22140-22155` —
+	 * lifted to a free function so the rule and the action agree by construction.
+	 *
+	 * Two things it deliberately does not do. It does not fall back to a default ammo
+	 * model, because the C# throws and `DoUnloadAmmoFromGun` throws. And it does **not**
+	 * include `AmmoType.PLASMA`, which is the member the reference's own switch forgot:
+	 * `AMMO_PLASMA` was added in Release 7-6, the same release as the unload itself,
+	 * and the author wrote the ten cases that existed when the method was drafted. The
+	 * port keeps the omission, and both refusals it causes are asserted in the tests
+	 * rather than left as a surprise.
+	 *
+	 * A `switch` on ten enum members transcribed as an eleven-entry table, keyed by the
+	 * enum rather than by an index, because the C#'s order carries no meaning here and
+	 * a keyed lookup cannot fall off the end.
+	 */
+	private static AmmoModelForWeaponAmmoType(
+		ammoType: AmmoType,
+	): ItemAmmoModel | null {
+		// C# `m_GameItems.AMMO_*`, and the `AmmoType` each belongs to. Built per call
+		// rather than cached: `Models.items` is process-wide state that `LoadData`
+		// re-seeds, and a static table of models captured at class-load time would
+		// outlive the registry it points into.
+		switch (ammoType) {
+			case AmmoType.BOLT:
+				return Models.items.get(ItemID.AMMO_BOLTS) as ItemAmmoModel;
+			case AmmoType.FUEL:
+				return Models.items.get(ItemID.AMMO_FUEL) as ItemAmmoModel;
+			case AmmoType.GRENADES:
+				return Models.items.get(ItemID.AMMO_GRENADES) as ItemAmmoModel;
+			case AmmoType.HEAVY_PISTOL:
+				return Models.items.get(ItemID.AMMO_HEAVY_PISTOL) as ItemAmmoModel;
+			case AmmoType.HEAVY_RIFLE:
+				return Models.items.get(ItemID.AMMO_HEAVY_RIFLE) as ItemAmmoModel;
+			case AmmoType.LIGHT_PISTOL:
+				return Models.items.get(ItemID.AMMO_LIGHT_PISTOL) as ItemAmmoModel;
+			case AmmoType.LIGHT_RIFLE:
+				return Models.items.get(ItemID.AMMO_LIGHT_RIFLE) as ItemAmmoModel;
+			case AmmoType.MINIGUN:
+				return Models.items.get(ItemID.AMMO_MINIGUN) as ItemAmmoModel;
+			case AmmoType.NAIL:
+				return Models.items.get(ItemID.AMMO_NAILS) as ItemAmmoModel;
+			case AmmoType.PRECISION_RIFLE:
+				return Models.items.get(ItemID.AMMO_PRECISION_RIFLE) as ItemAmmoModel;
+			case AmmoType.SHOTGUN:
+				return Models.items.get(ItemID.AMMO_SHOTGUN) as ItemAmmoModel;
+			default:
+				return null;
+		}
 	}
 
 	// C# HandlePlayerSwitchPlace — RogueGame.cs:8446
@@ -10288,6 +12896,56 @@ export class RogueGame {
 		return actionDone;
 	}
 
+	/**
+	 * C# `HandlePlayerMakeFireForCooking()` -- `RogueGame.cs:13519-13587`, Release 7-6.
+	 *
+	 * MATCHES MODE: point at a tile. Returns whether the turn continues.
+	 *
+	 * The C# checks the equipped item *before* entering the overlay and refuses with
+	 * "You must equip matches in order to make fires." The ordering matters:
+	 * entering the mode with the wrong item in hand would strand the player in a
+	 * direction-wait with nothing they can light.
+	 *
+	 * A refused direction does **not** leave the mode. The `do/while` continues on a
+	 * refusal, so pointing at a wall says why and lets you point somewhere else --
+	 * that is what the C# does, and cancelling is ESC rather than a second refusal.
+	 */
+	private async HandlePlayerMakeFireForCooking(player: Actor): Promise<boolean> {
+		const leftHand = player.getEquippedItem(DollPart.LEFT_HAND);
+		if (leftHand === null || leftHand.model.id !== ItemID.MATCHES) {
+			this.AddMessage(this.MakeMessage(player, "You must equip matches in order to make fires."));
+			return true;
+		}
+
+		this.ClearOverlays();
+		this.AddOverlay(
+			new OverlayPopup(
+				this.START_FIRE_MODE_TEXT,
+				this.MODE_TEXTCOLOR,
+				this.MODE_BORDERCOLOR,
+				this.MODE_FILLCOLOR,
+				new Point(0, 0),
+			),
+		);
+
+		let loop = true;
+		do {
+			this.RedrawPlayScreen();
+			const dir = await this.WaitDirectionOrCancel();
+			if (dir == null) {
+				loop = false;
+			} else if (dir !== Direction.NEUTRAL) {
+				const pos = dir.applyTo(player.location.position);
+				const canStart = this.m_Rules.canStartCookingFire(player, pos);
+				if (!canStart.ok) this.AddMessage(new Message(canStart.reason, this.m_Session.worldTime.turnCounter, this.NIGHT_COLOR));
+				else this.DoMakeFireForCooking(player, pos);
+			}
+		} while (loop);
+
+		this.ClearOverlays();
+		return loop;
+	}
+
 	// C# HandlePlayerUseSpray — RogueGame.cs:9034
 	async HandlePlayerUseSpray(player: Actor): Promise<boolean> {
 		const it = player.getEquippedItem(DollPart.LEFT_HAND);
@@ -10312,6 +12970,14 @@ export class RogueGame {
 		return false;
 	}
 
+	/**
+	 * Still Alive, Release 7-6: the extinguisher reuses the spray-paint *mode*,
+	 * so the banner changes with the can in your hand.
+	 */
+	readonly FIRE_EXTINGUISHER_MODE_TEXT: string[] = [
+		"EXTINGUISH MODE - directions to clean a tile or object, ESC cancels",
+	];
+
 	// C# HandlePlayerTag — RogueGame.cs:9070
 	async HandlePlayerTag(player: Actor): Promise<boolean> {
 		let loop = true;
@@ -10332,10 +12998,18 @@ export class RogueGame {
 			return false;
 		}
 
+		// Which can is this? The C# keeps a `specialCase` string and a parallel
+		// banner, with the branch re-tested inside the loop. Both are reproduced,
+		// and the gate keeps CLASSIC on the tagging path even if it is somehow
+		// handed an extinguisher.
+		const isExtinguisher =
+			hasFeature(this.m_Session.ruleset, Feature.FireExtinguishers) &&
+			sprayPaint.model.id === ItemID.FIRE_EXTINGUISHER;
+
 		this.ClearOverlays();
 		this.AddOverlay(
 			new OverlayPopup(
-				this.TAG_MODE_TEXT,
+				isExtinguisher ? this.FIRE_EXTINGUISHER_MODE_TEXT : this.TAG_MODE_TEXT,
 				this.MODE_TEXTCOLOR,
 				this.MODE_BORDERCOLOR,
 				this.MODE_FILLCOLOR,
@@ -10351,6 +13025,33 @@ export class RogueGame {
 			} else if (dir !== Direction.NEUTRAL) {
 				const pos = player.location.position.add(new Point(dir.dx, dir.dy));
 				if (player.location.map!.isInBoundsPoint(pos)) {
+					if (isExtinguisher) {
+						// The C# checks all three fire kinds on the target tile and
+						// refuses with its own message if there is nothing burning --
+						// a different refusal from the tagging one, and the player can
+						// act on it differently.
+						const map = player.location.map!;
+						const mapObj = map.getMapObjectAtPoint(pos);
+						const tile = map.getTileAt(pos.x, pos.y);
+						const actor = map.getActorAtPoint(pos);
+						const burning =
+							(mapObj !== null && mapObj.isOnFire) ||
+							(tile !== null && tile.isOnFire) ||
+							(actor !== null && actor.isOnFire);
+						if (burning) {
+							this.DoUseFireExtinguisher(player, sprayPaint, pos);
+							loop = false;
+							actionDone = true;
+						} else {
+							this.AddMessage(
+								this.MakeErrorMessage(
+									"Can't spray there : nothing to extinguish.",
+								),
+							);
+							this.RedrawPlayScreen();
+						}
+						continue;
+					}
 					const res = this.CanTag(player.location.map!, pos);
 					if (res.ok) {
 						this.DoTag(player, sprayPaint, pos);
@@ -10463,6 +13164,1163 @@ export class RogueGame {
 		return actionDone;
 	}
 
+	/**
+	 * C# `CheckIfWorldDecays` — `RogueGame.cs:9246-9263`, `//@@MP (Release 7-6)`.
+	 *
+	 * (C# line numbers in this block are against
+	 * `_refs/StillAlive-master/Rogue Survivor Still Alive/Engine/RogueGame.cs`,
+	 * grepped rather than taken from a header. Some comments elsewhere in this file
+	 * quote a different revision of the C# and do not agree with it:
+	 * `HandlePlayerUseSpray` is `:9034` above and `:14876` in `_refs`, and
+	 * `OnNewNight` is `:17240` above and `:8907` in `_refs`. Others do agree --
+	 * `ReplaceDestroyedWall` is `:20134` in both -- so it is a mixed bag rather than
+	 * a second file, and these are the numbers that can be checked today.)
+	 *
+	 * ## The cadence is three days and then never again
+	 *
+	 * The C# divides the current day by `DaysBeforeWorldDecays` and applies a phase
+	 * only when the quotient is exactly 1, 2 or 3:
+	 *
+	 * ```csharp
+	 * double decayPhase = ((double)m_Session.WorldTime.Day / (double)s_Options.DaysBeforeWorldDecays);
+	 * if ((int)decayPhase != decayPhase)
+	 *     return; //not an interger
+	 *
+	 * if (decayPhase == 1)
+	 *     ApplyWorldDecayPhase(1, map); //first phase
+	 * else if (decayPhase == 2)
+	 *     ApplyWorldDecayPhase(2, map); //second phase
+	 * else if (decayPhase == 3)
+	 *     ApplyWorldDecayPhase(3, map); //third phase
+	 * //else, not a day where decay state changes
+	 * ```
+	 *
+	 * So the option is a *period*, not an offset, and the world gets exactly three
+	 * passes ever. At the default 7 that is day 7, 14 and 21; at 28 it is day 28, 56
+	 * and 84, which most runs never reach. A fourth phase is not merely absent, it
+	 * is unimplemented — there is no `_PHASE4` drawing in the C# and the reader
+	 * below has no `case 4`.
+	 *
+	 * The C#'s integrality test is a truncating cast compared against the double,
+	 * which is an integer test written the long way. `Number.isInteger` is the same
+	 * predicate and also absorbs the divide-by-zero that a `daysBeforeWorldDecays` of
+	 * zero would produce (`day / 0` is `Infinity`, not an integer), so there is no
+	 * separate guard for it — the C# does not have one either, and its cast of
+	 * `Infinity` to `int` is itself unspecified, so both ends up returning.
+	 */
+	private CheckIfWorldDecays(map: Map): void {
+		// Start/continue the world decay process
+		if (this.m_Session.worldTime.day < s_Options.daysBeforeWorldDecays) {
+			//don't even bother before the first day of decay
+			return;
+		}
+
+		const decayPhase =
+			this.m_Session.worldTime.day / s_Options.daysBeforeWorldDecays;
+		if (!Number.isInteger(decayPhase)) return; //not an interger
+
+		if (decayPhase === 1) this.ApplyWorldDecayPhase(1, map); //first phase
+		else if (decayPhase === 2) this.ApplyWorldDecayPhase(2, map); //second phase
+		else if (decayPhase === 3) this.ApplyWorldDecayPhase(3, map); //third phase
+		//else, not a day where decay state changes
+	}
+
+	/**
+	 * C# `ApplyWorldDecayPhase` — `RogueGame.cs:9265-9410`, `//@@MP (Release 7-6)`.
+	 *
+	 * One pass of one phase over one map: every tile, then every map object. The C#
+	 * is 145 lines of which the tile half is a ladder of early exits and the object
+	 * half is a four-way `else if` on the image name; both are transcribed here in
+	 * that order, because the order is what the exits mean.
+	 *
+	 * ## The tile half, guard by guard
+	 *
+	 * 1. `!tile.Model.CanDecay` — 34 of the 142 models, and the exclusion is
+	 *    *not* "not walkable": grass, dirt, the ponds and the two carpets all fail
+	 *    it while `FLOOR_TILES` and `FLOOR_WHITE_TILE` pass. The C#'s own reason is
+	 *    a comment on the guard: "is tile a decay type? (not relevant for ponds,
+	 *    grass, etc)".
+	 * 2. `tile.DecayPhase >= phase` — the high-water mark. A tile already at or past
+	 *    this phase is left alone, which is what makes the pass idempotent and what
+	 *    makes a save/reload safe: the phase travels with the tile
+	 *    (`Tile.decayPhase`) and not merely with its drawing.
+	 * 3. The inside/outside ladder, below. **This is the ladder the subway comment
+	 *    in `GameTiles` is pointing at**, and the answer is that the special case is
+	 *    `map.Lighting`, not a wall model.
+	 *
+	 * ## The subway, and every other below-ground map
+	 *
+	 * `GameTiles.cs:506` registers `WALL_SUBWAY` with `CanDecay = true` and says so:
+	 *
+	 * > `//to handle the fact that subways are also below ground and thus that bit
+	 * > doesn't decay, we handle this in RogueGame.ApplyWorldDecayPhase()`
+	 *
+	 * **There is no `WALL_SUBWAY` test anywhere in the C#** — `grep -r WALL_SUBWAY`
+	 * over the reference returns `GameTiles.cs` and nothing else. What the comment
+	 * points at is the `map.Lighting == Lighting.OUTSIDE` test on `:9289`, and it
+	 * does the job for subways by way of two facts about the generator rather than
+	 * one fact about the wall:
+	 *
+	 * - `GenerateSubwayMap` builds the whole map with `Lighting.DARKNESS`
+	 *   (`BaseTownGenerator.cs:937`), and so does `GenerateSewersMap`
+	 *   (`:633`). Every other below-ground map the fork generates is `DARKNESS` or
+	 *   `LIT` too.
+	 * - `GenerateSubwayMap` then marks *every* tile `IsInside = true`
+	 *   (`:1101`).
+	 *
+	 * So a subway wall arrives as `CanDecay && isInside && !isWalkable` on a map whose
+	 * lighting is not `OUTSIDE`, and the arm at `:9292` — `else //is underground, so no
+	 * decay` — `continue`s it. `WALL_SUBWAY`'s `CanDecay = true` is therefore not a
+	 * contradiction: it is the flag that lets the tile *reach* the ladder, where the
+	 * ladder is what declines it. Do not "fix" it by setting the flag false; that
+	 * would silently make subway walls differ from every other below-ground wall,
+	 * which `CanDecay` does not and cannot express.
+	 *
+	 * The same arm declines sewer walls (`CanDecay = false` already) and the
+	 * interior walls of any `DARKNESS`/`LIT` map — the mall's underground car park,
+	 * the basements, the CHAR facility. That is the generalisation the subway comment
+	 * is really about, and it is why the guard is written on lighting rather than on
+	 * the wall.
+	 *
+	 * ## Draw order is the point of the `insertDecoration` / `addDecoration` split
+	 *
+	 * An interior wall takes `addDecoration` and lands on top of the pile
+	 * (`:9346-9353`); everything else takes `insertDecoration(..., 0)` and lands at
+	 * the bottom (`:9357`). So blood and scorch draw *over* decayed grime outdoors
+	 * and *under* it indoors. That asymmetry is the C#'s own, `Tile.insertDecoration`
+	 * says so in its doc comment, and it is preserved rather than tidied up.
+	 */
+	private ApplyWorldDecayPhase(phase: number, map: Map): void {
+		//walls and floors
+		for (let x = 0; x < map.width; x++) {
+			for (let y = 0; y < map.height; y++) {
+				//get tile
+				const tile = map.getTileAt(x, y);
+				if (tile === null) continue;
+
+				//is tile a decay type? (not relevant for ponds, grass, etc)
+				if (!tile.model.canDecay) continue;
+
+				//does it already have a decay deco of this level or higher?
+				if (tile.decayPhase >= phase) continue;
+
+				//less prone to weathering than outside tiles
+				let interiorWallForDecay = false;
+				if (tile.isInside) {
+					if (!tile.model.isWalkable) {
+						//indoor wall tiles
+						if (map.lighting === Lighting.OUTSIDE) {
+							//ground level interior walls have a generic decoration applied
+							interiorWallForDecay = true;
+						} else {
+							//is underground, so no decay
+							// ** The subway, the sewers, the basements and the mall
+							// car park all arrive here. See the method header. **
+							continue;
+						}
+					} else {
+						//indoor floor tile
+						//inside floor tiles only have two phases of decay, not three like outdoor tiles
+						if (tile.decayPhase === 2) continue;
+
+						//don't do every indoor floor tile all at once. it looks more organic if a trickle of tiles decay each day
+						if (!this.m_Rules.rollChance(25)) continue;
+					}
+				}
+				//certain outdoor floor tiles should be spread out rather than decayed all at once
+				else if (
+					tile.model.imageId.includes("basketball") ||
+					tile.model.imageId.includes("tennis") ||
+					tile.model === this.m_GameTiles.get(TileID.ROAD_ASPHALT_NS) ||
+					tile.model === this.m_GameTiles.get(TileID.ROAD_ASPHALT_EW) ||
+					tile.model === this.m_GameTiles.get(TileID.FLOOR_WALKWAY) ||
+					tile.model === this.m_GameTiles.get(TileID.FLOOR_ASPHALT)
+				) {
+					if (!this.m_Rules.rollChance(25)) continue;
+				}
+
+				//check what, if any, decorations this tile already has
+				const decayDecorations: string[] = [];
+				if (tile.hasDecorations) {
+					let isDamagedWall = false;
+					for (const deco of tile.getDecorations!) {
+						//don't apply to damaged walls
+						if (deco.includes("_damaged")) {
+							isDamagedWall = true;
+							break;
+						}
+						//check if it has a decay phase deco already
+						else if (deco.includes("_phase")) decayDecorations.push(deco);
+					}
+					if (isDamagedWall) continue;
+
+					//if we've reached here we're clear to proceed with applying a decay decoration
+
+					//first remove any existing decay decoration
+					if (decayDecorations.length > 0) {
+						//should only ever be one decay deco (but you never know, i am a bush league dev ;) )
+						//
+						// ** The guard really is unreachable in practice: guard 2 above
+						// skips a tile whose phase is already >= the phase being applied,
+						// so the only `_phase` decoration that can be present is the one
+						// from the *previous* phase. `Tile.removeDecoration` also nulls
+						// the whole list when the last entry goes, which is why a tile
+						// that decayed twice and then lost its drawing has no
+						// decorations at all rather than an empty array. **
+						for (const decayDeco of decayDecorations) tile.removeDecoration(decayDeco);
+					}
+				}
+
+				//add decoration phase#
+				tile.decayPhase = phase;
+				if (interiorWallForDecay) {
+					if (phase === 1)
+						tile.addDecoration(
+							GameImages.DECO_WALL_GENERIC_INTERIOR_DECAY_PHASE1,
+						);
+					else if (phase === 2)
+						tile.addDecoration(
+							GameImages.DECO_WALL_GENERIC_INTERIOR_DECAY_PHASE2,
+						);
+					else if (phase === 3)
+						tile.addDecoration(
+							GameImages.DECO_WALL_GENERIC_INTERIOR_DECAY_PHASE3,
+						);
+				} else {
+					tile.insertDecoration(
+						this.ChooseRelevantDecayDecorationForTile(tile),
+						0,
+					);
+					//decorations are drawn based on their position in the tile's index of decorations. first one in is the first one drawn on the tile
+					//it's thus vital that decay decorations are drawn first, so that others such as blood splatters and fire/explosion scorches are drawn on top of them
+					//the new InsertDecoration() method fulfills this purpose
+				}
+			}
+		}
+
+		// C# `#region MapObjects`, `:9365-9409`.
+		//
+		// **The whole region is guarded on `!IsInside`, and that is a different test
+		// from the tile half's.** A fence on a pavement is outdoor and decays; the
+		// identical sprite inside a shop does not. The C# asks the *tile* the object
+		// stands on, not the object and not the map.
+		for (const mapObj of map.mapObjects) {
+			const at = map.getTileAt(
+				mapObj.location.position.x,
+				mapObj.location.position.y,
+			);
+			// A map object is always placed in bounds, so `null` here is unreachable
+			// the way the C#'s `GetTileAt` never returns null. The port's does, and
+			// a sweep over every object on the map is no place for a null
+			// dereference: an object that somehow is off its map is simply not
+			// decayed, and the alternative is crashing a game at day 7.
+			if (at === null || at.isInside) continue;
+
+			//note: in some places we dice roll. we don't do every tile all at once. for certain things it looks more organic if a trickle of tiles decay each day
+
+			const currentImageName = mapObj.imageId;
+
+			//picket fences
+			if (currentImageName.includes("picket_fence")) {
+				if (!currentImageName.includes(`phase${phase}`)) {
+					//checks that it doesn't already have an image of the target phase
+					// Dead in the reference too: no generator places a picket fence.
+					// See the "World decay: map objects" block in `GameImages`.
+					mapObj.imageId = RogueGame.ChooseRelevantPicketFenceSprite(currentImageName, phase); //there are 3 different directions to handle
+				}
+			}
+			//chainwire fences (basketball and tennis courts)
+			else if (currentImageName.includes("chainwire_fence")) {
+				if (
+					!currentImageName.includes(`phase${phase}`) &&
+					this.m_Rules.rollChance(33)
+				) {
+					mapObj.imageId = this.ChooseRandomWireFenceSprite(phase); //there are 4 different sets of fence decay sprites, so gimme a random one for this phase
+				}
+			} else if (currentImageName.includes("chainwire_gate")) {
+				//(let's just ignore open ones)
+				if (
+					!currentImageName.includes(`phase${phase}`) &&
+					this.m_Rules.rollChance(33)
+				) {
+					mapObj.imageId = this.ChooseRandomWireFenceGateSprite(phase); //there are 3 different sets of fence decay sprites, so gimme a random one for this phase
+				}
+			}
+			//cars
+			else if (mapObj instanceof Car) {
+				//if imagephase is 2 or more behind the current phase do it automatically, otherwise roll
+				//get the last character only (which indicates the phase of decay)
+				//this works because all car file names end with "_phase#", where # is a number from 1 to 4
+				//
+				// ** ...which is a statement about the C#'s car ids and not about the
+				// port's. `BaseMapGenerator.CARS` here is the *vanilla*
+				// `car1..car4` (see the `Feature.Junkyard` block in `GameImages`), and
+				// the trailing digit of those is not a decay phase at all -- it is
+				// which of four cars it is. So this arm renames a car from
+				// `MapObjects/car3` to `MapObjects/car2` and the player sees a
+				// different car rather than a rustier one. The C#'s logic is
+				// transcribed exactly; the divergence is in the ids, which are
+				// `generators/`' to change and which the Classic fingerprint depends
+				// on. The C#'s own `int.Parse` would throw on a non-digit trailing
+				// character; `parseInt` yields `NaN`, which fails the `<` comparison
+				// and leaves the 33% roll in charge. No port car ends in a
+				// non-digit, so neither path is taken. **
+				const currentImagePhase = parseInt(
+					currentImageName[currentImageName.length - 1],
+					10,
+				);
+				if (currentImagePhase < phase - 1 || this.m_Rules.rollChance(33)) {
+					//get the sprite's filename without the final digit (which indicates the phase of decay)
+					//
+					// The C# writes `currentImageName.TrimEnd().Substring(0, ...)`:
+					// the `TrimEnd()` result is discarded, because the `Substring` is
+					// taken off the *untrimmed* name. Dead code, kept as the C# has it.
+					const withoutLast = currentImageName.slice(0, -1);
+					//set the sprite of the new phase
+					mapObj.imageId = withoutLast + phase;
+				}
+			}
+		}
+	}
+
+	/**
+	 * C# `ChooseRelevantDecayDecorationForTile` — `RogueGame.cs:9412-9797`,
+	 * `//@@MP (Release 7-6)`.
+	 *
+	 * The pick-one-of-two-or-three table, and it is a long one: 385 lines of C#,
+	 * 21 image ids, and a `throw` at the end. The C#'s own two-line preface:
+	 *
+	 * ```csharp
+	 * //tile parameter should never be 0, as the phase is ++ by the calling parent function
+	 * //these are order from roughly most common to least, just to reduce as many CPU cycles as possible
+	 * ```
+	 *
+	 * Three things about the shape are worth stating before the table, because all
+	 * three are easy to break with a tidy-up:
+	 *
+	 * ## The cases are on `imageId`, never on `TileID`
+	 *
+	 * Nine of the twenty-one are exact `ImageID ==` comparisons and two are
+	 * `ImageID.Contains`. Keying on `TileID` instead — the obvious port — puts
+	 * `FLOOR_ARMY` (registered with the *office floor* texture) in the wrong place
+	 * and, worse, breaks the two walls that are registered as stone:
+	 * `WALL_POLICE_STATION` and `WALL_SUBWAY` both carry
+	 * `GameImages.TILE_WALL_STONE`, so they arrive here already spelled
+	 * `Tiles/wall_stone` and take the stone case. `ReplaceDestroyedWall` has the
+	 * same alias and the same trap, and `tests/replace-destroyed-wall.test.ts`
+	 * has the test that fails first.
+	 *
+	 * ## The unmatched phase falls *through* to the next case, and that is the throw
+	 *
+	 * Every case is `if (imageId == X) { switch (DecayPhase) { case 1: return ...; } }`
+	 * with no `default`. A phase of 0 (or 4) matches no `case`, so control leaves the
+	 * switch, leaves the `if`, and carries on to the *next* image's test — which also
+	 * fails, and so on down the list to the `throw`. So the C#'s terminal
+	 * `InvalidOperationException` is reachable two ways: an unlisted `imageId`, or a
+	 * listed one at a phase its array does not cover. The first is the parking
+	 * asphalt gap below; the second cannot happen, because the caller sets
+	 * `tile.DecayPhase = phase` immediately before calling and `phase` is only ever
+	 * 1, 2 or 3.
+	 *
+	 * **One listed `imageId` *is* unhandled, and it is a port artefact rather than a
+	 * C# gap.** `Tiles/parking_asphalt_ns` and `Tiles/parking_asphalt_ew` are images
+	 * the C# declares and preloads (`GameImages.cs:219-220`, Release 7-3) but never
+	 * registers a `TileModel` for, and the port has registered both *and* marked them
+	 * `canDecay`. Nothing places them, so the throw is unreachable — but it is
+	 * reachable in a way the C#'s is not, and the C#'s own comment on the spot says
+	 * the same thing:
+	 *
+	 * ```csharp
+	 * //parking asphalt (there are two subtypes)
+	 * //// don't need to do this one at the moment, as it's only used in the mall underground parking so far
+	 * ```
+	 *
+	 * Nothing was added here to paper over it. Clearing `canDecay` on those two
+	 * models would hide the landmine by making a modelling decision the reference
+	 * does not make, and a case here would need drawings that do not exist.
+	 *
+	 * ## Four indoor floors answer phase 3 with a phase-2 drawing
+	 *
+	 * `office`, `planks`, `shop_tile` and `white_tile` are written
+	 * `case 2: case 3:` returning the *phase 2* array, and the C# says why on each:
+	 * "I include three in case entrance tiles count as !IsInside, and are thus missed
+	 * by the filters in the calling parent function". An indoor floor normally never
+	 * reaches phase 3 (`ApplyWorldDecayPhase` stops it at 2), so this is the
+	 * belt-and-braces path for a doorway tile that the generator left marked
+	 * outdoor. Preserved, including the comment's claim.
+	 */
+	private ChooseRelevantDecayDecorationForTile(tile: Tile): string {
+		//tile parameter should never be 0, as the phase is ++ by the calling parent function
+		//these are order from roughly most common to least, just to reduce as many CPU cycles as possible
+		// (C# `:9414-9415`)
+
+		if (tile.model.isWalkable) {
+			//floor tiles
+			//note: inside floor tiles aren't exposed to the elements and thus don't suffer as much decay (ie. no phase 3)
+
+			// walkway
+			//this method accounts for the fact that multiple tilemodels can use the same tile image
+			if (tile.model.imageId === GameImages.TILE_FLOOR_WALKWAY) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_FLOOR_WALKWAY_DECAY_V1_PHASE1,
+							GameImages.DECO_FLOOR_WALKWAY_DECAY_V2_PHASE1,
+							GameImages.DECO_FLOOR_WALKWAY_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_FLOOR_WALKWAY_DECAY_V1_PHASE2,
+							GameImages.DECO_FLOOR_WALKWAY_DECAY_V2_PHASE2,
+							GameImages.DECO_FLOOR_WALKWAY_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_FLOOR_WALKWAY_DECAY_V1_PHASE3,
+							GameImages.DECO_FLOOR_WALKWAY_DECAY_V2_PHASE3,
+							GameImages.DECO_FLOOR_WALKWAY_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// road (asphalt - there are 3 subtypes)
+			//North-South
+			if (tile.model.imageId === GameImages.TILE_ROAD_ASPHALT_NS) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_FLOOR_ROAD_NS_DECAY_V1_PHASE1,
+							GameImages.DECO_FLOOR_ROAD_NS_DECAY_V2_PHASE1,
+							GameImages.DECO_FLOOR_ROAD_NS_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_FLOOR_ROAD_NS_DECAY_V1_PHASE2,
+							GameImages.DECO_FLOOR_ROAD_NS_DECAY_V2_PHASE2,
+							GameImages.DECO_FLOOR_ROAD_NS_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_FLOOR_ROAD_NS_DECAY_V1_PHASE3,
+							GameImages.DECO_FLOOR_ROAD_NS_DECAY_V2_PHASE3,
+							GameImages.DECO_FLOOR_ROAD_NS_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+			//East-West
+			if (tile.model.imageId === GameImages.TILE_ROAD_ASPHALT_EW) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_FLOOR_ROAD_EW_DECAY_V1_PHASE1,
+							GameImages.DECO_FLOOR_ROAD_EW_DECAY_V2_PHASE1,
+							GameImages.DECO_FLOOR_ROAD_EW_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_FLOOR_ROAD_EW_DECAY_V1_PHASE2,
+							GameImages.DECO_FLOOR_ROAD_EW_DECAY_V2_PHASE2,
+							GameImages.DECO_FLOOR_ROAD_EW_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_FLOOR_ROAD_EW_DECAY_V1_PHASE3,
+							GameImages.DECO_FLOOR_ROAD_EW_DECAY_V2_PHASE3,
+							GameImages.DECO_FLOOR_ROAD_EW_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// asphalt floor
+			if (tile.model.imageId === GameImages.TILE_FLOOR_ASPHALT) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_FLOOR_ASPHALT_DECAY_V1_PHASE1,
+							GameImages.DECO_FLOOR_ASPHALT_DECAY_V2_PHASE1,
+							GameImages.DECO_FLOOR_ASPHALT_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_FLOOR_ASPHALT_DECAY_V1_PHASE2,
+							GameImages.DECO_FLOOR_ASPHALT_DECAY_V2_PHASE2,
+							GameImages.DECO_FLOOR_ASPHALT_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_FLOOR_ASPHALT_DECAY_V1_PHASE3,
+							GameImages.DECO_FLOOR_ASPHALT_DECAY_V2_PHASE3,
+							GameImages.DECO_FLOOR_ASPHALT_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// office
+			if (tile.model.imageId === GameImages.TILE_FLOOR_OFFICE) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_FLOOR_OFFICE_DECAY_V1_PHASE1,
+							GameImages.DECO_FLOOR_OFFICE_DECAY_V2_PHASE1,
+							GameImages.DECO_FLOOR_OFFICE_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					//I include three in case entrance tiles count as !IsInside, and are thus missed by the filters in the calling parent function
+					case 2:
+					case 3: {
+						const phase2Decorations = [
+							GameImages.DECO_FLOOR_OFFICE_DECAY_V1_PHASE2,
+							GameImages.DECO_FLOOR_OFFICE_DECAY_V2_PHASE2,
+							GameImages.DECO_FLOOR_OFFICE_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+				}
+			}
+
+			// floor planks
+			if (tile.model.imageId === GameImages.TILE_FLOOR_PLANKS) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_FLOOR_PLANKS_DECAY_V1_PHASE1,
+							GameImages.DECO_FLOOR_PLANKS_DECAY_V2_PHASE1,
+							GameImages.DECO_FLOOR_PLANKS_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					//I include three in case entrance tiles count as !IsInside, and are thus missed by the filters in the calling parent function
+					case 2:
+					case 3: {
+						const phase2Decorations = [
+							GameImages.DECO_FLOOR_PLANKS_DECAY_V1_PHASE2,
+							GameImages.DECO_FLOOR_PLANKS_DECAY_V2_PHASE2,
+							GameImages.DECO_FLOOR_PLANKS_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+				}
+			}
+
+			// shop tiles
+			if (tile.model.imageId === GameImages.TILE_FLOOR_TILES) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_FLOOR_SHOP_TILE_DECAY_V1_PHASE1,
+							GameImages.DECO_FLOOR_SHOP_TILE_DECAY_V2_PHASE1,
+							GameImages.DECO_FLOOR_SHOP_TILE_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					//I include three in case entrance tiles count as !IsInside, and are thus missed by the filters in the calling parent function
+					case 2:
+					case 3: {
+						const phase2Decorations = [
+							GameImages.DECO_FLOOR_SHOP_TILE_DECAY_V1_PHASE2,
+							GameImages.DECO_FLOOR_SHOP_TILE_DECAY_V2_PHASE2,
+							GameImages.DECO_FLOOR_SHOP_TILE_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+				}
+			}
+
+			// concrete
+			if (tile.model.imageId === GameImages.TILE_FLOOR_CONCRETE) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_FLOOR_CONCRETE_DECAY_V1_PHASE1,
+							GameImages.DECO_FLOOR_CONCRETE_DECAY_V2_PHASE1,
+							GameImages.DECO_FLOOR_CONCRETE_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_FLOOR_CONCRETE_DECAY_V1_PHASE2,
+							GameImages.DECO_FLOOR_CONCRETE_DECAY_V2_PHASE2,
+							GameImages.DECO_FLOOR_CONCRETE_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_FLOOR_CONCRETE_DECAY_V1_PHASE3,
+							GameImages.DECO_FLOOR_CONCRETE_DECAY_V2_PHASE3,
+							GameImages.DECO_FLOOR_CONCRETE_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// white tile (shopping mall)
+			if (tile.model.imageId === GameImages.TILE_FLOOR_WHITE_TILE) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_FLOOR_WHITE_TILE_DECAY_V1_PHASE1,
+							GameImages.DECO_FLOOR_WHITE_TILE_DECAY_V2_PHASE1,
+							GameImages.DECO_FLOOR_WHITE_TILE_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					//I include three in case entrance tiles count as !IsInside, and are thus missed by the filters in the calling parent function
+					case 2:
+					case 3: {
+						const phase2Decorations = [
+							GameImages.DECO_FLOOR_WHITE_TILE_DECAY_V1_PHASE2,
+							GameImages.DECO_FLOOR_WHITE_TILE_DECAY_V2_PHASE2,
+							GameImages.DECO_FLOOR_WHITE_TILE_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+				}
+			}
+
+			//parking asphalt (there are two subtypes)
+			//// don't need to do this one at the moment, as it's only used in the mall underground parking so far
+			//
+			// ** The C#'s comment, and the two models the port registered for those
+			// images are `canDecay` without a case here. See the method header. **
+
+			// basketball court
+			//need to use this broad method, as courts are made up of dozens of unique tiles
+			if (tile.model.imageId.includes("basketball")) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_FLOOR_BASKETBALL_COURT_DECAY_V1_PHASE1,
+							GameImages.DECO_FLOOR_BASKETBALL_COURT_DECAY_V2_PHASE1,
+							GameImages.DECO_FLOOR_BASKETBALL_COURT_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_FLOOR_BASKETBALL_COURT_DECAY_V1_PHASE2,
+							GameImages.DECO_FLOOR_BASKETBALL_COURT_DECAY_V2_PHASE2,
+							GameImages.DECO_FLOOR_BASKETBALL_COURT_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_FLOOR_BASKETBALL_COURT_DECAY_V1_PHASE3,
+							GameImages.DECO_FLOOR_BASKETBALL_COURT_DECAY_V2_PHASE3,
+							GameImages.DECO_FLOOR_BASKETBALL_COURT_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// tennis court
+			//need to use this broad method, as courts are made up of dozens of unique tiles
+			if (tile.model.imageId.includes("tennis")) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_FLOOR_TENNIS_COURT_DECAY_V1_PHASE1,
+							GameImages.DECO_FLOOR_TENNIS_COURT_DECAY_V2_PHASE1,
+							GameImages.DECO_FLOOR_TENNIS_COURT_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_FLOOR_TENNIS_COURT_DECAY_V1_PHASE2,
+							GameImages.DECO_FLOOR_TENNIS_COURT_DECAY_V2_PHASE2,
+							GameImages.DECO_FLOOR_TENNIS_COURT_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_FLOOR_TENNIS_COURT_DECAY_V1_PHASE3,
+							GameImages.DECO_FLOOR_TENNIS_COURT_DECAY_V2_PHASE3,
+							GameImages.DECO_FLOOR_TENNIS_COURT_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+		} else {
+			//wall tile
+
+			// brick
+			if (tile.model.imageId === GameImages.TILE_WALL_BRICK) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_WALL_BRICK_DECAY_V1_PHASE1,
+							GameImages.DECO_WALL_BRICK_DECAY_V2_PHASE1,
+							GameImages.DECO_WALL_BRICK_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_WALL_BRICK_DECAY_V1_PHASE2,
+							GameImages.DECO_WALL_BRICK_DECAY_V2_PHASE2,
+							GameImages.DECO_WALL_BRICK_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_WALL_BRICK_DECAY_V1_PHASE3,
+							GameImages.DECO_WALL_BRICK_DECAY_V2_PHASE3,
+							GameImages.DECO_WALL_BRICK_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// CHAR office
+			if (tile.model.imageId === GameImages.TILE_WALL_CHAR_OFFICE) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_WALL_CHAR_DECAY_V1_PHASE1,
+							GameImages.DECO_WALL_CHAR_DECAY_V2_PHASE1,
+							GameImages.DECO_WALL_CHAR_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_WALL_CHAR_DECAY_V1_PHASE2,
+							GameImages.DECO_WALL_CHAR_DECAY_V2_PHASE2,
+							GameImages.DECO_WALL_CHAR_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_WALL_CHAR_DECAY_V1_PHASE3,
+							GameImages.DECO_WALL_CHAR_DECAY_V2_PHASE3,
+							GameImages.DECO_WALL_CHAR_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// stone wall
+			//
+			// ** Two variants, not three, and police-station and subway walls land
+			// here too: both are registered with `TILE_WALL_STONE`. **
+			if (tile.model.imageId === GameImages.TILE_WALL_STONE) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_WALL_STONE_DECAY_V1_PHASE1,
+							GameImages.DECO_WALL_STONE_DECAY_V2_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_WALL_STONE_DECAY_V1_PHASE2,
+							GameImages.DECO_WALL_STONE_DECAY_V2_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_WALL_STONE_DECAY_V1_PHASE3,
+							GameImages.DECO_WALL_STONE_DECAY_V2_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// light brown wall
+			if (tile.model.imageId === GameImages.TILE_WALL_LIGHT_BROWN) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_WALL_LIGHT_BROWN_DECAY_V1_PHASE1,
+							GameImages.DECO_WALL_LIGHT_BROWN_DECAY_V2_PHASE1,
+							GameImages.DECO_WALL_LIGHT_BROWN_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_WALL_LIGHT_BROWN_DECAY_V1_PHASE2,
+							GameImages.DECO_WALL_LIGHT_BROWN_DECAY_V2_PHASE2,
+							GameImages.DECO_WALL_LIGHT_BROWN_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_WALL_LIGHT_BROWN_DECAY_V1_PHASE3,
+							GameImages.DECO_WALL_LIGHT_BROWN_DECAY_V2_PHASE3,
+							GameImages.DECO_WALL_LIGHT_BROWN_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// concrete (non-CHAR offices)
+			if (tile.model.imageId === GameImages.TILE_WALL_CONCRETE) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_WALL_CONCRETE_DECAY_V1_PHASE1,
+							GameImages.DECO_WALL_CONCRETE_DECAY_V2_PHASE1,
+							GameImages.DECO_WALL_CONCRETE_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_WALL_CONCRETE_DECAY_V1_PHASE2,
+							GameImages.DECO_WALL_CONCRETE_DECAY_V2_PHASE2,
+							GameImages.DECO_WALL_CONCRETE_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_WALL_CONCRETE_DECAY_V1_PHASE3,
+							GameImages.DECO_WALL_CONCRETE_DECAY_V2_PHASE3,
+							GameImages.DECO_WALL_CONCRETE_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// army wall
+			if (tile.model.imageId === GameImages.TILE_WALL_ARMY_BASE) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_WALL_ARMY_BASE_DECAY_V1_PHASE1,
+							GameImages.DECO_WALL_ARMY_BASE_DECAY_V2_PHASE1,
+							GameImages.DECO_WALL_ARMY_BASE_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_WALL_ARMY_BASE_DECAY_V1_PHASE2,
+							GameImages.DECO_WALL_ARMY_BASE_DECAY_V2_PHASE2,
+							GameImages.DECO_WALL_ARMY_BASE_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_WALL_ARMY_BASE_DECAY_V1_PHASE3,
+							GameImages.DECO_WALL_ARMY_BASE_DECAY_V2_PHASE3,
+							GameImages.DECO_WALL_ARMY_BASE_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// fuel station wall
+			if (tile.model.imageId === GameImages.TILE_WALL_FUEL_STATION) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_WALL_FUEL_STATION_DECAY_V1_PHASE1,
+							GameImages.DECO_WALL_FUEL_STATION_DECAY_V2_PHASE1,
+							GameImages.DECO_WALL_FUEL_STATION_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_WALL_FUEL_STATION_DECAY_V1_PHASE2,
+							GameImages.DECO_WALL_FUEL_STATION_DECAY_V2_PHASE2,
+							GameImages.DECO_WALL_FUEL_STATION_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_WALL_FUEL_STATION_DECAY_V1_PHASE3,
+							GameImages.DECO_WALL_FUEL_STATION_DECAY_V2_PHASE3,
+							GameImages.DECO_WALL_FUEL_STATION_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// wood (farm shed)
+			//
+			// ** Two variants, not three, and the decos are named `*_WALL_PLANKS_*`
+			// for a tile whose image is `wall_wood_planks`. **
+			if (tile.model.imageId === GameImages.TILE_WALL_WOOD_PLANKS) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_WALL_PLANKS_DECAY_V1_PHASE1,
+							GameImages.DECO_WALL_PLANKS_DECAY_V2_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_WALL_PLANKS_DECAY_V1_PHASE2,
+							GameImages.DECO_WALL_PLANKS_DECAY_V2_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_WALL_PLANKS_DECAY_V1_PHASE3,
+							GameImages.DECO_WALL_PLANKS_DECAY_V2_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// hospital
+			if (tile.model.imageId === GameImages.TILE_WALL_HOSPITAL) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_WALL_HOSPITAL_DECAY_V1_PHASE1,
+							GameImages.DECO_WALL_HOSPITAL_DECAY_V2_PHASE1,
+							GameImages.DECO_WALL_HOSPITAL_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_WALL_HOSPITAL_DECAY_V1_PHASE2,
+							GameImages.DECO_WALL_HOSPITAL_DECAY_V2_PHASE2,
+							GameImages.DECO_WALL_HOSPITAL_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_WALL_HOSPITAL_DECAY_V1_PHASE3,
+							GameImages.DECO_WALL_HOSPITAL_DECAY_V2_PHASE3,
+							GameImages.DECO_WALL_HOSPITAL_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+
+			// mall
+			if (tile.model.imageId === GameImages.TILE_WALL_MALL) {
+				switch (tile.decayPhase) {
+					case 1: {
+						const phase1Decorations = [
+							GameImages.DECO_WALL_MALL_DECAY_V1_PHASE1,
+							GameImages.DECO_WALL_MALL_DECAY_V2_PHASE1,
+							GameImages.DECO_WALL_MALL_DECAY_V3_PHASE1,
+						];
+						return phase1Decorations[this.m_Rules.roll(0, phase1Decorations.length)];
+					}
+					case 2: {
+						const phase2Decorations = [
+							GameImages.DECO_WALL_MALL_DECAY_V1_PHASE2,
+							GameImages.DECO_WALL_MALL_DECAY_V2_PHASE2,
+							GameImages.DECO_WALL_MALL_DECAY_V3_PHASE2,
+						];
+						return phase2Decorations[this.m_Rules.roll(0, phase2Decorations.length)];
+					}
+					case 3: {
+						const phase3Decorations = [
+							GameImages.DECO_WALL_MALL_DECAY_V1_PHASE3,
+							GameImages.DECO_WALL_MALL_DECAY_V2_PHASE3,
+							GameImages.DECO_WALL_MALL_DECAY_V3_PHASE3,
+						];
+						return phase3Decorations[this.m_Rules.roll(0, phase3Decorations.length)];
+					}
+				}
+			}
+		}
+
+		throw new Error(
+			`unexpected tile model? tilemodel: ${tile.model.imageId}`,
+		);
+	}
+
+	/**
+	 * C# `ChooseRelevantPicketFenceSprite` — `RogueGame.cs:9799-9831`, Release 7-6.
+	 * Static there because it rolls nothing; `static` here for the same reason.
+	 *
+	 * **Dead in the reference and dead here.** No C# generator places a picket fence
+	 * (`GameImages.cs:610-612` declares the three phase-0 sprites and
+	 * `BaseMapGenerator` never asks for them), and the port's generators place none
+	 * either, so the arm in `ApplyWorldDecayPhase` that would call this can never be
+	 * entered. Transcribed anyway, because it is part of the method the C# has and
+	 * because the C#'s `ArgumentOutOfRangeException` for a fourth phase is the only
+	 * statement in the whole subsystem that says out loud that there are three
+	 * phases and no more.
+	 *
+	 * Note the C#'s own two throws: the `switch`'s `default` for a phase outside
+	 * 1..3, and a second one after the switch for an image name that is neither `EW`
+	 * nor `NS_left` nor `NS_right`. Both are preserved, and the second is reachable in
+	 * the C# too if a fourth picket-fence sprite is ever added without a case.
+	 */
+	private static ChooseRelevantPicketFenceSprite(
+		currentImageName: string,
+		newPhase: number,
+	): string {
+		switch (newPhase) {
+			case 1:
+				if (currentImageName.includes("EW"))
+					return GameImages.OBJ_PICKET_FENCE_EW_V1_PHASE1;
+				else if (currentImageName.includes("NS_left"))
+					return GameImages.OBJ_PICKET_FENCE_NS_LEFT_V1_PHASE1;
+				else if (currentImageName.includes("NS_right"))
+					return GameImages.OBJ_PICKET_FENCE_NS_RIGHT_V1_PHASE1;
+				break;
+			case 2:
+				if (currentImageName.includes("EW"))
+					return GameImages.OBJ_PICKET_FENCE_EW_V1_PHASE2;
+				else if (currentImageName.includes("NS_left"))
+					return GameImages.OBJ_PICKET_FENCE_NS_LEFT_V1_PHASE2;
+				else if (currentImageName.includes("NS_right"))
+					return GameImages.OBJ_PICKET_FENCE_NS_RIGHT_V1_PHASE2;
+				break;
+			case 3:
+				if (currentImageName.includes("EW"))
+					return GameImages.OBJ_PICKET_FENCE_EW_V1_PHASE3;
+				else if (currentImageName.includes("NS_left"))
+					return GameImages.OBJ_PICKET_FENCE_NS_LEFT_V1_PHASE3;
+				else if (currentImageName.includes("NS_right"))
+					return GameImages.OBJ_PICKET_FENCE_NS_RIGHT_V1_PHASE3;
+				break;
+			default:
+				throw new RangeError("newPhase");
+		}
+
+		throw new Error("unexpected picket fence image name?");
+	}
+
+	/**
+	 * C# `ChooseRandomWireFenceSprite` — `RogueGame.cs:9833-9848`, Release 7-6.
+	 *
+	 * Four sets of chainwire-fence decay sprites per phase, picked at random, and the
+	 * randomness is the point: the C#'s comment is "there are 4 different sets of
+	 * fence decay sprites, so gimme a random one for this phase". A single set would
+	 * make every court in the city rusted identically.
+	 *
+	 * Live, unlike its picket-fence sibling: `Feature.SportsCourts` places
+	 * `MapObjects/chainwire_fence`, which contains the `"chainwire_fence"`
+	 * substring the caller's `else if` matches on.
+	 */
+	private ChooseRandomWireFenceSprite(newPhase: number): string {
+		switch (newPhase) {
+			case 1: {
+				const phase1Sprites = [
+					GameImages.OBJ_CHAINWIRE_FENCE_V1_PHASE1,
+					GameImages.OBJ_CHAINWIRE_FENCE_V2_PHASE1,
+					GameImages.OBJ_CHAINWIRE_FENCE_V3_PHASE1,
+					GameImages.OBJ_CHAINWIRE_FENCE_V4_PHASE1,
+				];
+				return phase1Sprites[this.m_Rules.roll(0, phase1Sprites.length)];
+			}
+			case 2: {
+				const phase2Sprites = [
+					GameImages.OBJ_CHAINWIRE_FENCE_V1_PHASE2,
+					GameImages.OBJ_CHAINWIRE_FENCE_V2_PHASE2,
+					GameImages.OBJ_CHAINWIRE_FENCE_V3_PHASE2,
+					GameImages.OBJ_CHAINWIRE_FENCE_V4_PHASE2,
+				];
+				return phase2Sprites[this.m_Rules.roll(0, phase2Sprites.length)];
+			}
+			case 3: {
+				const phase3Sprites = [
+					GameImages.OBJ_CHAINWIRE_FENCE_V1_PHASE3,
+					GameImages.OBJ_CHAINWIRE_FENCE_V2_PHASE3,
+					GameImages.OBJ_CHAINWIRE_FENCE_V3_PHASE3,
+					GameImages.OBJ_CHAINWIRE_FENCE_V4_PHASE3,
+				];
+				return phase3Sprites[this.m_Rules.roll(0, phase3Sprites.length)];
+			}
+			default:
+				throw new RangeError("newPhase");
+		}
+	}
+
+	/**
+	 * C# `ChooseRandomWireFenceGateSprite` — `RogueGame.cs:9850-9865`, Release 7-6.
+	 *
+	 * Three sets rather than four, and it is called for a *closed* gate: the C#'s
+	 * comment on the call site is "(let's just ignore open ones)", which is why the
+	 * caller's arm matches on the bare substring `"chainwire_gate"` and lets
+	 * `chainwire_gate_closed`, `chainwire_gate_open` and `chainwire_gate_broken` all
+	 * through. An open gate therefore decays too, despite the comment.
+	 */
+	private ChooseRandomWireFenceGateSprite(newPhase: number): string {
+		switch (newPhase) {
+			case 1: {
+				const phase1Sprites = [
+					GameImages.OBJ_CHAINWIRE_FENCE_GATE_V1_PHASE1,
+					GameImages.OBJ_CHAINWIRE_FENCE_GATE_V2_PHASE1,
+					GameImages.OBJ_CHAINWIRE_FENCE_GATE_V3_PHASE1,
+				];
+				return phase1Sprites[this.m_Rules.roll(0, phase1Sprites.length)];
+			}
+			case 2: {
+				const phase2Sprites = [
+					GameImages.OBJ_CHAINWIRE_FENCE_GATE_V1_PHASE2,
+					GameImages.OBJ_CHAINWIRE_FENCE_GATE_V2_PHASE2,
+					GameImages.OBJ_CHAINWIRE_FENCE_GATE_V3_PHASE2,
+				];
+				return phase2Sprites[this.m_Rules.roll(0, phase2Sprites.length)];
+			}
+			case 3: {
+				const phase3Sprites = [
+					GameImages.OBJ_CHAINWIRE_FENCE_GATE_V1_PHASE3,
+					GameImages.OBJ_CHAINWIRE_FENCE_GATE_V2_PHASE3,
+					GameImages.OBJ_CHAINWIRE_FENCE_GATE_V3_PHASE3,
+				];
+				return phase3Sprites[this.m_Rules.roll(0, phase3Sprites.length)];
+			}
+			default:
+				throw new RangeError("newPhase");
+		}
+	}
+
 	// C# StartPlayerWaitLong — RogueGame.cs:9267
 	StartPlayerWaitLong(player: Actor): void {
 		this.CheckAutoSaveTime();
@@ -10505,7 +14363,7 @@ export class RogueGame {
 			if (other != null && this.m_Rules.areEnemies(player, other)) return false;
 		}
 
-		if (await this.TryPlayerInsanity()) return false;
+		if (await this.TryPlayerUnwell()) return false;
 
 		return true;
 	}
@@ -10800,6 +14658,7 @@ export class RogueGame {
 			follower,
 			this.m_Session.worldTime,
 			this.m_Session.world!.weather,
+			true, // Release 6-5: light sources outside the actor's own FOV
 		);
 
 		let loop = true;
@@ -12321,13 +16180,14 @@ export class RogueGame {
 				title = "MOVEMENT - DIRECTIONS";
 				body = [
 					"MOVE your character around with the movements keys.",
-					"The default keys are your NUMPAD numbers.",
+					"The default keys are the grid over the map:",
 					"",
-					"7 8 9",
-					"4 - 6",
-					"1 2 3",
+					"Q W E        NW  N  NE",
+					"A S D         W  S   E",
+					"Z C           SW    SE",
 					"",
-					"5 makes you WAIT one turn.",
+					"Your NUMPAD does the same thing, and the four arrow keys walk you north, south, east and west.",
+					"",
 					"The move keys are the most important ones.",
 					"When asked for a DIRECTION, press a MOVE key.",
 					"Be sure to remember that!",
@@ -13186,6 +17046,13 @@ export class RogueGame {
 			case Activity.SLEEPING:
 				return "Sleeping.";
 
+			// Still Alive, Release 7-6 (`RogueGame.cs:31629`). Ungated because it
+			// is a label rather than a behaviour: only the AI arm sets
+			// `Activity.FISHING`, that arm is behind `Feature.Fishing`, and a
+			// description of an unreachable state cannot differ.
+			case Activity.FISHING:
+				return "Fishing.";
+
 			default:
 				throw new TypeError("unhandled activity " + actor.activity);
 		}
@@ -13461,7 +17328,23 @@ export class RogueGame {
 			lines.push(...this.DescribeItemWeapon(it));
 			if (it instanceof ItemRangedWeapon) {
 				isDefaultUse = false;
+				// C# `:32019-32023`, transcribed including the part that looks like a
+				// mistake. The C# assigns "to fire" and then, on the very next line,
+				// assigns "to unload ammo" over it — with the guard that would have
+				// limited the second to an *equipped* gun commented out
+				// (`//if (rwp.IsEquipped) //@@MP (Release 7-6)`). So the reference shows
+				// every ranged weapon's additional description as "to unload ammo",
+				// and the "to fire" line is dead code that can never be read.
+				//
+				// Kept rather than repaired, for the reason the rest of this port's
+				// reference quirks are kept: this is a second copy of the string table
+				// to hold correct, and a repair here would be a divergence nobody
+				// asked for. It does cost something real — the player is never told
+				// that LMB fires, on any gun — so it is written down here rather than
+				// left to be discovered. `isDefaultUse = false` above is the C#'s and
+				// is unaffected: left-click still fires.
 				inInvAdditionalDesc = `to fire : <${key(PlayerCommand.FIRE_MODE)}>`;
+				inInvAdditionalDesc = `to unload ammo : <${key(PlayerCommand.UNLOAD_AMMO)}>`;
 			}
 		} else if (it instanceof ItemFood) {
 			lines.push(...this.DescribeItemFood(it));
@@ -13500,6 +17383,32 @@ export class RogueGame {
 			else inInvAdditionalDesc = "to activate trap : drop it";
 		} else if (it instanceof ItemEntertainment) {
 			lines.push(...this.DescribeItemEntertainment(it));
+		} else if (
+			isPlayerInventory &&
+			hasFeature(this.m_Session.ruleset, Feature.Fishing) &&
+			it.model.id === ItemID.FISHING_ROD
+		) {
+			// C# RogueGame.cs:32099. The rod is the one item in the game whose use is
+			// a *different key*, and this is the only place that says so -- the equip
+			// line below prints "to equip", which is true and useless.
+			inInvAdditionalDesc =
+				`to fish : <${key(PlayerCommand.WAIT_LONG)}> or <${key(PlayerCommand.WAIT_OR_SELF)}>`;
+		} else if (isPlayerInventory && it.model.equipmentPart === DollPart.LEFT_ARM) {
+			// C# RogueGame.cs:32097, Release 7-2. Rewrites the shield's own flavour
+			// text from its static base chance to the total, the reader's Martial Arts
+			// included -- so the number a player reads is the number the block roll
+			// will actually use.
+			//
+			// **This mutates shared model state**, replacing the string on the
+			// registered `ItemModel` rather than a per-item copy. That is the C#'s
+			// arrangement and it is kept: every shield carries the same text, so the
+			// mutation is idempotent, and "fixing" it with a copy would diverge from
+			// the reference for no observable gain.
+			//
+			// The C# places this branch *before* the rod and matchbox ones; here it
+			// follows them. The order is immaterial -- it is an `else if` chain and no
+			// item is both a left-arm part and one of those.
+			it.model.flavorDescription = `${this.m_Rules.actorShieldChanceToBlock(this.m_Player)}% total chance to block (including skill)`;
 		}
 
 		// 3. Flavor description
@@ -13511,6 +17420,19 @@ export class RogueGame {
 		if (isPlayerInventory) {
 			lines.push(" ");
 			lines.push("----");
+			// C# `RogueGame.cs:32126-32127`: the move-to-backpack line, and only for
+			// an item the fork says may go in one. `canGoInBackpacks` is a curated
+			// 100-model list, not a rule derivable from `isEquipable` -- a combat
+			// knife qualifies and a hunting rifle does not.
+			if (
+				hasFeature(this.m_Session.ruleset, Feature.ShelterBackpacks) &&
+				it.model.canGoInBackpacks &&
+				firstBackpack(this.m_Player) != null
+			) {
+				lines.push(
+					`to move to backpack : <${key(PlayerCommand.SWAP_INVENTORY)}>`,
+				);
+			}
 			if (it.model.isEquipable)
 				lines.push(
 					`to ${it.isEquipped ? "unequip" : "equip"} : <LMB> or <Ctrl-${iSlot + 1}>`,
@@ -14219,6 +18141,17 @@ export class RogueGame {
 				);
 		}
 
+		// If fishing, force unequip fishing rod.  (C# RogueGame.cs:17278)
+		//
+		// A cast is a *wait*: walking away from a pond ends it, and the C# does
+		// this silently (`canMessage: false`) because a survivor who has just been
+		// stabbed does not need to be told their rod is in their hand.
+		if (hasFeature(this.m_Session.ruleset, Feature.Fishing)) {
+			const leftHandItem = actor.getEquippedItem(DollPart.LEFT_HAND);
+			if (leftHandItem !== null && leftHandItem.model.id === ItemID.FISHING_ROD)
+				this.DoUnequipItem(actor, leftHandItem, false);
+		}
+
 		// Spend AP & STA, check for running, jumping and dragging corpse.
 		let moveCost = Rules.BASE_ACTION_COST;
 
@@ -14237,6 +18170,35 @@ export class RogueGame {
 		if (isJump) {
 			// cost STA.
 			this.SpendActorStaminaPoints(actor, Rules.STAMINA_COST_JUMP);
+
+			//@@MP (Release 2), "order them by most common descending" -- the C#'s own
+			// comment at `:17315`. Fence before car, and both behind **one** audible gate
+			// rather than a player test outside it, so this is the shove's shape and not
+			// the melee one's.
+			if (this.isAudibleToPlayer(newLocation, NOISE_RADII.QUIET)) {
+				if (mapObj.theName === "the chain wire fence") {
+					// Note this compares the door-style *name* string, while the bash and
+					// break ladders key on the bare `"chain fence"` **material**. Two
+					// different lookups for one object in one class, both ported.
+					if (actor.isPlayer) {
+						if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+							this.m_SoundManager.play(GameSounds.CLIMB_FENCE_PLAYER);
+					} else {
+						if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+							this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.CLIMB_FENCE_NEARBY);
+					}
+				} else if (mapObj instanceof Car) {
+					//@@MP (Release 7-3): a `Car` **type** test, where the fence above is a
+					// name string. The fork tightened this one and left the other alone.
+					if (actor.isPlayer) {
+						if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+							this.m_SoundManager.play(GameSounds.CLIMB_CAR_PLAYER);
+					} else {
+						if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+							this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.CLIMB_CAR_NEARBY);
+					}
+				}
+			}
 
 			// show.
 			if (this.IsVisibleToPlayer(actor))
@@ -14319,9 +18281,27 @@ export class RogueGame {
 
 	// C# OnActorEnterTile — RogueGame.cs:12804
 	async OnActorEnterTile(actor: Actor): Promise<void> {
-		void actor;
 		const map = actor.location.map!;
 		const pos = actor.location.position;
+
+		// C# `if (actor.IsPlayer) { CheckAmbientSFX(map); CheckLandedHelicopterSFX(map); }`
+		// — RogueGame.cs:17393-17399, the first thing the method does. Moving is the
+		// event that changes what is audible: crossing a doorway swaps the rain bed
+		// for the inside one, and it has to happen on the step, not on the next
+		// weather roll.
+		//
+		// The player only, as in the C#: an NPC walking past a door must not re-decide
+		// what the player's ears are hearing, and `CheckAmbientAudio` reads
+		// `m_Player`'s tile.
+		//
+		// Both C# calls, in the C#'s order. `CheckLandedHelicopterSFX` is second
+		// because it is the finer-grained of the two: `CheckAmbientAudio` picks one
+		// weather bed for the whole map, this picks a helicopter tier from the exact
+		// distance, so it is the one that has to be evaluated after the step.
+		if (actor.isPlayer) {
+			this.CheckAmbientAudio(map);
+			this.checkLandedHelicopterSFX(map);
+		}
 
 		// Check traps.
 		// Don't check if there is a covering mobj there.
@@ -15056,14 +19036,57 @@ export class RogueGame {
 		}
 	}
 
-	// C# DoWait — RogueGame.cs:13420
-	DoWait(actor: Actor): void {
+	// C# DoWait — RogueGame.cs:23027
+	//
+	// `isFishing` exists because the C# has it, and the C# has it for a reason
+	// that matters: the *rod in the off hand* is what makes a wait a cast, and the
+	// C# therefore re-derives it here rather than trusting whichever keypress
+	// reached this function. A long wait and a single wait are both a wait, so
+	// both are a cast, and a caller that remembered to pass the flag would be one
+	// more way for the two to disagree. The parameter stays for the AI arm, which
+	// is the only thing the C# ever passes `true` to directly.
+	DoWait(actor: Actor, isFishing: boolean = false): void {
 		// spend AP.
 		this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
 
+		// player is fishing?  (C# RogueGame.cs:23049)
+		//
+		// One gate for the whole cast, covering three things: the inference, the
+		// message below and the catch block further down. They cannot disagree
+		// because there is only one decision — under CLASSIC a player holding a rod
+		// waits, breathes and nothing else, and `isFishing` stays whatever the caller
+		// passed, which is `false` for every caller that exists.
+		if (hasFeature(this.m_Session.ruleset, Feature.Fishing) && actor.isPlayer) {
+			const rod = actor.getEquippedItem(DollPart.LEFT_HAND);
+			// `LEFT_HAND`, not `getEquippedMeleeWeapon()`'s `RIGHT_HAND`: the rod is
+			// the one item the fork puts in the off hand.
+			if (rod !== null && rod.model.id === ItemID.FISHING_ROD) isFishing = true;
+		}
+
 		// message.
+		//
+		// Alight actors get the fire message *instead of* the breath one. That
+		// ordering is the C#'s (`:23060`) and it is load-bearing for the same reason
+		// the fishing one is: the C# re-derives the state here rather than trusting
+		// the caller, so a long wait cannot quietly skip the "you are on fire" line.
 		if (this.IsVisibleToPlayer(actor)) {
-			if (actor.staminaPoints < this.m_Rules.actorMaxSTA(actor))
+			if (hasFeature(this.m_Session.ruleset, Feature.TileFires) && actor.isOnFire) {
+				this.AddMessage(
+					actor.isPlayer
+						? this.MakePlayerCentricMessage(
+								"You stop-drop-and-roll to try to extinguish yourself.",
+								actor.location.position,
+							)
+						: this.MakeMessage(
+								actor,
+								`stop-drops-and-rolls to try to extinguish ${this.HimselfOrHerself(actor)}.`,
+							),
+				);
+			} else if (isFishing)
+				this.AddMessage(
+					this.MakeMessage(actor, "is waiting for a fish to bite."),
+				);
+			else if (actor.staminaPoints < this.m_Rules.actorMaxSTA(actor))
 				this.AddMessage(
 					this.MakeMessage(
 						actor,
@@ -15076,8 +19099,89 @@ export class RogueGame {
 				);
 		}
 
-		// regen STA.
-		this.RegenActorStaminaPoints(actor, Rules.STAMINA_REGEN_WAIT);
+		// regen STA -- but only if not alight, and otherwise try to roll it out.
+		// C# `:23076-23080`, Release 7-6. The stamina suppression is the interesting
+		// half: you cannot catch your breath while you are burning.
+		if (
+			hasFeature(this.m_Session.ruleset, Feature.TileFires) &&
+			actor.isOnFire
+		) {
+			if (this.m_Rules.rollChance(RogueGame.ON_WAIT_EXTINGUISH_FIRE_CHANCE)) {
+				this.ExtinguishOnFireActor(actor);
+			}
+		} else {
+			this.RegenActorStaminaPoints(actor, Rules.STAMINA_REGEN_WAIT);
+		}
+
+		// caught a fish?  (C# RogueGame.cs:23085)
+		if (isFishing) {
+			// Only the player rolls. An NPC's `caughtFish` starts true
+			// (`RogueGame.cs:23086`), so the AI arm lands a fish on its first wait —
+			// which is what makes an NPC's "fishing" a way of spending turns, and
+			// why the C#'s reel-nearby sound can be cut off by the catch.
+			let caughtFish = true;
+			if (actor.isPlayer) {
+				caughtFish = this.m_Rules.rollChance(
+					this.m_Rules.catchingFishChance(s_Options.resourcesAvailability, actor),
+				);
+			}
+
+			if (caughtFish) {
+				if (actor.isPlayer) {
+					// The reel, and the second `Feature.ExtendedAudio` reader
+					// (`RogueGame.cs:23107-23109`). A separate gate from the cast's
+					// because it is a separate file and a separate moment: the C#
+					// plays it inside the catch, not on every wait, so a survivor
+					// casting repeatedly hears one reel per fish and not one per cast.
+					//
+					// **Not ported: the C#'s `Stop(FISHING_CAST_PLAYER)`** immediately
+					// before it. That is one line whose whole purpose is to cut the
+					// cast off because the two overlap when the player reels quickly,
+					// and `IMusicManager` has no per-id `stop()` -- `stop()` is global,
+					// so using it would silence the soundtrack. The overlap is audible
+					// and harmless; silencing the music is neither.
+					if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+						this.m_SoundManager.play(
+							GameSounds.FISHING_REEL_PLAYER,
+						);
+
+					// `AddMessageIfAudibleForPlayer` rather than `AddMessage`: the C# says
+					// this particular message is what interrupts a long wait, so a bite
+					// during one is the intended way to be interrupted.
+					this.AddMessageIfAudibleForPlayer(
+						actor.location,
+						this.MakeMessage(actor, "caught a fish!"),
+					);
+				}
+
+				const rawFish = Models.items.get(ItemID.FOOD_RAW_FISH) as ItemFoodModel;
+				const bestBefore =
+					actor.location.map!.localTime.turnCounter +
+					WorldTime.TURNS_PER_DAY * rawFish.bestBeforeDays;
+				// The C#'s trailing `new ItemFood(model, bestBefore, true, true)` are
+				// `isForbiddenToAI` and `isRaw`; the port reads the second off the
+				// row (the meat path in `ButcherMeat` does the same) and the first is
+				// set below, because it is a property of this catch rather than of the
+				// row — a *bought* fish is the AI's to take, a hooked one is not.
+				const fish = new ItemFood(rawFish, bestBefore);
+				fish.isForbiddenToAI = true;
+				if (!actor.inventory!.addAll(fish)) this.DropItem(actor, fish);
+
+				// feels good
+				if (actor.model.abilities.hasSanity)
+					// The C# passes `ActorSanRegenValue(actor, SANITY_RECOVER_CHAT_OR_TRADE)`,
+					// which adds a Strong Psyche bonus. The port has no such helper, and
+					// its two other `SANITY_RECOVER_CHAT_OR_TRADE` call sites (`DoChatActor`,
+					// `DoTradeWith`) pass the constant too, so this matches the port rather
+					// than introducing a third convention.
+					this.RegenActorSanity(actor, Rules.SANITY_RECOVER_CHAT_OR_TRADE);
+
+				// finish fishing: a rod is cast, not carried. Silent, like the C#'s
+				// `false`, because the player was told nothing about holding it.
+				const held = actor.getEquippedItem(DollPart.LEFT_HAND);
+				if (held !== null) this.DoUnequipItem(actor, held, false);
+			}
+		}
 	}
 
 	// C# DoPlayerBump — RogueGame.cs:13440
@@ -15135,6 +19239,69 @@ export class RogueGame {
 			);
 			this.RedrawPlayScreen();
 			return false;
+		}
+
+		// 5. army rescue helicopter (endgame) //@@MP (Release 6-4)
+		//
+		// C# `:23298-23327`, the fifth of its "MapObject special cases". The port
+		// deleted that whole region when it made bumping non-destructive — the
+		// clothes/hair/shoes cases are `Feature`-less C# content the port never
+		// ported, and this one came back because without it the rescue endgame has
+		// no way to be *finished*: the C# has no key for it, a bump is the only
+		// interaction with an unbreakable, unwalkable object, and the three
+		// helicopter tiles are exactly that.
+		//
+		// `aName` rather than an image id, because that is the C#'s test
+		// (`:23298`) and it survives the three-piece sprite: the three objects are
+		// all named "helicopter" and any one of them boards.
+		//
+		// The gate is on the feature *and* on the site, because under CLASSIC no
+		// helicopter is ever placed — so the branch is unreachable there — and
+		// because a save written before this feature would otherwise offer a
+		// rescue it cannot have.
+		if (hasFeature(this.m_Session.ruleset, Feature.HelicopterRescue)) {
+			const heliMap = this.m_Session.armyHelicopterRescueMap;
+			if (
+				heliMap !== null &&
+				heliMap === player.location.map &&
+				this.m_Session.armyHelicopterRescueCoordinates !== null
+			) {
+				const target = direction.applyTo(player.location.position);
+				if (heliMap.getMapObjectAtPoint(target)?.aName === "a helicopter") {
+					// Ask for confirmation.
+					this.AddMessage(
+						this.MakeYesNoMessage(
+							"Really escape on the helicopter and finish the game",
+						),
+					);
+					this.RedrawPlayScreen();
+					const confirm = await this.WaitYesOrNo();
+
+					if (confirm) {
+						// Completed achievement!
+						this.m_Session.scoring.setCompletedAchievement(
+							AchievementIDs.RESCUED_BY_HELICOPTER,
+						);
+						await this.ShowNewAchievement(AchievementIDs.RESCUED_BY_HELICOPTER);
+
+						// Now rescue.
+						this.ClearMessages();
+						this.RedrawPlayScreen();
+						await this.PlayerWasRescued();
+						return true;
+					}
+					this.ClearMessages();
+					this.AddMessage(
+						new Message(
+							"Ok, but remember, it won't wait for long...",
+							this.m_Session.worldTime.turnCounter,
+							Color.Yellow,
+						),
+					);
+					this.RedrawPlayScreen();
+					return false;
+				}
+			}
 		}
 
 		this.AddMessage(
@@ -15529,8 +19696,103 @@ export class RogueGame {
 		// which is the readable order.
 		await this.AnimateAttackLunge(attacker, defender);
 
-		// Hit vs Missed
-		if (hitRoll > defRoll) {
+		// Blocked by the defender's shield? C# `:18368-18390`, Release 7-2.
+		//
+		// **This is the C#'s `if`/`else`, not a modifier on the attack below it.**
+		// A blocked swing does no damage at all: the message says the attack "is
+		// blocked by a shield", and the C# puts the entire hit/miss resolution --
+		// the `hitRoll`/`defRoll` comparison, damage, zombification, the lot -- in
+		// the `else` arm, so none of it runs. Reading it as an extra `if` over the
+		// top of the resolution would produce an attack that reports being blocked
+		// and then wounds the defender anyway, which is the opposite of what a
+		// shield is for.
+		//
+		// One divergence forced by this port, not by the reference: the C# rolls
+		// `hitRoll`/`defRoll` *inside* the `else`, so its shield check precedes
+		// them. This port rolled them before the lunge animation instead,
+		// deliberately, so a save taken mid-swing cannot capture half an attack
+		// (see the comment above `AnimateAttackLunge`). The shield roll therefore
+		// lands after them rather than before. Classic never reaches the check at
+		// all -- there is no shield item in it -- so no Classic roll order moves.
+		if (
+			defender.getEquippedShield() !== null &&
+			this.m_Rules.rollChance(this.m_Rules.actorShieldChanceToBlock(defender))
+		) {
+			// `SHIELD_BLOCK_PLAYER` and `SHIELD_BLOCK_NEARBY`, the **ids** — which is
+			// what the C# plays (`RogueGame.cs:18372`, `:18374`) and what
+			// `GameSounds.ts:22-24` makes the rule: the `*_FILE` twin names a path
+			// and is for the loader, not for playback. These two lines named the
+			// `*_FILE`, and `soundPath` could not resolve one — it *replaces* an
+			// extension and a `_FILE` has none, so the URL came back without a
+			// suffix and 404'd. The block was wired, reached the sfx channel, and
+			// was silent. `AssetPaths.soundPath` is fixed too; naming the id is what
+			// puts these under the gate scan below.
+			//
+			// The gate is new, and the other half of that. Both effects are Release
+			// 7-2 fork-only assets, and under CLASSIC the lines below are unreachable
+			// only because Classic has no shield item — the port was relying on a
+			// coincidence of inventory rather than asking `hasFeature`, which is
+			// what every other ExtendedAudio site does. The `_FILE` spelling had also
+			// been hiding them from that scan: it resolves the constant *name*, and a
+			// `_FILE`'s value is a path, so no fixture entry matched it and the line
+			// was skipped as "not a fork id" rather than reported.
+			//
+			// The C#'s `if (isPlayer) … else if (IsAudibleToPlayer(…))`
+			// (`RogueGame.cs:18371-18374`), with `Feature.ExtendedAudio` folded into
+			// each arm. Both effects are Release 7-2 fork-only assets, and under
+			// CLASSIC these lines are unreachable only because Classic has no shield
+			// item — the port was relying on a coincidence of inventory rather than
+			// asking `hasFeature`, which is what every other ExtendedAudio site
+			// does. The gate is repeated per arm rather than hoisted because it is
+			// what the surrounding code does everywhere else — a gate immediately
+			// above the id it governs — and because a single gate wrapping both arms
+			// sits four lines from the second id, outside the three-line window the
+			// gate scan reads. Two `Set` lookups, on a roll that only happens when a
+			// shield blocks.
+			if (isPlayer) {
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					this.m_SoundManager.play(GameSounds.SHIELD_BLOCK_PLAYER);
+			} else if (this.isAudibleToPlayer(attacker.location, NOISE_RADII.QUIET)) {
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					this.m_SoundManager.play(GameSounds.SHIELD_BLOCK_NEARBY);
+			}
+
+			if (isAttVisible || isDefVisible) {
+				this.AddMessage(
+					this.MakeMessage(
+						attacker,
+						this.Conjugate(attacker, attack.verb),
+						defender,
+						" but is blocked by a shield.",
+					),
+				);
+				try {
+					this.AddOverlay(
+						new OverlayImage(
+							this.MapToScreen(defender.location.position),
+							GameImages.ICON_MELEE_MISS,
+						),
+					);
+				} catch (e) {
+					reportSwallowed("DoMeleeAttack", e);
+				}
+				this.RedrawPlayScreen();
+				await this.AnimDelay(isPlayer ? DELAY_NORMAL : DELAY_SHORT);
+			}
+
+			// The C# then rolls to disarm, from the same `CanDisarm` +
+			// `DisarmChance` pair the hit path uses -- but it discards the result,
+			// where the hit path narrates the item sent flying. This port's `Disarm`
+			// takes the disarmed actor alone rather than both, so the call is
+			// `Disarm(defender)` and the return value goes unused, as in the C#.
+			if (
+				attacker.model.abilities.canDisarm &&
+				this.m_Rules.rollChance(attack.disarmChance)
+			) {
+				this.Disarm(defender);
+			}
+		} else if (hitRoll > defRoll) {
+			// Hit vs Missed
 			// alpha10
 			// roll for attacker disarming defender
 			if (
@@ -15599,10 +19861,16 @@ export class RogueGame {
 							),
 						);
 					}
-					this.InfectActor(
-						defender,
-						Rules.infectionForDamage(attacker, dmgRoll),
-					);
+					// Still Alive (Release 7-6): infection-resistant body armour can
+					// block the bite outright. The gate, the torso lookup and the roll
+					// are all inside `infectionBlockedByArmor` -- see the comment
+					// there for why that is one function and not three lines here.
+					if (!this.m_Rules.infectionBlockedByArmor(defender)) {
+						this.InfectActor(
+							defender,
+							Rules.infectionForDamage(attacker, dmgRoll),
+						);
+					}
 				}
 
 				// Killed?
@@ -15763,6 +20031,31 @@ export class RogueGame {
 			}
 		} else {
 			// miss
+			/**
+			 * Still Alive, Release 2 — `RogueGame.cs:18547-18550`. The fork's "hear"
+			 * line for a whiffed melee attack, and it was missing from the port:
+			 * this block had the message and the overlay and nothing else, so the
+			 * game's most frequent sound never played. The port's own options-menu
+			 * preview of the same constant is what made the omission visible — a
+			 * constant reached only from a volume row has no other caller.
+			 *
+			 * Not gated on `Feature.ExtendedAudio`, and should not be: the constant
+			 * carries no `@@MP` marker on its declaration (`GameSounds.cs:119`), so
+			 * the sound is vanilla's and Classic plays it too. Only the *call site*
+			 * is a fork addition, which is the distinction the `VANILLA_IDS` comment
+			 * in `tests/extended-audio.test.ts` explains.
+			 *
+			 * Awaited, as the port's other `m_SoundManager.play` calls are: the
+			 * buffer fetch is async, so a fire-and-forget call lets the miss land a
+			 * beat before its own sound.
+			 */
+			if (isPlayer) {
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					await this.m_SoundManager.play(GameSounds.MELEE_ATTACK_MISS_PLAYER);
+			} else if (this.isAudibleToPlayer(attacker.location, NOISE_RADII.QUIET)) {
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					await this.m_SoundManager.play(GameSounds.MELEE_ATTACK_MISS_NEARBY);
+			}
 			// show
 			if (isAttVisible || isDefVisible) {
 				this.AddMessage(
@@ -15843,7 +20136,9 @@ export class RogueGame {
 				this.SpendActorActionPoints(attacker, Rules.BASE_ACTION_COST);
 
 				// do attack.
-				await this.DoSingleRangedAttack(attacker, defender, LoF, 0);
+				// C# `:18608-18609`: DEFAULT and FLAMING both fire once and make the
+				// single-shot sound.
+				await this.DoSingleRangedAttack(attacker, defender, LoF, 0, 1);
 				break;
 			}
 
@@ -15851,8 +20146,17 @@ export class RogueGame {
 				// spend AP.
 				this.SpendActorActionPoints(attacker, Rules.BASE_ACTION_COST);
 
+				// C# `:18614-18620`. The first shot only makes the *rapid* sound if a
+				// second shot is actually coming, which is what `Ammo >= 2` decides --
+				// so emptying the magazine on the last round gives a single-shot bark
+				// rather than a burst that never arrives.
+				const burstWeapon = attacker.getEquippedWeapon();
+				if (!(burstWeapon instanceof ItemRangedWeapon))
+					throw new Error("rapid fire but no equipped ranged weapon");
+				const soundEffect = burstWeapon.ammo >= 2 ? 2 : 1;
+
 				// 1st attack
-				await this.DoSingleRangedAttack(attacker, defender, LoF, 1);
+				await this.DoSingleRangedAttack(attacker, defender, LoF, 1, soundEffect);
 
 				// 2nd attack.
 				// special cases:
@@ -15878,7 +20182,10 @@ export class RogueGame {
 					return;
 				} else {
 					// perform attack normally.
-					await this.DoSingleRangedAttack(attacker, defender, LoF, 2);
+					// Zero sound, as the C# (`:18631-18632`): the burst already made its
+					// noise on the first shot and a second report would be two gunshots
+					// where the player fired once.
+					await this.DoSingleRangedAttack(attacker, defender, LoF, 2, 0);
 				}
 				break;
 			}
@@ -15895,6 +20202,7 @@ export class RogueGame {
 		defender: Actor,
 		LoF: Point[],
 		shotCounter: number,
+		soundEffectShots: number = 0,
 	): Promise<void> {
 		// set activiy & target.
 		attacker.activity = Activity.FIGHTING;
@@ -15918,6 +20226,28 @@ export class RogueGame {
 
 		// spend STA.
 		this.SpendActorStaminaPoints(attacker, attack.staminaPenalty);
+
+		// The gun's report. C# `RogueGame.cs:18696-18697`, in the same place:
+		//
+		// ```csharp
+		// if (soundEffectShots > 0)
+		//     PlayRangedWeaponSFX(attacker.Location, weapon, soundEffectShots);
+		// ```
+		//
+		// The port has no `FireMode`, so the C#'s `soundEffectShots` is derived from
+		// the 0-based `shotCounter`: the first shot of a burst is single-shot and the
+		// rest are rapid. A single-shot fire mode produces `shotCounter === 0` every
+		// time anyway, so this is the same choice a fire-mode enum would make -- see
+		// `PlayRangedWeaponSFX` for the two divergences that follow from not having one.
+		//
+		// Placed before the jam roll on purpose: a jammed weapon does make a noise,
+		// and the C#'s call is likewise above the jam branch's early `return`.
+		if (soundEffectShots > 0) {
+			const rangedWeapon = attacker.getEquippedWeapon();
+			if (rangedWeapon !== null) {
+				this.PlayRangedWeaponSFX(attacker.location, rangedWeapon.model, soundEffectShots);
+			}
+		}
 
 		// Firearms weapon jam?
 		if (attack.kind === AttackKind.FIREARM) {
@@ -16007,7 +20337,55 @@ export class RogueGame {
 		}
 
 		// Hit vs Missed
+		//@@MP (Release 7-1): the chainsaw revs **whether or not the swing lands**
+		// (`RogueGame.cs:18356-18365`), which is why this sits *above* the hit test
+		// rather than inside it. A saw that only made noise on a hit would be silent
+		// through every miss, which is most of them.
+		//
+		// It is also the only three-rung ladder in the fork, and the only one using
+		// **two different radii**: `QUIET` for `_NEARBY`, then `MODERATE` for `_FAR`.
+		// Read as one `bandForDistance` call it would be wrong at both ends -- a saw 7
+		// tiles off is `FAR` here but only `NEARBY` to a single band, because `QUIET`
+		// ends at 5 and `MODERATE` at 8.
+		// The C# casts `attacker.GetEquippedWeapon()` to `ItemMeleeWeapon` first and
+		// compares the *model*, so a non-melee equipped weapon cannot match. Comparing
+		// models directly is equivalent here and avoids the cast; the `instanceof`
+		// would be the closer transcription if `ItemMeleeWeapon` ever gained subclasses
+		// with different fuel rules.
+		if (
+			attacker.getEquippedWeapon()?.model ===
+			Models.items.get(ItemID.MELEE_CHAINSAW)
+		) {
+			if (isPlayer) {
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					await this.m_SoundManager.play(GameSounds.CHAINSAW_PLAYER);
+			} else if (this.isAudibleToPlayer(attacker.location, NOISE_RADII.QUIET)) {
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					await this.m_SoundManager.play(GameSounds.CHAINSAW_NEARBY);
+			} else if (this.isAudibleToPlayer(attacker.location, NOISE_RADII.MODERATE)) {
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					await this.m_SoundManager.play(GameSounds.CHAINSAW_FAR);
+			}
+		}
+
 		if (hitRoll > defRoll) {
+			//@@MP (Release 2), the **hit** counterpart of the `_MISS` pair above.
+			// `RogueGame.cs:18407-18410`, sitting between the chainsaw sanity block and
+			// the disarm roll -- so it lands on a landed hit only, which is what makes
+			// the pair a ladder rather than two alternatives.
+			//
+			// This is `Play`, not `PlayIfNotAlreadyPlaying`: two landed hits in the same
+			// turn should both be heard, and the C# distinguishes the melee `_NEARBY`
+			// (BGM priority, `play`) from the shout `_NEARBY` (event priority,
+			// `playIfNotAlreadyPlaying`) precisely on that.
+			if (isPlayer) {
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					await this.m_SoundManager.play(GameSounds.MELEE_ATTACK_PLAYER);
+			} else if (this.isAudibleToPlayer(attacker.location, NOISE_RADII.QUIET)) {
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					await this.m_SoundManager.play(GameSounds.MELEE_ATTACK_NEARBY);
+			}
+
 			// roll damage - double potential if def is sleeping.
 			const dmgRoll =
 				this.m_Rules.rollDamage(
@@ -16321,7 +20699,26 @@ export class RogueGame {
 
 	// C# DoBlast — RogueGame.cs:14198
 	// async: C# blocks on AnimDelay/ApplyExplosionWave.
-	async DoBlast(location: Location, blastAttack: BlastAttack): Promise<void> {
+	//
+	// **`itemModel` is the C#'s third parameter** (`RogueGame.cs:19567`), added in
+	// Release 4 for the SFX switch and threaded through to `ApplyExplosionDamage`'s
+	// tile-fire seeding at `:20036`. The port had two parameters, so its blast path
+	// could not know *what* had exploded and the seeding was unreachable.
+	//
+	// **Only the tile-fire half of the C#'s `itemModel` use is ported here, and that
+	// is a deliberate narrowing rather than an oversight.** `DoBlast` also reads the
+	// model for a three-way SFX switch on the primed id (`:19580`, `:19636`,
+	// `:19662`), the BFG plasma icon (`:19693`), and the smoke screen and flashbang
+	// deployments (`:19697`, `:19699`); `ApplyExplosionDamage` additionally uses it
+	// for the plasma charge's four special cases (`:19871`, `:19902`, `:19922`,
+	// `:20006`, `:20028`). None of that is reachable in the port today --
+	// `DeploySmokeScreen` and `DetonateFlashbang` do not exist here, the BFG and the
+	// grenade launcher are unported, and no code path primes a plasma charge -- so
+	// porting it would be ~200 lines of unreachable transcription. What *is* ported
+	// is exactly equivalent for every explosive the port can detonate: see the
+	// seeding note in `ApplyExplosionDamage` for why gating on `causesTileFires`
+	// alone matches the C#'s `IsFlameWeapon || CausesTileFires`.
+	async DoBlast(location: Location, blastAttack: BlastAttack, itemModel: ItemModel): Promise<void> {
 		// noise.
 		this.OnLoudNoise(location.map!, location.position, "A loud EXPLOSION");
 
@@ -16353,7 +20750,7 @@ export class RogueGame {
 		}
 
 		// ground zero explosion.
-		await this.ApplyExplosionDamage(location, 0, blastAttack);
+		await this.ApplyExplosionDamage(location, 0, blastAttack, itemModel);
 
 		// explosion wave.
 		for (
@@ -16366,6 +20763,7 @@ export class RogueGame {
 				location,
 				waveDistance,
 				blastAttack,
+				itemModel,
 			);
 
 			// show.
@@ -16386,6 +20784,7 @@ export class RogueGame {
 		center: Location,
 		waveDistance: number,
 		blast: BlastAttack,
+		itemModel: ItemModel,
 	): Promise<boolean> {
 		let anyVisible = false;
 		const map = center.map!;
@@ -16404,6 +20803,7 @@ export class RogueGame {
 						new Point(x, ymin),
 						waveDistance,
 						blast,
+						itemModel,
 					)) || anyVisible;
 			}
 		}
@@ -16417,6 +20817,7 @@ export class RogueGame {
 						new Point(x, ymax),
 						waveDistance,
 						blast,
+						itemModel,
 					)) || anyVisible;
 			}
 		}
@@ -16432,6 +20833,7 @@ export class RogueGame {
 						new Point(xmin, y),
 						waveDistance,
 						blast,
+						itemModel,
 					)) || anyVisible;
 			}
 		}
@@ -16447,6 +20849,7 @@ export class RogueGame {
 						new Point(xmax, y),
 						waveDistance,
 						blast,
+						itemModel,
 					)) || anyVisible;
 			}
 		}
@@ -16462,6 +20865,7 @@ export class RogueGame {
 		pt: Point,
 		waveDistance: number,
 		blast: BlastAttack,
+		itemModel: ItemModel,
 	): Promise<boolean> {
 		if (
 			blastCenter.map!.isInBoundsPoint(pt) &&
@@ -16478,6 +20882,7 @@ export class RogueGame {
 				new Location(blastCenter.map, pt),
 				waveDistance,
 				blast,
+				itemModel,
 			);
 
 			// show if visible.
@@ -16502,6 +20907,7 @@ export class RogueGame {
 		location: Location,
 		distanceFromBlast: number,
 		blast: BlastAttack,
+		itemModel: ItemModel,
 	): Promise<number> {
 		const map = location.map!;
 
@@ -16619,7 +21025,14 @@ export class RogueGame {
 					// then directly damage the object.
 					if (damageToObject >= 0) {
 						obj.hitPoints -= damageToObject;
-						if (obj.hitPoints <= 0) this.DoDestroyObject(obj);
+						// C# `:19991-19994`. `ExplosionChainReactionMapObjects` may have
+						// swapped a BREAKABLE fuel pump for an UNBREAKABLE wreck, in
+						// which case `DoDestroyObject` must *not* also run -- the C#'s
+						// comment says exactly that, and getting it wrong would delete
+						// the wreck the explosion just left behind.
+						if (obj.hitPoints <= 0 && !(await this.ExplosionChainReactionMapObjects(location))) {
+							this.DoDestroyObject(obj);
+						}
 					}
 				}
 			}
@@ -16633,13 +21046,359 @@ export class RogueGame {
 			}
 		}
 
-		// destroy walls?
-		if (blast.canDestroyWalls) {
-			throw new Error("blast.destroyWalls");
+		// destroy walls? C# `:20016-20024`.
+		//
+		// ```csharp
+		// if (blast.CanDestroyWalls)
+		// {
+		//     if (map.IsDestructibleWallAt(this, location) && !map.AnyAdjacentOutOfBounds(location.Position))
+		//     { ReplaceDestroyedWall(location); wallDestroyed = true; }
+		// }
+		// ```
+		//
+		// **This used to be `throw new Error("blast.destroyWalls")`, and removing it
+		// is what made the fuel pump arm possible at all.** Three explosives carry
+		// `canDestroyWalls` (`GameItems.ts`: dynamite, C4, fuel pump) and the fuel
+		// pump's is reached by `ExplodeFuelPump`, so the throw was reachable the moment
+		// a pump detonated — and it had been reachable for dynamite and C4 since
+		// "Port Phase 4 slice 6", where it was left as an honest marker for work that
+		// had not been done.
+		//
+		// The outer guard below is the C#'s, verbatim, so the *decision* to destroy a
+		// wall is now correct. `IsDestructibleWallAt` is inlined rather than kept as a
+		// `Map` method because it asks `GameTiles` about the tile model and `data/` has
+		// no business importing `gameplay/`; the cast is the one `LOS.ts:454` already
+		// uses to reach a `GameTiles`-only method off the base-typed `Models.tiles`.
+		const wallTile = map.getTileAt(location.position.x, location.position.y);
+		const isDestructibleWall =
+			!map.isOnMapBorder(location.position.x, location.position.y) &&
+			wallTile !== null &&
+			(Models.tiles as GameTiles).isDestructibleWallModel(wallTile.model);
+
+		// C# `:20015`, immediately before the wall branch and read again at `:20026`
+		// to decide whether to scorch. Declared here rather than inside the branch
+		// because its whole purpose is to carry "did the wall actually go" out to the
+		// scorch step below.
+		let wallDestroyed = false;
+
+		if (
+			blast.canDestroyWalls &&
+			isDestructibleWall &&
+			!map.anyAdjacentOutOfBounds(location.position)
+		) {
+			this.ReplaceDestroyedWall(location);
+			wallDestroyed = true;
+		}
+
+		// Scorch the blast mark. C# `:20027-20030`, Release 2:
+		//
+		// ```csharp
+		// if (!wallDestroyed) // add scorch sprite where ground or surviving wall was blasted
+		// {
+		//     if (itemModel != m_GameItems.PLASMA_CHARGE_PRIMED) // special case for the BFG
+		//         ScorchBurntTile(map, x, y, modifiedDamage);
+		// }
+		// ```
+		//
+		// The two exclusions are the C#'s and both are load-bearing.
+		//
+		// `wallDestroyed` is the interesting one. A tile whose wall just fell is now
+		// an open patch of the building's own floor with rubble drawn over it, and
+		// scorching *that* would blacken the floor the player is being invited to walk
+		// through — so the C# suppresses the mark whenever the wall came down, and
+		// leaves it for every other blast (bare ground, or a wall that survived) to
+		// record itself. Before `ReplaceDestroyedWall` landed this was hard-coded
+		// false, which made the exclusion unreachable; it is now genuinely reachable,
+		// and it is the first thing that changes for dynamite, C4 and a detonating
+		// fuel pump in any district with a wall between two rooms.
+		//
+		// The plasma charge exclusion is the C#'s: the BFG "doesnt fire a standard
+		// explosive", so it leaves no conventional scorch.
+		if (!wallDestroyed && itemModel.id !== ItemID.EXPLOSIVE_PLASMA_CHARGE_PRIMED) {
+			this.scorchBurntTile(map, location.position.x, location.position.y, modifiedDamage);
+		}
+
+		// Explosion fires. C# `:20035-20037`, the last thing `ApplyExplosionDamage`
+		// does before returning:
+		//
+		// ```csharp
+		// if (itemModel.IsFlameWeapon || itemModel.CausesTileFires)
+		//     SetTileOnFire(map, x, y, true);
+		// ```
+		//
+		// **Gated on `causesTileFires` alone, and that is exactly equivalent for every
+		// explosive this port can detonate.** The C#'s condition also admits
+		// `IsFlameWeapon`, but the only model in the reference carrying that flag
+		// *without* also carrying `CausesTileFires` is the flamethrower
+		// (`GameItems.cs:2084`), a ranged weapon that never reaches this method. Every
+		// explosive with `IsFlameWeapon` -- the molotov pair (`:2315-2316`,
+		// `:2323-2324`) and the fuel can pair (`:2379-2380`, `:2387-2388`) -- also has
+		// `CausesTileFires`. So dropping `IsFlameWeapon` from the disjunction changes
+		// no explosive's behaviour here, and avoids porting a flag that five other
+		// call sites (`RogueGame.cs:18742`, `:18791`, `:18828`, `:18873`, `:18992`)
+		// and `BaseAI.cs:4549` also read. Dropping it is a narrowing of the *flag*, not
+		// of the *behaviour*, and that distinction is the whole reason it is safe.
+		//
+		// `wasFlameWeapon` is `true` unconditionally, as the C# has it: the C# passes
+		// the literal `true` at `:20036` for both branches, because an explosion is
+		// allowed to scorch and ignite walls in a way a spreading fire is not.
+		if (itemModel.causesTileFires) {
+			await this.setTileOnFire(map, location.position.x, location.position.y, true);
 		}
 
 		// return damage done.
 		return modifiedDamage;
+	}
+
+	/**
+	 * C# `ExplosionChainReactionMapObjects` — `RogueGame.cs:20110-20121`, Release 7-3.
+	 * "Convert fuel pumps into explosives to make them explode."
+	 *
+	 * Returns `true` when it consumed the object, which is the caller's signal to
+	 * skip `DoDestroyObject`: a pump that just exploded has already been replaced by
+	 * an unbreakable wreck, and destroying that as well would leave the tile bare.
+	 *
+	 * **The HP arm is unreachable in practice, and that is a fact worth writing down
+	 * rather than a reason to skip this.** A pump has 800 hitpoints
+	 * (`DoorWindow.BASE_HITPOINTS * 20`) and the strongest blast in the game deals
+	 * 200 at ground zero, so a healthy pump cannot be reduced to zero by a
+	 * neighbouring blast and this never fires from the HP path. It is here because
+	 * the C# has it, because a pump at low HP from bashing *can* reach it, and
+	 * because it costs four lines. Pump-to-pump propagation in the reference goes
+	 * through `setTileOnFire`'s adjacency sweep instead.
+	 */
+	private async ExplosionChainReactionMapObjects(location: Location): Promise<boolean> {
+		const mapObj = location.map!.getMapObjectAt(location.position.x, location.position.y);
+		if (mapObj !== null && mapObj.imageId === GameImages.OBJ_FUEL_PUMP) {
+			await this.ExplodeFuelPump(location);
+			return true;
+		}
+		return false;
+	}
+
+	/**
+	 * C# `ExplodeFuelPump` — `RogueGame.cs:20123-20129`, Release 7-3. The only
+	 * implementation; the reference has five call sites and this is all of them.
+	 *
+	 * Three statements, and **the order is the C#'s and it matters**:
+	 *
+	 *  1. Remove the intact pump. Before the blast, not after, so that the blast sees
+	 *     an empty tile — it takes no self-damage, does not re-trigger itself through
+	 *     `ExplosionChainReactionMapObjects`, and is not adjacent to its own fire.
+	 *  2. Blast with the hidden `FUEL_PUMP_PRIMED` model, purely to borrow its blast
+	 *     numbers: radius 2, damage `[200, 100, 50]`, `canDamageObjects` and
+	 *     `canDestroyWalls` both true, `CausesTileFires` true. Those come from
+	 *     `Items_Explosives.csv:7` and are already in the port's model row.
+	 *  3. Place the wreck, *after* the blast has finished.
+	 *
+	 * The C# passes `thrower = null`, so the Explosives-skill damage bonus at
+	 * `:19863-19864` never applies to a pump blast. The port has no `thrower` on
+	 * `Item` at all, so there is nothing to thread and nothing is lost.
+	 */
+	private async ExplodeFuelPump(location: Location): Promise<void> {
+		const map = location.map!;
+		// 1. get rid of the intact pump.
+		const pump = map.getMapObjectAt(location.position.x, location.position.y);
+		if (pump !== null) map.removeMapObject(pump);
+
+		// 2. the hidden explosive, so we can cause a big boom. **Awaited**, which the C#'s
+		// synchronous `DoBlast` gets for free and this port does not: `DoBlast` awaits
+		// `AnimDelay`, so a floating promise here would place the wreck *before* the
+		// blast had finished and turn any failure inside the blast into an unhandled
+		// rejection rather than an error the caller sees.
+		const primedModel = this.m_GameItems.get(ItemID.EXPLOSIVE_FUEL_PUMP_PRIMED) as ItemExplosiveModel;
+		await this.DoBlast(new Location(map, location.position), primedModel.blastAttack, primedModel);
+
+		// 3. what happens to the pump after it goes boom.
+		map.placeMapObject(
+			this.m_TownGenerator.makeObjFuelPumpBroken(GameImages.OBJ_FUEL_PUMP_BROKEN),
+			location.position,
+		);
+	}
+
+	/**
+	 * C# `RogueGame.ReplaceDestroyedWall(Location)` — `RogueGame.cs:20134-20232`,
+	 * Release 3, made `static` in Release 5-7. "Replaces the wall tile with the
+	 * appropriate type of floor tile and damaged wall section."
+	 *
+	 * Only ever reached from `ApplyExplosionDamage`, and only once that method's
+	 * guard has already established this tile is a destructible wall whose whole
+	 * eight-square ring is on the map. That guard is why none of the four neighbour
+	 * probes below needs an out-of-bounds question answered.
+	 *
+	 * ## Both switches read `imageId`, never `TileID`
+	 *
+	 * This is the one thing in the method that is easy to get wrong, because the
+	 * obvious-looking port — switching on the wall's `TileID` — is wrong in a way
+	 * that only shows up on three specific walls.
+	 *
+	 * `WALL_POLICE_STATION` and `WALL_SUBWAY` are registered in `GameTiles` with
+	 * `GameImages.TILE_WALL_STONE` as their image (`GameTiles.ts:247,250`, mirroring
+	 * the reference's own `GameTiles.cs`). The reference's model table even carries
+	 * the author's warning to keep `IsDestructibleWallModel()` and
+	 * `ReplaceDestroyedWall()` in step — and by *name* they are not in step, because
+	 * neither has a `case`. The stone image they share is what closes the gap: they
+	 * arrive at this switch already spelled `Tiles/wall_stone` and take the stone
+	 * rubble.
+	 *
+	 * So all twelve destructible walls resolve to a case, and the C#'s
+	 * `default: throw new NotSupportedException(...)` is genuinely unreachable.
+	 * **That is why the `default:` below leaves the tile as bare floor instead of
+	 * throwing.** A `TileID`-keyed switch would put police station and subway walls
+	 * in that default, and throwing there would be a crash the reference does not
+	 * have — inventing a bug rather than porting one.
+	 *
+	 * ## Also note what the method does *not* do
+	 *
+	 * `wall_wood_planks` spawns a plank instead of a drawing, and `wall_red_curtains`
+	 * leaves a bare gap — "leaves a whole gap", the C#'s own comment. So eleven wall
+	 * cases resolve to eight distinct rubble drawings, a plank, or nothing at all.
+	 */
+	private ReplaceDestroyedWall(location: Location): void {
+		const map = location.map!;
+		const tile = map.getTileAt(location.position.x, location.position.y);
+		if (tile === null) return;
+
+		// C# `:20138`, Release 4: drop any decorations first, "eg shop signage".
+		// Removing rather than keeping is the point — a blown-up cinema wall should
+		// not still be advertising itself over the hole.
+		tile.removeAllDecorations();
+
+		// C# `:20141-20179`: read the wall's *image*, then decorate. `addDecoration`
+		// appends, which is the C#'s `AddDecoration` (`Tile.cs:118-125`); the
+		// priority-inserting `insertDecoration` is a different call for world decay.
+		//
+		// The `imageId` is captured before any model swap below, matching the C#'s
+		// order, and because decorations live on the tile rather than on the model,
+		// the rubble drawn here survives `setTileModelAt` turning the tile into a
+		// walkable floor.
+		const wallImageId = tile.model.imageId;
+		switch (wallImageId) {
+			case GameImages.TILE_WALL_BRICK:
+				tile.addDecoration(GameImages.DECO_WALL_BRICK_DAMAGED);
+				break;
+			case GameImages.TILE_WALL_CHAR_OFFICE:
+				tile.addDecoration(GameImages.DECO_WALL_CHAR_OFFICE_DAMAGED);
+				break;
+			case GameImages.TILE_WALL_HOSPITAL:
+				tile.addDecoration(GameImages.DECO_WALL_HOSPITAL_DAMAGED);
+				break;
+			// Unreachable in practice: `WALL_SEWER` is one of the three walls
+			// `IsDestructibleWallModel` excludes, so no guard lets us in here for a
+			// sewer wall. Kept because the C# keeps it, and because excluding it
+			// would be a second, invisible divergence from the reference.
+			case GameImages.TILE_WALL_SEWER:
+				tile.addDecoration(GameImages.DECO_WALL_SEWER_DAMAGED);
+				break;
+			// Stone rubble for three models: plain stone, police station and subway.
+			case GameImages.TILE_WALL_STONE:
+				tile.addDecoration(GameImages.DECO_WALL_STONE_DAMAGED);
+				break;
+			case GameImages.TILE_WALL_LIGHT_BROWN:
+				tile.addDecoration(GameImages.DECO_WALL_LIGHT_BROWN_DAMAGED);
+				break;
+			case GameImages.TILE_WALL_ARMY_BASE:
+				tile.addDecoration(GameImages.DECO_WALL_ARMY_BASE_DAMAGED);
+				break;
+			// Release 7-3. The only case that drops an item rather than a
+			// decoration — the planks that were holding the wall up are now loose.
+			case GameImages.TILE_WALL_WOOD_PLANKS:
+				map.dropItemAt(this.m_TownGenerator.makeItemWoodenPlank(), location.position);
+				break;
+			case GameImages.TILE_WALL_FUEL_STATION:
+				tile.addDecoration(GameImages.DECO_WALL_FUEL_STATION_DAMAGED);
+				break;
+			case GameImages.TILE_WALL_MALL:
+				tile.addDecoration(GameImages.DECO_WALL_MALL_DAMAGED);
+				break;
+			case GameImages.TILE_WALL_RED_CURTAINS:
+				// "Leaves a whole gap" (C# `:20175`). No decoration, no item: the
+				// curtain comes down entirely and you can simply walk through.
+				break;
+			default:
+				// The C# throws `NotSupportedException` here. Unreachable there too,
+				// for the aliasing reason in this method's header — and kept
+				// deliberately quiet, since throwing would be a crash of this
+				// port's own making rather than one carried over.
+				break;
+		}
+
+		// C# `:20181-20195`: adopt an adjacent floor so the player is shown the new
+		// floor is walk-through-able. The probe order is load-bearing and is the
+		// C#'s verbatim — `y+1`, `y-1`, `x+1`, `x-1`, first match wins.
+		//
+		// (The C#'s own comments label `y+1` "north" and `y-1` "south"; the labels
+		// are kept with the lines they belong to, and it is the sequence, not the
+		// compass words, that has to match.)
+		const { x, y } = location.position;
+		const north = new Point(x, y + 1);
+		const south = new Point(x, y - 1);
+		const east = new Point(x + 1, y);
+		const west = new Point(x - 1, y);
+		const chosen =
+			map.isBuildingFloorTileAt(north.x, north.y) ? north
+			: map.isBuildingFloorTileAt(south.x, south.y) ? south
+			: map.isBuildingFloorTileAt(east.x, east.y) ? east
+			: map.isBuildingFloorTileAt(west.x, west.y) ? west
+			: null;
+
+		// No structural floor anywhere around: asphalt, and no further work. A wall
+		// with open ground on all four sides is the case the C# handles first, before
+		// the switch below ever runs.
+		if (chosen === null) {
+			map.setTileModelAt(x, y, Models.tiles.get(TileID.FLOOR_ASPHALT)!);
+			return;
+		}
+
+		// C# `:20197-20231`.
+		const floorImageId = map.getTileAt(chosen.x, chosen.y)?.model.imageId;
+		switch (floorImageId) {
+			case GameImages.TILE_FLOOR_OFFICE:
+				map.setTileModelAt(x, y, Models.tiles.get(TileID.FLOOR_OFFICE)!);
+				break;
+			case GameImages.TILE_FLOOR_TILES:
+				map.setTileModelAt(x, y, Models.tiles.get(TileID.FLOOR_TILES)!);
+				break;
+			case GameImages.TILE_FLOOR_CONCRETE:
+				map.setTileModelAt(x, y, Models.tiles.get(TileID.FLOOR_CONCRETE)!);
+				break;
+			case GameImages.TILE_FLOOR_WALKWAY:
+				map.setTileModelAt(x, y, Models.tiles.get(TileID.FLOOR_WALKWAY)!);
+				break;
+			case GameImages.TILE_FLOOR_PLANKS:
+				map.setTileModelAt(x, y, Models.tiles.get(TileID.FLOOR_PLANKS)!);
+				break;
+			// **These two cases cannot run**, and that is the reference's doing.
+			// The only route into this switch is a neighbour `isBuildingFloorTileAt`
+			// approved, and that list names neither floor, so a food-court pool or a
+			// white-tile floor next door never reaches the case written for it. Kept
+			// dead on purpose: dropping them would hide a real quirk of the C#, and
+			// widening the predicate to reach them would invent behaviour it does not
+			// have. See `Map.isBuildingFloorTileAt`.
+			case GameImages.TILE_FLOOR_FOOD_COURT_POOL:
+				map.setTileModelAt(x, y, Models.tiles.get(TileID.FLOOR_FOOD_COURT_POOL)!);
+				break;
+			case GameImages.TILE_FLOOR_WHITE_TILE:
+				map.setTileModelAt(x, y, Models.tiles.get(TileID.FLOOR_WHITE_TILE)!);
+				break;
+			// Five sewer drawings collapse to one model. The animated frames are
+			// distinct images but one destination tile, which is why this keeps the
+			// water and cover properties `GameTiles` hangs on `FLOOR_SEWER_WATER`
+			// rather than copying an animation onto the wall that just fell over.
+			case GameImages.TILE_FLOOR_SEWER_WATER:
+			case GameImages.TILE_FLOOR_SEWER_WATER_ANIM1:
+			case GameImages.TILE_FLOOR_SEWER_WATER_ANIM2:
+			case GameImages.TILE_FLOOR_SEWER_WATER_ANIM3:
+			case GameImages.TILE_FLOOR_SEWER_WATER_COVER:
+				map.setTileModelAt(x, y, Models.tiles.get(TileID.FLOOR_SEWER_WATER)!);
+				break;
+			default:
+				// Everything `isBuildingFloorTileAt` approves but this switch does not
+				// name: the two Release 4 carpets, dirt, and the nine Release 6-1 pond
+				// tiles. Fifteen structural floors in, seven out.
+				map.setTileModelAt(x, y, Models.tiles.get(TileID.FLOOR_WALKWAY)!);
+				break;
+		}
 	}
 
 	// C# ExplosionChainReaction — RogueGame.cs:14469
@@ -17035,6 +21794,34 @@ export class RogueGame {
 	// C# DoShout — RogueGame.cs:14835
 	// async: C# blocks on AddMessagePressEnter.
 	async DoShout(speaker: Actor, text: string | null): Promise<void> {
+		//@@MP (Release 7-4). Four ids for one shout, chosen by **who shouts and
+		// whether the player can hear them** -- so the ladder is sex-major x audibility,
+		// not distance. Both dimensions are needed because the C# picks the id inside
+		// one ternary (`RogueGame.cs:20592`); splitting it into a distance band would
+		// need a fourth dimension the fork does not have.
+		//
+		// The undead and living animals are excluded with the C#'s own "//just in case",
+		// which is worth keeping verbatim: without it an undead crowd that shouts would
+		// play a human voice, and the comment says the author knew it could and did not
+		// care to prove it.
+		if (
+			!speaker.model.abilities.isUndead &&
+			!speaker.model.abilities.isLivingAnimal
+		) {
+			const male = speaker.doll.body.isMale;
+			if (speaker.isPlayer) {
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					this.m_SoundManager.playIfNotAlreadyPlaying(
+						male ? GameSounds.MALE_SHOUT_PLAYER : GameSounds.FEMALE_SHOUT_PLAYER,
+					);
+			} else if (this.isAudibleToPlayer(speaker.location, NOISE_RADII.QUIET)) {
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					this.m_SoundManager.playIfNotAlreadyPlaying(
+						male ? GameSounds.MALE_SHOUT_NEARBY : GameSounds.FEMALE_SHOUT_NEARBY,
+					);
+			}
+		}
+
 		// spend APs.
 		this.SpendActorActionPoints(speaker, Rules.BASE_ACTION_COST);
 
@@ -17124,6 +21911,20 @@ export class RogueGame {
 	DoTakeItem(actor: Actor, position: Point, it: Item): void {
 		const map = actor.location.map!;
 
+		// C# `RogueGame.cs:12062-12068`: the backpack gates, in the C#'s order --
+		// one-bag first, then the Hauler tier on its slot count. **Above** the AP
+		// spend, because the C# checks before spending and a refused take must not
+		// cost a turn.
+		if (it instanceof ItemBackpack) {
+			const res = this.m_Rules.canActorTakeBackpack(actor, it);
+			if (!res.ok) {
+				this.AddMessage(
+					this.MakeErrorMessage(`Cannot take ${it.theName} : ${res.reason}.`),
+				);
+				return;
+			}
+		}
+
 		// spend APs.
 		this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
 
@@ -17144,6 +21945,12 @@ export class RogueGame {
 			if (itemsThere !== null && itemsThere.contains(it))
 				map.removeItemAt(it, position);
 		}
+
+		// Still Alive, Release 7-6: picked up is no longer junk, so the clock
+		// restarts if it is dropped again. Unconditional rather than gated --
+		// the field is only ever set when the feature is on, so there is nothing
+		// to clear under CLASSIC, and the write makes "rescued" true either way.
+		it.droppedOnTurnNumber = null;
 
 		// message
 		if (
@@ -17279,6 +22086,16 @@ export class RogueGame {
 	OnEquipItem(actor: Actor, it: Item): void {
 		// Weapons
 		if (it.model instanceof ItemWeaponModel) {
+			// C# `bool isOneHanded = false;` (`:20978`), read at `:21014`. The
+			// default is load-bearing rather than a placeholder: both the shield
+			// drop below and the fishing rod's arm test `!isOneHanded`, so a model
+			// that reached this point without setting the local would have a shield
+			// taken off it. Only the two weapon subclasses can get here, and each
+			// assigns, so the default is unreachable today -- it is transcribed
+			// because the C#'s is, and because a third `ItemWeaponModel` subclass
+			// should inherit the reference's behaviour rather than this port's
+			// reading of it.
+			let isOneHanded = false;
 			if (it.model instanceof ItemMeleeWeaponModel) {
 				const meleeModel = it.model;
 				const unarmed = actor.sheet.unarmedAttack;
@@ -17289,6 +22106,7 @@ export class RogueGame {
 					meleeModel.attack.staminaPenalty,
 					meleeModel.attack.disarmChance,
 				);
+				isOneHanded = meleeModel.isOneHanded; // C# :20987
 			} else if (it.model instanceof ItemRangedWeaponModel) {
 				const rangedModel = it.model;
 				actor.currentRangedAttack = Attack.rangedAttack(
@@ -17300,19 +22118,106 @@ export class RogueGame {
 					rangedModel.attack.damageValue,
 					rangedModel.attack.range,
 				);
+				isOneHanded = rangedModel.isOneHanded; // C# :20997
+			}
+
+			// C# `:21014-21019`. Still Alive, Release 7-2: a two-handed weapon
+			// cannot be held alongside a shield, so equipping one drops the shield.
+			// This is the direction the C# gets for free from `DoEquipItem` -- the
+			// weapon is already on the arm by the time `OnEquipItem` runs, and the
+			// shield is a different part, so neither unequip displaces the other.
+			//
+			// **`DoUnequipItem` strips the arm and nothing else.** It does not put
+			// the item back in an inventory; the reference's own method is
+			// `EquippedPart = NONE` plus a message (`:20956-20971`), so a shield
+			// dropped this way is out of the actor's hands and still in its pack.
+			// That is transcribed rather than "fixed" -- returning it would be a
+			// second, unrecorded copy of the call the reference does not make.
+			if (!isOneHanded) {
+				// `getEquippedShield` is the left arm, not a type test: the fork has
+				// no `ItemShieldModel`, so this is whatever is on that arm.
+				const shield = actor.getEquippedShield();
+				if (shield !== null) this.DoUnequipItem(actor, shield);
 			}
 		}
 		// Armors
 		else if (it.model instanceof ItemBodyArmorModel) {
 			actor.currentDefence = actor.currentDefence.add(it.model.toDefence());
 		}
+		// Still Alive, Release 7-2 (C# `:21030-21045`): the arm is the shield, so
+		// this is the inverse of the guard above -- equipping a shield drops a
+		// two-handed weapon. It sits between the armour arm and the batteries
+		// because that is where the reference has it, inside its `Armors` region.
+		//
+		// **The `if`/`else` is the reference's and is deliberate.** A two-handed
+		// *melee* weapon is dropped and the ranged weapon is never looked at
+		// (`:21034-21035` then `:21038-21040`); only when the melee weapon is
+		// absent or one-handed does the ranged get its turn. Collapsing the `else`
+		// into a second `if` would drop two things where the reference drops one,
+		// which is the kind of fix that reads as a bug fix and is a divergence.
+		// In practice the actor has one right hand, so at most one of the two can be
+		// equipped anyway -- the `else` is unobservable with today's arm layout and
+		// is kept because the two-arm case is exactly where it would stop being so.
+		else if (it.model.equipmentPart === DollPart.LEFT_ARM) {
+			const melee = actor.getEquippedMeleeWeapon();
+			if (melee !== null && !melee.isOneHanded) {
+				this.DoUnequipItem(actor, melee);
+			} else {
+				const ranged = actor.getEquippedRangedWeapon();
+				if (ranged !== null && !ranged.isOneHanded)
+					this.DoUnequipItem(actor, ranged);
+			}
+			// C# `:21043-21044`, Release 2.
+			//
+			// The one thing left in this arm, and it was the last: `GameSounds.EQUIP`
+			// arrived with `Feature.ExtendedAudio` and had no call site, so the fork
+			// equipped a shield in silence. The player-only test guards nothing but
+			// the sound, which is the C#'s own comment (`//@@MP (Release 2)`) — there
+			// is no NPC variant of this id.
+			//
+			// Played under the gate rather than beside it, for the same reason the
+			// shield-block roll repeats its gate per arm: one gate wrapping both a
+			// player arm and an `else` sits outside the three-line window the gate
+			// scan reads.
+			if (actor.isPlayer && hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.play(GameSounds.EQUIP);
+		}
 		// Batteries
 		else if (it.model instanceof ItemTrackerModel) {
 			const trIt = it as ItemTracker;
 			--trIt.batteries;
 		} else if (it.model instanceof ItemLightModel) {
-			const ltIt = it as ItemLight;
-			--ltIt.batteries;
+			// C# `:21049-21060`. The port had the battery decrement and none of the
+			// three sounds, so a torch was switched on in silence and — the part with
+			// teeth — no FOV was recomputed, so the light the player just equipped did
+			// not take effect until the next turn. The C# calls `UpdatePlayerFOV`
+			// immediately for that reason (`//@@MP - update FOV now, don't wait until
+			// the next turn`, Release 6-2), and the port's `UpdatePlayerFOV` is the
+			// same function.
+			if (actor.isPlayer) {
+				const ltIt = it as ItemLight;
+				--ltIt.batteries;
+
+				// Three ids, one gate, in the C#'s order. Night vision and binoculars
+				// are Release 6-3/7-1, the torch click is the original Release 2 one.
+				//
+				// Written as three guarded statements rather than the C#'s
+				// `if / else if / else` because the three ids cannot share one gate
+				// and stay inside the gate scan's window — the same constraint the
+				// shield-block roll is written under, and the reason the throwable
+				// light packs carry a gate each.
+				if (this.m_Rules.isItemNightVision(it)) {
+					if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+						this.m_SoundManager.play(GameSounds.NIGHT_VISION);
+				} else if (this.m_Rules.isItemBinoculars(it)) {
+					if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+						this.m_SoundManager.play(GameSounds.EQUIP);
+				} else if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio)) {
+					this.m_SoundManager.play(GameSounds.TORCH_CLICK_PLAYER);
+				}
+
+				this.UpdatePlayerFOV(this.m_Player);
+			}
 		}
 	}
 
@@ -17331,10 +22236,55 @@ export class RogueGame {
 		}
 	}
 
-	// C# DoDropItem — RogueGame.cs:15078
-	DoDropItem(actor: Actor, it: Item): void {
-		// spend APs.
-		this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+	/**
+	 * C# `DoDropItem` — classic `RogueGame.cs:15078`, Still Alive `RogueGame.cs:21123`
+	 * (`_refs/StillAlive-master`).
+	 *
+	 * Two Still Alive arms land here, and both are about *what a drop costs and what
+	 * it leaves behind* rather than about the drop itself:
+	 *
+	 * - **The AP spend moved from the top of the method to the bottom**, and a
+	 *   `spendAP` local appeared with it (`RogueGame.cs:21125`). The reference needs
+	 *   that because two of its arms `return` before the spend: the fuel-can prompt and
+	 *   the candle prompt both bail out there, so "place one lit candle" costs *no*
+	 *   turn in the C# while "drop the whole box" costs one. That asymmetry is the
+	 *   reference's and is kept: it is the difference between lighting a room and
+	 *   unpacking a box. `SpendActorActionPoints` is a subtraction and an
+	 *   `lastActionTurn` write (`:5166`) with nothing in it that reads the drop, so
+	 *   moving the call down is otherwise unobservable.
+	 * - **A throwable light dropped by the player is AP-free**
+	 *   (`RogueGame.cs:21153-21157`, Release 7-5). The comment there is "avoid the
+	 *   double-turn hit": `HandlePlayerUseThrowableItem` already spends a turn to throw
+	 *   one, and the light then reaches the ground through the ordinary drop path, so a
+	 *   naive `DoDropItem` charged twice for a single act.
+	 *
+	 * **The C#'s arm order is not copied, and the reason is Classic.** The reference
+	 * chains `trap` → `ItemLight` → `actor.IsPlayer` → `CANDLES_BOX` → `else discard`,
+	 * and because the `actor.IsPlayer` arm is *unconditional* for the player it
+	 * pre-empts the discard tests entirely: in the fork a player can never discard an
+	 * empty spray can or a dead tracker, because the arm that handles fuel cans swallows
+	 * every other player item first. Importing that shape would change behaviour for
+	 * two items Classic *can* produce. The candle arm below is therefore added as a
+	 * sibling of the existing `else` block instead, which leaves every Classic item on
+	 * exactly the path it took before.
+	 *
+	 * **The C#'s fuel prompt is not ported.** `DROP_FUEL_TEXT`
+	 * (`RogueGame.cs:21162-21199`, Release 7-1) is a fourth reader of `AMMO_FUEL` and
+	 * belongs to it, not to any of the light kits; `AMMO_FUEL` and its other three
+	 * readers already existed here.
+	 *
+	 * **async, because one arm blocks.** The candle arm reads a key, so every caller
+	 * of `DoDropItem` above it in the call graph became awaitable -- see
+	 * `HandleMouseInventory`'s header, which is the one that matters. For an NPC, and
+	 * for every item that is not a box of candles, nothing in this body is awaited, so
+	 * the whole method still runs to completion inside the synchronous prefix: which is
+	 * what keeps `ActionDropItem.perform()`, whose signature is `void` in a file this
+	 * change does not own, behaving exactly as it did.
+	 */
+	async DoDropItem(actor: Actor, it: Item): Promise<void> {
+		// Still Alive, Release 7-5: a throwable light the player is dropping has
+		// already spent its turn being thrown. See the header.
+		let spendAP = true;
 
 		// which item to drop (original or a clone)
 		let dropIt: Item = it;
@@ -17356,6 +22306,28 @@ export class RogueGame {
 
 			// make sure source stack is desactivated (activate only activate the stack top item).
 			trap.deactivate(); // alpha10  //trap.isActivated = false;
+		} else if (it instanceof ItemLight && actor.isPlayer && it.model.isThrowable) {
+			spendAP = false; // avoid the double-turn hit
+		} else if (this.IsPlayerCandleBoxDrop(actor, it)) {
+			// The candle arm is the only one that blocks, and it is reached through a
+			// **synchronous** guard rather than by awaiting a predicate. That is not a
+			// style point: `await` suspends even on an already-resolved promise, so a
+			// `DoDropItem` that awaited the candle arm unconditionally would hand every
+			// other drop back to the caller half-finished -- and the caller is
+			// `ActionDropItem.perform()`, whose return type is `void`.
+			// `tests/ai-orders.test.ts` is the test that says so.
+			//
+			// `true` means the drop is fully handled and `DoDropItem` returns without
+			// spending a turn: one lit candle placed, or Escape, or a refused key, or a
+			// tile that already has a candle, or the open air.
+			//
+			// `false` is the `A` key and falls through to the ordinary drop below, which
+			// *does* spend the turn -- and it deliberately skips the discard tests, as the
+			// C# does: its `else if (CANDLES_BOX)` arm swallows a box of candles whole, so
+			// `discardMe` is never computed for one. A box is a plain `Item` and every
+			// discard test would say `false` anyway; this says so once instead of three
+			// times.
+			if (await this.DoDropCandlesPrompt(actor, it)) return;
 		} else {
 			// drop or discard.
 			if (it instanceof ItemTracker) {
@@ -17389,7 +22361,130 @@ export class RogueGame {
 					),
 				);
 		}
+
+		// spend APs. The C#'s `if (spendAP)` — see the header for why it is conditional
+		// and why it is last.
+		if (spendAP) this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
 	}
+
+	/**
+	 * C# the candle arm of `DoDropItem` — `RogueGame.cs:21202-21261`, Still Alive
+	 * Release 7-1.
+	 *
+	 * A box of candles is not a light: it is a plain `ItemModel`, and the light only
+	 * exists as a *decoration on the tile the box is standing on*. So dropping one is
+	 * a prompt, not a drop -- and the two answers are genuinely different acts:
+	 *
+	 * - `O` places **one lit candle**: one candle leaves the box, a `DECO_LIT_CANDLE`
+	 *   decoration goes on the actor's own tile, and a `TaskRemoveDecoration` twelve
+	 *   hours out takes it away again. A candle burns out, and the reference models
+	 *   that as a timer rather than as a battery -- there is no `ItemLight` anywhere in
+	 *   the path, which is why `IsActorStandingInLight` and `LOS.addOtherLitTiles` both
+	 *   read the *decoration* rather than an item.
+	 * - `A` drops the box as an ordinary item, on the floor, and it stops being light.
+	 *
+	 * **Returns `true` when the drop has been fully handled and `DoDropItem` must
+	 * return**, and `false` when the C# falls through to the normal drop -- which is
+	 * the `A` key, an NPC holding a box, and every item that is not a box of candles.
+	 * Every `true` is one of the C#'s five `return`s. The three guards it repeats are
+	 * `IsPlayerCandleBoxDrop`'s, and it re-tests them rather than trusting its caller:
+	 * it is the method a test reaches directly.
+	 *
+	 * **Gated on `Feature.DarknessFov`.** A lit candle is ambient light, and the flag
+	 * is the port's name for the fork's ambient-lighting-and-true-darkness rework --
+	 * the same one `LOS.addOtherLitTiles` and `Rules.fovProfile` answer to. The three
+	 * light kits have no Classic drop site, so under Classic this arm cannot be
+	 * reached by a generated world; the gate is what keeps a hand-placed or
+	 * script-given box from putting a twelve-hour light into a Classic district, where
+	 * nothing reads the decoration for anything but drawing.
+	 *
+	 * **No AP is spent on the `O` and on the refusals**, which is the C#'s behaviour and
+	 * not an oversight here: all five of its early returns are above the
+	 * `if (spendAP)` spend at the end of `DoDropItem`.
+	 *
+	 * **The guard is `it.model.id`, where the C#'s is `it.Model ==` the registered
+	 * instance** (`:21203`). Same question, same answer -- the registry hands out one
+	 * model object per id -- and the id form is what every other identity test in this
+	 * file uses, the riot shield's included.
+	 */
+	private IsPlayerCandleBoxDrop(actor: Actor, it: Item): boolean {
+		if (it.model.id !== ItemID.CANDLES_BOX) return false;
+		// `if (actor.IsPlayer)` at `:21205`, with **no** `else`. So an NPC holding a box
+		// enters this arm and simply falls out of it, reaching the ordinary drop below
+		// with no prompt and no candle -- which is also why `GenerateDrunkAction`'s
+		// carve-out (`:25008`) exists: a survivor must never be handed a question.
+		if (!actor.isPlayer) return false;
+		return hasFeature(this.m_Session.ruleset, Feature.DarknessFov);
+	}
+
+	private async DoDropCandlesPrompt(actor: Actor, it: Item): Promise<boolean> {
+		if (!this.IsPlayerCandleBoxDrop(actor, it)) return false;
+
+		const pt = actor.location.position;
+		const map = actor.location.map!;
+
+		this.AddOverlay(
+			new OverlayPopup(
+				this.DROP_CANDLES_TEXT,
+				this.MODE_TEXTCOLOR,
+				this.MODE_BORDERCOLOR,
+				this.MODE_FILLCOLOR,
+				Point.Zero,
+			),
+		);
+		this.RedrawPlayScreen();
+
+		const inKey = await this.m_UI.UI_WaitKey();
+		const tile = map.getTileAt(pt.x, pt.y);
+
+		if (inKey.key === "Escape") {
+			// C# `:21211-21216`: do nothing but clean the overlay up.
+		} else if (inKey.key === "o" || inKey.key === "O") {
+			// drop only one.
+			const hasCandle = tile?.hasDecoration(GameImages.DECO_LIT_CANDLE) ?? false;
+			if (hasCandle) {
+				this.AddMessage(this.MakeErrorMessage("There's already a lit candle there."));
+			} else if (tile === null || !tile.isInside) {
+				this.AddMessage(
+					this.MakeErrorMessage("Candles are useless outside in the elements."),
+				);
+			} else {
+				// remove a candle from the box, and the whole box if it's now empty.
+				actor.inventory!.consume(it);
+
+				// place a lit candle on the ground, with a task to remove it when it runs
+				// out. The order is the C#'s (`:21243-21245`): the timer is armed
+				// *before* the decoration goes on. `addTimer` is not the C#'s
+				// `Map.AddTimer` -- it is `RogueGame`'s own, which also registers the
+				// pending task against the map's clock -- and `addDecoration` already
+				// dedupes, so the C#'s second `if (!HasDecoration)` guard has no
+				// counterpart and no behaviour.
+				map.addTimer(
+					new TaskRemoveDecoration(
+						WorldTime.TURNS_PER_HOUR * 12,
+						pt.x,
+						pt.y,
+						GameImages.DECO_LIT_CANDLE,
+					),
+				);
+				tile.addDecoration(GameImages.DECO_LIT_CANDLE);
+			}
+		} else if (inKey.key === "a" || inKey.key === "A") {
+			// drop all. The C# (`:21251-21252`) only redraws and falls through to the
+			// normal drop -- so this returns `false` and `DoDropItem` puts the box on
+			// the floor and spends the turn.
+			this.RedrawPlayScreen();
+			return false;
+		} else {
+			this.AddMessage(this.MakeErrorMessage("Unhandled key error when dropping candles."));
+			this.AddMessage(this.MakeErrorMessage("Did you perhaps hit the wrong key?"));
+		}
+
+		this.ClearOverlays();
+		this.RedrawPlayScreen();
+		return true;
+	}
+
 
 	// C# DiscardItem — RogueGame.cs:15147
 	DiscardItem(actor: Actor, it: Item): void {
@@ -17410,6 +22505,18 @@ export class RogueGame {
 
 		// make sure it is unequipped.
 		it.equippedPart = DollPart.NONE;
+
+		// Still Alive, Release 7-6: only an NPC's litter is allowed to rot. The
+		// `!==` rather than `===` matters, and matches the C#: the player's own
+		// drops are never stamped, and neither is a follower's, so a companion
+		// handing you down their last bandage cannot lose it to the sweep.
+		if (
+			hasFeature(this.m_Session.ruleset, Feature.ItemDespawn) &&
+			actor !== this.m_Player &&
+			actor.leader !== this.m_Player
+		) {
+			this.ApplyItemTurnTracker(it);
+		}
 	}
 
 	// C# DropCloneItem — RogueGame.cs:15168
@@ -17426,22 +22533,385 @@ export class RogueGame {
 	}
 
 	// C# DoUseItem — RogueGame.cs:15181
-	DoUseItem(actor: Actor, it: Item): void {
+	/**
+	 * Is the actor standing next to anything that throws light?
+	 *
+	 * Still Alive, Release 7-5 (`RogueGame.cs:33047`), tidied in the fork's own
+	 * Release 8-2. This is what makes "you cannot use medicine in the dark" fair
+	 * rather than absurd: absolute darkness means FOV 0, and a player holding an
+	 * unlit torch in a pitch-black basement would otherwise be told no while
+	 * standing next to a barrel that is on fire.
+	 *
+	 * A 3x3 scan — the actor's own tile, then the eight around it — because the
+	 * C# assumes ambient light "from items/decorations is always only 3x3 tiles".
+	 * That assumption is load-bearing: a brazier two tiles away does not count,
+	 * and that is the fork's behaviour, not a shortcut taken here.
+	 *
+	 * **One of the C#'s five checks was not ported**, because what it needs did not
+	 * exist yet, and it is the kind of omission that should be a comment rather than a
+	 * silent gap:
+	 *
+	 * - `IsAnyTileFireThere` — a *tile* fire (grass, carpet, a burning floor)
+	 *   rather than a burning object. That is `Feature.TileFires`, still pending.
+	 *
+	 * When `TileFires` lands, add the tile-fire check *here*, and the two callers
+	 * below need no change.
+	 *
+	 * **The lit-candle check now *is* here** (`GameImages.DECO_LIT_CANDLE`,
+	 * `RogueGame.cs:33065`, in the C# between the tile-fire test and the actor test).
+	 * It arrived with `DoDropItem`'s candle arm, which is what puts the decoration on
+	 * the tile in the first place: `LOS.addOtherLitTiles` (`LOS.ts:471`) has read the
+	 * same decoration to *draw* the tile lit since the darkness rework, so before this
+	 * a lit candle was visible from up to ten tiles away and still did not count as
+	 * light on the tile you were standing on.
+	 */
+	IsActorStandingInLight(actor: Actor): boolean {
+		const map = actor.location.map!;
+		const from = actor.location.position;
+		// The C# walks `Direction.COMPASS` starting *at* the actor's own tile and
+		// stepping after each test, so the centre is checked first and then the
+		// eight neighbours. The loop below reproduces that order rather than
+		// checking centre-plus-eight in some other order, because with `continue`
+		// the order decides which of several light sources is found first -- and
+		// today that is unobservable, which is exactly why it should not be left
+		// to chance.
+		const spots: Point[] = [from];
+		for (const d of Direction.COMPASS) spots.push(d.applyTo(from));
+
+		for (const spot of spots) {
+			if (!map.isInBounds(spot.x, spot.y)) continue;
+
+			// on-fire map objects
+			const mapObj = map.getMapObjectAtPoint(spot);
+			if (mapObj !== null && mapObj.isOnFire) return true;
+
+			// a lit candle, placed by `DoDropItem`'s candle arm. See the header for
+			// why this was the one C# check that waited on a reader rather than on a
+			// sprite. The C# calls `GetTileAt(spot)` without a bounds re-check here
+			// because it is inside the `IsInBounds` loop body above; so is this.
+			if (map.getTileAt(spot.x, spot.y)?.hasDecoration(GameImages.DECO_LIT_CANDLE))
+				return true;
+
+			// actors carrying a working light
+			const other = map.getActorAtPoint(spot);
+			if (other !== null) {
+				const held = other.getEquippedItem(DollPart.LEFT_HAND);
+				if (held instanceof ItemLight && held.batteries > 0) return true;
+			}
+
+			// dropped lights
+			const inv = map.getItemsAt(spot);
+			if (inv !== null) {
+				for (const item of inv.items) {
+					if (item instanceof ItemLight) return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * C# `DoUseItem` — classic `RogueGame.cs:15181`, Still Alive `RogueGame.cs:21486-21557`.
+	 *
+	 * **async, and that is the only structural change to a method with four dozen call
+	 * sites' worth of neighbours.** Still Alive hangs five prompts off this chain and
+	 * each one blocks the C# on `UI_WaitKey`; `UI_WaitKey` is a promise here, so the
+	 * four player-facing entry points above it (`OnLMBItem`, `OnRMBItem`,
+	 * `DoPlayerItemSlotUse`, `DoPlayerItemSlotDrop`) and the one turn-loop call site
+	 * became awaitable. `HandleMouseInventory`'s header explains why that was the right
+	 * way round rather than `fireAndForget`.
+	 *
+	 * The one remaining sync entry point is `ActionUseItem.perform()`, whose signature
+	 * is `void` in `Actions.ts` — a file this change does not own. It is harmless,
+	 * because an `async` function runs its whole body inside the synchronous prefix
+	 * when nothing is awaited, and every arm that awaits below is guarded by
+	 * `actor.isPlayer`, which an `ActionUseItem` never satisfies. The NPC path
+	 * therefore executes exactly as it did before this change, to the statement.
+	 */
+	async DoUseItem(actor: Actor, it: Item): Promise<void> {
+		// Still Alive, Release 6-2: it may be too dark to read or to use medicine.
+		// The C# computes this once, here, and consults it from two branches; the
+		// helper is called per branch instead, because the C#'s version is one
+		// boolean read before a chain of `instanceof` tests and a function call in
+		// each of two arms reads the same for free.
+		const absoluteDarkness = this.m_Rules.isActorInAbsoluteDarkness(actor);
 		// alpha10 defrag ai inventories
 		const defragInventory = !actor.isPlayer && it.model.isStackable;
+		// Still Alive's "complex items" block (`:21538-21552`) is guarded by this one
+		// pair of tests for all six of its arms: the light packs, a bare throwable, a
+		// siphon kit, seeds, a box of candles and a sleeping bag. Two of those six --
+		// the siphon kit and the seeds' own handler -- are already in the port, but as
+		// unguarded top-level arms, and moving them inside the C#'s guard would change
+		// what an NPC holding a kit can do. So the guard is applied to the arms this
+		// change adds and the two existing ones are left where they were. Recorded here
+		// rather than tidied, because tidying it is a separate decision about the AI's
+		// item use and not a side effect of landing these four items.
+		const complexItems = actor.isPlayer && !actor.isBotPlayer;
 
 		// concrete use.
 		if (it instanceof ItemFood) this.DoUseFoodItem(actor, it);
-		else if (it instanceof ItemMedicine) this.DoUseMedicineItem(actor, it);
+		else if (it instanceof ItemMedicine) {
+			// Release 6-2, with the Release 7-5 exception: cigarettes and booze are
+			// consumable in the dark. That reads oddly until you notice neither is
+			// really medicine -- both are `ItemMedicine` only so they can restore a
+			// point of sanity, which is what `ItemModel.isRecreational` records.
+			let standingInLight = true;
+			if (absoluteDarkness) {
+				standingInLight =
+					it.model.id === ItemID.MEDICINE_CIGARETTES ||
+					this.m_Rules.isItemAlcoholForDrinking(it) ||
+					this.IsActorStandingInLight(actor);
+			}
+			if (standingInLight) this.DoUseMedicineItem(actor, it);
+			else if (actor.isPlayer) {
+				this.AddMessage(
+					new Message(
+						"You can't do that, it's too dark here.",
+						this.m_Session.worldTime.turnCounter,
+						Color.Red,
+					),
+				);
+			}
+		}
 		else if (it instanceof ItemAmmo) this.DoUseAmmoItem(actor, it);
 		//else if (it instanceof ItemSprayScent)  // alpha10 new way to use spray scent
 		//    this.DoUseSprayScentItem(actor, it);
 		else if (it instanceof ItemTrap) this.DoUseTrapItem(actor, it);
-		else if (it instanceof ItemEntertainment)
-			this.DoUseEntertainmentItem(actor, it);
+		// Still Alive, Release 7-2 (C# RogueGame.cs:21531-21532), between the trap
+		// and molotov arms as in the reference.
+		//
+		// **The C# tests model identity, not an id:** `it.Model ==
+		// GameItems.POLICE_RIOT_SHIELD`. There is no shield model class to test
+		// against, so the reference compares the registered instance. `it.model.id`
+		// answers the same question here and reads better; the two cannot disagree,
+		// because the registry hands out one instance per id.
+		else if (it.model.id === ItemID.POLICE_RIOT_SHIELD) this.DoUseShieldItem(actor, it);
+		// Still Alive, Release 7-1 (C# RogueGame.cs:21536-21537), the first of the
+		// "complex items" and the only one *outside* the player-only block -- the fork
+		// lets an NPC craft a molotov from a bottle too, and it costs it a turn.
+		else if (
+			hasFeature(this.m_Session.ruleset, Feature.TileFires) &&
+			this.IsItemLiquorForMolotov(it)
+		) {
+			await this.DoMakeMolotov(actor, it);
+		}
+		// Still Alive, Release 7-1 (C# RogueGame.cs:21540-21543). The two throwable-light
+		// arms, and the reason `FLARES_KIT` and `GLOWSTICKS_BOX` exist at all: the light
+		// is manufactured at use time, so using the box is what turns it into a light.
+		//
+		// **Gated on `Feature.DarknessFov`.** Both kits exist only to put light in the
+		// dark -- their flavour text says "bright, throwable light" and nothing else --
+		// and the flag is the port's name for the fork's ambient-lighting-and-true-
+		// darkness rework, the same one `LOS.addOtherLitTiles`, `Rules.fovProfile` and
+		// `IsActorStandingInLight` answer to. Neither box has a Classic drop site, so
+		// this gate cannot move a generated Classic world; what it stops is the
+		// *reachable* case the brief asks about -- `GameItems.ts:1159` sets
+		// `isThrowable` on `LIGHT_FLARE` and `LIGHT_GLOWSTICK` **unconditionally**, so
+		// under Classic a player who somehow holds one would otherwise get the fork's
+		// throw mode and its five-tile reach for free.
+		else if (
+			complexItems &&
+			hasFeature(this.m_Session.ruleset, Feature.DarknessFov) &&
+			(it.model.id === ItemID.FLARES_KIT || it.model.id === ItemID.GLOWSTICKS_BOX)
+		) {
+			await this.HandlePlayerUseLightPackThrowable(actor, it);
+		} else if (
+			complexItems &&
+			hasFeature(this.m_Session.ruleset, Feature.DarknessFov) &&
+			it.model.isThrowable
+		) {
+			// A *bare* `LIGHT_FLARE` or `LIGHT_GLOWSTICK`, used out of the pack rather
+			// than made from a box. Same gate, same reason; the C#'s comment here
+			// ("flares and candles") names a candle, which is not throwable, so the
+			// comment is stale in the reference and the flag it tests is not.
+			await this.HandlePlayerUseThrowableItem(actor, it);
+		}
+		// Still Alive, Release 7-2 (C# RogueGame.cs:21548-21549). A box of candles is
+		// "used" by being dropped -- `DoDropItem`'s own arm does the prompting, which
+		// is why this is a plain `DoDropItem` and not a handler of its own. Same gate as
+		// the two above, for the same reason: the thing it leaves behind is ambient
+		// light. (Release 7-2, not 7-1: `:21203`'s arm is marked 7-1 but `CANDLES_BOX`
+		// is registered at `GameItems.cs:2996`, and the dispatch line is 7-2.)
+		else if (
+			complexItems &&
+			hasFeature(this.m_Session.ruleset, Feature.DarknessFov) &&
+			it.model.id === ItemID.CANDLES_BOX
+		) {
+			await this.DoDropItem(actor, it);
+		}
+		// Still Alive, Release 7-3 (C# RogueGame.cs:21550-21551), the last of the block.
+		// Gated on `Feature.ResourcesAvailability` -- see `HandlePlayerUseSleepingBag`.
+		else if (
+			complexItems &&
+			hasFeature(this.m_Session.ruleset, Feature.ResourcesAvailability) &&
+			it.model.id === ItemID.SLEEPING_BAG
+		) {
+			await this.HandlePlayerUseSleepingBag(actor, it);
+		}
+		// Still Alive, Release 7-1: using a siphon kit drains an adjacent car.
+		// Placed before the fallthrough so a kit is never silently consumed.
+		else if (
+			hasFeature(this.m_Session.ruleset, Feature.SiphonFuel) &&
+			it.model.id === ItemID.SIPHON_KIT
+		) {
+			this.HandlePlayerSiphonFuel();
+		}
+		// Still Alive, Release 7-6: using a rod casts it, which is a sound and a
+		// sentence rather than a state change. The *state* lives in `DoWait`, which
+		// is also why the branch has to sit before the fallthrough -- a rod must
+		// never be silently consumed.
+		else if (
+			hasFeature(this.m_Session.ruleset, Feature.Fishing) &&
+			it.model.id === ItemID.FISHING_ROD
+		) {
+			this.DoUseFishingRodItem(actor);
+		}
+		else if (it instanceof ItemEntertainment) {
+			// Release 6-2: too dark to read. Unlike medicine this has no carve-out
+			// -- there is no "but you can smoke while reading".
+			let standingInLight = true;
+			if (absoluteDarkness) standingInLight = this.IsActorStandingInLight(actor);
+			if (standingInLight) this.DoUseEntertainmentItem(actor, it);
+			else if (actor.isPlayer) {
+				this.AddMessage(
+					new Message(
+						"You can't do that, it's too dark here.",
+						this.m_Session.worldTime.turnCounter,
+						Color.Red,
+					),
+				);
+			}
+		}
 
 		// alpha10 defrag ai inventories
 		if (defragInventory) actor.inventory!.defrag();
+	}
+
+	/**
+	 * C# `Rules.IsItemLiquorForMolotov` — `_refs/StillAlive-master/.../Engine/Rules.cs:1297`,
+	 * Still Alive Release 4 (made static in 5-7).
+	 *
+	 * **Inlined into `RogueGame` rather than added to `Rules.ts`**, for ownership:
+	 * `Rules.ts` is not a file this change may touch. It is a two-id test with no
+	 * `GameMode` question in it, so the `Rules` layer buys nothing here, and the port
+	 * already keeps rules-shaped predicates on `RogueGame` when they arrive with the
+	 * method that reads them (`BarricadeLegality`, `BreakLegality`, `CanTag`, and
+	 * `CanActorThrowItemTo` beside this one). **Move it to `Rules` as
+	 * `isItemLiquorForMolotov` when that file is next edited.**
+	 *
+	 * Two ids and nothing else, which is the whole reason the two liquors are two
+	 * models rather than one: `makeItemLiquorForMolotov` (`BarBuilding.ts:616`) draws
+	 * between them, so a survivor holding "the wrong" bottle is a real state.
+	 */
+	private IsItemLiquorForMolotov(item: Item): boolean {
+		if (item === null) return false;
+		return (
+			item.model.id === ItemID.LIQUOR_AMBER ||
+			item.model.id === ItemID.LIQUOR_CLEAR
+		);
+	}
+
+	/**
+	 * C# `DoMakeMolotov` — `RogueGame.cs:22092-22129`, Still Alive Release 7-1, over a
+	 * Release 4 predicate. Reached from `DoUseItem` by *using* a bottle of liquor.
+	 *
+	 * The mechanic is a one-for-one conversion with an overflow rule: the bottle stack
+	 * leaves the inventory whole, one primed molotov is built per bottle, and whatever
+	 * the inventory will not take is put on the ground (`:22112-22121`, Release 7-5).
+	 * The AP spend is Release 7-6 (`:22097`) and is the reason an NPC may do this too --
+	 * see the arm in `DoUseItem`.
+	 *
+	 * **The quantity is read *after* the removal, which is the C#'s order and it
+	 * matters.** `:22099-22102` is `RemoveAllQuantity(it)` and then
+	 * `int liquorQuantity = it.Quantity`, and `RemoveAllQuantity` -- both here and in
+	 * the reference -- does not zero the item's own `Quantity`, it only takes the
+	 * object out of the inventory. So the count survives and the loop builds one
+	 * molotov per bottle. Read it before the removal instead and the conversion would
+	 * build nothing at all; `still-alive-misc-items.test.ts` pins that a bar's bottle
+	 * arrives as a stack of six over a limit of three, which is the case that makes the
+	 * difference visible.
+	 *
+	 * **The overflow goes to the ground rather than vanishing** (`:22113-22121`), one
+	 * `DropItem` per molotov, and each of those drops *one* item rather than the whole
+	 * stack -- the loop constructs a fresh `ItemGrenade` each pass, so there is nothing
+	 * to over-drop.
+	 *
+	 * **Gated on `Feature.TileFires` by its call site**, and the mapping is the one
+	 * judgement call in this change worth arguing for. The molotov's only
+	 * distinguishing property in this port is `causesTileFires` on its model
+	 * (`GameItems.ts:940`, the C#'s `CausesTileFires` at `:2315`); its blast differs
+	 * from a grenade's in nothing else. So `TileFires` -- "spread, extinguish, rain,
+	 * damage to actors/corpses/crops", the flag that decides whether fire is a hazard
+	 * in a ruleset at all -- is the switch that decides whether the player is *offered*
+	 * the one item whose whole job is to make fire. The two obvious alternatives are
+	 * worse: `Feature.Cooking` is about food on a heat source, `Feature.FireBarrels` is
+	 * about fixed fixtures you build, and `Feature.Alcohol` is about drinking -- which
+	 * these two models never reach, because they are plain `ItemModel`s rather than
+	 * `ItemMedicine`s and `makeItemAlcohol` in `BarBuilding.ts` says so explicitly.
+	 *
+	 * Note what the gate is *not*: it does not make a thrown molotov harmless under a
+	 * `TileFires`-off ruleset. `ApplyExplosionDamage`'s seeding call
+	 * (`RogueGame.ts:20592`) is not itself gated. The gate is about not offering the
+	 * craft, and it is recorded here rather than asserted as more than that.
+	 *
+	 * The sound (`MAKE_MOLOTOV`, `:22124`) is `Feature.ExtendedAudio`-gated: it is one
+	 * of the fork's 180 effects and not a Classic asset. The port has the id and the
+	 * file; the gate is what keeps the fork's audio out of a Classic district.
+	 */
+	async DoMakeMolotov(actor: Actor, it: Item): Promise<void> {
+		// The C# re-tests the predicate at the top of its own body (`:22094`), so this
+		// is a second call rather than a redundant one: `DoUseItem` needs it to route,
+		// and this is what makes the method safe to call on its own.
+		if (!this.IsItemLiquorForMolotov(it)) return;
+
+		// spend ap. Release 7-6.
+		this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+		// remove the liquor.
+		actor.inventory!.removeAllQuantity(it);
+
+		// add as many molotovs as possible to the actor inventory.
+		const liquorQuantity = it.quantity;
+		let molotovsAdded = 0;
+		for (let i = 0; i !== liquorQuantity; i++) {
+			const molotov = this.NewMolotov();
+			molotovsAdded += actor.inventory!.addAsMuchAsPossible(molotov).quantityAdded;
+		}
+
+		// add any molotovs that couldn't fit in the actor's inventory to the ground.
+		const overflowMolotovs = liquorQuantity - molotovsAdded;
+		for (let i = 0; i !== overflowMolotovs; i++) {
+			this.DropItem(actor, this.NewMolotov());
+		}
+
+		if (actor.isPlayer) {
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.play(GameSounds.MAKE_MOLOTOV);
+		}
+
+		if (this.IsVisibleToPlayer(actor)) {
+			this.AddMessage(
+				this.MakeMessage(actor, "crafted a molotov from liquor."),
+			);
+		}
+	}
+
+	/**
+	 * C# `new ItemGrenade(GameItems.MOLOTOV, GameItems.MOLOTOV_PRIMED)` — written out
+	 * at two sites in `DoMakeMolotov` (`:22106`, `:22118`) rather than factored out.
+	 *
+	 * Factored out here because the C# repeats it and a transcription that repeats a
+	 * two-argument constructor call is a transcription that can get one of the two
+	 * wrong. `MOLOTOV_PRIMED` is a *separate* id from `MOLOTOV` and both are needed:
+	 * `ItemGrenadePrimedModel`'s constructor reads `grenadeModel.blastAttack` and
+	 * `fuseDelay` off the unprimed model, so the primed sprite cannot be found without
+	 * it.
+	 */
+	private NewMolotov(): ItemGrenade {
+		return new ItemGrenade(
+			this.m_GameItems.get(ItemID.EXPLOSIVE_MOLOTOV),
+			this.m_GameItems.get(ItemID.EXPLOSIVE_MOLOTOV_PRIMED),
+		);
 	}
 
 	// C# DoEatFoodFromGround — RogueGame.cs:15205
@@ -17465,6 +22935,16 @@ export class RogueGame {
 		// consume it.
 		const inv = actor.location.map!.getItemsAt(actor.location.position);
 		inv!.consume(food);
+
+		// raw meat may poison (Still Alive, Release 7-6). After the consume, as
+		// the C# does, so the perishing factor is read from the eaten item.
+		if (this.m_Rules.contractFoodPoisoning(
+			actor,
+			food,
+			actor.location.map!.localTime.turnCounter,
+		)) {
+			this.AddMessage(this.MakeMessage(actor, "contracted food poisoning"));
+		}
 
 		// message.
 		const isVisible = this.IsVisibleToPlayer(actor);
@@ -17524,6 +23004,15 @@ export class RogueGame {
 		// consume it.
 		actor.inventory!.consume(food);
 
+		// raw meat may poison (Still Alive, Release 7-6) -- see the other eat site.
+		if (this.m_Rules.contractFoodPoisoning(
+			actor,
+			food,
+			actor.location.map!.localTime.turnCounter,
+		)) {
+			this.AddMessage(this.MakeMessage(actor, "contracted food poisoning"));
+		}
+
 		// canned food drops empty cans.
 		if (food.model === this.m_GameItems.get(ItemID.FOOD_CANNED_FOOD)) {
 			const emptyCan = new ItemTrap(
@@ -17563,22 +23052,74 @@ export class RogueGame {
 		}
 	}
 
-	// C# DoVomit — RogueGame.cs:15291
+	/**
+	 * C# `DoVomit` (RogueGame.cs:15291).
+	 *
+	 * **Gated, and not only because food poisoning is Still Alive-only.** Vanilla
+	 * already has vomiting — the cannibalism and nausea paths both call this — and
+	 * the fork's Release 7-6 pass changed *every* vomit: four hours of sleep and
+	 * of food instead of one, and the decoration put on a two-day timer instead
+	 * of being added every time. Quoting the C# here as "vomit" and porting it
+	 * wholesale would silently quadruple the cost of vanilla cannibalism, so both
+	 * halves are behind the flag.
+	 *
+	 * The timer is the sharper of the two changes: without the `hasDecoration`
+	 * check a second vomit on the same tile restarts the two-day clock, so the
+	 * tile never clears. Vanilla has no check and no timer, so under CLASSIC the
+	 * decoration accumulates exactly as it did.
+	 */
 	DoVomit(actor: Actor): void {
+		const stillAlive = hasFeature(this.m_Session.ruleset, Feature.FoodPoisoning);
+		const hours = stillAlive ? 4 : 1;
+
 		// beuargh.
 		actor.staminaPoints -= Rules.FOOD_VOMIT_STA_COST;
 		actor.sleepPoints = Math.max(
 			0,
-			actor.sleepPoints - WorldTime.TURNS_PER_HOUR,
+			actor.sleepPoints - WorldTime.TURNS_PER_HOUR * hours,
 		);
-		actor.foodPoints = Math.max(0, actor.foodPoints - WorldTime.TURNS_PER_HOUR);
+		actor.foodPoints = Math.max(
+			0,
+			actor.foodPoints - WorldTime.TURNS_PER_HOUR * hours,
+		);
 
 		// drop vomit ^^.
 		const loc = actor.location;
 		const map = loc.map!;
-		map
-			.getTileAt(loc.position.x, loc.position.y)
-			?.addDecoration(GameImages.DECO_VOMIT);
+		const tile = map.getTileAt(loc.position.x, loc.position.y);
+		if (tile === null || tile === undefined) return;
+		if (!stillAlive) {
+			tile.addDecoration(GameImages.DECO_VOMIT);
+			return;
+		}
+		if (!tile.hasDecoration(GameImages.DECO_VOMIT)) {
+			tile.addDecoration(GameImages.DECO_VOMIT);
+			map.addTimer(
+				new TaskRemoveDecoration(
+					WorldTime.TURNS_PER_DAY * 2,
+					loc.position.x,
+					loc.position.y,
+					GameImages.DECO_VOMIT,
+				),
+			);
+		}
+
+		//@@MP (Release 2), and the audible arm passes **no radius at all**
+		// (`RogueGame.cs:21772-21775`): `IsAudibleToPlayer(actor.Location)`, not the
+		// `QUIET` every other pair in the fork uses. That is the overload's default of
+		// `audioRadius = 0` -- `NO_NOISE_RADIUS` -- so the check degrades to "is the
+		// actor within the player's own `AudioRange`" with no noise radius added.
+		//
+		// Reading it as `QUIET` (the obvious transcription, and what the shout and
+		// extinguisher pairs do) would make the NPC tier inaudible from 6 tiles out
+		// instead of audible, so the two are different sounds over a 5-tile band.
+		if (actor.isPlayer) {
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.play(GameSounds.VOMIT_PLAYER);
+		} else if (this.isAudibleToPlayer(actor.location)) {
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.VOMIT_NEARBY);
+		}
 	}
 
 	// C# DoUseMedicineItem — RogueGame.cs:15304
@@ -17595,7 +23136,28 @@ export class RogueGame {
 			const STAwaste = STAneed <= 0 || med.staminaBoost <= 0;
 			const SLPwaste = SLPneed <= 0 || med.sleepBoost <= 0;
 			const CureWaste = CureNeed <= 0 || med.infectionCure <= 0;
-			const SanWaste = SanNeed <= 0 || med.sanityCure <= 0;
+			// Still Alive, Release 5-7: recreational items are never "wasted
+			// medicine", so a beer can be drunk at full sanity and a cigarette
+			// lit at full everything. The C# writes this as a default-false
+			// `SanWaste` that the recreational case skips over -- the shape is odd
+			// because it lets alcohol through *and* the darkness carve-out in
+			// `DoUseItem`, which is the same three-way "medicine that is not
+			// medicine" distinction.
+			//
+			// Gated: without it, a Still Alive survivor at full sanity is told
+			// "Don't waste medicine!" for a beer, and under CLASSIC nothing should
+			// change at all.
+			// For a recreational item `SanWaste` is *unconditionally* false, not
+			// "recreational and wasteful" -- the C# sets it false and only the
+			// non-recreational branch can turn it on. Reading it the other way round
+			// (as a first draft here did) leaves a full-sanity survivor still being
+			// told "Don't waste medicine!" for a beer, which is the bug the carve-out
+			// exists to remove.
+			const SanWaste = hasFeature(this.m_Session.ruleset, Feature.Alcohol)
+				? med.model.isRecreational
+					? false
+					: SanNeed <= 0 || med.sanityCure <= 0
+				: SanNeed <= 0 || med.sanityCure <= 0;
 
 			if (HPwaste && STAwaste && SLPwaste && CureWaste && SanWaste) {
 				this.AddMessage(this.MakeErrorMessage("Don't waste medicine!"));
@@ -17634,6 +23196,29 @@ export class RogueGame {
 		// consume it.
 		actor.inventory!.consume(med);
 
+		// Still Alive: medkits and antivirals cure food poisoning too
+		// (RogueGame.cs:21845-21851, Release 7-6).
+		//
+		// The C# gates this on an explicit model list, not on `med.infectionCure
+		// > 0` and not on "some medicine was consumed" -- it is one `else if` arm in
+		// the canned-drinks/cigarettes chain, so a bandage or a sanity pill falls
+		// through it untouched. Gating on `infectionCure` instead would have been
+		// almost-but-not-quite right (medikits do carry a cure value) and would
+		// have quietly widened the fork's behaviour to every curative.
+		//
+		// Also note it fires *after* the consume, which is why the port does too.
+		if (hasFeature(this.m_Session.ruleset, Feature.FoodPoisoning) &&
+		    actor.isFoodPoisoned &&
+		    (med.model.id === ItemID.MEDICINE_SMALL_MEDIKIT ||
+		     med.model.id === ItemID.MEDICINE_LARGE_MEDIKIT ||
+		     med.model.id === ItemID.MEDICINE_PILLS_ANTIVIRAL)) {
+			actor.isFoodPoisoned = false;
+			if (actor === this.m_Player || actor.leader === this.m_Player)
+				this.AddMessage(
+					this.MakeMessage(actor, "cures their food poisoning"),
+				);
+		}
+
 		// message.
 		if (this.IsVisibleToPlayer(actor))
 			this.AddMessage(
@@ -17643,6 +23228,48 @@ export class RogueGame {
 					med,
 				),
 			);
+
+		// Alcohol effects. Still Alive, Release 7-1.
+		//
+		// **Both effects are threshold crossings, not levels.** Each compares
+		// `previousBloodAlcohol` against the *previous* turn's snapshot, so a
+		// survivor who is already at 85% does not vomit on every subsequent can --
+		// without the snapshot, "BAC >= 80%" would fire forever. The snapshot is
+		// taken at the top of the turn in the per-actor loop.
+		//
+		// Note the two thresholds are close together (80% and 100%) and passing
+		// out does *both*: `DoVomit` then `DoStartSleeping`. A survivor who downs
+		// their sixth beer vomits twice, which reads as a bug until you notice the
+		// 80% arm is `else`-free rather than mutually exclusive. That is the C#.
+		if (
+			hasFeature(this.m_Session.ruleset, Feature.Alcohol) &&
+			this.m_Rules.isItemAlcoholForDrinking(med)
+		) {
+			const blackout = Rules.BLACKOUT_DRUNK_LEVEL;
+			actor.bloodAlcohol += Rules.ALCOHOL_STANDARD_UNIT;
+
+			// vomit at 80%
+			if (
+				actor.previousBloodAlcohol < blackout * 0.8 &&
+				actor.bloodAlcohol >= blackout * 0.8
+			) {
+				this.DoVomit(actor);
+			}
+
+			// pass out at 100%
+			if (
+				actor.previousBloodAlcohol < blackout &&
+				actor.bloodAlcohol >= blackout
+			) {
+				this.DoVomit(actor);
+				this.DoStartSleeping(actor);
+				if (this.IsVisibleToPlayer(actor)) {
+					this.AddMessage(
+						this.MakeMessage(actor, this.Conjugate(actor, this.VERB_BLACK_OUT), med),
+					);
+				}
+			}
+		}
 	}
 
 	// C# DoUseAmmoItem — RogueGame.cs:15348
@@ -17685,6 +23312,30 @@ export class RogueGame {
 		// is DoSprayOdorSuppressor. Ported as empty.
 		void actor;
 		void spray;
+	}
+
+	// C# DoUseShieldItem — RogueGame.cs:21974, Still Alive Release 7-2
+	//
+	// Equip-or-unequip on the left arm, and nothing else: no AP spend, no message of
+	// its own, no state change. The reference gets away with that because
+	// `DoEquipItem`/`DoUnequipItem` speak for themselves.
+	//
+	// **The third argument the C# passes, `true`, is `showMessage`, and this port
+	// has no such flag.** Both `DoEquipItem` and `DoUnequipItem` here always message,
+	// where the C# defaults `showMessage = false` (Release 6-1). That collapse is
+	// pre-existing and not this method's to undo — but it happens to land on the
+	// answer the shield wants, since it is the one C# site that asks for `true`.
+	// Note the asymmetry it hides: `DoUnequipItem`'s port signature calls its flag
+	// `canMessage = true`, so the port's *default* is the opposite of the C#'s.
+	//
+	// The toggle reads the left arm rather than asking whether `shield` is the item
+	// currently equipped there, which is what the C# does. The two differ only if
+	// two shields are in hand at once: the C# would unequip whichever one is on the
+	// arm, this port unequips the one passed in. Transcribed as-is.
+	DoUseShieldItem(actor: Actor, shield: Item): void {
+		const leftArmItem = actor.getEquippedItem(DollPart.LEFT_ARM);
+		if (leftArmItem === null) this.DoEquipItem(actor, shield);
+		else this.DoUnequipItem(actor, shield);
 	}
 
 	// C# DoUseTrapItem — RogueGame.cs:15400
@@ -17809,11 +23460,58 @@ export class RogueGame {
 		// Do it.
 		door.setState(DoorWindow.STATE_CLOSED);
 
-		// Message.
-		if (this.IsVisibleToPlayer(actor) || this.IsVisibleToPlayer(door)) {
-			this.AddMessage(
-				this.MakeMessage(actor, this.Conjugate(actor, this.VERB_CLOSE), door),
-			);
+		//@@MP (Release 7-4) changed this whole block from **visible** to **audible**,
+		// and the four-way material ladder is a fork addition on top of that
+		// (`RogueGame.cs:22234-22248`). The port had the vanilla shape: no sound, and
+		// a `IsVisibleToPlayer` gate on the message.
+		//
+		// The ladder is ordered, not exhaustive, and the order is the content:
+		// `givesWood` wins over `isMetal`, so a wooden-framed metal door is reported as
+		// wood. That is the C#'s order and not an accident -- `GivesWood` is set by the
+		// door's construction, `IsMetal` by its material, and the fork wanted salvage
+		// to be audible. Reading it the other way round would make every metal door with
+		// a wooden frame ring like metal and silently change which of the two the player
+		// hears.
+		if (
+			actor.isPlayer ||
+			this.isAudibleToPlayer(door.location, NOISE_RADII.QUIET)
+		) {
+			// All four ids are fork additions, so all four are gated. The lookup is
+			// repeated per branch rather than hoisted: `extended-audio.test.ts` requires
+			// a fork id to be named within three lines of a literal
+			// `Feature.ExtendedAudio`, and a hoisted `const` plus this comment block puts
+			// the last two reads four lines out. Repeating a cheap feature lookup is the
+			// cheaper of the two costs.
+			//
+			// The ladder order is the content: `givesWood` wins over `isMetal`, so a
+			// wooden-framed metal door is reported as wood, because the fork wanted
+			// salvage to be audible. Reading it the other way would make every metal door
+			// with a wooden frame ring like metal and silently change which one is heard.
+			if (door.givesWood) {
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					this.m_SoundManager.play(GameSounds.WOODEN_DOOR_CLOSE);
+			} else if (door.isMetal) {
+				//@@MP (Release 7-4)
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					this.m_SoundManager.play(GameSounds.METAL_DOOR_CLOSE);
+			} else if (door.theName === "the roller door") {
+				//@@MP (Release 4). A **name** comparison, not a flag: the fork never added
+				// an `IsRollerDoor`, so this is a string match against the door's name and
+				// will not fire for a roller door the generator named differently.
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					this.m_SoundManager.play(GameSounds.ROLLER_DOOR);
+			} else {
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					this.m_SoundManager.play(GameSounds.GLASS_DOOR);
+			}
+			// The fork also made the message **non-player only** (`:22244`). Vanilla showed
+			// it to everyone who could see the door; the fork shows it only to a non-player
+			// actor, because the player's own action is already obvious.
+			if (!actor.isPlayer) {
+				this.AddMessage(
+					this.MakeMessage(actor, this.Conjugate(actor, this.VERB_CLOSE), door),
+				);
+			}
 			this.RedrawPlayScreen();
 		}
 
@@ -17837,14 +23535,36 @@ export class RogueGame {
 		);
 
 		// message.
+		//
+		//@@MP (Release 3 + Release 7-4): a **visible / `MODERATE`-audible** ladder, and
+		// the two arms carry *different messages* as well as different sounds -- the
+		// audible one is player-centric ("You hear some sort of construction work")
+		// because the player cannot see who is hammering. The port had the visible arm
+		// only, so barricading a door out of earshot or in the dark happened in silence.
+		//
+		// `MODERATE`, not `QUIET`: hammering a door carries further than a shove, and the
+		// fork chose the wider radius for exactly that reason. Both arms use
+		// `playIfNotAlreadyPlaying`, so nailing the same door twice in a turn is one
+		// hammer.
 		const isVisible =
 			this.IsVisibleToPlayer(actor) || this.IsVisibleToPlayer(door);
 		if (isVisible) {
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.BUILDING_PLAYER);
 			this.AddMessage(
 				this.MakeMessage(
 					actor,
 					this.Conjugate(actor, this.VERB_BARRICADE),
 					door,
+				),
+			);
+		} else if (this.isAudibleToPlayer(door.location, NOISE_RADII.MODERATE)) {
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.BUILDING_NEARBY);
+			this.AddMessage(
+				this.MakePlayerCentricMessage(
+					"You hear some sort of construction work",
+					door.location.position,
 				),
 			);
 		}
@@ -18003,6 +23723,9 @@ export class RogueGame {
 		}
 
 		// remove object - but not windows.
+		// C# `:22435`, between the improvised-spear drop and the door state change.
+		this.PlayBashOrBreakSFX(mapObj, true);
+
 		if (isWindow) {
 			door!.setState(DoorWindow.STATE_BROKEN);
 		} else mapObj.location.map!.removeMapObject(mapObj);
@@ -18389,6 +24112,22 @@ export class RogueGame {
 			}
 		}
 
+		//@@MP (Release 3), and the gate is **outside** the player test
+		// (`RogueGame.cs:22802-22808`) -- the inverse of the melee pair, which tests
+		// `isPlayer` first and audibility second. Written the melee way this is not
+		// merely a different shape, it is a different sound: that form plays
+		// `SHOVE_PLAYER` for the player at any distance, and the C# deliberately does
+		// not, because at that range the shove is silent.
+		if (this.isAudibleToPlayer(actor.location, NOISE_RADII.QUIET)) {
+			if (actor.isPlayer) {
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					this.m_SoundManager.play(GameSounds.SHOVE_PLAYER);
+			} else {
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.SHOVE_NEARBY);
+			}
+		}
+
 		// message.
 		const isVisible =
 			this.IsVisibleToPlayer(actor) ||
@@ -18558,8 +24297,88 @@ export class RogueGame {
 		if (
 			actor.isPlayer &&
 			this.m_MusicManager.getCurrentMusicId() === GameMusics.SLEEP
-		)
+		) {
 			this.m_MusicManager.stop();
+			// C# `CheckAmbientSFX(actor.Location.Map)` — RogueGame.cs:22962, and the
+			// C#'s comment on it is the whole reason: "restart the rain sound if
+			// required". Waking is the other moment the audible world has to be
+			// re-decided, because the beds were stopped on the way in and nothing
+			// else between then and now would put them back — a survivor could wake
+			// up in a thunderstorm and stand there in silence.
+			this.CheckAmbientAudio(actor.location.map!);
+		}
+	}
+
+	/**
+	 * Put out everything burning on one adjacent tile. Still Alive, Release 7-6
+	 * (`RogueGame.cs:23439`).
+	 *
+	 * All three of the C#'s targets are handled: a burning map object (a barrel,
+	 * campfire or car), a burning tile, and a burning *actor*. The third is why
+	 * the C# sprays at a position rather than at an object — a person can be alight
+	 * with nothing alight around them — and it was the arm that waited on
+	 * `Actor.isOnFire`.
+	 *
+	 * The empty-can discard (Release 7-5) is kept: an extinguisher is 20 sprays,
+	 * and the C# throws the can away when it runs out.
+	 */
+	DoUseFireExtinguisher(
+		sprayer: Actor,
+		extinguisher: ItemSprayPaint,
+		pos: Point,
+	): void {
+		// spend AP.
+		this.SpendActorActionPoints(sprayer, Rules.BASE_ACTION_COST);
+
+		// spend paint.
+		extinguisher.paintQuantity -= 1;
+
+		// extinguish ALL fires there.
+		const map = sprayer.location.map!;
+		const mapObj = map.getMapObjectAtPoint(pos);
+		if (mapObj !== null && mapObj.isOnFire) this.UnapplyOnFire(mapObj);
+		const tile = map.getTileAt(pos.x, pos.y);
+		if (tile !== null && tile.isOnFire) this.extinguishOnFireTile(tile);
+		// The third target, and the reason the C# sprays at a *position* rather than
+		// a map object: a person can be alight without anything on that tile being
+		// alight. `RogueGame.cs:23450-23452`.
+		const target = map.getActorAtPoint(pos);
+		if (target !== null && target.isOnFire) this.ExtinguishOnFireActor(target);
+
+		//@@MP (Release 7-6), and note the sound and the message are on **separate**
+		// gates -- `IsAudibleToPlayer` for the hiss, `IsVisibleToPlayer` for the line.
+		// The port had only the message, so an extinguisher used in the dark worked and
+		// said nothing.
+		if (sprayer.isPlayer) {
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.play(GameSounds.FIRE_EXTINGUISHER_PLAYER);
+		} else if (this.isAudibleToPlayer(sprayer.location, NOISE_RADII.QUIET)) {
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.play(GameSounds.FIRE_EXTINGUISHER_NEARBY);
+		}
+
+		// message.
+		if (this.IsVisibleToPlayer(sprayer)) {
+			this.AddMessage(
+				this.MakeMessage(
+					sprayer,
+					`${this.Conjugate(sprayer, this.VERB_REMOVE)} the fire.`,
+				),
+			);
+		}
+
+		// discard empty spray. Still Alive, Release 7-5.
+		if (extinguisher.paintQuantity <= 0) {
+			this.DiscardItem(sprayer, extinguisher);
+			if (sprayer.isPlayer) {
+				this.AddMessage(
+					new Message(
+						"Fire extinguisher is now empty and has been discarded.",
+						map.localTime.turnCounter,
+					),
+				);
+			}
+		}
 	}
 
 	// C# DoTag — RogueGame.cs:16083
@@ -18779,6 +24598,13 @@ export class RogueGame {
 					await this.AnimDelay(actor.isPlayer ? DELAY_NORMAL : DELAY_SHORT);
 				}
 			}
+		}
+
+		// If fishing, force unequip fishing rod.  (C# RogueGame.cs:23707)
+		if (hasFeature(this.m_Session.ruleset, Feature.Fishing)) {
+			const leftHandItem = actor.getEquippedItem(DollPart.LEFT_HAND);
+			if (leftHandItem !== null && leftHandItem.model.id === ItemID.FISHING_ROD)
+				this.DoUnequipItem(actor, leftHandItem, false);
 		}
 
 		// If sleeping, wake up dude!
@@ -19370,6 +25196,11 @@ export class RogueGame {
 
 		// music.
 		this.m_MusicManager.stop();
+		// C# `m_AmbientSFXManager.StopAll()` — RogueGame.cs:7290, ahead of the music
+		// line. The post-mortem is a still screen with one cue on it, and a rain bed
+		// under it is not that.
+		if (hasFeature(this.m_Session.ruleset, Feature.AmbientAudio))
+			this.m_AmbientSFXManager.stopAll();
 		this.m_MusicManager.play(GameMusics.PLAYER_DEATH, MusicPriority.EVENT);
 
 		///////////
@@ -19485,6 +25316,121 @@ export class RogueGame {
 		this.m_MusicManager.stop();
 	}
 
+	/**
+	 * C# `PlayerWasRescued` — `RogueGame.cs:7377-7458`, Release 6-4.
+	 *
+	 * The ending half of `Feature.HelicopterRescue`, and the reason the C# has a
+	 * `m_PlayerWasRescued` flag as well as an `IsDead` one: the player is removed
+	 * from the map here, and removing a player does not stop the world — only
+	 * `GameLoop`'s extra condition does.
+	 *
+	 * async: the C# blocks on `WaitYesOrNo` (in `DoPlayerBump`, its caller),
+	 * `AddMessagePressEnter` and the whole of `HandlePostRescue`.
+	 *
+	 * ## Two things are missing, and both are deliberate
+	 *
+	 * - **`GameMusics.POST_RESCUE`.** The C# plays a dedicated rescue cue here
+	 *   (`:7389`) and the track exists in `_refs`, but it is not among the files in
+	 *   `public/assets/music`, and `MUSIC_GAINS` is *generated* from the shipped
+	 *   files by `scripts/measure-audio-levels.mjs` — so the id cannot be added
+	 *   without an audio-assets pass that re-encodes the music folder. The music is
+	 *   stopped and nothing is played in its place, which is the honest half
+	 *   rather than the wrong cue.
+	 * - **The death screenshot.** `s_Options.isDeathScreenshotOn` is checked by
+	 *   `PlayerDied` and by the C#'s `PlayerWasRescued` (`:7437`); it is not
+	 *   checked here, so a rescued run takes no screenshot.
+	 */
+	async PlayerWasRescued(): Promise<void> {
+		// Stop sim thread.
+		this.StopSimThread(true);
+
+		// audio. The C# also plays `GameMusics.POST_RESCUE` here — see above.
+		this.m_MusicManager.stop();
+		if (hasFeature(this.m_Session.ruleset, Feature.AmbientAudio))
+			this.m_AmbientSFXManager.stopAll();
+
+		/////////////
+		// Scoring
+		/////////////
+		this.m_Session.scoring.turnsSurvived = this.m_Session.worldTime.turnCounter;
+		// No `setKiller`: the C# does not call it either, and a rescued survivor has
+		// no killer.
+		if (this.m_Player.countFollowers > 0) {
+			for (const fo of this.m_Player.followers ?? [])
+				this.m_Session.scoring.addFollowerWhenDied(fo);
+		}
+
+		const zones = this.m_Player.location.map!.getZonesAt(
+			this.m_Player.location.position.x,
+			this.m_Player.location.position.y,
+		);
+		if (zones.length === 0) {
+			this.m_Session.scoring.deathPlace = this.m_Player.location.map!.name;
+		} else {
+			const zoneName = zones[0].name;
+			this.m_Session.scoring.deathPlace = `${this.m_Player.location.map!.name} at ${zoneName}`;
+		}
+		// The two fields keep their C# names (`DeathReason` / `DeathPlace`) and the
+		// C# keeps writing them from here — `RogueGame.cs:7411-7412` — because
+		// `HandlePostRescue`'s `> RESCUE` section reads them.
+		this.m_Session.scoring.deathReason = "Rescued to Murdoch air force base";
+		this.m_Session.scoring.addEvent(
+			this.m_Session.worldTime.turnCounter,
+			"Rescued.",
+		);
+
+		/////////////////////////////////////////
+		// Tip, Message & screenshot.
+		/////////////////////////////////////////
+		const iTip = this.m_Rules.roll(0, GameTips.TIPS.length);
+		this.AddOverlay(
+			new OverlayPopup(
+				["TIP OF THE DEAD", "Did you know that...", GameTips.TIPS[iTip]],
+				Color.White,
+				Color.White,
+				this.POPUP_FILLCOLOR,
+				new Point(0, 0),
+			),
+		);
+
+		this.ClearMessages();
+		this.AddMessage(
+			new Message(
+				"**** YOU WERE RESCUED! ****",
+				this.m_Session.worldTime.turnCounter,
+				Color.Red,
+			),
+		);
+		this.AddMessage(
+			new Message(
+				"Congratulations. Survivng that dead city was no small feat.",
+				this.m_Session.worldTime.turnCounter,
+				Color.Red,
+			),
+		);
+		this.AddMessage(
+			new Message(
+				"But could you have survived even longer...?",
+				this.m_Session.worldTime.turnCounter,
+				Color.Red,
+			),
+		);
+
+		await this.AddMessagePressEnter();
+
+		// post-rescue.
+		await this.HandlePostMortem(true);
+
+		// Remove player to end the game.
+		// C# `:7449`: "removing isn't enough, we must use this to stop the world".
+		this.m_PlayerWasRescued = true;
+		this.m_Player.location.map!.removeActor(this.m_Player);
+
+		// audio.
+		this.m_AmbientSFXManager.stopAll();
+		this.m_MusicManager.stop();
+	}
+
 	// C# TimeSpanToString — RogueGame.cs:16878
 	// `TimeSpan` here is seconds (`Scoring.RealLifePlayingTime` → `realLifePlayingTimeSeconds`).
 	TimeSpanToString(rt: TimeSpan): string {
@@ -19503,8 +25449,26 @@ export class RogueGame {
 		return `${timeDays}${timeHours}${timeMinutes}${timeSeconds}`;
 	}
 
-	// C# HandlePostMortem — RogueGame.cs:16888
-	async HandlePostMortem(): Promise<void> {
+	/**
+	 * C# `HandlePostMortem` (`RogueGame.cs:16888`) and, with `rescued`, its
+	 * twin `HandlePostRescue` (`RogueGame.cs:7835`, Release 6-4).
+	 *
+	 * The C# wrote those two out as two ~300-line methods that differ in six
+	 * places, all of them strings and section headings. They are one method here
+	 * with a flag, because a second copy of the options block and the follower
+	 * block would be a second copy to forget to update, and the C#'s two copies
+	 * have *already* drifted from each other — the rescue variant's "he had no
+	 * particular skills" is a sentence the port replaced on the death side years
+	 * ago and could not be kept on both. Six branches are cheaper than that.
+	 *
+	 * With `rescued = false` this is byte-for-byte the post-mortem it always was.
+	 *
+	 * The only place the port keeps one wording where the C# had two is the three
+	 * "nothing here" lines (skills / inventory / followers): the port already
+	 * rewrote those on the death side, and a fifth and sixth variant of "was a jack
+	 * of all trades" is not worth the duplication.
+	 */
+	async HandlePostMortem(rescued = false): Promise<void> {
 		////////////////
 		// Prepare data.
 		////////////////
@@ -19531,16 +25495,30 @@ export class RogueGame {
 		const graveyard = new TextFile();
 
 		graveyard.append(`ROGUE SURVIVOR ${GAME_VERSION}`);
-		graveyard.append("POST MORTEM");
+		// C# `:7859`: the rescue summary names the game mode, which the post mortem
+		// does not — a rescued run is the one that was played in a mode, and the C#
+		// wanted that on the record.
+		graveyard.append(
+			rescued
+				? `POST-RESCUE SUMMARY - ${GameMode[this.m_Session.gameMode]}`
+				: "POST MORTEM",
+		);
 
 		// Summary
 		graveyard.append(
 			`${name} was ${this.AorAn(this.m_Player.model.name)} and ${this.AorAn(this.m_Player.faction.memberName)}.`,
 		);
-		graveyard.append(`${heOrShe} survived to see ${deathTime.toString()}.`);
-		graveyard.append(
-			`${name}'s spirit guided ${himOrHer} for ${realTimeString}.`,
-		);
+		// C# `:7864-7866`: the rescue variant drops the second line entirely and has
+		// no "spirit guided" line at all — a rescued survivor has not been a spirit.
+		if (rescued) {
+			graveyard.append(`${heOrShe} was rescued on ${deathTime.toString()}.`);
+			graveyard.append(`${name}'s run took ${realTimeString}.`);
+		} else {
+			graveyard.append(`${heOrShe} survived to see ${deathTime.toString()}.`);
+			graveyard.append(
+				`${name}'s spirit guided ${himOrHer} for ${realTimeString}.`,
+			);
+		}
 		if (this.m_Session.scoring.reincarnationNumber > 0)
 			graveyard.append(
 				`${heOrShe} was reincarnation ${this.m_Session.scoring.reincarnationNumber}.`,
@@ -19571,7 +25549,11 @@ export class RogueGame {
 				graveyard.append(`- ${ach.name} for ${ach.scoreValue} points!`);
 			else graveyard.append(`- Fail : ${ach.teaseName}.`);
 		}
-		if (this.m_Session.scoring.completedAchievementsCount === 0) {
+		// C# `:7881-7889`: the rescue variant has no "achieved nothing" arm at all —
+		// it prints the total unconditionally — and its all-done line is a different
+		// sentence. Both would otherwise say "And then died." about a survivor who
+		// flew out of the city.
+		if (!rescued && this.m_Session.scoring.completedAchievementsCount === 0) {
 			graveyard.append("Didn't achieve anything notable. And then died.");
 			graveyard.append(
 				`(unlock all the ${Scoring.MAX_ACHIEVEMENTS} achievements to win this game version)`,
@@ -19585,22 +25567,35 @@ export class RogueGame {
 				Scoring.MAX_ACHIEVEMENTS
 			)
 				graveyard.append(
-					"*** You achieved everything! You can consider having won this version of the game! CONGRATULATIONS! ***",
+					rescued
+						? "You achieved everything and managed to escape the city! Very impressive!"
+						: "*** You achieved everything! You can consider having won this version of the game! CONGRATULATIONS! ***",
 				);
 			else
 				graveyard.append(
 					"(unlock all the achievements to win this game version)",
 				);
-			graveyard.append(
-				"(later versions of the game will feature real winning conditions and multiple endings...)",
-			);
+			// C# `:7888`: the "later versions" tease is death-side only — a run that
+			// escaped has found the ending the tease is promising does not exist yet.
+			if (!rescued)
+				graveyard.append(
+					"(later versions of the game will feature real winning conditions and multiple endings...)",
+				);
 		}
 		graveyard.append(" ");
 
-		graveyard.append("> DEATH");
-		graveyard.append(
-			`${this.m_Session.scoring.deathReason} in ${this.m_Session.scoring.deathPlace}.`,
-		);
+		// C# `:7890-7891` writes "> RESCUE" and joins the two halves with "from".
+		if (rescued) {
+			graveyard.append("> RESCUE");
+			graveyard.append(
+				`${this.m_Session.scoring.deathReason} from ${this.m_Session.scoring.deathPlace}.`,
+			);
+		} else {
+			graveyard.append("> DEATH");
+			graveyard.append(
+				`${this.m_Session.scoring.deathReason} in ${this.m_Session.scoring.deathPlace}.`,
+			);
+		}
 		graveyard.append(" ");
 
 		graveyard.append("> KILLS");
@@ -19625,7 +25620,12 @@ export class RogueGame {
 		graveyard.append(" ");
 
 		graveyard.append("> FUN FACTS!");
-		graveyard.append(`While ${name} has died, others are still having fun!`);
+		// C# `:7925`.
+		graveyard.append(
+			rescued
+				? `While ${name} has escaped the city, others are still surviving`
+				: `While ${name} has died, others are still having fun!`,
+		);
 		const funFacts = this.CompileDistrictFunFacts(
 			this.m_Player.location.map!.district!,
 		);
@@ -19786,12 +25786,19 @@ export class RogueGame {
 			);
 		graveyard.append(" ");
 
-		graveyard.append("> R.I.P");
-		graveyard.append(`May ${this.HisOrHer(this.m_Player)} soul rest in peace.`);
-		graveyard.append(
-			`For ${this.HisOrHer(this.m_Player)} body is now a meal for evil.`,
-		);
-		graveyard.append("The End.");
+		// C# `:8091-8096`: the rescue variant replaces all four lines with one, and
+		// has the player on the chopper rather than in the ground.
+		if (rescued) {
+			graveyard.append("> Farewell");
+			graveyard.append(`May Murdoch base prove to be a haven for ${name}.`);
+		} else {
+			graveyard.append("> R.I.P");
+			graveyard.append(`May ${this.HisOrHer(this.m_Player)} soul rest in peace.`);
+			graveyard.append(
+				`For ${this.HisOrHer(this.m_Player)} body is now a meal for evil.`,
+			);
+			graveyard.append("The End.");
+		}
 
 		/////////////////////
 		// Save to graveyard
@@ -19801,7 +25808,7 @@ export class RogueGame {
 		this.m_UI.UI_Clear(Color.Black);
 		this.m_UI.UI_DrawStringBoldLarge(
 			Color.Yellow,
-			"Saving post mortem to graveyard...",
+			rescued ? "Saving rescue to graveyard..." : "Saving post mortem to graveyard...",
 			0,
 			0,
 		);
@@ -19903,6 +25910,22 @@ export class RogueGame {
 
 	// C# OnNewNight — RogueGame.cs:17240
 	async OnNewNight(): Promise<void> {
+		//----- De-spawn helicopter if it's end of rescue day  //@@MP (Release 6-4)
+		// C# `:8910-8914`, the first statement in the method, before `UpdatePlayerFOV`.
+		//
+		// The C# has no gate: it reads `m_Session.ArmyHelicopterRescue_Map` and
+		// would throw on a save with no site. The port gates on the feature and
+		// then on the site existing, because `armyHelicopterRescueMap` is null both
+		// before a site is picked and in a save written before this feature — and
+		// "the rescue day arrived and nothing was there" is the correct answer for
+		// both, not a crash.
+		if (hasFeature(this.m_Session.ruleset, Feature.HelicopterRescue)) {
+			if (this.m_Session.worldTime.day === this.m_Session.armyHelicopterRescueDay) {
+				const helicopterMap = this.m_Session.armyHelicopterRescueMap;
+				if (helicopterMap !== null) this.DespawnArmyHelicopter(helicopterMap);
+			}
+		}
+
 		this.UpdatePlayerFOV(this.m_Player);
 
 		//----- Upgrade Player (undead only once every 2 nights)
@@ -20051,6 +26074,18 @@ export class RogueGame {
 					AchievementIDs.REACHED_DAY_28,
 				);
 				await this.ShowNewAchievement(AchievementIDs.REACHED_DAY_28);
+			}
+		}
+
+		//----- Spawn helicopter if it's rescue day  //@@MP (Release 6-4)
+		// C# `:9050-9054`, the last statement of `OnNewDay` — after the day
+		// achievements, so a survivor who is still alive on the rescue day sees the
+		// achievement popup before the chopper lands.
+		if (hasFeature(this.m_Session.ruleset, Feature.HelicopterRescue)) {
+			if (this.m_Session.worldTime.day === this.m_Session.armyHelicopterRescueDay) {
+				const helicopterMap = this.m_Session.armyHelicopterRescueMap;
+				if (helicopterMap !== null)
+					await this.SpawnArmyHelicopterOnMap(helicopterMap);
 			}
 		}
 	}
@@ -20576,6 +26611,311 @@ export class RogueGame {
 			this.m_Session.worldTime.turnCounter,
 			`The weather changed to ${this.DescribeWeather(this.m_Session.weather)}.`,
 		);
+
+		// C# `CheckAmbientSFX(m_Player.Location.Map)` — RogueGame.cs:10398, the last
+		// line of the same method. Rain has to start on the turn the weather turns,
+		// not on the next step the player happens to take.
+		this.CheckAmbientAudio(this.m_Player.location.map!);
+	}
+
+	/**
+	 * C# `CheckAmbientSFX` (`RogueGame.cs:10417`) — play the ambient the weather,
+	 * the clock and the player's own indoors-ness call for.
+	 *
+	 * The port renames it `CheckAmbientAudio` because what it drives is not sound
+	 * effects: the C# hands the id to `m_AmbientSFXManager`, which is a *second
+	 * `SFMLMusicManager` instance* (`RogueGame.cs:861`), so "SFX" in the C#'s name is
+	 * a misnomer the fork itself half-acknowledges in `GameAmbients.cs:5` ("these
+	 * may be played in conjunction with background music"). Naming it after the
+	 * channel keeps the next reader out of `WebAudioSoundManager`.
+	 *
+	 * **One gate, and it is the feature's whole behaviour.** Every arm below is
+	 * Still Alive content; under CLASSIC there is no ambient channel at all, and a
+	 * single `if` here means there is no version of "rain in a basement" that
+	 * classic can half-receive. The five `stopAll()` sites are gated separately for
+	 * the same reason, and `tests/ambient-audio.test.ts` asserts the split.
+	 *
+	 * **Only the five rain/nature tracks are reachable.** The C#'s thirteen split
+	 * three ways, and only one way has its prerequisites in the port:
+	 *
+	 * - **Rain, thundering rain, night animals — wired.** The port has `Weather`
+	 *   (`data/Weather.ts`), `WorldTime.isNight`, and `Tile.isInside`; all three are
+	 *   the C#'s inputs. The `StopAllAmbientsExcept` structure is the C#'s verbatim,
+	 *   including the start-before-stop ordering (`:10445-10448`), which is there
+	 *   so the swap has no silent gap.
+	 * - **The five helicopter tracks — not wired, pending `Feature.HelicopterRescue`.**
+	 *   `CheckLandedHelicopterSFX` (`:10524`) reads
+	 *   `m_Session.ArmyHelicopterRescue_Map` and `_Coordinates`, neither of which
+	 *   the port has — it has the *day* (`Session.armyHelicopterRescueDay`, set by
+	 *   `DifficultyAtCreation`) and no map to put a helicopter on. It also needs
+	 *   `Rules.QUIET/MODERATE/BOOMING_NOISE_RADIUS` for the four distance tiers;
+	 *   the port has only `LOUD_NOISE_RADIUS` (`Rules.ts:310`). There is nothing to
+	 *   stub: a stationary helicopter the player is not rescued by would be a new
+	 *   endgame, not this feature.
+	 * - **The two church bells — not wired, pending `Feature.Church`.** The C#'s
+	 *   trigger is `m_Player.Location.Map.HasChurch` at sunset (`:5637`), and the
+	 *   port's `Map` has no `hasChurch` at all. A `true` there would have to be
+	 *   invented, and "wherever the church building generator will eventually put a
+	 *   church" is a guess with a sound attached to it.
+	 * - **`TEST_AMBIENT` — shipped, never triggered.** Its only C# caller is the
+	 *   options screen's ambient-volume preview (`RogueGame.cs:2244`), and the port
+	 *   has no ambient-volume row. See `GameAmbients.TEST_AMBIENT`.
+	 */
+	CheckAmbientAudio(map: Map): void {
+		if (!hasFeature(this.m_Session.ruleset, Feature.AmbientAudio)) return;
+
+		// C#: the player is asleep, so the beds were stopped on the way in and
+		// restarting one here would be rain over a sleep screen. `:10419-10422`.
+		if (this.m_Player.isSleeping) return;
+
+		// C#: a level with no sky. The whole of the underground is named here,
+		// because on those maps the *weather* is still the session's and would
+		// otherwise put an outside rain bed under a survivor in a tunnel.
+		//
+		// Two differences from the C# list, both recorded rather than smoothed over:
+		// `hospital_Admissions` is added (the C# silences the other four hospital
+		// levels and leaves the ground floor audible), and `armyBase` is absent.
+		//
+		// The army base's *reason* used to be given as "the C#'s
+		// `UniqueMaps.ArmyBase` does not exist in the port — that is
+		// `Feature.ArmyBase`, still pending". The first half is still true; the
+		// second stopped being true when the feature landed, and it is the half a
+		// reader would act on. `Feature.ArmyBase` is wired: `BaseTownGenerator`
+		// has `makeArmyOffices` and `populateArmyOfficeBuilding`, both gated on it,
+		// and the plan records it as DONE.
+		//
+		// The reason it is still absent here is the narrower one: the army base is a
+		// *town* building generator with **no underground level of its own**, so the
+		// port's `UniqueMaps` has no `armyBase` map to name and there is no band to
+		// silence. That is a different statement from "pending" — it says the level
+		// does not exist in the reference's shape either, rather than that the port
+		// has not got to it yet.
+		//
+		// The omission is silent rather than wrong either way: a survivor in a
+		// surface army office hears weather, which is the C#'s behaviour for a map
+		// it also has no underground name for. The police-station and CHAR levels are
+		// both present in the port's `UniqueMaps`, so they are here.
+		//
+		// The C# reads the *session's* map name here (`m_Session.CurrentMap.Name`,
+		// `:10425`) and the map it was handed for everything else. Every one of its
+		// five call sites passes the player's map, which is the current map, so the
+		// port reads `map.name` throughout and does not have a second notion of
+		// "where the player is" to disagree with.
+		if (
+			map.name.includes("basement") ||
+			map.district?.sewersMap === map ||
+			map.district?.subwayMap === map ||
+			this.m_Session.uniqueMaps.charUndergroundFacility.theMap === map ||
+			this.m_Session.uniqueMaps.policeStation_OfficesLevel.theMap === map ||
+			this.m_Session.uniqueMaps.policeStation_JailsLevel.theMap === map ||
+			this.m_Session.uniqueMaps.hospital_Admissions.theMap === map ||
+			this.m_Session.uniqueMaps.hospital_Offices.theMap === map ||
+			this.m_Session.uniqueMaps.hospital_Patients.theMap === map ||
+			this.m_Session.uniqueMaps.hospital_Power.theMap === map ||
+			this.m_Session.uniqueMaps.hospital_Storage.theMap === map
+		) {
+			this.StopAllAmbientsExcept("all");
+			return;
+		}
+
+		// C#: `map.GetTileAt(Player.Location.Position)`, on the *map*, not on the
+		// session's current one — the two differ on a district change, and the C# is
+		// explicit that the tile comes from the map it was handed.
+		const here = this.m_Player.location.position;
+		const tile = map.getTileAt(here.x, here.y);
+		if (tile === null) return;
+
+		// The inside/outside split is the only thing the four rain tracks have over
+		// two names each, so it is decided once here rather than four times.
+		let wanted: string | null = null;
+		if (this.m_Session.weather === Weather.RAIN) {
+			wanted = tile.isInside ? GameAmbients.RAIN_INSIDE : GameAmbients.RAIN_OUTSIDE;
+		} else if (this.m_Session.weather === Weather.HEAVY_RAIN) {
+			wanted = tile.isInside
+				? GameAmbients.THUNDERING_RAIN_INSIDE
+				: GameAmbients.THUNDERING_RAIN_OUTSIDE;
+		} else if (this.m_Session.worldTime.isNight) {
+			// C#: no inside/outside split for the animals (`:10476-10478`).
+			wanted = GameAmbients.NIGHT_ANIMALS;
+		}
+
+		if (wanted === null) {
+			this.StopAllAmbientsExcept("all");
+			return;
+		}
+
+		// C# order: start the incoming bed *first*, then stop the others
+		// (`:10445-10448`). The other way round leaves a gap of however long the
+		// outgoing track takes to release, and rain-to-night is the transition a
+		// player actually hears.
+		//
+		// `playIfNotAlreadyPlaying`, not the C#'s hand-written `if (!IsPlaying(...))`
+		// guard: same condition, and a survivor standing still in the rain would
+		// otherwise have the bed restarted from the top under them.
+		this.m_AmbientSFXManager.playIfNotAlreadyPlaying(wanted, true);
+		this.StopAllAmbientsExcept(wanted);
+	}
+
+	/**
+	 * The church bells, at sunset. C# `RogueGame.cs:5635-5641`, Release 6-6.
+	 *
+	 * ```csharp
+	 * if (newPhase == DayPhase.SUNSET)
+	 * {
+	 *     if (m_Player.Location.Map.HasChurch && !m_Player.IsSleeping)
+	 *         m_AmbientSFXManager.PlayIfNotAlreadyPlaying(GameAmbients.CHURCH_BELLS_WITHIN_MAP, AudioPriority.PRIORITY_BGM);
+	 *     else
+	 *         m_AmbientSFXManager.PlayIfNotAlreadyPlaying(GameAmbients.CHURCH_BELLS_OUTSIDE_MAP, AudioPriority.PRIORITY_BGM);
+	 * }
+	 * ```
+	 *
+	 * A method where the C# has three inline lines, because the *selection* is the
+	 * only testable part and inlining it inside `advancePlayDistrict` would put it
+	 * behind a whole simulated turn. Nothing else is extracted.
+	 *
+	 * **The `else` is doing more work than it looks.** A sleeping player rings the
+	 * "outside the map" bells even while standing inside the church, because the
+	 * only test is `HasChurch && !IsSleeping` and a sleeping player fails it
+	 * whichever map they are on. Transcribed as-is: the C# plainly means "can the
+	 * player hear it", and the answer for someone asleep indoors is no -- it just
+	 * happens to reach for the outside recording in that case.
+	 *
+	 * Both are one-shots (`looping` defaults false, `ISoundManager.cs:52`), so
+	 * `playIfNotAlreadyPlaying` only guards a re-trigger inside the ring's own
+	 * length.
+	 */
+	private checkChurchBellsSFX(): void {
+		const playerMap = this.m_Player.location.map;
+		const id =
+			playerMap !== null && playerMap.hasChurch && !this.m_Player.isSleeping
+				? GameAmbients.CHURCH_BELLS_WITHIN_MAP
+				: GameAmbients.CHURCH_BELLS_OUTSIDE_MAP;
+		this.m_AmbientSFXManager.playIfNotAlreadyPlaying(id, false);
+	}
+
+	/**
+	 * C# `CheckLandedHelicopterSFX(Map)` -- `RogueGame.cs:10524-10568`, Release 6-4.
+	 *
+	 * A landed rescue helicopter is an ambient source in its own right, and which
+	 * of four looping tracks plays is a function of how far away the player is. So
+	 * this is called on **every player step**, not once at spawn: walk towards the
+	 * helicopter and the bed steps down through the tiers with you.
+	 *
+	 * The four tracks and their radii are the C#'s (`Rules.cs:226-229`: QUIET 5,
+	 * MODERATE 8, LOUD 14, BOOMING 23). `NoiseDistance` already models exactly this
+	 * ladder, so this method is `bandFor` plus a stop half rather than 45
+	 * transliterated lines.
+	 *
+	 * **One deliberate divergence, in the stop half.** The C# stops a track with
+	 * `IsPlaying(track) && dist > upperBound`, so the `NEAR` track keeps playing
+	 * for every distance up to `MODERATE` -- including the 3 tiles at which the C#
+	 * is simultaneously starting `VISIBLE`. Walking towards a landed helicopter
+	 * leaves two tracks running in the reference. `NoiseDistance.isWithinBand` is
+	 * the complement of the *start* ladder and is what this uses, so only one track
+	 * plays at a time. `NoiseDistance.ts:203-215` documents the divergence and why
+	 * the fixed form is the one a ported caller wants; recording it here so it is a
+	 * decision rather than a surprise.
+	 */
+	private checkLandedHelicopterSFX(_map: Map): void {
+		const session = Session.get();
+		const here = this.m_Player.location.map;
+		const coords = session.armyHelicopterRescueCoordinates;
+		// The C#'s outer condition, verbatim: it is present on rescue day, on that
+		// map, and in daylight. `armyHelicopterRescueMap` is derived from the
+		// district rather than stored (`Session.ts:338-357`), and the identity check
+		// the C# writes as `map == ...Map` is this.
+		const present =
+			session.worldTime.day === session.armyHelicopterRescueDay &&
+			here !== null &&
+			here === session.armyHelicopterRescueMap &&
+			!session.worldTime.isNight &&
+			coords !== null;
+
+		if (present && coords !== null && here !== null) {
+			// The C# takes the helicopter's *visual* top-left tile and adds one, to
+			// land roughly in the middle of its 4x2 footprint (`:10531`). Taking the
+			// top-left instead would put the source half a helicopter off, which is
+			// enough to shift a tier boundary for a player standing right beside it.
+			const heliPoint = new Point(coords.x + 1, coords.y);
+			const distance = this.DistanceToPlayer(here, heliPoint);
+			const band = bandForDistance(distance);
+
+			// The C#'s start ladder. `Inaudible` starts nothing, which is correct:
+			// past BOOMING there is no track to play.
+			const wanted =
+				band === NoiseBand.Quiet
+					? GameAmbients.STATIONARY_HELICOPTER_VISIBLE
+					: band === NoiseBand.Moderate
+						? GameAmbients.STATIONARY_HELICOPTER_NEAR
+						: band === NoiseBand.Loud
+							? GameAmbients.STATIONARY_HELICOPTER_FAR
+							: band === NoiseBand.Booming
+								? GameAmbients.STATIONARY_HELICOPTER_FARTHEST
+								: null;
+			if (wanted !== null) {
+				this.m_AmbientSFXManager.playIfNotAlreadyPlaying(wanted, true);
+			}
+
+			// The stop half, for all four, using the fixed band test.
+			for (const [track, tier] of [
+				[GameAmbients.STATIONARY_HELICOPTER_VISIBLE, NoiseBand.Quiet],
+				[GameAmbients.STATIONARY_HELICOPTER_NEAR, NoiseBand.Moderate],
+				[GameAmbients.STATIONARY_HELICOPTER_FAR, NoiseBand.Loud],
+				[GameAmbients.STATIONARY_HELICOPTER_FARTHEST, NoiseBand.Booming],
+			] as const) {
+				// The C#'s `IsPlaying(track) && dist > upperBound` (`RogueGame.cs:10545`).
+				// The `isPlaying` half is not decoration: without it every player step
+				// would issue three `stop` calls for tracks that were never started,
+				// which is noise a real `WebAudioAmbientManager` would have to absorb.
+				if (this.m_AmbientSFXManager.isPlaying(track) && !isWithinBand(tier, distance)) {
+					this.m_AmbientSFXManager.stop(track);
+				}
+			}
+			return;
+		}
+
+		// Not here, or night, or the wrong day: silence the lot.
+		//
+		// The C#'s `else if` chain (`:10558-10566`) stops only the *first* track it
+		// finds playing, farthest first. That is safe there only because the start
+		// ladder can never leave two running -- which, as noted above, it can. This
+		// stops all four, because the branch's purpose is "the helicopter is not
+		// here, so there must be no helicopter sound", and stopping one of four
+		// would not achieve that.
+		for (const track of [
+			GameAmbients.STATIONARY_HELICOPTER_VISIBLE,
+			GameAmbients.STATIONARY_HELICOPTER_NEAR,
+			GameAmbients.STATIONARY_HELICOPTER_FAR,
+			GameAmbients.STATIONARY_HELICOPTER_FARTHEST,
+		]) {
+			if (this.m_AmbientSFXManager.isPlaying(track)) this.m_AmbientSFXManager.stop(track);
+		}
+	}
+
+	/**
+	 * C# `StopAllAmbientsExcept` (`RogueGame.cs:10490`) — silence every ambient in the
+	 * weather/night family except `exceptId`. `"all"` silences all of them.
+	 *
+	 * A named list of five in the C#, transcribed as one, because the C# writes the
+	 * same `if (IsPlaying(x)) Stop(x)` five times by hand and a fifth member would
+	 * be a fifth place to forget. The helicopter and bell tracks are deliberately
+	 * **not** in it: the C#'s list does not contain them either
+	 * (`CheckLandedHelicopterSFX` stops its own four, and nothing stops the bells
+	 * because they are one-shots), and adding them here would silence a helicopter
+	 * every time the player walked indoors — a behaviour the C# does not have.
+	 */
+	StopAllAmbientsExcept(exceptId: string): void {
+		const keep = new Set([exceptId, "all"]);
+		for (const id of [
+			GameAmbients.RAIN_INSIDE,
+			GameAmbients.RAIN_OUTSIDE,
+			GameAmbients.THUNDERING_RAIN_INSIDE,
+			GameAmbients.THUNDERING_RAIN_OUTSIDE,
+			GameAmbients.NIGHT_ANIMALS,
+		]) {
+			if (keep.has(id)) continue;
+			if (this.m_AmbientSFXManager.isPlaying(id)) this.m_AmbientSFXManager.stop(id);
+		}
 	}
 
 	/// <summary>
@@ -20686,7 +27026,1540 @@ export class RogueGame {
 	/// Put the object on fire : firestate = onfire, jump -1.
 	/// </summary>
 	/// <param name="mapObj"></param>
+	/**
+	 * Set a tile alight. Still Alive, Release 5-2, reshaped in 6-1 and 7-6.
+	 *
+	 * The C#'s comment on `wasFlameWeapon` is the important part: **a spreading
+	 * fire does not scorch or ignite walls, only flame weapons and explosions
+	 * do.** Without that, fire walks straight through a wall from outside to inside
+	 * and the building is no longer a refuge. So `wasFlameWeapon` is not a detail
+	 * -- it is the only thing keeping walls between a fire and the people behind
+	 * them.
+	 *
+	 * The `EFFECT_ONFIRE` decoration is added here and removed only in
+	 * `extinguishOnFireTile`, so the flag and the decoration cannot drift apart.
+	 */
+	private async setTileOnFire(map: Map, x: number, y: number, wasFlameWeapon: boolean): Promise<void> {
+		const tile = map.getTileAt(x, y);
+		if (tile === null || tile.isOnFire) return;
+		// Water does not burn. Still Alive, Release 6-1.
+		if (map.isAnyTileWaterThere(new Point(x, y))) return;
+
+		let scorched = false;
+		if (tile.model.isWalkable) {
+			tile.isOnFire = true;
+			tile.addDecoration(GameImages.EFFECT_ONFIRE);
+			scorched = true;
+		}
+		// The C# passes BASE_TILE_FIRE_DAMAGE (1) -- `RogueGame.cs:24631`. It is 1,
+		// which lands in the `<= 40` tier, so an ordinary spreading fire draws the
+		// outer mark and only explosions draw anything heavier.
+		if (wasFlameWeapon || scorched) this.scorchBurntTile(map, x, y, RogueGame.BASE_TILE_FIRE_DAMAGE);
+
+		// Fires blow up adjacent fuel pumps. C# `:24633-24642`, Release 7-3:
+		//
+		// ```csharp
+		// map.ForEachAdjacentAndCenterInMap(pt, (adj) =>
+		// {
+		//     MapObject mapObj = map.GetMapObjectAt(adj);
+		//     if (mapObj != null && mapObj.ImageID == GameImages.OBJ_FUEL_PUMP)
+		//     { ExplodeFuelPump(mapObj.Location); return; }
+		// });
+		// ```
+		//
+		// **This sweep is the only way one fuel pump detonates another**, and the
+		// recursion it sets up is the C#'s cascade: a pump blasts, its blast sets
+		// tiles on fire (its model carries `CausesTileFires`), each of those ignites
+		// and sweeps its own eight neighbours, so pumps within Chebyshev distance 2
+		// of the first go up too. There is no depth limit and no visited set, exactly
+		// as in the reference.
+		//
+		// Two details transcribed rather than tidied. The sweep runs **after** the
+		// early returns above, so a tile that is already burning, is water, or has no
+		// tile at all never triggers a pump — C# `:24616-24619` returns before the
+		// sweep is reached. And `return` inside the C#'s lambda exits only that one
+		// adjacent tile; it is not a break of the nine-tile walk, so several adjacent
+		// pumps can all go up.
+		//
+		// `ForEachAdjacentAndCenterInMap` is the centre followed by `Direction.COMPASS`,
+		// i.e. eight directions, so this is a 3x3 neighbourhood and not a plus-shape.
+		for (let dx = -1; dx <= 1; dx++) {
+			for (let dy = -1; dy <= 1; dy++) {
+				const adj = new Point(x + dx, y + dy);
+				if (!map.isInBoundsPoint(adj)) continue;
+				const mapObj = map.getMapObjectAt(adj.x, adj.y);
+				if (mapObj !== null && mapObj.imageId === GameImages.OBJ_FUEL_PUMP) {
+					// `mapObj.location` rather than a hand-built `Location`, as the C# has
+					// it at `:24640`. `Map.placeMapObject` sets that back-pointer
+					// (`Map.ts:627`), so it is the pump's own location and not a guess.
+					await this.ExplodeFuelPump(mapObj.location);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Mark a tile as burnt, so nothing can spread onto it again.
+	 * Still Alive, Release 5-2.
+	 *
+	 * This is the fire's memory. Without it the spread loop is happy to re-ignite
+	 * a tile it already burnt, and a single match consumes an entire building
+	 * forever rather than burning out.
+	 */
+	/**
+	 * C# `ScorchBurntTile(Map, int, int, int)` -- `RogueGame.cs:24556-24608`.
+	 *
+	 * Add a burn mark to the ground. Before this was ported the method only set the
+	 * `IsScorched` flag and left the decoration off, which is why it read as three
+	 * lines; the C# is 53 of them, and all of that is the damage tier.
+	 *
+	 * The tiers are the C#'s own, including its own complaint about them: the C#
+	 * marks the damage thresholds "a lazy way of doing it -- should go back and
+	 * calculate based on radius from the center of the blast". Kept as-is, because
+	 * a scorch mark that differs from the reference is worse than a scorch mark that
+	 * is merely arbitrary.
+	 *
+	 * **The `damage > 0` test gates the flag too, not just the decoration.** That is
+	 * easy to misread as a guard on the drawing alone. In the C# `IsScorched = true`
+	 * is inside the `if`, so a zero-damage call marks nothing and flags nothing.
+	 * `setTileOnFire` therefore only scorches once a fire has actually taken on a
+	 * walkable tile.
+	 */
+	private scorchBurntTile(map: Map, x: number, y: number, damage: number): void {
+		// Stairs are skipped. C# `:24558`.
+		if (map.getExitAt(new Point(x, y)) !== null) return;
+
+		const tile = map.getTileAt(x, y);
+		if (tile === null) return;
+
+		// Do not scorch a damaged wall: the scorch sprite would hide the opening.
+		// C# `:24560-24569`, Release 7-6.
+		//
+		// **This guard only started working when `ReplaceDestroyedWall` landed, and
+		// that is worth keeping written down** because it changes behaviour for the
+		// two things that can put a `_damaged` drawing on a tile. It was ported
+		// defensively while that method was still a no-op, which left the branch
+		// unreachable rather than absent — the same state `ApplyExplosionDamage`'s
+		// scorch suppression was in, and both came alive together.
+		//
+		// Now it is live, and all nine `DECO_WALL_*_DAMAGED` ids match, since each
+		// ends `_damaged` by construction (they are named for the drawing, not for
+		// the state). Two consequences worth being explicit about:
+		//
+		// - A tile fire that reaches a blown-open wall now stops at it instead of
+		//   blacking over the gap, which is the whole reason the guard exists.
+		// - `wall_wood_planks` and `wall_red_curtains` are the two destructible walls
+		//   that add *no* decoration, so neither can satisfy this test. A fire will
+		//   scorch those two openings. That is the reference's behaviour too, and it
+		//   is a consequence of those two cases dropping a drawing, not a separate
+		//   decision.
+		if (tile.hasDecorations) {
+			for (const deco of tile.getDecorations ?? []) {
+				if (deco.includes("_damaged")) return;
+			}
+		}
+
+		// Release 5-2: never stack a second scorch over a first.
+		if (!(damage > 0) || map.tileAlreadyHasScorchDecoration(x, y)) return;
+
+		tile.scorchTile();
+
+		// The C# adds a `TaskRemoveDecoration(TURNS_PER_DAY * 3)` alongside every
+		// mark, so a scorch is temporary evidence of a fire that *was* here and not
+		// a permanent scar. The `IsScorched` flag above is the permanent half and
+		// has no timer -- it means "no fuel left to burn", which is why a spreading
+		// tile fire walks over scorched ground without reigniting it.
+		const isWall = (Models.tiles as GameTiles).isWallModel(tile.model);
+		let imageId: string;
+		if (damage <= 40) {
+			imageId = isWall ? GameImages.DECO_SCORCH_MARK_OUTER_WALL : GameImages.DECO_SCORCH_MARK_OUTER_FLOOR;
+		} else if (damage <= 120) {
+			imageId = isWall ? GameImages.DECO_SCORCH_MARK_INNER_WALL : GameImages.DECO_SCORCH_MARK_INNER_FLOOR;
+		} else {
+			// No wall branch. The centre mark is a flat drawing, so the C# lays it
+			// over a wall as well rather than having nothing to show.
+			imageId = GameImages.DECO_SCORCH_MARK_CENTER_FLOOR;
+		}
+		tile.addDecoration(imageId);
+		map.addTimer(new TaskRemoveDecoration(WorldTime.TURNS_PER_DAY * 3, x, y, imageId));
+	}
+
+	/** Put a burning tile out. Still Alive, Release 6-1. */
+	private extinguishOnFireTile(tile: Tile): void {
+		if (tile === null) return;
+		tile.isOnFire = false;
+		tile.removeDecoration(GameImages.EFFECT_ONFIRE);
+	}
+
+	/**
+	 * Hurt whatever is standing in a burning tile. Still Alive, Release 5-2.
+	 *
+	 * Distinct from `ApplyBurnDamageToOnFireActor`: that is 2 damage and follows
+	 * the actor, this is 1 and hits whoever is standing in the flames. Skeletons are
+	 * immune here, which is the C#'s `IsSkeletonBranch` test -- and they are immune
+	 * in `SetActorOnFire` too, so a skeleton in a fire is simply never hurt.
+	 *
+	 * **The crop arm is here, and it is not the blocked thing this comment used to
+	 * say it was.** C# `:24731-24734` converts a `FLOOR_PLANTED` tile back to
+	 * `FLOOR_GRASS`, and an earlier version of this file recorded it as unportable
+	 * because "the farming system that plants anything is alpha10-era and was never
+	 * ported". That conflated the *planting* half with the *loss* half. Nothing
+	 * about destroying a crop needs a farming system: `TileID.FLOOR_PLANTED` is
+	 * registered (`GameTiles.ts:236`), is flammable (`:407`), and the tile model is
+	 * read and written with the same two calls every other generator uses.
+	 *
+	 * The one producer of `FLOOR_PLANTED` -- `HandlePlayerPlantSeeds`
+	 * (`RogueGame.cs:14208`) -- is still unported, and `ItemID.VEGETABLE_SEEDS` does
+	 * not exist. So in the port today this arm can only fire on a planted tile that
+	 * something else put there, and `Feature.Farm`'s own crops are map objects
+	 * (a berry bush, a peanut plant, a grape vine) rather than planted tiles, so
+	 * they are *not* affected by this. It is landed anyway, and deliberately: it is
+	 * three lines, it is the C#'s behaviour, and leaving the lossy half out while
+	 * shipping the flammable half would mean a planted tile burns forever.
+	 */
+	private async applyBurnDamageFromTileFire(
+		map: Map,
+		point: Point,
+		exemptFromTileFireDMGThisTurn: ReadonlySet<Actor> = new Set<Actor>(),
+	): Promise<void> {
+		const actor = map.getActorAtPoint(point);
+		if (actor !== null && !GameActors.isSkeletonBranch(actor.model) && actor.hitPoints > 0) {
+			await this.InflictDamage(actor, RogueGame.BASE_TILE_FIRE_DAMAGE);
+			// Release 6-6: an actor that already burned as an *alight* actor this
+			// turn is exempt. Without this, standing in a fire costs 1 + 2 damage
+			// every turn instead of 2.
+			if (!exemptFromTileFireDMGThisTurn.has(actor)) {
+				if (this.m_Rules.rollChance(RogueGame.CATCH_ONFIRE_FROM_TILE_CHANCE)) {
+					this.SetActorOnFire(actor);
+				}
+			}
+			if (actor.hitPoints <= 0) {
+				if (this.IsVisibleToPlayer(actor)) {
+					this.AddMessage(
+						new Message(
+							`${actor.theName} died in flames!`,
+							this.m_Session.worldTime.turnCounter,
+							Color.Orange,
+						),
+					);
+				}
+				this.KillActor(null, actor, "died in flames", true);
+			}
+		}
+
+		// Corpses burn too, and a scorched map is full of them.
+		for (const corpse of map.getCorpsesAt(point) ?? []) {
+			this.InflictDamageToCorpse(corpse, RogueGame.BASE_TILE_FIRE_DAMAGE);
+		}
+
+		// And crops are total: C# `:24731-24734`, the method's last statement, after
+		// the actor and the corpses so that a burning tile loses everything it was
+		// holding in the C#'s order rather than ours.
+		//
+		// `FLOOR_PLANTED` -> `FLOOR_GRASS`, unconditionally, with no roll, no item
+		// and no message. Losing the crop is the whole effect: the tile is no longer
+		// planted, so nothing will harvest it again, and replanting costs the player
+		// another seed and another turn. The C# has no null guard before this read
+		// (`:24732-24733` dereferences `tile` straight after the assignment) because
+		// it has already established the tile exists; the optional chain is the port's
+		// necessary divergence, since `getTileAt` returns `Tile | null`.
+		const tile = map.getTileAt(point.x, point.y);
+		if (tile?.model === Models.tiles.get(TileID.FLOOR_PLANTED)) {
+			map.setTileModelAt(point.x, point.y, Models.tiles.get(TileID.FLOOR_GRASS)!);
+		}
+	}
+
+	// ── Actor on fire (Still Alive, Release 5-7) ─────────────────────────────────
+	//
+	// A *per-actor* fire, distinct from standing in a tile fire. It follows the
+	// actor, draws a torso decoration, is put out by rain or by stop-drop-and-
+	// roll, and is where `Feature.ArmorResist`'s fire column is finally consulted.
+	//
+	// **Gated on `Feature.TileFires`, and that is a decision worth stating.** The
+	// C# gates nothing — this is core fork content from Release 5-7 — but this port
+	// gates everything, and the ignition sources are the fork's fire: tile fires,
+	// molotovs, flamethrowers. So it rides on the fork's fire feature.
+	//
+	// The consequence is a coupling: `Feature.ArmorResist`'s fire half only
+	// functions under `Feature.TileFires` as well. That is defensible — fire
+	// resistance is only meaningful if fire can set you alight, and in this port
+	// fire *is* `TileFires` — but it is a coupling, not a fact of the C#, and it
+	// is recorded in plans/BROWSER_PORT_PLAN rather than buried.
+
+	/**
+	 * C# `SetActorOnFire` — `RogueGame.cs:24737`.
+	 *
+	 * Three refusals before anything happens, and the order is the C#'s:
+	 *  1. **Skeletons cannot burn.** `GameActors.isSkeletonBranch` — the same test
+	 *     the tile-fire pass uses, and for the same reason.
+	 *  2. **Water is a hard block** (Release 6-1). `Actor.isInWater`, set by the
+	 *     movement code; a wading actor is not ignited by a burning tile beside it.
+	 *  3. **Fire-resistant armour wins** (Release 7-1) -- and this is the whole of
+	 *     `Feature.ArmorResist`'s fire half. `fireResistance` is a *percentage
+	 *     roll*, not a damage multiplier here: a 30% suit fails the roll seven
+	 *     times in ten. Note the same column is read as a multiplier in
+	 *     `ItemBodyArmor`; the C# uses it both ways and so does this.
+	 *
+	 * `wasOnFire` exists for one message: the C# only tells the player "You are
+	 * literally on fire!" on the *transition*, so standing in a fire for six turns
+	 * says it once.
+	 */
+	SetActorOnFire(actor: Actor): void {
+		if (actor === null || GameActors.isSkeletonBranch(actor.model) || actor.isInWater) return;
+
+		const wasOnFire = actor.isOnFire;
+		actor.isOnFire = true;
+
+		const torso = () => actor.doll.getDecorations(DollPart.TORSO);
+		/** C#'s repeated `GetDecorations(...) == null || !Contains(...)` guard. */
+		const addIfAbsent = (imageId: string): void => {
+			const d = torso();
+			if (d === null || !d.includes(imageId)) actor.doll.addDecoration(DollPart.TORSO, imageId);
+		};
+
+		// undead: two sprites, and rat zombies get neither (the C#'s `else if
+		// (model != RatZombie)` falls through to the living branch's decoration
+		// code, which for a rat is the male/female one -- so a rat zombie is drawn
+		// with a living's fire).
+		if (actor.model.abilities.isUndead) {
+			if (
+				actor.model === Models.actors.get(ActorID.UNDEAD_ZOMBIE) ||
+				actor.model === Models.actors.get(ActorID.UNDEAD_DARK_ZOMBIE) ||
+				actor.model === Models.actors.get(ActorID.UNDEAD_DARK_EYED_ZOMBIE)
+			) {
+				addIfAbsent(GameImages.ZOMBIE_ON_FIRE);
+			} else if (actor.model !== Models.actors.get(ActorID.UNDEAD_RAT_ZOMBIE)) {
+				addIfAbsent(GameImages.OTHER_UNDEAD_ON_FIRE);
+			}
+			return;
+		}
+
+		// living: the armour roll, and the two living sprites.
+		const torsoItem = actor.getEquippedItem(DollPart.TORSO);
+		if (torsoItem !== null && torsoItem instanceof ItemBodyArmor) {
+			if (this.m_Rules.rollChance((torsoItem.model as ItemBodyArmorModel).fireResistance)) {
+				actor.isOnFire = false;
+				return;
+			}
+		}
+		addIfAbsent(actor.model.dollBody.isMale ? GameImages.MALE_ON_FIRE : GameImages.FEMALE_ON_FIRE);
+
+		// A scream is a loud noise, and it is the only way fire announces itself
+		// without a message. The C# also calls `DoScream`, which draws the speaker's
+		// mouth open and plays a gendered sound; the port has no `DoScream`, and
+		// inventing one is a renderer job, so only the noise is ported -- which is
+		// the part that has consequences. The sound is `Feature.ExtendedAudio`.
+		this.OnLoudNoise(actor.location.map!, actor.location.position, "A loud SCREAM");
+
+		if (actor.isPlayer && !wasOnFire) {
+			this.AddMessage(
+				new Message(
+					"You are literally on fire! You should try to extinguish yourself.",
+					this.m_Session.worldTime.turnCounter,
+					Color.Red,
+				),
+			);
+		}
+	}
+
+	/**
+	 * C# `ExtinguishOnFireActor` — `RogueGame.cs:24819`.
+	 *
+	 * Clears the bit and removes whichever fire decoration is present. The C#'s
+	 * `else if` chain means it removes at most one, which is correct only because
+	 * `SetActorOnFire` adds at most one; removing *all four* defensively would
+	 * paper over a bug where two were added, so the chain is kept.
+	 */
+	ExtinguishOnFireActor(actor: Actor): void {
+		if (actor === null) return;
+		actor.isOnFire = false;
+		const d = actor.doll.getDecorations(DollPart.TORSO);
+		if (d === null) return;
+		if (d.includes(GameImages.ZOMBIE_ON_FIRE)) actor.doll.removeDecoration(GameImages.ZOMBIE_ON_FIRE);
+		else if (d.includes(GameImages.OTHER_UNDEAD_ON_FIRE))
+			actor.doll.removeDecoration(GameImages.OTHER_UNDEAD_ON_FIRE);
+		else if (d.includes(GameImages.MALE_ON_FIRE)) actor.doll.removeDecoration(GameImages.MALE_ON_FIRE);
+		else if (d.includes(GameImages.FEMALE_ON_FIRE)) actor.doll.removeDecoration(GameImages.FEMALE_ON_FIRE);
+	}
+
+	/**
+	 * C# `ApplyBurnDamageToOnFireActor` — `RogueGame.cs:24659`.
+	 *
+	 * Distinct from `applyBurnDamageFromTileFire`, which is 1 damage and hits
+	 * whoever is standing in the flames. This is 2 damage and hits the burning
+	 * actor wherever they are -- which is why a fire you walk out of keeps hurting.
+	 */
+	private async ApplyBurnDamageToOnFireActor(actor: Actor): Promise<void> {
+		if (actor.hitPoints > 0) {
+			await this.InflictDamage(actor, RogueGame.BASE_ISONFIRE_FIRE_DAMAGE);
+		}
+		if (actor.hitPoints <= 0) {
+			if (this.IsVisibleToPlayer(actor)) {
+				this.AddMessage(
+					new Message(
+						`${actor.theName} died in flames!`,
+						this.m_Session.worldTime.turnCounter,
+						Color.Orange,
+					),
+				);
+			}
+			this.KillActor(null, actor, "burned alive", true);
+			if (!actor.model.abilities.isUndead) {
+				this.SeeingCauseInsanity(
+					actor,
+					actor.location,
+					Rules.SANITY_HIT_EATEN_ALIVE,
+					`${actor.theName} burnt alive`,
+				);
+			}
+		}
+	}
+
+	/**
+	 * The per-turn pass for alight actors — C# `RogueGame.cs:6199-6231`.
+	 *
+	 * Rain puts you out **only if you are not indoors** (Release 6-1), and clear
+	 * weather puts a *living* out at 33%: "undead aren't smart enough to
+	 * extinguish themselves", which is why the C#'s comment sits on the constant
+	 * rather than on the branch.
+	 *
+	 * The survivors are recorded in `exemptFromTileFireDMGThisTurn` and handed to
+	 * the tile-fire pass, so an actor standing in a fire is burned once and not
+	 * twice. That list is the whole subtlety of this function.
+	 *
+	 * @returns the actors that burned, for the tile-fire pass's exemption list.
+	 */
+	async stepActorsOnFire(map: Map): Promise<Set<Actor>> {
+		const exemptFromTileFireDMGThisTurn = new Set<Actor>();
+		if (!hasFeature(this.m_Session.ruleset, Feature.TileFires)) return exemptFromTileFireDMGThisTurn;
+
+		let baseExtinguishChance = RogueGame.CLEAR_WEATHER_FIRE_EXTINGUISH_CHANCE;
+		if (this.m_Rules.isWeatherRain(this.m_Session.weather)) {
+			baseExtinguishChance =
+				this.m_Session.weather === Weather.HEAVY_RAIN
+					? RogueGame.HEAVY_RAIN_FIRE_EXTINGUISH_CHANCE
+					: RogueGame.LIGHT_RAIN_FIRE_EXTINGUISH_CHANCE;
+		}
+		const raining = this.m_Rules.isWeatherRain(this.m_Session.weather);
+
+		// `ToList` in the C#, because `KillActor` mutates the collection mid-loop.
+		for (const actor of [...map.actors]) {
+			if (!actor.isOnFire) continue;
+			const tile = map.getTileAt(actor.location.position.x, actor.location.position.y);
+			if (raining && tile !== null && !tile.isInside) {
+				if (this.m_Rules.rollChance(baseExtinguishChance)) {
+					this.ExtinguishOnFireActor(actor);
+					continue;
+				}
+			} else if (!actor.model.abilities.isUndead) {
+				if (this.m_Rules.rollChance(RogueGame.CLEAR_WEATHER_FIRE_EXTINGUISH_CHANCE)) {
+					this.ExtinguishOnFireActor(actor);
+					continue;
+				}
+			}
+			// still alight: burn, and do not burn again for the tile fire.
+			await this.ApplyBurnDamageToOnFireActor(actor);
+			exemptFromTileFireDMGThisTurn.add(actor);
+		}
+		return exemptFromTileFireDMGThisTurn;
+	}
+
+	/**
+	 * The per-turn tile-fire pass: spread, then burn out, then burn the victim.
+	 *
+	 * Still Alive, Release 5-2 (`RogueGame.cs:6843`). The order within one tile is
+	 * the whole design and is not interchangeable:
+	 *
+	 * 1. **Spread** to adjacent flammable, unburnt, unlit tiles, each on its own
+	 *    5% roll. A tile is only ever *tested* once per turn, tracked in
+	 *    `alreadyTested`, so a tile adjacent to two fires is offered a single roll
+	 *    rather than two.
+	 * 2. **Burn out**, at a chance derived from the weather -- but *halved* outside
+	 *    and *quartered* inside, and the C#'s comment is that indoor fires "aren't
+	 *    affected by weather", which is not quite what the divisor does: it makes
+	 *    them roughly twice as long-lived as an outdoor fire in the same weather.
+	 * 3. **Burn whatever is standing there** -- but only if the fire did *not* just
+	 *    spread to this tile. A fire that arrived this turn has already burned
+	 *    whoever caught it (step 1), so burning again would double-damage.
+	 *
+	 * **The "actor catches fire" arm is ported**, via `SetActorOnFire` and the
+	 * per-turn `stepActorsOnFire`. It is gated on this same feature, and the
+	 * coupling is recorded: `Feature.ArmorResist`'s fire half only functions under
+	 * `Feature.TileFires`, because in this port fire *is* `TileFires`.
+	 */
+	private async stepTileFires(map: Map, exempt: ReadonlySet<Actor> = new Set<Actor>()): Promise<void> {
+		if (!hasFeature(this.m_Session.ruleset, Feature.TileFires)) return;
+
+		// Weather sets the base rate; indoors divides it down again.
+		let baseExtinguishChance = RogueGame.CLEAR_WEATHER_FIRE_EXTINGUISH_CHANCE;
+		if (this.m_Rules.isWeatherRain(this.m_Session.weather)) {
+			baseExtinguishChance =
+				this.m_Session.weather === Weather.HEAVY_RAIN
+					? RogueGame.HEAVY_RAIN_FIRE_EXTINGUISH_CHANCE
+					: RogueGame.LIGHT_RAIN_FIRE_EXTINGUISH_CHANCE;
+		}
+
+		// Tiles that have already had their spread roll, so a tile between two
+		// fires is offered one roll and not two.
+		const alreadyTested = new Set<number>();
+		// Tiles that caught fire this turn, so they are neither burnt out nor
+		// burnt a second time.
+		const spreadTo = new Set<number>();
+
+		for (let x = 0; x < map.width; x++) {
+			for (let y = 0; y < map.height; y++) {
+				const here = new Point(x, y);
+				if (!map.isAnyTileFireThere(here)) continue;
+				alreadyTested.add(coordKey(x, y));
+
+				// 1. spread
+				for (const d of Direction.COMPASS) {
+					const adj = d.applyTo(here);
+					if (!map.isInBounds(adj.x, adj.y)) continue;
+					// `isInflammableTile` is a *double* negative and the C# leans on
+					// that: its `if (!IsInflammableTile(...)) { spread }` block is
+					// the work itself, and the port's equivalent is a skip-guard on
+					// the un-negated call. Negating it here -- the obvious
+					// transcription -- inverts the whole mechanic and makes fire
+					// spread onto precisely the tiles that cannot burn. Same trap as
+					// `ItemDespawn`'s ammo exemption, and the tests here caught it.
+					if (map.isInflammableTile(adj, true)) continue;
+					const key = coordKey(adj.x, adj.y);
+					if (alreadyTested.has(key)) continue;
+					alreadyTested.add(key);
+					if (!this.m_Rules.rollChance(RogueGame.TILE_FIRE_SPREAD_CHANCE)) continue;
+					spreadTo.add(key);
+					// false: a spreading fire must not scorch walls.
+					await this.setTileOnFire(map, adj.x, adj.y, false);
+					await this.applyBurnDamageFromTileFire(map, adj, exempt);
+				}
+
+				// 2. burn out
+				if (spreadTo.has(coordKey(x, y))) continue;
+				const tile = map.getTileAt(x, y)!;
+				const divisor = tile.isInside ? 4 : 2;
+				const extinguishChance = Math.max(
+					1,
+					Math.round(baseExtinguishChance / divisor),
+				);
+				if (this.m_Rules.rollChance(extinguishChance)) {
+					this.extinguishOnFireTile(tile);
+					continue;
+				}
+
+				// 3. burn the victim
+				await this.applyBurnDamageFromTileFire(map, here, exempt);
+			}
+		}
+	}
+
+	/**
+	 * Using a fishing rod casts it.  C# `DoUseFishingRodItem` — `RogueGame.cs:21940`.
+	 *
+	 * Of the C#'s three statements, two are ported and one is not:
+	 *
+	 * - **Ported: dropping a two-handed right-hand weapon** (C# 21945-21956). This
+	 *   arm was held back only because it asks `IsOneHanded`, which did not exist
+	 *   in the port; it does now, and the earlier note here saying so has been
+	 *   corrected below. The rod goes in the *left* hand, so the reference clears
+	 *   the right one first — the same mutual exclusion as the shield, for the same
+	 *   reason, and with the same `DoUnequipItem(..., false)` third argument: the
+	 *   C#'s `showMessage = false`, which is this port's `canMessage = false` (the
+	 *   two names are opposites by default — the C# defaults `showMessage` to
+	 *   `false`, the port defaults `canMessage` to `true` — so the *passed* value
+	 *   is the same either way, unlike the defaults).
+	 *   The arm tests the **model** (`rightHandItem.Model is ItemMeleeWeaponModel`)
+	 *   and unequips the **item**, exactly as the reference does, and it is
+	 *   `if`/`else if` there too: a melee right-hand weapon is considered and a
+	 *   ranged one only if it was not a melee.
+	 *   **This runs before the `isPlayer` test, ungated inside the method.** That
+	 *   is deliberate on both counts and worth stating, because the C# puts the
+	 *   clear-the-hand first and the whole reason it cannot move a Classic world is
+	 *   the `Feature.Fishing` gate on the only call site (the `DoUseItem` arm that
+	 *   tests `it.model.id === ItemID.FISHING_ROD`), not anything in here. An NPC
+	 *   casting a rod clears its own hand, as in the reference.
+	 * - **Not ported: the cast and reel sounds** (`GameSounds.FISHING_CAST_*` and
+	 *   `FISHING_REEL_*`, `GameSounds.cs:424-431`). Four of the ~180 entries that
+	 *   arrive with `Feature.ExtendedAudio`, still pending. The C# stops the cast
+	 *   sound before starting the reel precisely because the two can overlap, which
+	 *   is not worth reproducing without either.
+	 * - **Ported: the sentence.** It is the only part of a cast the player is told
+	 *   about, and it is the one that turns a rod from an inventory object into
+	 *   something to do.
+	 *
+	 * **A correction to what this comment used to say.** It claimed the fork sets
+	 * `IsOneHanded = false` throughout, `true` for "the combat knife and the
+	 * pistols". That was wrong on both halves, and it was wrong in the direction
+	 * that matters — it implied one-handedness was rare, when it is the majority:
+	 * **19 of the fork's 37 melee weapons are one-handed** and only 7 of its 22
+	 * ranged ones are. The combat knife is 1 of 19; the "pistols" are 4 of 7, and
+	 * they are not all of it — the SMG, the nail gun and the stun gun are
+	 * one-handed too, and the nail gun and the stun gun are *not* pistols, being the
+	 * two `isSingleShot` weapons sitting next to those literals. Conversely the
+	 * baseball bat, the chainsaw, the katana and the fire axe are all two-handed.
+	 * The full sets are transcribed one at a time in `GameItems`' `meleeMap` and
+	 * `rangedMap` headers, and asserted in `tests/two-handed-weapons.test.ts`.
+	 *
+	 * **Reachable from the player's own hands only through the AI.** A rod has
+	 * `EquipmentPart = LEFT_HAND` and so `IsEquipable`, which means both the
+	 * left-mouse and the ctrl-slot paths *equip* a rod rather than use it, and
+	 * `DoUseItem` is otherwise only reached by `ActionUseItem`. That is the C#'s
+	 * own shape and it is transcribed rather than fixed: an NPC told to use the rod
+	 * it just picked up gets the sentence, and the player gets the same information
+	 * from the inventory description's "to fish" line.
+	 *
+	 * The catch itself is in `DoWait`, because in the C# a cast is not a mode you
+	 * enter -- it is a wait with a rod in your hand.
+	 */
+	DoUseFishingRodItem(actor: Actor): void {
+		// C# 21942-21958. See the header for why this is before the `isPlayer`
+		// test and why the third argument is `false`.
+		const rightHandItem = actor.getEquippedItem(DollPart.RIGHT_HAND);
+		if (rightHandItem !== null) {
+			if (rightHandItem.model instanceof ItemMeleeWeaponModel) {
+				if (!rightHandItem.model.isOneHanded)
+					this.DoUnequipItem(actor, rightHandItem, false);
+			} else if (rightHandItem.model instanceof ItemRangedWeaponModel) {
+				if (!rightHandItem.model.isOneHanded)
+					this.DoUnequipItem(actor, rightHandItem, false);
+			}
+		}
+
+		if (actor.isPlayer) {
+			// The cast sound, and the first of the four `Feature.ExtendedAudio`
+			// readers. Gated because the file is the fork's: `fishing_cast_player`
+			// is not in the port's `GameSounds` and is not a Classic asset, so
+			// playing it unconditionally would be the fork's audio leaking into
+			// classic rather than a ruleset difference.
+			//
+			// `PlayIfNotAlreadyPlaying` in the C# (`RogueGame.cs:21962`); the port's
+			// `IMusicManager.play` already returns early when the same id is
+			// playing (`WebAudioMusicManager.start`, `:107`), so the two agree.
+			//
+			// **Not ported: the NPC arm** (`RogueGame.cs:21964`), which plays
+			// `FISHING_CAST_NEARBY` when `IsAudibleToPlayer(loc, QUIET_NOISE_RADIUS)`.
+			// The port has no `QUIET_NOISE_RADIUS` and no audibility predicate that
+			// takes a radius, and inventing one would be guessing a number the C#
+			// does not define here. Recorded rather than faked.
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.play(GameSounds.FISHING_CAST_PLAYER);
+
+			this.AddMessage(
+				new Message(
+					`Now press Wait <${s_KeyBindings.get(PlayerCommand.WAIT_OR_SELF) ?? "?"}>` +
+						` or Long-Wait <${s_KeyBindings.get(PlayerCommand.WAIT_LONG) ?? "?"}>` +
+						` until a fish is hooked.`,
+					actor.location.map!.localTime.turnCounter,
+					Color.Yellow,
+				),
+			);
+		}
+	}
+
+	/**
+	 * C# `HandlePlayerUseThrowableItem` — `RogueGame.cs:14912-15009`, Still Alive
+	 * Release 7-1. The C#'s own header calls this "for non-grenades eg ItemLight".
+	 *
+	 * A throw-mode loop, and the *second* one in the file: `HandlePlayerThrowGrenade`
+	 * (`:13688`) is the grenade version and reads the equipped weapon rather than an
+	 * argument. The two are near-identical and are kept as two methods, for the same
+	 * reason `THROW_MODE_TEXT` and `THROW_GRENADE_MODE_TEXT` are two strings.
+	 *
+	 * Three differences from the grenade mode, all of them the C#'s:
+	 *
+	 * - **The reach is `MAX_THROWABLE_DISTANCE`, flat** (`:14918`), where the grenade
+	 *   mode scales by `Rules.ActorMaxThrowRange`. See the constant's header.
+	 * - **No blast-radius confirmation.** A grenade asks "You are in the blast
+	 *   radius!" before it goes off (`:13770`); a flare is not a grenade and does not.
+	 * - **The item is dropped on the tile and then `Consume`d**, rather than thrown as
+	 *   an equipped grenade: `:14963-14966` is `map.DropItemAt(item, targetThrow)`
+	 *   followed by `player.Inventory.Consume(item)`.
+	 *
+	 * **The `Consume` is a C# oddity and is reproduced.** The item handed in was
+	 * manufactured a moment earlier by `HandlePlayerUseLightPackThrowable` and was
+	 * never in the player's inventory, so `Consume` decrements its quantity from one to
+	 * zero and then fails to find it in the inventory to remove. The result on the
+	 * ground is a flare at quantity 0. That is invisible today -- `ItemLight` draws no
+	 * quantity and `DescribeItemLight` never prints one -- but it is the C#'s state and
+	 * a ground pile it stacks into is the C#'s pile. Transcribed rather than tidied.
+	 *
+	 * The unreachable local the C# declares just above this call
+	 * (`Point pt = new Point(player.Location.Position.X, ...)` at `:15032`, in the
+	 * *caller*) is not reproduced: it is a dead statement, not a behaviour.
+	 *
+	 * **Gated on `Feature.DarknessFov`** by its two call sites in `DoUseItem` rather
+	 * than here, so that the flag is asked once, where the item identity is known. The
+	 * reasoning is the same as for the kits themselves: the only items this can ever
+	 * throw are `LIGHT_FLARE` and `LIGHT_GLOWSTICK`, and both exist to make light in
+	 * the dark.
+	 */
+	async HandlePlayerUseThrowableItem(
+		player: Actor,
+		item: Item,
+	): Promise<boolean> {
+		let loop = true;
+		let actionDone = false;
+		const map = player.location.map!;
+		let targetThrow = player.location.position;
+		const maxThrowDist = RogueGame.MAX_THROWABLE_DISTANCE;
+
+		// Loop.
+		const lot: Point[] = [];
+		do {
+			lot.length = 0;
+			const res = this.CanActorThrowItemTo(player, targetThrow, lot, item, maxThrowDist);
+
+			// 1. Redraw
+			this.ClearOverlays();
+			this.AddOverlay(
+				new OverlayPopup(
+					this.THROW_MODE_TEXT,
+					this.MODE_TEXTCOLOR,
+					this.MODE_BORDERCOLOR,
+					this.MODE_FILLCOLOR,
+					new Point(0, 0),
+				),
+			);
+			const lineImage = res.ok
+				? GameImages.ICON_LINE_CLEAR
+				: GameImages.ICON_LINE_BLOCKED;
+			for (const pt of lot) {
+				this.AddOverlay(new OverlayImage(this.MapToScreen(pt), lineImage));
+			}
+			this.RedrawPlayScreen();
+
+			// 2. Get input.
+			const key = await this.m_UI.UI_WaitKey();
+			const command = InputTranslator.keyToCommand(
+				RogueGame.KeyBindings(),
+				key.key,
+				key.ctrl,
+				key.alt,
+				key.shift,
+				key.code,
+			);
+
+			// 3. Handle input
+			if (key.key === "Escape") {
+				loop = false;
+			} else if (key.key === "f" || key.key === "F") {
+				// do throw.
+				if (res.ok) {
+					// spend AP.
+					this.SpendActorActionPoints(player, Rules.BASE_ACTION_COST);
+
+					// drop item at target position.
+					map.dropItemAt(item, targetThrow);
+
+					// consume item. See the header: the C# consumes an item that is
+					// not in the inventory, and the ground pile keeps quantity 0.
+					player.inventory!.consume(item);
+
+					// message about throwing.
+					const isVisible =
+						this.IsVisibleToPlayer(player) || this.IsVisibleToPlayer(map, targetThrow);
+					if (isVisible) {
+						this.AddOverlay(
+							new OverlayRect(
+								Color.Yellow,
+								new Rect(
+									this.MapToScreen(player.location.position).x,
+									this.MapToScreen(player.location.position).y,
+									TILE_SIZE,
+									TILE_SIZE,
+								),
+							),
+						);
+						this.AddOverlay(
+							new OverlayRect(
+								Color.Red,
+								new Rect(
+									this.MapToScreen(targetThrow).x,
+									this.MapToScreen(targetThrow).y,
+									TILE_SIZE,
+									TILE_SIZE,
+								),
+							),
+						);
+						this.AddMessage(
+							this.MakeMessage(
+								player,
+								`${this.Conjugate(player, this.VERB_THROW)} a ${item.model.singleName}!`,
+							),
+						);
+						this.RedrawPlayScreen();
+						await this.AnimDelay(DELAY_SHORT);
+						this.ClearOverlays();
+						this.RedrawPlayScreen();
+					}
+
+					this.RedrawPlayScreen();
+					loop = false;
+					actionDone = true;
+				} else {
+					this.AddMessage(
+						this.MakeErrorMessage(`Can't throw there : ${res.reason}.`),
+					);
+				}
+			} else {
+				// direction?
+				const dir = this.CommandToDirection(command);
+				if (dir != null) {
+					const pos = targetThrow.add(new Point(dir.dx, dir.dy));
+					if (
+						map.isInBoundsPoint(pos) &&
+						this.m_Rules.gridDistance(player.location.position, pos) <= maxThrowDist
+					)
+						targetThrow = pos;
+				}
+			}
+		} while (loop);
+
+		// cleanup.
+		this.ClearOverlays();
+
+		// return if we did an action.
+		return actionDone;
+	}
+
+	/**
+	 * C# `Rules.CanActorThrowItemTo` — `_refs/StillAlive-master/.../Engine/Rules.cs:3371`,
+	 * Still Alive Release 7-1.
+	 *
+	 * **Inlined into `RogueGame` rather than added to `Rules.ts`**, and the reason is
+	 * ownership rather than design: `Rules` is the `GameMode` layer and this is not a
+	 * `GameMode` question, but `Rules.ts` is not a file this change may touch. The
+	 * port already has this shape -- `BarricadeLegality`, `BreakLegality` and `CanTag`
+	 * are all rules-shaped predicates living on `RogueGame` and returning `RuleResult`
+	 * -- so it is the local convention and not an improvisation. **Move it to
+	 * `Rules` as `canActorThrowItemTo` when that file is next edited.**
+	 *
+	 * Note that this is *not* `Rules.canActorThrowTo`, which is already ported: that
+	 * one is the grenade's, it reads the actor's *equipped* weapon to get
+	 * `ActorMaxThrowRange`, and its first refusal is "no grenade equiped". This one
+	 * takes the item and the range as arguments, refuses with "no throwable item",
+	 * and does not consult the actor's skill at all.
+	 */
+	private CanActorThrowItemTo(
+		actor: Actor,
+		pos: Point,
+		lof: Point[],
+		item: Item,
+		maxThrowDist: number,
+	): RuleResult {
+		// The C# clears the caller's `List<Point>` in place (`if (LoF != null) LoF.Clear()`)
+		// rather than filling it, and the caller reuses one list across the whole loop.
+		lof.length = 0;
+
+		// 1. No throwable item.
+		if (item === null || !item.model.isThrowable)
+			return { ok: false, reason: "no throwable item" };
+
+		// 2. Out of range.
+		if (this.m_Rules.gridDistance(actor.location.position, pos) > maxThrowDist)
+			return { ok: false, reason: "out of throwing range" };
+
+		// 3. No LoT.
+		if (!LOS.canTraceThrowLine(actor.location.map!, actor.location.position, pos, maxThrowDist, lof))
+			return { ok: false, reason: "no line of throwing" };
+
+		// all clear.
+		return { ok: true, reason: "" };
+	}
+
+	/**
+	 * C# `HandlePlayerUseLightPackThrowable` — `RogueGame.cs:15011-15085`, Still Alive
+	 * Release 7-1.
+	 *
+	 * The reader that makes `FLARES_KIT` and `GLOWSTICKS_BOX` anything at all, and it
+	 * is unusual in a way worth stating first: **neither box is a light.** Both are
+	 * plain `ItemModel`s, and the light is manufactured here, one item at a time, as
+	 * `new ItemLight(LIGHT_FLARE)` or `new ItemLight(LIGHT_GLOWSTICK)`. Nothing in
+	 * `GameItems` gives either box a battery, an `fovBonus` or a sprite of its own that
+	 * lights anything, and adding one would be inventing a mechanism the reference does
+	 * not have. (`GameItems.ts:1348-1358` says the same about all three kits and names
+	 * this method as the site.)
+	 *
+	 * So the two answers are:
+	 *
+	 * - **`C`arry** — one lit light is added to the inventory and *equipped*, and one
+	 *   flare or glowstick is taken out of the box. Three guards, all the C#'s:
+	 *   a full inventory refuses (`:15038`), an already-equipped `ItemLight` refuses
+	 *   (`:15046`) so the player does not silently lose a torch, and the box is
+	 *   consumed *first* when its quantity was one (`:15055-15059`) so the new light
+	 *   can reuse the slot. That last one is why the C# has a `consumedAlready` flag
+	 *   rather than just consuming at the end.
+	 * - **`T`hrow** — `HandlePlayerUseThrowableItem` aims it, and the box loses one only
+	 *   if the throw actually happened (`:15033-15034`).
+	 *
+	 * **The throw arm spends its own turn and the carry arm spends none**, which is the
+	 * reference's asymmetry and not an oversight: `HandlePlayerUseThrowableItem` calls
+	 * `SpendActorActionPoints` itself (`:14960`), and nothing here spends for a carried
+	 * light. A flare in the hand is free; a flare on the floor is a turn.
+	 *
+	 * **The sound is `Feature.ExtendedAudio`-gated** (`FLARE` / `GLOWSTICK`, `:15067-15070`),
+	 * because both ids are from the fork's 180-effect set and neither is a Classic
+	 * asset. The port has the constants and the files; gating is what keeps the fork's
+	 * audio out of a Classic district.
+	 *
+	 * **Gated on `Feature.DarknessFov` by its call site in `DoUseItem`**, not here, so
+	 * the flag is asked where the item identity is known and this method is the same
+	 * shape as the C#'s.
+	 */
+	async HandlePlayerUseLightPackThrowable(
+		player: Actor,
+		pack: Item,
+	): Promise<void> {
+		let item: ItemLight;
+		if (pack.model.id === ItemID.FLARES_KIT) {
+			item = new ItemLight(this.m_GameItems.get(ItemID.LIGHT_FLARE));
+		} else if (pack.model.id === ItemID.GLOWSTICKS_BOX) {
+			item = new ItemLight(this.m_GameItems.get(ItemID.LIGHT_GLOWSTICK));
+		} else {
+			// The C# throws `InvalidOperationException("unhandled item pack type")`
+			// (`:15019`). Kept: this method has exactly two callers and both test the
+			// model first, so the throw is unreachable by construction rather than by
+			// luck, and a hand-written third caller should fail loudly rather than drop
+			// a null light.
+			throw new Error("unhandled item pack type");
+		}
+
+		this.AddOverlay(
+			new OverlayPopup(
+				this.THROWABLE_LIGHT_TEXT,
+				this.MODE_TEXTCOLOR,
+				this.MODE_BORDERCOLOR,
+				this.MODE_FILLCOLOR,
+				Point.Zero,
+			),
+		);
+		this.RedrawPlayScreen();
+
+		const inKey = await this.m_UI.UI_WaitKey();
+		if (inKey.key === "Escape") {
+			// C# `:15025-15028`: `;` -- do nothing. The fall-through past the whole
+			// chain then reaches the two cleanup lines, which is all that happens.
+		} else if (inKey.key === "t" || inKey.key === "T") {
+			// throw.
+			if (await this.HandlePlayerUseThrowableItem(player, item)) {
+				player.inventory!.consume(pack);
+			}
+		} else if (inKey.key === "c" || inKey.key === "C") {
+			// carry.
+			if (player.inventory!.isFull && pack.quantity > 1) {
+				this.AddMessage(this.MakeErrorMessage("No inventory space available."));
+				this.ClearOverlays();
+				this.RedrawPlayScreen();
+				return;
+			}
+
+			for (const i of player.inventory!.items) {
+				if (i.equippedPart !== DollPart.NONE && i instanceof ItemLight) {
+					this.AddMessage(this.MakeErrorMessage("You already have a light equipped."));
+					this.ClearOverlays();
+					this.RedrawPlayScreen();
+					return;
+				}
+			}
+
+			// Clear the light pack if it's the last item, as we may reuse that
+			// inventory slot.
+			let consumedAlready = false;
+			if (pack.quantity === 1) {
+				player.inventory!.consume(pack);
+				consumedAlready = true;
+			}
+
+			// Add a lit one.
+			const quantityAdded = player.inventory!.addAsMuchAsPossible(item).quantityAdded;
+			// remove one from the pack, and the whole pack if it's now empty
+			if (quantityAdded > 0) {
+				if (pack.model.id === ItemID.FLARES_KIT) {
+					if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+						this.m_SoundManager.play(GameSounds.FLARE);
+				} else if (pack.model.id === ItemID.GLOWSTICKS_BOX) {
+					if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+						this.m_SoundManager.play(GameSounds.GLOWSTICK);
+				}
+				this.DoEquipItem(player, item);
+
+				if (!consumedAlready) player.inventory!.consume(pack);
+			}
+		} else {
+			this.AddMessage(
+				this.MakeErrorMessage("Unhandled key error when using throwable light."),
+			);
+			this.AddMessage(this.MakeErrorMessage("Did you perhaps hit the wrong key?"));
+		}
+
+		this.ClearOverlays();
+		this.RedrawPlayScreen();
+	}
+
+	/**
+	 * Siphon fuel out of an adjacent wrecked car.
+	 *
+	 * Still Alive, Release 7-1 (`RogueGame.cs:14248`), plus the Release 7-3 fuel
+	 * pump. Reached by *using* a siphon kit, not by a `PlayerCommand` — which is
+	 * why there is no new command in the enum.
+	 *
+	 * The mechanic is a unit conversion: a `Car`'s tank is read as an ammo stack,
+	 * clamped to `AMMO_FUEL`'s stack limit, and whatever the inventory will not
+	 * take is left in the car. That asymmetry is the whole design — you drain what
+	 * you can carry and the rest stays put — and it is also why `Car`'s tank is
+	 * capped at 99 rather than at a day's burn.
+	 *
+	 * Two details that are easy to miss:
+	 *
+	 * - **One car per turn.** The C# `return`s out of the adjacency callback on
+	 *   the first successful car, so a survivor standing between two wrecks gets
+	 *   one tank's worth, not two.
+	 * - **The 10% chance of drinking some.** A siphon hose has its obvious hazard.
+	 *   It rolls per *successful* car, not per attempt, and it fires after the fuel
+	 *   has already been banked.
+	 *
+	 * The fuel pump branch is Release 7-3 and needs no fuel of its own: a pump is
+	 * unpowered, so siphoning from one is refused with its own message rather than
+	 * the generic "no cars" one.
+	 */
+	HandlePlayerSiphonFuel(): boolean {
+		if (!hasFeature(this.m_Session.ruleset, Feature.SiphonFuel)) return false;
+
+		const map = this.m_Player.location.map!;
+		let refuelled = false;
+		let fueledCar = false;
+		let pumpAdjacent = false;
+
+		for (const d of Direction.COMPASS) {
+			const pt = d.applyTo(this.m_Player.location.position);
+			if (!map.isInBounds(pt.x, pt.y)) continue;
+			const mapObj = map.getMapObjectAtPoint(pt);
+			if (mapObj === null) continue;
+
+			if (mapObj instanceof Car) {
+				if (mapObj.fuelUnits <= 0) continue;
+				fueledCar = true;
+
+				const limit = Models.items.get(ItemID.AMMO_FUEL).stackingLimit;
+				const stack = new ItemAmmo(Models.items.get(ItemID.AMMO_FUEL));
+				stack.quantity = Math.min(mapObj.fuelUnits, limit);
+				const added = this.m_Player.inventory!.addAsMuchAsPossible(stack)
+					.quantityAdded;
+				mapObj.fuelUnits -= added;
+
+				// One car per turn, and the roll is per successful car.
+				if (added > 0) {
+					if (this.m_Rules.rollChance(Rules.VOMIT_WHILE_SIPHONING_CHANCE)) {
+						this.DoVomit(this.m_Player);
+						this.AddMessage(
+							this.MakeMessage(
+								this.m_Player,
+								"accidentally drank a bit of fuel",
+							),
+						);
+					}
+					refuelled = true;
+					break;
+				}
+			} else if (mapObj.imageId === GameImages.OBJ_FUEL_PUMP) {
+				pumpAdjacent = true;
+			}
+		}
+
+		if (refuelled) return true;
+		if (pumpAdjacent) {
+			this.AddMessage(
+				new Message(
+					"Fuel pumps need power. It's not possible to siphon from them.",
+					this.m_Session.worldTime.turnCounter,
+					Color.Red,
+				),
+			);
+			return false;
+		}
+		if (!fueledCar) {
+			this.AddMessage(
+				new Message(
+					"Not adjacent to any cars with fuel left.",
+					this.m_Session.worldTime.turnCounter,
+					Color.Red,
+				),
+			);
+			return false;
+		}
+		// A car was there with fuel, but the inventory took none of it.
+		this.AddMessage(
+			new Message(
+				"Cannot siphon fuel; inventory already full.",
+				this.m_Session.worldTime.turnCounter,
+				Color.Red,
+			),
+		);
+		return false;
+	}
+
+	/**
+	 * Whether the player is drunk enough to lose control of an action.
+	 *
+	 * Still Alive, Release 7-1. The third arm of `TryPlayerUnwell`, and the one
+	 * that was missing when the other two landed: insanity, then drunkenness, then
+	 * food poisoning.
+	 *
+	 * Mirrors `TryPlayerInsanity` step for step for the same reason the food
+	 * poisoning arm does -- the C# runs all three as one chain
+	 * (`TryPlayerControlAlteringEffects`) and the early return on an illegal
+	 * action is what keeps a null from being performed.
+	 */
+	async TryPlayerDrunkenness(): Promise<boolean> {
+		if (!hasFeature(this.m_Session.ruleset, Feature.Alcohol)) return false;
+		if (!this.m_Rules.isActorDrunk(this.m_Player)) return false;
+		if (!this.m_Rules.rollChance(Rules.DRUNK_AFFECTED_ACTION_CHANCE))
+			return false;
+
+		const drunkAction = this.GenerateDrunkAction(this.m_Player);
+		if (drunkAction == null) return false;
+		if (!drunkAction.isLegal()) return false;
+
+		this.ClearMessages();
+		this.AddMessage(
+			new Message(
+				"(you're quite drunk. you lost control for a moment)",
+				this.m_Player.location.map!.localTime.turnCounter,
+				Color.Orange,
+			),
+		);
+		await drunkAction.perform();
+		return true;
+	}
+
+	/**
+	 * A random, uncontrolled action, as a manifestation of heavy intoxication.
+	 *
+	 * Still Alive, Release 7-1 (`RogueGame.cs:24984`). One d6:
+	 *
+	 * | roll | what |
+	 * |---|---|
+	 * | 0-1 | vomit, then wait |
+	 * | 2-3 | bump a random direction |
+	 * | 4 | unequip a random item, or drop one |
+	 * | 5 | aggression at a random same-gender bystander |
+	 *
+	 * The d6 is `m_Rules.Roll(0, 6)`, and the port's `DiceRoller.roll(min, max)`
+	 * is exclusive of `max`, so this is `roll(0, 6)` and every case is reachable.
+	 * The weights are lopsided on purpose: vomiting is the commonest outcome at a
+	 * third of the table.
+	 *
+	 * Note the fourth case has a carve-out: a box of candles, flares or glowsticks
+	 * would otherwise be dropped, and those prompt the player to drop one or all
+	 * -- so a drunken survivor shouts instead. The C# carries that as an inline
+	 * list of three item ids (`RogueGame.cs:25008`), and the port's version of that
+	 * arm used to say the three did not exist and to drop the exclusion. They exist
+	 * now, so the exclusion is there.
+	 *
+	 * **The incapacitated AI's copy of this arm is still not ported**, and it is the
+	 * other half of what the brief calls out. `GenerateIncapacitatedAction`
+	 * (`RogueGame.cs:25042-25076`, Release 7-2) has no counterpart in this port at
+	 * all -- its three other arms need `DeploySmokeScreen` and `DetonateFlashbang`,
+	 * which `RogueGame.ts:20161` records as absent -- so there is nothing to add the
+	 * `:25068` carve-out to. It arrives with that method.
+	 */
+	GenerateDrunkAction(actor: Actor): ActorAction | null {
+		switch (this.m_Rules.roll(0, 6)) {
+			case 0:
+			case 1:
+				this.DoVomit(actor);
+				return new ActionWait(actor, this);
+
+			case 2:
+			case 3:
+				return new ActionBump(actor, this, this.m_Rules.rollDirection());
+
+			case 4: {
+				const inv = actor.inventory;
+				if (inv === null || inv.isEmpty) return null;
+				const it = inv.items[this.m_Rules.roll(0, inv.items.length)];
+				if (it.equippedPart !== DollPart.NONE) {
+					return new ActionUnequipItem(actor, this, it);
+				}
+				// The C# excludes a box of candles, a flare kit and a box of
+				// glowsticks from being dropped here, because those three prompt the
+				// player to drop one or all -- so a drunken survivor would be asked
+				// a question instead of simply fumbling. `RogueGame.cs:25008`.
+				//
+				// **The exclusion is the reference's, and its reason is a prompt that
+				// only a human can answer.** `ActionDropItem.perform()` reaches
+				// `DoDropItem`, which now blocks on the candle prompt, and a survivor
+				// has nobody to press `O`. The shout is the C#'s substitute and is
+				// kept as-is, right down to the "DAMN IT!!!" that is also the
+				// incapacitated AI's catch-all (`:25074`).
+				//
+				// The three ids are gated on `Feature.DarknessFov` for the same reason
+				// every other reader of the kits is: under Classic none of them is a
+				// light source and none of them prompts, so a survivor must be free to
+				// drop one. `LIGHT_FLARE` and `LIGHT_GLOWSTICK` are *not* in this list
+				// and never were -- dropping a bare flare does not prompt, which is the
+				// distinction the earlier note here used to get wrong.
+				if (
+					hasFeature(this.m_Session.ruleset, Feature.DarknessFov) &&
+					(it.model.id === ItemID.CANDLES_BOX ||
+						it.model.id === ItemID.FLARES_KIT ||
+						it.model.id === ItemID.GLOWSTICKS_BOX)
+				) {
+					return new ActionShout(actor, this, "DAMN IT!!!");
+				}
+				return new ActionDropItem(actor, this, it);
+			}
+
+			case 5: {
+				const map = actor.location.map!;
+				const fov = this.m_Rules.actorFOV(
+					actor,
+					map.localTime,
+					this.m_Session.weather,
+				);
+				for (const other of map.actors) {
+					if (other === actor) continue;
+					if (this.m_Rules.areEnemies(actor, other)) continue;
+					if (
+						!LOS.canTraceViewLine(
+							map,
+							actor.location.position,
+							other.location.position,
+							fov,
+						)
+					)
+						continue;
+					// Must be the same gender. The C#'s comment is just "must be
+					// same gender", and it is worth keeping that visible because it
+					// is a strange rule to encounter without warning.
+					if (actor.doll.body.isMale !== other.doll.body.isMale) continue;
+					if (this.m_Rules.rollChance(50)) {
+						// force leaving of leader.
+						if (actor.hasLeader) {
+							actor.leader!.removeFollower(actor);
+							actor.trustInLeader = Rules.TRUST_NEUTRAL;
+						}
+						this.DoMakeAggression(actor, other);
+						return new ActionSay(actor, this, other, "WHAT ARE YOU LOOKING AT!");
+					}
+				}
+				return null;
+			}
+
+			default:
+				return null;
+		}
+	}
+
+	/**
+	 * Burn one turn of fuel off every fuel-bearing object that is alight.
+	 *
+	 * Still Alive, Release 7-6 (RogueGame.cs:6735-6838). The C#'s shape is
+	 * reproduced, including the parts that look like mistakes, with two
+	 * deliberate divergences, both noted below.
+	 *
+	 * The three-way test mirrors the C#'s three `as` casts. A `Car` is
+	 * `UNINFLAMMABLE` and so can never be alight by spreading fire -- it only
+	 * loses fuel by exploding, which is handled where the blast happens. The C#'s
+	 * comment says it is "deliberately exempting Car fires", and the fire state is
+	 * what does the exempting, not a check in this loop.
+	 *
+	 * **Divergence 1 -- the rain roll is weather-gated here, and is not in the
+	 * C#.** The fork's campfire arm rolls `FIRE_RAIN_PUT_OUT_CHANCE` against an
+	 * outdoor campfire with no `IsWeatherRain` test anywhere in scope; the nearest
+	 * one in that file is some 600 lines earlier, in an unrelated dousing check.
+	 * Ported literally, an outdoor campfire would be extinguished every ten turns
+	 * *in clear weather*, which cannot be the intent of a branch whose comment
+	 * reads "rain may extinguish outdoor campfires". Gating on `isWeatherRain`
+	 * matches both the comment and the vanilla loop this branch replaced, and is
+	 * the only way to read the omission as a slip rather than a design.
+	 *
+	 * **Divergence 2 -- barrels get no rain roll at all.** Only `Campfire` does in
+	 * the C#, and that is almost certainly deliberate: a barrel is a metal drum, a
+	 * campfire is not.
+	 */
+	BurnFuelOnFires(map: Map): void {
+		for (const obj of map.mapObjects) {
+			if (!obj.isOnFire) continue;
+
+			if (obj instanceof Campfire) {
+				let rainExtinguishedIt = false;
+				if (this.m_Rules.isWeatherRain(this.m_Session.weather)) {
+					const tile = map.getTileAt(obj.location.position.x, obj.location.position.y);
+					// Divergence 1: see above. The C# omits the weather test.
+					if (tile !== null && !tile.isInside &&
+					    this.m_Rules.rollChance(Rules.FIRE_RAIN_PUT_OUT_CHANCE)) {
+						this.UnapplyOnFire(obj);
+						rainExtinguishedIt = true;
+					}
+				}
+				if (!rainExtinguishedIt) {
+					--obj.fuelUnits;
+					if (obj.fuelUnits <= 0) this.UnapplyOnFire(obj);
+				}
+				continue;
+			}
+
+			if (obj instanceof Barrel) {
+				--obj.fuelUnits;
+				if (obj.fuelUnits <= 0) this.UnapplyOnFire(obj);
+			}
+		}
+	}
+
+	/**
+	 * Mark an item as junk that an NPC has discarded, so the sweep can age it out.
+	 *
+	 * Still Alive, Release 7-6 (`RogueGame.cs:21451`).
+	 *
+	 * The whole feature is this whitelist read upside down. Everything the player
+	 * might still want is *exempted* here, and only what falls off the end gets a
+	 * timestamp. So the order is a performance list -- most-commonly-dropped first,
+	 * as the C# comments -- and getting an exemption wrong means the item
+	 * disappears from a map the player is looking at.
+	 *
+	 * One of the C#'s exemptions is **not** ported, and it is worth saying which
+	 * and why:
+	 *
+	 * - `ItemBackpack` does not exist (`ShelterBackpacks` is pending). The
+	 *   C# exempts backpacks in *both* this function and the sweep; when that
+	 *   feature lands, both sites must be revisited together, or stashed
+	 *   backpacks will start rotting.
+	 *
+	 * The `isRecreational` test is the interesting one. Beer, cigarettes and energy
+	 * drinks are all `ItemMedicine` -- historically, to restore a point of sanity --
+	 * so a bare "is it medicine" keeps every dropped beer bottle forever, which is
+	 * exactly the clutter this feature exists to remove. The flag is why the C#
+	 * reads "keep all medicine *except booze*".
+	 */
+	private ApplyItemTurnTracker(it: Item): void {
+		if (it instanceof ItemMedicine && !it.model.isRecreational) return;
+		if (it instanceof ItemEntertainment) return;
+		if (it instanceof ItemFood) return;
+		// The C# tests `it is ItemGrenade`, a *subclass* of `ItemExplosive`, so a
+		// stick of dynamite or a smoke grenade is not exempt and does rot. The
+		// port has the same subclass, so this is a direct transcription.
+		if (it instanceof ItemGrenade) return;
+		if (it instanceof ItemAmmo) {
+			// Some ammo is early-game clutter; the four below are the guns a
+			// survivor is likely to still be using when the sweep starts.
+			const t = (it.model as ItemAmmoModel).ammoType;
+			if (
+				t !== AmmoType.BOLT &&
+				t !== AmmoType.LIGHT_PISTOL &&
+				t !== AmmoType.NAIL &&
+				t !== AmmoType.FUEL
+			) {
+				return;
+			}
+		}
+		if (it instanceof ItemTrap && it.model.id !== ItemID.TRAP_EMPTY_CAN) return;
+		// `SLEEPING_BAG` and `FISHING_ROD`: rare items no refugee wave brings in, so
+		// they must not be deleted (C# RogueGame.cs:21477). Neither line needs a
+		// `hasFeature` gate, and the reason is the same one the Butchering sanity
+		// carve-out uses: this tests a *data* flag, not a behaviour. Nothing in the
+		// port can produce a rod -- the fork's own `BaseMapGenerator.MakeItemFishingRod`
+		// has no callers, and no spawn table names one -- so under CLASSIC this line
+		// cannot change anything. It is ungated rather than inert so that the day a
+		// generator does spawn rods, the exemption is already the C#'s.
+		//
+		// The bag's exemption was written as prose only: the comment named
+		// `SLEEPING_BAG` and then said it "still does not exist in the port", and the
+		// line below tested the rod alone. That was true while the item was missing,
+		// and became a live gap the moment `ItemID.SLEEPING_BAG` was registered -- the
+		// sentence would have read as covered while the code was not. The bag is
+		// ungated for the rod's reason plus one more: nothing spawns it either (its
+		// three reference readers are unported), so under CLASSIC this cannot fire
+		// either, and when the sleeping-bag use path lands the exemption is already
+		// the C#'s rather than a rot-everything bug waiting behind it.
+		if (it.model.id === ItemID.FISHING_ROD) return;
+		if (it.model.id === ItemID.SLEEPING_BAG) return;
+		if (it.isUnique || it.isForbiddenToAI) return;
+		it.droppedOnTurnNumber = this.m_Session.worldTime.turnCounter;
+	}
+
+	/**
+	 * Age out junk an NPC dropped, once the world is old enough to care.
+	 *
+	 * Still Alive, Release 7-6 (`RogueGame.cs:9062`).
+	 *
+	 * Two details that are easy to get wrong:
+	 *
+	 * - **The sweep skips tiles the player can see.** An item vanishing in plain
+	 *   sight is a bug, not cleanup, so a visible tile is never even scanned.
+	 * - **The comparison is `>=` against a whole number of days**, and the
+	 *   caller's outer guard is `worldTurn > days * TURNS_PER_DAY`. So an item
+	 *   stamped exactly `days` days ago is removed only on the *next* sweep, which
+	 *   is a day later than the number in the option suggests.
+	 * - **Backpacks are exempt** (`RogueGame.cs:9076`, Release 8-2:
+	 *   `&& !(it is ItemBackpack)`), and the reason is scarcity rather than
+	 *   sentiment. There are eight places a bag can spawn, most of them a
+	 *   percentage of one tile in one building, and a survivor who finds one and
+	 *   walks away from it would otherwise come back a week later to find it
+	 *   despawned. The exemption was previously unreachable — nothing in the port
+	 *   produced an `ItemBackpack`, so the guard had nothing to apply to and its
+	 *   absence was invisible. It is here because the placement now exists, and a
+	 *   guard that only lands after the thing it guards is a bug waiting for the
+	 *   next reader to assume it is unnecessary.
+	 *
+	 * Iterating a copy of the item list matters: `removeItemAt` mutates the
+	 * inventory this loop is walking.
+	 */
+	private DeleteItemsSittingIdle(map: Map, currentTurn: number): void {
+		const days = RogueGame.Options().daysBeforeDiscardedItemDespawns;
+		if (days <= 0) return;
+		for (let x = 0; x < map.width; x++) {
+			for (let y = 0; y < map.height; y++) {
+				if (this.IsVisibleToPlayer(map, new Point(x, y))) continue;
+				const inv = map.getItemsAt(new Point(x, y));
+				if (inv === null) continue;
+				for (const it of inv.items.slice()) {
+					if (it.droppedOnTurnNumber === null) continue;
+					// `!(it is ItemBackpack)`, Release 8-2. See above.
+					if (it instanceof ItemBackpack) continue;
+					const idleTurns = currentTurn - it.droppedOnTurnNumber;
+					if (idleTurns >= days * WorldTime.TURNS_PER_DAY) {
+						map.removeItemAt(it, new Point(x, y));
+					}
+				}
+			}
+		}
+	}
+
+	/**
+	 * Run the despawn sweep for every map in a district.
+	 *
+	 * The `>` rather than `>=` is the C#'s: the sweep does not start until the
+	 * world clock is strictly past one full despawn window, so a short game never
+	 * sweeps anything at all.
+	 *
+	 * The feature gate lives *here* rather than at the turn-loop call site, beside
+	 * the other guard, for two reasons. It keeps the two conditions in one place,
+	 * where a reader can see that both must hold; and it means the flag is covered
+	 * by the same tests as the rate limit, instead of being untestable turn-loop
+	 * plumbing that only a source scanner can vouch for. A gate at the call site
+	 * is a gate nobody can mutate-check.
+	 */
+	private DespawnJunkInDistrict(district: District): void {
+		if (!hasFeature(this.m_Session.ruleset, Feature.ItemDespawn)) return;
+		if (this.m_Session.worldTime.turnCounter <=
+			RogueGame.Options().daysBeforeDiscardedItemDespawns * WorldTime.TURNS_PER_DAY) {
+			return;
+		}
+		for (const map of district.maps) {
+			this.DeleteItemsSittingIdle(map, map.localTime.turnCounter);
+		}
+	}
+
 	// C# ApplyOnFire — RogueGame.cs:17963
+	/**
+	 * C# `DoMakeFireForCooking(Actor, Point)` -- `RogueGame.cs:23550-23601`, Release 7-6.
+	 *
+	 * The only way in the whole game for a player to start a fire, and therefore the
+	 * thing `Feature.Cooking` and `Feature.FireBarrels` were both blocked on: before
+	 * it, the only fire the port could produce came from an explosion.
+	 *
+	 * Three shapes, distinguished by what it finds:
+	 *  - a **barrel or campfire with fuel** -- relight it, no wood consumed;
+	 *  - **one without fuel** -- add wood, then light it;
+	 *  - **empty ground** -- place a new campfire, add wood, light it.
+	 *
+	 * The `usedWood` flag exists only to pick the message, and it is the difference
+	 * between "starts a fire with some wood" and "reignites a fire" -- which is the
+	 * player's only indication of whether their plank went in.
+	 */
+	DoMakeFireForCooking(actor: Actor, firePos: Point): void {
+		// `Feature.Cooking` owns the command and the sound. The C# needs no gate here
+		// because `DoMakeFireForCooking` only exists in Release 7-6, so the fork's
+		// fire-start is unconditional there; the port gates the *feature*, and a
+		// Classic player has no matchbox to equip and no `MAKE_COOKING_FIRE` key.
+		if (!hasFeature(this.m_Session.ruleset, Feature.Cooking)) return;
+		let usedWood = false;
+		const map = actor.location.map;
+		if (map === null) return;
+
+		const mapObj = map.getMapObjectAt(firePos.x, firePos.y);
+		if (mapObj instanceof Barrel || mapObj instanceof Campfire) {
+			if (mapObj.fuelUnits <= 0) {
+				usedWood = true;
+				this.increaseCookingFireFuel(actor, mapObj);
+			}
+			// now light it
+			this.ApplyOnFire(mapObj);
+		} else {
+			// need to make a campfire
+			usedWood = true;
+			const newCampfire = this.m_TownGenerator.makeObjCampfire(GameImages.OBJ_CAMPFIRE);
+			map.placeMapObject(newCampfire, firePos);
+			this.increaseCookingFireFuel(actor, newCampfire);
+			this.ApplyOnFire(newCampfire);
+		}
+
+		// use up a match
+		const matches =
+			actor.inventory?.getSmallestStackByModel(Models.items.get(ItemID.MATCHES)!) ?? null;
+		if (matches !== null) actor.inventory!.consume(matches);
+
+		// Gated again rather than relying on the one at the top of the method: the
+		// effect is a separate feature surface from the fire, and it is seventeen lines
+		// away. `extended-audio.test.ts` requires a fork-only id to sit within three
+		// lines of its own gate, which is a rule about proximity rather than about
+		// control flow -- and a reader scanning for "is this sound gated" should not
+		// have to walk back up the method to find out.
+		// Gated on `ExtendedAudio`, not `Cooking`, and that is the distinction the
+		// other four gated effects in the port already make: `Cooking` owns the fire
+		// and `ExtendedAudio` owns the fork's *recordings* of it. The C# needs neither
+		// here because `DoMakeFireForCooking` only exists in Release 7-6, so its sound
+		// is unconditional by construction.
+		if (actor.isPlayer && hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+			this.m_SoundManager.play(GameSounds.MATCH_STRIKE_START_FIRE_PLAYER);
+		//@@MP (Release 7-6), the sizzle. `RogueGame.cs:21749-21752`.
+		//
+		// `PlayIfNotAlreadyPlaying` for **both** tiers, unlike almost every other pair
+		// in the fork where the player's own is a plain `Play`. A fire already hissing
+		// should not gain a second hiss from one match, so the two tiers differ only in
+		// *which* id, not in how it is started -- and the `_PLAYER` half is the one case
+		// where that costs the player something: two matches in a turn is one hiss.
+		if (actor.isPlayer) {
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.COOKING_SIZZLE_PLAYER);
+		} else if (this.isAudibleToPlayer(actor.location, NOISE_RADII.QUIET)) {
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.COOKING_SIZZLE_NEARBY);
+		}
+		if (this.IsVisibleToPlayer(actor) || (mapObj !== null && this.IsVisibleToPlayer(mapObj))) {
+			this.AddMessage(
+				usedWood
+					? this.MakeMessage(actor, "starts a fire with some wood.")
+					: this.MakeMessage(actor, "reignites a fire."),
+			);
+		}
+	}
+
+	/**
+	 * C# `IncreaseCookingFireFuel(Actor, MapObject)` -- `RogueGame.cs:23603-23620`,
+	 * Release 7-6.
+	 *
+	 * One wood plank, consumed from the **smallest** stack (the C#'s
+	 * `GetSmallestStackByType`, "smallest stack first"), and a barrel gets four times
+	 * as much because it is four times as big.
+	 *
+	 * The clamp to `MaxFuelUnits` is the C#'s, and **it can never fire**: a
+	 * receptacle only takes wood when its fuel is at zero, so the largest single
+	 * jump is 0 -> 360 against a barrel's 720. It is transcribed because it is there,
+	 * and noted because a reader who works out that it is dead might otherwise
+	 * remove it and break parity with the reference.
+	 */
+	private increaseCookingFireFuel(actor: Actor, mapObj: Barrel | Campfire): void {
+		const wood = actor.inventory?.getSmallestStackByType(ItemBarricadeMaterial) ?? null;
+		if (wood !== null) actor.inventory!.consume(wood);
+
+		const per = mapObj instanceof Barrel
+			? RogueGame.FIRE_FUEL_PER_WOOD_PLANK * 4
+			: RogueGame.FIRE_FUEL_PER_WOOD_PLANK;
+		mapObj.fuelUnits = Math.min(mapObj.fuelUnits + per, mapObj.maxFuelUnits);
+	}
+
 	ApplyOnFire(mapObj: MapObject): void {
 		// put object on fire.
 		mapObj.fireState = MapObjectFire.ONFIRE;
@@ -20793,8 +28666,8 @@ export class RogueGame {
 		this.m_MessageManager.add(
 			new Message(
 				GameOptions.isFirstPersonView(s_Options.viewMode)
-					? "First person view. Left and Right turn you; Up and Down walk you forward and back."
-					: "Top-down view. The arrow keys walk you again.",
+					? "First person view. Left and Right turn you, and so do A and D; Up and Down walk you forward and back."
+					: "Top-down view. The arrow keys and A W S D walk you again.",
 				this.m_Session.worldTime.turnCounter,
 				Color.LightGray,
 			),
@@ -21095,7 +28968,13 @@ export class RogueGame {
 						this.m_Session.scoring.side,
 						this.m_Session.scoring.reincarnationNumber,
 					),
-			)}% ${Session.descShortGameMode(this.m_Session.gameMode)}`,
+			)}% ${Session.descShortGameMode(this.m_Session.gameMode)}` +
+				// The ruleset rides on the mode line rather than taking a row of its
+				// own: Y0..Y6 are all used, and adding a seventh means growing a panel
+				// whose height is drawn in several places. It is on the HUD at all
+				// because a Still Alive world is otherwise indistinguishable from a
+				// classic one until a fork-only item turns up in a corpse's pockets.
+				` / ${Session.descShortRuleset(this.m_Session.ruleset)}`,
 			X1,
 			Y4,
 		);
@@ -21134,6 +29013,23 @@ export class RogueGame {
 					INVENTORYPANEL_Y,
 				);
 			}
+			// C# `RogueGame.cs:25393-25400`: the backpack takes the ground panel's
+			// row and hides it, rather than the two being stacked. `BACKPACK_PANEL_Y`
+			// is `GROUNDINVENTORYPANEL_Y`, so drawing both would be one on top of
+			// the other -- and `backpackHidesGroundPanel` is the C#'s `hideGroundInv`
+			// test, which is about capacity rather than visibility.
+			const pack = firstBackpack(this.m_Player);
+			if (pack != null && backpackHidesGroundPanel(pack)) {
+				this.DrawInventory(
+					pack.backpackInventory,
+					BACKPACK_PANEL_TITLE,
+					true,
+					INVENTORY_SLOTS_PER_LINE,
+					pack.backpackInventory.maxCapacity,
+					INVENTORYPANEL_X,
+					backpackPanelY(),
+				);
+			} else
 			this.DrawInventory(
 				this.m_Player.location.map!.getItemsAt(
 					this.m_Player.location.position,
@@ -21884,7 +29780,15 @@ export class RogueGame {
 				break;
 
 			case Activity.SLEEPING:
-				this.m_UI.UI_DrawImage(GameImages.ACTIVITY_SLEEPING, gx, gy);
+				this.m_UI.UI_DrawImageTinted(GameImages.ACTIVITY_SLEEPING, gx, gy, tint);
+				break;
+
+			// Still Alive, Release 7-6 (`RogueGame.cs:25965`). The C# groups
+			// FISHING with the activities that draw nothing, so this port does too:
+			// fishing is legible from the rod in the actor's hand, and the fork
+			// shipped no activity sprite for it. Ungated for the reason given on
+			// `DescribeActorActivity`'s arm.
+			case Activity.FISHING:
 				break;
 
 			default:
@@ -22160,7 +30064,195 @@ export class RogueGame {
 		}
 	}
 
-	// C# DrawActorEquipment — RogueGame.cs:18777
+		/**
+	 * Draws an actor magnified, for the character customiser's preview.
+	 *
+	 * The scaled `DrawActorDecoration` overload already exists for `DrawCorpse`, so
+	 * this is a layer list rather than a second renderer to keep in step with the
+	 * doll. The order is the C#'s and is load-bearing: clothes go on in that order or
+	 * a sprite covers the one beneath it.
+	 *
+	 * **`TORSO` is drawn once, where `DrawCorpse` draws it twice.** That doubling is
+	 * in the reference and is invisible in game — the corpse is drawn once and the
+	 * second pass composites the same sprite over itself — but a preview is
+	 * inspected closely, and twice is visibly darker on any sprite with alpha. New UI
+	 * is not obliged to reproduce a compositing artefact.
+	 *
+	 * No `tint`: nothing tints the player, and the scaled overload does not take one.
+	 */
+	/**
+	 * Reports, in one line, any appearance choice that the body on offer cannot
+	 * honour — which happens exactly when the player switches sex, because the
+	 * catalogues are per-sex.
+	 *
+	 * Returns nothing and writes into `cleared` so the screen can keep the note on
+	 * screen until the next row change, rather than having it vanish the moment the
+	 * arrow key is released. A silently dropped choice is the kind of thing a player
+	 * discovers three runs later.
+	 */
+	private noteDroppedAppearance(
+		appearance: CharacterAppearance,
+		isMale: boolean,
+		cleared: string[],
+	): void {
+		const dropped = appearance.revalidate(outfitChoices(isMale));
+		if (dropped.length === 0) return;
+		cleared.push(
+			`Switched body: ${dropped.map((l) => APPEARANCE_LAYER_LABELS[l].trim().toLowerCase()).join(", ")} back to random.`,
+		);
+	}
+
+		/**
+		 * Draws the character preview in the customiser's right column.
+		 *
+		 * A **throwaway actor**, rebuilt each frame rather than kept: it has to exist to
+		 * own a doll, and an actor that outlived the screen would be one more thing to
+		 * unregister. It is never added to the world, so nothing can observe it — no
+		 * faction, no turn, no save.
+		 *
+		 * `body` is 0 for a random-sex male preview, 1 male, 2 female, and an undead
+		 * type index otherwise; the caller resolves `*Random*` so this does not roll.
+		 */
+	private DrawCharacterPreview(
+		isUndead: boolean,
+		body: number,
+		appearance: CharacterAppearance,
+	): void {
+		const undeadIds = [
+			ActorID.UNDEAD_SKELETON,
+			ActorID.UNDEAD_ZOMBIE,
+			ActorID.UNDEAD_MALE_ZOMBIFIED,
+			ActorID.UNDEAD_FEMALE_ZOMBIFIED,
+			ActorID.UNDEAD_ZOMBIE_MASTER,
+		];
+		const isMale = body !== 2;
+		// `*Random*` undead (body 0) previews the first type rather than rolling: a
+		// preview that reshuffles every frame is worse than one that is stable and
+		// might change on Enter.
+const model = isUndead
+			? this.gameActors.get(
+					undeadIds[Math.max(0, Math.min(undeadIds.length - 1, body))],
+				)
+			: this.gameActors.get(isMale ? ActorID.MALE_CIVILIAN : ActorID.FEMALE_CIVILIAN);
+		if (model == null) return;
+
+		// **A doll, not an `Actor`.** The first version of this built a throwaway
+		// actor with `createAnonymous` every frame, which is how it reached game state
+		// at all: the model's `createdCount` went up on every redraw, and constructing
+		// an `Actor` outside a map is not something the draw path should be doing —
+		// it crashed on `isDead` of null as soon as the player moved a row. Nothing in
+		// a preview needs an actor; it needs a `DollBody` and an image id, and both
+		// belong to the model.
+		const doll = new Doll(model.dollBody);
+
+		if (isUndead && model.imageId == null) {
+			// **Doll-based, so it has to be dressed or nothing is drawn at all.** The
+			// zombified pair are `imageId`-less models that inherit the victim's
+			// clothes and gain a bloodied torso (`makeZombified`), so that is exactly
+			// what is reproduced here. Sex comes from the model rather than the row,
+			// because a zombified man's model says so.
+			//
+			// The `isUndead` half of this condition is load-bearing: **living actors
+			// are `imageId`-less too**, so testing `imageId == null` alone dressed every
+			// human as a freshly-zombied one and put blood on their shirt.
+			const zombifiedIsMale = model.dollBody.isMale;
+			const [eyes, skins, heads, torsos, legs, shoes] = appearance.asDressArgs(
+				outfitChoices(zombifiedIsMale),
+				this.appearanceSeed,
+			);
+			BaseMapGenerator.dressActorDoll(
+				new DiceRoller(this.appearanceSeed),
+				doll,
+				eyes,
+				skins,
+				heads,
+				torsos,
+				legs,
+				shoes,
+			);
+			doll.addDecoration(DollPart.TORSO, GameImages.BLOODIED);
+		} else if (!isUndead) {
+			// Human: the *real* dressing code, and the same seed character creation will
+			// use, so the preview cannot drift from what the player actually gets.
+			const [eyes, skins, heads, torsos, legs, shoes] = appearance.asDressArgs(
+				outfitChoices(isMale),
+				this.appearanceSeed,
+			);
+			BaseMapGenerator.dressActorDoll(
+				new DiceRoller(this.appearanceSeed),
+				doll,
+				eyes,
+				skins,
+				heads,
+				torsos,
+				legs,
+				shoes,
+			);
+		}
+		// Whole-body undead (`Actors/skeleton`, `Actors/zombie`,
+		// `Actors/zombie_master`) are left alone: they have no layers to choose and
+		// nothing to add. Dressing one showed a zombie in a shirt.
+
+		// Centred under the rows rather than beside them: every option row here spans
+		// the full canvas -- the skill list alone runs to its right edge -- so there is
+		// no column to put a preview in, and the lower half is empty.
+		//
+		// `UI_DrawImageTransform` scales about the sprite's own centre, so the *drawn*
+		// width is irrelevant here and centring on `ACTOR_SIZE * PREVIEW_SCALE` left
+		// every figure half a sprite left of middle.
+		const gx = Math.round((CANVAS_WIDTH - ACTOR_SIZE) / 2);
+		this.DrawDollPreview(model.imageId, doll, gx, PREVIEW_TOP_Y, PREVIEW_SCALE);
+
+		this.m_UI.UI_DrawStringBoldLarge(
+			Color.Gray,
+			isUndead ? model.name : isMale ? "Male civilian" : "Female civilian",
+			gx - ACTOR_SIZE * PREVIEW_SCALE,
+			PREVIEW_TOP_Y + ACTOR_SIZE * PREVIEW_SCALE + MENU_BOLD_LINE_SPACING,
+		);
+	}
+
+	/**
+	 * Draws a doll, magnified, for the customiser.
+	 *
+	 * The scaled decoration draw already exists for `DrawCorpse`, so this is a layer
+	 * list rather than a second renderer to keep in step with the doll. The order is
+	 * the C#'s and is load-bearing: clothes go on in that order or a sprite covers the
+	 * one beneath it.
+	 *
+	 * **`TORSO` is drawn once, where `DrawCorpse` draws it twice.** That doubling is
+	 * in the reference and is invisible in game — the corpse is drawn once and the
+	 * second pass composites the same sprite over itself — but a preview is inspected
+	 * closely, and twice is visibly darker on any sprite with alpha. New UI is not
+	 * obliged to reproduce a compositing artefact.
+	 */
+	private DrawDollPreview(
+		imageId: string | null,
+		doll: Doll,
+		gx: number,
+		gy: number,
+		scale: number,
+	): void {
+		const px = gx + ACTOR_OFFSET;
+		const py = gy + ACTOR_OFFSET;
+
+		if (imageId != null) this.m_UI.UI_DrawImageTransform(imageId, px, py, 0, scale);
+
+		const layer = (part: DollPart): void => {
+			const decos = doll.getDecorations(part);
+			if (decos == null) return;
+			for (const imageID of decos)
+				this.m_UI.UI_DrawImageTransform(imageID, px, py, 0, scale);
+		};
+
+		layer(DollPart.SKIN);
+		layer(DollPart.FEET);
+		layer(DollPart.LEGS);
+		layer(DollPart.TORSO);
+		layer(DollPart.EYES);
+		layer(DollPart.HEAD);
+	}
+
+// C# DrawActorEquipment — RogueGame.cs:18777
 	DrawActorEquipment(
 		actor: Actor,
 		gx: number,
@@ -23861,6 +31953,19 @@ export class RogueGame {
 
 	// C# LoadGame — RogueGame.cs:19819
 	async LoadGame(saveName: string): Promise<boolean> {
+		// C# `m_MusicManager.StopAll(); m_AmbientSFXManager.StopAll();` —
+		// RogueGame.cs:2394-2395, before the save is even read. The beds belong to
+		// the *old* world's weather and the old player's tile, and neither survives
+		// the load; the C# does not restart them here either, so the loaded game's
+		// first step brings its own.
+		//
+		// The gate reads the *outgoing* `m_Session`, before `Session.load()` swaps it,
+		// and that is the question being asked: the beds that might be playing are
+		// the ones the outgoing session's ruleset allowed, so a CLASSIC load out of
+		// a Still Alive game stops them and the reverse is a no-op.
+		if (hasFeature(this.m_Session.ruleset, Feature.AmbientAudio))
+			this.m_AmbientSFXManager.stopAll();
+
 		// C# loads the save file named `saveName`; the browser keeps the same
 		// JSON in localStorage (session) and in one IndexedDB slot (see DoSaveGame).
 		const saveFile = await GameSaveManager.loadGame(Number(saveName));
@@ -23920,6 +32025,11 @@ export class RogueGame {
 
 	// C# LoadOptions — RogueGame.cs:19843
 	async LoadOptions(): Promise<void> {
+		// See `LoadHiScoreTable`: the desktop read is asynchronous, and this is one
+		// of the three readers that would otherwise have read an empty map and
+		// written the defaults back over the player's options.
+		await whenStorageReady();
+
 		// load. (C# `s_Options = GameOptions.Load(path)` — s_Options *is* the
 		// shared Options singleton, so copy into it instead of replacing it.)
 		s_Options.copyFrom(GameOptions.load());
@@ -23936,6 +32046,27 @@ export class RogueGame {
 		// m_MusicManager.IsMusicEnabled = Options.PlayMusic;
 		// m_MusicManager.Volume = Options.MusicVolume;   (C# volume is 0..100, WebAudio is 0..1)
 		this.m_MusicManager.setVolume(s_Options.musicVolume / 100);
+
+		/**
+		 * Still Alive, Release 2 / 6-1: the two sound buses.
+		 *
+		 * The C# sets all three of `IsSoundEnabled`, `SoundVolume`,
+		 * `IsAmbientSoundEnabled` and `AmbientSFXVolume` in the same block as the
+		 * music pair (`RogueGame.cs:2703`). The port had only the music pair, which
+		 * left two whole option rows with nothing to write to — and this is why:
+		 * `WebAudioSoundManager` had a private `enabled` that was checked in `play`
+		 * but could not be set from outside, so there was no seam for the flag and
+		 * the volume for non-music effects was never applied anywhere. A player
+		 * turning the sound down was changing the music and only the music.
+		 *
+		 * Enabled is set separately from volume for the reason `WebAudioSoundManager`
+		 * documents: an off bus and a quiet bus are different states, and the C# has
+		 * a row for each.
+		 */
+		this.m_SoundManager.setEnabled(s_Options.playSFXs);
+		this.m_SoundManager.setVolume(s_Options.sfxVolume / 100);
+		this.m_AmbientSFXManager.setEnabled(s_Options.playAmbientSFXs);
+		this.m_AmbientSFXManager.setVolume(s_Options.ambientSFXVolume / 100);
 
 		// update difficulty.
 		if (this.m_Session != null && this.m_Session.scoring != null) {
@@ -23971,6 +32102,10 @@ export class RogueGame {
 
 	// C# LoadKeybindings — RogueGame.cs:19873
 	async LoadKeybindings(): Promise<void> {
+		// See `LoadHiScoreTable`: without this the desktop build read keybindings
+		// from an empty map and then saved the defaults over the player's own.
+		await whenStorageReady();
+
 		this.m_UI.UI_Clear(Color.Black);
 		this.m_UI.UI_DrawStringBoldLarge(
 			Color.White,
@@ -24408,7 +32543,12 @@ export class RogueGame {
 	}
 
 	// C# GenerateWorld — RogueGame.cs:20149
-	GenerateWorld(isVerbose: boolean, size: number): void {
+	//
+	// Returns false when a required unique map could not be placed, so the caller
+	// can roll a new seed and try again. C# returned void and let the failure
+	// escape as an exception from a factory two frames down; the fork changed it to
+	// a bool and wrapped `StartNewGame` in `do { ... } while (!worldMade)`.
+	GenerateWorld(isVerbose: boolean, size: number): boolean {
 		// say so.
 		if (isVerbose) {
 			this.m_UI.UI_Clear(Color.Black);
@@ -24463,6 +32603,25 @@ export class RogueGame {
 		const hospitalDistrictPos = noSpecialDistricts[districtIdx];
 		noSpecialDistricts.splice(districtIdx, 1);
 
+		// The mall takes the third special-building slot. C# `:4239-4240`, Release 7-3.
+		//
+		// **The C# spends this die unconditionally and this port must not.** Still Alive
+		// has a single ruleset, so the reference can simply draw a third position and
+		// its own `//@@MP (Release 7-3)` marker records that the fork added it. Here the
+		// roll sits behind `Feature.ShoppingMall`, because an ungated third roll would
+		// consume a die in Classic and shift every roll after it -- which is the
+		// fingerprint, not just a layout difference. Same reasoning as the BlackOps
+		// gate, which went on the check rather than the fire so Classic spends no dice.
+		//
+		// So `null` here means "Classic", and the `equals` at the params site treats it
+		// as "not this district" for the same reason it does for an empty list.
+		let mallDistrictPos: Point | null = null;
+		if (hasFeature(this.m_Session.ruleset, Feature.ShoppingMall)) {
+			districtIdx = this.m_Rules.roll(0, noSpecialDistricts.length);
+			mallDistrictPos = noSpecialDistricts[districtIdx];
+			noSpecialDistricts.splice(districtIdx, 1);
+		}
+
 		/////////////////////////
 		// Create districts maps
 		/////////////////////////
@@ -24493,6 +32652,7 @@ export class RogueGame {
 					district,
 					policeStationDistrictPos,
 					hospitalDistrictPos,
+					mallDistrictPos,
 				);
 				district.entryMap = entryMap;
 				district.name = entryMap.name;
@@ -24519,8 +32679,42 @@ export class RogueGame {
 			);
 			this.m_UI.UI_Repaint();
 		}
-		this.m_Session.uniqueMaps.charUndergroundFacility =
+		// `CreateUniqueMap_ArmyUndegroundBase(world)` belongs here — the C# calls it at
+		// `:4289`, *before* the CHAR facility, and bails out of `NewGame` if either is
+		// missing (`:4290-4291`). **It is not called, and that is a finding rather than
+		// an oversight.**
+		//
+		// The port does have the method and it is tested end-to-end
+		// (`tests/army-base-underground.test.ts`). Wiring it makes `NewGame` return false
+		// for most of this repository's own test worlds, with
+		//
+		//   "could not generate a world in 12 attempts; no business district with a CHAR
+		//    office, and no green district with a park to land a helicopter in, in a 3x3
+		//    city"
+		//
+		// because a green district with an army office requires a block that survives the
+		// office pass, and a 3x3 city has almost no green blocks. The C# has the same
+		// early-out and would fail identically on a world that small — which means the
+		// early-out is a **real fragility of the fork**, not a transcription error, and
+		// reproducing it faithfully means this port cannot start a small world at all.
+		//
+		// That is a decision about the port's own minimum city size, not a detail to
+		// settle inside a wiring change. The call, its ordering and its two-roll
+		// district-and-office selection are all in place above; what is missing is a
+		// decision on whether a world without an army base should be unplayable.
+		// Until that is made, `m_Session.uniqueMaps.armyBase` stays null and the map is
+		// reachable only from tests.
+
+		const charUnderground =
 			this.CreateUniqueMap_CHARUndegroundFacility(world);
+		if (charUnderground === null) {
+			// The offices are behind a RollChance, so a business quarter with none in
+			// it is a legal roll. Nothing after this point may assume the map
+			// exists -- twenty-odd sites dereference `charUndergroundFacility.theMap`
+			// -- so bail here rather than build half a world on top of it.
+			return false;
+		}
+		this.m_Session.uniqueMaps.charUndergroundFacility = charUnderground;
 
 		/////////////////
 		// Unique Actors
@@ -24715,6 +32909,25 @@ export class RogueGame {
 		tagTile.removeAllDecorations();
 		tagTile.addDecoration(GameImages.DECO_ROGUEDJACK_TAG);
 
+		////////////////////////////////////////////////////
+		// Pick the helicopter rescue landing site. //@@MP (Release 6-3)
+		////////////////////////////////////////////////////
+		//
+		// Third worldgen stage that can fail, and it sits exactly where the C# has
+		// it: after the easter-egg tag, before the player is spawned. The C# cannot
+		// fail here at all — its own comment says "if the heli can't be generated
+		// for some reason, it's off for this run" — because its earlier
+		// `CreateUniqueMap_ArmyUndegroundBase` already returned false on the
+		// absence of a green district with an army office, and a green district with
+		// an army office is not necessarily one with a park.
+		//
+		// The gate is inside the method rather than here, so the caller reads as the
+		// C# does and there is exactly one place that decides whether the feature
+		// runs. Under CLASSIC this is a no-op that returns true, which is what keeps
+		// a Classic world byte-identical to one generated before this feature
+		// existed: no dice is taken and no field is written.
+		if (!this.PickHelicopterRescueSite(world)) return false;
+
 		//////////////////////////////
 		// Spawn player on center map
 		//////////////////////////////
@@ -24778,6 +32991,157 @@ export class RogueGame {
 			);
 			this.m_UI.UI_Repaint();
 		}
+		return true;
+	}
+
+	/**
+	 * C# `GenerateWorld`'s "Pick location for helicopter rescue" region —
+	 * `RogueGame.cs:4470-4574`, Release 6-3.
+	 *
+	 * Three steps, in the C#'s order, and the order is the whole content: the
+	 * eligible districts are collected first, the roll happens second, and only
+	 * then is a tile scanned for. Getting it wrong would not shift a single die —
+	 * it would change which district the one roll that *is* taken picks from.
+	 *
+	 * **Returns false when there is nowhere to land**, which is the C#'s
+	 * behaviour: it `return false`s on both "no green district spot" and "no clear
+	 * spot in one", and `StartNewGame`'s `do { ... } while (!worldMade)` is the
+	 * machinery that handles it. Two sites it can fail on, and the bound on that
+	 * loop is 12 attempts — see there for why the error message names the *other*
+	 * failure too.
+	 *
+	 * ## The roll
+	 *
+	 * The C# shuffles `goodDistricts` with `OrderBy(x => r.Next())` on an
+	 * **unseeded** `new Random()` (`:4526-4528`). That is a C# bug for a game with
+	 * `--seed` and a save format: the same save reloaded picks a different landing
+	 * site every time, and no world can be reproduced from its seed. The port
+	 * spends one die from the injected roller instead — `this.m_Rules.roll`, the
+	 * same call `CreateUniqueMap_ArmyUndegroundBase` uses to pick *its* green
+	 * district (`RogueGame.cs:4903`), so this feature costs worldgen exactly one
+	 * roll and it is a roll the fork's own generator would have taken.
+	 *
+	 * The C# then tries every district in the shuffled order until one has a spot.
+	 * A single roll cannot express a permutation, so the roll picks a *starting
+	 * index* and the remaining districts are walked cyclically from it. Same
+	 * "try them all" semantics, same one die, and the walk is a pure function of
+	 * the roll — which is the property the unseeded shuffle destroyed.
+	 */
+	PickHelicopterRescueSite(world: World): boolean {
+		if (!hasFeature(this.m_Session.ruleset, Feature.HelicopterRescue)) return true;
+
+		// 1. All green districts with a park in them.
+		//    The C# names this `hasPark` and tests only "Park" here, adding
+		//    "Graveyard" and "court" two steps later — so a district whose only
+		//    open space is a graveyard is still not a candidate. That asymmetry is
+		//    the C#'s and is kept: `Feature.Graveyard` made the graveyard zone exist
+		//    (Release 4) and the fork did not notice that its own picker needed it.
+		const goodDistricts: District[] = [];
+		for (let x = 0; x < world.size; x++) {
+			for (let y = 0; y < world.size; y++) {
+				const district = world.getDistrict(x, y);
+				if (district === null || district.kind !== DistrictKind.GREEN)
+					continue;
+				const entryMap = district.entryMap;
+				if (entryMap === null) continue;
+				if (!entryMap.zones.some((z) => z.name.includes("Park"))) continue;
+				goodDistricts.push(district);
+			}
+		}
+
+		// 2. Pick one green district at random.
+		if (goodDistricts.length === 0) return false;
+		const first = this.m_Rules.roll(0, goodDistricts.length);
+
+		// 3. First of them with three consecutive object-free tiles in a
+		//    park-ish zone.
+		for (let i = 0; i < goodDistricts.length; i++) {
+			const chosenDistrict = goodDistricts[(first + i) % goodDistricts.length];
+			const landing = this.FindHelicopterLandingSpot(chosenDistrict);
+			if (landing === null) continue;
+
+			// C# `:4551-4553`, in the C#'s order.
+			this.m_Session.setHelicopterRescueSite(
+				World.CoordToString(
+					chosenDistrict.worldPosition.x,
+					chosenDistrict.worldPosition.y,
+				),
+				landing,
+			);
+			return true;
+		}
+
+		// C# `:4572`: "Could not find suitable location for helicopter landing".
+		return false;
+	}
+
+	/**
+	 * The three-tile scan, C# `RogueGame.cs:4530-4559`.
+	 *
+	 * A zone qualifies by *name* — "Park", "Graveyard" or "court" (`:4533`) — so
+	 * the exclusion is a substring test on three tokens rather than a zone
+	 * attribute, and the port keeps it as a substring test. Anything a future
+	 * building names "Sport court" or "Court House" joins the set by being
+	 * spelled that way, which is exactly as fragile as the C# and for the same
+	 * reason: the C# has no `ZoneAttributes.IS_HELICOPTER_PARK` to key on.
+	 *
+	 * The scan is x-major (`for x { for y { } }`), so the first hit is the
+	 * leftmost column, topmost row — kept, because which tile a run's rescue
+	 * square is on is not something to change silently.
+	 */
+	private FindHelicopterLandingSpot(district: District): Point | null {
+		const map = district.entryMap;
+		if (map === null) return null;
+
+		for (const zone of map.zones) {
+			if (!isHelicopterLandingZoneName(zone.name)) continue;
+
+			for (let x = zone.bounds.left; x < zone.bounds.right; x++) {
+				for (let y = zone.bounds.top; y < zone.bounds.bottom; y++) {
+					if (!this.TileIsGoodForHelicopter(map, new Point(x, y)))
+						continue;
+					if (map.getMapObjectAt(x, y) !== null) continue;
+					if (!this.TileIsGoodForHelicopter(map, new Point(x + 1, y)))
+						continue;
+					if (map.getMapObjectAt(x + 1, y) !== null) continue;
+					if (!this.TileIsGoodForHelicopter(map, new Point(x + 2, y)))
+						continue;
+					if (map.getMapObjectAt(x + 2, y) !== null) continue;
+
+					return new Point(x, y);
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * C# `TileIsGoodForHelicopter` — `RogueGame.cs:4649-4658`.
+	 *
+	 * **Every tile that exists is good.** That is the C#'s own answer, and it is
+	 * reproduced rather than repaired: both of its arms `return true`, so the
+	 * grass / sports-court test on the first line gates nothing and the
+	 * `// bad spot.` arm is a no-op. The consequence is that the *only* real
+	 * constraint on a landing site is the three-consecutive-object-free test in
+	 * `FindHelicopterLandingSpot`, which is why that test is what the suite
+	 * asserts.
+	 *
+	 * Repairing it was considered and rejected on the same grounds the rest of
+	 * this port keeps upstream quirks: the dead arm is the whole of what the site
+	 * picker chooses on, so "fixing" it would reject most parks (a park's
+	 * perimeter is walkway and fenced, its interior grass with trees on it) and
+	 * turn a second worldgen failure mode into a common one. It is also not
+	 * writable as written: the port has no `GameTiles.isSportsCourtTile`
+	 * (`Feature.SportsCourts` is pending), so the intended predicate would have
+	 * to be invented rather than ported.
+	 *
+	 * The one difference: the C# indexes the tile grid unguarded and throws
+	 * `IndexOutOfRangeException` one tile past the map edge, and the scan reads
+	 * `x + 2` with no bounds check of its own. The port's `getTileAt` returns
+	 * null there, and a tile that is not there is not a place to land.
+	 */
+	TileIsGoodForHelicopter(map: Map, pt: Point): boolean {
+		return map.getTileAt(pt.x, pt.y) !== null;
 	}
 
 	// C# CheckIfExitIsGood — RogueGame.cs:20494
@@ -24823,6 +33187,15 @@ export class RogueGame {
 			false,
 			0,
 		);
+		// alpha10 marks every unique NPC `isUnique`, and that is what the
+		// first-sighting check requires before it clears their invincibility
+		// (`HandlePlayerActor`: `if (other.isUnique) { ... isInvincible = false }`).
+		// This spawner is the one that forgot, so the Thing went into
+		// `uniqueActors`, got `isInvincible = true` from the worldgen sweep, and
+		// could never lose it: permanently invincible, with no theme music on the
+		// first sighting either. The other six unique spawners in this file all set
+		// it. Same fix as the fork's RogueGame.cs:4693.
+		actor.isUnique = true;
 
 		// 3. Spawn in sewers map.
 		const roller = new DiceRoller(map.seed);
@@ -25247,7 +33620,83 @@ export class RogueGame {
 	}
 
 	// C# CreateUniqueMap_CHARUndegroundFacility — RogueGame.cs:20887
-	CreateUniqueMap_CHARUndegroundFacility(world: World): UniqueMap {
+	/**
+	 * C# `CreateUniqueMap_ArmyUndegroundBase` — `RogueGame.cs:4226` (Release 6-3).
+	 *
+	 * Three steps, in the C#'s order: find every green district with an army office,
+	 * pick one at random, generate the base under it.
+	 *
+	 * ## Two details that are easy to lose
+	 *
+	 * **Two separate rolls, not one.** `goodDistricts[...]` picks the *district* and
+	 * then `offices[...]` picks the *office inside it* — so a green district with three
+	 * army offices is three times as likely to be chosen as one with a single office,
+	 * because the second roll is over the office list rather than the district list.
+	 * Collapsing them into "pick a district, take its first office" would be a
+	 * different distribution and would show up as a map at a different coordinate.
+	 *
+	 * **The map is renamed and re-parented after generation.** `map.Name` becomes
+	 * `"Army Base @{x}-{y}"` from the entry position, `map.District` is set to the
+	 * chosen district, and `chosenDistrict.AddUniqueMap(map)` registers it. The rename
+	 * happens *after* `GenerateUniqueMap_ArmyBase`, which had already set the name to
+	 * `"Army Base"` — so the two names are not a conflict, they are sequential.
+	 *
+	 * A district with no army office is a legal world: `makeArmyOffices` is behind
+	 * `roll(0, 99)` per green block, and `Feature.ArmyBase` is off under Classic. So
+	 * `null` here is an expected outcome, and the C# returns it to abort `NewGame`.
+	 */
+	CreateUniqueMap_ArmyUndegroundBase(world: World): UniqueMap | null {
+		///////////////////////////////////////////////
+		// 1. Find all green districts with army offices.
+		// 2. Pick one green district at random.
+		// 3. Generate underground map there.
+		///////////////////////////////////////////////
+
+		// 1. Find all green districts with offices.
+		const goodDistricts: District[] = [];
+		for (let x = 0; x < world.size; x++) {
+			for (let y = 0; y < world.size; y++) {
+				const district = world.getDistrict(x, y)!;
+				// The C# has `// || world[x, y].Kind == DistrictKind.GENERAL`
+				// commented out at `:4243`, so only GREEN qualifies. Left that way: the
+				// commented line is a record of a decision not taken, not a request.
+				if (district.kind !== DistrictKind.GREEN) continue;
+				const hasOffice = district.entryMap!.zones.some((z) =>
+					z.hasGameAttribute(ZoneAttributes.IS_ARMY_OFFICE)
+				);
+				if (hasOffice) goodDistricts.push(district);
+			}
+		}
+
+		// 2. Pick one green district at random.
+		if (goodDistricts.length === 0) {
+			// No `Logger` in the port; `logInit` is what world generation uses.
+			logInit("world generation failure: no green districts with army offices");
+			return null;
+		}
+		const chosenDistrict = goodDistricts[this.m_Rules.roll(0, goodDistricts.length)]!;
+
+		// 3. Generate underground map there.
+		const offices = chosenDistrict.entryMap!.zones.filter((z) =>
+			z.hasGameAttribute(ZoneAttributes.IS_ARMY_OFFICE)
+		);
+		const chosenOffice = offices[this.m_Rules.roll(0, offices.length)]!;
+		const built = this.m_TownGenerator.createUniqueMap_ArmyBase(
+			chosenDistrict.entryMap!,
+			chosenOffice,
+			s_Options.districtSize
+		);
+		if (built === null) return null;
+		const map = built.map;
+		map.district = chosenDistrict;
+		map.name = `Army Base @${built.baseEntryPos.x}-${built.baseEntryPos.y}`;
+		chosenDistrict.addUniqueMap(map);
+		const um = new UniqueMap();
+		um.theMap = map;
+		return um;
+	}
+
+	CreateUniqueMap_CHARUndegroundFacility(world: World): UniqueMap | null {
 		////////////////////////////////////////////////
 		// 1. Find all business districts with offices.
 		// 2. Pick one business district at random.
@@ -25272,8 +33721,14 @@ export class RogueGame {
 			}
 
 		// 2. Pick one business district at random.
-		if (goodDistricts.length === 0)
-			throw new Error("world has no business districts with offices");
+		// Returning null rather than throwing is the point: the caller regenerates
+		// the whole world on a fresh seed. A district with no CHAR office is
+		// possible — the office is behind a `RollChance`, so a 5x5 city can roll
+		// a business quarter with none in it — and the C# answered that by throwing
+		// out of a method whose only caller had an unreachable catch, so the game
+		// was dead with no way to continue and nothing in the log. See
+		// `GenerateWorld`'s retry and plans/BROWSER_PORT_PLAN §5.6c item 2.
+		if (goodDistricts.length === 0) return null;
 		const chosenDistrict =
 			goodDistricts[this.m_Rules.roll(0, goodDistricts.length)];
 
@@ -25320,6 +33775,13 @@ export class RogueGame {
 		district: District,
 		policeStationDistrictPos: Point,
 		hospitalDistrictPos: Point,
+		/**
+		 * The mall's district, or `null` under Classic. C# `:5006` compares against
+		 * `mallDistrictPos` directly because the reference always drew one; here the
+		 * roll is gated on `Feature.ShoppingMall`, so Classic passes `null` and the
+		 * comparison is written to answer "not this district" for it.
+		 */
+		mallDistrictPos: Point | null,
 	): Map {
 		const gridX = district.worldPosition.x;
 		const gridY = district.worldPosition.y;
@@ -25383,6 +33845,11 @@ export class RogueGame {
 		);
 		genParams.generateHospital =
 			district.worldPosition.equals(hospitalDistrictPos);
+		// C# `:5006`, Release 7-3. `mallDistrictPos` is null under Classic, and
+		// `Point.equals(null)` is false, so the param is left false there rather than
+		// needing a separate gate -- the same shape as the two above it.
+		genParams.generateShoppingMall =
+			mallDistrictPos !== null && district.worldPosition.equals(mallDistrictPos);
 
 		// 4. Generate map.
 		const prevParams = this.m_TownGenerator.params;
@@ -25459,7 +33926,7 @@ export class RogueGame {
 						this.gameFactions.get(FactionID.TheCivilians),
 						0,
 					);
-					townGen.dressCivilian(roller, player);
+					this.dressPlayerFromCharGen(player);
 					townGen.giveNameToActor(roller, player);
 					// Then zombify.
 					player = this.Zombify(null, player, true);
@@ -25489,7 +33956,7 @@ export class RogueGame {
 				this.gameFactions.get(FactionID.TheCivilians),
 				0,
 			);
-			townGen.dressCivilian(roller, player);
+			this.dressPlayerFromCharGen(player);
 			townGen.giveNameToActor(roller, player);
 			player.sheet.skillTable.addOrIncreaseSkill(this.m_CharGen.startingSkill);
 
@@ -26303,27 +34770,32 @@ export class RogueGame {
 		// 5. Sighting Jason Myer : !jasonmyers
 		{
 			const jasonMyers = this.m_Session.uniqueActors.jasonMyers.theActor;
-			if (player !== jasonMyers) {
-				if (!jasonMyers!.isDead) {
-					if (this.IsVisibleToPlayer(jasonMyers!)) {
-						// music.
-						if (this.m_MusicManager.getCurrentMusicId() !== GameMusics.INSANE) {
-							this.m_MusicManager.stop();
-							this.m_MusicManager.play(GameMusics.INSANE, MusicPriority.EVENT);
-						}
+			// **`theActor` is null until he spawns, and stays null forever under a
+			// ruleset that never spawns him.** The C# reads `.IsDead` unconditionally
+			// because Classic always creates him during world generation; the `!` here
+			// was that assumption copied into a port where it does not hold, and it
+			// threw `Cannot read properties of null (reading 'isDead')` on the first
+			// turn of every Still Alive run. Null and "not yet here" are the same thing
+			// for this check: there is nobody to see.
+			if (jasonMyers != null && player !== jasonMyers && !jasonMyers.isDead) {
+				if (this.IsVisibleToPlayer(jasonMyers)) {
+					// music.
+					if (this.m_MusicManager.getCurrentMusicId() !== GameMusics.INSANE) {
+						this.m_MusicManager.stop();
+						this.m_MusicManager.play(GameMusics.INSANE, MusicPriority.EVENT);
+					}
 
-						// message if 1st time.
-						if (!this.m_Session.scoring.hasSighted(jasonMyers!.model.id)) {
-							this.ClearMessages();
-							this.AddMessage(
-								new Message(
-									"Nice axe you have there!",
-									this.m_Session.worldTime.turnCounter,
-									Color.Yellow,
-								),
-							);
-							if (!this.m_Player.isBotPlayer) await this.AddMessagePressEnter();
-						}
+					// message if 1st time.
+					if (!this.m_Session.scoring.hasSighted(jasonMyers.model.id)) {
+						this.ClearMessages();
+						this.AddMessage(
+							new Message(
+								"Nice axe you have there!",
+								this.m_Session.worldTime.turnCounter,
+								Color.Yellow,
+							),
+						);
+						if (!this.m_Player.isBotPlayer) await this.AddMessagePressEnter();
 					}
 				}
 			}
@@ -26407,6 +34879,14 @@ export class RogueGame {
 	// C# HandleReincarnation — RogueGame.cs:22001
 	// async: C# blocks on the avatar menu and on WaitEnter/WaitYesOrNo.
 	async HandleReincarnation(): Promise<void> {
+		// C# `m_MusicManager.StopAll(); m_SFXManager.StopAll(); m_AmbientSFXManager.StopAll();`
+		// — RogueGame.cs:5501-5504, the first three lines of the method and *before*
+		// the "do we even reincarnate" question. The port's `m_MusicManager.stop()`
+		// for that case is further down, so the ambient stop is here rather than
+		// folded into it: a declined reincarnation still has to leave the rain.
+		if (hasFeature(this.m_Session.ruleset, Feature.AmbientAudio))
+			this.m_AmbientSFXManager.stopAll();
+
 		// Reincarnate?
 		// don't bother if option set to zero.
 		if (
@@ -27754,9 +36234,19 @@ export class RogueGame {
 		this.DoCloseDoor(actor, door);
 	}
 
-	/** camelCase alias for `game.doDropItem()` — C# `DoDropItem`. */
-	doDropItem(actor: Actor, it: Item): void {
-		this.DoDropItem(actor, it);
+	/**
+	 * camelCase alias for `game.doDropItem()` — C# `DoDropItem`.
+	 *
+	 * async, because `DoDropItem` is: see its header. **`ActionDropItem.perform()`
+	 * calls this and does not await it** -- its return type is `void` in
+	 * `engine/actions/Actions.ts`, which this change does not own. That is harmless
+	 * and not by luck: for an NPC, and for every item that is not a box of candles,
+	 * `DoDropItem`'s body contains no `await`, so an `async` method runs it to
+	 * completion before returning the promise and the action behaves exactly as
+	 * before.
+	 */
+	async doDropItem(actor: Actor, it: Item): Promise<void> {
+		await this.DoDropItem(actor, it);
 	}
 
 	/** camelCase alias for `game.doEatCorpse()` — C# `DoEatCorpse`. */
@@ -27931,14 +36421,21 @@ export class RogueGame {
 		return await this.DoUseExit(actor, exitPoint);
 	}
 
-	/** camelCase alias for `game.doUseItem()` — C# `DoUseItem`. */
-	doUseItem(actor: Actor, it: Item): void {
-		this.DoUseItem(actor, it);
+	/**
+	 * camelCase alias for `game.doUseItem()` — C# `DoUseItem`.
+	 *
+	 * async, and `ActionUseItem.perform()` does not await it -- `void` in
+	 * `engine/actions/Actions.ts`. Harmless for the reason `doDropItem`'s note gives:
+	 * every arm of `DoUseItem` that awaits is guarded by `actor.isPlayer`, so an NPC's
+	 * use runs to completion inside the synchronous prefix.
+	 */
+	async doUseItem(actor: Actor, it: Item): Promise<void> {
+		await this.DoUseItem(actor, it);
 	}
 
 	/** camelCase alias for `game.doWait()` — C# `DoWait`. */
-	doWait(actor: Actor): void {
-		this.DoWait(actor);
+	doWait(actor: Actor, isFishing = false): void {
+		this.DoWait(actor, isFishing);
 	}
 
 	UpdatePlayerFOV(player: Actor): void {
@@ -27956,6 +36453,7 @@ export class RogueGame {
 			player,
 			this.m_Session.worldTime,
 			this.m_Session.world!.weather,
+			true, // Release 6-5: light sources outside the actor's own FOV
 		);
 		// Push the FOV onto the map's tiles. Without this nothing is ever marked
 		// in-view, so IsVisibleToPlayer is false everywhere and no actor, item or

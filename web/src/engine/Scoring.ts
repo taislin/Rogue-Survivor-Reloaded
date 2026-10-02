@@ -6,7 +6,9 @@ import { Actor } from "@data/Actor";
 import { Map as GameMap } from "@data/Map";
 import { Models } from "@data/Models";
 import { WorldTime } from "@engine/WorldTime";
-import { GameOptions, ZupDays } from "@engine/GameOptions";
+import { Feature, hasFeature } from "@engine/FeatureFlags";
+import { GameOptions, Resources, ZupDays } from "@engine/GameOptions";
+import { Session } from "@engine/Session";
 import { GameMusics } from "@gameplay/GameSounds";
 import { SkillID } from "@gameplay/Skills";
 
@@ -23,6 +25,17 @@ export enum AchievementIDs {
   CHAR_POWER_UNDERGROUND_FACILITY,
 
   KILLED_THE_SEWERS_THING,
+
+  /**
+   * C# `Achievement.IDs.RESCUED_BY_HELICOPTER` — `Scoring.cs:34`, Release 6-4.
+   *
+   * Appended rather than placed where the C# has it (before the killing-uniques
+   * region, `Scoring.cs:352-359`), for the same reason as `RaidType`: the enum is
+   * written into the save and into the post-mortem text file as a *count*
+   * (`MAX_ACHIEVEMENTS`), but the members are also persisted by position in
+   * `serialization/specs.ts`, so inserting would move every achievement after it.
+   */
+  RESCUED_BY_HELICOPTER,
 
   _COUNT,
 }
@@ -259,6 +272,34 @@ export class Scoring {
       )
     );
 
+    //@@MP (Release 6-4)
+    this.initAchievement(
+      AchievementIDs.RESCUED_BY_HELICOPTER,
+      new Achievement(
+        AchievementIDs.RESCUED_BY_HELICOPTER,
+        "Escaped the city by army rescue helicopter",
+        "Did not escape the city",
+        ["So long, it's been a blast"],
+        // `ACHIEVEMENT` is a **fork-only** sound id, and the port's rule is that a
+        // fork-only id is never named ungated -- `tests/extended-audio.test.ts`
+        // scans for exactly that, and it caught this line. The C# plays it
+        // **The C# plays `GameSounds.ACHIEVEMENT` here** -- `Scoring.cs:358`, the
+        // `SFXID` parameter of `Achievement`'s constructor, and it does so for all
+        // nine of its achievements. The port does not: that field is `musicId`, and
+        // every other row in this file fills it with a `GameMusics.*` id, so the
+        // port plays a cue where the C# plays an effect.
+        //
+        // That is a pre-existing port-wide divergence rather than something this
+        // feature introduces, and following the C# *here* would mean putting a sound
+        // id in a music field. It typechecks -- both are strings -- and it is
+        // precisely the mistake the type system cannot catch. `HEYTHERE` is what the
+        // other two generic achievements use, so this matches the port rather than
+        // introducing a second convention for one row.
+        GameMusics.HEYTHERE,
+        3000
+      )
+    );
+
     // Reaching Day X
     this.initAchievement(
       AchievementIDs.REACHED_DAY_07,
@@ -394,6 +435,27 @@ export class Scoring {
         GameOptions.DEFAULT_SUPPLIESDROP_FACTOR;
       if (side === DifficultySide.FOR_SURVIVOR) rating -= 0.5 * k;
       else rating += 0.5 * k;
+    }
+
+    // - Resources availability : x1.5 (LOW) -> x0.5 (HIGH), survivor only
+    //
+    // The one difficulty factor that is a *multiplier on the whole rating*
+    // rather than an additive term, and it is a multiplier in only one
+    // direction. Playing LOW as a survivor makes the game worth 1.5x; playing
+    // HIGH as a survivor halves it. For the zombies there is no adjustment at
+    // all -- a plentiful world is no easier or harder to conquer, only a
+    // different kind of game, and the C# declines to score that.
+    //
+    // Gated because the option outlives the ruleset: it lives in localStorage,
+    // so a player who set HIGH under Still Alive and then started a CLASSIC
+    // game still has HIGH in the blob, and an ungated reader would quietly halve
+    // their classic score. Hiding the row in the options screen is not enough.
+    if (
+      side === DifficultySide.FOR_SURVIVOR &&
+      hasFeature(Session.get().ruleset, Feature.ResourcesAvailability)
+    ) {
+      if (options.resourcesAvailability === Resources.LOW) rating *= 1.5;
+      else if (options.resourcesAvailability === Resources.HIGH) rating *= 0.5;
     }
 
     // - Zombifieds UpDay

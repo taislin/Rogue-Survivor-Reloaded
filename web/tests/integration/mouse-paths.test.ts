@@ -158,7 +158,7 @@ async function redrawsWhileWaiting(probe: MouseProbeUI, ms: number): Promise<num
 
   const running = game.HandlePlayerActor(player);
   await new Promise<void>((r) => setTimeout(r, ms));
-  probe.postKey("."); // WAIT_OR_SELF: ends the turn and returns from the loop
+  probe.postKey("X"); // WAIT_OR_SELF: ends the turn and returns from the loop
   await Promise.race([
     running,
     new Promise<void>((r) => setTimeout(r, 2000)),
@@ -264,17 +264,17 @@ describe("picking an item up off the ground", () => {
     return new Point(topLeft.x + 16, topLeft.y + 16);
   }
 
-  it("moves the item into the player inventory on a left click", () => {
+  it("moves the item into the player inventory on a left click", async () => {
     const item = dropItem();
     const player = game.player!;
     const ground = player.location.map!.getItemsAt(player.location.position)!;
     expect(ground.contains(item)).toBe(true);
 
     const probe = new MouseProbeUI();
-    withProbe(probe, () => {
+    await withProbe(probe, async () => {
       const centre = groundSlotCentre(0);
       probe.mousePosition = probe.fromCanvas(centre.x, centre.y);
-      const res = game.HandleMouseInventory(probe.mousePosition, MouseButton.Left, false);
+      const res = await game.HandleMouseInventory(probe.mousePosition, MouseButton.Left, false);
       expect(res.hasDoneAction).toBe(true);
     });
 
@@ -282,7 +282,7 @@ describe("picking an item up off the ground", () => {
     expect(ground.isEmpty).toBe(true);
   });
 
-  it("works the same when the canvas is displayed larger than 1:1", () => {
+  it("works the same when the canvas is displayed larger than 1:1", async () => {
     // The reported position is in CSS pixels and the engine divides by
     // `UI_GetCanvasScale*`; a probe at 2x must land on the same slot. Before the
     // mouse mapping was fixed, the position was scaled by the backing store and
@@ -294,10 +294,10 @@ describe("picking an item up off the ground", () => {
     const probe = new MouseProbeUI();
     probe.displayScale = 2;
 
-    withProbe(probe, () => {
+    await withProbe(probe, async () => {
       const centre = groundSlotCentre(0);
       probe.mousePosition = probe.fromCanvas(centre.x, centre.y);
-      const res = game.HandleMouseInventory(probe.mousePosition, MouseButton.Left, false);
+      const res = await game.HandleMouseInventory(probe.mousePosition, MouseButton.Left, false);
       expect(res.hasDoneAction).toBe(true);
     });
 

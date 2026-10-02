@@ -330,7 +330,13 @@ export abstract class MapGenerator {
   // ── Map objects ───────────────────────────────────────────────────────────
 
   mapObjectPlace(map: GameMap, x: number, y: number, mapObj: MapObject): void {
-    if (!map.getMapObjectAt(x, y)) map.placeMapObject(mapObj, new Point(x, y));
+    // The exit check is not belt-and-braces. An exit tile is a doorway or a
+    // stairway: put a shelf, a bed or a junk pile on one and the room it connects
+    // is sealed, with no way for the generator to notice. The police station's
+    // offices and jails level are joined by exactly such a tile, and so is every
+    // house basement and the sewers maintenance ladder.
+    if (!map.getMapObjectAt(x, y) && !map.getExitAt(new Point(x, y)))
+      map.placeMapObject(mapObj, new Point(x, y));
   }
 
   mapObjectFill(map: GameMap, rect: Rect, createFn: (p: Point) => MapObject | null): void;
@@ -372,7 +378,7 @@ export abstract class MapGenerator {
       for (let y = top; y < top + h; y++) {
         const p = new Point(x, y);
         const newMapObject = fn(p);
-        if (newMapObject && !map.getMapObjectAt(x, y)) {
+        if (newMapObject && !map.getMapObjectAt(x, y) && !map.getExitAt(p)) {
           map.placeMapObject(newMapObject, new Point(x, y));
         }
       }
@@ -436,7 +442,7 @@ export abstract class MapGenerator {
     for (let x = left; x < left + w; x++) {
       for (let y = top; y < top + h; y++) {
         const p = new Point(x, y);
-        if (goodFn(p) && !map.getMapObjectAt(x, y)) {
+        if (goodFn(p) && !map.getMapObjectAt(x, y) && !map.getExitAt(p)) {
           if (!goodList) goodList = [];
           goodList.push(p);
         }

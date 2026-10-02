@@ -31,6 +31,16 @@ export class GameSaveManager {
     try {
       // Try localStorage first
       storage.setItem(key, json);
+      // `await storage.flush?.()` is what makes the `true` below mean something.
+      // On the desktop backend `setItem` cannot throw — it records that a write
+      // is owed and returns — so this used to be a hard `return true` for a write
+      // that had not happened and might never happen. `flush` rejects if the write
+      // failed, which drops into the IndexedDB fallback below exactly as a quota
+      // error would.
+      //
+      // Optional because the browser and in-memory backends are synchronous, and
+      // there is nothing there to wait for.
+      await storage.flush?.();
       return true;
     } catch (e) {
       // If localStorage is full (> 5MB or quota exceeded), fall back to IndexedDB

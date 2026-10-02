@@ -190,6 +190,7 @@ class OptionsProbeUI extends NullRogueUI {
 const music: IMusicManager = {
   play(): void {},
   playLooping(): void {},
+  playIfNotAlreadyPlaying(): void {},
   stop(): void {},
   pause(): void {},
   resume(): void {},

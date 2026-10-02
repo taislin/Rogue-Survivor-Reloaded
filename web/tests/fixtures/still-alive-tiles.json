@@ -1,0 +1,1138 @@
+{
+  "FLOOR_ARMY": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_ASPHALT": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_18": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_19": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_20": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_21": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_22": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_23": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_24": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_25": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_27": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_28": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_29": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_30": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_31": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_32": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_33": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_34": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_36": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_37": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_38": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_39": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_40": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_41": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_42": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_43": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_45": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_46": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_47": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_48": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_49": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_50": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_51": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_52": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_54": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_55": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_56": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_57": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_58": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_59": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_60": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_61": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_63": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_64": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_65": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_66": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_67": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_68": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_69": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_70": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BASKETBALL_COURT_OUTER": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_BLUE_CARPET": {
+    "canDecayInFork": false,
+    "flammableInFork": true,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_CONCRETE": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_DIRT": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_FOOD_COURT_POOL": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": true,
+    "waterCover": "Tiles/floor_pool_water_cover"
+  },
+  "FLOOR_GRASS": {
+    "canDecayInFork": false,
+    "flammableInFork": true,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_OFFICE": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_PLANKS": {
+    "canDecayInFork": true,
+    "flammableInFork": true,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_PLANTED": {
+    "canDecayInFork": false,
+    "flammableInFork": true,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_POND_CENTER": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": true,
+    "waterCover": "Tiles/floor_pond_water_cover"
+  },
+  "FLOOR_POND_E_EDGE": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": true,
+    "waterCover": "Tiles/floor_pond_water_cover"
+  },
+  "FLOOR_POND_NE_CORNER": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": true,
+    "waterCover": "Tiles/floor_pond_water_cover"
+  },
+  "FLOOR_POND_NW_CORNER": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": true,
+    "waterCover": "Tiles/floor_pond_water_cover"
+  },
+  "FLOOR_POND_N_EDGE": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": true,
+    "waterCover": "Tiles/floor_pond_water_cover"
+  },
+  "FLOOR_POND_SE_CORNER": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": true,
+    "waterCover": "Tiles/floor_pond_water_cover"
+  },
+  "FLOOR_POND_SW_CORNER": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": true,
+    "waterCover": "Tiles/floor_pond_water_cover"
+  },
+  "FLOOR_POND_S_EDGE": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": true,
+    "waterCover": "Tiles/floor_pond_water_cover"
+  },
+  "FLOOR_POND_W_EDGE": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": true,
+    "waterCover": "Tiles/floor_pond_water_cover"
+  },
+  "FLOOR_RED_CARPET": {
+    "canDecayInFork": false,
+    "flammableInFork": true,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_SEWER_WATER": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": true,
+    "waterCover": "Tiles/floor_sewer_water_cover"
+  },
+  "FLOOR_TENNIS_COURT_10": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_11": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_12": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_13": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_14": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_15": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_18": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_19": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_20": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_21": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_22": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_23": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_26": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_27": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_28": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_29": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_30": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_31": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_34": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_35": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_36": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_37": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_38": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_39": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_42": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_43": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_44": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_45": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_46": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_47": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_50": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_51": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_52": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_53": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_54": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_55": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_58": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_59": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_60": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_61": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_62": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_63": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_66": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_67": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_68": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_69": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_70": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_71": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TENNIS_COURT_OUTER": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_TILES": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_WALKWAY": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "FLOOR_WHITE_TILE": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "PARKING_ASPHALT_EW": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "PARKING_ASPHALT_NS": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "RAIL_EW": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "ROAD_ASPHALT_EW": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "ROAD_ASPHALT_NS": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": true,
+    "walkable": true,
+    "water": false,
+    "waterCover": null
+  },
+  "WALL_ARMY_BASE": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": false,
+    "walkable": false,
+    "water": false,
+    "waterCover": null
+  },
+  "WALL_BRICK": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": false,
+    "walkable": false,
+    "water": false,
+    "waterCover": null
+  },
+  "WALL_CHAR_OFFICE": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": false,
+    "walkable": false,
+    "water": false,
+    "waterCover": null
+  },
+  "WALL_CONCRETE": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": false,
+    "walkable": false,
+    "water": false,
+    "waterCover": null
+  },
+  "WALL_FUEL_STATION": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": false,
+    "walkable": false,
+    "water": false,
+    "waterCover": null
+  },
+  "WALL_HOSPITAL": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": false,
+    "walkable": false,
+    "water": false,
+    "waterCover": null
+  },
+  "WALL_LIGHT_BROWN": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": false,
+    "walkable": false,
+    "water": false,
+    "waterCover": null
+  },
+  "WALL_MALL": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": false,
+    "walkable": false,
+    "water": false,
+    "waterCover": null
+  },
+  "WALL_PILLAR_CONCRETE": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": false,
+    "walkable": false,
+    "water": false,
+    "waterCover": null
+  },
+  "WALL_POLICE_STATION": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": false,
+    "walkable": false,
+    "water": false,
+    "waterCover": null
+  },
+  "WALL_RED_CURTAINS": {
+    "canDecayInFork": false,
+    "flammableInFork": true,
+    "transparent": false,
+    "walkable": false,
+    "water": false,
+    "waterCover": null
+  },
+  "WALL_SEWER": {
+    "canDecayInFork": false,
+    "flammableInFork": false,
+    "transparent": false,
+    "walkable": false,
+    "water": false,
+    "waterCover": null
+  },
+  "WALL_STONE": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": false,
+    "walkable": false,
+    "water": false,
+    "waterCover": null
+  },
+  "WALL_SUBWAY": {
+    "canDecayInFork": true,
+    "flammableInFork": false,
+    "transparent": false,
+    "walkable": false,
+    "water": false,
+    "waterCover": null
+  },
+  "WALL_WOOD_PLANKS": {
+    "canDecayInFork": true,
+    "flammableInFork": true,
+    "transparent": false,
+    "walkable": false,
+    "water": false,
+    "waterCover": null
+  }
+}

@@ -70,5 +70,101 @@
     "SAN": 0,
     "STACKING": 6,
     "FLAVOR": "Kill it with pills."
+  },
+  {
+    "ID": "MEDICINE_SMALL_MEDIKIT",
+    "NAME": "small medikit",
+    "PLURAL": "small medikits",
+    "HP": 6,
+    "STA": 0,
+    "SLP": 0,
+    "INF": 0,
+    "SAN": 0,
+    "STACKING": 3,
+    "FLAVOR": "For cuts, sprains and scrapes."
+  },
+  {
+    "ID": "MEDICINE_LARGE_MEDIKIT",
+    "NAME": "large medikit",
+    "PLURAL": "large medikits",
+    "HP": 12,
+    "STA": 0,
+    "SLP": 0,
+    "INF": 4,
+    "SAN": 0,
+    "STACKING": 0,
+    "FLAVOR": "All-in-one first aid."
+  },
+  {
+    "ID": "MEDICINE_ALCOHOL_BEER_BOTTLE_BROWN",
+    "NAME": "beer",
+    "PLURAL": "beers",
+    "HP": 0,
+    "STA": 0,
+    "SLP": 0,
+    "INF": 0,
+    "SAN": 36,
+    "STACKING": 6,
+    "FLAVOR": "My other beer's a lager."
+  },
+  {
+    "ID": "MEDICINE_ALCOHOL_BEER_BOTTLE_GREEN",
+    "NAME": "beer",
+    "PLURAL": "beers",
+    "HP": 0,
+    "STA": 0,
+    "SLP": 0,
+    "INF": 0,
+    "SAN": 36,
+    "STACKING": 6,
+    "FLAVOR": "My other beer's an ale."
+  },
+  {
+    "ID": "MEDICINE_ALCOHOL_BEER_CAN_BLUE",
+    "NAME": "beer",
+    "PLURAL": "beers",
+    "HP": 0,
+    "STA": 0,
+    "SLP": 0,
+    "INF": 0,
+    "SAN": 30,
+    "STACKING": 6,
+    "FLAVOR": "The brew for you."
+  },
+  {
+    "ID": "MEDICINE_ALCOHOL_BEER_CAN_RED",
+    "NAME": "beer",
+    "PLURAL": "beers",
+    "HP": 0,
+    "STA": 0,
+    "SLP": 0,
+    "INF": 0,
+    "SAN": 30,
+    "STACKING": 6,
+    "FLAVOR": "Pulls you on through."
+  },
+  {
+    "ID": "MEDICINE_CIGARETTES",
+    "NAME": "cigarette",
+    "PLURAL": "cigarettes",
+    "HP": 0,
+    "STA": 0,
+    "SLP": 0,
+    "INF": 0,
+    "SAN": 20,
+    "STACKING": 20,
+    "FLAVOR": "Flavour country... wherever that is."
+  },
+  {
+    "ID": "MEDICINE_ENERGY_DRINK",
+    "NAME": "energy drink",
+    "PLURAL": "energy drinks",
+    "HP": 0,
+    "STA": 40,
+    "SLP": 120,
+    "INF": 0,
+    "SAN": 0,
+    "STACKING": 4,
+    "FLAVOR": "Grants you flight."
   }
 ]

@@ -17,29 +17,46 @@ import { resolve } from "node:path";
  * fine. Hence these assertions are on the *files*, not on the runtime: they
  * fail when a table gains a column, loses one, or gets re-ordered.
  *
- * These tables used to be generated from the original game's
- * `src/Resources/Data/*.csv`, and a third assertion here compared each
- * committed JSON against its CSV to catch a table that was edited but never
- * regenerated. src/ is gone from the repository (it survives only as a local,
- * gitignored reference folder), so there is nothing left to compare against
- * and nothing left to regenerate from: the JSON is now the only copy, and these
- * two assertions are what stands between it and a silently unreadable column.
+ * ## What this file no longer checks, and why
+ *
+ * It used to carry a third suite, "the Still Alive merge did not disturb
+ * classic", which compared every committed JSON row against the original game's
+ * `src/Resources/Data/*.csv` — canonical column names *and* positional equality
+ * *and* the one permitted id rename. That is gone, and it is not recoverable
+ * here: `src/` was removed from the repository's tracking (it survives only as a
+ * local, gitignored reference folder), so there is nothing left to compare
+ * against and nothing left to regenerate from. The JSON is now the only copy.
+ *
+ * **The property that suite asserted is real and is now unpinned.** Still Alive
+ * adds a ruleset that plays against these same tables, so the merge is only safe
+ * if classic is untouched — and taking the fork's tables wholesale looks like
+ * the merge while silently rebalancing classic (army ration nutrition 0.25 to
+ * 0.33, best-before 5 days to never) at the layer both rulesets read. The two
+ * suites below still catch the failure mode they were written for: a column that
+ * the code cannot read, and a header cell used raw as a key. What is no longer
+ * caught is a *value* edited in one place and never regenerated in the other.
+ *
+ * If `src/Resources/Data` is ever restored to the working tree, that suite is
+ * worth bringing back rather than writing fresh — it pinned an id rename
+ * (`Actors.csv` row 0, `_FIRST` -> `UNDEAD_SKELETON`) that nothing else records.
  */
 
-const jsonDir = resolve(__dirname, "../src/gameplay/data");
+const repoRoot = resolve(__dirname, "../..");
+const jsonDir = resolve(repoRoot, "web/src/gameplay/data");
 
 /** The canonical column names, mirroring `COLUMNS` in convert-csv.js. */
 const EXPECTED_COLUMNS: Record<string, string[]> = {
   "Actors.json": ["ID", "NAME", "PLURAL", "SPD", "HP", "STA", "ATK", "DMG", "DEF", "PRO_HIT", "PRO_SHOT", "FOV", "AUDIO", "SMELL", "SCORE", "FLAVOR"],
-  "Items_Armors.json": ["ID", "NAME", "PLURAL", "PRO_HIT", "PRO_SHOT", "ENC", "WEIGHT", "FLAVOR"],
+  "Items_Armors.json": ["ID", "NAME", "PLURAL", "PRO_HIT", "PRO_SHOT", "ENC", "WEIGHT", "FIRE_RESIST", "INF_RESIST", "FLAVOR"],
+  "Items_Backpacks.json": ["ID", "NAME", "PLURAL", "INV_SLOTS", "ENC", "WEIGHT", "FLAVOR"],
   "Items_Barricading.json": ["ID", "NAME", "PLURAL", "VALUE", "STACKINGLIMIT", "FLAVOR"],
   "Items_Entertainment.json": ["ID", "NAME", "PLURAL", "STACKING", "VALUE", "BORE_CHANCE", "FLAVOR"],
   "Items_Explosives.json": ["ID", "NAME", "PLURAL", "FUSE", "MAXTHROW", "STACKINGLIMIT", "RADIUS", "BLAST0", "BLAST1", "BLAST2", "BLAST3", "BLAST4", "BLAST5", "FLAVOR"],
-  "Items_Food.json": ["ID", "NAME", "PLURAL", "NUTRITION", "BESTBEFORE", "STACKINGLIMIT", "FLAVOR"],
+  "Items_Food.json": ["ID", "NAME", "PLURAL", "NUTRITION", "BESTBEFORE", "STACKINGLIMIT", "CAUSES_POISON", "CAN_BE_COOKED", "FLAVOR"],
   "Items_Lights.json": ["ID", "NAME", "PLURAL", "FOV", "BATTERIES", "FLAVOR"],
   "Items_Medicine.json": ["ID", "NAME", "PLURAL", "HP", "STA", "SLP", "INF", "SAN", "STACKING", "FLAVOR"],
-  "Items_MeleeWeapons.json": ["ID", "NAME", "PLURAL", "ATK", "DMG", "STA", "DISARM", "TOOLBASHDMGBONUS", "TOOLBUILDBONUS", "STACKINGLIMIT", "ISFRAGILE", "FLAVOR"],
-  "Items_RangedWeapons.json": ["ID", "NAME", "PLURAL", "ATK", "RAPID1", "RAPID2", "DMG", "RANGE", "MAXAMMO", "FLAVOR"],
+  "Items_MeleeWeapons.json": ["ID", "NAME", "PLURAL", "ATK", "DMG", "STA", "DISARM", "TOOLBASHDMGBONUS", "TOOLBUILDBONUS", "STACKINGLIMIT", "ISFRAGILE", "WEIGHT", "FLAVOR"],
+  "Items_RangedWeapons.json": ["ID", "NAME", "PLURAL", "ATK", "RAPID1", "RAPID2", "DMG", "RANGE", "MAXAMMO", "WEIGHT", "FLAVOR"],
   "Items_Scentsprays.json": ["ID", "NAME", "PLURAL", "QUANTITY", "STRENGTH", "FLAVOR"],
   "Items_Spraypaints.json": ["ID", "NAME", "PLURAL", "QUANTITY", "FLAVOR"],
   "Items_Trackers.json": ["ID", "NAME", "PLURAL", "BATTERIES", "HASCLOCK", "FLAVOR"],

@@ -3,7 +3,7 @@ import { RogueGame } from "@engine/RogueGame";
 import { NullRogueUI } from "@ui/NullRogueUI";
 import { NullMusicManager } from "@engine/audio/NullMusicManager";
 import { SimRatio } from "@engine/GameOptions";
-import { GameMode, Session } from "@engine/Session";
+import { GameMode, Ruleset, Session } from "@engine/Session";
 import { GameSaveManager } from "@engine/GameSave";
 import { GRAPH_VERSION } from "@engine/serialization/SessionGraph";
 import { SkillID } from "@gameplay/Skills";
@@ -87,6 +87,7 @@ describe("a save carries the world", () => {
     session.lastTurnPlayerActed = 77;
     session.nextAutoSaveTime = 4321;
     session.charUndergroundFacility_Activated = true;
+    session.armyHelicopterRescueDay = 19;
 
     await saveToSlotZero();
 
@@ -97,7 +98,17 @@ describe("a save carries the world", () => {
     expect(data.lastTurnPlayerActed).toBe(77);
     expect(data.nextAutoSaveTime).toBe(4321);
     expect(data.charUndergroundFacility_Activated).toBe(true);
+    // Chosen at character creation and per-run, so a save that dropped it would
+    // restore a run whose helicopter arrives on the default day instead of the
+    // one the player agreed to. Additive: a save with no key defaults to 21.
+    expect(data.armyHelicopterRescueDay).toBe(19);
     expect(data.gameMode).toBe(GameMode.GM_STANDARD);
+    // The ruleset is a sibling of gameMode in the hand-written root object, not
+    // in the graph, so `save-graph-roundtrip.test.ts` cannot see it — this is the
+    // only place it is checked end to end. It matters more than it looks: a save
+    // that lost the ruleset would load as CLASSIC under `?? Ruleset.CLASSIC`, and
+    // a Still Alive world would silently come back as a classic one.
+    expect(data.ruleset).toBe(Ruleset.CLASSIC);
     expect(data.graphVersion).toBe(GRAPH_VERSION);
     expect(data.graph).not.toBeNull();
   });
@@ -107,6 +118,7 @@ describe("a save carries the world", () => {
     // and it has to leave a world that is the one they saved: same map, same
     // actors, same turn.
     game.session.worldTime.turnCounter = 2000;
+    game.session.armyHelicopterRescueDay = 17;
     const before = {
       map: game.session.currentMap,
       world: game.session.world,
@@ -125,6 +137,7 @@ describe("a save carries the world", () => {
     expect(game.session.currentMap!.countActors).toBe(before.actors);
     expect(game.session.currentMap!.mapObjects.length).toBe(before.objects);
     expect(game.session.worldTime.turnCounter).toBe(2000);
+    expect(game.session.armyHelicopterRescueDay).toBe(17);
     // The player is back, and is a player again: the graph does not carry
     // controllers, so `LoadGame` reattaches one.
     expect(game.player).not.toBeNull();

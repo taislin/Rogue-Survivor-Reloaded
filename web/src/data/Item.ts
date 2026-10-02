@@ -8,6 +8,18 @@ export class Item {
   equippedPart: DollPart = DollPart.NONE;
   isUnique: boolean = false;
   isForbiddenToAI: boolean = false;
+  /**
+   * The turn this was last put on the ground by an NPC, or `null`.
+   *
+   * Still Alive, Release 7-6. Deliberately a *nullable* stamp rather than a
+   * boolean "junk" flag: the despawn sweep compares it against the current
+   * turn, so an item dropped on turn 100 and one dropped on turn 5000 are
+   * treated differently, and picking the item back up clears it.
+   *
+   * A plain own field, so the graph writer carries it with no spec entry --
+   * the same as `Actor.isFoodPoisoned`.
+   */
+  droppedOnTurnNumber: number | null = null;
 
   constructor(model: ItemModel) {
     this.modelId = model.id;

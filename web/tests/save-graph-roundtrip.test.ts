@@ -2,11 +2,17 @@ import { describe, it, expect, beforeAll, afterEach } from "vitest";
 import { HeadlessRunner } from "../src/sim/HeadlessRunner";
 import { NullRogueUI } from "@ui/NullRogueUI";
 import { RogueGame } from "@engine/RogueGame";
-import { Session, SaveFormat } from "@engine/Session";
+import { Session, SaveFormat, GameMode, Ruleset } from "@engine/Session";
 import { storage } from "@engine/storage";
 import { WorldTime } from "@engine/WorldTime";
+import { Point } from "@engine/Point";
+import { GameImages } from "@gameplay/GameImages";
+import { MapObjectBreak } from "@data/MapObject";
+import { Barrel, Campfire, Car } from "@engine/mapobjects/MapObjects";
 import { GRAPH_VERSION, type GraphData } from "@engine/serialization/SessionGraph";
-import { Exit, Map as GameMap } from "@data/Map";import { CLASS_SPECS, encodeScoring } from "@engine/serialization/specs";
+import { Exit, Map as GameMap } from "@data/Map";
+import { AchievementIDs } from "@engine/Scoring";
+import { CLASS_SPECS, encodeScoring } from "@engine/serialization/specs";
 import {
   findPlayerActor,
   readSessionGraph,
@@ -257,6 +263,63 @@ describe("a restored map is usable, not just complete", () => {
     }
   });
 
+  it("restores a fuel-bearing map object as its own class, with its fuel", () => {
+    // The class, not just the fields. If the `Barrel` spec were missing or sat
+    // below the bare `MapObject` catch-all, the object would restore perfectly
+    // and silently become a `MapObject` -- every field intact, `instanceof
+    // Barrel` false, and the burn loop's first `as` cast quietly returning null.
+    // Put one of each on the *live* map and save it, rather than hoping the
+    // generated world happens to contain one. It has to be the live map: the
+    // writer walks `session.currentMap`, so an object placed on a previously
+    // loaded graph is simply not in the save -- which is a silent pass-to-nothing
+    // rather than an error, and worth being explicit about.
+    const map = session.currentMap!;
+
+    // The tiles are found rather than
+    // hard-coded: a hard-coded (3, 3) is free in one seed and occupied in the
+    // next, and `placeMapObject` does not complain when it overwrites.
+    const spots: Point[] = [];
+    for (let y = 0; y < map.height && spots.length < 3; y++) {
+      for (let x = 0; x < map.width && spots.length < 3; x++) {
+        const p = new Point(x, y);
+        if (map.getMapObjectAt(x, y) === null) spots.push(p);
+      }
+    }
+    expect(spots).toHaveLength(3);
+    const [barrelSpot, campfireSpot, carSpot] = spots;
+
+    map.placeMapObject(
+      new Barrel("receptacle", GameImages.OBJ_BARRELS, MapObjectBreak.UNBREAKABLE, 7),
+      barrelSpot,
+    );
+    map.placeMapObject(
+      new Campfire("campfire", "MapObjects/campfire", MapObjectBreak.BREAKABLE, 5),
+      campfireSpot,
+    );
+    map.placeMapObject(
+      new Car("wrecked car", GameImages.OBJ_CAR1, MapObjectBreak.BROKEN, 42),
+      carSpot,
+    );
+    const reloaded = freshRoundTrip().loaded.currentMap;
+
+    const barrel = reloaded.getMapObjectAt(barrelSpot.x, barrelSpot.y)!;
+    const campfire = reloaded.getMapObjectAt(campfireSpot.x, campfireSpot.y)!;
+    const car = reloaded.getMapObjectAt(carSpot.x, carSpot.y)!;
+
+    expect(barrel).toBeInstanceOf(Barrel);
+    expect(campfire).toBeInstanceOf(Campfire);
+    expect(car).toBeInstanceOf(Car);
+
+    expect((barrel as Barrel).fuelUnits).toBe(7);
+    expect((campfire as Campfire).fuelUnits).toBe(5);
+    expect((car as Car).fuelUnits).toBe(42);
+
+    // A barrel is a day, a campfire three hours, a car 99 -- not one number.
+    expect((barrel as Barrel).maxFuelUnits).toBe(WorldTime.TURNS_PER_DAY);
+    expect((campfire as Campfire).maxFuelUnits).toBe(WorldTime.TURNS_PER_HOUR * 3);
+    expect((car as Car).maxFuelUnits).toBe(99);
+  });
+
   it("finds every restored map object, corpse and scent by position", () => {
     const { loaded } = roundTrip();
     const map = loaded.currentMap;
@@ -356,9 +419,14 @@ describe("the scoring survives", () => {
     expect(afterJson).toBe(beforeJson);
   });
 
-  it("keeps the eight achievements, which are indexed without a guard", () => {
+  it("keeps every achievement, which are indexed without a guard", () => {
     const { loaded } = roundTrip();
-    expect(loaded.scoring.achievements.length).toBe(8);
+    // Nine, not eight: `RESCUED_BY_HELICOPTER` came with
+    // `Feature.HelicopterRescue`. Asserted against the enum rather than a literal
+    // so the next achievement is a one-line edit here — the point of the test is
+    // that the array has no *hole*, and a literal count only tests that until
+    // somebody adds one.
+    expect(loaded.scoring.achievements.length).toBe(AchievementIDs._COUNT);
     // `hasCompletedAchievement` would throw on a hole in that array.
     expect(() => loaded.scoring.hasCompletedAchievement(0)).not.toThrow();
   });
@@ -382,6 +450,48 @@ describe("Session.save and Session.load", () => {
     expect(loadedSession.currentMap!.countActors).toBeGreaterThan(0);
     expect(loadedSession.worldTime.turnCounter).toBe(session.worldTime.turnCounter);
     expect(loadedSession.loadedPlayer).not.toBeNull();
+  });
+
+  it("loads a save written before the ruleset field existed, as CLASSIC", () => {
+    // The ruleset is additive in the hand-written root object, not in the graph,
+    // so nothing about `GRAPH_VERSION` had to change and every existing save in
+    // the wild has no `ruleset` key at all. `Session.load` therefore defaults it.
+    //
+    // Defaulting to CLASSIC rather than rejecting the save is the right call and
+    // worth pinning: a pre-ruleset save *was* a classic save, and the alternatives
+    // — guessing STILL_ALIVE, or refusing — would either invent a content set the
+    // player never chose or throw away a run over a missing field.
+    const { data: graph } = freshRoundTrip();
+    storage.setItem(
+      Session.STORAGE_KEY,
+      JSON.stringify({
+        gameMode: GameMode.GM_STANDARD,
+        seed: session.seed,
+        lastTurnPlayerActed: session.lastTurnPlayerActed,
+        graphVersion: GRAPH_VERSION,
+        graph,
+      })
+    );
+
+    expect(Session.load()).toBe(true);
+    expect(Session.get().ruleset).toBe(Ruleset.CLASSIC);
+  });
+
+  it("keeps the ruleset across a round trip", () => {
+    // The same field, with a value: a Still Alive save must come back as a Still
+    // Alive save, or the world would silently revert to classic content.
+    const previous = session.ruleset;
+    session.ruleset = Ruleset.STILL_ALIVE;
+    try {
+      Session.save(session, SaveFormat.FORMAT_JSON);
+      const raw = JSON.parse(storage.getItem(Session.STORAGE_KEY)!);
+      expect(raw.ruleset).toBe(Ruleset.STILL_ALIVE);
+
+      expect(Session.load()).toBe(true);
+      expect(Session.get().ruleset).toBe(Ruleset.STILL_ALIVE);
+    } finally {
+      session.ruleset = previous;
+    }
   });
 
   it("still refuses a save with no graph, rather than loading the scalars alone", () => {

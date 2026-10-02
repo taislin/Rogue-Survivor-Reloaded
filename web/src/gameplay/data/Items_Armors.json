@@ -7,6 +7,8 @@
     "PRO_SHOT": 8,
     "ENC": 6,
     "WEIGHT": 10,
+    "FIRE_RESIST": 0,
+    "INF_RESIST": 0,
     "FLAVOR": "You look manly!"
   },
   {
@@ -17,6 +19,8 @@
     "PRO_SHOT": 4,
     "ENC": 4,
     "WEIGHT": 10,
+    "FIRE_RESIST": 0,
+    "INF_RESIST": 0,
     "FLAVOR": "Oh! Suits you sir!"
   },
   {
@@ -27,6 +31,8 @@
     "PRO_SHOT": 0,
     "ENC": 0,
     "WEIGHT": 0,
+    "FIRE_RESIST": 0,
+    "INF_RESIST": 0,
     "FLAVOR": "Rock'n'roll."
   },
   {
@@ -37,6 +43,8 @@
     "PRO_SHOT": 1,
     "ENC": 0,
     "WEIGHT": 0,
+    "FIRE_RESIST": 0,
+    "INF_RESIST": 0,
     "FLAVOR": "Rock'n'roll."
   },
   {
@@ -47,6 +55,8 @@
     "PRO_SHOT": 2,
     "ENC": 0,
     "WEIGHT": 0,
+    "FIRE_RESIST": 0,
+    "INF_RESIST": 0,
     "FLAVOR": "Law, Order and Padded Jackets."
   },
   {
@@ -57,6 +67,8 @@
     "PRO_SHOT": 3,
     "ENC": 2,
     "WEIGHT": 0,
+    "FIRE_RESIST": 0,
+    "INF_RESIST": 0,
     "FLAVOR": "Standard Anti Zombie Riots Gear."
   },
   {
@@ -67,6 +79,32 @@
     "PRO_SHOT": 1,
     "ENC": 0,
     "WEIGHT": 0,
+    "FIRE_RESIST": 0,
+    "INF_RESIST": 0,
     "FLAVOR": "It's pretty wild out there."
+  },
+  {
+    "ID": "ARMOR_FIRE_HAZARD_SUIT",
+    "NAME": "fire hazard suit",
+    "PLURAL": "fire hazard suits",
+    "PRO_HIT": 3,
+    "PRO_SHOT": 0,
+    "ENC": 10,
+    "WEIGHT": 5,
+    "FIRE_RESIST": 100,
+    "INF_RESIST": 30,
+    "FLAVOR": "Fire can't touch me."
+  },
+  {
+    "ID": "ARMOR_BIOHAZARD_SUIT",
+    "NAME": "biohazard suit",
+    "PLURAL": "biohazard suits",
+    "PRO_HIT": 1,
+    "PRO_SHOT": 0,
+    "ENC": 10,
+    "WEIGHT": 5,
+    "FIRE_RESIST": 5,
+    "INF_RESIST": 50,
+    "FLAVOR": "Like an extra in E.T."
   }
 ]

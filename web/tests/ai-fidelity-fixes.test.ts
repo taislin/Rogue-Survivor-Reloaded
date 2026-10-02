@@ -27,7 +27,7 @@ import { ActorID } from "@gameplay/GameActors";
  *
  * Each case corresponds to a divergence from `src/Gameplay/AI/`, and the
  * expectation comes from the C# rather than from the port, per the porting rule
- * at the top of BROWSER_PORT_PLAN. Where a fix was a data-structure swap rather
+ * at the top of plans/BROWSER_PORT_PLAN. Where a fix was a data-structure swap rather
  * than a transcription (`RouteFinder`'s frontier) the test is *differential*,
  * against a reference implementation of the original algorithm — a hand-written
  * expected value would only restate whatever the new code happens to do.

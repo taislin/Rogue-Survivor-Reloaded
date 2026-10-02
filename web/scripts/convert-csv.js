@@ -1,8 +1,33 @@
 const fs = require("fs");
 const path = require("path");
 
-const dataDir = path.resolve(__dirname, "../../src/Resources/Data");
+// Where the CSVs come from. The default is the merged superset in `web/data`,
+// which is the port's content source as of the Still Alive ruleset work; run
+// `python3 scripts/merge-content-tables.py` to regenerate it from
+// `src/Resources/Data` and the fork. `--from <dir>` points at another set,
+// resolved against the current directory, e.g. from `web/`:
+//
+//   node scripts/convert-csv.js --from ../src/Resources/Data
+//
+// Note that a set with fewer columns than COLUMNS declares is refused by the
+// length check below, so that only works while COLUMNS still matches vanilla.
+const fromArg = process.argv.indexOf("--from");
+const dataDir = fromArg !== -1 && process.argv[fromArg + 1]
+  ? path.resolve(process.cwd(), process.argv[fromArg + 1])
+  : path.resolve(__dirname, "../data");
 const outDir = path.resolve(__dirname, "../src/gameplay/data");
+
+if (!fs.existsSync(dataDir)) {
+  console.error(
+    `CSV source directory not found: ${dataDir}\n` +
+      (dataDir.endsWith(`${path.sep}data`)
+        ? "The merged superset is missing. Run:\n" +
+          "  python3 scripts/merge-content-tables.py\n" +
+          "Or point at another directory with --from <dir>."
+        : "Pass --from <dir> to choose another source.")
+  );
+  process.exit(1);
+}
 
 if (!fs.existsSync(outDir)) {
   fs.mkdirSync(outDir, { recursive: true });
@@ -29,7 +54,15 @@ const COLUMNS = {
     "ID", "NAME", "PLURAL", "SPD", "HP", "STA", "ATK", "DMG", "DEF",
     "PRO_HIT", "PRO_SHOT", "FOV", "AUDIO", "SMELL", "SCORE", "FLAVOR",
   ],
-  "Items_Armors.csv": ["ID", "NAME", "PLURAL", "PRO_HIT", "PRO_SHOT", "ENC", "WEIGHT", "FLAVOR"],
+  "Items_Armors.csv": [
+    "ID", "NAME", "PLURAL", "PRO_HIT", "PRO_SHOT", "ENC", "WEIGHT",
+    "FIRE_RESIST",  // "FIRE_RESIST%"
+    "INF_RESIST",   // "INF_RESIST%"
+    "FLAVOR",
+  ],
+  "Items_Backpacks.csv": [
+    "ID", "NAME", "PLURAL", "INV_SLOTS", "ENC", "WEIGHT", "FLAVOR",
+  ],
   "Items_Barricading.csv": ["ID", "NAME", "PLURAL", "VALUE", "STACKINGLIMIT", "FLAVOR"],
   "Items_Entertainment.csv": [
     "ID", "NAME", "PLURAL", "STACKING", "VALUE", "BORE_CHANCE", "FLAVOR",
@@ -39,7 +72,10 @@ const COLUMNS = {
     "BLAST0", "BLAST1", "BLAST2", "BLAST3", "BLAST4", "BLAST5", "FLAVOR",
   ],
   "Items_Food.csv": [
-    "ID", "NAME", "PLURAL", "NUTRITION", "BESTBEFORE", "STACKINGLIMIT", "FLAVOR",
+    "ID", "NAME", "PLURAL", "NUTRITION", "BESTBEFORE", "STACKINGLIMIT",
+    "CAUSES_POISON",  // "Causes food poisoning?"
+    "CAN_BE_COOKED",  // "Can be cooked?"
+    "FLAVOR",
   ],
   "Items_Lights.csv": ["ID", "NAME", "PLURAL", "FOV", "BATTERIES", "FLAVOR"],
   "Items_Medicine.csv": [
@@ -47,10 +83,14 @@ const COLUMNS = {
   ],
   "Items_MeleeWeapons.csv": [
     "ID", "NAME", "PLURAL", "ATK", "DMG", "STA", "DISARM", "TOOLBASHDMGBONUS",
-    "TOOLBUILDBONUS", "STACKINGLIMIT", "ISFRAGILE", "FLAVOR",
+    "TOOLBUILDBONUS", "STACKINGLIMIT", "ISFRAGILE",
+    "WEIGHT",  // Still Alive: encumbrance on every melee weapon
+    "FLAVOR",
   ],
   "Items_RangedWeapons.csv": [
-    "ID", "NAME", "PLURAL", "ATK", "RAPID1", "RAPID2", "DMG", "RANGE", "MAXAMMO", "FLAVOR",
+    "ID", "NAME", "PLURAL", "ATK", "RAPID1", "RAPID2", "DMG", "RANGE", "MAXAMMO",
+    "WEIGHT",  // Still Alive: encumbrance on every ranged weapon
+    "FLAVOR",
   ],
   "Items_Scentsprays.csv": ["ID", "NAME", "PLURAL", "QUANTITY", "STRENGTH", "FLAVOR"],
   "Items_Spraypaints.csv": ["ID", "NAME", "PLURAL", "QUANTITY", "FLAVOR"],
@@ -61,7 +101,10 @@ const COLUMNS = {
     "USE_ACTIVATE",    // "USE TO ACTIVATE?"
     "TRIGGER_CHANCE",  // "TRIGGER CHANCE per quantity"
     "DAMAGE",          // "DAMAGE per quantity"
-    "ONE_TIME",        // "DESACTIVATES WHEN TRIGGERED?" (header has a stray 0xA0)
+    // "DEACTIVATES WHEN TRIGGERED?" -- the header has a stray 0xA0 before the
+    // "?", and Still Alive fixed the DES/DE typo. The name is positional, so
+    // the spelling change needs no edit here.
+    "ONE_TIME",
     "BREAK_CHANCE",    // "BREAK CHANCE when TRIGGERED"
     "BLOCK_CHANCE",    // "BLOCK CHANCE per item"
     "BREAK_ESCAPE",    // "BREAK CHANCE when ESCAPE"

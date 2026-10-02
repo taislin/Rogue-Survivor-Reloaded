@@ -17,12 +17,14 @@ import { TileModel } from '@data/TileModel';
 import { Zone } from '@data/Zone';
 import { DiceRoller } from '@engine/DiceRoller';
 import { Direction } from '@engine/Direction';
-import { Options } from '@engine/GameOptions';
+import { GameOptions, Options } from '@engine/GameOptions';
 import { Point } from '@engine/Point';
 import { Rect } from '@engine/Rect';
 import { Rules } from '@engine/Rules';
-import { Session, UniqueActor, UniqueMap } from '@engine/Session';
+import { Session, GameMode, UniqueActor, UniqueMap } from '@engine/Session';
 import { WorldTime } from '@engine/WorldTime';
+import { Feature, hasFeature } from '@engine/FeatureFlags';
+import { makeBackpack } from '@gameplay/Backpacks';
 import { DoorWindow } from '@engine/mapobjects/MapObjects';
 import { GangAI } from '@gameplay/ai/GangAI';
 import { ActorID } from '@gameplay/GameActors';
@@ -35,6 +37,36 @@ import { GameTiles, TileID } from '@gameplay/GameTiles';
 import { SkillID } from '@gameplay/Skills';
 import { ZoneAttributes } from '@gameplay/ZoneAttributes';
 import { BaseMapGenerator } from './BaseMapGenerator';
+import { makeBarBuilding } from './BarBuilding';
+import { makeBankBuilding } from './buildings/makeBankBuilding';
+import { makeFireStationBuilding } from './buildings/makeFireStationBuilding';
+import { makeFuelStationBuilding } from './buildings/makeFuelStationBuilding';
+import {
+  makeBasketballCourtBuilding,
+  makeTennisCourtBuilding,
+} from './buildings/makeSportsCourts';
+import { makeFarmBuilding } from './buildings/makeFarmBuilding';
+import { makeJunkyard } from './buildings/makeJunkyard';
+import { makeAnimalShelterBuilding } from './buildings/makeAnimalShelterBuilding';
+import { makeClinicBuilding } from './buildings/makeClinicBuilding';
+import { makeMallBlocks, makeShoppingMall } from './buildings/makeShoppingMall';
+import { TOWN_BUILDING_PASSES, runTownBuildingPasses } from './TownBuilding';
+import { makeChurchBuilding } from './buildings/makeChurchBuilding';
+import { makeLibraryBuilding } from './buildings/makeLibraryBuilding';
+import {
+  Block,
+  Parameters,
+  makeWalkwayZones as makeWalkwayZonesOn,
+  placeDoor as placeDoorOn,
+} from './TownBuilding';
+import type { TownBuildingContext, TownPlacement } from './TownBuilding';
+
+// `Block` and `Parameters` moved to `./TownBuilding` so a building generator
+// written as its own file can import them without pulling this 5 800-line
+// class in behind it. Re-exported here because they have been part of this
+// module's public surface since before that file existed, and the tests
+// (`stage2-fixes.test.ts`, `item-factories.test.ts`) import them from here.
+export { Block, Parameters };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Game = any;
@@ -52,12 +84,74 @@ const NAME_SUBWAY_RAILS = 'rails';
 // ── Constants ──────────────────────────────────────────────────────────────
 const PARK_TREE_CHANCE = 25;
 const PARK_BENCH_CHANCE = 5;
+
+// ── Still Alive, Release 6-1 and 7-6 (`BaseTownGenerator.cs:311-313`).
+//
+// The pond replaced alpha10's shed outright ("based on alpha 10 shed"), and the
+// dimensions are unchanged, so `PARK_SHED_WIDTH`/`HEIGHT` below are these numbers
+// under their old names.
+const PARK_POND_CHANCE = 1000;
+const PARK_POND_WIDTH = 5;
+const PARK_POND_HEIGHT = 5;
+/**
+ * Still Alive, Release 4: inside a *graveyard*, the tree roll is reused as a
+ * "grave or tree" roll and then a tombstone is drawn from it. The C# says so:
+ * "use the original tree chance, but within that a higher chance to be a grave
+ * instead" -- the comment is slightly wrong, 33 is not 25, but the reuse is the
+ * point and the number is the C#'s.
+ */
+const PARK_GRAVE_OR_TREE_CHANCE = 33;
+
+/** C# `BaseMapGenerator.cs:528`, Release 7-3. */
+const PARK_TREES: readonly string[] = [
+  GameImages.OBJ_TREE1,
+  GameImages.OBJ_TREE2,
+  GameImages.OBJ_TREE3,
+  GameImages.OBJ_TREE4,
+];
 const PARK_ITEM_CHANCE = 5;
+// The alpha10 shed, which Release 6-1 replaced with the pond and which the port
+// still builds **under Classic**, so that Classic stays byte-identical. See step 6.
 const PARK_SHED_CHANCE = 75; // alpha10.1
 const PARK_SHED_WIDTH = 5; // alpha10
 const PARK_SHED_HEIGHT = 5; // alpha10
 
 const MAX_CHAR_GUARDS_PER_OFFICE = 3;
+
+/**
+ * C# `:8525` -- how often a bare CHAR storage-room tile carries junk or barrels.
+ *
+ * **47, and not the 50 this port had.** The C# writes a bare `RollChance(47)` with
+ * no `//@@MP` marker and no release tag, so unlike the fire barrel and the two
+ * Resources Availability gates there is nothing to hang a feature on and nothing
+ * suggesting the number was ever tuned. It is applied as written, in both rulesets:
+ * keeping a Classic-only 50 would be the port inventing a divergence from the
+ * reference rather than recording one. It is **not** a free change -- this threshold
+ * cascades into the bare-tile count and the loop's dice -- so the cost is measured
+ * and recorded in this method's header rather than glossed here.
+ */
+/**
+ * `ARMY_POSTERS` — `BaseTownGenerator.cs:11016`.
+ *
+ * A module const rather than a class static, alongside the other sprite tables in this
+ * file. Three sprites, chosen by `roll(0, 3)` on every non-walkable tile that passes
+ * the 25% gate.
+ */
+const ARMY_POSTERS: readonly string[] = [
+  GameImages.DECO_ARMY_POSTER1,
+  GameImages.DECO_ARMY_POSTER2,
+  GameImages.DECO_ARMY_POSTER3,
+];
+
+const CHAR_STORAGE_JUNK_CHANCE = 47;
+/**
+ * C# `:8527` -- `else if (m_DiceRoller.RollChance(3)) //@@MP (Release 7-6)`.
+ *
+ * Still Alive only. Gated on `Feature.FireBarrels` *and* gated before the roll,
+ * because consuming a die shifts every roll after it -- the same argument
+ * `BaseMapGenerator.makeObjWreckedCar` (`:757-760`) makes for its fuel tank.
+ */
+const CHAR_STORAGE_FIRE_BARREL_CHANCE = 3;
 
 const SEWERS_ITEM_CHANCE = 1;
 const SEWERS_JUNK_CHANCE = 10;
@@ -88,145 +182,19 @@ const SHOP_BASEMENT_ITEM_CHANCE_PER_SHELF = 33;
 const SHOP_WINDOW_CHANCE = 30;
 const SHOP_BASEMENT_ZOMBIE_RAT_CHANCE = 5; // per tile.
 
+/**
+ * One church per ten still-empty blocks. C# `BaseTownGenerator.cs:600`, a `//10%`
+ * comment against `if (rolled >= 89)` on a `Roll(0, 99)`.
+ *
+ * Not a `Parameters` field, unlike `shopBuildingChance` and
+ * `parkBuildingChance`. Those two have a `m_Params` member in the C# to mirror
+ * (`:92-207`); the church chance is a bare literal in the dispatch, and putting
+ * it in `Parameters` would mean widening the shared seam for a number the
+ * reference does not make configurable.
+ */
+const CHURCH_BUILDING_CHANCE = 10;
+
 // ── Types ──────────────────────────────────────────────────────────────────
-export class Parameters {
-  district: District | null = null;
-  generatePoliceStation: boolean = false;
-  generateHospital: boolean = false;
-
-  private m_MapWidth: number = MAP_MAX_WIDTH;
-  private m_MapHeight: number = MAP_MAX_HEIGHT;
-  private m_MinBlockSize: number = 11;
-  private m_WreckedCarChance: number = 10;
-  private m_ShopBuildingChance: number = 10;
-  private m_ParkBuildingChance: number = 10;
-  private m_CHARBuildingChance: number = 10;
-  private m_PostersChance: number = 2;
-  private m_TagsChance: number = 2;
-  private m_ItemInShopShelfChance: number = 100;
-  private m_PolicemanChance: number = 15;
-
-  get mapWidth(): number {
-    return this.m_MapWidth;
-  }
-
-  set mapWidth(value: number) {
-    if (value <= 0 || value > MAP_MAX_WIDTH) throw new RangeError('MapWidth');
-    this.m_MapWidth = value;
-  }
-
-  get mapHeight(): number {
-    return this.m_MapHeight;
-  }
-
-  set mapHeight(value: number) {
-    if (value <= 0 || value > MAP_MAX_HEIGHT) throw new RangeError('MapHeight');
-    this.m_MapHeight = value;
-  }
-
-  get minBlockSize(): number {
-    return this.m_MinBlockSize;
-  }
-
-  set minBlockSize(value: number) {
-    if (value < 4 || value > 32) throw new RangeError('MinBlockSize must be [4..32]');
-    this.m_MinBlockSize = value;
-  }
-
-  get wreckedCarChance(): number {
-    return this.m_WreckedCarChance;
-  }
-
-  set wreckedCarChance(value: number) {
-    if (value < 0 || value > 100) throw new RangeError('WreckedCarChance must be [0..100]');
-    this.m_WreckedCarChance = value;
-  }
-
-  get shopBuildingChance(): number {
-    return this.m_ShopBuildingChance;
-  }
-
-  set shopBuildingChance(value: number) {
-    if (value < 0 || value > 100) throw new RangeError('ShopBuildingChance must be [0..100]');
-    this.m_ShopBuildingChance = value;
-  }
-
-  get parkBuildingChance(): number {
-    return this.m_ParkBuildingChance;
-  }
-
-  set parkBuildingChance(value: number) {
-    if (value < 0 || value > 100) throw new RangeError('ParkBuildingChance must be [0..100]');
-    this.m_ParkBuildingChance = value;
-  }
-
-  get charBuildingChance(): number {
-    return this.m_CHARBuildingChance;
-  }
-
-  set charBuildingChance(value: number) {
-    if (value < 0 || value > 100) throw new RangeError('CHARBuildingChance must be [0..100]');
-    this.m_CHARBuildingChance = value;
-  }
-
-  get postersChance(): number {
-    return this.m_PostersChance;
-  }
-
-  set postersChance(value: number) {
-    if (value < 0 || value > 100) throw new RangeError('PostersChance must be [0..100]');
-    this.m_PostersChance = value;
-  }
-
-  get tagsChance(): number {
-    return this.m_TagsChance;
-  }
-
-  set tagsChance(value: number) {
-    if (value < 0 || value > 100) throw new RangeError('TagsChance must be [0..100]');
-    this.m_TagsChance = value;
-  }
-
-  get itemInShopShelfChance(): number {
-    return this.m_ItemInShopShelfChance;
-  }
-
-  set itemInShopShelfChance(value: number) {
-    if (value < 0 || value > 100) throw new RangeError('ItemInShopShelfChance must be [0..100]');
-    this.m_ItemInShopShelfChance = value;
-  }
-
-  get policemanChance(): number {
-    return this.m_PolicemanChance;
-  }
-
-  set policemanChance(value: number) {
-    if (value < 0 || value > 100) throw new RangeError('PolicemanChance must be [0..100]');
-    this.m_PolicemanChance = value;
-  }
-}
-
-export class Block {
-  rectangle!: Rect;
-  buildingRect!: Rect;
-  insideRect!: Rect;
-
-  constructor(rect: Rect) {
-    this.resetRectangle(rect);
-  }
-
-  resetRectangle(rect: Rect): void {
-    this.rectangle = rect;
-    this.buildingRect = new Rect(rect.left + 1, rect.top + 1, rect.width - 2, rect.height - 2);
-    this.insideRect = new Rect(
-      this.buildingRect.left + 1,
-      this.buildingRect.top + 1,
-      this.buildingRect.width - 2,
-      this.buildingRect.height - 2
-    );
-  }
-}
-
 export enum ShopType {
   GENERAL_STORE = 0,
   GROCERY,
@@ -260,6 +228,25 @@ export class BaseTownGenerator extends BaseMapGenerator {
    */
   private m_SurfaceBlocks: Block[] | null = null;
 
+  /**
+   * The placement primitives as a plain object, built once per generator.
+   *
+   * Most of what a building generator needs is already a public method on
+   * `MapGenerator`, but `placeDoor`, `makeWalkwayZones`, `makeUniqueZone`,
+   * `barricadeDoors`, `clearRectangle` and the six door factories are
+   * `protected`, so they cannot be reached from a building in its own file.
+   * Rather than widen their visibility one at a time, every delegate a building
+   * is allowed to have is written out here, once: the set becomes the
+   * `TownBuildingContext` interface in `./TownBuilding`, so "what a building may
+   * touch" is one list instead of a set of `protected` keywords scattered over
+   * two base classes.
+   *
+   * Cached rather than rebuilt per block: the delegates read `this.m_DiceRoller`
+   * and `this.m_Params` at call time, so a cached object still follows the
+   * per-district reseed in `generate()`.
+   */
+  private m_Placement: TownPlacement | null = null;
+
   get params(): Parameters {
     return this.m_Params;
   }
@@ -272,6 +259,77 @@ export class BaseTownGenerator extends BaseMapGenerator {
     super(game);
     this.m_Params = parameters;
     this.m_DiceRoller = new DiceRoller();
+  }
+
+  /** The cached placement primitives. See `m_Placement`. */
+  private placement(): TownPlacement {
+    if (this.m_Placement) return this.m_Placement;
+    this.m_Placement = {
+      tileFill: (map, model, rect, decoratorFn) =>
+        decoratorFn ? this.tileFill(map, model, rect, decoratorFn) : this.tileFill(map, model, rect),
+      tileRectangle: (map, model, rect, decoratorFn) =>
+        decoratorFn
+          ? this.tileRectangle(map, model, rect, decoratorFn)
+          : this.tileRectangle(map, model, rect),
+      tileHLine: (map, model, left, top, width, decoratorFn) =>
+        decoratorFn
+          ? this.tileHLine(map, model, left, top, width, decoratorFn)
+          : this.tileHLine(map, model, left, top, width),
+      tileVLine: (map, model, left, top, height, decoratorFn) =>
+        decoratorFn
+          ? this.tileVLine(map, model, left, top, height, decoratorFn)
+          : this.tileVLine(map, model, left, top, height),
+
+      mapObjectPlace: (map, x, y, mapObj) => this.mapObjectPlace(map, x, y, mapObj),
+      mapObjectFill: (map, rect, createFn) => this.mapObjectFill(map, rect, createFn),
+      makeObjFuelPump: (fuelPumpImageID) => this.makeObjFuelPump(fuelPumpImageID),
+      mapObjectPlaceInGoodPosition: (map, rect, isGoodPosFn, roller, createFn) =>
+        this.mapObjectPlaceInGoodPosition(map, rect, isGoodPosFn, roller, createFn),
+      decorateOutsideWalls: (map, rect, decoFn) => this.decorateOutsideWalls(map, rect, decoFn),
+
+      placeDoor: (map, x, y, floor, door) => this.placeDoor(map, x, y, floor, door),
+      makeObjWoodenDoor: () => this.makeObjWoodenDoor(),
+      makeObjHospitalDoor: () => this.makeObjHospitalDoor(),
+      makeObjCharDoor: () => this.makeObjCharDoor(),
+      makeObjGlassDoor: () => this.makeObjGlassDoor(),
+      makeObjIronDoor: () => this.makeObjIronDoor(),
+      makeObjWindow: () => this.makeObjWindow(),
+
+      countAdjDoors: (map, x, y) => this.countAdjDoors(map, x, y),
+      countAdjWalls: (map, x, y) => this.countAdjWalls(map, x, y),
+      countAdjWalkables: (map, x, y) => this.countAdjWalkables(map, x, y),
+
+      makeUniqueZone: (basename, rect) => this.makeUniqueZone(basename, rect),
+      makeWalkwayZones: (map, b) => this.makeWalkwayZones(map, b),
+      makeShopGeneralItem: () => this.makeShopGeneralItem(),
+      addExit: (from, fromPosition, to, toPosition, exitImageID, isAnAIExit) =>
+        this.addExit(from, fromPosition, to, toPosition, exitImageID, isAnAIExit),
+      barricadeDoors: (map, rect, barricadeLevel) => this.barricadeDoors(map, rect, barricadeLevel),
+
+      itemsDrop: (map, rect, isGoodPositionFn, createFn) =>
+        this.itemsDrop(map, rect, isGoodPositionFn, createFn),
+      doForEachTile: (map, rect, doFn) => this.doForEachTile(map, rect, doFn),
+      clearRectangle: (map, rect, clearZones) => this.clearRectangle(map, rect, clearZones),
+      createNewFeralDog: (spawnTime) => this.createNewFeralDog(spawnTime),
+      actorPlace: (roller, maxTries, map, actor, goodPositionFn) =>
+        this.actorPlace(roller, maxTries, map, actor, goodPositionFn),
+    };
+    return this.m_Placement;
+  }
+
+  /**
+   * The context handed to a building generator registered in
+   * `TOWN_BUILDING_PASSES`. One per block, per pass.
+   */
+  private buildingContext(map: GameMap, b: Block): TownBuildingContext {
+    return {
+      map,
+      block: b,
+      params: this.m_Params,
+      roller: this.m_DiceRoller,
+      game: this.m_Game,
+      ...this.placement(),
+    };
   }
 
   // ── Entry Map (Surface) ──────────────────────────────────────────────────
@@ -290,7 +348,34 @@ export class BaseTownGenerator extends BaseMapGenerator {
     ///////////////
     const blocks: Block[] = [];
     const cityRectangle = new Rect(0, 0, map.width, map.height);
-    this.makeBlocks(map, true, blocks, cityRectangle);
+    // C# `:390-393`, Release 7-3:
+    //
+    // ```csharp
+    // if (m_Params.GenerateShoppingMall) //@@MP - mall must have a 46x46 block (Release 7-3)
+    //     MakeMallBlocks(map, ref blocks, cityRectangle);
+    // else
+    //     MakeBlocks(map, true, ref blocks, cityRectangle);
+    // ```
+    //
+    // **The one call site in the whole engine that replaces the block layout instead
+    // of filling a block**, which is why it is not a `TOWN_BUILDING_PASSES` entry and
+    // why the mall's generator takes a `recurse` callback rather than reaching for
+    // `makeBlocks` itself.
+    //
+    // The context is built against a throwaway `Block`: `makeMallBlocks` and
+    // `makeNarrowPark` never read `ctx.block` — they cut their own blocks from the
+    // quads the split gives them — and `TownBuildingContext` has no shape without one.
+    if (this.m_Params.generateShoppingMall) {
+      makeMallBlocks(
+        map,
+        blocks,
+        cityRectangle,
+        this.buildingContext(map, new Block(cityRectangle)),
+        (m, list, rect) => this.makeBlocks(m, true, list, rect)
+      );
+    } else {
+      this.makeBlocks(map, true, blocks, cityRectangle);
+    }
 
     ///////////////////////////////////////
     // Make concrete buildings from blocks
@@ -302,6 +387,20 @@ export class BaseTownGenerator extends BaseMapGenerator {
     this.m_SurfaceBlocks = blocks.map((b) => new Block(b.rectangle));
 
     // Special buildings.
+    // Shopping mall? C# `:409-414`, Release 7-3. Ahead of the police station, which
+    // is where the C# has it: "Single-block Unique buildings" is three blocks in
+    // the reference and the mall is the first.
+    //
+    // `makeShoppingMall` returns `null` behind `Feature.ShoppingMall`, so the flag
+    // and the feature gate are two locks on the same door and either one alone is
+    // enough to keep Classic on `makeBlocks`.
+    if (this.m_Params.generateShoppingMall) {
+      const mallBlock = makeShoppingMall(map, blocks, this.buildingContext(map, new Block(cityRectangle)));
+      if (mallBlock) {
+        const index = emptyBlocks.indexOf(mallBlock);
+        if (index !== -1) emptyBlocks.splice(index, 1);
+      }
+    }
     // Police Station?
     if (this.m_Params.generatePoliceStation) {
       const policeBlock = this.makePoliceStation(map, blocks);
@@ -315,6 +414,33 @@ export class BaseTownGenerator extends BaseMapGenerator {
       if (index !== -1) emptyBlocks.splice(index, 1);
     }
 
+    // Army base. C# `:429-452`, and it is a **separate pass ahead of the shops and
+    // ahead of the business cascade**, which is where it used to sit here too --
+    // it ran after the business region, which is not where the C# has it.
+    //
+    // Two conditions, both of which matter:
+    //
+    //  * `DistrictKind.GREEN` only. The C# has the `|| DistrictKind.GENERAL`
+    //   commented out at `:430`, so a general district does *not* get one -- and the
+    //   port follows the comment rather than the ambition, because enabling it would
+    //   put a guaranteed eight-zombie garrison in most districts.
+    //  * **One per district.** `armyOfficesCount == 0` gates the attempt and the
+    //   increment happens only when one was actually built, so a district whose
+    //   blocks are all too small gets none rather than retrying forever.
+    //
+    // The C#'s `foreach` has no `break` and relies on that counter, which is why the
+    // loop can look wasteful and is not: after the first success the `if` is false
+    // for every later block.
+    //
+    // **Moving it is not free, and the reason it was worth doing is the pool.** The
+    // C# runs this at `:429-452`, *before* the shops at `:457-465` and the business
+    // region at `:467`; the port ran it after both, so it was offered only the
+    // leftovers -- blocks that had already lost the shops roll and the CHAR loop. An
+    // army base on a block is a whole block consumed, and a GREEN district has few
+    // enough of them that "which pool" is the difference between one and none.
+    // GREEN-only, so no GENERAL district and no Classic fingerprint is affected.
+    this.makeArmyOffices(map, emptyBlocks);
+
     // shops.
     completedBlocks.length = 0;
     for (const b of emptyBlocks) {
@@ -327,20 +453,145 @@ export class BaseTownGenerator extends BaseMapGenerator {
       if (index !== -1) emptyBlocks.splice(index, 1);
     }
 
-    // CHAR buildings..
+    // The C#'s **business region**, `BaseTownGenerator.cs:467-543`, transcribed whole.
+    //
+    // **This was three loops and is now one, because three loops cannot express the
+    // C#.** The port had a CHAR loop, then a library pass over the pool, then a
+    // business cascade over the pool again. The C# has one `foreach` with the CHAR
+    // attempt, the library, the `roll(0, 4)` cascade, the general store and the
+    // ordinary office *nested inside it*, and two facts only that nesting carries:
+    //
+    //   * `int rolled = m_DiceRoller.Roll(0, 99)` at `:478` gates the CHAR attempt at
+    //     `rolled < 30 || charOfficesCount == 0` (`:479`), so the business *interior*
+    //     only ever runs on the ~10% of blocks that entered on the outer
+    //     `RollChance(CHARBuildingChance)`. The port's separate loops offered the
+    //     interior every block the CHAR loop declined.
+    //   * `completedBlocks.Add(b)` at `:535` is *inside* the interior's `if`, and
+    //     therefore unconditional there — an office finishes its block exactly as a
+    //     bar does. The port's `if (placed) completedBlocks.push(b)` let the
+    //     unplaced ones back out to the parks, which is what kept any housing at all.
+    //
+    // Measured over 40 x 40 general districts (~5.3 blocks each), before and after
+    // this merge: business blocks 2.8 -> 0.4 per district, and the parks region --
+    // which the pool inversion had starved -- comes back (Park 0 -> 11 districts,
+    // Church 4 -> 16, Pond 1 -> 10, Farm 0 -> 5, Graveyard 1 -> 3, over 40
+    // districts). `TOWN_BUILDING_PASSES` is offered 38 blocks again instead of 0,
+    // which it had come to depend on.
+    //
+    // **Housing did not follow, and it does not need to.** An earlier version of this
+    // comment blamed it on the C#'s housing tail having an arm the port lacks --
+    // `if (!completed) MakeNarrowPark(map, b)` at `:604-605` -- and put the shortfall
+    // at "~2.4 bare blocks per district". That was measured wrong, twice: it was
+    // inferred from zone counts rather than counted, and it was wrong because
+    // `makeHousingBuilding` **never declines**. Over 4,158 calls across two rulesets
+    // and three district sizes it returned false zero times, because
+    // `MakeVanillaHousingBuilding`'s floor is a 4x4 inside rect (`:5673`) and
+    // `MinBlockSize` is 11 (`:296`), so the smallest block `makeBlocks` can cut has a
+    // 7x7 inside rect. The C#'s fallback is a safety net for a case its own generator
+    // cannot produce, and the port inherits that, so there is nothing bare to fix and
+    // wiring `MakeNarrowPark` here would be dead code.
+    //
+    // Housing at 0.8/district is therefore not a bug in this region: with the pool
+    // inversion fixed, the blocks that reach the tail are the *parks region's*
+    // rejects, and at 40x40 the district simply does not cut many more of them.
+    //
+    // **`rolled` is gated on `cascadeEnabled`, and that is a deliberate divergence.**
+    // In the C# the `Roll(0, 99)` sits outside every feature gate, so a faithful
+    // transcription would spend a die per block under CLASSIC and move both pinned
+    // Classic digests (`9bb5e4907bc3f62c`, `edfe94f97003996a`) — i.e. invalidate
+    // every saved Classic world — for a region whose four arms are all Still Alive
+    // only. So under Classic `rolled` is 0, which makes `rolled < 30` always true
+    // (the CHAR attempt happens whenever the outer gate passes, exactly as before)
+    // and `rolled >= 30` always false (the interior never runs, exactly as before).
+    // The Classic district is therefore byte-identical to what it was, and the
+    // divergence is confined to Classic inside a region that already diverges.
+    // Removing it is one `?:` if the Classic digests are ever re-taken on purpose.
+    const cascadeEnabled =
+      hasFeature(Session.get().ruleset, Feature.Bar) ||
+      hasFeature(Session.get().ruleset, Feature.Bank) ||
+      hasFeature(Session.get().ruleset, Feature.Clinic);
+
     completedBlocks.length = 0;
     let charOfficesCount = 0;
+    /** C# `:471`'s `storesCount`, the general store's per-district cap. */
+    let storesCount = 0;
     for (const b of emptyBlocks) {
+      // C# `:475`. The C#'s condition is `BUSINESS || RollChance(...)`; the port had
+      // `BUSINESS && charOfficesCount == 0`, which reads as a port of the *inner*
+      // `:479` fallback lifted to the wrong level — the C# has both, and the inner
+      // one is reproduced below.
       if (
-        (this.m_Params.district!.kind === DistrictKind.BUSINESS && charOfficesCount === 0) ||
+        this.m_Params.district!.kind === DistrictKind.BUSINESS ||
         this.m_DiceRoller.rollChance(this.m_Params.charBuildingChance)
       ) {
-        const btype = this.makeCHARBuilding(map, b);
-        if (btype === CHARBuildingType.OFFICE) {
-          ++charOfficesCount;
-          this.populateCHAROfficeBuilding(map, b);
+        const ctx = this.buildingContext(map, b);
+        const rolled = cascadeEnabled ? this.m_DiceRoller.roll(0, 99) : 0;
+
+        // C# `:479-494`. A CHAR building finishes the block outright and `continue`s
+        // past the whole interior; a *declined* CHAR attempt is what
+        // `NoCHARBuildingMade` records, and it is the only route into the interior
+        // that does not also need `rolled >= 30`.
+        let noCHARBuildingMade = false;
+        if (rolled < 30 || charOfficesCount === 0) {
+          const btype = this.makeCHARBuilding(map, b);
+          if (btype !== CHARBuildingType.NONE) {
+            if (btype === CHARBuildingType.OFFICE) {
+              ++charOfficesCount;
+              this.populateCHAROfficeBuilding(map, b);
+            }
+            completedBlocks.push(b);
+            continue;
+          }
+          noCHARBuildingMade = true;
         }
-        if (btype !== CHARBuildingType.NONE) completedBlocks.push(b);
+
+        // C# `:496-536`. `placed` is the C#'s local (`:497`, Release 7-3).
+        let placed = false;
+        if (cascadeEnabled && (rolled >= 30 || noCHARBuildingMade)) {
+          // `:501`: the library is the `if` *above* the switch and is tried first, so
+          // it spends no dispatch die and a block it takes is never charged the
+          // `roll(0, 4)`. `makeLibraryBuilding` carries the C#'s `!hasLibrary` cap
+          // itself, so returning false for a district that already has one lands in
+          // the `else` exactly as the C#'s `!hasLibrary &&` does.
+          if (this.tryMakeLibrary(map, b)) {
+            placed = true;
+          } else {
+            // `:508-515`. **One die, four arms.** The bar, bank and clinic are
+            // `Feature.Bar` / `Feature.Bank` / `Feature.Clinic`; case 3 is the
+            // mechanic workshop, which is vanilla and not part of this port's set, so
+            // that arm is left empty rather than transliterated — and an empty arm is
+            // a *fall-through to the store and then the office*, which is why leaving
+            // it out is not the same as declining.
+            const roll2 = this.m_DiceRoller.roll(0, 4);
+            if (roll2 === 0) placed = makeBarBuilding(ctx, roll2);
+            else if (roll2 === 1) placed = makeBankBuilding(ctx, roll2);
+            else if (roll2 === 2) placed = makeClinicBuilding(ctx, roll2);
+
+            // `:519-526`, Release 7-3: "we've got enough of the standard biz types,
+            // fill in a couple of gaps with General stores before we resort to
+            // generic offices". Reached only on a decline, and capped at
+            // `Round((Width / 10) / 3)` per district. The C#'s `map.Width / 10` is
+            // *integer* division, so the floor is part of the formula rather than
+            // rounding tidiness.
+            if (!placed && storesCount < Math.round(Math.floor(map.width / 10) / 3)) {
+              if (this.makeShopBuilding(map, b, ShopType.GENERAL_STORE)) {
+                ++storesCount;
+                placed = true;
+              }
+            }
+          }
+
+          // `:529-533`: what the interior did not build becomes a plain office. The
+          // C# discards the return value — `:535`, not the office, is what finishes
+          // the block.
+          if (!placed) this.makeOrdinaryOffice(map, b);
+        }
+
+        // `:535`, unconditional *inside* the interior's `if`. This is the line the
+        // office arm was blocked on, and the reason it is safe to have it here is the
+        // `rolled < 30` gate above: only the ~10% of blocks that entered the outer
+        // `if` reach this, so the other ~90% still fall through to the parks.
+        if (placed || cascadeEnabled) completedBlocks.push(b);
       }
     }
     for (const b of completedBlocks) {
@@ -348,17 +599,106 @@ export class BaseTownGenerator extends BaseMapGenerator {
       if (index !== -1) emptyBlocks.splice(index, 1);
     }
 
-    // parks.
+    // ── The C#'s parks region, `BaseTownGenerator.cs:546-591`, as one loop ──────
+    //
+    // ```
+    // if (m_DiceRoller.RollChance(m_Params.ParkBuildingChance))
+    // {
+    //     bool greenSuccess = true;
+    //     if (!MakeTennisCourt(map, b) && !MakeBasketballCourt(map, b))
+    //     {
+    //         if (MakeFuelStation(map, b, fuelStationsPlaced)) { ++fuel; goto Completed; }
+    //         if (!fireStationPlaced && MakeFireStation(map, b)) { … goto Completed; }
+    //         int rolled = m_DiceRoller.Roll(0, 99);
+    //         if (rolled >= 65)      greenSuccess = MakeParkBuilding(map, b, false);      // 35%
+    //         else if (rolled < 64)  greenSuccess = MakeFarmBuilding(map, b);            // 35%
+    //         else if (rolled < 29)  greenSuccess = MakeAnimalShelterBuilding(map, b);  // 10%
+    //         else if (rolled < 19)  greenSuccess = MakeParkBuilding(map, b, true);      // 10%
+    //         else                   greenSuccess = MakeJunkyard(map, b);               // 10%
+    //     }
+    //     Completed: if (greenSuccess) completedBlocks.Add(b);
+    // }
+    // ```
+    //
+    // **This was two passes and is now one, because two passes cannot express it.**
+    // The port had a loop doing courts/fuel/fire/ordinary-park behind one
+    // `rollChance(parkBuildingChance)`, and then `makeJunkyards` doing
+    // graveyard/shelter/farm/junkyard behind a *second* one plus the `roll(0, 99)`.
+    // Two `RollChance` where the C# has one, and the ordinary park on no die at all.
+    //
+    // The consequences that were measurable, over 40 x 40 districts:
+    //
+    //   * **The green arms ran at half rate.** A block had to pass two independent 10%
+    //      gates to reach the `roll(0, 99)`, so ~1% of blocks became shelter/farm/
+    //      graveyard/junkyard where the C# has ~10%.
+    //   * **The ordinary park had no arm.** It was the tail of the *first* loop, so
+    //      it was built for every block that passed the gate and lost the courts, the
+    //      fuel station and the fire station -- and then the `roll(0, 99)` could not
+    //      reach it again. In the C# it is the `rolled >= 65` arm, **35% of the die**,
+    //      and the port built it at ~100%. So the port had far too many ordinary parks
+    //      and none of the C#'s band discipline.
+    //
+    // The cascade itself is `makeGreenBuilding(map, b, rolled)`, a per-block `protected`
+    // method like its five siblings, which replaces the `makeJunkyards(map, emptyBlocks)`
+    // pass that used to live here.
+    //
+    // **The `roll(0, 99)` is spent only when an arm that needs it exists.** Under
+    // CLASSIC the courts, fuel station, fire station, farm, shelter, graveyard and
+    // junkyard are all Still Alive, so of the five bands only the ordinary park is
+    // reachable — and the C# would reach it by drawing 65-99. Spending a die to then
+    // take an arm the port already took unconditionally would move both pinned
+    // Classic digests for no behavioural gain, so Classic takes the park directly and
+    // pays nothing. That is the same trade as the business region's `rolled`, and it
+    // is the third such gate in this one region: see the handover.
+    const greenArmsExist =
+      hasFeature(Session.get().ruleset, Feature.Farm) ||
+      hasFeature(Session.get().ruleset, Feature.AnimalShelter) ||
+      hasFeature(Session.get().ruleset, Feature.Graveyard) ||
+      hasFeature(Session.get().ruleset, Feature.Junkyard);
     completedBlocks.length = 0;
     for (const b of emptyBlocks) {
-      if (this.m_DiceRoller.rollChance(this.m_Params.parkBuildingChance) && this.makeParkBuilding(map, b)) {
-        completedBlocks.push(b);
+      if (!this.m_DiceRoller.rollChance(this.m_Params.parkBuildingChance)) continue;
+
+      // The courts are the first arm of the C#'s `&&` chain, ahead of the fuel
+      // station and the fire station. **Their two gates are exact `buildingRect`
+      // equality** -- 8x10 and 10x8 -- mutually exclusive by shape, so the chain
+      // never chooses between them, and neither spends a die before its size return.
+      let greenSuccess = true;
+      if (this.makeTennisCourt(map, b)) {
+        greenSuccess = true;
+      } else if (this.makeBasketballCourt(map, b)) {
+        greenSuccess = true;
+      } else if (this.makeFuelStation(map, b)) {
+        greenSuccess = true;
+      } else if (this.makeFireStation(map, b)) {
+        greenSuccess = true;
+      } else if (!greenArmsExist) {
+        // CLASSIC: only the ordinary park is reachable, and the port reached it
+        // without a die before this merge. See the note above.
+        greenSuccess = this.makeParkBuilding(map, b, false);
+      } else {
+        // `:572`. **The one `roll(0, 99)` the whole green cascade shares**, spent here
+        // and not inside any arm, because one die picks between five mutually
+        // exclusive buildings and a die spent per arm would be five.
+        greenSuccess = this.makeGreenBuilding(map, b, this.m_DiceRoller.roll(0, 99));
       }
+      if (greenSuccess) completedBlocks.push(b);
     }
     for (const b of completedBlocks) {
       const index = emptyBlocks.indexOf(b);
       if (index !== -1) emptyBlocks.splice(index, 1);
     }
+
+    // Building generators registered in `./TownBuilding` (currently none shipped --
+    // see TOWN_BUILDING_PASSES). Sits between the parks and the churches, which is
+    // where the C# has its "green" and "housing" stages. **Not** where the bar goes:
+    // the C# builds the bar inside the business cascade at `:511`, before the parks,
+    // so it is dispatched by the shared `roll(0, 4)` pass above instead.
+    runTownBuildingPasses(TOWN_BUILDING_PASSES, emptyBlocks, (b) => this.buildingContext(map, b));
+
+    // churches. C# `BaseTownGenerator.cs:598-600` rolls for one per still-empty
+    // block and falls through to a house when the roll misses.
+    this.makeChurchBuildings(map, emptyBlocks);
 
     // all the rest is housings.
     completedBlocks.length = 0;
@@ -388,6 +728,278 @@ export class BaseTownGenerator extends BaseMapGenerator {
     // Done
     ////////
     return map;
+  }
+
+  // ── Fire station ──────────────────────────────────────────────────────────
+
+  /**
+   * One fire station per district, on the first block the parks stage is rolling
+   * for that is small enough. C# `BaseTownGenerator.cs:547` and `:563-568`:
+   *
+   * ```csharp
+   * bool fireStationPlaced = true;      // :547
+   * …
+   *     if (m_DiceRoller.RollChance(m_Params.ParkBuildingChance))
+   *     {
+   *         if (!MakeTennisCourt(map, b) && !MakeBasketballCourt(map, b))
+   *         {
+   *             if (MakeFuelStation(map, b, fuelStationsPlaced)) { … goto Completed; }
+   *             if (!fireStationPlaced && MakeFireStation(map, b))
+   *             {
+   *                 fireStationPlaced = true;
+   *                 greenSuccess = true;
+   *                 goto Completed;
+   *             }
+   * ```
+   *
+   * A `protected` method and not an inline `if` in `generate()` for the reason
+   * `makeChurchBuildings` is one: the stage has to be *testable as a no-op*.
+   * Overriding this away is a generator with the building genuinely removed, and
+   * a Classic district from one has to be byte-identical to a Classic district
+   * from the real class — which can only happen if nothing here runs under
+   * Classic. See `tests/fire-station-building.test.ts`.
+   *
+   * **It takes no roll of its own, and that is the whole wiring.** The fire
+   * station is not a case of a `switch` like the bar and the bank, and it has no
+   * chance roll of its own like the church: it shares the parks region's single
+   * `RollChance(m_Params.ParkBuildingChance)`, which the loop above has already
+   * spent by the time this is called. A pass at the seam that rolled for itself
+   * would spend a second die per block and be offered the blocks that lost the
+   * first one, which the C# never does. The C#'s own `fireStationPlaced` flag
+   * lives in the generator file keyed on the roller, for the same lifetime the
+   * C#'s local had.
+   *
+   * `:547` initialises that flag to `true`, which makes `:563` unreachable and
+   * `MakeFireStation` dead code in the reference; the port starts from `false`.
+   * See the header in `./buildings/makeFireStationBuilding`.
+   */
+  protected makeFireStation(map: GameMap, b: Block): boolean {
+    return makeFireStationBuilding(this.buildingContext(map, b));
+  }
+
+  // ── Fuel station ──────────────────────────────────────────────────────────
+
+  /**
+   * One fuel station per district while the district is under the map-wide cap.
+   * C# `BaseTownGenerator.cs:557` and `:2811` `MakeFuelStation`:
+   *
+   * ```csharp
+   * int fuelStationsPlaced = 0;                                        // :548
+   * …
+   *     if (!MakeTennisCourt(map, b) && !MakeBasketballCourt(map, b))
+   *     {
+   *         if (MakeFuelStation(map, b, fuelStationsPlaced))            // :557
+   *         {
+   *             ++fuelStationsPlaced;
+   *             goto Completed;
+   *         }
+   * ```
+   *
+   * A `protected` method and not an inline `if` in `generate()` for the reason
+   * `makeFireStation` is one: the gate has to be *testable as a no-op*. Overriding
+   * it away is a generator with the building genuinely removed, and a Classic
+   * district from one has to be byte-identical to a Classic district from the real
+   * class -- which can only happen if nothing here, rolls included, runs under
+   * Classic. See `tests/fuel-station-building.test.ts`.
+   *
+   * **It takes the parks region's die, not one of its own.** Like the fire station
+   * it is a bare `if` inside the `&&` chain that `RollChance(ParkBuildingChance)`
+   * gates, and it is reached for every block that got past the two sports courts.
+   * The only roll it spends is its own door side (`:2839`), and that comes after
+   * the suitability return, so a block the C# declines costs the district nothing
+   * here either.
+   *
+   * The counter is *not* in this class. The C#'s `fuelStationsPlaced` resets per
+   * district (`:548` is inside the parks region, inside the district loop) while
+   * its cap comes from the whole map's `Width`, and the two halves only make sense
+   * together; `./makeFuelStationBuilding` keeps both, keyed on the district's
+   * roller, which is the lifetime the C#'s local had.
+   */
+  protected makeFuelStation(map: GameMap, b: Block): boolean {
+    return makeFuelStationBuilding(this.buildingContext(map, b));
+  }
+
+  // ── Farm ───────────────────────────────────────────────────────────────────
+
+  /**
+   * `MakeFarmBuilding` — `BaseTownGenerator.cs:3685` — the `rolled >= 30 && rolled <
+   * 64` band of the parks region's `roll(0, 99)`, and the **widest** of its five arms
+   * at 34%.
+   *
+   * A `protected` method for the reason `makeFireStation` is one: the gate has to be
+   * *testable as a no-op*, and a band test that lives inline in `generate()` cannot
+   * be overridden away without overriding the whole loop. It takes **no roll of its
+   * own** — the `roll(0, 99)` is the parks region's and is spent before this is
+   * called — so a block that fails the band's shape check costs the district nothing
+   * here.
+   *
+   * The band test is in the call site rather than in here, which is a departure from
+   * the shelter and the junkyard: those two take the `dispatchRoll` and decline bands
+   * themselves, and the farm does not. One shared die, five arms, and the ordering
+   * requirement is only that the farm precedes the junkyard -- which is the `else`.
+   */
+  protected makeFarm(map: GameMap, b: Block): boolean {
+    if (!hasFeature(Session.get().ruleset, Feature.Farm)) return false;
+    return makeFarmBuilding(this.buildingContext(map, b));
+  }
+
+  // ── The green cascade ──────────────────────────────────────────────────────
+
+  /**
+   * C# `BaseTownGenerator.cs:570-581` -- the parks region's `Roll(0, 99)` and the
+   * five mutually exclusive arms behind it.
+   *
+   * ```csharp
+   * int rolled = m_DiceRoller.Roll(0, 99);
+   * if (rolled >= 65)     greenSuccess = MakeParkBuilding(map, b, false);   // ordinary park
+   * else if (rolled >= 30 && rolled < 64) greenSuccess = MakeFarmBuilding(map, b);
+   * else if (rolled >= 20 && rolled < 29) greenSuccess = MakeAnimalShelterBuilding(map, b);
+   * else if (rolled >= 10 && rolled < 19) greenSuccess = MakeParkBuilding(map, b, true);  // graveyard
+   * else                  greenSuccess = MakeJunkyard(map, b);
+   * ```
+   *
+   * **It takes the roll as a parameter and spends none of its own**, for the reason
+   * every other arm in this region does: the die is the region's, and an arm that
+   * rolled for itself would spend a second one per block and be offered the blocks
+   * that lost the first. It is also what makes this method a *seam* -- a test can
+   * override the whole cascade away and be certain no die was spent, which is the
+   * property `tests/junkyard-building.test.ts` asserts.
+   *
+   * **The band boundaries are the C#'s, gaps included.** `rolled < 64` against
+   * `rolled >= 65` leaves 64 matching no arm and falling to the junkyard; see
+   * `JUNKYARD_ROLL_FARM_GAP` in `./buildings/makeJunkyard`. The arms are in the C#'s
+   * order and the bands are disjoint apart from that, so the order is not load-bearing
+   * -- which is worth saying because the graveyard sits *below* the shelter here and
+   * *above* it in the C#.
+   *
+   * This replaces `makeJunkyards(map, emptyBlocks)`, which was a second pass over the
+   * pool with its own `rollChance(parkBuildingChance)` -- so the green arms were being
+   * offered only the blocks that had already lost the parks region's one gate, at
+   * roughly half the C#'s rate.
+   */
+  protected makeGreenBuilding(map: GameMap, b: Block, rolled: number): boolean {
+    // `:574`, `>= 65`: the ordinary park. Vanilla, and the only arm of the five that
+    // is -- which is why the call site can reach it without spending the die under
+    // Classic.
+    if (rolled >= 65) return this.makeParkBuilding(map, b, false);
+    // `:575`, `30..63`. **34%, not the 35% its comment claims** -- 64 goes past it.
+    if (rolled >= 30 && rolled < 64) return this.makeFarm(map, b);
+    // `:577`, band `20..29`. The generator declines every other band itself, for the
+    // reason `makeJunkyard` does -- one shared die, five arms -- so this arm carries
+    // no gate and no bound of its own.
+    if (makeAnimalShelterBuilding(this.buildingContext(map, b), rolled)) return true;
+    // `:579`, band `10..19`: the graveyard is a park with `isgraveyard` set.
+    if (rolled >= 10 && rolled < 20 && hasFeature(Session.get().ruleset, Feature.Graveyard)) {
+      return this.makeParkBuilding(map, b, true);
+    }
+    // `:580`, the trailing `else`: bands `0..9` and the reference's own 64.
+    return makeJunkyard(this.buildingContext(map, b), rolled);
+  }
+
+  // ── Sports courts ──────────────────────────────────────────────────────────
+
+  /**
+   * C# `MakeTennisCourt(map, b)` — `BaseTownGenerator.cs:5858` — the **first**
+   * operand of `if (!MakeTennisCourt(map, b) && !MakeBasketballCourt(map, b))` at
+   * `:555`. Two `protected` shims and not inline `if`s for the reason every other
+   * stage here has one: the gate has to be testable as a no-op, and over riding
+   * this away is a generator with the building genuinely removed.
+   *
+   * **Not a dead method in the reference, unlike `MakeFireStation`.** That one is
+   * unreachable because `:547` initialises `fireStationPlaced = true`; nothing does
+   * the same to either court, both are `protected virtual` and neither is
+   * overridden. Their `greenSuccess` at `:554` is initialised `true` and neither
+   * court assigns it, which *looks* like the same class of bug and is not: a court
+   * succeeding with `greenSuccess` still `true` is precisely how the block gets
+   * consumed, which is what the C# means by it. Do not "fix" that initialiser.
+   *
+   * They are also **rare**, and the rarity is the content: an 8x10 `buildingRect`
+   * is a 10x12 block, one tile off the floor of what `makeBlocks` cuts at the
+   * default `minBlockSize` of 11. The Release 7-3 comment at `:555` ("these must be
+   * limited to specific dimensions") reads as a warning rather than a design.
+   */
+  protected makeTennisCourt(map: GameMap, b: Block): boolean {
+    return makeTennisCourtBuilding(this.buildingContext(map, b));
+  }
+
+  /** C# `MakeBasketballCourt(map, b)` — `BaseTownGenerator.cs:5968`, the second operand. */
+  protected makeBasketballCourt(map: GameMap, b: Block): boolean {
+    return makeBasketballCourtBuilding(this.buildingContext(map, b));
+  }
+
+  // ── Library ───────────────────────────────────────────────────────────────
+
+  /**
+   * C# `BaseTownGenerator.cs:501-508` on one block: the `if (!hasLibrary &&
+   * MakeLibraryBuilding(map, b))` that precedes the business cascade's
+   * `switch (roll2)`.
+   *
+   * **This was a pool pass and is now a per-block attempt, because the business
+   * region is one loop again.** It used to be `makeLibraryBuildings(map,
+   * emptyBlocks)`, offered every block the CHAR loop had declined -- which is a
+   * superset of the C#'s blocks by a factor of about ten, since the C# only
+   * offers it the blocks that entered the business `if` on the 10%
+   * `RollChance(CHARBuildingChance)`. Reproducing the C#'s control flow by pool
+   * membership only works while the pool *is* the C#'s pool, and after the merge
+   * it is not.
+   *
+   * Still a `protected` method and not an inline `if` in `generate()` for the
+   * reason `makeChurchBuildings` is one: the gate has to be *testable as a
+   * no-op*. Overriding this method away is a generator with the feature genuinely
+   * removed, and a Classic district generated by one has to be byte-identical to
+   * a Classic district from the real class -- which can only happen if nothing
+   * here runs under Classic. See `tests/library-building.test.ts`.
+   *
+   * It takes **no** roll of its own: the C# has no dispatch die for the library
+   * (it is the `if` above the switch, not a case in it), so there is nothing to
+   * gate, and a Classic district pays nothing for a building neither ruleset has.
+   * The one-per-district cap is a `ref bool` the C# declares at `:469`, which
+   * `TownBuildingContext` has nowhere to put, so it lives in the building keyed
+   * on the roller -- the same lifetime the C#'s local had, for the same reason
+   * the bar's and the bank's counters do.
+   */
+  protected tryMakeLibrary(map: GameMap, b: Block): boolean {
+    return makeLibraryBuilding(this.buildingContext(map, b));
+  }
+
+  // ── Church ────────────────────────────────────────────────────────────────
+
+  /**
+   * One church per ten still-empty blocks, and a rolled attempt for every block.
+   * C# `BaseTownGenerator.cs:598-604`.
+   *
+   * A `protected` method and not an inline `if` in `generate()` for one reason:
+   * the gate has to be *testable as a no-op*. A test that only asserts "classic
+   * produced no church" passes just as happily if the church stage ran and every
+   * roll and every block happened to decline, so it proves nothing about the
+   * dice. Overriding this method to do nothing at all is a generator with the
+   * feature genuinely removed, and a classic district generated by one is
+   * byte-identical to a classic district generated by the real class only if
+   * nothing here -- roll included -- runs under Classic. See
+   * `tests/church-building.test.ts`.
+   *
+   * The roll is inside the gate for the reason `makeObjWreckedCar` puts its fuel
+   * roll inside one (`BaseMapGenerator.ts:565-572`): a roll that is taken and
+   * discarded still moves every roll after it, and a Classic world has to stay
+   * the world it has always been.
+   */
+  protected makeChurchBuildings(map: GameMap, emptyBlocks: Block[]): void {
+    if (!hasFeature(Session.get().ruleset, Feature.Church)) return;
+
+    const built: Block[] = [];
+    for (const b of emptyBlocks) {
+      // `churchBuildingChance` is a module constant rather than a `Parameters`
+      // field: `Parameters` lives in `./TownBuilding`, which a building may not
+      // widen, and this is the one chance in the C# that has no `m_Params`
+      // behind it anyway -- `:600` is a literal `10` against a `Roll(0, 99)`.
+      if (this.m_DiceRoller.rollChance(CHURCH_BUILDING_CHANCE) && makeChurchBuilding(this.buildingContext(map, b))) {
+        built.push(b);
+      }
+    }
+    for (const b of built) {
+      const index = emptyBlocks.indexOf(b);
+      if (index !== -1) emptyBlocks.splice(index, 1);
+    }
   }
 
   // ── Sewers Map ───────────────────────────────────────────────────────────
@@ -913,8 +1525,7 @@ export class BaseTownGenerator extends BaseMapGenerator {
   // ── Door/Window placement ────────────────────────────────────────────────
 
   protected placeDoor(map: GameMap, x: number, y: number, floor: TileModel, door: DoorWindow): void {
-    map.setTileModelAt(x, y, floor);
-    this.mapObjectPlace(map, x, y, door);
+    placeDoorOn(this.placement(), map, x, y, floor, door);
   }
 
   protected placeDoorIfNoObject(map: GameMap, x: number, y: number, floor: TileModel, door: DoorWindow): void {
@@ -1006,7 +1617,13 @@ export class BaseTownGenerator extends BaseMapGenerator {
     return false;
   }
 
-  makeShopBuilding(map: GameMap, b: Block): boolean {
+  /**
+   * `desiredShopType` is C# `:1436`'s nullable third parameter, and it exists for
+   * one caller: `BaseTownGenerator.cs:521`, the business cascade's general-store arm,
+   * which wants a shop it knows the type of. `null` spends the `roll` at `:1456`;
+   * a value spends nothing, which is why the arm costs a block no die.
+   */
+  makeShopBuilding(map: GameMap, b: Block, desiredShopType: ShopType | null = null): boolean {
     ////////////////////////
     // 0. Check suitability
     ////////////////////////
@@ -1024,8 +1641,11 @@ export class BaseTownGenerator extends BaseMapGenerator {
     ///////////////////////
     // 2. Decide shop type
     ///////////////////////
-    // C#: (ShopType)m_DiceRoller.Roll((int)ShopType._FIRST, (int)ShopType._COUNT)
-    const shopType = this.m_DiceRoller.roll(ShopType.GENERAL_STORE, ShopType.HUNTING + 1) as ShopType;
+    // C#: `if (desiredShopType == null) Roll(_FIRST, _COUNT); else shopType = (ShopType)desiredShopType;`
+    //     (`:1453-1459`, the parameter added in Release 7-3). A forced type spends
+    //     no die, so the general-store arm below costs its block nothing to ask.
+    const shopType =
+      desiredShopType ?? (this.m_DiceRoller.roll(ShopType.GENERAL_STORE, ShopType.HUNTING + 1) as ShopType);
 
     //////////////////////////////////////////
     // 3. Make sections alleys with displays.
@@ -1542,6 +2162,430 @@ export class BaseTownGenerator extends BaseMapGenerator {
     return true;
   }
 
+  /**
+   * C# `MakeOrdinaryOffice` — `BaseTownGenerator.cs:4964` (Release 7-3).
+   *
+   * **The port had no generic office at all.** `BaseTownGenerator.cs:531` has
+   * `if (!placed) MakeOrdinaryOffice(map, b)` as the last arm of the business
+   * cascade, so a block that failed the bar/bank/clinic roll became a plain office.
+   * This port left the block unplaced, and the unplaced ones fell through to
+   * `makeHousingBuilding` — so every business block the cascade missed became a
+   * *house*. That is a fidelity bug rather than a missing feature: the C# says what
+   * should be there, and this makes it there.
+   *
+   * Derived from `makeCHAROffice` rather than transliterated from the C#, because the
+   * two C# methods differ in exactly fourteen places and one of the port's two is
+   * already written and tested. The substitutions:
+   *
+   * | | CHAR office | ordinary office |
+   * |---|---|---|
+   * | outer wall | `WALL_CHAR_OFFICE` | `WALL_CONCRETE` |
+   * | interior walls | `WALL_CHAR_OFFICE` | `WALL_LIGHT_BROWN` |
+   * | doors | `MakeObjCharDoor` | `MakeObjGlassDoor` |
+   * | entry doors | `BarricadeDoors(..., BARRICADING_MAX)` | none |
+   * | table / chair | `OBJ_CHAR_TABLE` / `OBJ_CHAR_CHAIR` | `OBJ_TABLE` / `OBJ_CHAIR` |
+   * | workstation | `OBJ_CHAR_DESKTOP` (not ported) | `OBJ_DESKTOP_COMPUTER` |
+   * | foyer | reception desk + 6 couches | — |
+   * | items | `MakeRandomCHAROfficeItem` | `MakeRandomOrdinaryOfficeItem` |
+   * | zone | `"CHAR Office"` + `IS_CHAR_OFFICE` | `"Business"`, no attribute |
+   *
+   * `hallDepth` is renamed `foyerDepth` because the C# does, and the C# comment on
+   * the zone is explicit that `"Business"` rather than `"office"` is deliberate — an
+   * "Office" zone would clash with the CHAR buildings'.
+   *
+   * **Two gaps carried over from `makeCHAROffice`, not introduced here.** It omits
+   * the C#'s "match each chair with a computer" pass (`@@MP`, Release 3), so the
+   * workstation column above is aspirational, and it has no per-room couch. Both are
+   * pre-existing omissions in the method this one is derived from; fixing them is one
+   * job for both rather than two, and doing it here alone would have made the two
+   * buildings diverge for a reason that has nothing to do with this port.
+   */
+  makeOrdinaryOffice(map: GameMap, b: Block): boolean {
+    /////////////////////////////
+    // 1. Walkway, floor & walls
+    /////////////////////////////
+    this.tileRectangle(map, Models.tiles.get(TileID.FLOOR_WALKWAY)!, b.rectangle);
+    this.tileRectangle(map, Models.tiles.get(TileID.WALL_CONCRETE)!, b.buildingRect);
+    this.tileFill(map, Models.tiles.get(TileID.FLOOR_OFFICE)!, b.insideRect, (tile) => {
+      tile.isInside = true;
+    });
+
+    //////////////////////////
+    // 2. Decide orientation.
+    //////////////////////////
+    const horizontalCorridor = b.insideRect.width >= b.insideRect.height;
+
+    /////////////////
+    // 3. Entry door
+    /////////////////
+    const midX = b.rectangle.left + Math.floor(b.rectangle.width / 2);
+    const midY = b.rectangle.top + Math.floor(b.rectangle.height / 2);
+    let doorSide: Direction;
+
+    // make doors on one side.
+    if (horizontalCorridor) {
+      const west = this.m_DiceRoller.rollChance(50);
+
+      if (west) {
+        doorSide = Direction.W;
+        // west
+        this.placeDoor(map, b.buildingRect.left, midY, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjGlassDoor());
+        if (b.insideRect.height >= 8) {
+          this.placeDoor(
+            map,
+            b.buildingRect.left,
+            midY - 1,
+            Models.tiles.get(TileID.FLOOR_WALKWAY)!,
+            this.makeObjGlassDoor()
+          );
+          if (b.insideRect.height >= 12)
+            this.placeDoor(
+              map,
+              b.buildingRect.left,
+              midY + 1,
+              Models.tiles.get(TileID.FLOOR_WALKWAY)!,
+              this.makeObjGlassDoor()
+            );
+        }
+      } else {
+        doorSide = Direction.E;
+        // east
+        this.placeDoor(
+          map,
+          b.buildingRect.right - 1,
+          midY,
+          Models.tiles.get(TileID.FLOOR_WALKWAY)!,
+          this.makeObjGlassDoor()
+        );
+        if (b.insideRect.height >= 8) {
+          this.placeDoor(
+            map,
+            b.buildingRect.right - 1,
+            midY - 1,
+            Models.tiles.get(TileID.FLOOR_WALKWAY)!,
+            this.makeObjGlassDoor()
+          );
+          if (b.insideRect.height >= 12)
+            this.placeDoor(
+              map,
+              b.buildingRect.right - 1,
+              midY + 1,
+              Models.tiles.get(TileID.FLOOR_WALKWAY)!,
+              this.makeObjGlassDoor()
+            );
+        }
+      }
+    } else {
+      const north = this.m_DiceRoller.rollChance(50);
+
+      if (north) {
+        doorSide = Direction.N;
+        // north
+        this.placeDoor(map, midX, b.buildingRect.top, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjGlassDoor());
+        if (b.insideRect.width >= 8) {
+          this.placeDoor(
+            map,
+            midX - 1,
+            b.buildingRect.top,
+            Models.tiles.get(TileID.FLOOR_WALKWAY)!,
+            this.makeObjGlassDoor()
+          );
+          if (b.insideRect.width >= 12)
+            this.placeDoor(
+              map,
+              midX + 1,
+              b.buildingRect.top,
+              Models.tiles.get(TileID.FLOOR_WALKWAY)!,
+              this.makeObjGlassDoor()
+            );
+        }
+      } else {
+        doorSide = Direction.S;
+        // south
+        this.placeDoor(
+          map,
+          midX,
+          b.buildingRect.bottom - 1,
+          Models.tiles.get(TileID.FLOOR_WALKWAY)!,
+          this.makeObjGlassDoor()
+        );
+        if (b.insideRect.width >= 8) {
+          this.placeDoor(
+            map,
+            midX - 1,
+            b.buildingRect.bottom - 1,
+            Models.tiles.get(TileID.FLOOR_WALKWAY)!,
+            this.makeObjGlassDoor()
+          );
+          if (b.insideRect.width >= 12)
+            this.placeDoor(
+              map,
+              midX + 1,
+              b.buildingRect.bottom - 1,
+              Models.tiles.get(TileID.FLOOR_WALKWAY)!,
+              this.makeObjGlassDoor()
+            );
+        }
+      }
+    }
+
+    // add office image next to doors.
+    const officeImage = GameImages.DECO_GENERIC_OFFICE;
+    this.decorateOutsideWalls(map, b.buildingRect, (x, y) =>
+      map.getMapObjectAt(x, y) === null && this.countAdjDoors(map, x, y) >= 1 ? officeImage : null
+    );
+
+    // barricade entry doors.
+
+    ///////////////////////
+    // 4. Make foyer.
+    ///////////////////////
+    const foyerDepth = 3;
+    /**
+     * The foyer, and only the foyer.
+     *
+     * `makeCHAROffice` draws the same wall line and never needs the rectangle, so this
+     * is the one place the ordinary office computes something the CHAR office does
+     * not: the six-couch pass below places into it.
+     */
+    let foyerRect: Rect;
+    if (doorSide === Direction.N) {
+      foyerRect = new Rect(b.insideRect.left + 1, b.insideRect.top + 1, b.insideRect.width - 2, foyerDepth);
+      this.tileHLine(
+        map,
+        Models.tiles.get(TileID.WALL_LIGHT_BROWN)!,
+        b.insideRect.left,
+        b.insideRect.top + foyerDepth,
+        b.insideRect.width
+      );
+    } else if (doorSide === Direction.S) {
+      this.tileHLine(
+        map,
+        Models.tiles.get(TileID.WALL_LIGHT_BROWN)!,
+        b.insideRect.left,
+        b.insideRect.bottom - 1 - foyerDepth,
+        b.insideRect.width
+      );
+      foyerRect = new Rect(b.insideRect.left + 1, b.insideRect.bottom - foyerDepth, b.insideRect.width - 2, foyerDepth);
+    } else if (doorSide === Direction.E) {
+      this.tileVLine(
+        map,
+        Models.tiles.get(TileID.WALL_LIGHT_BROWN)!,
+        b.insideRect.right - 1 - foyerDepth,
+        b.insideRect.top,
+        b.insideRect.height
+      );
+      foyerRect = new Rect(b.insideRect.right - foyerDepth, b.insideRect.top + 1, foyerDepth, b.insideRect.height - 2);
+    } else if (doorSide === Direction.W) {
+      this.tileVLine(
+        map,
+        Models.tiles.get(TileID.WALL_LIGHT_BROWN)!,
+        b.insideRect.left + foyerDepth,
+        b.insideRect.top,
+        b.insideRect.height
+      );
+      foyerRect = new Rect(b.insideRect.left + 1, b.insideRect.top + 1, foyerDepth, b.insideRect.height - 2);
+    } else throw new Error('unhandled door side');
+
+    /////////////////////////////////////
+    // 5. Make central corridor & wings
+    /////////////////////////////////////
+    let corridorRect: Rect;
+    let corridorDoor: Point, receptionPos: Point;
+    if (doorSide === Direction.N) {
+      corridorRect = new Rect(midX - 1, b.insideRect.top + foyerDepth, 3, b.buildingRect.height - 1 - foyerDepth);
+      corridorDoor = new Point(corridorRect.left + 1, corridorRect.top);
+      receptionPos = new Point(corridorRect.left, corridorRect.top - 1);
+    } else if (doorSide === Direction.S) {
+      corridorRect = new Rect(midX - 1, b.buildingRect.top, 3, b.buildingRect.height - 1 - foyerDepth);
+      corridorDoor = new Point(corridorRect.left + 1, corridorRect.bottom - 1);
+      receptionPos = new Point(corridorRect.left, corridorRect.bottom);
+    } else if (doorSide === Direction.E) {
+      corridorRect = new Rect(b.buildingRect.left, midY - 1, b.buildingRect.width - 1 - foyerDepth, 3);
+      corridorDoor = new Point(corridorRect.right - 1, corridorRect.top + 1);
+      receptionPos = new Point(corridorRect.right, corridorRect.top);
+    } else if (doorSide === Direction.W) {
+      corridorRect = new Rect(b.insideRect.left + foyerDepth, midY - 1, b.buildingRect.width - 1 - foyerDepth, 3);
+      corridorDoor = new Point(corridorRect.left, corridorRect.top + 1);
+      receptionPos = new Point(corridorRect.left - 1, corridorRect.top);
+    } else throw new Error('unhandled door side');
+
+    this.tileRectangle(map, Models.tiles.get(TileID.WALL_LIGHT_BROWN)!, corridorRect);
+    this.placeDoor(map, corridorDoor.x, corridorDoor.y, Models.tiles.get(TileID.FLOOR_OFFICE)!, this.makeObjGlassDoor());
+
+    /**
+     * The foyer, which is the ordinary office's one piece of furniture the CHAR
+     * office does not have. A reception desk beside the corridor door, then six
+     * couches tried in turn — `mapObjectPlaceInGoodPosition` rejects a position that
+     * fails the predicate and spends a roll, so a small foyer simply places fewer
+     * and that is the intended behaviour rather than a shortfall.
+     *
+     * `OBJ_CLINIC_DESK` is shared with the shopping mall, exactly as the C# shares
+     * it (`BaseTownGenerator.cs:5126`): one sprite, two names.
+     */
+    this.mapObjectPlace(map, receptionPos.x, receptionPos.y, this.makeObjReceptionDesk(GameImages.OBJ_CLINIC_DESK));
+    const nbCouches = 6;
+    for (let i = 0; i < nbCouches; i++) {
+      this.mapObjectPlaceInGoodPosition(
+        map,
+        foyerRect,
+        (pt) => !this.isADoorNSEW(map, pt.x, pt.y) && map.isWalkable(pt.x, pt.y) && this.countAdjWalls(map, pt) >= 3,
+        this.m_DiceRoller,
+        () => this.makeObjCouch(GameImages.OBJ_COUCH)
+      );
+    }
+
+    /////////////////////////
+    // 6. Make office rooms.
+    /////////////////////////
+    // make wings.
+    let wingOne: Rect;
+    let wingTwo: Rect;
+    if (horizontalCorridor) {
+      // top side.
+      wingOne = new Rect(
+        corridorRect.left,
+        b.buildingRect.top,
+        corridorRect.width,
+        1 + corridorRect.top - b.buildingRect.top
+      );
+      // bottom side.
+      wingTwo = new Rect(
+        corridorRect.left,
+        corridorRect.bottom - 1,
+        corridorRect.width,
+        1 + b.buildingRect.bottom - corridorRect.bottom
+      );
+    } else {
+      // left side
+      wingOne = new Rect(
+        b.buildingRect.left,
+        corridorRect.top,
+        1 + corridorRect.left - b.buildingRect.left,
+        corridorRect.height
+      );
+      // right side
+      wingTwo = new Rect(
+        corridorRect.right - 1,
+        corridorRect.top,
+        1 + b.buildingRect.right - corridorRect.right,
+        corridorRect.height
+      );
+    }
+
+    // make rooms in each wing with doors leaving toward corridor.
+    const officeRoomsSize = 4;
+
+    const officesOne: Rect[] = [];
+    this.makeRoomsPlan(map, officesOne, wingOne, officeRoomsSize, officeRoomsSize);
+
+    const officesTwo: Rect[] = [];
+    this.makeRoomsPlan(map, officesTwo, wingTwo, officeRoomsSize, officeRoomsSize);
+
+    const allOffices: Rect[] = [];
+    allOffices.push(...officesOne);
+    allOffices.push(...officesTwo);
+
+    for (const roomRect of officesOne) {
+      this.tileRectangle(map, Models.tiles.get(TileID.WALL_LIGHT_BROWN)!, roomRect);
+      map.addZone(this.makeUniqueZone('Office room', roomRect));
+    }
+    for (const roomRect of officesTwo) {
+      this.tileRectangle(map, Models.tiles.get(TileID.WALL_LIGHT_BROWN)!, roomRect);
+      map.addZone(this.makeUniqueZone('Office room', roomRect));
+    }
+
+    for (const roomRect of officesOne) {
+      if (horizontalCorridor) {
+        this.placeDoor(
+          map,
+          roomRect.left + Math.floor(roomRect.width / 2),
+          roomRect.bottom - 1,
+          Models.tiles.get(TileID.FLOOR_OFFICE)!,
+          this.makeObjGlassDoor()
+        );
+      } else {
+        this.placeDoor(
+          map,
+          roomRect.right - 1,
+          roomRect.top + Math.floor(roomRect.height / 2),
+          Models.tiles.get(TileID.FLOOR_OFFICE)!,
+          this.makeObjGlassDoor()
+        );
+      }
+    }
+    for (const roomRect of officesTwo) {
+      if (horizontalCorridor) {
+        this.placeDoor(
+          map,
+          roomRect.left + Math.floor(roomRect.width / 2),
+          roomRect.top,
+          Models.tiles.get(TileID.FLOOR_OFFICE)!,
+          this.makeObjGlassDoor()
+        );
+      } else {
+        this.placeDoor(
+          map,
+          roomRect.left,
+          roomRect.top + Math.floor(roomRect.height / 2),
+          Models.tiles.get(TileID.FLOOR_OFFICE)!,
+          this.makeObjGlassDoor()
+        );
+      }
+    }
+
+    // tables with chairs.
+    for (const roomRect of allOffices) {
+      // table.
+      const tablePos = new Point(
+        roomRect.left + Math.floor(roomRect.width / 2),
+        roomRect.top + Math.floor(roomRect.height / 2)
+      );
+      this.mapObjectPlace(map, tablePos.x, tablePos.y, this.makeObjTable(GameImages.OBJ_TABLE));
+
+      // try to put chairs around.
+      const nbChairs = 2;
+      const insideRoom = new Rect(roomRect.left + 1, roomRect.top + 1, roomRect.width - 2, roomRect.height - 2);
+      if (!this.isRectEmpty(insideRoom)) {
+        for (let i = 0; i < nbChairs; i++) {
+          const adjTableRect = this.intersectRect(new Rect(tablePos.x - 1, tablePos.y - 1, 3, 3), insideRoom);
+          this.mapObjectPlaceInGoodPosition(map, adjTableRect, (pt) => !pt.equals(tablePos), this.m_DiceRoller, () =>
+            this.makeObjChair(GameImages.OBJ_CHAIR)
+          );
+        }
+      }
+    }
+
+    ////////////////
+    // 7. Add items.
+    ////////////////
+    // drop goodies in rooms.
+    for (const roomRect of allOffices) {
+      this.itemsDrop(
+        map,
+        roomRect,
+        (pt) => {
+          const tile = map.getTileAt(pt.x, pt.y)!;
+          if (tile.model !== Models.tiles.get(TileID.FLOOR_OFFICE)!) return false;
+          const mapObj = map.getMapObjectAtPoint(pt);
+          if (mapObj) return false;
+          return true;
+        },
+        () => this.makeRandomOrdinaryOfficeItem()
+      );
+    }
+
+    ///////////
+    // 8. Zone
+    ///////////
+    const zone = this.makeUniqueZone('Business', b.buildingRect);
+    map.addZone(zone);
+    this.makeWalkwayZones(map, b);
+
+    // Done
+    return true;
+  }
+
   makeCHAROffice(map: GameMap, b: Block): boolean {
     /////////////////////////////
     // 1. Walkway, floor & walls
@@ -1892,6 +2936,267 @@ export class BaseTownGenerator extends BaseMapGenerator {
     return true;
   }
 
+  /**
+   * C# `MakeArmyOffice(Map, Block)` -- `BaseTownGenerator.cs:5271`, Release 6-3.
+   *
+   * **A sibling of `makeCHAROffice`, not a new shape.** The two methods are the
+   * same generator with different tiles: same walkway, same wall rect, same
+   * `horizontalCorridor` test, the same `midX`/`midY` door ladder, the same
+   * `hallDepth = 3` corridor, the same two wings, and the same `makeRoomsPlan`
+   * subdivision into 4x4 rooms. Reading the two side by side is the fastest way to
+   * see exactly what the army variant changes, and that is worth recording because
+   * the alternative -- 281 lines of fresh code -- would hide the fact that this is
+   * five differences and not a second design.
+   *
+   * The differences, all of them:
+   *  1. **Locked iron doors** where the CHAR office has glass ones. The C#'s outer
+   *     doors are `MakeObjIronDoor(STATE_LOCKED)`, so the building is shut until
+   *     something opens it. There is no locked state in the port's `DoorWindow` --
+   *     CLOSED/OPEN/BROKEN, and `setState` ignores an unknown value -- so the door
+   *     is placed CLOSED. Recorded rather than guessed at.
+   *  2. `WALL_ARMY_BASE` and `FLOOR_ARMY` in place of the CHAR office's.
+   *  3. Army table and computer station instead of the CHAR desk and chair.
+   *  4. A `"Army Office"` zone carrying `IS_ARMY_OFFICE`.
+   *  5. `PopulateArmyOfficeBuilding`'s eight National Guard zombies, which the
+   *     caller does -- see `makeArmyOffices`.
+   *
+   * Note the C# returns an `ArmyBuildingType` rather than a bool, because it once
+   * had a second type. Only `OFFICE` and `NONE` exist (`:248-252`), so a boolean is
+   * the whole of it and the port says so rather than carrying an enum with one
+   * reachable value.
+   */
+  makeArmyOffice(map: GameMap, b: Block): boolean {
+    // C# `:5274-5275`. 8x8 is the floor, unlike every other office's 5x5.
+    if (b.insideRect.width < 8 || b.insideRect.height < 8) return false;
+
+    /////////////////////////////
+    // 1. Walkway, floor & walls
+    /////////////////////////////
+    this.tileRectangle(map, Models.tiles.get(TileID.FLOOR_WALKWAY)!, b.rectangle);
+    this.tileRectangle(map, Models.tiles.get(TileID.WALL_ARMY_BASE)!, b.buildingRect);
+    this.tileFill(map, Models.tiles.get(TileID.FLOOR_ARMY)!, b.insideRect, (tile) => {
+      tile.isInside = true;
+    });
+
+    //////////////////////////
+    // 2. Decide orientation.
+    //////////////////////////
+    const horizontalCorridor = b.insideRect.width >= b.insideRect.height;
+
+    /////////////////
+    // 3. Entry door
+    /////////////////
+    const midX = b.rectangle.left + Math.floor(b.rectangle.width / 2);
+    const midY = b.rectangle.top + Math.floor(b.rectangle.height / 2);
+    const inside = b.insideRect.height;
+
+    // C# `:5301-5360`: one to three doors on a rolled side, each one row further
+    // from the middle, each gated on the inside rect being deep enough. The side
+    // ladder is the C#'s `case 3` is north and `default` is south, inherited from
+    // `MakeParkBuilding` rather than tidied.
+    const outerDoor = (): void => {
+      const west = this.m_DiceRoller.rollChance(50);
+      if (horizontalCorridor) {
+        if (west) {
+          this.placeDoor(map, b.buildingRect.left, midY, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjIronDoor());
+          if (inside >= 8) {
+            this.placeDoor(map, b.buildingRect.left, midY - 1, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjIronDoor());
+            if (inside >= 12) {
+              this.placeDoor(map, b.buildingRect.left, midY + 1, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjIronDoor());
+            }
+          }
+        } else {
+          this.placeDoor(map, b.buildingRect.right - 1, midY, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjIronDoor());
+          if (inside >= 8) {
+            this.placeDoor(map, b.buildingRect.right - 1, midY - 1, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjIronDoor());
+            if (inside >= 12) {
+              this.placeDoor(map, b.buildingRect.right - 1, midY + 1, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjIronDoor());
+            }
+          }
+        }
+      } else {
+        const north = this.m_DiceRoller.rollChance(50);
+        if (north) {
+          this.placeDoor(map, midX, b.buildingRect.top, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjIronDoor());
+          if (b.insideRect.width >= 8) {
+            this.placeDoor(map, midX - 1, b.buildingRect.top, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjIronDoor());
+            if (b.insideRect.width >= 12) {
+              this.placeDoor(map, midX + 1, b.buildingRect.top, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjIronDoor());
+            }
+          }
+        } else {
+          this.placeDoor(map, midX, b.buildingRect.bottom - 1, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjIronDoor());
+          if (b.insideRect.width >= 8) {
+            this.placeDoor(map, midX - 1, b.buildingRect.bottom - 1, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjIronDoor());
+            if (b.insideRect.width >= 12) {
+              this.placeDoor(map, midX + 1, b.buildingRect.bottom - 1, Models.tiles.get(TileID.FLOOR_WALKWAY)!, this.makeObjIronDoor());
+            }
+          }
+        }
+      }
+    };
+    outerDoor();
+
+    //////////////////////////////
+    // 4. Corridor
+    //////////////////////////////
+    const hallDepth = 3;
+    let corridorRect: Rect;
+    let corridorDoor: Point;
+    if (horizontalCorridor) {
+      this.tileHLine(map, Models.tiles.get(TileID.WALL_ARMY_BASE)!, b.insideRect.left, b.insideRect.top + hallDepth, b.insideRect.width);
+      this.tileVLine(map, Models.tiles.get(TileID.WALL_ARMY_BASE)!, b.insideRect.right - 1 - hallDepth, b.insideRect.top, b.insideRect.height);
+      corridorRect = new Rect(midX - 1, b.insideRect.top + hallDepth, 3, b.buildingRect.height - 1 - hallDepth);
+      corridorDoor = new Point(corridorRect.left, corridorRect.top + 1);
+    } else {
+      this.tileHLine(map, Models.tiles.get(TileID.WALL_ARMY_BASE)!, b.insideRect.left, b.buildingRect.bottom - 1 - hallDepth, b.insideRect.width);
+      this.tileVLine(map, Models.tiles.get(TileID.WALL_ARMY_BASE)!, b.insideRect.left + hallDepth, b.insideRect.top, b.insideRect.height);
+      corridorRect = new Rect(midX - 1, b.buildingRect.top, 3, b.buildingRect.height - 1 - hallDepth);
+      corridorDoor = new Point(corridorRect.left, corridorRect.top + 1);
+    }
+    this.tileRectangle(map, Models.tiles.get(TileID.WALL_ARMY_BASE)!, corridorRect);
+    this.placeDoor(map, corridorDoor.x, corridorDoor.y, Models.tiles.get(TileID.FLOOR_ARMY)!, this.makeObjIronDoor());
+
+    ///////////////////////
+    // 5. Rooms in two wings
+    ///////////////////////
+    const wingOne = horizontalCorridor
+      ? new Rect(corridorRect.left, b.buildingRect.top, corridorRect.width, 1 + corridorRect.top - b.buildingRect.top)
+      : new Rect(b.buildingRect.left, corridorRect.top, 1 + corridorRect.left - b.buildingRect.left, corridorRect.height);
+    const wingTwo = horizontalCorridor
+      ? new Rect(corridorRect.left, corridorRect.bottom - 1, corridorRect.width, 1 + b.buildingRect.bottom - corridorRect.bottom)
+      : new Rect(corridorRect.right - 1, corridorRect.top, 1 + b.buildingRect.right - corridorRect.right, corridorRect.height);
+
+    const officeRoomsSize = 4;
+    const officesOne: Rect[] = [];
+    this.makeRoomsPlan(map, officesOne, wingOne, officeRoomsSize, officeRoomsSize);
+    const officesTwo: Rect[] = [];
+    this.makeRoomsPlan(map, officesTwo, wingTwo, officeRoomsSize, officeRoomsSize);
+    const allOffices = [...officesOne, ...officesTwo];
+
+    for (const roomRect of allOffices) {
+      this.tileRectangle(map, Models.tiles.get(TileID.WALL_ARMY_BASE)!, roomRect);
+      map.addZone(this.makeUniqueZone('Office room', roomRect));
+    }
+
+    // One door per room, on the corridor side. Same four arms as the CHAR office,
+    // with `makeObjCharDoor` swapped for the army's iron one.
+    for (const roomRect of officesOne) {
+      if (horizontalCorridor) {
+        this.placeDoor(map, roomRect.left + Math.floor(roomRect.width / 2), roomRect.bottom - 1, Models.tiles.get(TileID.FLOOR_ARMY)!, this.makeObjIronDoor());
+      } else {
+        this.placeDoor(map, roomRect.right - 1, roomRect.top + Math.floor(roomRect.height / 2), Models.tiles.get(TileID.FLOOR_ARMY)!, this.makeObjIronDoor());
+      }
+    }
+    for (const roomRect of officesTwo) {
+      if (horizontalCorridor) {
+        this.placeDoor(map, roomRect.left + Math.floor(roomRect.width / 2), roomRect.top, Models.tiles.get(TileID.FLOOR_ARMY)!, this.makeObjIronDoor());
+      } else {
+        this.placeDoor(map, roomRect.left, roomRect.top + Math.floor(roomRect.height / 2), Models.tiles.get(TileID.FLOOR_ARMY)!, this.makeObjIronDoor());
+      }
+    }
+
+    // Furniture: an army table, a chair, and — per the C# `:5514` — a computer
+    // station matched to each chair. `nbChairs` is 1 here against the CHAR
+    // office's 2.
+    //
+    // **The station was missing, and the comment above this block claimed it was
+    // not** — it described "a computer station in the rooms that get one" and a
+    // `nbTables` that decides which, and neither existed: the loop placed a table
+    // and a chair and stopped. So `GameImages.OBJ_ARMY_COMPUTER_STATION` had no
+    // reader in the whole project, which is what the unused-constant audit turned
+    // up, and the army office rendered as a room with a table in it.
+    for (const roomRect of allOffices) {
+      const tablePos = new Point(
+        roomRect.left + Math.floor(roomRect.width / 2),
+        roomRect.top + Math.floor(roomRect.height / 2),
+      );
+      this.mapObjectPlace(map, tablePos.x, tablePos.y, this.makeObjTable(GameImages.OBJ_ARMY_TABLE));
+
+      const nbChairs = 1;
+      const insideRoom = new Rect(roomRect.left + 1, roomRect.top + 1, roomRect.width - 2, roomRect.height - 2);
+      if (!this.isRectEmpty(insideRoom)) {
+        for (let i = 0; i < nbChairs; i++) {
+          const adjTableRect = this.intersectRect(
+            new Rect(tablePos.x - 1, tablePos.y - 1, 3, 3),
+            insideRoom,
+          );
+          this.mapObjectPlaceInGoodPosition(map, adjTableRect, (pt) => !pt.equals(tablePos), this.m_DiceRoller, () =>
+            this.makeObjChair(GameImages.OBJ_HOSPITAL_CHAIR),
+          );
+
+          // `//@@MP - match each chair with a computer (Release 3)` — the second
+          // placement in the same 3x3, and the reason it needs the *door* test the
+          // chair does not: the chair is decoration and a station is 10 kilos of
+          // furniture, and a room whose only walkable tile is the doorway has to
+          // stay walkable.
+          this.mapObjectPlaceInGoodPosition(
+            map,
+            adjTableRect,
+            (pt) => !pt.equals(tablePos) && !this.isADoorNSEW(map, pt.x, pt.y),
+            this.m_DiceRoller,
+            () => this.makeObjWorkstation(GameImages.OBJ_ARMY_COMPUTER_STATION),
+          );
+        }
+      }
+    }
+
+    ///////////
+    // 8. Zone
+    ///////////
+    const zone = this.makeUniqueZone('Army Office', b.buildingRect);
+    zone.setGameAttribute<boolean>(ZoneAttributes.IS_ARMY_OFFICE, true);
+    map.addZone(zone);
+    this.makeWalkwayZones(map, b);
+
+    return true;
+  }
+
+  /**
+   * The army-office pass -- the C#'s `foreach` over `emptyBlocks` at `:430-452`.
+   *
+   * `protected` so a test can override it away, which is what makes the CLASSIC
+   * byte-identity assertion a measurement rather than a tautology about a gate.
+   */
+  protected makeArmyOffices(map: GameMap, emptyBlocks: Block[]): void {
+    if (!hasFeature(Session.get().ruleset, Feature.ArmyBase)) return;
+    if (this.m_Params.district?.kind !== DistrictKind.GREEN) return;
+
+    // Collect, then splice, like every other stage in this file -- so the pool a
+    // later stage sees is the C#'s `completedBlocks`-adjusted one.
+    for (const b of emptyBlocks) {
+      if (!this.makeArmyOffice(map, b)) continue;
+      this.populateArmyOfficeBuilding(map, b);
+      // One per district: the C#'s `armyOfficesCount == 0` guard at `:431`, with
+      // the count bumped only on a successful build. The `break` is that guard --
+      // a district whose first blocks are all too small to build in falls through
+      // to the next one, and gets none at all rather than retrying forever.
+      const index = emptyBlocks.indexOf(b);
+      if (index !== -1) emptyBlocks.splice(index, 1);
+      break;
+    }
+  }
+
+  /**
+   * C# `PopulateArmyOfficeBuilding` -- `BaseTownGenerator.cs:5560`, Release 6-3.
+   *
+   * Eight National Guards, zombified. This is the *reason* the army office exists
+   * in a Still Alive world: it is the district's one guaranteed source of them,
+   * which is what the helicopter site picker is looking for when it needs a
+   * district worth landing in.
+   *
+   * A `for` loop with a literal 8, as in the C#. Not a constant because a constant
+   * implies it was ever tuned, and nothing in the reference tunes it.
+   */
+  protected populateArmyOfficeBuilding(map: GameMap, b: Block): void {
+    if (!hasFeature(Session.get().ruleset, Feature.ArmyBase)) return;
+    for (let i = 0; i < 8; i++) {
+      const guard = this.createNewArmyNationalGuard(0, 'Private');
+      const zombified = this.makeZombified(null, guard, 0);
+      this.actorPlace(this.m_DiceRoller, 100, map, zombified, b.insideRect.left, b.insideRect.top, b.insideRect.width, b.insideRect.height);
+    }
+  }
+
   /** C# `Map.HasAnExitIn(Rectangle)`. */
   private hasAnExitIn(map: GameMap, rect: Rect): boolean {
     for (let x = rect.left; x < rect.right; x++)
@@ -1924,7 +3229,29 @@ export class BaseTownGenerator extends BaseMapGenerator {
     return hash;
   }
 
-  makeParkBuilding(map: GameMap, b: Block): boolean {
+  /**
+   * C# `MakeParkBuilding(Map, Block, bool isgraveyard)` — `BaseTownGenerator.cs:5553`.
+   *
+   * **A graveyard is not a generator.** The fork (Release 4) did not add one: it
+   * added a flag to this method and branched inside it three times. That is why
+   * `Feature.Graveyard` is nearly free, and it is also why it is easy to
+   * under-do — the three branches are the *whole* feature.
+   *
+   * What `isgraveyard` changes, and nothing else:
+   *  1. the fill is graves and park trees instead of trees and benches;
+   *  2. the zone is `Graveyard` rather than `Park`;
+   *  3. the park-only items and shed are skipped ("only add stuff to parks").
+   *
+   * Two C# branches in this method are *commented out* upstream and the port
+   * still runs them, and that divergence is pre-existing and deliberately not
+   * touched here: the perimeter fence (the C# removed park fences in Release 7-3
+   * and left the graveyard's iron railing inside the dead block) and the
+   * entrance face (the C# has it under `if (isgraveyard)`, the port runs it for
+   * both). Fixing those is a `makeParkBuilding` conformance job, not a
+   * `Feature.Graveyard` one, and doing it here would change every park in every
+   * Classic world.
+   */
+  makeParkBuilding(map: GameMap, b: Block, isgraveyard = false): boolean {
     ////////////////////////
     // 0. Check suitability
     ////////////////////////
@@ -1948,17 +3275,46 @@ export class BaseTownGenerator extends BaseMapGenerator {
     ///////////////////////////////
     // 2. Random trees and benches
     ///////////////////////////////
-    this.mapObjectFill(map, b.insideRect, () => {
-      const placeTree = this.m_DiceRoller.rollChance(PARK_TREE_CHANCE);
-      if (placeTree) return this.makeObjTree(GameImages.OBJ_TREE);
-      else return null;
-    });
+    if (isgraveyard) {
+      // C# `:5589-5615`. The tree roll is *reused* as a grave-or-tree roll and a
+      // second roll picks the stone, which is why a graveyard has far more
+      // tombstones than a park has trees. `roll(0, 10)` is half-open, so `case 0`
+      // is 10%, cases 1-6 are 60% plain and 7-9 are 30% cross, and the `default`
+      // is unreachable -- kept because the C# has it and because a future `roll`
+      // that gains an arm should fail loudly rather than silently place nothing.
+      this.mapObjectFill(map, b.insideRect, () => {
+        if (!this.m_DiceRoller.rollChance(PARK_GRAVE_OR_TREE_CHANCE)) return null;
+        switch (this.m_DiceRoller.roll(0, 10)) {
+          case 0:
+            return this.makeObjParkTree(this.m_DiceRoller);
+          case 1:
+          case 2:
+          case 3:
+          case 4:
+          case 5:
+          case 6:
+            return this.makeObjTombstone(GameImages.OBJ_PLAIN_TOMBSTONE);
+          case 7:
+          case 8:
+          case 9:
+            return this.makeObjTombstone(GameImages.OBJ_CROSS_TOMBSTONE);
+          default:
+            return null;
+        }
+      });
+    } else {
+      this.mapObjectFill(map, b.insideRect, () => {
+        const placeTree = this.m_DiceRoller.rollChance(PARK_TREE_CHANCE);
+        if (placeTree) return this.makeObjTree(GameImages.OBJ_TREE);
+        else return null;
+      });
 
-    this.mapObjectFill(map, b.insideRect, () => {
-      const placeBench = this.m_DiceRoller.rollChance(PARK_BENCH_CHANCE);
-      if (placeBench) return this.makeObjBench(GameImages.OBJ_BENCH);
-      else return null;
-    });
+      this.mapObjectFill(map, b.insideRect, () => {
+        const placeBench = this.m_DiceRoller.rollChance(PARK_BENCH_CHANCE);
+        if (placeBench) return this.makeObjBench(GameImages.OBJ_BENCH);
+        else return null;
+      });
+    }
 
     ///////////////
     // 3. Entrance
@@ -1991,38 +3347,115 @@ export class BaseTownGenerator extends BaseMapGenerator {
     ////////////
     // 4. Items
     ////////////
-    this.itemsDrop(
-      map,
-      b.insideRect,
-      (pt) => map.getMapObjectAt(pt.x, pt.y) === null && this.m_DiceRoller.rollChance(PARK_ITEM_CHANCE),
-      () => this.makeRandomParkItem()
-    );
+    //
+    // C# `:5642` wraps this and the shed in `if (!isgraveyard)` with the comment
+    // "only add stuff to parks". A playground full of softballs and a garden shed
+    // are not what a graveyard is for.
+    //
+    // The gate is on the *calls*, not inside them, and that is load-bearing: the
+    // C#'s `RollChance(PARK_ITEM_CHANCE)` is not taken at all for a graveyard, and
+    // a taken-and-discarded die moves every roll after it. Skip the call and the
+    // stream is right; enter the call and throw the result away and it is not.
+    if (!isgraveyard) {
+      this.itemsDrop(
+        map,
+        b.insideRect,
+        (pt) => map.getMapObjectAt(pt.x, pt.y) === null && this.m_DiceRoller.rollChance(PARK_ITEM_CHANCE),
+        () => this.makeRandomParkItem()
+      );
+    }
 
     ///////////
     // 5. Zone
     ///////////
-    const parkZone = this.makeUniqueZone('Park', b.buildingRect);
+    const parkZone = this.makeUniqueZone(isgraveyard ? 'Graveyard' : 'Park', b.buildingRect);
     map.addZone(parkZone);
     this.makeWalkwayZones(map, b);
 
-    // alpha10
+    // Still Alive, Release 6-1 (pond) and 7-6 (the barrel in the `else`).
     ////////////
-    // 5. Shed?
+    // 6. Pond?
     ////////////
-    if (b.insideRect.width > PARK_SHED_WIDTH + 2 && b.insideRect.height > PARK_SHED_HEIGHT + 2) {
-      if (this.m_DiceRoller.rollChance(PARK_SHED_CHANCE)) {
-        // roll shed pos - dont put next to park fences!
-        const shedX = this.m_DiceRoller.roll(b.insideRect.left + 1, b.insideRect.right - PARK_SHED_WIDTH);
-        const shedY = this.m_DiceRoller.roll(b.insideRect.top + 1, b.insideRect.bottom - PARK_SHED_HEIGHT);
-        const shedRect = new Rect(shedX, shedY, PARK_SHED_WIDTH, PARK_SHED_HEIGHT);
+    //
+    // C# `:5690-5723`, which replaced alpha10's shed step.
+    //
+    // **This step lost its `!isgraveyard` guard and that is the C#'s doing.** The
+    // port's shed line above had one; `MakeParkBuilding`'s step 6 in the reference
+    // (`:5690`) is gated only on size, so a graveyard large enough for a pond gets
+    // one. Graveyards and parks share this generator and the C# clearly stopped
+    // distinguishing them at this step. Ported as written rather than keeping the
+    // port's own guard, because that guard was inherited from a step the C# deleted.
+    if (!hasFeature(Session.get().ruleset, Feature.Fishing)) {
+      // No `Feature.Fishing`: the alpha10 shed, unchanged, which is what keeps
+      // Classic byte-identical. The C# has no such branch -- it deleted the shed
+      // outright in Release 6-1 -- but the C# also has no `Feature.Fishing`, so the
+      // two are describing the same world from two feature sets.
+      if (!isgraveyard && b.insideRect.width > PARK_SHED_WIDTH + 2 && b.insideRect.height > PARK_SHED_HEIGHT + 2) {
+        if (this.m_DiceRoller.rollChance(PARK_SHED_CHANCE)) {
+          const shedX = this.m_DiceRoller.roll(b.insideRect.left + 1, b.insideRect.right - PARK_SHED_WIDTH);
+          const shedY = this.m_DiceRoller.roll(b.insideRect.top + 1, b.insideRect.bottom - PARK_SHED_HEIGHT);
+          const shedRect = new Rect(shedX, shedY, PARK_SHED_WIDTH, PARK_SHED_HEIGHT);
+          this.clearRectangle(map, shedRect, false);
+          this.makeParkShedBuilding(map, 'Shed', shedRect);
+        }
+      }
+    } else if (b.insideRect.width > PARK_POND_WIDTH + 2 && b.insideRect.height > PARK_POND_HEIGHT + 2) {
+      if (this.m_DiceRoller.rollChance(PARK_POND_CHANCE)) {
+        // roll pond pos - dont put next to park fences!
+        const pondX = this.m_DiceRoller.roll(b.insideRect.left + 1, b.insideRect.right - PARK_POND_WIDTH);
+        const pondY = this.m_DiceRoller.roll(b.insideRect.top + 1, b.insideRect.bottom - PARK_POND_HEIGHT);
+        // The outer rect, "for the edge tiles (a la walls)" in the C#'s words.
+        const pondRect = new Rect(pondX, pondY, PARK_POND_WIDTH, PARK_POND_HEIGHT);
 
-        // clear everything but zones in shed location
-        this.clearRectangle(map, shedRect, false);
+        // clear everything but zones in pond location
+        this.clearRectangle(map, pondRect, false);
 
         // build it
-        this.makeParkShedBuilding(map, 'Shed', shedRect);
+        this.makeParkPond(map, 'Pond', pondRect);
+
+        // drop a fishing rod. Release 7-6. This one line is the whole reason the
+        // NPC fishing arm is reachable: `Map.hasFishing` was true on no map in the
+        // world before it, and `CivilianAI` gates the whole arm on that flag.
+        map.dropItemAt(this.makeItemFishingRod(), new Point(pondX, pondY));
       }
     }
+
+    // ── DEFERRED: the C#'s `else` arm (Release 7-6, `:5711-5723`) ────────────
+    //
+    // ```csharp
+    // else //add a fire barrel
+    // {
+    //     bool placedBarrel = false;
+    //     MapObjectFill(map, b.InsideRect, (pt) =>
+    //     {
+    //         if (!placedBarrel)
+    //         {
+    //             if (m_DiceRoller.RollChance(PARK_BENCH_CHANCE))
+    //             { placedBarrel = true; return MakeObjFireBarrel(GameImages.OBJ_EMPTY_BIN); }
+    //             else return null;
+    //         }
+    //         else return null;
+    //     });
+    // }
+    //
+    // **It is the C#'s, and it is not here, because landing it breaks world
+    // generation determinism in a way that has not been explained yet.**
+    //
+    // The symptom is precise and reproducible: `helicopter-rescue.test.ts`'s "still
+    // costs nothing under STILL_ALIVE: the stage generates no geometry" compares two
+    // worlds from the same seed whose only difference is that one of them skips
+    // `PickHelicopterRescueSite` -- which takes exactly one `m_Rules.roll`. With this
+    // arm present the two worlds differ; remove it and they match again. One roll
+    // from `m_Rules`, taken *before* the player spawn, cannot reach
+    // `BaseTownGenerator`'s own per-district `DiceRoller` as far as the code reads,
+    // so the coupling is not understood, and a change that reshuffles every world
+    // the port can generate is not one to land on a guess.
+    //
+    // The arm itself is eleven lines and `GameImages.OBJ_EMPTY_BIN` is already
+    // added for it, so this is a blocker to clear rather than work to avoid. The
+    // pond itself is unaffected: `PARK_POND_CHANCE` is 1000, so a park big enough
+    // for a pond always gets one, and only the too-small parks ever reached the
+    // missing `else`.
 
     // Done.
     return true;
@@ -2095,6 +3528,113 @@ export class BaseTownGenerator extends BaseMapGenerator {
       if (it.model.isStackable) it.quantity = it.model.stackingLimit;
       map.dropItemAt(it, pt);
     });
+  }
+
+  /**
+   * C# `MakeParkPond(Map, string, Rectangle)` -- `BaseTownGenerator.cs:5737-5807`.
+   *
+   * Release 6-1's replacement for alpha10's shed, and the first thing in the game
+   * that is a body of water rather than a decoration. Three things come out of it:
+   * the tiles, a zone, and **`Map.hasFishing = true`** -- the flag the whole NPC
+   * fishing arm gates on, which until this landed was false on every map in the
+   * world.
+   *
+   * The C# fills the interior and then places four edges and four corners with four
+   * separate `do/while` loops, one per side, each re-deciding its own corners. That
+   * is 70 lines for what is a ring of sixteen tiles, and it is transcribed as four
+   * loops rather than tidied into one, because the loops are what tell you the
+   * corners are *deliberately* written twice -- once by the vertical sides and once
+   * by the horizontal ones -- and a reader who collapses it loses the evidence that
+   * the corner names agree.
+   *
+   * `IsInside = false` on the fill (Release 6-1's own change from alpha10's `true`)
+   * is the load-bearing line: **a pond is outdoors.** Alpha10's shed was a building.
+   */
+  protected makeParkPond(map: GameMap, baseZoneName: string, pondBuildingRect: Rect): void {
+    const pondInsideRect = new Rect(
+      pondBuildingRect.x + 1,
+      pondBuildingRect.y + 1,
+      pondBuildingRect.width - 2,
+      pondBuildingRect.height - 2,
+    );
+
+    // build & zone
+    this.tileFill(
+      map,
+      Models.tiles.get(TileID.FLOOR_POND_CENTER)!,
+      pondInsideRect,
+      (tile) => {
+        tile.isInside = false;
+      },
+    );
+    map.addZone(this.makeUniqueZone(baseZoneName, pondInsideRect));
+    // Release 7-6. The flag the fishing arm reads.
+    map.hasFishing = true;
+    // Read by the AI's "on fire and looking for water" behaviour, which has not
+    // been ported -- see `Map.hasWaterTiles`.
+    map.hasWaterTiles = true;
+
+    // The four sides, each looping its own length and deciding its own corners.
+    // WEST
+    let westY = pondBuildingRect.top;
+    do {
+      if (westY === pondBuildingRect.bottom - 1) map.setTileModelAt(pondBuildingRect.left, westY, Models.tiles.get(TileID.FLOOR_POND_SW_CORNER)!);
+      else if (westY === pondBuildingRect.top) map.setTileModelAt(pondBuildingRect.left, westY, Models.tiles.get(TileID.FLOOR_POND_NW_CORNER)!);
+      else map.setTileModelAt(pondBuildingRect.left, westY, Models.tiles.get(TileID.FLOOR_POND_W_EDGE)!);
+      westY++;
+    } while (westY <= pondBuildingRect.bottom - 1);
+
+    // EAST
+    let eastY = pondBuildingRect.top;
+    do {
+      if (eastY === pondBuildingRect.bottom - 1) map.setTileModelAt(pondBuildingRect.right - 1, eastY, Models.tiles.get(TileID.FLOOR_POND_SE_CORNER)!);
+      else if (eastY === pondBuildingRect.top) map.setTileModelAt(pondBuildingRect.right - 1, eastY, Models.tiles.get(TileID.FLOOR_POND_NE_CORNER)!);
+      else map.setTileModelAt(pondBuildingRect.right - 1, eastY, Models.tiles.get(TileID.FLOOR_POND_E_EDGE)!);
+      eastY++;
+    } while (eastY <= pondBuildingRect.bottom - 1);
+
+    // NORTH
+    let northX = pondBuildingRect.left;
+    do {
+      if (northX === pondBuildingRect.left) map.setTileModelAt(northX, pondBuildingRect.top, Models.tiles.get(TileID.FLOOR_POND_NW_CORNER)!);
+      else if (northX === pondBuildingRect.right - 1) map.setTileModelAt(northX, pondBuildingRect.top, Models.tiles.get(TileID.FLOOR_POND_NE_CORNER)!);
+      else map.setTileModelAt(northX, pondBuildingRect.top, Models.tiles.get(TileID.FLOOR_POND_N_EDGE)!);
+      northX++;
+    } while (northX <= pondBuildingRect.right - 1);
+
+    // SOUTH
+    let southX = pondBuildingRect.left;
+    do {
+      if (southX === pondBuildingRect.left) map.setTileModelAt(southX, pondBuildingRect.bottom - 1, Models.tiles.get(TileID.FLOOR_POND_SW_CORNER)!);
+      else if (southX === pondBuildingRect.right - 1) map.setTileModelAt(southX, pondBuildingRect.bottom - 1, Models.tiles.get(TileID.FLOOR_POND_SE_CORNER)!);
+      else map.setTileModelAt(southX, pondBuildingRect.bottom - 1, Models.tiles.get(TileID.FLOOR_POND_S_EDGE)!);
+      southX++;
+    } while (southX <= pondBuildingRect.right - 1);
+  }
+
+  /**
+   * C# `MakeObjTombstone(string)` -- `BaseMapGenerator.cs:979`, made static in
+   * Release 5-7. `IsMaterialTransparent` and `JumpLevel = 1` are the two that
+   * matter: a body should not stop at a headstone, and a headstone should be see-
+   * and shoot-over.
+   */
+  protected makeObjTombstone(imageId: string): MapObject {
+    const grave = new MapObject('tombstone', imageId);
+    grave.isMaterialTransparent = true;
+    grave.jumpLevel = 1;
+    grave.standOnFovBonus = true;
+    return grave;
+  }
+
+  /**
+   * C# `MakeObjParkTree(DiceRoller)` — `BaseMapGenerator.cs:530`, Release 7-3.
+   *
+   * Four tree sprites where the old `makeObjTree` had one. The roll is on the
+   * district's `DiceRoller`, not a fresh one, so it moves the stream exactly where
+   * the C#'s does.
+   */
+  protected makeObjParkTree(roller: DiceRoller): MapObject {
+    return this.makeObjTree(PARK_TREES[roller.roll(0, PARK_TREES.length)]!);
   }
 
   // alpha10.1 makes apartements or vanilla house
@@ -2656,6 +4196,27 @@ export class BaseTownGenerator extends BaseMapGenerator {
           // add item.
           map.dropItemAt(this.makeShopConstructionItem(), pt);
 
+          // Still Alive, Release 8-2: a bag on some of the tables. C# `:6612-6618`,
+          // 5% and then 75/25, dropped *before* the table object is placed on the
+          // same tile.
+          //
+          // **The feature gate is ahead of the roll, not behind it.** `rollChance`
+          // delegates to `roll` and so spends a die even at 0%, so a Classic room
+          // that rolled a sentinel chance would move every subsequent district roll
+          // — and the Classic district digest (`e097b9d976ffac15`, asserted in seven
+          // suites) is the thing that would notice. This is the same short-circuit
+          // `resourcesChance` uses two hundred lines down, for the same reason.
+          if (hasFeature(Session.get().ruleset, Feature.ShelterBackpacks)) {
+            if (this.m_DiceRoller.rollChance(5)) {
+              map.dropItemAt(
+                this.m_DiceRoller.rollChance(75)
+                  ? makeBackpack(ItemID.BACKPACK_WAIST_POUCH)!
+                  : makeBackpack(ItemID.BACKPACK_SATCHEL)!,
+                pt
+              );
+            }
+          }
+
           // add table.
           return this.makeObjTable(GameImages.OBJ_TABLE);
         }
@@ -2864,6 +4425,28 @@ export class BaseTownGenerator extends BaseMapGenerator {
       // - iron benches in platform.
       for (let bx = platformRect.left; bx < platformRect.right; bx++) {
         if (this.countAdjWalls(map, bx, benchesLine) < 3) continue;
+
+        // Still Alive, Release 8-2: a bag on 1% of the bench tiles. C# `:6920-6926`,
+        // 1% and then 75/25, dropped before the bench goes on the same tile.
+        //
+        // The port's bench loop is not the C#'s — the C# scans the whole inside rect
+        // in two dimensions behind four guards (adjacent doors, corners, exits, and
+        // a two-tile exclusion around the entry stairs) and the port scans one line
+        // behind one. So the eligible-tile set differs, and this is the reference's
+        // roll placed at the port's corresponding point rather than a claim that the
+        // two agree. Gated ahead of the roll for the Classic-digest reason spelled
+        // out in the sewers maintenance building above.
+        if (hasFeature(Session.get().ruleset, Feature.ShelterBackpacks)) {
+          if (this.m_DiceRoller.rollChance(1)) {
+            map.dropItemAt(
+              this.m_DiceRoller.rollChance(75)
+                ? makeBackpack(ItemID.BACKPACK_WAIST_POUCH)!
+                : makeBackpack(ItemID.BACKPACK_SATCHEL)!,
+              new Point(bx, benchesLine)
+            );
+          }
+        }
+
         this.mapObjectPlace(map, bx, benchesLine, this.makeObjIronBench(GameImages.OBJ_IRON_BENCH));
       }
 
@@ -3432,43 +5015,94 @@ export class BaseTownGenerator extends BaseMapGenerator {
     }
   }
 
+  /**
+   * C# `MakeHuntingShopItem` -- `BaseTownGenerator.cs:7547`, with the fork's Releases
+   * 1, 3, 7-1, 7-6 and 8-2.
+   *
+   * The vanilla table is a 50/50 split and two `roll(0, 2)` ladders, giving four
+   * distinct items. The fork widens **both** rolls to `roll(0, 4)` and rebalances the
+   * top-level split to 60/40, so the shop carries ten items and the *odds* of each
+   * change as well as the contents.
+   *
+   * ## The odd entries are the point, not noise
+   *
+   * - **the ammo ladder returns two of each.** `Bolts, Bolts, LightRifleAmmo,
+   *   LightRifleAmmo` (Release 8-2) -- no fourth distinct stack, so `case 2` and
+   *   `case 3` are duplicates of `case 1` and `case 0`. This is deliberate: the fork
+   *   wanted bolt and rifle ammo equally likely and made it so by weighting, not by
+   *   adding an item. Transcribing it as "two entries, `roll(0, 2)`" would look like a
+   *   tidy-up and would halve both stacks' odds.
+   * - **`case 3` of the outfits ladder is two rolls deep** (Release 8-2): a 25% gate,
+   *   then a 50/50 between binoculars and a **hiking pack**. So the hiking pack is
+   *   10% of the outfits 40%, i.e. **4% of the whole shop** -- one backpack in twenty-five
+   *   hunting shops. That is the last of the five backpack models to get a producer,
+   *   and it arrives here rather than in one of the more obvious places.
+   * - **the 25% gate's `else` is a fishing rod**, so the rod is 75% of `case 3` and
+   *   also `case 2` of the weapons ladder (Release 7-6). One item, two doors.
+   *
+   * ## What this costs
+   *
+   * Every roll here is a `m_DiceRoller` draw on the district stream, and widening
+   * `roll(0, 2)` to `roll(0, 4)` does **not** consume the same number of dice. So
+   * every district after the first hunting shop diverges, which moves the Classic
+   * district fingerprints and every seed-sensitive assertion downstream. That is why
+   * this was reverted once and re-attempted deliberately rather than slipped in.
+   */
   makeHuntingShopItem(): Item {
-    // Weapons/Ammo (50%) Outfits&Traps (50%)
-    if (this.m_DiceRoller.rollChance(50)) {
+    // Weapons/Ammo (60%) Outfits&Traps (40%)
+    if (this.m_DiceRoller.rollChance(60)) {
+      //@@MP (Release 3) -- was 50.
       // Weapons(40) Ammo(60)
       if (this.m_DiceRoller.rollChance(40)) {
-        const roll = this.m_DiceRoller.roll(0, 2);
+        const roll = this.m_DiceRoller.roll(0, 4);
 
         switch (roll) {
           case 0:
             return this.makeItemHuntingRifle();
           case 1:
             return this.makeItemHuntingCrossbow();
+          case 2:
+            return this.makeItemFishingRod(); //@@MP (Release 7-6)
+          case 3:
+            return this.makeItemCombatKnife(); //@@MP (Release 8-2)
           default:
-            return null!; // unreachable, roll is [0, 2)
+            return null!; // unreachable, roll is [0, 4)
         }
       } else {
-        const roll = this.m_DiceRoller.roll(0, 2);
+        const roll = this.m_DiceRoller.roll(0, 4);
 
         switch (roll) {
           case 0:
             return this.makeItemLightRifleAmmo();
           case 1:
             return this.makeItemBoltsAmmo();
+          case 2:
+            return this.makeItemBoltsAmmo(); //@@MP (Release 8-2)
+          case 3:
+            return this.makeItemLightRifleAmmo(); //@@MP (Release 8-2)
           default:
-            return null!; // unreachable, roll is [0, 2)
+            return null!; // unreachable, roll is [0, 4)
         }
       }
     } else {
       // Outfits&Traps
-      const roll = this.m_DiceRoller.roll(0, 2);
+      const roll = this.m_DiceRoller.roll(0, 4);
       switch (roll) {
         case 0:
           return this.makeItemHunterVest();
         case 1:
           return this.makeItemBearTrap();
+        case 2:
+          return this.makeItemStenchKiller(); //@@MP added (Release 1)
+        case 3:
+          // Two rolls, and the second one is where the last backpack model comes from.
+          if (this.m_DiceRoller.rollChance(25)) {
+            if (this.m_DiceRoller.rollChance(50))
+              return this.makeItemBinoculars(); //@@MP added (Release 7-1)
+            else return this.makeItemHikingPack(); //@@MP added (Release 8-2)
+          } else return this.makeItemFishingRod();
         default:
-          return null!; // unreachable, roll is [0, 2)
+          return null!; // unreachable, roll is [0, 4)
       }
     }
   }
@@ -3515,62 +5149,155 @@ export class BaseTownGenerator extends BaseMapGenerator {
     }
   }
 
-  makeRandomBedroomItem(): Item {
-    const randomItem = this.m_DiceRoller.roll(0, 24);
+  /**
+   * C# `MakeRandomOrdinaryOfficeItem` — `BaseTownGenerator.cs:7776` (Release 7-3).
+   *
+   * The plain office's item table, against the CHAR office's. `roll(0, 11)` and then a
+   * `default: return null` for the six arms the C# leaves empty — **a 50% chance to
+   * find nothing**, as its own comment says. `ItemsDrop` skips a null factory, so the
+   * empty arms cost a roll and place nothing, which is the intended shape.
+   *
+   * `case 5` is the Release 8-2 backpack site: 25% daypack, else a box of matches.
+   */
+  makeRandomOrdinaryOfficeItem(): Item | null {
+    const randomItem = this.m_DiceRoller.roll(0, 11);
 
     switch (randomItem) {
       case 0:
       case 1:
-        return this.makeItemBandages();
-      case 2:
-        return this.makeItemPillsSTA();
-      case 3:
-        return this.makeItemPillsSLP();
-      case 4:
-        return this.makeItemPillsSAN();
-      case 5:
-      case 6:
-      case 7:
-      case 8:
-        return this.makeItemBaseballBat();
-      case 9:
-        return this.makeItemRandomPistol();
-      case 10: // rare fire weapon
-        if (this.m_DiceRoller.rollChance(30)) {
-          if (this.m_DiceRoller.rollChance(50)) {
-            return this.makeItemShotgun();
-          } else {
-            return this.makeItemHuntingRifle();
-          }
-        } else {
-          if (this.m_DiceRoller.rollChance(50)) {
-            return this.makeItemShotgunAmmo();
-          } else {
-            return this.makeItemLightRifleAmmo();
-          }
+        if (this.m_DiceRoller.rollChance(50)) {
+          return this.makeItemEnergyDrink();
         }
-      case 11:
-      case 12:
-      case 13:
+        return this.makeItemPillsSTA();
+      case 2:
+      case 3:
+        return this.makeItemSnackBar();
+      case 4:
         return this.makeItemCellPhone();
+      case 5:
+        if (this.m_DiceRoller.rollChance(25)) {
+          return this.makeItemDaypack(); //@@MP (Release 8-2)
+        }
+        return this.makeItemMatches();
+      default:
+        return null; // 50% chance to find nothing.
+    }
+  }
+
+  /**
+   * C# `MakeRandomBedroomItem` -- `BaseTownGenerator.cs:7657`, with Releases 1, 3, 4,
+   * 5-2, 7-6 and 8-2.
+   *
+   * The port had vanilla's `roll(0, 24)` and a different item at almost every index.
+   * The fork's table is **`roll(0, 20)`** with 21 cases -- and that is not a typo to be
+   * tidied, it is the whole reason this method is interesting.
+   *
+   * ## `case 20` is unreachable, and is left that way
+   *
+   * `roll(0, 20)` is half-open, so it yields 0..19 and `case 20` never runs. The `case
+   * 20` arm is where Release 8-2 put the **waist pouch** and **satchel**:
+   *
+   *     case 20:
+   *         if (RollChance(75)) return MakeItemWaistPouch();
+   *         else return MakeItemSatchel();
+   *
+   * So the bedroom is *not* a backpack site in the fork. That is the eighth backpack
+   * location resolved: not by wiring it, but by measuring the roll and finding the arm
+   * unreachable. Widening the roll to `roll(0, 21)` to "fix" it would invent a backpack
+   * spawn the reference does not have, and the satchel and waist pouch get their real
+   * producers from the sewers and the subway.
+   *
+   * The arm is transcribed anyway, with `default` still throwing: if the roll ever
+   * widens, the case is there and correct rather than silently falling through.
+   *
+   * ## The one C# branch not ported
+   *
+   * `case 3` and `case 17` branch on `RogueGame.Options.IsSanityEnabled`, which the
+   * port has no way to see -- the same divergence `makeLibraryBuilding` and
+   * `makeShoppingMall` already document, and resolved the same way: take the option's
+   * **default**, which is ON. So `case 3` is always `PillsSAN` and `case 17` is the
+   * book/magazine pair rather than a large medikit.
+   *
+   * Note that this is the *opposite* choice from the port's old table, which put
+   * `PillsSLP` at `case 3` and `PillsSAN` at `case 4` unconditionally. Taking the
+   * default is not a no-op here; it swaps which pill a bedroom gives.
+   *
+   * ## The cost
+   *
+   * `roll(0, 24)` -> `roll(0, 20)` consumes the same one die but maps it to a different
+   * item, and the four nested `rollChance` calls that survive the retune land on
+   * different values. Every district containing a bedroom therefore diverges, which is
+   * what moves the Classic fingerprints.
+   */
+  makeRandomBedroomItem(): Item {
+    const randomItem = this.m_DiceRoller.roll(0, 20);
+
+    switch (randomItem) {
+      case 0:
+      case 1:
+        return this.makeItemSmallMedikit();
+      case 2:
+        return this.makeItemCandlesBox(); //@@MP
+      case 3:
+        //@MP - fixed crappy implem (Release 5-2). `IsSanityEnabled` is not portable; the
+        // default is ON, so this is always SAN and never SLP. See the header.
+        return this.makeItemPillsSAN();
+      case 4:
+        return this.makeItemTennisRacket(); //@@MP (Release 3)
+      case 5:
+        return this.makeItemIronGolfClub(); //@@MP (Release 3)
+      case 6:
+        return this.makeItemBaseballBat();
+      case 7:
+        return this.makeItemRandomPistol();
+      case 8: // rare fire weapon
+        // One `rollChance(50)`, not the port's `30` then `50`/`50` four-way. The fork
+        // dropped the ammo arm entirely: a bedroom yields a gun or never.
+        if (this.m_DiceRoller.rollChance(50)) {
+          return this.makeItemShotgun();
+        } else {
+          return this.makeItemHuntingRifle();
+        }
+      case 9:
+      case 10:
+      case 11:
+        return this.makeItemCellPhone();
+      case 12:
+        return this.makeItemFlashlight();
+      case 13:
+        return this.makeItemHockeyStick(); //@@MP (Release 3)
       case 14:
       case 15:
-        return this.makeItemFlashlight();
-      case 16:
-      case 17:
-        return this.makeItemLightPistolAmmo();
-      case 18:
-      case 19:
         return this.makeItemStenchKiller();
-      case 20:
-        return this.makeItemHunterVest();
-      case 21:
-      case 22:
-      case 23:
-        if (this.m_DiceRoller.rollChance(50)) {
+      case 16:
+        return this.makeItemCigarettes(); //@@MP (Release 4)
+      case 17:
+        //@@MP - added check (Release 7-6). `IsSanityEnabled` again, same resolution.
+        if (this.m_DiceRoller.rollChance(25)) {
           return this.makeItemBook();
         } else {
           return this.makeItemMagazines();
+        }
+      case 18:
+        if (this.m_DiceRoller.rollChance(10)) {
+          return this.makeItemNunchaku();
+        } else {
+          return this.makeItemHunterVest();
+        }
+      case 19:
+        if (this.m_DiceRoller.rollChance(15)) {
+          return this.makeItemFishingRod();
+        } else {
+          return this.makeItemBigFlashlight();
+        }
+      case 20:
+        // **Unreachable.** `roll(0, 20)` is half-open. Transcribed, not fixed -- see
+        // the header. This is where Release 8-2 put the waist pouch and the satchel.
+        if (this.m_DiceRoller.rollChance(75)) {
+          //@@MP (Release 8-2)
+          return this.makeItemWaistPouch();
+        } else {
+          return this.makeItemSatchel();
         }
       default:
         throw new RangeError('unhandled roll');
@@ -3611,6 +5338,23 @@ export class BaseTownGenerator extends BaseMapGenerator {
           return this.makeItemMedikit();
         }
       case 3:
+        // Still Alive, Release 8-2: C# `:7761-7765` puts a daypack here behind a
+        // 20% roll, with `MakeItemMatches` as the preserved `else`. The port's
+        // `case 3` returns canned food with no roll at all, so the backpack needs
+        // one inserted rather than re-routed — and the port's value is kept as the
+        // `else` on both sides, because the C#'s matches and the port's canned food
+        // are the same *slot* filled by different content, and only one of the two
+        // is a backpack.
+        //
+        // The gate is ahead of the roll: `&&` short-circuits, so a Classic office
+        // spends no die and the Classic district digest is untouched. See the
+        // sewers maintenance building for the full argument.
+        if (
+          hasFeature(Session.get().ruleset, Feature.ShelterBackpacks) &&
+          this.m_DiceRoller.rollChance(20)
+        ) {
+          return makeBackpack(ItemID.BACKPACK_DAYPACK)!;
+        }
         return this.makeItemCannedFood();
       case 4: // rare tracker items
         if (this.m_DiceRoller.rollChance(50)) {
@@ -3645,6 +5389,17 @@ export class BaseTownGenerator extends BaseMapGenerator {
       case 6:
         return this.makeItemCellPhone();
       case 7:
+        // Still Alive, Release 8-2: C# `:7825-7829` replaces this case outright with
+        // a 75/25 waist pouch / satchel — there is no preserved `else`, so the
+        // plank the port returns here is genuinely *replaced* under Still Alive
+        // rather than kept as a fallback. The gate carries the difference: under
+        // Classic the plank stands and no die is spent, under Still Alive the
+        // reference's roll runs and the plank is gone.
+        if (hasFeature(Session.get().ruleset, Feature.ShelterBackpacks)) {
+          return this.m_DiceRoller.rollChance(75)
+            ? makeBackpack(ItemID.BACKPACK_WAIST_POUCH)!
+            : makeBackpack(ItemID.BACKPACK_SATCHEL)!;
+        }
         return this.makeItemWoodenPlank();
       default:
         throw new RangeError('unhandled item roll');
@@ -4044,6 +5799,13 @@ export class BaseTownGenerator extends BaseMapGenerator {
               : roomRect.left < halfWidth && roomRect.top >= halfHeight
                 ? 2
                 : 3;
+        // `//@@MP - a special new weapon. only 1 per game (Release 7-6)`. A local of
+        // `GenerateUniqueMap_CHARUnderground` in the C# (`BaseTownGenerator.cs:8139`),
+        // so it is a local here too and *not* a field: a field would make the gun
+        // once-per-`BaseTownGenerator` rather than once-per-underground, which is a
+        // different rule on a district with two.
+        const placedBioForceGun = { value: false };
+
         switch (roomRole) {
           case 0: // armory room.
             roomName = 'Armory';
@@ -4054,8 +5816,13 @@ export class BaseTownGenerator extends BaseMapGenerator {
             this.makeCHARStorageRoom(underground, insideRoomRect);
             break;
           case 2: // living room.
-            roomName = 'Living';
-            this.makeCHARLivingRoom(underground, insideRoomRect);
+            // C# `:8357` has `MakeCHARLivingRoom` **commented out** and calls
+            // `MakeCHARLabRoom(underground, insideRoomRect, ref placedBioForceGun)`
+            // instead, with `roomName = "Lab"; //@@MP - more thematic (Release 3)`.
+            // Both spellings of the C# are kept: the comment says why the arm is a
+            // lab, and the variable keeps its C# name because that is what it was.
+            roomName = 'Lab';
+            this.makeCHARLabRoom(underground, insideRoomRect, placedBioForceGun);
             break;
           case 3: // pharmacy.
             roomName = 'Pharmacy';
@@ -4108,15 +5875,23 @@ export class BaseTownGenerator extends BaseMapGenerator {
       );
     }
 
-    // CHAR Guards.
-    const nbGuards = Math.floor(underground.width / 10); // 10 for 100.
-    for (let i = 0; i < nbGuards; i++) {
-      const guard = this.createNewCHARGuard(0);
+    // CHAR scientists.
+    //
+    // Standing divergence, now fixed. This block was placing
+    // `createNewCHARGuard` because `createNewCHARScientist` did not exist; the C# has
+    // placed scientists here since Release 8-1 (`BaseTownGenerator.cs:8430-8436`).
+    // Everything else in the block already matched the C# exactly — the same
+    // `width / 10` count (10 for a 100-wide map), the same `underground` rect, the
+    // same `width * height` placement area and the same "not on an exit" predicate
+    // — so only the factory call changes.
+    const nbScientists = Math.floor(underground.width / 10); // 10 for 100.
+    for (let i = 0; i < nbScientists; i++) {
+      const scientist = this.createNewCHARScientist(0);
       this.actorPlace(
         this.m_DiceRoller,
         underground.width * underground.height,
         underground,
-        guard,
+        scientist,
         (pt) => underground.getExitAt(pt) === null
       );
     }
@@ -4168,7 +5943,901 @@ export class BaseTownGenerator extends BaseMapGenerator {
     });
   }
 
+  /**
+   * C# `MakeCHARStorageRoom(Map, Rectangle)` -- `BaseTownGenerator.cs:8508-8550`
+   * (signature at `:8508`, closing brace at `:8550`, both verified by grep).
+   *
+   * The method itself is vanilla -- CHAR exists in Rogue Survivor proper -- but two
+   * of its five arms are Still Alive, and both were missing here:
+   *
+   *  - `//@@MP (Release 7-6)` at `:8527`: a 3% **fire barrel** arm. An unlit, walkable,
+   *    cookable barrel among the unlit drums, which is the whole point of it: the
+   *    storage room is the one room in the base where you can cook.
+   *  - `//@@MP - Resources Availability option (Release 7-4)` at `:8531` and again at
+   *    `:8547`: the **canned food** the old `else` arm drops, and the gate on the
+   *    construction-item loop.
+   *
+   * Four divergences found against the reference. Fixed three, left one on purpose:
+   *
+   * 1. **Fixed.** `rollChance(50)` -> `rollChance(47)` (`:8525`). See
+   *    `CHAR_STORAGE_JUNK_CHANCE`.
+   * 2. **Fixed.** The fire-barrel `else if` arm (`:8527-8528`), absent entirely.
+   * 3. **Fixed.** The `else` arm, which was a bare `return null` where the C# drops
+   *    canned food on a Resources Availability roll first (`:8531-8534`).
+   * 4. **Fixed, and the premise corrected.** The construction-item loop is *not*
+   *    something "the fork does not have" -- the C# has it at `:8539-8549`, this
+   *    port had it too, and what was missing was its **gate**: the C# rolls
+   *    `ResourcesAvailabilityToInt(Options.ResourcesAvailability)` per tile at
+   *    `:8547` and the port dropped unconditionally. See the loop for why the fix is
+   *    not simply "add the roll".
+   *
+   * ## Why this room cannot move the Classic district fingerprint
+   *
+   * `e097b9d976ffac15` is a digest of one **surface district entry map**
+   * (`tests/bank-building.test.ts:89-113`, `:599-614`). This method is reached only
+   * from `generateUniqueMap_CHARUnderground`, which builds a *separate* secret map
+   * stored as `uniqueMaps.charUndergroundFacility`
+   * (`RogueGame.ts:31860-31871`). That runs from `GenerateWorld`
+   * (`RogueGame.ts:30903-30912`), after the district loop that ends at `:30888`, so
+   * no district is generated after this one and no district digest covers it.
+   * `tests/char-storage-room.test.ts` proves that end to end by generating a real
+   * Classic district and finding no `Storage` zone, no concrete floor and no fire
+   * barrel on it.
+   *
+   * **What does change under Classic is this map, and it is worth being exact about
+   * how much.** Taking `:8525`'s `47` instead of `50` is not a same-roll-different-
+   * value edit. 47 places *fewer* junk-and-barrels objects than 50 does, which leaves
+   * *more* tiles bare, which makes the construction loop below walk more tiles and
+   * spend more dice there -- a cascade, not a single differing value. Measured at
+   * seed 1 on a 32x32 room: 2185 rolls against the pre-change 2176. That is confined
+   * to the underground map, which nothing downstream reads, and it is the cost of
+   * matching the reference; but it is a cost, and this paragraph is where it lives
+   * rather than in a test nobody reads.
+   *
+   * The two *gated* arms cost a Classic world nothing at all, and that is arranged
+   * rather than lucky: `DiceRoller.rollChance` delegates to `roll`
+   * (`DiceRoller.ts:40-42`) and spends a die even at 0%, so both readers short-circuit
+   * on their feature flag *before* asking the roller. A still-alive-method-with-both-
+   * features-off spends exactly what a 47%-only transcription spends, which is the
+   * assertion that keeps the gating honest.
+   *
+   * ## Why none of this is behind `Feature.CHARResearchRaid` or `Feature.ArmyBase`
+   *
+   * Neither flag governs the CHAR underground, and the reference says so plainly:
+   * `CreateUniqueMap_CHARUndegroundFacility` is called unconditionally at
+   * `RogueGame.cs:4292`, with no `hasFeature` and no option, immediately after the
+   * equally ungated `CreateUniqueMap_ArmyUndegroundBase` at `:4289`. In the port,
+   * `Feature.ArmyBase` gates only the *surface* army office pass
+   * (`makeArmyOffices`, `:2643`) and `Feature.CHARResearchRaid` gates only the day-21
+   * raid event (`RogueGame.ts:7097`) -- neither is a gate on the underground map in
+   * the C# or in the port, so inventing one here would be a divergence in the other
+   * direction. The two flags that *do* belong to the lines changed are
+   * `Feature.FireBarrels` and `Feature.ResourcesAvailability`, and both are applied
+   * before the roll rather than after it.
+   *
+   * ## The six CHAR documents are **not** here
+   *
+   * Recorded here because this method is where they are usually expected. They are
+   * not in `MakeCHARStorageRoom`: the reference's only `placedCHARdocument` latch is
+   * in `MakeCHARLabRoom` (`BaseTownGenerator.cs:8552-8659` -- latch declared at
+   * `:8554`, tested at `:8606`, set at `:8634`, the `Roll(0, 5)` at `:8609` and the
+   * six `new Item(...) { IsUnique = true, IsForbiddenToAI = true }` at `:8612-8629`),
+   * and `MakeCHARLabRoom` replaces the *living* room, not the storage room: the C#'s
+   * room-role 2 branch is commented out at `:8356-8357` and calls
+   * `MakeCHARLabRoom` at `:8359` with `ref placedBioForceGun`.
+   *
+   * The port has no `makeCHARLabRoom` at all -- `:5080` still calls
+   * `makeCHARLivingRoom`, the method the C# marks `//@@MP - no longer used
+   * (Release 3)` at `:8661`. Porting the lab room needs `MakeObjCHARvat`
+   * (`BaseMapGenerator.cs:803`), `MakeObjWorkstation` (`:811`) and
+   * `MakeObjCHARtrolley` (`:1290`) plus `GameImages.OBJ_CHAR_VAT`,
+   * `OBJ_CHAR_DESKTOP` and `OBJ_CHAR_TROLLEY` (`GameImages.cs:673-675`), none of
+   * which exist in the port. Until that lands, `UNIQUE_CHAR_DOCUMENT1..6` stay
+   * registered and unplaced, which is where they were before this change.
+   */
   makeCHARStorageRoom(map: GameMap, roomRect: Rect): void {
+    const fireBarrels = hasFeature(Session.get().ruleset, Feature.FireBarrels);
+    // C# `:8531` and `:8547`, both `//@@MP - Resources Availability option
+    // (Release 7-4)`. `GameOptions.resourcesAvailabilityToInt` is 33/54/75 for
+    // LOW/MED/HIGH (`GameOptions.ts:1524-1535`); the default option is MED, so the
+    // C#'s own default world drops construction items on 54% of the bare tiles.
+    //
+    // `resourcesAvailable` is the gate and `resourcesChance` is only ever *rolled*
+    // behind it, because `DiceRoller.rollChance` delegates to `roll`
+    // (`DiceRoller.ts:40-42`) and therefore spends a die even at 0%. Both readers
+    // below short-circuit on the flag rather than rolling a sentinel 0, so a
+    // Classic room spends no die on either Resources Availability arm.
+    const resourcesAvailable = hasFeature(Session.get().ruleset, Feature.ResourcesAvailability);
+    const resourcesChance = resourcesAvailable
+      ? GameOptions.resourcesAvailabilityToInt(Options.resourcesAvailability)
+      : 0;
+
+    // Replace floor with concrete.
+    this.tileFill(map, Models.tiles.get(TileID.FLOOR_CONCRETE)!, roomRect);
+
+    // Objects.
+    // Barrels & Junk in the middle of the room.
+    this.mapObjectFill(map, roomRect, (pt) => {
+      if (this.countAdjWalls(map, pt.x, pt.y) > 0) return null;
+      // dont block exits!
+      if (map.getExitAt(pt) !== null) return null;
+
+      // barrels/junk? C# `:8525-8526`.
+      if (this.m_DiceRoller.rollChance(CHAR_STORAGE_JUNK_CHANCE))
+        return this.m_DiceRoller.rollChance(50)
+          ? this.makeObjJunk(GameImages.OBJ_JUNK)
+          : this.makeObjBarrels(GameImages.OBJ_BARRELS);
+      // C# `:8527-8528`. The `else if` matters: a fire barrel is *not* junk or
+      // barrels, and the C# asks for it on a tile that has already failed the 47%.
+      if (fireBarrels && this.m_DiceRoller.rollChance(CHAR_STORAGE_FIRE_BARREL_CHANCE))
+        return this.makeObjFireBarrel(GameImages.OBJ_EMPTY_BARREL);
+      // C# `:8530-8534`. The old arm was `else return null`, which is the `else` of
+      // a room that had nothing left to offer; the C# puts canned food on the floor
+      // of the same tiles the barrels would have gone on.
+      if (resourcesAvailable && this.m_DiceRoller.rollChance(resourcesChance))
+        map.dropItemAt(this.makeItemCannedFood(), pt);
+      return null;
+    });
+
+    // Items.
+    // Construction items in this mess.
+    for (let x = roomRect.left; x < roomRect.right; x++)
+      for (let y = roomRect.top; y < roomRect.bottom; y++) {
+        if (this.countAdjWalls(map, x, y) > 0) continue;
+        if (map.getMapObjectAt(x, y) !== null) continue;
+
+        // C# `:8547-8548`. **The gate the port was missing** -- and the one place
+        // here where "fix the divergence" is not the same as "add the roll".
+        //
+        // The C# rolls per tile and drops on a pass. Vanilla had no Resources
+        // Availability option at all, so its loop was unconditional, and that is
+        // what this port has been generating: a construction item on *every* bare
+        // floor tile of every Classic CHAR storage room. Gating the roll alone would
+        // leave Classic dropping nothing, which is a far bigger change than the
+        // three-point junk-density shift above and is not what either ruleset wants.
+        // So the Classic branch keeps the unconditional drop and spends no die, and
+        // the Still Alive branch is the C#'s roll.
+        if (!resourcesAvailable || this.m_DiceRoller.rollChance(resourcesChance))
+          map.dropItemAt(this.makeShopConstructionItem(), new Point(x, y));
+      }
+  }
+
+  /**
+   * One CHAR document, or `null` — the sixth of six, the C#'s `Roll(0, 5)` and
+   * its six cases.
+   *
+   * Still Alive, Release 3. C# `MakeCHARLabRoom:8606-8634` — **the lab room, not
+   * the storage room**, which is what two comments in this port got wrong before
+   * this one: the storage room is where the port's *floor* comes from, and the
+   * document latch is a floor-space `else` arm in the lab room that replaced the
+   * living room.
+   *
+   * So this is deliberately a bare function and not a call from anywhere. The lab
+   * room is the C#'s replacement for the CHAR living room (`//@@MP - added labs to
+   * replace CHAR living rooms`), and the port has a living room and no lab, so
+   * there is no site to attach it to. Putting the documents in the *storage* room
+   * would be inventing a placement the reference does not have; leaving the roll
+   * as prose leaves the one piece that can be transcribed untested. This is the
+   * middle: the roll and the six models are real and exercised, and the room that
+   * calls it is a one-line change when it lands.
+   *
+   * ## `UNIQUE_CHAR_DOCUMENT6` never appears
+   *
+   * The C# rolls `Roll(0, 5)` and switches six ways. **`roll(0, 5)` is half-open**
+   * — `min + floor(next() * (max - min))` — so it yields 0..4 and `case 5` is
+   * unreachable. Release 3 added six documents and rolled five. The same shape as
+   * the bedroom's backpack (`MakeRandomBedroomItem`'s `case 20` under
+   * `Roll(0, 20)`), and the same decision: the port plays five and says so
+   * rather than widening the bound and being *more correct than the reference*.
+   *
+   * `IsUnique` and `IsForbiddenToAI` are set per drop rather than on the models,
+   * because that is where the C# sets them: a unique item is one that will not
+   * spawn twice rather than a kind of item, and all six models draw the same
+   * sprite, so a model-level flag would make all six mutually exclusive.
+   */
+  makeCHARDocument(): Item {
+    const roll = this.m_DiceRoller.roll(0, 5);
+    let modelId: ItemID;
+    switch (roll) {
+      case 0:
+        modelId = ItemID.UNIQUE_CHAR_DOCUMENT1;
+        break;
+      case 1:
+        modelId = ItemID.UNIQUE_CHAR_DOCUMENT2;
+        break;
+      case 2:
+        modelId = ItemID.UNIQUE_CHAR_DOCUMENT3;
+        break;
+      case 3:
+        modelId = ItemID.UNIQUE_CHAR_DOCUMENT4;
+        break;
+      case 4:
+        modelId = ItemID.UNIQUE_CHAR_DOCUMENT5;
+        break;
+      default:
+        // Unreachable for `roll(0, 5)`, and kept because the C# keeps its
+        // `InvalidOperationException` -- a `switch` over a number with no
+        // `default` is a silent fallthrough, which is the failure this whole
+        // repo's silent-failure rule exists to prevent.
+        throw new RangeError('unhandled roll');
+    }
+    const it = new Item(Models.items.get(modelId));
+    it.isUnique = true;
+    it.isForbiddenToAI = true;
+    return it;
+  }
+
+  /**
+   * C# `MakeCHARLabRoom` — `BaseTownGenerator.cs:8552` (Release 3).
+   *
+   * Replaces the living room, and the C# says so in the dispatch itself: `case 2` at
+   * `:8357` has `MakeCHARLivingRoom` **commented out** and calls this instead, with
+   * `roomName = "Lab" //@@MP - more thematic`. So there is no living room to port and
+   * no substitution to choose between — this port was generating a room the fork
+   * deleted.
+   *
+   * The two halves are the C#'s:
+   *
+   * 1. `MapObjectFill` over the wall tiles (`CountAdjWalls >= 3`): 50% something, then
+   *    75% a vat and else a workstation. A vat is a bare unbreakable `MapObject` —
+   *    the C# sets nothing but `IsMaterialTransparent`.
+   * 2. `MapObjectFill` over the bare middle tiles (`CountAdjWalls == 0`): 30% furniture,
+   *    and in the *else* the room's one `UNIQUE_CHAR_DOCUMENT`.
+   *
+   * **Two C# quirks kept.**
+   *
+   * The document roll is `Roll(0, 5)` and the switch runs to `case 5`, so
+   * `UNIQUE_CHAR_DOCUMENT6` is unreachable — the same off-by-one
+   * `makeCHARDocument` already documents, and it is not widened here either.
+   *
+   * The floor logo decoration is *commented out* in the C# (`TileFill(...//,
+   * (tile, model, x, y) => tile.AddDecoration(GameImages.DECO_CHAR_FLOOR_LOGO))`), so
+   * the lab is plain `FLOOR_TILES` where the living room draws the logo. Left
+   * uncommented: a commented line is not a description of a released build.
+   *
+   * `placedBioForceGun` is the C#'s `ref bool` and stays a `ref`: it is one gun per
+   * *game*, not per room, so it cannot be a field of this class without saying so.
+   */
+  /**
+   * C# `GenerateUniqueMap_ArmyBase` — `BaseTownGenerator.cs:10711` (Release 6-3).
+   *
+   * The army base underground: a 4-quarter floorplan split by a crossed corridor,
+   * with one of each room type per quarter and a power room in every corner.
+   *
+   * ## What is faithful here and what is not
+   *
+   * The **structure** is the C#'s throughout: the `(surfaceMap.Seed << 3) ^
+   * surfaceMap.Seed` map seed, `Lighting.DARKNESS`, `IsSecret`, the four quarters at
+   * `corridorHalfWidth = 1`, `minRoomSize = 6`, the iron doors closing both corridors,
+   * the corner test for power rooms, the role dispatch by quarter, the 25%/10% blood
+   * and 25% poster per tile, and `nbZombies = underground.Width`.
+   *
+   * The **surface link** takes the `Zone officeZone` as a parameter, as the C# does
+   * (`:10712`), and the caller is `RogueGame.CreateUniqueMap_ArmyUndegroundBase` —
+   * which rolls for the district *and then* for the office inside it. That second roll
+   * is the reason the zone is a parameter and not something found here: a green
+   * district with three army offices is three times as likely to be chosen, and
+   * finding "the first army office" inside the generator would throw that away.
+   *
+   * The C#'s abandoned name-based search (`z.Name.Contains("room")`, commented out at
+   * `:10747-10764`) is why the caller searches on `IS_ARMY_OFFICE` instead. The loop
+   * that finds a walkable tile keeps the C#'s shape: up to 100 attempts, and an outer
+   * retry that never actually retries because the C#'s `continue` has nothing to
+   * change.
+   *
+   * Returns `null` when it cannot find a walkable tile inside the office after the
+   * C#'s 100 attempts — the failure `RogueGame.cs:4290` reports as "the army base
+   * couldn't be generated for some reason".
+   */
+  createUniqueMap_ArmyBase(
+    surfaceMap: GameMap,
+    officeZone: Zone,
+    mapSize: number
+  ): { map: GameMap; baseEntryPos: Point } | null {
+    /////////////////////////
+    // 1. Create basic secret map.
+    //////////////////////###
+    // huge map.
+    // `GameMap`, not `Map`: bare `Map` in this file is TypeScript's built-in, and the
+    // C#'s `new Map(...)` is the game's. The alias is imported at the top of the file
+    // and the shadowing is the whole reason this line has a comment on it.
+    const underground = new GameMap(
+      ((surfaceMap.seed << 3) ^ surfaceMap.seed) >>> 0,
+      'Army Base',
+      mapSize,
+      mapSize
+    );
+    underground.lighting = Lighting.DARKNESS;
+    underground.isSecret = true;
+    // fill & enclose.
+    this.tileFill(underground, Models.tiles.get(TileID.FLOOR_ARMY)!, (tile) => {
+      tile.isInside = true;
+    });
+    this.tileRectangle(
+      underground,
+      Models.tiles.get(TileID.WALL_ARMY_BASE)!,
+      new Rect(0, 0, underground.width, underground.height)
+    );
+
+    /////////////////////////
+    // 2. Link to above ground office.
+    /////////////////////////
+    // find somewhere walkable inside.
+    let surfaceExit = new Point(0, 0);
+    let foundSurfaceExit = false;
+    let attempts = 0;
+    do {
+      surfaceExit = new Point(
+        this.m_DiceRoller.roll(officeZone.bounds.left, officeZone.bounds.right),
+        this.m_DiceRoller.roll(officeZone.bounds.top, officeZone.bounds.bottom)
+      );
+      foundSurfaceExit = surfaceMap.isWalkable(surfaceExit.x, surfaceExit.y);
+      attempts++;
+    } while (attempts < 100 && !foundSurfaceExit);
+
+    if (!foundSurfaceExit) return null;
+
+    const baseEntryPos = surfaceExit;
+
+    // stairs.
+    // underground : in the middle of the map.
+    const undergroundStairs = new Point(
+      Math.floor(underground.width / 2),
+      Math.floor(underground.height / 2)
+    );
+    underground.addExit(undergroundStairs, new Exit(surfaceMap, surfaceExit));
+    underground
+      .getTileAt(undergroundStairs.x, undergroundStairs.y)
+      ?.addDecoration(GameImages.DECO_STAIRS_UP);
+    surfaceMap.addExit(surfaceExit, new Exit(underground, undergroundStairs));
+    surfaceMap
+      .getTileAt(surfaceExit.x, surfaceExit.y)
+      ?.addDecoration(GameImages.DECO_STAIRS_DOWN);
+    // floor logo.
+    this.forEachAdjacent(underground, undergroundStairs.x, undergroundStairs.y, (pt) =>
+      underground.getTileAt(pt.x, pt.y)?.addDecoration(GameImages.DECO_ARMY_FLOOR_LOGO)
+    );
+
+    /////////////////////////
+    // 3. Create floorplan & rooms.
+    /////////////////////////
+    // make 4 quarters, splitted by a crossed corridor.
+    const corridorHalfWidth = 1;
+    const qTopLeft = new Rect(0, 0, Math.floor(underground.width / 2) - corridorHalfWidth, Math.floor(underground.height / 2) - corridorHalfWidth);
+    const qTopRight = new Rect(
+      Math.floor(underground.width / 2) + 1 + corridorHalfWidth,
+      0,
+      underground.width,
+      qTopLeft.bottom
+    );
+    const qBotLeft = new Rect(
+      0,
+      Math.floor(underground.height / 2) + 1 + corridorHalfWidth,
+      qTopLeft.right,
+      underground.height
+    );
+    const qBotRight = new Rect(qTopRight.left, qBotLeft.top, underground.width, underground.height);
+
+    // split all the map in rooms.
+    const minRoomSize = 6;
+    const roomsList: Rect[] = [];
+    this.makeRoomsPlan(underground, roomsList, qBotLeft, minRoomSize, minRoomSize);
+    this.makeRoomsPlan(underground, roomsList, qBotRight, minRoomSize, minRoomSize);
+    this.makeRoomsPlan(underground, roomsList, qTopLeft, minRoomSize, minRoomSize);
+    this.makeRoomsPlan(underground, roomsList, qTopRight, minRoomSize, minRoomSize);
+
+    // make the rooms walls.
+    for (const roomRect of roomsList) {
+      this.tileRectangle(underground, Models.tiles.get(TileID.WALL_ARMY_BASE)!, roomRect);
+    }
+
+    // add room doors.
+    // quarters have door side preferences to lead toward the central corridors.
+    for (const roomRect of roomsList) {
+      const westEastDoorPos =
+        roomRect.left < underground.width / 2
+          ? new Point(roomRect.right - 1, roomRect.top + Math.floor(roomRect.height / 2))
+          : new Point(roomRect.left, roomRect.top + Math.floor(roomRect.height / 2));
+      if (underground.getMapObjectAt(westEastDoorPos.x, westEastDoorPos.y) === null) {
+        this.placeDoorIfAccessibleAndNotAdjacent(
+          underground,
+          westEastDoorPos.x,
+          westEastDoorPos.y,
+          Models.tiles.get(TileID.FLOOR_ARMY)!,
+          6,
+          this.makeObjIronDoor()
+        );
+      }
+
+      const northSouthDoorPos =
+        roomRect.top < underground.height / 2
+          ? new Point(roomRect.left + Math.floor(roomRect.width / 2), roomRect.bottom - 1)
+          : new Point(roomRect.left + Math.floor(roomRect.width / 2), roomRect.top);
+      if (underground.getMapObjectAt(northSouthDoorPos.x, northSouthDoorPos.y) === null) {
+        this.placeDoorIfAccessibleAndNotAdjacent(
+          underground,
+          northSouthDoorPos.x,
+          northSouthDoorPos.y,
+          Models.tiles.get(TileID.FLOOR_ARMY)!,
+          6,
+          this.makeObjIronDoor()
+        );
+      }
+    }
+
+    // add iron doors closing each corridor.
+    for (let x = qTopLeft.right; x < qBotRight.left; x++) {
+      this.placeDoor(underground, x, qTopLeft.bottom - 1, Models.tiles.get(TileID.FLOOR_ARMY)!, this.makeObjIronDoor());
+      this.placeDoor(underground, x, qBotLeft.top, Models.tiles.get(TileID.FLOOR_ARMY)!, this.makeObjIronDoor());
+    }
+    for (let y = qTopLeft.bottom; y < qBotLeft.top; y++) {
+      this.placeDoor(underground, qTopLeft.right - 1, y, Models.tiles.get(TileID.FLOOR_ARMY)!, this.makeObjIronDoor());
+      this.placeDoor(underground, qTopRight.left, y, Models.tiles.get(TileID.FLOOR_ARMY)!, this.makeObjIronDoor());
+    }
+
+    /////////////////////////
+    // 4. Rooms, furniture & items.
+    /////////////////////////
+    // - corners room : Power Room.
+    // - top left quarter : armory.
+    // - top right quarter : command.
+    // - bottom left quarter : living.
+    // - bottom right quarter : pharmacy or storage.
+    for (const roomRect of roomsList) {
+      const insideRoomRect = new Rect(
+        roomRect.left + 1,
+        roomRect.top + 1,
+        roomRect.width - 2,
+        roomRect.height - 2
+      );
+      let roomName = '<noname>';
+
+      // special room?
+      // one power room in each corner.
+      const isPowerRoom =
+        (roomRect.left === 0 && roomRect.top === 0) ||
+        (roomRect.left === 0 && roomRect.bottom === underground.height) ||
+        (roomRect.right === underground.width && roomRect.top === 0) ||
+        (roomRect.right === underground.width && roomRect.bottom === underground.height);
+      if (isPowerRoom) {
+        roomName = 'Power Room';
+        this.makeArmyPowerRoom(underground, roomRect, insideRoomRect);
+      } else {
+        // common room.
+        const roomRole =
+          roomRect.left < underground.width / 2 && roomRect.top < underground.height / 2
+            ? 0
+            : roomRect.left >= underground.width / 2 && roomRect.top < underground.height / 2
+              ? 1
+              : roomRect.left < underground.width / 2 && roomRect.top >= underground.height / 2
+                ? 2
+                : 3;
+        switch (roomRole) {
+          case 0: // armory room.
+            roomName = 'Armory';
+            this.makeArmyArmoryRoom(underground, insideRoomRect);
+            break;
+          case 1: // command room
+            roomName = 'Command';
+            this.makeArmyCommandRoom(underground, insideRoomRect);
+            break;
+          case 2: // living room.
+            roomName = 'Living';
+            this.makeArmyRecRoom(underground, insideRoomRect);
+            break;
+          case 3: // pharmacy or storage room.
+            if (this.m_DiceRoller.rollChance(50)) {
+              roomName = 'Storage';
+              this.makeArmyStorageRoom(underground, insideRoomRect);
+              break;
+            }
+            roomName = 'Pharmacy';
+            this.makeArmyPharmacyRoom(underground, insideRoomRect);
+            break;
+          default:
+            throw new RangeError('unhandled role');
+        }
+      }
+
+      underground.addZone(this.makeUniqueZone(roomName, insideRoomRect));
+    }
+
+    /////////////////////////
+    // 5. Posters & Blood.
+    /////////////////////////
+    // army posters & blood almost everywhere.
+    for (let x = 0; x < underground.width; x++) {
+      for (let y = 0; y < underground.height; y++) {
+        // poster on wall?
+        if (this.m_DiceRoller.rollChance(25)) {
+          const tile = underground.getTileAt(x, y);
+          if (tile === null || tile.model.isWalkable) continue;
+          tile.addDecoration(ARMY_POSTERS[this.m_DiceRoller.roll(0, ARMY_POSTERS.length)]!);
+        }
+
+        // large blood?  `//@@MP - was 20 (Release 3)`
+        if (this.m_DiceRoller.rollChance(10)) {
+          const tile = underground.getTileAt(x, y);
+          if (tile === null) continue;
+          tile.addDecoration(
+            tile.model.isWalkable ? GameImages.DECO_BLOODIED_FLOOR : GameImages.DECO_BLOODIED_WALL
+          );
+        } else if (this.m_DiceRoller.rollChance(20)) {
+          // small blood? //@@MP (Release 3)
+          const tile = underground.getTileAt(x, y);
+          if (tile === null) continue;
+          tile.addDecoration(
+            tile.model.isWalkable
+              ? GameImages.DECO_BLOODIED_FLOOR_SMALL
+              : GameImages.DECO_BLOODIED_WALL_SMALL
+          );
+        }
+      }
+    }
+
+    /////////////////////////
+    // 6. Populate.
+    /////////////////////////
+    // leveled up undeads!
+    const nbZombies = underground.width; // 100 for 100.
+    for (let i = 0; i < nbZombies; i++) {
+      const undead = this.createNewUndead(0);
+      for (;;) {
+        const upID: ActorID = this.m_Game.NextUndeadEvolution(undead.model.id);
+        if (upID === undead.model.id) break;
+        undead.model = Models.actors.get(upID)!;
+      }
+      this.actorPlace(
+        this.m_DiceRoller,
+        underground.width * underground.height,
+        underground,
+        undead,
+        (pt) => underground.getExitAt(pt) === null // don't block exits!
+      );
+    }
+
+    /////////////////////////
+    // 7. Add uniques.
+    /////////////////////////
+    // Empty in the C#, and the C# says why: "looks like RoguedJack had some plans for
+    // a boss or special items for the CHAR underground that the army base is copied
+    // from". The block is kept as a comment rather than deleted, because that note is
+    // the reason this map is shaped the way it is.
+
+    /////////////////////////
+    // 8. Music.   // alpha10
+    /////////////////////////
+    // The C# assigns `CHAR_UNDERGROUND_FACILITY` here, not the army track, because the
+    // base was copied from the CHAR facility. Kept: a track that fits better is not
+    // the track the game plays.
+    underground.bgMusic = GameMusics.CHAR_UNDERGROUND_FACILITY;
+
+    return { map: underground, baseEntryPos };
+  }
+
+
+    /**
+   * C# `MakeArmyCommandRoom` — `BaseTownGenerator.cs:11155`.
+   *
+   * Two `MapObjectFill` passes: radios and computer stations along the walls
+   * (`CountAdjWalls >= 3`, 66% something), tables and more stations in the middle.
+   *
+   * The Black Ops GPS is `//@@MP - moved from the armory (Release 7-6)`: the fork took
+   * it *out* of the armory's 34-way roll and put it here at a flat 10%, and both
+   * changes are visible here and absent from `makeArmyArmoryRoom` respectively.
+   *
+   * `DECO_ARMY_FLOOR_LOGO` is commented out on the floor line, so the room is plain
+   * `FLOOR_ARMY` — the same "a commented line is not a description of a release"
+   * reading applied to the CHAR lab.
+   */
+  makeArmyCommandRoom(map: GameMap, roomRect: Rect): void {
+    // Replace floor with tiles with painted logo.
+    this.tileFill(map, Models.tiles.get(TileID.FLOOR_ARMY)!, roomRect);
+
+    // Objects.
+    // radios along walls.
+    this.mapObjectFill(map, roomRect, (pt) => {
+      if (this.countAdjWalls(map, pt.x, pt.y) < 3) return null;
+      // dont block exits!
+      if (map.getExitAt(pt) !== null) return null;
+
+      // computer/radio?
+      if (this.m_DiceRoller.rollChance(66)) {
+        if (this.m_DiceRoller.rollChance(25)) {
+          return this.makeObjWorkstation(GameImages.OBJ_ARMY_COMPUTER_STATION);
+        }
+        if (this.m_DiceRoller.rollChance(10)) {
+          map.dropItemAt(this.makeItemBlackOpsGPS(), pt); //@@MP - moved from the armory (Release 7-6)
+        }
+        return this.makeObjArmyRadioCupboard(GameImages.OBJ_ARMY_RADIO_CUPBOARD);
+      }
+      return null;
+    });
+
+    // desktops and tables in the middle of the room
+    this.mapObjectFill(map, roomRect, (pt) => {
+      if (this.countAdjWalls(map, pt.x, pt.y) > 0) return null;
+      if (map.getExitAt(pt) !== null) return null;
+
+      // tables/chairs.
+      if (this.m_DiceRoller.rollChance(25)) {
+        if (this.m_DiceRoller.rollChance(75)) {
+          return this.makeObjWorkstation(GameImages.OBJ_ARMY_COMPUTER_STATION);
+        }
+        return this.makeObjTable(GameImages.OBJ_ARMY_TABLE);
+      }
+      return null;
+    });
+  }
+
+  /**
+   * C# `MakeArmyRecRoom` — `:11209`. **The eighth-and-last backpack site.**
+   *
+   * Beds and footlockers along the walls, tables and chairs in the middle. The
+   * rucksack sits in the bed arm at `ResourcesAvailability / 3` — and *this* room
+   * divides, where `makeArmyArmoryRoom`'s `armorChance` does not:
+   *
+   * ```
+   * int rucksackChance = GameOptions.ResourcesAvailabilityToInt(...);
+   * rucksackChance = (int)rucksackChance / 3;
+   * ```
+   *
+   * The CHAR lab has the identical shape with its `armorChance / 3` line **commented
+   * out** (`BaseTownGenerator.cs:8600`). Both are transcribed as written: this one
+   * divides, the lab does not. At the default MED option that is 54/3 = 18% against
+   * the lab's 54%, which is a visible difference between two rooms whose C# looks
+   * almost identical.
+   */
+  makeArmyRecRoom(map: GameMap, roomRect: Rect): void {
+    // Replace floor with tiles with painted logo.
+    this.tileFill(map, Models.tiles.get(TileID.FLOOR_ARMY)!, roomRect);
+
+    // Objects.
+    // Beds/Footlockers along walls.
+    this.mapObjectFill(map, roomRect, (pt) => {
+      if (this.countAdjWalls(map, pt.x, pt.y) < 3) return null;
+      if (map.getExitAt(pt) !== null) return null;
+
+      // bed/fridge?
+      if (this.m_DiceRoller.rollChance(50)) {
+        if (this.m_DiceRoller.rollChance(50)) {
+          let rucksackChance = this.armyResourcesChance();
+          rucksackChance = Math.floor(rucksackChance / 3);
+          if (this.m_DiceRoller.rollChance(rucksackChance)) {
+            map.dropItemAt(this.makeItemArmyRucksack(), pt); //@@MP - added (Release 8-2)
+          }
+          return this.makeObjBed(GameImages.OBJ_ARMY_BUNK_BED);
+        }
+        return this.makeObjArmyFootlocker(GameImages.OBJ_ARMY_FOOTLOCKER);
+      }
+      return null;
+    });
+
+    // Tables(with canned food) & Chairs in the middle.
+    const resourcesChance = this.armyResourcesChance();
+    this.mapObjectFill(map, roomRect, (pt) => {
+      if (this.countAdjWalls(map, pt.x, pt.y) > 0) return null;
+      if (map.getExitAt(pt) !== null) return null;
+
+      // tables/chairs.
+      if (this.m_DiceRoller.rollChance(30)) {
+        if (this.m_DiceRoller.rollChance(30)) {
+          //@@MP - Resources Availability option (Release 7-4)
+          if (this.m_DiceRoller.rollChance(resourcesChance)) {
+            map.dropItemAt(this.makeItemCannedFood(), pt);
+          }
+          return this.makeObjTable(GameImages.OBJ_ARMY_TABLE);
+        }
+        return this.makeObjChair(GameImages.OBJ_HOSPITAL_CHAIR);
+      }
+      return null;
+    });
+  }
+
+  /**
+   * C# `MakeArmyPowerRoom` — `:11296`.
+   *
+   * The only one of the six taking **two** rectangles: `wallsRect` for the door signs
+   * and `roomRect` for the generators. Both C# call sites pass `roomRect` for both
+   * (`//@@MP - unused parameter (Release 5-7)` on both), so in practice the walls pass
+   * runs over the interior and finds no doors and does nothing.
+   *
+   * **That is kept.** Collapsing to one rectangle would be a tidy-up that changes what
+   * the method does the moment a caller does pass a real `wallsRect`, and the C#'s
+   * comment is the only evidence anyone ever will.
+   */
+  makeArmyPowerRoom(map: GameMap, wallsRect: Rect, roomRect: Rect): void {
+    // Replace floor with concrete.
+    this.tileFill(map, Models.tiles.get(TileID.FLOOR_CONCRETE)!, roomRect);
+
+    // add deco power sign next to doors.
+    this.doForEachTile(map, wallsRect, (pt) => {
+      if (!(map.getMapObjectAt(pt.x, pt.y) instanceof DoorWindow)) return;
+      this.doForEachAdjacentInMap(map, pt, (ptAdj) => {
+        const tile = map.getTileAt(ptAdj.x, ptAdj.y);
+        if (tile === null || tile.model.isWalkable) return;
+        tile.removeAllDecorations();
+        tile.addDecoration(GameImages.DECO_POWER_SIGN_BIG);
+      });
+    });
+
+    // add power generators along walls.
+    this.doForEachTile(map, roomRect, (pt) => {
+      const tile = map.getTileAt(pt.x, pt.y);
+      if (tile === null || !tile.model.isWalkable) return;
+      if (map.getExitAt(pt) !== null) return;
+      if (this.countAdjWalls(map, pt.x, pt.y) < 3) return;
+
+      this.mapObjectPlace(
+        map,
+        pt.x,
+        pt.y,
+        this.makeObjPowerGenerator(GameImages.OBJ_POWERGEN_OFF, GameImages.OBJ_POWERGEN_ON)
+      );
+    });
+  }
+
+  /**
+   * C# `MakeArmyArmoryRoom` — `BaseTownGenerator.cs:11018`.
+   *
+   * One `MapObjectFill` over the wall tiles, each getting a shop shelf and, behind
+   * `Feature.ResourcesAvailability`, an item off a 34-way roll.
+   *
+   * **The 34-way roll keeps two `default:` arms as content.** `case 30-31` is the
+   * minigun *the first time only* and `case 32-33` the grenade launcher likewise —
+   * `//@@MP - only one per game (Release 7-6)`. Both flags are method locals in the C#
+   * and are locals here, so a second armory in the same base would get ammo for the
+   * second minigun. A class field would have made them once per district.
+   *
+   * `case 25` is C4, which the C# spells `MakeItemC4Explosive`.
+   */
+  makeArmyArmoryRoom(map: GameMap, roomRect: Rect): void {
+    //@@MP - only one per game (Release 7-6)
+    let minigunSpawned = false;
+    let grenadelauncherSpawned = false;
+
+    const resourcesChance = this.armyResourcesChance();
+
+    // Shelves with weapons/ammo along walls.
+    this.mapObjectFill(map, roomRect, (pt) => {
+      if (this.countAdjWalls(map, pt.x, pt.y) < 2) return null;
+      // don't block doors
+      if (this.isADoorNSEW(map, pt.x, pt.y)) return null; //@@MP (Release 7-6)
+      // dont block exits!
+      if (map.getExitAt(pt) !== null) return null;
+
+      // table + tracker/armor/weapon.
+      if (this.m_DiceRoller.rollChance(resourcesChance)) {
+        const randomItem = this.m_DiceRoller.roll(0, 34);
+        let it: Item;
+        switch (randomItem) {
+          case 0:
+            it = this.makeItemArmyRifle();
+            break;
+          case 1:
+          case 2:
+          case 3:
+          case 4:
+          case 5:
+          case 6:
+            it = this.makeItemHeavyRifleAmmo();
+            break;
+          case 7:
+            it = this.makeItemArmyPistol();
+            break;
+          case 8:
+          case 9:
+          case 10:
+            it = this.makeItemHeavyPistolAmmo();
+            break;
+          case 11:
+            it = this.makeItemTacticalShotgun();
+            break;
+          case 12:
+          case 13:
+          case 14:
+          case 15:
+          case 16:
+            it = this.makeItemShotgunAmmo();
+            break;
+          case 17:
+            it = this.makeItemGrenade();
+            break;
+          case 18:
+          case 19:
+            it = this.makeItemArmyBodyArmor();
+            break;
+          case 20:
+            it = this.makeItemArmyPrecisionRifle();
+            break;
+          case 21:
+          case 22:
+          case 23:
+            it = this.makeItemPrecisionRifleAmmo();
+            break; //@@MP (Release 6-6)
+          case 24:
+            it = this.makeItemNightVisionGoggles();
+            break;
+          case 25:
+            it = this.makeItemC4Explosive();
+            break;
+          case 26:
+            it = this.makeItemFlamethrower();
+            break; //@@MP (Release 7-1)
+          case 27:
+          case 28:
+          case 29:
+            it = this.makeItemMinigunAmmo();
+            break; //@@MP (Release 7-6)
+          case 30:
+          case 31:
+            if (!minigunSpawned) {
+              //@@MP - only one per game (Release 7-6)
+              it = this.makeItemMinigun();
+              minigunSpawned = true;
+            } else {
+              it = this.makeItemMinigunAmmo();
+            }
+            break;
+          case 32:
+          case 33:
+            if (!grenadelauncherSpawned) {
+              //@@MP - only one per game (Release 7-6)
+              it = this.makeItemGrenadeLauncher();
+              grenadelauncherSpawned = true;
+            } else {
+              it = this.makeItemGrenadeLauncherAmmo();
+            }
+            break;
+          default:
+            throw new RangeError('unhandled roll');
+        }
+        map.dropItemAt(it, pt);
+      }
+
+      return this.makeObjShelf(GameImages.OBJ_SHOP_SHELF);
+    });
+  }
+
+  /**
+   * C# `MakeArmyPharmacyRoom` — `:11269`.
+   *
+   * Shelves along the walls, each with a `MakeHospitalItem` behind the Resources
+   * Availability option. `CountAdjWalls < 2` here rather than the armory's — the C# has
+   * both numbers and they are not the same test.
+   */
+  makeArmyPharmacyRoom(map: GameMap, roomRect: Rect): void {
+    // Shelves with medicine along walls.
+    const resourcesChance = this.armyResourcesChance();
+    this.mapObjectFill(map, roomRect, (pt) => {
+      if (this.countAdjWalls(map, pt.x, pt.y) < 2) return null;
+      // don't block doors
+      if (this.isADoorNSEW(map, pt.x, pt.y)) return null; //@@MP (Release 7-6)
+      // dont block exits!
+      if (map.getExitAt(pt) !== null) return null;
+
+      // table + meds.
+      if (this.m_DiceRoller.rollChance(resourcesChance)) {
+        //@@MP - Resources Availability option (Release 7-4)
+        map.dropItemAt(this.makeHospitalItem(), pt);
+      }
+
+      return this.makeObjShelf(GameImages.OBJ_SHOP_SHELF);
+    });
+  }
+
+  /**
+   * C# `MakeArmyStorageRoom` — `:11106`.
+   *
+   * The base's junk room, and the only one of the six that replaces its floor: the
+   * base's `FLOOR_ARMY` becomes `FLOOR_CONCRETE` here, exactly as the CHAR storage
+   * room does.
+   *
+   * The three 5% drops are `//@@MP - added items that were in the armory before
+   * (Release 7-6)` — the fork moved some of the armory's stock in here, which is why
+   * a storage room can now hand you a flashbang.
+   */
+  makeArmyStorageRoom(map: GameMap, roomRect: Rect): void {
     // Replace floor with concrete.
     this.tileFill(map, Models.tiles.get(TileID.FLOOR_CONCRETE)!, roomRect);
 
@@ -4180,22 +6849,119 @@ export class BaseTownGenerator extends BaseMapGenerator {
       if (map.getExitAt(pt) !== null) return null;
 
       // barrels/junk?
-      if (this.m_DiceRoller.rollChance(50))
+      if (this.m_DiceRoller.rollChance(50)) {
+        //@@MP - added items that were in the armory before (Release 7-6)
+        if (this.m_DiceRoller.rollChance(5)) map.dropItemAt(this.makeItemFlaresKit(), pt);
+        if (this.m_DiceRoller.rollChance(5)) map.dropItemAt(this.makeItemSmokeGrenade(), pt);
+        if (this.m_DiceRoller.rollChance(5)) map.dropItemAt(this.makeItemFlashbang(), pt);
         return this.m_DiceRoller.rollChance(50)
           ? this.makeObjJunk(GameImages.OBJ_JUNK)
           : this.makeObjBarrels(GameImages.OBJ_BARRELS);
-      else return null;
+      }
+      return null;
     });
 
     // Items.
-    // Construction items in this mess.
-    for (let x = roomRect.left; x < roomRect.right; x++)
+    const resourcesChance = this.armyResourcesChance();
+    for (let x = roomRect.left; x < roomRect.right; x++) {
       for (let y = roomRect.top; y < roomRect.bottom; y++) {
         if (this.countAdjWalls(map, x, y) > 0) continue;
         if (map.getMapObjectAt(x, y) !== null) continue;
-
-        map.dropItemAt(this.makeShopConstructionItem(), new Point(x, y));
+        //@@MP - Resources Availability option (Release 7-4)
+        if (this.m_DiceRoller.rollChance(resourcesChance))
+          map.dropItemAt(this.makeItemArmyRation(), new Point(x, y));
       }
+    }
+  }
+
+  /**
+   * The Resources Availability chance, read once and gated.
+   *
+   * Four of the six army rooms call this and each one reads it in the C#, at the point
+   * of the roll. Gating on the flag *before* the roll matters for the same reason it
+   * does in `makeCHARStorageRoom`: `DiceRoller.rollChance` delegates to `roll`
+   * (`DiceRoller.ts:40-42`) and spends a die even at 0%, so a Classic room that asked
+   * would spend four dice the C# never spends for Classic.
+   *
+   * Private and named so the four call sites cannot drift apart on the gate.
+   */
+  private armyResourcesChance(): number {
+    if (!hasFeature(Session.get().ruleset, Feature.ResourcesAvailability)) return 0;
+    return GameOptions.resourcesAvailabilityToInt(Options.resourcesAvailability);
+  }
+
+  makeCHARLabRoom(map: GameMap, roomRect: Rect, placedBioForceGun: { value: boolean }): void {
+    let placedCHARdocument = false;
+    // Replace floor with tiles with painted logo.
+    this.tileFill(map, Models.tiles.get(TileID.FLOOR_TILES)!, roomRect);
+
+    // Objects.
+    // vats along walls.
+    this.mapObjectFill(map, roomRect, (pt) => {
+      if (this.countAdjWalls(map, pt.x, pt.y) < 3) return null;
+      // dont block exits!
+      if (map.getExitAt(pt) !== null) return null;
+
+      // bed/fridge?
+      if (this.m_DiceRoller.rollChance(50)) {
+        if (this.m_DiceRoller.rollChance(75)) {
+          return this.makeObjCHARvat(GameImages.OBJ_CHAR_VAT);
+        }
+        return this.makeObjWorkstation(GameImages.OBJ_CHAR_DESKTOP);
+      }
+      return null;
+    });
+
+    // desktops and tables in the middle of the room
+    const resourcesAvailable = hasFeature(Session.get().ruleset, Feature.ResourcesAvailability);
+    const resourcesChance = resourcesAvailable
+      ? GameOptions.resourcesAvailabilityToInt(Options.resourcesAvailability)
+      : 0;
+    this.mapObjectFill(map, roomRect, (pt) => {
+      if (this.countAdjWalls(map, pt.x, pt.y) > 0) return null;
+      // dont block exits!
+      if (map.getExitAt(pt) !== null) return null;
+
+      // tables/chairs.
+      if (this.m_DiceRoller.rollChance(30)) {
+        if (this.m_DiceRoller.rollChance(50)) {
+          return this.makeObjWorkstation(GameImages.OBJ_CHAR_DESKTOP);
+        }
+        // The C# computes `armorChance` and then leaves the `armorChance / 3` line
+        // commented out (`BaseTownGenerator.cs:8600`), so the chance is the raw
+        // Resources Availability number and not a third of it.
+        if (this.m_DiceRoller.rollChance(resourcesChance)) {
+          map.dropItemAt(this.makeItemBiohazardSuit(), pt); //@@MP (Release 7-6)
+        }
+        return this.makeObjTable(GameImages.OBJ_CHAR_TABLE);
+      }
+
+      if (!placedCHARdocument) {
+        // `makeCHARDocument()` spends the `roll(0, 5)` itself -- it documents that
+        // bound and why `case 5` is dead -- so the roll is not repeated here.
+        map.dropItemAt(this.makeCHARDocument(), pt);
+        placedCHARdocument = true; //@@MP - only drop one per room
+      }
+      return null;
+    });
+
+    if (!placedBioForceGun.value) {
+      //@@MP - added (Release 7-6)
+      let placed = false;
+      this.mapObjectPlaceInGoodPosition(
+        map,
+        roomRect,
+        (pt) => map.getMapObjectAt(pt.x, pt.y) === null,
+        this.m_DiceRoller,
+        (pt) => {
+          map.dropItemAt(this.makeItemBioForceGun(), pt);
+          placed = true;
+          // trolley.
+          return this.makeObjCHARtrolley(GameImages.OBJ_CHAR_TROLLEY);
+        }
+      );
+      placedBioForceGun.value = placed; //@@MP - only drop one per game
+    }
   }
 
   makeCHARLivingRoom(map: GameMap, roomRect: Rect): void {
@@ -4603,6 +7369,14 @@ export class BaseTownGenerator extends BaseMapGenerator {
         // prisoner who should not be
         prisoner = this.createNewCivilian(0, 0, 1);
         prisoner.name = 'The Prisoner Who Should Not Be';
+        // alpha10 marks every unique NPC `isUnique`, and that is what the
+        // first-sighting check requires before it clears their invincibility
+        // (`RogueGame.HandlePlayerActor`: `if (other.isUnique) { ... isInvincible = false }`).
+        // This one forgot, so the prisoner was registered below, picked up
+        // `isInvincible = true` by the worldgen sweep, and could never lose it —
+        // the one actor in the game the player is guaranteed to meet and cannot
+        // kill. Same fix as the fork's BaseTownGenerator.cs:9146.
+        prisoner.isUnique = true;
 
         // plenty of food
         const prisonerInv = prisoner.inventory!;
@@ -5038,33 +7812,44 @@ export class BaseTownGenerator extends BaseMapGenerator {
     }
     map.setTileModelAt(1, storageSouth.top, Models.tiles.get(TileID.FLOOR_TILES)!);
 
-    // alpha10.1 moved Jason Myers out of power room to storage north corridor
-    // also upped high stamina to 5 (was 3).
-    // Jason Myers
-    const model = Models.actors.get(ActorID.JASON_MYERS)!;
-    const jason = model.createNamed(Models.factions.get(FactionID.ThePsychopaths)!, 'Jason Myers', false, 0);
-    jason.isUnique = true;
-    jason.doll.addDecoration(DollPart.SKIN, GameImages.ACTOR_JASON_MYERS);
-    this.giveStartingSkillToActor(jason, SkillID.TOUGH);
-    this.giveStartingSkillToActor(jason, SkillID.TOUGH);
-    this.giveStartingSkillToActor(jason, SkillID.TOUGH);
-    this.giveStartingSkillToActor(jason, SkillID.STRONG);
-    this.giveStartingSkillToActor(jason, SkillID.STRONG);
-    this.giveStartingSkillToActor(jason, SkillID.STRONG);
-    this.giveStartingSkillToActor(jason, SkillID.AGILE);
-    this.giveStartingSkillToActor(jason, SkillID.AGILE);
-    this.giveStartingSkillToActor(jason, SkillID.AGILE);
-    this.giveStartingSkillToActor(jason, SkillID.HIGH_STAMINA);
-    this.giveStartingSkillToActor(jason, SkillID.HIGH_STAMINA);
-    this.giveStartingSkillToActor(jason, SkillID.HIGH_STAMINA);
-    this.giveStartingSkillToActor(jason, SkillID.HIGH_STAMINA);
-    this.giveStartingSkillToActor(jason, SkillID.HIGH_STAMINA);
-    jason.inventory!.addAll(this.makeItemJasonMyersAxe());
-    map.placeActor(jason, new Point(Math.floor(map.width / 2), 1));
-    const jasonUnique = new UniqueActor();
-    jasonUnique.theActor = jason;
-    jasonUnique.isSpawned = true;
-    Session.get().uniqueActors.jasonMyers = jasonUnique;
+    // Still Alive, Release 8-1: the deranged patient, who replaces Jason Myers.
+    //
+    // The vanilla `Jason Myers` block below is the C#'s *alpha10.1* state, in
+    // which the power room was emptied and Jason moved to this corridor with five
+    // `HIGH_STAMINA`. The fork replaced him: `GameActors.cs:131` reads
+    // `DerangedPatient { … } //@@MP - was Jason Myers (Release 8-1)`, and
+    // `BaseTownGenerator.cs` in the fork contains no `JasonMyers` at all. So the
+    // two are the *same* actor slot and one feature gates both, rather than a new
+    // actor appearing beside the old one.
+    //
+    // `HIGH_STAMINA` five times is the alpha10.1 count, noted on the block below.
+    // The fork's patient gets three, in the power room.
+    if (!hasFeature(Session.get().ruleset, Feature.DerangedPatient)) {
+      const model = Models.actors.get(ActorID.JASON_MYERS)!;
+      const jason = model.createNamed(Models.factions.get(FactionID.ThePsychopaths)!, 'Jason Myers', false, 0);
+      jason.isUnique = true;
+      jason.doll.addDecoration(DollPart.SKIN, GameImages.ACTOR_JASON_MYERS);
+      this.giveStartingSkillToActor(jason, SkillID.TOUGH);
+      this.giveStartingSkillToActor(jason, SkillID.TOUGH);
+      this.giveStartingSkillToActor(jason, SkillID.TOUGH);
+      this.giveStartingSkillToActor(jason, SkillID.STRONG);
+      this.giveStartingSkillToActor(jason, SkillID.STRONG);
+      this.giveStartingSkillToActor(jason, SkillID.STRONG);
+      this.giveStartingSkillToActor(jason, SkillID.AGILE);
+      this.giveStartingSkillToActor(jason, SkillID.AGILE);
+      this.giveStartingSkillToActor(jason, SkillID.AGILE);
+      this.giveStartingSkillToActor(jason, SkillID.HIGH_STAMINA);
+      this.giveStartingSkillToActor(jason, SkillID.HIGH_STAMINA);
+      this.giveStartingSkillToActor(jason, SkillID.HIGH_STAMINA);
+      this.giveStartingSkillToActor(jason, SkillID.HIGH_STAMINA);
+      this.giveStartingSkillToActor(jason, SkillID.HIGH_STAMINA);
+      jason.inventory!.addAll(this.makeItemJasonMyersAxe());
+      map.placeActor(jason, new Point(Math.floor(map.width / 2), 1));
+      const jasonUnique = new UniqueActor();
+      jasonUnique.theActor = jason;
+      jasonUnique.isSpawned = true;
+      Session.get().uniqueActors.jasonMyers = jasonUnique;
+    }
 
     // done.
     return map;
@@ -5110,34 +7895,48 @@ export class BaseTownGenerator extends BaseMapGenerator {
       this.mapObjectPlace(map, pt.x, pt.y, this.makeObjPowerGenerator(GameImages.OBJ_POWERGEN_OFF, GameImages.OBJ_POWERGEN_ON));
     });
 
-    // alpha10.1 moved Jason Myers out of power room to storage north corridor
-    /*
-    // 3. Populate.
-    // enraged patient!
-    ActorModel model = m_Game.GameActors.JasonMyers;
-    Actor jason = model.CreateNamed(m_Game.GameFactions.ThePsychopaths, "Jason Myers", false, 0);
-    jason.IsUnique = true;
-    jason.Doll.AddDecoration(DollPart.SKIN, GameImages.ACTOR_JASON_MYERS);
-    GiveStartingSkillToActor(jason, Skills.IDs.TOUGH);
-    GiveStartingSkillToActor(jason, Skills.IDs.TOUGH);
-    GiveStartingSkillToActor(jason, Skills.IDs.TOUGH);
-    GiveStartingSkillToActor(jason, Skills.IDs.STRONG);
-    GiveStartingSkillToActor(jason, Skills.IDs.STRONG);
-    GiveStartingSkillToActor(jason, Skills.IDs.STRONG);
-    GiveStartingSkillToActor(jason, Skills.IDs.AGILE);
-    GiveStartingSkillToActor(jason, Skills.IDs.AGILE);
-    GiveStartingSkillToActor(jason, Skills.IDs.AGILE);
-    GiveStartingSkillToActor(jason, Skills.IDs.HIGH_STAMINA);
-    GiveStartingSkillToActor(jason, Skills.IDs.HIGH_STAMINA);
-    GiveStartingSkillToActor(jason, Skills.IDs.HIGH_STAMINA);
-    jason.Inventory.AddAll(MakeItemJasonMyersAxe());
-    map.PlaceActorAt(jason, new Point(map.Width / 2, map.Height / 2));
-    m_Game.Session.UniqueActors.JasonMyers = new UniqueActor()
-    {
-        TheActor = jason,
-        IsSpawned = true
-    };
-    */
+    // alpha10.1 emptied this room and moved Jason Myers to the storage north
+    // corridor; the fork put somebody else here instead. Still Alive, Release
+    // 8-1 replaced Jason Myers outright, so this is the same actor slot he
+    // vacated and the same `Feature.DerangedPatient` gate governs both. There is
+    // no state in which both exist, which is why it is one flag.
+    //
+    // The C#'s block is `BaseTownGenerator.cs:9613-9639`. The differences from
+    // Jason's, all of them the reference's:
+    //
+    // - `GameActors.DerangedPatient`, not `JasonMyers`;
+    // - the named actor is "deranged patient", not "Jason Myers" — so the name is
+    //   generated *and* overwritten, and `theName` reads as a description;
+    // - the skin is `ACTOR_DERANGED_PATIENT`, not `ACTOR_JASON_MYERS`;
+    // - three `HIGH_STAMINA`, where the corridor's Jason gets five (alpha10.1
+    //   "also upped high stamina to 5 (was 3)", so the fork's patient is back at
+    //   the pre-10.1 three);
+    // - a bonesaw, not an axe;
+    // - placed at the room's centre, not against the north wall.
+    if (hasFeature(Session.get().ruleset, Feature.DerangedPatient)) {
+      const model = Models.actors.get(ActorID.DERANGED_PATIENT)!;
+      const jason = model.createNamed(Models.factions.get(FactionID.ThePsychopaths)!, 'deranged patient', false, 0);
+      jason.isUnique = true;
+      jason.doll.addDecoration(DollPart.SKIN, GameImages.ACTOR_DERANGED_PATIENT);
+      this.giveStartingSkillToActor(jason, SkillID.TOUGH);
+      this.giveStartingSkillToActor(jason, SkillID.TOUGH);
+      this.giveStartingSkillToActor(jason, SkillID.TOUGH);
+      this.giveStartingSkillToActor(jason, SkillID.STRONG);
+      this.giveStartingSkillToActor(jason, SkillID.STRONG);
+      this.giveStartingSkillToActor(jason, SkillID.STRONG);
+      this.giveStartingSkillToActor(jason, SkillID.AGILE);
+      this.giveStartingSkillToActor(jason, SkillID.AGILE);
+      this.giveStartingSkillToActor(jason, SkillID.AGILE);
+      this.giveStartingSkillToActor(jason, SkillID.HIGH_STAMINA);
+      this.giveStartingSkillToActor(jason, SkillID.HIGH_STAMINA);
+      this.giveStartingSkillToActor(jason, SkillID.HIGH_STAMINA);
+      jason.inventory!.addAll(this.makeItemBonesaw());
+      map.placeActor(jason, new Point(Math.floor(map.width / 2), Math.floor(map.height / 2)));
+      const unique = new UniqueActor();
+      unique.theActor = jason;
+      unique.isSpawned = true;
+      Session.get().uniqueActors.derangedPatient = unique;
+    }
 
     // done.
     return map;
@@ -5658,6 +8457,70 @@ export class BaseTownGenerator extends BaseMapGenerator {
     return newGuard;
   }
 
+  /**
+   * Still Alive, Release 8-1 (`BaseTownGenerator.cs:11754-11796`).
+   *
+   * One member of `Feature.CHARResearchRaid`'s landing team. The raid spawns this
+   * once as the leader and three more times as colleagues, all on the same factory
+   * — the C# has no separate "colleague" variant, only the `"Dr. "` name prefix to
+   * tell the ranks apart, and it is this factory's output that decides which is
+   * which.
+   */
+  createNewCHARScientist(spawnTime: number): Actor {
+    // model.
+    const model = Models.actors.get(ActorID.CHAR_SCIENTIST)!;
+
+    // create.
+    const newScientist = model.createNumberedName(Models.factions.get(FactionID.TheCHARCorporation)!, spawnTime);
+
+    // setup.
+    this.dressCHARScientist(this.m_DiceRoller, newScientist);
+    this.giveNameToActor(this.m_DiceRoller, newScientist);
+    newScientist.name = 'Dr. ' + newScientist.name;
+
+    // starting skills. Each of the three is called once per point, so HAULER is at
+    // level 3, NECROLOGY at 5 and STRONG_PSYCHE at 2 -- the C# spells this out as
+    // repeated calls rather than a count, and so does this.
+    this.giveStartingSkillToActor(newScientist, SkillID.HAULER);
+    this.giveStartingSkillToActor(newScientist, SkillID.HAULER);
+    this.giveStartingSkillToActor(newScientist, SkillID.HAULER);
+    this.giveStartingSkillToActor(newScientist, SkillID.NECROLOGY);
+    this.giveStartingSkillToActor(newScientist, SkillID.NECROLOGY);
+    this.giveStartingSkillToActor(newScientist, SkillID.NECROLOGY);
+    this.giveStartingSkillToActor(newScientist, SkillID.NECROLOGY);
+    this.giveStartingSkillToActor(newScientist, SkillID.NECROLOGY);
+    this.giveStartingSkillToActor(newScientist, SkillID.STRONG_PSYCHE);
+    this.giveStartingSkillToActor(newScientist, SkillID.STRONG_PSYCHE);
+
+    // give items.
+    newScientist.inventory!.addAll(this.makeItemCHARLaptop());
+    newScientist.inventory!.addAll(this.makeItemZTracker());
+    newScientist.inventory!.addAll(this.makeItemPistol());
+    newScientist.inventory!.addAll(this.makeItemLightPistolAmmo());
+    newScientist.inventory!.addAll(this.makeItemArmyRation());
+    newScientist.inventory!.addAll(this.makeItemArmyRation());
+    newScientist.inventory!.addAll(this.makeItemArmyRation());
+    newScientist.inventory!.addAll(this.makeItemBiohazardSuit());
+    newScientist.inventory!.addAll(this.makeItemBigFlashlight());
+
+    // Antiviral pills exist in the corpses/infection ruleset and, in Vintage, when
+    // the player option is on; elsewhere a large medikit stands in. The C# asks
+    // `Rules.HasAntiviralPills(mode)` (`Rules.cs:5760-5769`); that helper is not in
+    // the port yet and `Rules` is not this slice's file, so the test is inlined
+    // rather than duplicating a `Rules` method that will land with the rest of
+    // Release 7-6. The second clause — `GM_VINTAGE && RogueGame.Options.AntiviralPills`
+    // — is dropped because the port has no `AntiviralPills` option, so Vintage takes
+    // the medikit branch too. Once the helper exists this collapses back to it.
+    if (Session.get().gameMode === GameMode.GM_CORPSES_INFECTION) {
+      newScientist.inventory!.addAll(this.makeItemPillsAntiviral());
+    } else {
+      newScientist.inventory!.addAll(this.makeItemLargeMedikit());
+    }
+
+    // done.
+    return newScientist;
+  }
+
   createNewArmyNationalGuard(spawnTime: number, rankName: string): Actor {
     // model.
     const model = Models.actors.get(ActorID.ARMY_NATIONAL_GUARD)!;
@@ -5765,6 +8628,17 @@ export class BaseTownGenerator extends BaseMapGenerator {
     return newBO;
   }
 
+  /**
+   * C# `BaseTownGenerator.cs:11957-11970` `CreateNewFeralDog(spawnTime)`.
+   *
+   * The only actor factory a *building* generator reaches, and it reaches this
+   * one through `placement()` rather than through `this`: see
+   * `TownBuildingContext.createNewFeralDog`. The ten kennel dogs of the animal
+   * shelter (`:4230`) are its only callers outside this class, and the one roll
+   * `skinDog` spends comes off `m_DiceRoller` — the district's roller — which is
+   * what keeps them interleaved with the rest of the block's generation instead
+   * of being a tenth of the world silently generating from somewhere else.
+   */
   createNewFeralDog(spawnTime: number): Actor {
     // model
     const newDog = Models.actors.get(ActorID.FERAL_DOG)!.createNumberedName(Models.factions.get(FactionID.TheFerals)!, spawnTime);
@@ -5784,22 +8658,6 @@ export class BaseTownGenerator extends BaseMapGenerator {
   }
 
   makeWalkwayZones(map: GameMap, b: Block): void {
-    /*
-     *  NNNE
-     *  W  E
-     *  W  E
-     *  WSSS
-     *
-     */
-    const r = b.rectangle;
-
-    // N
-    map.addZone(this.makeUniqueZone('walkway', new Rect(r.left, r.top, r.width - 1, 1)));
-    // S
-    map.addZone(this.makeUniqueZone('walkway', new Rect(r.left + 1, r.bottom - 1, r.width - 1, 1)));
-    // E
-    map.addZone(this.makeUniqueZone('walkway', new Rect(r.right - 1, r.top, 1, r.height - 1)));
-    // W
-    map.addZone(this.makeUniqueZone('walkway', new Rect(r.left, r.top + 1, 1, r.height - 1)));
+    makeWalkwayZonesOn(this.placement(), map, b);
   }
 }

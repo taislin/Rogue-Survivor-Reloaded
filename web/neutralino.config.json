@@ -1,11 +1,12 @@
 {
   "$schema": "https://raw.githubusercontent.com/neutralinojs/neutralinojs/main/schemas/neutralino.config.schema.json",
   "applicationId": "com.roguesurvivor.reloaded",
-  "version": "0.3.0",
+  "version": "0.9.2",
   "name": "RogueSurvivorReloaded",
   "defaultMode": "window",
   "port": 0,
   "enableServer": true,
+  "enableNativeAPI": true,
   "documentRoot": "/dist/",
   "url": "/index.html",
   "logging": {
@@ -22,7 +23,8 @@
       "fullScreen": false,
       "icon": "dist/icon-reloaded.png",
       "enableInspector": false,
-      "maximize": false
+      "maximize": false,
+      "injectGlobals": true
     }
   },
   "cli": {

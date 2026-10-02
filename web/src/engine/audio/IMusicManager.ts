@@ -40,6 +40,19 @@ export interface IMusicManager {
   /** C# `IMusicManager.PlayLooping` — start a track and repeat it. */
   playLooping(musicId: string, priority: MusicPriorityValue): void;
 
+  /**
+   * C# `ISoundManager.PlayIfNotAlreadyPlaying` — `SFMLSoundManager.cs:123`.
+   *
+   * The C# puts this on `ISoundManager`, which is the *music* interface there (the
+   * music and effects interfaces are `ISoundManager` and `IMDXSoundManager`, which is
+   * the opposite of what the names suggest). Splitting them in the port put the
+   * method on `ISoundManager` only, so the one music caller lost it:
+   * `OptionsMenuAudioAdjustment` (`RogueGame.cs:2244`) previews `TEST_MUSIC` with
+   * it, and re-entering the row must not restart the cue from the top on every
+   * cursor move.
+   */
+  playIfNotAlreadyPlaying(musicId: string, priority: MusicPriorityValue): void;
+
   stop(): void;
   pause(): void;
   resume(): void;

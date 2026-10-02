@@ -18,7 +18,7 @@ import { DoorWindow } from "@engine/mapobjects/MapObjects";
  * existing assertion. Thresholds are therefore calibrated from measurement, not
  * guessed -- see the numbers recorded below.
  *
- * One seed per file, following the constraint in BROWSER_PORT_PLAN §4.1a:
+ * One seed per file, following the constraint in plans/BROWSER_PORT_PLAN §4.1a:
  * `Session.get()` is a process-wide singleton and the model databases
  * self-register into `Models` statics, so two games in one process share state.
  * `reproducibility.test.ts` shells out to the CLI for the same reason. The seed
@@ -67,16 +67,16 @@ function surfaceDistricts(): GameMap[] {
  * `DoorWindow` is special-cased -- `Rules.isWalkableFor` treats a closed door
  * as openable-but-costly rather than a wall.
  */
-function passable(map: GameMap, x: number, y: number): boolean {
+function passable(map: GameMap, x: number, y: number, doorsPass = true): boolean {
   const tile = map.getTileAt(x, y);
   if (!tile || !tile.model.isWalkable) return false;
   const obj = map.getMapObjectAt(x, y);
-  if (obj && !obj.isWalkable && !(obj instanceof DoorWindow)) return false;
+  if (obj && !obj.isWalkable && !(doorsPass && obj instanceof DoorWindow)) return false;
   return true;
 }
 
 /** 4-connected flood fill of the passable region containing (sx, sy). */
-function flood(map: GameMap, sx: number, sy: number): Set<number> {
+function flood(map: GameMap, sx: number, sy: number, doorsPass = true): Set<number> {
   const key = (x: number, y: number) => y * map.width + x;
   const seen = new Set<number>([key(sx, sy)]);
   const queue: Array<[number, number]> = [[sx, sy]];
@@ -87,7 +87,7 @@ function flood(map: GameMap, sx: number, sy: number): Set<number> {
       const ny = y + dy;
       if (!map.isInBounds(nx, ny)) continue;
       const k = key(nx, ny);
-      if (seen.has(k) || !passable(map, nx, ny)) continue;
+      if (seen.has(k) || !passable(map, nx, ny, doorsPass)) continue;
       seen.add(k);
       queue.push([nx, ny]);
     }
@@ -96,15 +96,15 @@ function flood(map: GameMap, sx: number, sy: number): Set<number> {
 }
 
 /** All passable tiles of the map, grouped into connected components. */
-function components(map: GameMap): number[][] {
+function components(map: GameMap, doorsPass = true): number[][] {
   const key = (x: number, y: number) => y * map.width + x;
   const assigned = new Set<number>();
   const comps: number[][] = [];
   for (let x = 0; x < map.width; x++) {
     for (let y = 0; y < map.height; y++) {
-      if (!passable(map, x, y)) continue;
+      if (!passable(map, x, y, doorsPass)) continue;
       if (assigned.has(key(x, y))) continue;
-      const size = flood(map, x, y);
+      const size = flood(map, x, y, doorsPass);
       size.forEach((k) => assigned.add(k));
       comps.push([...size]);
     }
@@ -225,8 +225,38 @@ describe("generator integrity", () => {
     const tunnels = allMaps().filter((m) => /sewer|subway/i.test(m.name));
     expect(tunnels.length).toBeGreaterThan(0);
     for (const map of tunnels) {
-      const comps = components(map);
-      expect(comps.length, `${map.name} is a single region`).toBeGreaterThan(1);
+      // **Structurally** fragmented: count doors as walls.
+      //
+      // The obvious reading of this assertion -- components with closed doors counted
+      // as passable, which is what `passable` does by default -- is *measuring the wrong
+      // thing*, and it is not a rare edge. Measured over 18 subway maps on six seeds:
+      // with doors as walls every map is 2, 3 or 4 regions and **never** 1; with doors
+      // passable, 8 of the 18 come out as a single region.
+      //
+      // That single region is not a merged blob. The tools room is placed flush against
+      // the platform with a single iron door between them, so treating a closed door as
+      // openable joins them -- which is exactly what a subway station is: a platform you
+      // reach a tools room from by opening a door. Asserting `> 1` on that definition
+      // demands the player be unable to walk everywhere, and the generator is right to
+      // disagree.
+      //
+      // It also explains the failure this replaces. `Subway@1-1` came out as one region
+      // on seed 42 after the item-table retune moved the dice, but the pre-retune code
+      // produced one-region subways on 8 of 30 maps across ten seeds, so the old green
+      // was the luck of the fixture, not an invariant. (Measured, not inferred: the
+      // retune moved it 8/30 -> 10/30, which is noise.)
+      //
+      // So the guard against "someone loosened `passable` until the sewers look
+      // connected" is the structural count, and it is strictly stronger evidence than
+      // the reachability count it replaces -- it is the one that cannot be satisfied by
+      // a map which genuinely has separate tunnels.
+      const structural = components(map, false);
+      expect(structural.length, `${map.name} is a single structural region`).toBeGreaterThan(1);
+
+      // And the player-reachable count is still asserted, because a tunnel network with
+      // no reachable region at all is a different failure worth naming.
+      const reachable = components(map, true);
+      expect(reachable.length, `${map.name} has no reachable region`).toBeGreaterThan(0);
     }
   });
 });

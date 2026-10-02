@@ -10,6 +10,7 @@ import { ActorAction } from "@data/ActorAction";
 import { Attack, AttackKind } from "@data/Attack";
 import { BlastAttack } from "@data/BlastAttack";
 import { Corpse } from "@data/Corpse";
+import { Resources } from "@engine/GameOptions";
 import { Defence } from "@data/Defence";
 import { DollPart } from "@data/Doll";
 import { Item } from "@data/Item";
@@ -35,10 +36,14 @@ import {
 import { DiceRoller } from "@engine/DiceRoller";
 import { Direction } from "@engine/Direction";
 import { LOS, type FOV } from "@engine/LOS";
+import { Color } from "@engine/Color";
 import { Point } from "@engine/Point";
 import { GameMode } from "@engine/Session";
 import { DayPhase, WorldTime } from "@engine/WorldTime";
 import { ItemBodyArmor } from "@engine/items/ItemBodyArmor";
+import { ItemBackpack } from "@engine/items/ItemBackpack";
+import { Feature, hasFeature } from "@engine/FeatureFlags";
+import { Session } from "@engine/Session";
 import {
   ItemGrenade,
   ItemGrenadeModel,
@@ -51,12 +56,19 @@ import { ItemBarricadeMaterial, ItemEntertainment, ItemSprayScent } from "@engin
 import { ItemMedicine } from "@engine/items/ItemMedicine";
 import { ItemTracker } from "@engine/items/ItemTracker";
 import { ItemTrap } from "@engine/items/ItemTrap";
-import { ItemAmmo, ItemRangedWeapon, ItemWeapon } from "@engine/items/ItemWeapon";
-import { DoorWindow, Fortification, PowerGenerator } from "@engine/mapobjects/MapObjects";
+import {
+  ItemAmmo,
+  type ItemMeleeWeaponModel,
+  ItemRangedWeapon,
+  ItemWeapon,
+} from "@engine/items/ItemWeapon";
+import { Barrel, Campfire, DoorWindow, Fortification, PowerGenerator } from "@engine/mapobjects/MapObjects";
 
 import { FactionID } from "@gameplay/GameFactions";
 import { GangID } from "@gameplay/GameGangs";
 import { ItemID } from "@gameplay/GameItems";
+import { Models } from "@data/Models";
+import { ItemModel } from "@data/ItemModel";
 import { SkillID } from "@gameplay/Skills";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -111,6 +123,16 @@ export class Rules {
   // Stamina
   static readonly STAMINA_INFINITE = 99;
   static readonly STAMINA_MIN_FOR_ACTIVITY = 10;
+
+  // ── Still Alive: food poisoning (Release 7-6) ─────────────────────────
+  /** Percent chance of being poisoned, before the perishing factor. */
+  static readonly BASE_FOOD_POISONING_INFECTION_CHANCE = 20;
+  /** Percent chance per turn of shaking it off. */
+  static readonly BASE_FOOD_POISONING_RECOVERY_CHANCE = 1;
+  /** Per Hardy level, added to the recovery chance. */
+  static readonly SKILL_HARDY_FOOD_POISONING_RECOVERY_CHANCE_BONUS = 1;
+  /** Percent chance per action that being poisoned costs the actor control. */
+  static readonly FOOD_POISONING_AFFECTED_ACTION_CHANCE = 5;
   static readonly STAMINA_COST_RUNNING = 4;
   static readonly STAMINA_REGEN_WAIT = 2;
   static readonly STAMINA_REGEN_PER_TURN = 2;
@@ -130,7 +152,23 @@ export class Rules {
   static readonly BARRICADING_MAX = 2 * DoorWindow.BASE_HITPOINTS;
 
   // FOV
-  private static readonly MINIMAL_FOV = 2;
+  /**
+   * True darkness: the player sees nothing, and an NPC sees their own tile.
+   *
+   * Still Alive, Release 6-2 and 7-5. The C# has *two* constants where the port
+   * had one, and the pair is the whole feature:
+   *
+   * - `MINIMAL_FOV_PLAYER = 0` "ensures basements and other places without
+   *   natural light are truly dark".
+   * - `MINIMAL_FOV_LIVINGACTORS = 1` because, in the C#'s own words, "NPC AI
+   *   goes haywire if they can't see at all. it's just not possible to have total
+   *   darkness for them".
+   *
+   * So the asymmetry is deliberate and load-bearing: the player is meant to be
+   * blind in a basement, and the NPCs are not, because an NPC that cannot see
+   * stops pathing and the simulation hangs.
+   */
+
 
   // Day/Night and weather effects
   static readonly FOV_PENALTY_SUNSET = 1;
@@ -141,6 +179,80 @@ export class Rules {
   static readonly NIGHT_STA_PENALTY = 2;
   static readonly FOV_PENALTY_RAIN = 1;
   static readonly FOV_PENALTY_HEAVY_RAIN = 2;
+
+  // ── Intoxication. Still Alive, Release 7-1 ──────────────────────────────
+  // One standard drink's worth of blood alcohol, in turns. Because BAC decays
+  // one turn per turn, a survivor who downs five of these is out for two and a
+  // half in-game hours -- which is why these are expressed in TURNS_PER_HOUR
+  // rather than as abstract "points".
+  static readonly ALCOHOL_STANDARD_UNIT = WorldTime.TURNS_PER_HOUR;
+  /** Passing out: five standard drinks, and the top of the six display bands. */
+  static readonly BLACKOUT_DRUNK_LEVEL = 5 * WorldTime.TURNS_PER_HOUR;
+  /** Percent chance per action that drunkenness costs the actor control. */
+  static readonly DRUNK_AFFECTED_ACTION_CHANCE = 5;
+
+  // Ranged accuracy multipliers, by band. Note the *names* do not line up with
+  // the numbers: 0.66 is "HAMMERED" for 80-99%, and 0.95 is "TIPSY" for 40-59%.
+  // Both spellings are the C#'s, and the mismatch is a trap for anyone who
+  // assumes the constant names describe the bands.
+  private static readonly FIRING_WHEN_BLACKOUT_DRUNK = 0.5;
+  private static readonly FIRING_WHEN_HAMMERED = 0.66;
+  private static readonly FIRING_WHEN_DRUNK = 0.75;
+  private static readonly FIRING_WHEN_TIPSY = 0.95;
+  /** Still Alive, Release 7-1. The siphon hose has its hazard. */
+  static readonly VOMIT_WHILE_SIPHONING_CHANCE = 10;
+  /**
+   * The whole Release 6-2 FOV rebalance, in one place.
+   *
+   * Every number here is *paired* with a vanilla one, and the pairs are not
+   * independent: the night penalties were steepened "to offset the new BaseView
+   * FOV" at the same time as the floor was dropped to 0. Ship only half and
+   * nothing is ever dark -- a gentle night penalty plus a floor of 0 gives back
+   * what the floor took away. So they are read as a single record chosen by the
+   * flag, rather than as five separate `hasFeature` tests that could disagree
+   * with each other after an edit.
+   */
+  static readonly DARK_FOV: Readonly<{
+    penalties: { sunset: number; evening: number; midnight: number; deepNight: number; sunrise: number };
+    standOnBonus: number;
+    insideTorchBonus: number;
+    minimalFovPlayer: number;
+    minimalFovLivingActors: number;
+    /** Whether `standOnFovBonus` is suppressed when FOV has already reached 0. */
+    standOnNeedsFov: boolean;
+  }> = {
+    penalties: { sunset: 4, evening: 6, midnight: 5, deepNight: 7, sunrise: 4 },
+    standOnBonus: 2,
+    insideTorchBonus: 2,
+    minimalFovPlayer: 0,
+    minimalFovLivingActors: 1,
+    standOnNeedsFov: true,
+  };
+
+  /** Vanilla's numbers, spelled out so the contrast is visible in one place. */
+  private static readonly CLASSIC_FOV = {
+    standOnBonus: 1,
+    insideTorchBonus: 0,
+    minimalFovPlayer: 2,
+    minimalFovLivingActors: 2,
+    standOnNeedsFov: false,
+  };
+
+  /** The record in force for the live ruleset. Every reader goes through this. */
+  private get fovProfile(): typeof Rules.CLASSIC_FOV & {
+    penalties: { sunset: number; evening: number; midnight: number; deepNight: number; sunrise: number };
+  } {
+    if (!hasFeature(Session.get().ruleset, Feature.DarknessFov)) {
+      return { ...Rules.CLASSIC_FOV, penalties: {
+        sunset: Rules.FOV_PENALTY_SUNSET,
+        evening: Rules.FOV_PENALTY_EVENING,
+        midnight: Rules.FOV_PENALTY_MIDNIGHT,
+        deepNight: Rules.FOV_PENALTY_DEEP_NIGHT,
+        sunrise: Rules.FOV_PENALTY_SUNRISE,
+      } };
+    }
+    return Rules.DARK_FOV;
+  }
 
   // Weapons & firing
   static readonly MELEE_WEAPON_BREAK_CHANCE = 1;
@@ -155,6 +267,34 @@ export class Rules {
 
   // Body armors
   static readonly BODY_ARMOR_BREAK_CHANCE = 2;
+  /**
+   * Still Alive, Release 7-2 (`Rules.cs:129`). The police riot shield's chance to
+   * stop a melee attack outright, before skill.
+   *
+   * Read by exactly one thing today, `actorShieldChanceToBlock` below, and through
+   * it by `POLICE_RIOT_SHIELD`'s flavour text -- which is why the port builds that
+   * string from this constant instead of writing `"25% base chance to block melee
+   * attacks."` out. The C# does the same (`GameItems.cs:3038`).
+   *
+   * The C#'s sibling `SHIELD_ENCUMBERANCE_PENALTY` (`Rules.cs:130`) is declared just
+   * below, with the note that its only reader is `actorSpeed`.
+   */
+  static readonly SHIELD_BASE_BLOCK_CHANCE = 25;
+
+  /**
+   * C# `Rules.SHIELD_ENCUMBERANCE_PENALTY` — `Rules.cs:130`, Release 7-2.
+   *
+   * A speed multiplier, not an int, unlike its sibling above. The C# declares it
+   * `const float`; this port writes `0.75` and lets it be a `number`, because
+   * `actorSpeed` already works in floating point until its final `Math.floor`.
+   *
+   * Read exactly once, by `actorSpeed`, and ungated — the C# has no gate because
+   * it has one ruleset. **It is provably inert under Classic**, which is why that
+   * is safe here: `DollPart.LEFT_ARM` did not exist in this port until the shield
+   * landed, and the only model that names it is `POLICE_RIOT_SHIELD`. So no
+   * Classic actor can satisfy `getEquippedShield()` and no Classic speed moves.
+   */
+  static readonly SHIELD_ENCUMBERANCE_PENALTY = 0.75;
 
   // Hunger/Rot & Sleep & Sanity
   static readonly FOOD_BASE_POINTS = WorldTime.TURNS_PER_HOUR * 48;
@@ -297,6 +437,27 @@ export class Rules {
   static SKILL_MARTIAL_ARTS_ATK_BONUS = 6;
   static SKILL_MARTIAL_ARTS_DMG_BONUS = 2;
   static SKILL_MARTIAL_ARTS_DISARM_BONUS = 10;
+  /**
+   * Still Alive, Release 7-2 (`Rules.cs:375`), "+5% boost to shields": five points
+   * of `SHIELD_BASE_BLOCK_CHANCE` per level of Martial Arts.
+   *
+   * **Deliberately not wired to `Skills.csv`, and this one is worth reading twice.**
+   * The fork *does* assign it from a column -- `Skills.cs:376` writes
+   * `Rules.SKILL_MARTIAL_ARTS_SHIELD_BONUS = (int)s.VALUE4` -- and the fork's own
+   * `Skills.csv` duly has `MARTIAL_ARTS` with a fourth value of 5. The **vendored
+   * pack's** `Skills.json` does not: Martial Arts is a vanilla row there and its
+   * `VALUE4` is `0`. So a faithful-looking
+   * `Skills.SKILL_MARTIAL_ARTS_SHIELD_BONUS = Math.trunc(s.VALUE4)` would compile,
+   * pass a green type-check and silently make every shield in the game worth
+   * nothing, because `Skills.load()` runs at startup and 5 is overwritten by 0.
+   *
+   * Hence the C#'s declared value, 5, kept as a plain static like its three
+   * Martial Arts siblings -- the same shape `SKILL_UNSUSPICIOUS_FISHING_BONUS`
+   * below takes for the same underlying reason. The reference quirk is recorded
+   * rather than resolved: the fork's answer would be right against the fork's CSV
+   * and wrong against this one.
+   */
+  static SKILL_MARTIAL_ARTS_SHIELD_BONUS = 5;
   static SKILL_MEDIC_BONUS = 0.15;
   static SKILL_MEDIC_REVIVE_BONUS = 10;
   static SKILL_MEDIC_LEVEL_FOR_REVIVE_EST = 1;
@@ -310,6 +471,13 @@ export class Rules {
   static SKILL_STRONG_RESIST_DISARM_BONUS = 5;
   static SKILL_TOUGH_HP_BONUS = 6;
   static SKILL_UNSUSPICIOUS_BONUS = 20;
+  /**
+   * Still Alive, Release 7-6 (`Rules.cs:396`): +1 point of fishing chance per
+   * level of Unsuspicious. A constant like every other skill bonus, and like them
+   * it is *not* read from `Skills.csv` — the C# hardcodes it next to the skill
+   * bonuses rather than adding a `VALUE2` column, so there is no row to read.
+   */
+  static SKILL_UNSUSPICIOUS_FISHING_BONUS = 1;
   static UNSUSPICIOUS_BAD_OUTFIT_PENALTY = 75;
   static UNSUSPICIOUS_GOOD_OUTFIT_BONUS = 75;
 
@@ -325,6 +493,16 @@ export class Rules {
   static SKILL_ZINFECTOR_BONUS = 0.15;
   static SKILL_ZLIGHT_EATER_MAXFOOD_BONUS = 0.15;
   static SKILL_ZLIGHT_EATER_FOOD_BONUS = 0.1;
+
+  // Still Alive, Release 7-6. Not a skill bonus, which is why it is down here
+  // rather than in the block above: it is the base of a roll, and it is the other
+  // half of `SKILL_UNSUSPICIOUS_FISHING_BONUS`.
+  //
+  // `RogueGame.cs:392`, a percentage, with the C#'s own caveat -- "percentage.
+  // can't be less than 2" -- because `ResourcesAvailability` doubles it on HIGH
+  // and integer-halves it on LOW, so the base decides whether a poor world still
+  // fishes at all.
+  static readonly CATCHING_FISH_BASE_CHANCE = 2;
 
   // ── Fields ────────────────────────────────────────────────────────────────
   readonly diceRoller: DiceRoller;
@@ -477,6 +655,18 @@ export class Rules {
       return fail("triggered trap");
     }
 
+    // 4. Forbidden to AI.
+    // The flag is only honoured in the AI's *rating* (BaseAI returns JUNK for
+    // these), which is a preference and not a rule: anything that reaches an NPC
+    // by a path that does not go through `BaseAI` -- a gift, a container it was
+    // told to loot, a trade it agreed to -- still takes the item. Enforcing it
+    // here closes every one of those at the single choke point they share. The
+    // player is exempt, which is the whole point of the flag: these are items
+    // that make no sense for an NPC to carry, not items the player may not use.
+    if (it.isForbiddenToAI && !actor.isPlayer) {
+      return fail("forbidden to AI");
+    }
+
     return OK;
   }
 
@@ -492,6 +682,189 @@ export class Rules {
     // 2. Item not equipable.
     if (!it.model.isEquipable) {
       return fail("this item cannot be equipped");
+    }
+
+    // 3. Forbidden to AI.
+    // The flag is only honoured in the AI's *rating* (BaseAI returns JUNK for
+    // these), which is a preference and not a rule: anything that reaches an NPC
+    // by a path that does not go through `BaseAI` -- a gift, a container it was
+    // told to loot, a trade it agreed to -- still takes the item. Enforcing it
+    // here closes every one of those at the single choke point they share. The
+    // player is exempt, which is the whole point of the flag: these are items
+    // that make no sense for an NPC to carry, not items the player may not use.
+    if (it.isForbiddenToAI && !actor.isPlayer) {
+      return fail("forbidden to AI");
+    }
+
+    // 4. Still Alive, Release 7-6: a fishing rod is only a rod next to water.
+    //
+    // The C# special-cases the rod at its *two* equip sites
+    // (`RogueGame.cs:11395` `OnLMBItem` and `RogueGame.cs:11996`
+    // `DoPlayerItemSlotUse`) rather than in a rule, so this is folded into the
+    // rule instead of copied twice. That is behaviour-identical rather than
+    // merely equivalent: both C# sites test the rod *first* in the same chain and
+    // then fall through to the binoculars branch, which no rod can take, and a rod
+    // is always `IsEquipable` and never `IsForbiddenToAI` for a player -- so the
+    // water test is the only thing that can ever refuse one. The third caller,
+    // `DoTakeItem`'s auto-equip, cannot reach a rod either: the model sets
+    // `DontAutoEquip`.
+    if (it.model.id === ItemID.FISHING_ROD) {
+      return this.canActorEquipFishingRod(actor, it);
+    }
+
+    return OK;
+  }
+
+  /**
+   * Can this actor equip this fishing rod? Still Alive, Release 7-6.
+   *
+   * C# `CanActorEquipFishingRod` (`Rules.cs:1112`). Two reasons, in the C#'s
+   * order: "not a fishing rod" for anything else, and "not next to a body of
+   * water" for a rod the actor is not standing beside water with. The second is
+   * the whole rule -- a pond eight tiles away is as good as no pond at all, and
+   * the eight neighbours are `Direction.COMPASS`, the diagonal included.
+   *
+   * Gated on the feature, and it answers "not available in this ruleset" when the
+   * feature is off rather than skipping the check. `canActorCookFoodItem` sets
+   * that precedent: a predicate a UI asks must have a *false* to return, and under
+   * CLASSIC no rod exists to reach it, so the answer is never read either way.
+   */
+  canActorEquipFishingRod(actor: Actor, it: Item): RuleResult {
+    if (!actor) throw new Error("actor");
+    if (!it) throw new Error("item");
+
+    if (!hasFeature(Session.get().ruleset, Feature.Fishing)) {
+      return fail("not available in this ruleset");
+    }
+    if (it.model.id !== ItemID.FISHING_ROD) {
+      return fail("not a fishing rod");
+    }
+
+    const map = actor.location.map;
+    if (!map) return fail("not next to a body of water");
+    const pos = actor.location.position;
+    // The C# keeps scanning after it finds water (`continue`, not `break`); the
+    // answer is the same and eight tile lookups are not worth the difference.
+    for (const d of Direction.COMPASS) {
+      const at = d.applyTo(pos);
+      if (!map.isInBounds(at.x, at.y)) continue;
+      if (map.isAnyTileWaterThere(at)) return OK;
+    }
+
+    return fail("not next to a body of water");
+  }
+
+  /**
+   * May this actor pick up this backpack? Still Alive, Release 8-2.
+   *
+   * C# `CanActorTakeBackpack` (`Rules.cs:1251-1280`). Two *independent* gates, and
+   * the second one is the one with the arithmetic in it:
+   *
+   *  1. Already carrying one. The C#'s reason string is `"can only carry one
+   *     backpack at a time"` -- without the "you", which is the other string the
+   *     fork uses for the same rule at the *container* end (`Rules.cs:657-662`,
+   *     `"you can only carry one backpack at a time"`, player-only because the
+   *     bags are `IsForbiddenToAI`). Two different messages for two different
+   *     refusals, and the port keeps this one verbatim because a player who greps
+   *     the manual for it finds the other.
+   *
+   *  2. A Hauler tier on the *slot count*, in three bands rather than one per
+   *     pack: `5..6` needs 1, `7..8` needs 2, `9+` needs 3. The bands are why the
+   *     four-slot satchel needs nothing and the six-slot daypack needs one -- a
+   *     per-model table would put the satchel behind the first band for no reason,
+   *     and the C# has the satchel below it deliberately.
+   *
+   * Gated on the feature, and it answers "not available in this ruleset" rather
+   * than skipping the checks, for the reason `canActorEquipFishingRod` sets out:
+   * a predicate a UI asks has to have a *false* to return. Under CLASSIC no
+   * backpack model is reachable (`Backpacks.makeBackpack` returns null), so the
+   * answer is never read either way.
+   */
+  canActorTakeBackpack(actor: Actor, backPack: ItemBackpack): RuleResult {
+    if (!actor) throw new Error("actor");
+    if (!backPack) throw new Error("backPack");
+
+    if (!hasFeature(Session.get().ruleset, Feature.ShelterBackpacks)) {
+      return fail("not available in this ruleset");
+    }
+
+    if (actor.inventory?.hasItemOfType(ItemBackpack)) {
+      return fail("can only carry one backpack at a time");
+    }
+
+    const levelsOfHauler = actor.sheet.skillTable.getSkillLevel(SkillID.HAULER);
+    const slots = backPack.inventorySlots;
+    // The C#'s three `if`/`else if` bands, kept as three comparisons rather than
+    // collapsed into `Math.floor((slots - 3) / 2)`: the arithmetic is a guess
+    // about a table the C# spells out, and the boundary cases (4, 5, 7, 9) are
+    // exactly what a reader will check.
+    if (slots >= 5 && slots < 7 && levelsOfHauler < 1) {
+      return fail("need Hauler skill level 1 for that type of pack");
+    }
+    if (slots >= 7 && slots < 9 && levelsOfHauler < 2) {
+      return fail("need Hauler skill level 2 for that type of pack");
+    }
+    if (slots >= 9 && levelsOfHauler < 3) {
+      return fail("need Hauler skill level 3 for that type of pack");
+    }
+
+    return OK;
+  }
+
+  /**
+   * May this item move between an actor's pack and a backpack? Still Alive, Release
+   * 8-2.
+   *
+   * C# `CanActorMoveItemToBackpack` (`Rules.cs:1508-1557`). Four gates, in the
+   * C#'s order, and the order is load-bearing twice over: gate 2 is
+   * `ItemModel.canGoInBackpacks`, so an item that may not be packed is refused
+   * even against an empty bag, and gate 3 is `backPack.IsEquipped`, so the C#'s
+   * inverted convention ("equipped" means *closed*) is a refusal rather than a
+   * permission.
+   *
+   * `checkIsFull` is the C#'s parameter and it means the same here: the caller has
+   * already established there is room and does not want the capacity check repeated
+   * for a UI that only wants to know whether the key is worth offering. **All three
+   * of the C#'s call sites pass `false`** (`RogueGame.cs:13878`, `:13978`, `:14011`)
+   * because each is inside the same `IsFull || CanAddAtLeastOne` guard, so the
+   * parameter is dead weight in the C# too. The port keeps it for the same reason
+   * the C# has it: gate 4 is a question with two answers, and a caller asking
+   * "is this key worth offering?" wants the one without the capacity clause.
+   */
+  canActorMoveItemToBackpack(
+    actor: Actor,
+    it: Item,
+    backPack: ItemBackpack,
+    checkIsFull: boolean,
+  ): RuleResult {
+    if (!actor) throw new Error("actor");
+    if (!it) throw new Error("item");
+    if (!backPack) throw new Error("backPack");
+
+    if (!hasFeature(Session.get().ruleset, Feature.ShelterBackpacks)) {
+      return fail("not available in this ruleset");
+    }
+
+    // 1. Item is equipped.
+    if (it.isEquipped) {
+      return fail("item is equipped");
+    }
+
+    // 2. Item can't go in backpacks.
+    if (!it.model.canGoInBackpacks) {
+      return fail("cannot go in backpacks");
+    }
+
+    // 3. Backpack is equipped, i.e. *not* open. The C# comment says so in as many
+    // words; see `ItemBackpack.isOpen` for why that is the confusing way round.
+    if (backPack.isEquipped) {
+      return fail("backpack isn't open");
+    }
+
+    // 4. Inventory is full and cannot stack item.
+    const pack = backPack.backpackInventory;
+    if (checkIsFull && pack.isFull && !pack.canAddAtLeastOne(it)) {
+      return fail("backpack is full");
     }
 
     return OK;
@@ -554,6 +927,11 @@ export class Rules {
     }
     if (it instanceof ItemBarricadeMaterial) {
       return fail("to use material, build a barricade");
+    }
+    // 3. Forbidden to AI. See the note in `canActorGetItem`: the flag was only a
+    // rating before, which is a preference and not a rule.
+    if (it.isForbiddenToAI && !actor.isPlayer) {
+      return fail("forbidden to AI");
     }
     if (it instanceof ItemAmmo) {
       // 1. No compatible weapon equipped.
@@ -622,6 +1000,17 @@ export class Rules {
     // 3. Not a battery powered item.
     if (!this.isItemBatteryPowered(it)) {
       return fail("not a battery powered item");
+    }
+
+    // 4. Already full.
+    // Without this the AI recharges a *full* light forever: the light is the
+    // first rechargable item it finds, it never drains if nobody is shooting, and
+    // the actor spends the walk to the generator and the walk back on a no-op
+    // that costs a turn each way. The fork fixed this alongside the hand order
+    // above ("Items with batteries no longer recharge automatically when they
+    // run out" — the changelog phrasing is confusing, the exploit is this).
+    if (this.isItemBatteryFull(it)) {
+      return fail("battery is already full");
     }
 
     return OK;
@@ -910,13 +1299,21 @@ export class Rules {
         const powGen = mapObj;
         // Recharge battery powered item?
         if (powGen.isOn) {
-          const leftItem = actor.getEquippedItem(DollPart.LEFT_HAND);
-          if (leftItem && this.canActorRechargeItemBattery(actor, leftItem).ok) {
-            return { action: new ActionRechargeItemBattery(actor, game, leftItem), reason: "" };
-          }
+          // **Right hand before left.** A light or a tracker loses charge every
+          // turn, so the first rechargable item found is nearly always a depleted
+          // one in the left hand: the actor recharges the torch, walks away one
+          // turn later with it empty again, and the gun in the right hand never
+          // gets looked at. Testing the weapon first makes the weapon win, which
+          // is what the fork's comment calls "weapons must have priority". The
+          // AI's own item-rating change (JUNK for forbidden items) does not
+          // touch this, because a light is a perfectly good thing to own.
           const rightItem = actor.getEquippedItem(DollPart.RIGHT_HAND);
           if (rightItem && this.canActorRechargeItemBattery(actor, rightItem).ok) {
             return { action: new ActionRechargeItemBattery(actor, game, rightItem), reason: "" };
+          }
+          const leftItem = actor.getEquippedItem(DollPart.LEFT_HAND);
+          if (leftItem && this.canActorRechargeItemBattery(actor, leftItem).ok) {
+            return { action: new ActionRechargeItemBattery(actor, game, leftItem), reason: "" };
           }
         }
 
@@ -1122,7 +1519,12 @@ export class Rules {
       return fail("no ability to barricade");
     }
 
-    // 2. Door is not closed or broken.
+    // 2. Too dark to see. Still Alive, Release 6-2.
+    if (this.isActorInAbsoluteDarkness(actor)) {
+      return fail("it's too dark too see");
+    }
+
+    // 3. Door is not closed or broken.
     if (door.state !== DoorWindow.STATE_CLOSED && door.state !== DoorWindow.STATE_BROKEN) {
       return fail("not closed or broken");
     }
@@ -1721,6 +2123,12 @@ export class Rules {
   canActorRepairFortification(actor: Actor, _fort: Fortification): RuleResult {
     if (!actor) throw new Error("actor");
 
+    // 3. Too dark to see. Still Alive, Release 6-2. See `canActorBuildFortification`
+    // for the spelling note.
+    if (this.isActorInAbsoluteDarkness(actor)) {
+      return fail("it's too dark to see");
+    }
+
     // 1. Cannot use map objects.
     if (!actor.model.abilities.canUseMapObjects) {
       return fail("cannot use map objects");
@@ -1772,6 +2180,21 @@ export class Rules {
     // 2. Corpse not in same tile as actor.
     if (!corpse.position.equals(actor.location.position) || !actor.location.map!.hasCorpse(corpse)) {
       return fail("not in same location");
+    }
+    // 3. Need a suitable bladed melee weapon. Still Alive, Release 7-6.
+    //
+    // **Player only**, and that is the C#'s decision, not an omission: it says it
+    // "decided not to enforce this for NPCs, as having them prioritise bladed
+    // weapons seemed like too much of a faff. may be revisited". Enforcing it for
+    // the AI as well would make every NPC carry a knife, which is a different game.
+    if (
+      hasFeature(Session.get().ruleset, Feature.Butchering) &&
+      actor.isPlayer
+    ) {
+      const melee = actor.getEquippedMeleeWeapon();
+      if (melee === null || !(melee.model as ItemMeleeWeaponModel).canUseForButchering) {
+        return fail("need a bladed weapon equipped");
+      }
     }
 
     return OK;
@@ -1838,6 +2261,27 @@ export class Rules {
     }
 
     return OK;
+  }
+
+  /**
+   * Still Alive, Release 7-4: how much meat one animal corpse yields.
+   *
+   * HIGH 3, MED 2, LOW 1. The C# writes this as a `switch` on
+   * `ResourcesAvailability` with a `default: 2`, so the fallthrough is MED
+   * rather than the enum's first member -- the two agree at MED, but a bad
+   * cast into this function should not silently double a LOW world's yield.
+   */
+  static meatQuantityPerCorpse(availability: Resources): number {
+    switch (availability) {
+      case Resources.HIGH:
+        return 3;
+      case Resources.MED:
+        return 2;
+      case Resources.LOW:
+        return 1;
+      default:
+        return 2;
+    }
   }
 
   // ── Distances ────────────────────────────────────────────────────────────
@@ -2056,11 +2500,285 @@ export class Rules {
     const armor = actor.getEquippedItem(DollPart.TORSO);
     if (armor instanceof ItemBodyArmor) speed -= armor.weight;
 
+    // carrying a shield. Still Alive (Release 7-2), C# `Rules.cs:4650-4652`.
+    //
+    // **Position is load-bearing.** In the C# this sits between the torso armour
+    // subtraction and the heavy-weapon subtraction, and it is a multiply where
+    // those are subtracts — so moving it changes the result, not just the reading.
+    // For a shield plus a rifle: (speed - armour) * 0.75 - weaponWeight, and any
+    // other order gives a different number.
+    //
+    // Ungated, and inert under Classic: `DollPart.LEFT_ARM` is new in this port
+    // and only `POLICE_RIOT_SHIELD` names it, so `getEquippedShield()` cannot
+    // answer for a Classic actor. Note it uses the same accessor as the block
+    // roll, which means the penalty follows the reference's rule that "shield" is
+    // decided by the arm rather than by the item's type.
+    if (actor.getEquippedShield() !== null) {
+      speed *= Rules.SHIELD_ENCUMBERANCE_PENALTY;
+    }
+
+    // carrying a heavy weapon. Still Alive (Release 7-6), gated because it
+    // changes the speed of every actor with a gun in hand, not just the ones
+    // holding a new item.
+    //
+    // The fork reads the model off a cast, ranged first and melee in the `else`,
+    // so an exotic weapon subclass would contribute nothing. One read off the
+    // common base covers the same two cases without the fallthrough, and the
+    // `weight` default of 0 means a model without the column cannot slow anyone.
+    if (hasFeature(Session.get().ruleset, Feature.WeaponWeight)) {
+      const weapon = actor.getEquippedItem(DollPart.RIGHT_HAND);
+      if (weapon instanceof ItemWeapon) speed -= weapon.weaponModel.weight;
+    }
+
     // dragging corpses.
     if (actor.draggedCorpse !== null) speed /= 2;
 
     // done, speed must be >= 0.
     return Math.max(Math.floor(speed), 0);
+  }
+
+  /**
+   * Does `defender`'s body armour stop this bite infecting them?
+   *
+   * Still Alive, Release 7-6, and gated on `Feature.ArmorResist`. The roll is
+   * against the armour's `INF_RESIST%` as a *chance* -- `rollChance`, not a
+   * reduction.
+   *
+   * `FIRE_RESIST%` is *also* a `rollChance`, and **both** are chances -- the port's
+   * `ItemBodyArmor` comment claims fire resistance scales damage, and that is
+   * wrong. The C# uses it exactly one way, at `RogueGame.cs:24772`, to decide
+   * whether ignition sticks at all: a 30% suit lets you walk into a fire seven
+   * times out of ten and keeps you out of it the eleventh. It never appears as a
+   * damage multiplier anywhere in the reference, and a copy that read it as one
+   * here would quietly halve every burn instead of preventing ignition.
+   *
+   * It lives here rather than inline at the bite site so the gate and the roll
+   * are one thing a test can call. A test that re-implements the roll to check
+   * it is checking its own copy: it passes with the gate deleted and passes
+   * with the formula wrong, which is exactly what the first version of
+   * `armor-resist.test.ts` did.
+   */
+  infectionBlockedByArmor(defender: Actor): boolean {
+    if (!hasFeature(Session.get().ruleset, Feature.ArmorResist)) return false;
+    const torso = defender.getEquippedItem(DollPart.TORSO);
+    if (!(torso instanceof ItemBodyArmor)) return false;
+    return this.rollChance(torso.infectionResistance);
+  }
+
+  /**
+   * How much worse a piece of food's spoilage makes it, as a multiplier on the
+   * base poisoning chance: fresh 1, spoiled 3, rotten 5.
+   *
+   * The order of the tests matters and is the C#'s: it asks *still fresh*,
+   * then *expired*, then *spoiled*, and a food that is both expired and spoiled
+   * is rotten for this purpose. Reversing the first two would halve the chance
+   * for food that is merely old.
+   */
+  foodPoisoningPerishingFactor(food: ItemFood, turnCounter: number): number {
+    if (this.isFoodStillFresh(food, turnCounter)) return 1;
+    if (this.isFoodExpired(food, turnCounter)) return 3;
+    if (this.isFoodSpoiled(food, turnCounter)) return 5;
+    return 1;
+  }
+
+  /** C# `ActorRecoverFromFoodPoisoningChanceBonus` (Rules.cs:5059). */
+  actorRecoverFromFoodPoisoningChanceBonus(actor: Actor): number {
+    return Rules.SKILL_HARDY_FOOD_POISONING_RECOVERY_CHANCE_BONUS *
+      actor.sheet.skillTable.getSkillLevel(SkillID.HARDY);
+  }
+
+  /**
+   * The cooked twin of a raw meat, or null if the item is not one.
+   *
+   * **By id, not by name.** The fork does this with a `switch` on the food's
+   * `AName` -- `case "some raw fish": ... COOKED_FISH` -- which means renaming a
+   * row in the CSV silently stops the meat from ever cooking, and it fails in
+   * the worst direction: the raw item still poisons, so a player who cooked it
+   * would eat a poisonous piece of meat for the rest of the run. There is no
+   * case for a default, so an unmapped name simply leaves the raw item sitting
+   * by the fire forever.
+   *
+   * Only five pairs exist, because those are the five `CanBeCooked` rows.
+   */
+  cookedFoodFor(raw: ItemModel): ItemModel | null {
+    const id: Record<number, number> = {
+      [ItemID.FOOD_RAW_FISH]: ItemID.FOOD_COOKED_FISH,
+      [ItemID.FOOD_RAW_RABBIT]: ItemID.FOOD_COOKED_RABBIT,
+      [ItemID.FOOD_RAW_CHICKEN]: ItemID.FOOD_COOKED_CHICKEN,
+      [ItemID.FOOD_RAW_DOG_MEAT]: ItemID.FOOD_COOKED_DOG_MEAT,
+      [ItemID.FOOD_RAW_HUMAN_FLESH]: ItemID.FOOD_COOKED_HUMAN_FLESH,
+    };
+    const cooked = id[raw.id];
+    return cooked === undefined ? null : Models.items.get(cooked);
+  }
+
+  /**
+   * Can `actor` cook `it`? Still Alive, Release 7-6.
+   *
+   * Four refusals, in the C#'s order, and each with the reason it gives: not
+   * food, no need to cook it, not in the actor's inventory, not next to a fire.
+   * The reason comes back with the answer rather than a bare boolean, because the
+   * C# uses it for the "you cannot cook this because ..." message and losing it
+   * would make the command silently do nothing. It is a returned field rather
+   * than a C#-style `out` parameter because TypeScript has no equivalent that
+   * reads well.
+   *
+   * Gated on `Feature.Cooking`: the "next to a fire" test walks eight
+   * neighbouring tiles, and returning true for classic would make an
+   * always-available command on a feature the ruleset does not have.
+   */
+  /**
+   * C# `IsVisibleToActor(Actor, Point, Weather)` -- `Rules.cs:4131-4143`, Release 7-6.
+   *
+   * Two lines in the C# built from two things the port already has: the actor's FOV
+   * (`actorFOV`, `Rules.ts:2998`) and a line-of-sight trace (`LOS.canTraceViewLine`,
+   * `LOS.ts:166`). The reason it is written out rather than inlined at its two call
+   * sites is that it is the *only* visibility question in the rules that takes a
+   * target point rather than a target actor, and `Rules.canActorSeeSky` answers a
+   * different question.
+   */
+  isVisibleToActor(actor: Actor, target: Point, weather: Weather): boolean {
+    const map = actor.location.map;
+    if (map === null) return false;
+    // An FOV of zero means the actor cannot see anything at all, indoors by night,
+    // or blinded. The C# checks this before tracing, so a blind actor never gets a
+    // trace that would succeed.
+    const fov = this.actorFOV(actor, map.localTime, weather);
+    if (fov === 0) return false;
+    return LOS.canTraceViewLine(map, actor.location.position, target, fov);
+  }
+
+  /**
+   * C# `CanStartCookingFire(Actor, Point, out string reason)` -- `Rules.cs:4151-4286`,
+   * Release 7-6. 136 lines in the C#, eight checks, each with its own refusal string
+   * because the strings are what the player reads.
+   *
+   * This is the rule that makes the whole fire-start command reachable, and it is a
+   * rule rather than handler code for a reason: `HandlePlayerMakeFireForCooking` asks
+   * it once per direction while the player is in MATCHES MODE, so putting it in the
+   * handler would make the refusal text unreachable from a test.
+   */
+  canStartCookingFire(actor: Actor, firePos: Point): RuleResult {
+    const map = actor.location.map;
+    if (map === null) return { ok: false, reason: "You are nowhere." };
+    if (!map.isInBounds(firePos.x, firePos.y)) return { ok: false, reason: "You cannot place a fire there." };
+
+    const tile = map.getTileAt(firePos.x, firePos.y);
+    if (tile === null || !tile.model.isWalkable)
+      return { ok: false, reason: "You cannot place a fire there." };
+
+    if (map.getActorAtPoint(firePos) !== null)
+      return { ok: false, reason: "There is someone in the way." };
+
+    const mapObj = map.getMapObjectAt(firePos.x, firePos.y);
+    if (mapObj !== null) {
+      // An existing receptacle, or something in the way.
+      if (mapObj instanceof Barrel || mapObj instanceof Campfire) {
+        // A barrel or a campfire: always legal, and lighting it is the whole point of
+        // the "reignites a fire" message.
+      } else {
+        return { ok: false, reason: `${mapObj.aName} is in the way.` };
+      }
+    } else if (!tile.isInside) {
+      // Nothing there and it is outdoors: a new campfire. The C# refuses bare
+      // ground the player cannot see, which is the check below.
+    }
+
+    if (map.isAnyTileWaterThere(firePos))
+      return { ok: false, reason: "You cannot start a fire in the water." };
+
+    if (mapObj === null) {
+      // Needs something to burn.
+      const wood = actor.inventory?.getSmallestStackByType(ItemBarricadeMaterial) ?? null;
+      if (wood === null)
+        return { ok: false, reason: "You need some wood." };
+    }
+
+    if (!this.isVisibleToActor(actor, firePos, Session.get().weather))
+      return { ok: false, reason: "You cannot see there." };
+
+    return { ok: true, reason: "" };
+  }
+
+  canActorCookFoodItem(actor: Actor, it: Item): { can: boolean; reason: string } {
+    if (!hasFeature(Session.get().ruleset, Feature.Cooking)) {
+      return { can: false, reason: "not available in this ruleset" };
+    }
+    if (!(it instanceof ItemFood)) {
+      return { can: false, reason: "not food" };
+    }
+    if (!it.canBeCooked) {
+      return { can: false, reason: "no need to cook it" };
+    }
+    if (actor.inventory === null || !actor.inventory.contains(it)) {
+      return { can: false, reason: "not in inventory" };
+    }
+    if (!this.isActorNextToFire(actor)) {
+      return { can: false, reason: "must be next to a fire" };
+    }
+    return { can: true, reason: "" };
+  }
+
+  /** The eight compass neighbours, as `Direction.COMPASS` in the C#. */
+  private isActorNextToFire(actor: Actor): boolean {
+    const map = actor.location.map;
+    if (!map) return false;
+    const pos = actor.location.position;
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        if (dx === 0 && dy === 0) continue;
+        const at = new Point(pos.x + dx, pos.y + dy);
+        if (!map.isInBounds(at.x, at.y)) continue;
+        const obj = map.getMapObjectAt(at.x, at.y);
+        if (obj !== null && obj.isOnFire) return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Eat this and maybe contract food poisoning. Still Alive, Release 7-6, gated
+   * on `Feature.FoodPoisoning`.
+   *
+   * The chance is `max(base, base * perishingFactor)` less the actor's Hardy
+   * recovery bonus. The `max` is not redundancy: the fork's comment says it
+   * "avoids a case of multiplying by zero", and the bonus is a *subtraction*, so
+   * an actor with a high Hardy bonus would otherwise roll against a negative
+   * chance on a fresh piece of meat -- which `rollChance` would treat as certain.
+   *
+   * Call it after the food is consumed, as the C# does, so the perishing factor
+   * is read from the item that was actually eaten.
+   */
+  contractFoodPoisoning(actor: Actor, food: ItemFood, turnCounter: number): boolean {
+    if (!hasFeature(Session.get().ruleset, Feature.FoodPoisoning)) return false;
+    if (!food.canCauseFoodPoisoning) return false;
+    const base = Rules.BASE_FOOD_POISONING_INFECTION_CHANCE;
+    const factor = this.foodPoisoningPerishingFactor(food, turnCounter);
+    const chance = Math.max(base, base * factor) -
+      this.actorRecoverFromFoodPoisoningChanceBonus(actor);
+    if (!this.rollChance(chance)) return false;
+    actor.isFoodPoisoned = true;
+    return true;
+  }
+
+  /**
+   * The per-turn roll that shakes off food poisoning.
+   *
+   * Returns true when the actor recovered, so the caller can say so. Gated on
+   * the same feature as the contraction: a flag that could be set without the
+   * feature is reachable from a save, and one that could never be cleared would
+   * strand its holder.
+   */
+  recoverFromFoodPoisoning(actor: Actor): boolean {
+    if (!hasFeature(Session.get().ruleset, Feature.FoodPoisoning)) return false;
+    if (!actor.isFoodPoisoned) return false;
+    const chance = Rules.BASE_FOOD_POISONING_RECOVERY_CHANCE +
+      this.actorRecoverFromFoodPoisoningChanceBonus(actor);
+    if (this.rollChance(chance)) {
+      actor.isFoodPoisoned = false;
+      return true;
+    }
+    return false;
   }
 
   actorMaxHPs(actor: Actor): number {
@@ -2138,6 +2856,54 @@ export class Rules {
     return Rules.SKILL_NECROLOGY_UNDEAD_BONUS * actor.sheet.skillTable.getSkillLevel(SkillID.NECROLOGY);
   }
 
+  /**
+   * Still Alive, Release 7-2 (`Rules.cs:4765`). How likely a swing at `actor` is to
+   * be blocked by its shield: 25 flat, plus five points per level of Martial Arts.
+   *
+   * **It does not check that the actor is carrying a shield**, and neither does the
+   * C#. The roll that consults it (`RogueGame.cs:18369`) is guarded by
+   * `defender.GetEquippedShield() != null`, so the shield test happens once and
+   * this is only the percentage. Reading it as "the chance this actor's next
+   * attack is stopped" would be wrong, and computing the guard here instead would
+   * make the two disagree.
+   *
+   * Two readers so far, both outside this file: the melee roll in
+   * `RogueGame.DoMeleeAttack` and the flavour text `DescribeItemLong` rewrites
+   * while a shield is in the player's pack. Neither is ported yet; the method lands
+   * first so both can be one-liners.
+   */
+  actorShieldChanceToBlock(actor: Actor): number {
+    const actorSkillModifier =
+      Rules.SKILL_MARTIAL_ARTS_SHIELD_BONUS *
+      actor.sheet.skillTable.getSkillLevel(SkillID.MARTIAL_ARTS);
+    return Rules.SHIELD_BASE_BLOCK_CHANCE + actorSkillModifier;
+  }
+
+  /**
+   * C# `IsItemNightVision` — `Rules.cs:1376`, Release 6-3.
+   *
+   * An id test and nothing else, transcribed as such. It has three readers in the
+   * C#: the "too bright to equip" rule in `CanActorEquip` (`:883`, commented out
+   * there), the FOV bonus in `ComputeFOV` (`:5125` is its *binoculars* sibling),
+   * and the equip sound in `OnEquipItem` (`:21055`) — which is the one that has
+   * landed, and the reason this exists.
+   */
+  isItemNightVision(it: Item): boolean {
+    return it.model.id === ItemID.LIGHT_NIGHT_VISION;
+  }
+
+  /**
+   * C# `IsItemBinoculars` — `Rules.cs:1384`, Release 7-1.
+   *
+   * Also an id test. Its C# readers are the equip sound (`:21057`) and the FOV
+   * bonus (`:5125`), and the C# notes at `Rules.cs:891` that binoculars are
+   * `IsForbiddenToAI`, which is why there is no AI-side "too dark for binoculars"
+   * rule for it the way night vision has.
+   */
+  isItemBinoculars(it: Item): boolean {
+    return it.model.id === ItemID.LIGHT_BINOCULARS;
+  }
+
   actorMeleeAttack(actor: Actor, baseAttack: Attack, target: Actor | null, objToBreak: MapObject | null = null): Attack {
     let hit = baseAttack.hitValue;
     let dmg = baseAttack.damageValue;
@@ -2192,6 +2958,18 @@ export class Rules {
       disarmChance /= 2;
     } else if (this.isActorSleepy(actor)) {
       hit *= 3 / 4;
+      disarmChance *= 3 / 4;
+    }
+
+    // drunk penalty. Still Alive, Release 7-1. Gated, because this changes the
+    // hit value of every swing by any actor who has been drinking -- and unlike
+    // the ranged case there is a *second* effect here (the disarm chance), so a
+    // single missing gate would move two numbers at once.
+    if (
+      hasFeature(Session.get().ruleset, Feature.Alcohol) &&
+      this.isActorDrunk(actor)
+    ) {
+      hit *= Rules.FIRING_WHEN_DRUNK;
       disarmChance *= 3 / 4;
     }
 
@@ -2251,6 +3029,37 @@ export class Rules {
       hit *= Rules.FIRING_WHEN_SLP_SLEEPY;
       rapidHit1 *= Rules.FIRING_WHEN_SLP_SLEEPY;
       rapidHit2 *= Rules.FIRING_WHEN_SLP_SLEEPY;
+    }
+
+    // drunk penalty, four bands. Still Alive, Release 7-1.
+    //
+    // The band names are the C#'s and do not match the numbers: the 80-99% band
+    // uses `FIRING_WHEN_HAMMERED` (0.66) and the 40-59% band uses
+    // `FIRING_WHEN_TIPSY` (0.95). Reading the constant names as descriptions of
+    // the bands gives the wrong order, so the comments carry the percentages.
+    if (hasFeature(Session.get().ruleset, Feature.Alcohol)) {
+      const b = Rules.BLACKOUT_DRUNK_LEVEL;
+      if (actor.bloodAlcohol >= b) {
+        // 100%+ "uncon"
+        hit *= Rules.FIRING_WHEN_BLACKOUT_DRUNK;
+        rapidHit1 *= Rules.FIRING_WHEN_BLACKOUT_DRUNK;
+        rapidHit2 *= Rules.FIRING_WHEN_BLACKOUT_DRUNK;
+      } else if (actor.bloodAlcohol >= b * 0.8) {
+        // 80-99% "wasted" -- note: HAMMERED, not DRUNK
+        hit *= Rules.FIRING_WHEN_HAMMERED;
+        rapidHit1 *= Rules.FIRING_WHEN_HAMMERED;
+        rapidHit2 *= Rules.FIRING_WHEN_HAMMERED;
+      } else if (actor.bloodAlcohol >= b * 0.6) {
+        // 60-79% "drunk"
+        hit *= Rules.FIRING_WHEN_DRUNK;
+        rapidHit1 *= Rules.FIRING_WHEN_DRUNK;
+        rapidHit2 *= Rules.FIRING_WHEN_DRUNK;
+      } else if (actor.bloodAlcohol >= b * 0.4) {
+        // 40-59% "tipsy" -- note: TIPSY, at only -5%
+        hit *= Rules.FIRING_WHEN_TIPSY;
+        rapidHit1 *= Rules.FIRING_WHEN_TIPSY;
+        rapidHit2 *= Rules.FIRING_WHEN_TIPSY;
+      }
     }
 
     // stamina penalty.
@@ -2376,6 +3185,9 @@ export class Rules {
   actorFOV(actor: Actor, time: WorldTime, weather: Weather): number {
     const t = time;
     const w = weather;
+    // One read of the profile, at the top, so every branch below is visibly
+    // looking at the same set of numbers.
+    const profile = this.fovProfile;
 
     // Sleeping actors have no FOV.
     if (actor.isSleeping) return 0;
@@ -2397,6 +3209,8 @@ export class Rules {
         // night & weather penalty
         FOV -= this.nightFovPenalty(actor, t);
         FOV -= this.weatherFovPenalty(actor, w);
+        // (the night penalties are read through `fovProfile` inside
+        // `nightFovPenalty`; the two halves are one rebalance)
         break;
       default:
         throw new Error("unhandled lighting");
@@ -2422,15 +3236,47 @@ export class Rules {
           lightBonus = 1;
         }
       }
+      // Still Alive, Release 6-2: a torch is worth more indoors, which is the
+      // only way a basement is ever navigable. Gated with the rest of the
+      // rebalance -- a constant reading the feature is off would be a value
+      // nothing consults, and the test below would have to know that.
+      if (
+        lightBonus > 0 &&
+        actor.location.map!.getTileAt(actor.location.position.x, actor.location.position.y)!.isInside
+      ) {
+        lightBonus += profile.insideTorchBonus;
+      }
       FOV += lightBonus;
     }
 
     // standing on some map objects.
     const mobj = actor.location.map!.getMapObjectAtPoint(actor.location.position);
-    if (mobj && mobj.standOnFovBonus) ++FOV;
+    // Still Alive, Release 6-2: gated on FOV > 0, so a player who is already
+    // blind does not get +2 out of it. Without the check the floor is undone at
+    // the last moment, which is exactly the bug the `MINIMAL_FOV_PLAYER = 0`
+    // above was introduced to fix.
+    if (mobj && (!profile.standOnNeedsFov || FOV > 0) && mobj.standOnFovBonus) {
+      FOV += profile.standOnBonus;
+    }
 
-    // done.
-    FOV = Math.max(Rules.MINIMAL_FOV, FOV);
+    // Still Alive, Release 6-2, and the C# calls it "a lazy workaround": outside
+    // at night, never drop below 1. It is *not* redundant with the clamp below --
+    // the player clamp is 0, so without this a player outdoors at midnight with
+    // no torch would be blind. It is only redundant for NPCs, and it is applied
+    // before the clamp anyway.
+    if (
+      profile.standOnNeedsFov && // the C# guards this with the same flag it
+      light === Lighting.OUTSIDE && // uses for the FOV>0 check above
+      t.isNight &&
+      FOV < 1
+    ) {
+      FOV = 1;
+    }
+
+    // done. The split is the feature: the player may be blind, an NPC may not.
+    FOV = actor.isPlayer
+      ? Math.max(profile.minimalFovPlayer, FOV)
+      : Math.max(profile.minimalFovLivingActors, FOV);
     return FOV;
   }
 
@@ -2499,6 +3345,55 @@ export class Rules {
     return Rules.SKILL_CHARISMATIC_TRADE_BONUS * actor.sheet.skillTable.getSkillLevel(SkillID.CHARISMATIC);
   }
 
+  /**
+   * Chance, in percent, of landing a fish on one wait. Still Alive, Release 7-6.
+   *
+   * C# `RogueGame.cs:23090` — the arithmetic is `DoWait`'s own, the `Unsuspicious`
+   * half is `ActorFishingChanceFromUnsuspiciousSkill` (`Rules.cs:5255`), and both
+   * halves are here so the number is one testable expression rather than a shape
+   * buried in a message-and-roll block.
+   *
+   * Three things in that arithmetic are not incidental:
+   *
+   * - **`CATCHING_FISH_BASE_CHANCE` is 2 and the C# says it cannot be less.**
+   *   Two percent a wait is a wait measured in minutes, not turns, which is why
+   *   the C# centralises the inference in `DoWait` — a long wait is a long wait.
+   * - **LOW halves and *truncates*.** `(int)(2 * 0.5)` is 1, not 1.0 and not 0,
+   *   so a poor world still fishes, just half as well. `Math.trunc` is the same
+   *   operation; the C#'s cast is not a rounding mode.
+   * - **The `Math.Max` is redundant as written and load-bearing anyway.** The
+   *   right side is `chance + bonus`, which for a non-negative bonus is always
+   *   greater than `chance`. Transcribed rather than simplified, because the C#
+   *   author clearly expected a correction to bite and the two forms disagree the
+   *   moment a future edit makes the bonus negative.
+   *
+   * Ungated, like `meatQuantityPerCorpse`: a number that only the gated catch
+   * block in `DoWait` asks for cannot be wrong under CLASSIC, and gating it would
+   * mean returning a number that means nothing.
+   */
+  catchingFishChance(availability: Resources, actor: Actor): number {
+    let chance = Rules.CATCHING_FISH_BASE_CHANCE;
+    if (availability === Resources.HIGH) chance = Rules.CATCHING_FISH_BASE_CHANCE * 2;
+    else if (availability === Resources.LOW) {
+      chance = Math.trunc(Rules.CATCHING_FISH_BASE_CHANCE * 0.5);
+    }
+    return Math.max(chance, chance + this.actorFishingChanceFromUnsuspiciousSkill(actor));
+  }
+
+  /**
+   * C# `ActorFishingChanceFromUnsuspiciousSkill` (`Rules.cs:5255`).
+   *
+   * Unsuspicious is the one skill that helps you *lie* rather than fight, and a
+   * fisherman loitering by a pond for twenty turns is the fork's funniest new use
+   * for it: +1 point of chance per level, on top of a base that is already 2%.
+   */
+  actorFishingChanceFromUnsuspiciousSkill(actor: Actor): number {
+    return (
+      Rules.SKILL_UNSUSPICIOUS_FISHING_BONUS *
+      actor.sheet.skillTable.getSkillLevel(SkillID.UNSUSPICIOUS)
+    );
+  }
+
   actorUnsuspicousChance(observer: Actor, actor: Actor): number {
     // base = unsuspicious skill.
     const baseChance = Rules.SKILL_UNSUSPICIOUS_BONUS * actor.sheet.skillTable.getSkillLevel(SkillID.UNSUSPICIOUS);
@@ -2532,19 +3427,29 @@ export class Rules {
 
   // ── Day/Night, Weather & Lighting ────────────────────────────────────────
 
+  /**
+   * How much the night takes off an actor's view range.
+   *
+   * Also read by the location panel (`RogueGame.ts:21396`) to print "you can see
+   * less well at night", so it is not private to `actorFOV`.
+   */
   nightFovPenalty(actor: Actor, time: WorldTime): number {
     if (actor.model.abilities.isUndead) return 0;
+    // Still Alive's Release 6-2 numbers are much steeper than vanilla's
+    // 1/2/3/4/2, and they are read through the same profile as the FOV floor
+    // because the two are one rebalance. See `DARK_FOV`.
+    const p = this.fovProfile.penalties;
     switch (time.phase) {
       case DayPhase.SUNSET:
-        return Rules.FOV_PENALTY_SUNSET;
+        return p.sunset;
       case DayPhase.EVENING:
-        return Rules.FOV_PENALTY_EVENING;
+        return p.evening;
       case DayPhase.MIDNIGHT:
-        return Rules.FOV_PENALTY_MIDNIGHT;
+        return p.midnight;
       case DayPhase.DEEP_NIGHT:
-        return Rules.FOV_PENALTY_DEEP_NIGHT;
+        return p.deepNight;
       case DayPhase.SUNRISE:
-        return Rules.FOV_PENALTY_SUNRISE;
+        return p.sunrise;
       default:
         return 0;
     }
@@ -2580,9 +3485,102 @@ export class Rules {
     }
   }
 
+  /**
+   * FOV in an unlit interior. Still Alive, Release 6-2 and 7-5.
+   *
+   * Undeads keep their base view range — they are modelled as seeing in the dark
+   * — and everyone else falls to the floor, which is 0 for the player and 1 for
+   * an NPC. The `isPlayer` test is on the *actor*, not the faction, so a player
+   * driving an undead actor still gets the undead branch.
+   */
   darknessFov(actor: Actor): number {
+    const profile = this.fovProfile;
     if (actor.model.abilities.isUndead) return actor.sheet.baseViewRange;
-    return Rules.MINIMAL_FOV;
+    if (actor.isPlayer) return profile.minimalFovPlayer;
+    return profile.minimalFovLivingActors;
+  }
+
+  /**
+   * "sober" through "uncon". Still Alive, Release 7-1.
+   *
+   * Six bands at 0/20/40/60/80/100% of `BLACKOUT_DRUNK_LEVEL`, so the wording is
+   * finer than the two thresholds the *mechanics* use -- see `isActorDrunk`, which
+   * cuts at 60%. The mismatch is in the C# and preserved here: an actor can read
+   * "buzzed" on the panel and still miss shots.
+   *
+   * These three live on `Rules` rather than on `Actor` as the C# has them,
+   * because they need `BLACKOUT_DRUNK_LEVEL` and nothing under `src/data/` is
+   * allowed to import `src/engine/`. Every other derived actor property in the
+   * port already lives here.
+   */
+  describeIntoxication(actor: Actor): string {
+    const b = Rules.BLACKOUT_DRUNK_LEVEL;
+    if (actor.bloodAlcohol >= b) return "uncon";
+    if (actor.bloodAlcohol >= b * 0.8) return "wasted";
+    if (actor.bloodAlcohol >= b * 0.6) return "drunk";
+    if (actor.bloodAlcohol >= b * 0.4) return "tipsy";
+    if (actor.bloodAlcohol >= b * 0.2) return "buzzed";
+    return "sober";
+  }
+
+  /** The same six bands, green through red. Still Alive, Release 7-1. */
+  intoxicationColor(actor: Actor): Color {
+    const b = Rules.BLACKOUT_DRUNK_LEVEL;
+    if (actor.bloodAlcohol >= b) return Color.Red;
+    if (actor.bloodAlcohol >= b * 0.8) return Color.Tomato;
+    if (actor.bloodAlcohol >= b * 0.6) return Color.DarkSalmon;
+    if (actor.bloodAlcohol >= b * 0.4) return Color.MediumAquamarine;
+    if (actor.bloodAlcohol >= b * 0.2) return Color.PaleGreen;
+    return Color.Green;
+  }
+
+  /**
+   * "Drunk" for melee accuracy and for losing control of an action.
+   * Still Alive, Release 7-1. Cuts at **60%** of `BLACKOUT_DRUNK_LEVEL` -- the
+   * fourth of the six bands, neither the top nor half.
+   */
+  isActorDrunk(actor: Actor): boolean {
+    return actor.bloodAlcohol >= Rules.BLACKOUT_DRUNK_LEVEL * 0.6;
+  }
+
+  /**
+   * Is this actor standing in *total* darkness — FOV exactly 0?
+   *
+   * Still Alive, Release 6-2. The feature is not "it is dim"; it is the specific
+   * value 0, which under `DarknessFov` only the *player* can ever reach, because
+   * the NPC floor is 1. So every check below is in practice a check on the player
+   * alone, which is why the AI does not need a parallel set of rules.
+   *
+   * The C# passes `weather` into these `Can*` methods as a parameter. The port
+   * does not, and rather than widen four signatures and every call site, both
+   * inputs are read from the session here — the map's own local time and the
+   * session's weather, which is exactly what the C# passes.
+   */
+  isActorInAbsoluteDarkness(actor: Actor): boolean {
+    if (!hasFeature(Session.get().ruleset, Feature.DarknessGating)) return false;
+    const map = actor.location.map;
+    if (!map) return false;
+    return this.actorFOV(actor, map.localTime, Session.get().weather) === 0;
+  }
+
+  /**
+   * Is this one of the four things you can consume in the dark?
+   *
+   * Still Alive, Release 7-5. Cigarettes and booze are the exceptions to the
+   * "too dark to use medicine" rule, which reads as odd until you notice that
+   * neither of them is actually *medicine* — they are `ItemMedicine` only
+   * historically, to restore a point of sanity, which is what
+   * `ItemModel.isRecreational` records. So the rule is really "you cannot use
+   * *medicine* in the dark", and the two exceptions are the two things that are
+   * not medicine.
+   */
+  isItemAlcoholForDrinking(item: Item): boolean {
+    return (
+      item.model.id === ItemID.MEDICINE_ALCOHOL_BEER_BOTTLE_GREEN ||
+      item.model.id === ItemID.MEDICINE_ALCOHOL_BEER_CAN_BLUE ||
+      item.model.id === ItemID.MEDICINE_ALCOHOL_BEER_CAN_RED ||
+      item.model.id === ItemID.MEDICINE_CIGARETTES
+    );
   }
 
   odorsDecay(map: GameMap, pos: Point, weather: Weather): number {

@@ -25,6 +25,28 @@ export class WebAudioSoundManager implements ISoundManager {
     }
   }
 
+  /**
+   * Ids with a live buffer source right now.
+   *
+   * Exists for `playIfNotAlreadyPlaying`, which the C# also tracks (it asks
+   * `IsPlaying`). Set when a source starts and cleared on its `onended`, so an id
+   * drops out when the buffer finishes rather than when it was scheduled.
+   */
+  private readonly playing = new Set<string>();
+
+  /**
+   * C# `PlayIfNotAlreadyPlaying` -- `ISoundManager.cs:44`.
+   *
+   * Returns whether it started anything, which is what the C#'s callers would read
+   * off `IsPlaying` afterwards.
+   */
+  public playIfNotAlreadyPlaying(soundId: string): boolean {
+    if (!this.enabled || this.volume <= 0) return false;
+    if (this.playing.has(soundId)) return false;
+    void this.play(soundId);
+    return true;
+  }
+
   public async play(soundId: string): Promise<void> {
     if (!this.enabled || this.volume <= 0) return;
     this.initContext();
@@ -35,7 +57,18 @@ export class WebAudioSoundManager implements ISoundManager {
       try {
         const url = soundPath(soundId);
         const response = await fetch(url);
-        if (!response.ok) return;
+        if (!response.ok) {
+          // A bare `return` used to be here, and it is why a wrong URL is
+          // indistinguishable from a silent sound. The shield-block pair resolved
+          // to an extensionless path and 404'd: the effect was wired, reached this
+          // channel, got the right gain, and produced no sound and no log entry.
+          // The C# rethrows — `MDXSoundManager.Load` fails the frame on a bad
+          // name — so a 4xx is a packaging bug here too, and the catch below
+          // exists precisely to say so.
+          throw new Error(
+            `${response.status} ${response.statusText} for ${url}`,
+          );
+        }
         const arrayBuffer = await response.arrayBuffer();
         buffer = await this.ctx.decodeAudioData(arrayBuffer);
         this.buffers.set(soundId, buffer);
@@ -58,6 +91,10 @@ export class WebAudioSoundManager implements ISoundManager {
       gainNode.gain.value = this.volume * sfxGain(soundId);
       source.connect(gainNode);
       gainNode.connect(this.ctx.destination);
+      this.playing.add(soundId);
+      source.onended = () => {
+        this.playing.delete(soundId);
+      };
       source.start(0);
     }
   }
@@ -72,6 +109,17 @@ export class WebAudioSoundManager implements ISoundManager {
 
   public getVolume(): number {
     return this.volume;
+  }
+
+  /**
+   * Still Alive, Release 2 — `UI_SFXS`.
+   *
+   * `enabled` was already here and already checked in `play` and
+   * `playIfNotAlreadyPlaying`; it just had no way to be set from outside, so the
+   * port had one shared on/off state that nothing could reach.
+   */
+  public setEnabled(on: boolean): void {
+    this.enabled = on;
   }
 
   public async preload(soundIds: string[]): Promise<void> {

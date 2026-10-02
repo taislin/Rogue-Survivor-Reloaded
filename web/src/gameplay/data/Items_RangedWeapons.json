@@ -9,6 +9,7 @@
     "DMG": 24,
     "RANGE": 6,
     "MAXAMMO": 12,
+    "WEIGHT": 0,
     "FLAVOR": "Bang bang!"
   },
   {
@@ -21,6 +22,7 @@
     "DMG": 40,
     "RANGE": 8,
     "MAXAMMO": 10,
+    "WEIGHT": 0,
     "FLAVOR": "Aim. Shoot. Kill."
   },
   {
@@ -33,6 +35,7 @@
     "DMG": 16,
     "RANGE": 5,
     "MAXAMMO": 20,
+    "WEIGHT": 0,
     "FLAVOR": "Aim between the eyes."
   },
   {
@@ -45,6 +48,7 @@
     "DMG": 20,
     "RANGE": 8,
     "MAXAMMO": 7,
+    "WEIGHT": 0,
     "FLAVOR": "Good hunting!"
   },
   {
@@ -57,6 +61,7 @@
     "DMG": 18,
     "RANGE": 6,
     "MAXAMMO": 10,
+    "WEIGHT": 0,
     "FLAVOR": "Bang!"
   },
   {
@@ -69,6 +74,7 @@
     "DMG": 26,
     "RANGE": 6,
     "MAXAMMO": 6,
+    "WEIGHT": 0,
     "FLAVOR": "K for Kolt."
   },
   {
@@ -81,6 +87,7 @@
     "DMG": 20,
     "RANGE": 8,
     "MAXAMMO": 2,
+    "WEIGHT": 0,
     "FLAVOR": "Precise death."
   },
   {
@@ -93,6 +100,7 @@
     "DMG": 30,
     "RANGE": 3,
     "MAXAMMO": 5,
+    "WEIGHT": 0,
     "FLAVOR": "Devastating at close range."
   },
   {
@@ -105,6 +113,7 @@
     "DMG": 30,
     "RANGE": 4,
     "MAXAMMO": 5,
+    "WEIGHT": 0,
     "FLAVOR": "Merry Shotmas!"
   },
   {
@@ -117,6 +126,215 @@
     "DMG": 22,
     "RANGE": 6,
     "MAXAMMO": 14,
+    "WEIGHT": 0,
     "FLAVOR": "Feuer!"
+  },
+  {
+    "ID": "RANGED_ARMY_PRECISION_RIFLE",
+    "NAME": "army precision rifle",
+    "PLURAL": "army precision rifles",
+    "ATK": 90,
+    "RAPID1": 0,
+    "RAPID2": 0,
+    "DMG": 60,
+    "RANGE": 11,
+    "MAXAMMO": 1,
+    "WEIGHT": 1,
+    "FLAVOR": "One shot, one kill."
+  },
+  {
+    "ID": "RANGED_ARMY_RIFLE1",
+    "NAME": "army rifle",
+    "PLURAL": "army rifles",
+    "ATK": 35,
+    "RAPID1": 25,
+    "RAPID2": 25,
+    "DMG": 30,
+    "RANGE": 7,
+    "MAXAMMO": 30,
+    "WEIGHT": 0,
+    "FLAVOR": "Aim. Shoot. Kill."
+  },
+  {
+    "ID": "RANGED_REVOLVER",
+    "NAME": "revolver",
+    "PLURAL": "revolvers",
+    "ATK": 30,
+    "RAPID1": 0,
+    "RAPID2": 0,
+    "DMG": 25,
+    "RANGE": 5,
+    "MAXAMMO": 6,
+    "WEIGHT": 0,
+    "FLAVOR": "Do you feel lucky?"
+  },
+  {
+    "ID": "RANGED_VINTAGE_PISTOL",
+    "NAME": "vintage pistol",
+    "PLURAL": "vintage pistols",
+    "ATK": 20,
+    "RAPID1": 0,
+    "RAPID2": 0,
+    "DMG": 22,
+    "RANGE": 5,
+    "MAXAMMO": 8,
+    "WEIGHT": 0,
+    "FLAVOR": "Parabellum power."
+  },
+  {
+    "ID": "RANGED_NAIL_GUN",
+    "NAME": "nail gun",
+    "PLURAL": "nail guns",
+    "ATK": 80,
+    "RAPID1": 0,
+    "RAPID2": 0,
+    "DMG": 14,
+    "RANGE": 1,
+    "MAXAMMO": 99,
+    "WEIGHT": 0,
+    "FLAVOR": "Nailed it!"
+  },
+  {
+    "ID": "RANGED_FLAMETHROWER",
+    "NAME": "flame thrower",
+    "PLURAL": "flame throwers",
+    "ATK": 120,
+    "RAPID1": 15,
+    "RAPID2": 15,
+    "DMG": 15,
+    "RANGE": 3,
+    "MAXAMMO": 20,
+    "WEIGHT": 10,
+    "FLAVOR": "Flame grilled."
+  },
+  {
+    "ID": "RANGED_STUN_GUN",
+    "NAME": "stun gun",
+    "PLURAL": "stun guns",
+    "ATK": 60,
+    "RAPID1": 0,
+    "RAPID2": 0,
+    "DMG": 0,
+    "RANGE": 2,
+    "MAXAMMO": 5,
+    "WEIGHT": 0,
+    "FLAVOR": "Charged and ready."
+  },
+  {
+    "ID": "RANGED_SMG",
+    "NAME": "SMG",
+    "PLURAL": "SMGs",
+    "ATK": 20,
+    "RAPID1": 20,
+    "RAPID2": 20,
+    "DMG": 15,
+    "RANGE": 4,
+    "MAXAMMO": 30,
+    "WEIGHT": 0,
+    "FLAVOR": "A piece of Schmidt."
+  },
+  {
+    "ID": "RANGED_DOUBLE_BARREL",
+    "NAME": "double barrel",
+    "PLURAL": "double barrels",
+    "ATK": 60,
+    "RAPID1": 0,
+    "RAPID2": 0,
+    "DMG": 90,
+    "RANGE": 3,
+    "MAXAMMO": 1,
+    "WEIGHT": 0,
+    "FLAVOR": "Hell on Earth."
+  },
+  {
+    "ID": "RANGED_MINIGUN",
+    "NAME": "minigun",
+    "PLURAL": "miniguns",
+    "ATK": 90,
+    "RAPID1": 30,
+    "RAPID2": 30,
+    "DMG": 95,
+    "RANGE": 7,
+    "MAXAMMO": 96,
+    "WEIGHT": 20,
+    "FLAVOR": "I ain't got time to bleed."
+  },
+  {
+    "ID": "RANGED_TACTICAL_SHOTGUN",
+    "NAME": "tactical shotgun",
+    "PLURAL": "tactical shotguns",
+    "ATK": 80,
+    "RAPID1": 0,
+    "RAPID2": 0,
+    "DMG": 45,
+    "RANGE": 5,
+    "MAXAMMO": 7,
+    "WEIGHT": 0,
+    "FLAVOR": "Breach and clear."
+  },
+  {
+    "ID": "RANGED_ARMY_RIFLE2",
+    "NAME": "army rifle",
+    "PLURAL": "army rifles",
+    "ATK": 35,
+    "RAPID1": 20,
+    "RAPID2": 20,
+    "DMG": 40,
+    "RANGE": 7,
+    "MAXAMMO": 30,
+    "WEIGHT": 0,
+    "FLAVOR": "Aim. Shoot. Kill."
+  },
+  {
+    "ID": "RANGED_ARMY_RIFLE3",
+    "NAME": "army rifle",
+    "PLURAL": "army rifles",
+    "ATK": 40,
+    "RAPID1": 27,
+    "RAPID2": 27,
+    "DMG": 35,
+    "RANGE": 8,
+    "MAXAMMO": 30,
+    "WEIGHT": 0,
+    "FLAVOR": "Aim. Shoot. Kill."
+  },
+  {
+    "ID": "RANGED_ARMY_RIFLE4",
+    "NAME": "army rifle",
+    "PLURAL": "army rifles",
+    "ATK": 40,
+    "RAPID1": 30,
+    "RAPID2": 30,
+    "DMG": 30,
+    "RANGE": 9,
+    "MAXAMMO": 30,
+    "WEIGHT": 0,
+    "FLAVOR": "Aim. Shoot. Kill."
+  },
+  {
+    "ID": "RANGED_GRENADE_LAUNCHER",
+    "NAME": "grenade launcher",
+    "PLURAL": "grenade launchers",
+    "ATK": 99,
+    "RAPID1": 0,
+    "RAPID2": 0,
+    "DMG": 99,
+    "RANGE": 10,
+    "MAXAMMO": 1,
+    "WEIGHT": 5,
+    "FLAVOR": "Got time to duck?"
+  },
+  {
+    "ID": "RANGED_BIO_FORCE_GUN",
+    "NAME": "bio force gun",
+    "PLURAL": "bio force guns",
+    "ATK": 99,
+    "RAPID1": 0,
+    "RAPID2": 0,
+    "DMG": 99,
+    "RANGE": 10,
+    "MAXAMMO": 1,
+    "WEIGHT": 20,
+    "FLAVOR": "Burning hot plasma."
   }
 ]

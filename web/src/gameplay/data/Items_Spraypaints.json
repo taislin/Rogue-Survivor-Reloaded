@@ -26,5 +26,19 @@
     "PLURAL": "spray paint cans",
     "QUANTITY": 10,
     "FLAVOR": "Yo... Pink!?"
+  },
+  {
+    "ID": "PAINT_THINNER",
+    "NAME": "paint thinner can",
+    "PLURAL": "paint thinner cans",
+    "QUANTITY": 20,
+    "FLAVOR": "Removes tags and blood stains."
+  },
+  {
+    "ID": "FIRE_EXTINGUISHER",
+    "NAME": "fire extinguisher",
+    "PLURAL": "fire extinguishers",
+    "QUANTITY": 20,
+    "FLAVOR": "Extinguishes fires."
   }
 ]

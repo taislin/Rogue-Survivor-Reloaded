@@ -79,6 +79,13 @@ export class Color {
   static readonly OrangeRed     = new Color(255, 69, 0);
   static readonly Chocolate     = new Color(210, 105, 30);
   static readonly Beige         = new Color(245, 245, 220);
+  // The four named colours Still Alive's intoxication scale uses (Release 7-1).
+  // .NET's values: Tomato is 255,99,71; DarkSalmon 233,150,122;
+  // MediumAquamarine 102,205,170; PaleGreen 152,251,152.
+  static readonly Tomato             = new Color(255, 99, 71);
+  static readonly DarkSalmon         = new Color(233, 150, 122);
+  static readonly MediumAquamarine   = new Color(102, 205, 170);
+  static readonly PaleGreen          = new Color(152, 251, 152);
   /**
    * `System.Drawing.Color.BurlyWood` (#DEB887), which the C# uses for the
    * `LIT_BROWN` floor colour in GameTiles. The port previously used `Brown`
@@ -91,6 +98,26 @@ export class Color {
    */
   static readonly BurlyWood     = new Color(222, 184, 135);
   static readonly HotPink       = new Color(255, 105, 180);
+
+  // ── Still Alive minimap palette ──
+  //
+  // Added for the 125 tile models ported from the fork by
+  // scripts/port-tile-models.py. These are the .NET `System.Drawing` values,
+  // which is what the C# names actually refer to, and which this file's
+  // existing entries already follow -- CornflowerBlue (100,149,237),
+  // CadetBlue (95,158,160), BurlyWood (222,184,135), Chocolate (210,105,30)
+  // and LightBlue (173,216,230) are all .NET's, not approximations.
+  //
+  // The minimap is the only reader, so a wrong value here is invisible until a
+  // district renders in a colour that is not quite the district's.
+  static readonly SteelBlue       = new Color(70, 130, 180);
+  static readonly Sienna          = new Color(160, 82, 45);
+  static readonly SeaGreen        = new Color(46, 139, 87);
+  static readonly OliveDrab       = new Color(107, 142, 35);
+  static readonly MediumPurple    = new Color(147, 112, 219);
+  static readonly Khaki           = new Color(240, 230, 140);
+  static readonly Cornsilk        = new Color(255, 248, 220);
+  static readonly BlanchedAlmond  = new Color(255, 235, 205);
 
   toString(): string {
     return `rgba(${this.r},${this.g},${this.b},${this.a})`;

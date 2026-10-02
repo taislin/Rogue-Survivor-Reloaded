@@ -18,7 +18,7 @@
     <div class="wrap site-header__inner">
       <a class="brand" href="index.html">
         <img src="assets/img/icon-192.png" alt="" width="28" height="28">
-        <span>Rogue Survivor <em>Reloaded</em></span>
+        <span>Rogue Survivor: <em>Reloaded</em></span>
       </a>
       <nav class="site-nav" aria-label="Main">
         <a href="index.html">Home</a>
@@ -107,7 +107,7 @@
           <li>Vite 5 for the dev server and the bundle</li>
           <li>Canvas 2D &mdash; no game framework, no UI framework</li>
           <li>Web Audio API for music and sound</li>
-          <li>Vitest for the test suite &mdash; 501 tests across 34 files</li>
+          <li>Vitest for the test suite &mdash; 2,874 tests across 131 files</li>
           <li>Neutralino for the optional desktop build</li>
           <li>Express for the optional production server</li>
           <li>Node 20 or newer</li>
@@ -140,14 +140,14 @@
       1&ndash;2 tiles further than the original in rain, which was invisible from the
       player's side because the player's own view was correct. Each fix is pinned by a test,
       and the
-      <a href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/BROWSER_PORT_PLAN.md">porting
+      <a href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/plans/BROWSER_PORT_PLAN.md">porting
         plan</a> records the reasoning, including the audits that came back clean.
     </p>
 
 
     <h2 id="credits">Credits</h2>
     <div class="card">
-      <h3>Programming, graphics &amp; music &mdash; the original game</h3>
+      <h3>Programming, graphics and music - the original game</h3>
       <p>Jacques Ruiz (roguedjack), 2012&ndash;2018. The rules, the art, the music, the
         manual, and the 195 C# source files preserved in <code>src/</code> are all his
         work. This port exists because of it.</p>
@@ -185,6 +185,100 @@
 
       <p class="small muted" style="margin-top:1rem;margin-bottom:0">&ldquo;Thanks to the
         players for their feedback and eagerness to die!&rdquo;</p>
+    </div>
+
+    <div class="card">
+      <h3>Programming - <em>Rogue Survivor: Still Alive</em></h3>
+      <p>Mark Pryor (MP) wrote the fork whose extra rules, buildings, 711 sprites and audio
+        this port merges. Those files are also where a large part of the sprite and sound
+        library came from, and the fork states in its own <code>CREDITS.txt</code> that
+        every one of them is either public domain (CC0) or CC-BY 3.0 and every one has been
+        modified &mdash; so the artists and sound designers named there are owed the credit,
+        and it is reproduced in the game's own <b>Credits</b> screen.</p>
+
+      <div class="table-wrap" style="margin-top:1rem">
+        <table>
+          <tbody>
+            <tr>
+              <td>Programming</td>
+              <td><a href="http://roguesurvivor.proboards.com/user/180">roguesurvivor.proboards.com/user/180</a></td>
+            </tr>
+            <tr>
+              <td>Source</td>
+              <td><a href="https://gitlab.com/RogueSurvivor-StillAlive/">gitlab.com/RogueSurvivor-StillAlive</a></td>
+            </tr>
+            <tr>
+              <td>Images</td>
+              <td><a href="https://opengameart.org/">opengameart.org</a></td>
+            </tr>
+            <tr>
+              <td>Sounds</td>
+              <td><a href="https://freesound.org/">freesound.org</a>, <a href="https://pixabay.com/">pixabay.com</a>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Programming, sprite styles and fixes - this port</h3>
+      <p>Taislin. The rules engine, the browser runtime, the first-person view, the
+        merged content tables and the sprite-style option are the port's own work.</p>
+    </div>
+
+    <div class="card">
+      <h3>Sprite styles</h3>
+      <p>Pickable in <b>Options &rsaquo; (Gfx) Sprite Style</b>. Two are fan mods of
+        <em>Rogue Survivor</em> made for it and released to its community; both artists are
+        credited by name, and both packs are credited as CC-BY. Nothing about them was
+        commissioned, and neither artist is affiliated with this port.
+      </p>
+
+      <div class="table-wrap" style="margin-top:1rem">
+        <table>
+          <thead>
+            <tr>
+              <th>Style</th>
+              <th>Artist</th>
+              <th>Source</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>classic</code></td>
+              <td>Jacques Ruiz (roguedjack)</td>
+              <td>The original game's own artwork</td>
+            </tr>
+            <tr>
+              <td><code>deonapocalypse v9 r1</code></td>
+              <td>Deon</td>
+              <td>&ldquo;DEONAPOCALYPSE&rdquo; <em>Rogue Survivor</em> mod 1.2,
+                <a href="https://dffd.bay12games.com/">dffd.bay12games.com</a>
+              </td>
+            </tr>
+            <tr>
+              <td><code>genesis classic 1.4</code></td>
+              <td>Deon</td>
+              <td>&ldquo;Genesis Classic&rdquo; <em>Rogue Survivor</em> mod 1.4,
+                <a href="https://dffd.bay12games.com/">dffd.bay12games.com</a>
+              </td>
+            </tr>
+            <tr>
+              <td><code>dafttiles b1</code></td>
+              <td>daftigod</td>
+              <td>&ldquo;Daft Tiles&rdquo;,
+                <a href="https://roguesurvivor.proboards.com/thread/200/daft-tiles-beta-release">Rogue Survivor fan
+                  forum</a>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p class="small muted" style="margin-top:1rem;margin-bottom:0">The three mod packs
+        incorporate further work by other people &mdash; the Daft Tiles pack says so of
+        itself &mdash; and are redistributed here as they were published.</p>
     </div>
 
     <h2 id="license">License</h2>
@@ -225,7 +319,8 @@
           <ul>
             <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded">Source on GitHub</a></li>
             <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded/issues">Report an issue</a></li>
-            <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/BROWSER_PORT_PLAN.md">Porting
+            <li><a
+                href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/plans/BROWSER_PORT_PLAN.md">Porting
                 plan</a></li>
           </ul>
         </div>

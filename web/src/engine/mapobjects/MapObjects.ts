@@ -1,4 +1,5 @@
 import { MapObject, MapObjectBreak, MapObjectFire } from "@data/MapObject";
+import { WorldTime } from "@engine/WorldTime";
 import { StateMapObject } from "@data/StateMapObject";
 
 export class DoorWindow extends StateMapObject {
@@ -130,5 +131,90 @@ export class Board extends MapObject {
   constructor(name: string, imageId: string, text: string[]) {
     super(name, imageId);
     this.text = text;
+  }
+}
+
+/**
+ * Fuel-bearing map objects. Still Alive, Release 7-1 and 7-6.
+ *
+ * The C# declares `Barrel`, `Campfire` and `Car` as three independent classes
+ * that each carry the same pair of ints, and reads them back out with three
+ * `as` casts. That is reproduced here rather than tidied into a shared base:
+ * the burn loop's three-way `instanceof` is a direct transcription of the C#,
+ * and a base class would have made the specs one level deeper for no gain.
+ *
+ * The fuel is *not* the object's hit points. It is wood (or petrol, for a car)
+ * measured in turns of burn, and it only drains while the thing is alight.
+ */
+export class Barrel extends MapObject {
+  /**
+   * A full barrel is a day of burning. 720 is not a round number anyone chose;
+   * it is `TURNS_PER_DAY`, and it is worth writing as that because the campfire
+   * below is a three-hour tank and the pairing is otherwise arbitrary.
+   */
+  static readonly MAX_FUEL_UNITS = WorldTime.TURNS_PER_DAY;
+
+  fuelUnits: number;
+  readonly maxFuelUnits: number;
+
+  constructor(
+    name: string,
+    imageId: string,
+    breakState: MapObjectBreak,
+    fuelUnits: number,
+  ) {
+    super(name, imageId, breakState, MapObjectFire.BURNABLE, DoorWindow.BASE_HITPOINTS);
+    this.fuelUnits = fuelUnits;
+    this.maxFuelUnits = Barrel.MAX_FUEL_UNITS;
+  }
+}
+
+export class Campfire extends MapObject {
+  /** A campfire is a three-hour tank, not a day like a barrel. */
+  static readonly MAX_FUEL_UNITS = WorldTime.TURNS_PER_HOUR * 3;
+
+  fuelUnits: number;
+  readonly maxFuelUnits: number;
+
+  constructor(
+    name: string,
+    imageId: string,
+    breakState: MapObjectBreak,
+    fuelUnits: number,
+  ) {
+    super(name, imageId, breakState, MapObjectFire.BURNABLE, DoorWindow.BASE_HITPOINTS);
+    this.fuelUnits = fuelUnits;
+    this.maxFuelUnits = Campfire.MAX_FUEL_UNITS;
+  }
+}
+
+/**
+ * A car. Still Alive, Release 7-1.
+ *
+ * Two things here are counter-intuitive and both are faithful:
+ *
+ * - **`UNINFLAMMABLE` with zero hit points.** A car is a *fuel source*, not a
+ *   fire. It cannot be set alight by spreading tile fire, so the C#'s
+ *   "deliberately exempting Car fires" comment is enforced by the fire state
+ *   rather than by a check in the burn loop. A car only loses its fuel when it
+ *   explodes, which zeroes the tank outright.
+ * - **A maximum of 99, not `TURNS_PER_DAY`.** Car fuel is siphoned into a
+ *   jerry can as an ammo-like stack, so 99 is the stack limit, not a burn time.
+ */
+export class Car extends MapObject {
+  static readonly MAX_FUEL_UNITS = 99;
+
+  fuelUnits: number;
+  readonly maxFuelUnits: number;
+
+  constructor(
+    name: string,
+    imageId: string,
+    breakState: MapObjectBreak,
+    fuelUnits: number,
+  ) {
+    super(name, imageId, breakState, MapObjectFire.UNINFLAMMABLE, 0);
+    this.fuelUnits = fuelUnits;
+    this.maxFuelUnits = Car.MAX_FUEL_UNITS;
   }
 }

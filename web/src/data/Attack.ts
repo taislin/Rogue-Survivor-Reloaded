@@ -52,6 +52,18 @@ export class Attack {
   }
 
   get efficientRange(): number {
+    // A range of 1 is "adjacent", which is the efficient case by definition.
+    // `floor(1/2)` is 0, and the caller computes the distance penalty as
+    // `(efficientRange - distance) / range` and doubles it past the efficient
+    // range — so for range 1 at distance 1 that is `(0 - 1) / 1 * 2 = -2` and
+    // `distanceMod` comes out at **-1**. The hit value goes negative, so the
+    // weapon cannot hit anything at all rather than merely being poor at range.
+    //
+    // Latent in the shipped data, because no vanilla weapon has a range of 1 (the
+    // shortest is the shotgun at 3) — but the Still Alive content pack adds a stun
+    // gun that does, so this becomes a live bug the moment that table is merged.
+    // Fixed before it rather than after. Same fix as the fork's Attack.cs:56-64.
+    if (this.range === 1) return this.range;
     return Math.floor(this.range / 2);
   }
 

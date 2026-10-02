@@ -286,8 +286,22 @@ describe("the two features the identity bug disabled", () => {
 
     // Somewhere the player cannot see: the far corner, which the FOV cannot
     // reach on a 1x1 district map of any playable size.
-    const dark = new Point(map.width - 1, map.height - 1);
-    map.placeActor(follower!, dark);
+    //
+    // **Searched backwards from the corner rather than hardcoded**, because the corner
+    // is not guaranteed empty: `placeActor` throws on an occupied tile, and after the
+    // item-table retune this seed's district has a second live actor already standing
+    // on (49, 49). So the fixture was coupled to which tiles the generator happened to
+    // leave free -- and actor placement is one of the things the retune moves.
+    //
+    // Walking back along the bottom row keeps the tile as far from the player as the
+    // map allows while still being somewhere the FOV cannot reach.
+    let dark: Point | null = null;
+    for (let dx = map.width - 1; dx >= 0 && dark === null; dx--) {
+      const candidate = new Point(dx, map.height - 1);
+      if (map.getActorAt(candidate.x, candidate.y) === null) dark = candidate;
+    }
+    expect(dark, "the bottom row has no free tile for the follower").not.toBeNull();
+    map.placeActor(follower!, dark!);
 
     const followerFov = LOS.computeFOVFor(
       game.m_Rules,

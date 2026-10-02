@@ -10,6 +10,7 @@ import type { District } from "./District";
 import type { Actor } from "./Actor";
 import type { MapObject } from "./MapObject";
 import { Inventory } from "./Inventory";
+import { GameImages } from "@gameplay/GameImages";
 import type { Corpse } from "./Corpse";
 import { Odor, OdorScent } from "./Odor";
 import type { TimedTask } from "./TimedTask";
@@ -42,6 +43,78 @@ export class Map {
   bgMusic: string = "";
   isSecret: boolean = false;
   lighting: Lighting = Lighting.OUTSIDE;
+  /**
+   * Does this map have somewhere to fish? Still Alive, Release 7-6.
+   *
+   * C# `Data/Map.cs:144` over `m_HasFishing`, and the port keeps the property
+   * over a backing field for one reason: the graph reader builds a map with
+   * `Object.create(Map.prototype)`, so **class field initialisers never run** and
+   * a save written before this flag existed has no `_hasFishing` key to assign.
+   * A plain field would read `undefined` on such a map, and `!hasFishing` is the
+   * test the AI arm will make — `undefined` happens to be falsy, so it would
+   * work, but only by accident and only until somebody wrote `hasFishing === true`.
+   * Defaulting in the getter is what makes "a missing key reads as false" a
+   * property of the class rather than of the code that happens to test it, and it
+   * matches the C#'s own constructor default at `Data/Map.cs:273`.
+   */
+  private _hasFishing: boolean = false;
+
+  get hasFishing(): boolean {
+    return this._hasFishing ?? false;
+  }
+
+  set hasFishing(value: boolean) {
+    this._hasFishing = value;
+  }
+
+  /**
+   * Does this map have water tiles a burning actor could reach?
+   *
+   * C# `Data/Map.cs:150`, set by `MakeParkPond` (`BaseTownGenerator.cs:5746`) and
+   * read by the AI's "I am on fire and looking for somewhere to put myself out"
+   * behaviour. Same shape as `hasFishing` above for the same reason: the C# writes
+   * this through `BinaryFormatter`, so a save predating the field has no key to
+   * assign and a plain field would read `undefined`.
+   *
+   * **Nothing reads this in the port yet.** It is not `hasFishing`'s situation --
+   * `hasFishing` is read by the fishing path, which has landed -- but by the fire
+   * arm of the NPC AI, which has not. Recorded so the flag is not mistaken for
+   * working behaviour.
+   */
+  private _hasWaterTiles: boolean = false;
+
+  get hasWaterTiles(): boolean {
+    return this._hasWaterTiles ?? false;
+  }
+
+  set hasWaterTiles(value: boolean) {
+    this._hasWaterTiles = value;
+  }
+
+  /**
+   * Does this map have a church on it? Still Alive, Release 6-6.
+   *
+   * C# `Data/Map.cs:138` over `m_HasChurch`, and shaped exactly like
+   * {@link hasFishing} above for the same reason: the graph reader builds maps
+   * with `Object.create(Map.prototype)`, so a save written before this flag
+   * existed has no `_hasChurch` key and the getter has to supply the default.
+   *
+   * The only writer is `MakeChurchBuilding` (`BaseTownGenerator.cs:2379`), so
+   * unlike the fishing flag this one is only ever true on a surface map the
+   * town generator put a church on. The only reader -- the C#'s two church-bell
+   * ambients at sunset (`RogueGame.cs:5637`) -- is not wired yet; see
+   * `RogueGame.CheckAmbientAudio`.
+   */
+  private _hasChurch: boolean = false;
+
+  get hasChurch(): boolean {
+    return this._hasChurch ?? false;
+  }
+
+  set hasChurch(value: boolean) {
+    this._hasChurch = value;
+  }
+
   readonly localTime: WorldTime;
 
   readonly width: number;
@@ -117,6 +190,98 @@ export class Map {
    */
   isOnMapBorder(x: number, y: number): boolean {
     return x === 0 || x === this.width - 1 || y === 0 || y === this.height - 1;
+  }
+
+  /**
+   * C# `Map.AnyAdjacentOutOfBounds` — `Map.cs:1607-1620`, Release 7-3.
+   * "Used when checking if we'll allow a wall to be destructed (don't if OOB eg
+   * basement)": true when any of the eight compass neighbours is off the map.
+   *
+   * Distinct from `isOnMapBorder`, which asks about the tile itself. `AnyAdjacent…`
+   * asks about its ring, which is what stops a blast replacing a district's
+   * *boundary* wall with walkable floor and punching a hole out of the world.
+   *
+   * Pure geometry, and it stays that way: the C#'s other half,
+   * `IsDestructibleWallAt` (`:1622-1640`), asks `GameTiles` about the tile *model*,
+   * and `data/` has no business importing `gameplay/`. That half is done at the call
+   * site in `ApplyExplosionDamage`, with the same `Models.tiles as GameTiles` cast
+   * `LOS.ts:454` uses to reach a `GameTiles`-only method off the base-typed registry.
+   */
+  anyAdjacentOutOfBounds(p: Point): boolean {
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        if (dx === 0 && dy === 0) continue;
+        if (!this.isInBounds(p.x + dx, p.y + dy)) return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * C# `Map.IsBuildingFloorTileAt(int, int)` — Release 3, "check whether there's a
+   * structural floor tile here".
+   *
+   * The other half of `anyAdjacentOutOfBounds` above, and the two are a pair: that
+   * one answers "is the ring off the map?", this one answers "is the neighbour a
+   * floor?". `ReplaceDestroyedWall` needs both before it will replace a wall with
+   * walkable floor — the ring test so a blast cannot punch a hole out of the world
+   * at a district boundary, this one so the wall it opens up gets *that building's*
+   * flooring rather than a generic one.
+   *
+   * **The out-of-bounds answer is unreachable at the one call site.** The four
+   * neighbours it is asked about are compass steps from a tile whose whole
+   * eight-square ring already passed `anyAdjacentOutOfBounds`, so they are in
+   * bounds by construction. Answering `false` for a missing tile is defensive
+   * rather than a behaviour the C# ever gets to observe.
+   *
+   * ## The two floors this says "no" to
+   *
+   * `floor_food_court_pool` and `floor_white_tile` are absent, and that is worth
+   * stating plainly because `ReplaceDestroyedWall`'s *second* switch does list
+   * them. The only way to reach that switch is through a neighbour this method has
+   * just approved, and neither floor can be approved here, so those two cases can
+   * never run — a food-court pool next door is skipped in favour of whichever other
+   * neighbour matched first, or falls through to asphalt if none did.
+   *
+   * That is a dead branch in the reference, and it is kept dead here. Widening
+   * this list to "fix" it would invent behaviour the C# does not have, and the
+   * second switch would quietly start answering for floors the reference never
+   * consults.
+   */
+  isBuildingFloorTileAt(x: number, y: number): boolean {
+    const tile = this.getTileAt(x, y);
+    if (tile === null) return false;
+    switch (tile.model.imageId) {
+      case GameImages.TILE_FLOOR_OFFICE:
+      case GameImages.TILE_FLOOR_TILES:
+      case GameImages.TILE_FLOOR_CONCRETE:
+      case GameImages.TILE_FLOOR_WALKWAY:
+      case GameImages.TILE_FLOOR_PLANKS:
+      // Release 4.
+      case GameImages.TILE_FLOOR_RED_CARPET:
+      case GameImages.TILE_FLOOR_BLUE_CARPET:
+      case GameImages.TILE_FLOOR_DIRT:
+      case GameImages.TILE_FLOOR_SEWER_WATER:
+      case GameImages.TILE_FLOOR_SEWER_WATER_ANIM1:
+      case GameImages.TILE_FLOOR_SEWER_WATER_ANIM2:
+      case GameImages.TILE_FLOOR_SEWER_WATER_ANIM3:
+      case GameImages.TILE_FLOOR_SEWER_WATER_COVER:
+      // Release 6-1, the pond's nine structural tiles. Deliberately not
+      // `TILE_FLOOR_POND_WATER_COVER`: the C#'s list stops at the nine edge and
+      // centre drawings and does not name the cover overlay.
+      case GameImages.TILE_FLOOR_POND_CENTER:
+      case GameImages.TILE_FLOOR_POND_N_EDGE:
+      case GameImages.TILE_FLOOR_POND_NE_CORNER:
+      case GameImages.TILE_FLOOR_POND_E_EDGE:
+      case GameImages.TILE_FLOOR_POND_SE_CORNER:
+      case GameImages.TILE_FLOOR_POND_S_EDGE:
+      case GameImages.TILE_FLOOR_POND_SW_CORNER:
+      case GameImages.TILE_FLOOR_POND_W_EDGE:
+      case GameImages.TILE_FLOOR_POND_NW_CORNER:
+        return true;
+      default:
+        return false;
+    }
   }
 
   /**
@@ -606,6 +771,42 @@ export class Map {
     return null;
   }
 
+  /**
+   * Is there a fire on this tile? Still Alive, Release 6-1.
+   *
+   * A property of the *tile*, not a scan of decorations, which is why the flag
+   * exists at all: the spread loop asks this of every tile on the map every turn.
+   */
+  isAnyTileFireThere(pos: Point): boolean {
+    return this.getTileAt(pos.x, pos.y)?.isOnFire ?? false;
+  }
+
+  /**
+   * Can a fire spread to this tile? Still Alive, Release 5-2, with Release 6-1.
+   *
+   * Three ways to be in inflammable, and all three are load-bearing:
+   *
+   * - not a flammable model (5 tiles out of 143, so this is the common case)
+   * - already burnt, when `checkForScorching` -- nothing left to burn
+   * - already alight, when `checkForScorching` -- the caller is asking "could this
+   *   *catch*, not "is this lit"
+   *
+   * The parameter is the C#'s, and it is a parameter because two callers want
+   * different things: the spread loop passes `true`, and a flame weapon's splash
+   * passes `false` so it can deliberately land on an already-burnt tile.
+   */
+  isInflammableTile(pos: Point, checkForScorching: boolean): boolean {
+    const tile = this.getTileAt(pos.x, pos.y);
+    if (tile === null || !tile.model.isFlammable) return true;
+    if (checkForScorching && (tile.isScorched || tile.isOnFire)) return true;
+    return false;
+  }
+
+  /** Is this a water tile? Still Alive, Release 6-1 -- water does not burn. */
+  isAnyTileWaterThere(pos: Point): boolean {
+    return this.getTileAt(pos.x, pos.y)?.model.isWater ?? false;
+  }
+
   getItemsAt(pos: Point): Inventory | null {
     return this.groundItemsMap.get(Map.key(pos.x, pos.y)) ?? null;
   }
@@ -802,6 +1003,36 @@ export class Map {
   /** C# `Map.CountTimers`. */
   get countTimers(): number {
     return this.timersList.length;
+  }
+
+  /**
+   * C# `Map.TileAlreadyHasScorchDecoration` -- `Data/Map.cs:406-416`, Release 6-3.
+   *
+   * Is there already a scorch mark on this tile? A `ScorchBurntTile` call with
+   * `damage > 0` that answers yes does nothing at all -- not even the
+   * `IsScorched` flag -- which is the point: Release 5-2 added it so a spreading
+   * tile fire cannot stack marks on a tile an explosion already blackened.
+   *
+   * All five marks are listed, including the centre one, so "already scorched"
+   * means scorched by *any* of the tiers rather than by this one. A tile that took
+   * a 200-damage blast and later a 10-damage one keeps the big mark.
+   *
+   * This imports `GameImages` into `data/`, which nothing else here does. That is
+   * safe rather than merely convenient: `GameImages` is 700+ lines of string
+   * constants with **no imports at all**, so the edge cannot close a cycle. It is
+   * the one place the layering is crossed, and it is crossed to keep the C#'s
+   * signature instead of threading five image ids through every caller.
+   */
+  tileAlreadyHasScorchDecoration(x: number, y: number): boolean {
+    const tile = this.getTileAt(x, y);
+    if (tile === null) return false;
+    return (
+      tile.hasDecoration(GameImages.DECO_SCORCH_MARK_OUTER_WALL) ||
+      tile.hasDecoration(GameImages.DECO_SCORCH_MARK_INNER_WALL) ||
+      tile.hasDecoration(GameImages.DECO_SCORCH_MARK_OUTER_FLOOR) ||
+      tile.hasDecoration(GameImages.DECO_SCORCH_MARK_INNER_FLOOR) ||
+      tile.hasDecoration(GameImages.DECO_SCORCH_MARK_CENTER_FLOOR)
+    );
   }
 
   addTimer(timer: TimedTask): void {

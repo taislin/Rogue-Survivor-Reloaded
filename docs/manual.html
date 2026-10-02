@@ -1,1114 +1,1258 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Game Manual &middot; Rogue Survivor Reloaded</title>
-<meta name="description" content="The complete Rogue Survivor manual: the game, the city, the player sheet, every action and command, skills, items, followers, friends and foes.">
-<link rel="icon" href="assets/img/icon-192.png">
-<link rel="stylesheet" href="assets/css/site.css">
-<meta property="og:title" content="Rogue Survivor Reloaded &mdash; Game Manual">
-<meta property="og:description" content="The complete Rogue Survivor manual: actions, commands, skills, items and followers.">
-<meta property="og:type" content="website">
-<meta property="og:image" content="assets/img/icon-512.png">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Game Manual &middot; Rogue Survivor Reloaded</title>
+  <meta name="description"
+    content="The complete Rogue Survivor manual: the game, the city, the player sheet, every action and command, skills, items, followers, friends and foes.">
+  <link rel="icon" href="assets/img/icon-192.png">
+  <link rel="stylesheet" href="assets/css/site.css">
+  <meta property="og:title" content="Rogue Survivor Reloaded &mdash; Game Manual">
+  <meta property="og:description"
+    content="The complete Rogue Survivor manual: actions, commands, skills, items and followers.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="assets/img/icon-512.png">
 </head>
+
 <body>
-<a class="skip-link" href="#main">Skip to content</a>
+  <a class="skip-link" href="#main">Skip to content</a>
 
-<header class="site-header">
-  <div class="wrap site-header__inner">
-    <a class="brand" href="index.html">
-      <img src="assets/img/icon-192.png" alt="" width="28" height="28">
-      <span>Rogue Survivor <em>Reloaded</em></span>
-    </a>
-    <nav class="site-nav" aria-label="Main">
-      <a href="index.html">Home</a>
-      <a href="manual.html" aria-current="page">Manual</a>
-      <a href="controls.html">Controls</a>
-      <a href="guide.html">Guide</a>
-      <a href="info.html">About</a>
-      <a href="game/index.html">Play</a>
-      <a href="https://github.com/taislin/Rogue-Survivor-Reloaded">GitHub</a>
-    </nav>
-  </div>
-</header>
+  <header class="site-header">
+    <div class="wrap site-header__inner">
+      <a class="brand" href="index.html">
+        <img src="assets/img/icon-192.png" alt="" width="28" height="28">
+        <span>Rogue Survivor: <em>Reloaded</em></span>
+      </a>
+      <nav class="site-nav" aria-label="Main">
+        <a href="index.html">Home</a>
+        <a href="manual.html" aria-current="page">Manual</a>
+        <a href="controls.html">Controls</a>
+        <a href="guide.html">Guide</a>
+        <a href="info.html">About</a>
+        <a href="game/index.html">Play</a>
+        <a href="https://github.com/taislin/Rogue-Survivor-Reloaded">GitHub</a>
+      </nav>
+    </div>
+  </header>
 
-<main id="main" class="wrap">
-  <div class="page-head">
-    <p class="eyebrow">Reference</p>
-    <h1>Game Manual</h1>
-    <p>The complete manual for <em>Rogue Survivor</em>, by roguedjack. This is the
-    original text, reformatted for the web &mdash; not a word has been changed.</p>
-  </div>
+  <main id="main" class="wrap">
+    <div class="page-head">
+      <p class="eyebrow">Reference</p>
+      <h1>Game Manual</h1>
+      <p>The complete manual for <em>Rogue Survivor</em>, by roguedjack. This is the
+        original text, reformatted for the web &mdash; not a word has been changed.</p>
+    </div>
 
-  <div class="manual-layout">
-    <aside class="toc" aria-label="Manual contents">
-      <p class="toc__label">Contents</p>
-      <ol>
-        <li><a href="#s1-1-the-game">1. THE GAME</a></li>
-        <li><a href="#s1-setting-objective">SETTING &amp; OBJECTIVE</a></li>
-        <li><a href="#s1-game-mode">GAME MODE</a></li>
-        <li><a href="#s1-character-creation">CHARACTER CREATION</a></li>
-        <li><a href="#s1-progression">PROGRESSION</a></li>
-        <li><a href="#s1-surviving">SURVIVING</a></li>
-        <li><a href="#s1-basic-gameplay">BASIC GAMEPLAY</a></li>
-        <li><a href="#s1-events">EVENTS</a></li>
-        <li><a href="#s1-infection-if-enabled-in-game-mode">INFECTION (if enabled in game mode)</a></li>
-        <li><a href="#s1-corpses-if-enabled-in-game-mode">CORPSES (if enabled in game mode)</a></li>
-        <li><a href="#s1-advisor">ADVISOR</a></li>
-        <li><a href="#s1-reincarnation">REINCARNATION</a></li>
-        <li><a href="#s2-2-the-city">2. THE CITY</a></li>
-        <li><a href="#s2-districts">DISTRICTS</a></li>
-        <li><a href="#s2-sewers">SEWERS</a></li>
-        <li><a href="#s2-subway">SUBWAY</a></li>
-        <li><a href="#s2-shops">SHOPS</a></li>
-        <li><a href="#s2-other-buildings">OTHER BUILDINGS</a></li>
-        <li><a href="#s2-day-and-night">DAY AND NIGHT</a></li>
-        <li><a href="#s2-weather">WEATHER</a></li>
-        <li><a href="#s2-personal-enemies">PERSONAL ENEMIES</a></li>
-        <li><a href="#s2-murder-law">MURDER &amp; LAW</a></li>
-        <li><a href="#s3-3-player-sheet">3. PLAYER SHEET</a></li>
-        <li><a href="#s3-name">NAME</a></li>
-        <li><a href="#s3-hit-points-hp">HIT POINTS (HP)</a></li>
-        <li><a href="#s3-stamina-sta">STAMINA (STA)</a></li>
-        <li><a href="#s3-food-foo">FOOD (FOO)</a></li>
-        <li><a href="#s3-sleep-slp">SLEEP (SLP)</a></li>
-        <li><a href="#s3-infection-inf">INFECTION (INF)</a></li>
-        <li><a href="#s3-melee-stats-atk-dmg">MELEE STATS (Atk, Dmg)</a></li>
-        <li><a href="#s3-ranged-stats-atk-dmg-rng-amo">RANGED STATS (Atk, Dmg, Rng, Amo)</a></li>
-        <li><a href="#s3-defence-def">DEFENCE (Def)</a></li>
-        <li><a href="#s3-armor-arm">ARMOR (Arm)</a></li>
-        <li><a href="#s3-speed-spd">SPEED (Spd)</a></li>
-        <li><a href="#s3-field-of-view-fov">FIELD OF VIEW (FOV)</a></li>
-        <li><a href="#s3-smell-sml-undeads-only">SMELL (SML) - Undeads only.</a></li>
-        <li><a href="#s3-followers">FOLLOWERS</a></li>
-        <li><a href="#s3-inventory">INVENTORY</a></li>
-        <li><a href="#s3-items-on-ground">ITEMS ON GROUND</a></li>
-        <li><a href="#s3-skills">SKILLS</a></li>
-        <li><a href="#s4-4-actions-commands">4. ACTIONS &amp; COMMANDS</a></li>
-        <li><a href="#s4-help-default-h">HELP  (default H)</a></li>
-        <li><a href="#s4-looking-mouse">LOOKING  (mouse)</a></li>
-        <li><a href="#s4-moving-default-numpad">MOVING  (default Numpad)</a></li>
-        <li><a href="#s4-bumping">&quot;BUMPING&quot;</a></li>
-        <li><a href="#s4-using-an-exit-default-x">USING AN EXIT  (default X)</a></li>
-        <li><a href="#s4-running-default-r">RUNNING   (default R)</a></li>
-        <li><a href="#s4-waiting-resting-default-numpad5">WAITING/RESTING  (default NumPad5)</a></li>
-        <li><a href="#s4-waiting-one-hour-default-w">WAITING ONE HOUR  (default W)</a></li>
-        <li><a href="#s4-closing-a-door-window-default-c">CLOSING A DOOR/WINDOW  (default C)</a></li>
-        <li><a href="#s4-sleeping-default-z">SLEEPING  (default Z)</a></li>
-        <li><a href="#s4-bumping-jumping">(Bumping) JUMPING</a></li>
-        <li><a href="#s4-bumping-trading">(Bumping) TRADING</a></li>
-        <li><a href="#s4-negociating-trade-with-an-actor-default-e">NEGOCIATING TRADE WITH AN ACTOR (default E)</a></li>
-        <li><a href="#s4-bumping-attacking-an-actor">(Bumping) ATTACKING AN ACTOR</a></li>
-        <li><a href="#s4-bumping-attacking-a-barricade">(Bumping) ATTACKING A BARRICADE</a></li>
-        <li><a href="#s4-firing-default-f">FIRING  (default F)</a></li>
-        <li><a href="#s4-firing-throwing-grenades">(Firing) THROWING GRENADES</a></li>
-        <li><a href="#s4-taking-and-droping-items-mouse">TAKING AND DROPING ITEMS  (mouse)</a></li>
-        <li><a href="#s4-equiping-unequiping-and-using-items-mouse-default-shortcuts-control-number">EQUIPING/UNEQUIPING AND USING ITEMS  (mouse, default shortcuts Control-&lt;number&gt;)</a></li>
-        <li><a href="#s4-giving-items-mouse-then-default-g">GIVING ITEMS  (mouse, then default G)</a></li>
-        <li><a href="#s4-barricading-objects-default-b">BARRICADING OBJECTS  (default B)</a></li>
-        <li><a href="#s4-breaking-objects-default-k">BREAKING OBJECTS  (default K)</a></li>
-        <li><a href="#s4-pushing-objects-shoving-people-default-p">PUSHING OBJECTS/SHOVING PEOPLE  (default P)</a></li>
-        <li><a href="#s4-mark-enemies-default-ctrl-e">MARK ENEMIES  (default Ctrl-E)</a></li>
-        <li><a href="#s4-building-fortifications-default-n-and-control-n">BUILDING FORTIFICATIONS  (default N and Control-N)</a></li>
-        <li><a href="#s4-repairing-fortifications-default-b">REPAIRING FORTIFICATIONS  (default B)</a></li>
-        <li><a href="#s4-leading-default-t">LEADING  (default T)</a></li>
-        <li><a href="#s4-switching-place-default-ctrl-s">SWITCHING PLACE  (default Ctrl-S)</a></li>
-        <li><a href="#s4-order-default-o">ORDER  (default O)</a></li>
-        <li><a href="#s4-shouting-default-s">SHOUTING  (default S)</a></li>
-        <li><a href="#s4-use-spray-default-a">USE SPRAY  (default A)</a></li>
-        <li><a href="#s4-spray-a-tag-use-spray-with-a-spray-paint-item-equipped">SPRAY A TAG  (Use Spray with a Spray Paint item equipped)</a></li>
-        <li><a href="#s4-spray-or-erase-a-scent-use-spray-with-a-spray-scent-item-equipped">SPRAY OR ERASE A SCENT  (Use Spray with a Spray Scent item equipped)</a></li>
-        <li><a href="#s4-city-info-default-i">CITY INFO  (default I)</a></li>
-        <li><a href="#s4-messages-log-default-shift-m">MESSAGES LOG  (default Shift-M)</a></li>
-        <li><a href="#s4-advisor-hint-default-shift-h">ADVISOR HINT  (default Shift-H)</a></li>
-        <li><a href="#s4-system-abandoning-quitting-default-shift-a-shift-q">(System) ABANDONING &amp; QUITTING  (default Shift-A, Shift-Q)</a></li>
-        <li><a href="#s4-system-saving-loading-default-shift-s-shift-l">(System) SAVING &amp; LOADING  (default Shift-S, Shift-L)</a></li>
-        <li><a href="#s4-system-options-keybindings-default-shift-o-shift-k">(System) OPTIONS &amp; KEYBINDINGS  (default Shift-O, Shift-K)</a></li>
-        <li><a href="#s4-system-screenshot-default-shift-n">(System) SCREENSHOT  (default Shift-N)</a></li>
-        <li><a href="#s5-5-skills">5. SKILLS</a></li>
-        <li><a href="#s5-agile">AGILE</a></li>
-        <li><a href="#s5-awake">AWAKE</a></li>
-        <li><a href="#s5-bows">BOWS</a></li>
-        <li><a href="#s5-carpentry">CARPENTRY</a></li>
-        <li><a href="#s5-charismatic">CHARISMATIC</a></li>
-        <li><a href="#s5-firearms">FIREARMS</a></li>
-        <li><a href="#s5-hardy">HARDY</a></li>
-        <li><a href="#s5-hauler">HAULER</a></li>
-        <li><a href="#s5-high-stamina">HIGH STAMINA</a></li>
-        <li><a href="#s5-leadership">LEADERSHIP</a></li>
-        <li><a href="#s5-light-eater">LIGHT EATER</a></li>
-        <li><a href="#s5-light-sleeper">LIGHT SLEEPER</a></li>
-        <li><a href="#s5-martial-arts">MARTIAL ARTS</a></li>
-        <li><a href="#s5-medic">MEDIC</a></li>
-        <li><a href="#s5-necrology">NECROLOGY</a></li>
-        <li><a href="#s5-strong">STRONG</a></li>
-        <li><a href="#s5-tough">TOUGH</a></li>
-        <li><a href="#s5-unsuspicious">UNSUSPICIOUS</a></li>
-        <li><a href="#s6-6-items">6. ITEMS</a></li>
-        <li><a href="#s7-7-followers">7. FOLLOWERS</a></li>
-        <li><a href="#s7-getting-followers">GETTING FOLLOWERS</a></li>
-        <li><a href="#s7-leaving-followers">LEAVING FOLLOWERS</a></li>
-        <li><a href="#s7-leveling-up">LEVELING UP</a></li>
-        <li><a href="#s7-exiting-maps-with-you">EXITING MAPS WITH YOU</a></li>
-        <li><a href="#s7-trust">TRUST</a></li>
-        <li><a href="#s7-civilian-followers-directives-and-orders">CIVILIAN FOLLOWERS DIRECTIVES AND ORDERS</a></li>
-        <li><a href="#s7-tracking-followers">TRACKING FOLLOWERS</a></li>
-        <li><a href="#s7-follower-behavior">FOLLOWER BEHAVIOR</a></li>
-        <li><a href="#s7-leader-strategy">LEADER STRATEGY</a></li>
-        <li><a href="#s8-8-friends-foes">8. FRIENDS &amp; FOES</a></li>
-        <li><a href="#s8-undeads">UNDEADS</a></li>
-        <li><a href="#s8-livings">LIVINGS</a></li>
-        <li><a href="#s9-9-hints">9. HINTS</a></li>
-        <li><a href="#s9-living">LIVING</a></li>
-        <li><a href="#s9-undead">UNDEAD</a></li>
-      </ol>
-    </aside>
-
-    <article class="manual">
-      <input class="manual-filter" type="search" id="manual-filter"
-             placeholder="Filter the manual&hellip;" aria-label="Filter the manual">
-
-      <div class="callout callout--note">
-        <span class="callout__label">About this text</span>
-        <p>The manual was written for alpha 10 of the original game and is
-        slightly out of date. Parts of the game have changed since. Where this
-        page and the running game disagree, the game is right.</p>
-      </div>
-
-      <div class="card" style="margin-bottom:2.5rem">
-        <p class="toc__label">The nine chapters</p>
-        <ol style="columns:2;column-gap:2rem;margin-bottom:0">
-          <li>THE GAME</li>
-          <li>THE CITY</li>
-          <li>THE PLAYER SHEET</li>
-          <li>ACTIONS &amp; COMMANDS</li>
-          <li>SKILLS</li>
-          <li>ITEMS</li>
-          <li>FOLLOWERS</li>
-          <li>FRIENDS &amp; FOES</li>
-          <li>HINTS</li>
+    <div class="manual-layout">
+      <aside class="toc" aria-label="Manual contents">
+        <p class="toc__label">Contents</p>
+        <ol>
+          <li><a href="#s1-1-the-game">1. THE GAME</a></li>
+          <li><a href="#s1-setting-objective">SETTING &amp; OBJECTIVE</a></li>
+          <li><a href="#s1-game-mode">GAME MODE</a></li>
+          <li><a href="#s1-character-creation">CHARACTER CREATION</a></li>
+          <li><a href="#s1-progression">PROGRESSION</a></li>
+          <li><a href="#s1-surviving">SURVIVING</a></li>
+          <li><a href="#s1-basic-gameplay">BASIC GAMEPLAY</a></li>
+          <li><a href="#s1-events">EVENTS</a></li>
+          <li><a href="#s1-infection-if-enabled-in-game-mode">INFECTION (if enabled in game mode)</a></li>
+          <li><a href="#s1-corpses-if-enabled-in-game-mode">CORPSES (if enabled in game mode)</a></li>
+          <li><a href="#s1-advisor">ADVISOR</a></li>
+          <li><a href="#s1-reincarnation">REINCARNATION</a></li>
+          <li><a href="#s2-2-the-city">2. THE CITY</a></li>
+          <li><a href="#s2-districts">DISTRICTS</a></li>
+          <li><a href="#s2-sewers">SEWERS</a></li>
+          <li><a href="#s2-subway">SUBWAY</a></li>
+          <li><a href="#s2-shops">SHOPS</a></li>
+          <li><a href="#s2-other-buildings">OTHER BUILDINGS</a></li>
+          <li><a href="#s2-day-and-night">DAY AND NIGHT</a></li>
+          <li><a href="#s2-weather">WEATHER</a></li>
+          <li><a href="#s2-personal-enemies">PERSONAL ENEMIES</a></li>
+          <li><a href="#s2-murder-law">MURDER &amp; LAW</a></li>
+          <li><a href="#s3-3-player-sheet">3. PLAYER SHEET</a></li>
+          <li><a href="#s3-name">NAME</a></li>
+          <li><a href="#s3-hit-points-hp">HIT POINTS (HP)</a></li>
+          <li><a href="#s3-stamina-sta">STAMINA (STA)</a></li>
+          <li><a href="#s3-food-foo">FOOD (FOO)</a></li>
+          <li><a href="#s3-sleep-slp">SLEEP (SLP)</a></li>
+          <li><a href="#s3-infection-inf">INFECTION (INF)</a></li>
+          <li><a href="#s3-melee-stats-atk-dmg">MELEE STATS (Atk, Dmg)</a></li>
+          <li><a href="#s3-ranged-stats-atk-dmg-rng-amo">RANGED STATS (Atk, Dmg, Rng, Amo)</a></li>
+          <li><a href="#s3-defence-def">DEFENCE (Def)</a></li>
+          <li><a href="#s3-armor-arm">ARMOR (Arm)</a></li>
+          <li><a href="#s3-speed-spd">SPEED (Spd)</a></li>
+          <li><a href="#s3-field-of-view-fov">FIELD OF VIEW (FOV)</a></li>
+          <li><a href="#s3-smell-sml-undeads-only">SMELL (SML) - Undeads only.</a></li>
+          <li><a href="#s3-followers">FOLLOWERS</a></li>
+          <li><a href="#s3-inventory">INVENTORY</a></li>
+          <li><a href="#s3-items-on-ground">ITEMS ON GROUND</a></li>
+          <li><a href="#s3-skills">SKILLS</a></li>
+          <li><a href="#s4-4-actions-commands">4. ACTIONS &amp; COMMANDS</a></li>
+          <li><a href="#s4-help-default-h">HELP (default H)</a></li>
+          <li><a href="#s4-looking-mouse">LOOKING (mouse)</a></li>
+          <li><a href="#s4-moving-default-numpad">MOVING (default Q W E / A S D / Z C)</a></li>
+          <li><a href="#s4-bumping">&quot;BUMPING&quot;</a></li>
+          <li><a href="#s4-using-an-exit-default-x">USING AN EXIT (default .)</a></li>
+          <li><a href="#s4-running-default-r">RUNNING (default R)</a></li>
+          <li><a href="#s4-waiting-resting-default-numpad5">WAITING/RESTING (default X, or NumPad5)</a></li>
+          <li><a href="#s4-waiting-one-hour-default-w">WAITING ONE HOUR (default Shift-W)</a></li>
+          <li><a href="#s4-closing-a-door-window-default-c">CLOSING A DOOR/WINDOW (default Shift-T)</a></li>
+          <li><a href="#s4-sleeping-default-z">SLEEPING (default Shift-Z)</a></li>
+          <li><a href="#s4-bumping-jumping">(Bumping) JUMPING</a></li>
+          <li><a href="#s4-bumping-trading">(Bumping) TRADING</a></li>
+          <li><a href="#s4-negociating-trade-with-an-actor-default-e">NEGOCIATING TRADE WITH AN ACTOR (default E)</a>
+          </li>
+          <li><a href="#s4-bumping-attacking-an-actor">(Bumping) ATTACKING AN ACTOR</a></li>
+          <li><a href="#s4-bumping-attacking-a-barricade">(Bumping) ATTACKING A BARRICADE</a></li>
+          <li><a href="#s4-firing-default-f">FIRING (default F)</a></li>
+          <li><a href="#s4-firing-throwing-grenades">(Firing) THROWING GRENADES</a></li>
+          <li><a href="#s4-taking-and-droping-items-mouse">TAKING AND DROPING ITEMS (mouse)</a></li>
+          <li><a
+              href="#s4-equiping-unequiping-and-using-items-mouse-default-shortcuts-control-number">EQUIPING/UNEQUIPING
+              AND USING ITEMS (mouse, default shortcuts Control-&lt;number&gt;)</a></li>
+          <li><a href="#s4-giving-items-mouse-then-default-g">GIVING ITEMS (mouse, then default G)</a></li>
+          <li><a href="#s4-barricading-objects-default-b">BARRICADING OBJECTS (default B, or mouse)</a></li>
+          <li><a href="#s4-breaking-objects-default-k">BREAKING OBJECTS (default K, or mouse)</a></li>
+          <li><a href="#s4-pushing-objects-shoving-people-default-p">PUSHING OBJECTS/SHOVING PEOPLE (default P)</a></li>
+          <li><a href="#s4-mark-enemies-default-ctrl-e">MARK ENEMIES (default Ctrl-E)</a></li>
+          <li><a href="#s4-building-fortifications-default-n-and-control-n">BUILDING FORTIFICATIONS (default N and
+              Control-N)</a></li>
+          <li><a href="#s4-repairing-fortifications-default-b">REPAIRING FORTIFICATIONS (default B)</a></li>
+          <li><a href="#s4-leading-default-t">LEADING (default T)</a></li>
+          <li><a href="#s4-switching-place-default-ctrl-s">SWITCHING PLACE (default Ctrl-S)</a></li>
+          <li><a href="#s4-order-default-o">ORDER (default O)</a></li>
+          <li><a href="#s4-shouting-default-s">SHOUTING (default U)</a></li>
+          <li><a href="#s4-use-spray-default-a">USE SPRAY (default M)</a></li>
+          <li><a href="#s4-spray-a-tag-use-spray-with-a-spray-paint-item-equipped">SPRAY A TAG (Use Spray with a Spray
+              Paint item equipped)</a></li>
+          <li><a href="#s4-spray-or-erase-a-scent-use-spray-with-a-spray-scent-item-equipped">SPRAY OR ERASE A SCENT
+              (Use Spray with a Spray Scent item equipped)</a></li>
+          <li><a href="#s4-city-info-default-i">CITY INFO (default I)</a></li>
+          <li><a href="#s4-messages-log-default-shift-m">MESSAGES LOG (default Shift-M)</a></li>
+          <li><a href="#s4-advisor-hint-default-shift-h">ADVISOR HINT (default Shift-H)</a></li>
+          <li><a href="#s4-system-abandoning-quitting-default-shift-a-shift-q">(System) ABANDONING &amp; QUITTING
+              (default Shift-A, Shift-Q)</a></li>
+          <li><a href="#s4-system-saving-loading-default-shift-s-shift-l">(System) SAVING &amp; LOADING (default
+              Shift-S, Shift-L)</a></li>
+          <li><a href="#s4-system-options-keybindings-default-shift-o-shift-k">(System) OPTIONS &amp; KEYBINDINGS
+              (default Shift-O, Shift-K)</a></li>
+          <li><a href="#s4-system-screenshot-default-shift-n">(System) SCREENSHOT (default Shift-N)</a></li>
+          <li><a href="#s5-5-skills">5. SKILLS</a></li>
+          <li><a href="#s5-agile">AGILE</a></li>
+          <li><a href="#s5-awake">AWAKE</a></li>
+          <li><a href="#s5-bows">BOWS</a></li>
+          <li><a href="#s5-carpentry">CARPENTRY</a></li>
+          <li><a href="#s5-charismatic">CHARISMATIC</a></li>
+          <li><a href="#s5-firearms">FIREARMS</a></li>
+          <li><a href="#s5-hardy">HARDY</a></li>
+          <li><a href="#s5-hauler">HAULER</a></li>
+          <li><a href="#s5-high-stamina">HIGH STAMINA</a></li>
+          <li><a href="#s5-leadership">LEADERSHIP</a></li>
+          <li><a href="#s5-light-eater">LIGHT EATER</a></li>
+          <li><a href="#s5-light-sleeper">LIGHT SLEEPER</a></li>
+          <li><a href="#s5-martial-arts">MARTIAL ARTS</a></li>
+          <li><a href="#s5-medic">MEDIC</a></li>
+          <li><a href="#s5-necrology">NECROLOGY</a></li>
+          <li><a href="#s5-strong">STRONG</a></li>
+          <li><a href="#s5-tough">TOUGH</a></li>
+          <li><a href="#s5-unsuspicious">UNSUSPICIOUS</a></li>
+          <li><a href="#s6-6-items">6. ITEMS</a></li>
+          <li><a href="#s7-7-followers">7. FOLLOWERS</a></li>
+          <li><a href="#s7-getting-followers">GETTING FOLLOWERS</a></li>
+          <li><a href="#s7-leaving-followers">LEAVING FOLLOWERS</a></li>
+          <li><a href="#s7-leveling-up">LEVELING UP</a></li>
+          <li><a href="#s7-exiting-maps-with-you">EXITING MAPS WITH YOU</a></li>
+          <li><a href="#s7-trust">TRUST</a></li>
+          <li><a href="#s7-civilian-followers-directives-and-orders">CIVILIAN FOLLOWERS DIRECTIVES AND ORDERS</a></li>
+          <li><a href="#s7-tracking-followers">TRACKING FOLLOWERS</a></li>
+          <li><a href="#s7-follower-behavior">FOLLOWER BEHAVIOR</a></li>
+          <li><a href="#s7-leader-strategy">LEADER STRATEGY</a></li>
+          <li><a href="#s8-8-friends-foes">8. FRIENDS &amp; FOES</a></li>
+          <li><a href="#s8-undeads">UNDEADS</a></li>
+          <li><a href="#s8-livings">LIVINGS</a></li>
+          <li><a href="#s9-9-hints">9. HINTS</a></li>
+          <li><a href="#s9-living">LIVING</a></li>
+          <li><a href="#s9-undead">UNDEAD</a></li>
         </ol>
-      </div>
+      </aside>
 
-<section id="section-1">
-<h2 id="s1-1-the-game">1. THE GAME</h2>
-<p>On the stroke of midnight you suddenly wake up and find someone in the corner of your bedroom staring at you.</p>
-<p>What was THAT noise?</p>
-<p>'Hey! What are you doing in...</p>
-<p>-Brains! :D</p>
-<p>-What?</p>
-<p>-Brrrrrr! :)</p>
-<p>-What the hell dude? Get out of my bedroom!</p>
-<p>-Mmmh? :(</p>
-<p>-Plus you stink! Why do you... ZOMG YOU ARE A ZOMBIE!</p>
-<p>-Mhhgmgg ;)'</p>
-<p>Yes. It was a Zombie and it wanted your brain. Just like in those movies. So you kicked and punched till it did not move anymore. That's how a Zombie dies.</p>
-<p>Then another came through the window.</p>
-<p>And another through the door.</p>
-<p>And another.</p>
-<p>And then it never ended.</p>
-<h3 id="s1-setting-objective">SETTING &amp; OBJECTIVE</h3>
-<p>You must survive an urban Zombie apocalypse.</p>
-<p>You have to find ways to survive : food, shelter, weapons and companions.</p>
-<p>Your city has a persistent urban legend about some sort of monster lurking in the Sewers.</p>
-<p>Your home town is also known for being the headquarters of the world famous C.H.A.R. Corporation. Recently you've heard strange rumors about them...</p>
-<p>You can also play the game as an undead or reincarnate into different characters. These play modes are mostly for fun.</p>
-<p>Most of the manual is written with playing a survivor in mind.</p>
-<h3 id="s1-game-mode">GAME MODE</h3>
-<p>There are 3 different game modes, each enabling or disabling some aspects of the game.</p>
-<p>STANDARD - STD</p>
-<ul>
-<li>The default game setting.
-</li></ul>
-<p>CORPSES AND INFECTION - C&amp;I</p>
-<ul>
-<li>Adds infection and corpses.
-</li></ul>
-<p>VINTAGE - VTG</p>
-<ul>
-<li>C&amp;I and a limited selection of zombies for a more classic feel.
-</li></ul>
-<h3 id="s1-character-creation">CHARACTER CREATION</h3>
-<p>You can start as a living (a civilian survivor) or an undead.</p>
-<p>Starting as a living you choose a gender and a starting skill, or you can let the game make random choices for you.</p>
-<p>When starting as an undead you can choose your race.</p>
-<p>See the Skills section for mode details about skills.</p>
-<h3 id="s1-progression">PROGRESSION</h3>
-<p>Livings and undeads progress differently.</p>
-<ul>
-<li>Livings
-</li></ul>
-<p>Each time the sun rise and you're still alive you gain a level.</p>
-<p>You can upgrade a skill from a set of skills chosen at random.</p>
-<ul>
-<li>Undead
-</li></ul>
-<p>You need to kill to evolve into a more powerful undead.</p>
-<p>Not all undeads evolve.</p>
-<h3 id="s1-surviving">SURVIVING</h3>
-<p>You need to eat and sleep.</p>
-<p>If you ignore your basic needs your unhappy body will make your life much more difficult.</p>
-<p>You can die if you become starved.</p>
-<p>Undeads do not need to eat or sleep.</p>
-<p>Some livings do not need to eat, and in rare case do not need to sleep either.</p>
-<h3 id="s1-basic-gameplay">BASIC GAMEPLAY</h3>
-<p>Rogue Survivor handles combat and progression differently than most roguelikes.</p>
-<p>You're just an average human and you have to be cautious.</p>
-<p>Don't expect to be able to bash zombies left and right recklessly, even at high levels.</p>
-<p>Don't hesitate to FLEE and HIDE, you don't HAVE to kill every baddie in sight. The game is about SURVIVING not killing.</p>
-<p>The game doesn't change the difficulty depending on your level and there is no obvious difficulty progression.</p>
-<p>The game can be harsh on you, that's part of the fun.</p>
-<p>If some places or foes are too hard for you, just don't stay there and flee.</p>
-<p>You should FEAR for your life and use the Run action a lot.</p>
-<p>Undeads play very differently from livings.</p>
-<h3 id="s1-events">EVENTS</h3>
-<p>From time to time something special will happen. The game will inform you.</p>
-<p>You will learn them as you play.</p>
-<p>You can miss some events notification when sleeping.</p>
-<h3 id="s1-infection-if-enabled-in-game-mode">INFECTION (if enabled in game mode)</h3>
-<p>Some undeads infect livings whe they damage them.</p>
-<p>Infection does not worsen or heals by itself over time.</p>
-<p>You only get more infected with bites and you can only heal with meds.</p>
-<h3 id="s1-corpses-if-enabled-in-game-mode">CORPSES (if enabled in game mode)</h3>
-<p>Dead people become corpses.</p>
-<p>Corpses decay over time and will rot away.</p>
-<p>Infected corpses might rise as new undeads.</p>
-<p>They are more likely to rise if they are fresh, infected and at night.</p>
-<h3 id="s1-advisor">ADVISOR</h3>
-<p>The game has a hint system for new players called the Advisor.</p>
-<p>The hints will teach you most game controls and the gameplay basics.</p>
-<p>You can think of them as a simplified tutorial.</p>
-<p>You can enable or disable the Advisor in the options.</p>
-<p>The advisor is focused on learning the game as a survivor.</p>
-<h3 id="s1-reincarnation">REINCARNATION</h3>
-<p>After your character dies you can get the chance to reincarnate into another character in the same district.</p>
-<p>That means you can continue playing the game with an actor that was previously controlled by the AI (a NPC).</p>
-<p>You get a variety of choices, some which may not be available at the time of your death.</p>
-<p>The game will pick an actor for each choice and you can select one or end the game altogether.</p>
-<ul>
-<li><b>Random Actor</b> : an actor.
-</li>
-<li><b>Random Living</b> : a living actor.
-</li>
-<li><b>Random Undead</b> : an undead actor.
-</li>
-<li><b>Random Follower</b> : one of your follower.
-</li>
-<li><b>Your Killer</b> : the actor who directly killed you.
-</li>
-<li><b>Your Zombie Self</b> : if zombified, your ex-character turned zombie.
-</li></ul>
-<p>You then reincarnate into the body of the avatar and continue the game from there.</p>
-<p>You can set some options to control how reincarnation works (see the options section).</p>
-<p>You can set yourself various challenges if you restrict yourself to picking only certain kinds of avatars :</p>
-<ul>
-<li><b>Succession game</b> : your followers.
-</li>
-<li><b>Killer game</b> : your killer.
-</li>
-<li><b>Till the Last Survivor</b> : only living civilians.
-</li>
-<li><b>The Equalizer</b> : the opposite side (living as undead, undead as living).
-</li>
-<li><b>Life After Death</b> : your zombified self.
-</li></ul>
-<p>Obviously this feature can be abused.</p>
-<p>It breaks one of the fundemental game design notion of frustration vs reward.</p>
-<p>It jumps the shark. Breaks the fourth wall.</p>
-<p>Its a choice given to you to explore new ways to play the game.</p>
-</section>
-<section id="section-2">
-<h2 id="s2-2-the-city">2. THE CITY</h2>
-<h3 id="s2-districts">DISTRICTS</h3>
-<p>The City is divided into Districts. Districts are numbered by their coordinates on the city map starting at 0-0 for the northwest district.</p>
-<p>Each District is a different map. You can move in the city by exiting a district on the borders.</p>
-<p>When entering a district the game will simulate the district if you have the option enabled. See Options for more details.</p>
-<p>There are different kinds of districts, each being likely to have different types of buildings.</p>
-<ul>
-<li><b>District</b> : generic district, a bit of everything.
-</li>
-<li><b>Business Districts</b> : mostly CHAR Corp offices and houses.
-</li>
-<li><b>Green District</b> : mostly parks and houses.
-</li>
-<li><b>Residential District</b> : mostly houses.
-</li>
-<li><b>Shopping District</b> : mostly shops and houses.
-</li></ul>
-<p>You can see what you know about the city by using the City Info command (default I).</p>
-<h3 id="s2-sewers">SEWERS</h3>
-<p>A sewers network runs under each district.</p>
-<p>Sewers networks are linked to the surface and to each neighbouring network.</p>
-<p>You can visit the sewers by finding a ladder and climbing down.</p>
-<p>It's dark there and you should bring some light.</p>
-<p>You've heard an urban legend about a monster lurking down there.</p>
-<h3 id="s2-subway">SUBWAY</h3>
-<p>A Subway line runs through the middle city from the west to the east.</p>
-<p>Only those districts are linked by the subway.</p>
-<p>You can visit the sewers by finding a station on the surface and going down stairs.</p>
-<p>Like sewers it's dark down there.</p>
-<h3 id="s2-shops">SHOPS</h3>
-<p>Shops provide different items.</p>
-<p>Business and deliveries doesn't work well during apocalypses. First arrived, first served. Sooner or later there will be nothing left.</p>
-<ul>
-<li><b>Construction</b> : tools and construction material.
-</li>
-<li><b>General Store</b> : a bit of everything.
-</li>
-<li><b>Grocery</b> : food.
-</li>
-<li><b>Gunshop</b> : guns, the shopkeeper barricaded the doors but that shouldn't stop you.
-</li>
-<li><b>Pharmacy</b> : medicine.
-</li>
-<li><b>Sportswear</b> : bats, clubs and if you are lucky hunting tools or weapons.
-</li></ul>
-<h3 id="s2-other-buildings">OTHER BUILDINGS</h3>
-<ul>
-<li><b>Sewers Maintenance</b> : there is usually one of them in each district, but not always.
-</li>
-<li><b>Subway Station</b> : there is usually one in each district linked by the subway line.
-</li>
-<li><b>CHAR Agency</b> : open 24/24.
-</li>
-<li><b>CHAR Offices</b> : private property, you are not supposed to go there...
-</li></ul>
-<h3 id="s2-day-and-night">DAY AND NIGHT</h3>
-<p>During the night your FoV (field of view = distance at which you can see) diminish and you tire faster.</p>
-<p>Undeads are not affected by day or night.</p>
-<h3 id="s2-weather">WEATHER</h3>
-<p>Weather can change daily, improving or worsening. Some weather types have an effect.</p>
-<ul>
-<li><b>Sunny and Cloudy</b> : no effect.
-</li>
-<li><b>Rain</b> : livings FoV - 1; scents decay faster.
-</li>
-<li><b>Heavy rain</b> : livings FoV - 2; scents decay even faster.
-</li></ul>
-<p>Undeads are no affect by FoV changes, but undeads using smell will have more trouble following their prey since scents fade faster.</p>
-<p>As far as you are concerned, going outside at night under heavy rain with no flashlight and zombies around doesn't sound very safe...</p>
-<p>Rain has also a chance to put out fires, such as burning cars.</p>
-<h3 id="s2-personal-enemies">PERSONAL ENEMIES</h3>
-<p>Some actors are normally friendly with each other but might become personal enemies.</p>
-<p>For all intend and purpose personal enemies are treated like normal enemies by the game.</p>
-<p>Personal enemies are for life, you can't make peace with them.</p>
-<p>A leader will share personal enemies with his followers, and vice-versa, but followers won't share enemies between them.</p>
-<p>Making an enemy of someone can have additional consequences, depending on the actor faction.</p>
-<p>It is generally not a good idea to make an enemy of a cop or a soldier.</p>
-<p>Undeads cannot have personal enemies.</p>
-<h3 id="s2-murder-law">MURDER &amp; LAW</h3>
-<p>In the game a <q>murder</q> is killing a living that is not in an enemy faction, even if they are personal enemies.</p>
-<p>For instance a civilian killing a civilian.</p>
-<p>Killing in self-defence is not considered a murder and the tooltip on the agressor will say so.</p>
-<p>Gangs and the like are not considered murderers since they are already ennemies with the law abiding citizens.</p>
-<p>Citizens might try to murder people for food if they desperatly need it.</p>
-<p>One can avoid confrontation by giving in to their demands : drop food and let them take it or directly give them food.</p>
-<p>As soon as they can get food they will stop being aggressive. But once fighting has started it is too late.</p>
-<p>Cops are law enforcers and are on the look out for murderers.</p>
-<p>Cops might recognize a murderer when they see him and will always spot a murder being committed if they see it.</p>
-<p>Murderers who move closer to cops and who have committed more murders have more chance to get recognized.</p>
-<p>Cops have licence to kill murderers and do not get penalized for it.</p>
-<p>Times are harsh, and sometimes you will have no choice but to commit murder to save your own life or defend your possessions.</p>
-</section>
-<section id="section-3">
-<h2 id="s3-3-player-sheet">3. PLAYER SHEET</h2>
-<h3 id="s3-name">NAME</h3>
-<p>Your name and occupation.</p>
-<p>Your name and appearance are generated when you start a new game.</p>
-<h3 id="s3-hit-points-hp">HIT POINTS (HP)</h3>
-<p>How many damage you can take.</p>
-<p>At zero or less HP you die.</p>
-<p>Damage dealt to your HP is also dealt to your STA.</p>
-<p>Sleeping on a couch can slowly heal you.</p>
-<p>Use of some Medicine items heals you.</p>
-<h3 id="s3-stamina-sta">STAMINA (STA)</h3>
-<p>Some actions tires you and cost STA.</p>
-<p>To perform certain actions you need enough stamina.</p>
-<p>You automatically recover a small amount of STA each turn.</p>
-<p>Below a certain level you become Tired and your Speed decrease.</p>
-<p>Waiting recovers more STA.</p>
-<p>Use of some Medicine items recovers STA.</p>
-<p>Performing tiring actions during the night cost more than during the day.</p>
-<h3 id="s3-food-foo">FOOD (FOO)</h3>
-<p>You need to eat food to survive.</p>
-<p>Food points slowly decrease each turn.</p>
-<p>Below a certain level you become Hungry and at zero points you are Starved.</p>
-<p><b>Hungry</b> : you cannot sleep.</p>
-<p><b>Starved</b> : in addition you have a chance to die of starvation each turn.</p>
-<p>Use Food items to recover FOO.</p>
-<p>Eating spoiled food will recover much less points and you risk vomitting.</p>
-<p>Eating expired food is less severe.</p>
-<h3 id="s3-sleep-slp">SLEEP (SLP)</h3>
-<p>To stay in shape you have to sleep.</p>
-<p>Sleep points slowly decrease each turn, and decrease more rapidly at night.</p>
-<p>Below a certain level you become Sleepy and at zero points you are Exhausted.</p>
-<p><b>Sleepy</b> : your Speed, Attack, Defence and FOV decrease.</p>
-<p><b>Exhausted</b> : the penalties are much worse.</p>
-<p>Use of some Medicine items recovers SLP.</p>
-<p>Sleeping recovers SLP. See the Sleeping action for more details.</p>
-<h3 id="s3-infection-inf">INFECTION (INF)</h3>
-<p>Only in C&amp;I and VTG game modes.</p>
-<p>Some undeads deal infection damage.</p>
-<p>As your infection % increase, you feel more and more sick.</p>
-<p>When infection reaches 100% you may die.</p>
-<p>Your infection <q>hit points</q> is the sum of your max HPs and max STA.</p>
-<h3 id="s3-melee-stats-atk-dmg">MELEE STATS (Atk, Dmg)</h3>
-<p>You have natural base values for Melee Attack (Atk) and Melee Damage (Dmg).</p>
-<p><b>Atk</b> : influence how likely you are to score a hit vs an enemy defence value.</p>
-<p><b>Dmg</b> : maximum damage you can do in a hit vs livings/undeads.</p>
-<p>Attacking is a tiring action and cost STA.</p>
-<p>Use of Melee Weapons increase your Melee Atk and Melee Dmg, but might cost additional STA.</p>
-<h3 id="s3-ranged-stats-atk-dmg-rng-amo">RANGED STATS (Atk, Dmg, Rng, Amo)</h3>
-<p>You have no natural ranged attack. Atk and Dmg values works the same as Melee.</p>
-<p>Ranged attacks have an additional Range (Rng) value.</p>
-<p><b>Rng</b> : How far the weapon can fire and the weapon efficient range.</p>
-<p><b>Amo</b> : How many ammunitions left in the weapon.</p>
-<p>Attacking with a ranged weapon usually cost no STA.</p>
-<p>See the Firing action description for more details.</p>
-<h3 id="s3-defence-def">DEFENCE (Def)</h3>
-<p>You have a natural base value for Defence (Def).</p>
-<p>Used when defending from all kinds of attacks.</p>
-<h3 id="s3-armor-arm">ARMOR (Arm)</h3>
-<p>Reduces amount of damage dealt to you when hit or shot at.</p>
-<p>You have no natural protection.</p>
-<p>Equiping some items improves your armor ratings.</p>
-<h3 id="s3-speed-spd">SPEED (Spd)</h3>
-<p>How fast you are. The higher the better.</p>
-<p>You start with a base value of 1.0, meaning you can perform one standard action per turn.</p>
-<p>Undeads are generally slower.</p>
-<p>In certain circumstances your Spd will temporary increase or decrease.</p>
-<p>Under the hood the game use an Action Points (AP) system : every action cost a number of AP and Spd measure how much AP you recover each turn.</p>
-<h3 id="s3-field-of-view-fov">FIELD OF VIEW (FOV)</h3>
-<p>How far you can see.</p>
-<p>During the night your FoV will progressively diminish.</p>
-<p>During the day your FoV will progressively increase back to its maximum value.</p>
-<p>Weather can also diminish your FoV.</p>
-<h3 id="s3-smell-sml-undeads-only">SMELL (SML) - Undeads only.</h3>
-<p>Smell rating for undeads.</p>
-<h3 id="s3-followers">FOLLOWERS</h3>
-<p>How many followers are in your party.</p>
-<p>See the Followers section for more details.</p>
-<h3 id="s3-inventory">INVENTORY</h3>
-<p>The items you are carrying.</p>
-<p>Items highlighted in green are currently equiped.</p>
-<p>Ranged weapons are shown with an ammo gauge.</p>
-<p>You have a limited number of slots in your inventory but you can stack some items together.</p>
-<p>Stackable items are shown with a quantity number.</p>
-<p>Manage your items with using the mouse over items, or use/equip one item by using the item slot shortcut.</p>
-<p>To equip/unequip or use an item : Left-Click.</p>
-<p><b>To drop an item</b> : Right-Click.</p>
-<h3 id="s3-items-on-ground">ITEMS ON GROUND</h3>
-<p>List the items on the tile you are currently standing.</p>
-<p>They are displayed in the same way as your items.</p>
-<p>Manage items on the ground with the mouse.</p>
-<p><b>To take an item</b> : Left-Click.</p>
-<h3 id="s3-skills">SKILLS</h3>
-<p>List your current skills, their level and their name.</p>
-<p>See the Skills section for more details.</p>
-</section>
-<section id="section-4">
-<h2 id="s4-4-actions-commands">4. ACTIONS &amp; COMMANDS</h2>
-<p>This section describes the actions you can perform in the game and the interactions with other actors and objects.</p>
-<p>You can redefine the keys in game (default Shift-K).</p>
-<h3 id="s4-help-default-h">HELP <span class="h-key"><span class="h-src">default</span> <kbd>H</kbd></span></h3>
-<p>Read this manual ingame.</p>
-<h3 id="s4-looking-mouse">LOOKING <span class="h-key"><span class="h-src">mouse</span></span></h3>
-<p>Move the mouse on the map to look at a tile.</p>
-<p>Gives you usefull descriptions for learning the game or analyzing the tactical situation.</p>
-<h3 id="s4-moving-default-numpad">MOVING <span class="h-key"><span class="h-src">default</span> <kbd>Numpad</kbd></span></h3>
-<p>Walk or run around.</p>
-<p>If you try to move where you cannot you might <q>bump</q> into something.</p>
-<p><q>Bumping</q> allows you to perform some actions.</p>
-<h3 id="s4-bumping">&quot;BUMPING&quot;</h3>
-<p><q>Bumping</q> is trying to move into a tile occupied by someone or something.</p>
-<p>Some interactions are triggered by bumping into various things :</p>
-<p>Jumping on or over an obstacle.</p>
-<p>Opening doors.</p>
-<p>Taking items from shelves and containers.</p>
-<p>Chatting or trading with an actor.</p>
-<p>Attacking an actor.</p>
-<p>Attacking a barricade.</p>
-<h3 id="s4-using-an-exit-default-x">USING AN EXIT <span class="h-key"><span class="h-src">default</span> <kbd>X</kbd></span></h3>
-<p>Some exits (such as ladders and holes) allow you to move between maps.</p>
-<p>Stand on an exit and use the command.</p>
-<h3 id="s4-running-default-r">RUNNING <span class="h-key"><span class="h-src">default</span> <kbd>R</kbd></span></h3>
-<p>You can start and stop running. When running you move 2x faster but it cost you STA.</p>
-<p>You need to be not tired to start or continue running. If you are tired while running you automatically stop.</p>
-<h3 id="s4-waiting-resting-default-numpad5">WAITING/RESTING <span class="h-key"><span class="h-src">default</span> <kbd>NumPad5</kbd></span></h3>
-<p>Do nothing. You recover STA faster this way.</p>
-<h3 id="s4-waiting-one-hour-default-w">WAITING ONE HOUR <span class="h-key"><span class="h-src">default</span> <kbd>W</kbd></span></h3>
-<p>Wait for one hour. Interrupted if you see enemies, become hungry or sleepy, or witness something important happening.</p>
-<p>Useful if you want to wait for the day to rise, the night to fall or just to waste time.</p>
-<h3 id="s4-closing-a-door-window-default-c">CLOSING A DOOR/WINDOW <span class="h-key"><span class="h-src">default</span> <kbd>C</kbd></span></h3>
-<p>Closes an adjacent door or window.</p>
-<h3 id="s4-sleeping-default-z">SLEEPING <span class="h-key"><span class="h-src">default</span> <kbd>Z</kbd></span></h3>
-<p>Sleeping recovers SLP points and can slowly heal you.</p>
-<p>You can sleep anywhere but sleeping on a couch recovers your points faster and can slowly heal you.</p>
-<p>You cannot sleep while Hungry, apart from that you can sleep anytime you wish.</p>
-<p>While sleeping you cannot see, hear or do anything and are entirely vulnerable to attacks. An attack will wake you up immediately.</p>
-<p>You will wake up when your SLP points are fully restored or when you become hungry.</p>
-<p>You should be carefull where and when you sleep. It is safer and healthier to find a couch and barricade the room for the night.</p>
-<p>You will miss some events if they happen during your sleep.</p>
-<p>The game performs some simulation while you sleep if you have the option enabled.</p>
-<p>Loud noises within a close distance have a chance to wake you up. The closer the noise the higher the chances.</p>
-<h3 id="s4-bumping-jumping">(Bumping) JUMPING</h3>
-<p>Jump or climb on something that is marked as jumpable.</p>
-<p>Jumping is a tiring action and cost some STA.</p>
-<h3 id="s4-bumping-trading">(Bumping) TRADING</h3>
-<p>The actor must be willing to trade and have an item to offer. Look for the <q>can trade</q> $ icon on the map.</p>
-<p>He will offer you an exhange of items and you can accept or decline the deal.</p>
-<p>You can try trading as many times as you want.</p>
-<p>Before trading you should look at the actor to see what items he is carrying.</p>
-<p>Some actors will not be interesting in any of your items and will refuse to trade.</p>
-<p>It is a fast and easy way to trade but the items you are offered might not be the best.</p>
-<p>Use the negociating trade command if you want more control and better deals.</p>
-<h3 id="s4-negociating-trade-with-an-actor-default-e">NEGOCIATING TRADE WITH AN ACTOR <span class="h-key"><span class="h-src">default</span> <kbd>E</kbd></span></h3>
-<p>You can initiate a more detailled trade negociation with this command.</p>
-<p>Press the key and with the direction keys select an adjacent actor willing to trade.</p>
-<p>This works like normal trading, except you chose which items you want to exhange instead of getting a semi-random offer from an actor.</p>
-<p>You can select an item to offer and see what items you can ask for in exhange, or the other way around.</p>
-<p>If you have the charismatic skill you have chances to convince the actor to give up items it would not give away otherwise.</p>
-<p>If you are the leader of the actor and he trust you he will accept all your offers.</p>
-<h3 id="s4-bumping-attacking-an-actor">(Bumping) ATTACKING AN ACTOR</h3>
-<p>Perform a melee attack on an enemy. This is a quite tiring action and cost STA.</p>
-<p>Melee weapons increase your Atk and Dmg. Most weapons cost additional STA to handle, those are usually larger or heavier weapons.</p>
-<h3 id="s4-bumping-attacking-a-barricade">(Bumping) ATTACKING A BARRICADE</h3>
-<p>Perform a sure-to-hit full damage melee attack on a barricade to eventually break it.</p>
-<p>The material used to build the barricade is lost because of the destruction.</p>
-<h3 id="s4-firing-default-f">FIRING <span class="h-key"><span class="h-src">default</span> <kbd>F</kbd></span></h3>
-<p>Enter fire mode. You need to have an available ranged attack, such as a ranged weapon.</p>
-<p>You can switch fire mode to <q>rapid</q>. In rapid fire mode you shoot twice with the same action but each shot has less chance of hitting, depending on the weapon used.</p>
-<p>You must have a clear line of fire to your target. You cannot shoot through actors and only shoot through some objects such as windows or fences.</p>
-<p>A ranged weapon has an Efficient Range which is usually half its maximum range.</p>
-<p>Below the efficient range the target is easier to hit, over the efficient range the target is harder to hit.</p>
-<p>When firing the line of fire is drawn:</p>
-<ul>
-<li>in red if you have no clear line of fire;
-</li>
-<li>in yellow when the target is beyond the efficient range;
-</li>
-<li>in green when the target is within the efficient range.
-</li></ul>
-<p>Your aiming accuracy is penalized if you are sleepy, exhausted, tired or your stamina bar is not full.</p>
-<h3 id="s4-firing-throwing-grenades">(Firing) THROWING GRENADES</h3>
-<p>Equip a grenade and use the Fire action.</p>
-<p>You can throw the grenade on a tile. The distance of the throw depends on the grenade item and your Strong skill.</p>
-<p>The throw is blocked only blocking tiles and objects. You can lob grenades over people and some objects.</p>
-<p>You do not need to have a view on the targeted tile, in other words you can often throw farther than your FoV.</p>
-<p>Once thrown the grenade is primed and will explode soon. Better run away.</p>
-<p>The explosion always hit people or objects that stands in the blast zone. It does more damage the closer one is to the center of the blast.</p>
-<h3 id="s4-taking-and-droping-items-mouse">TAKING AND DROPING ITEMS <span class="h-key"><span class="h-src">mouse</span></span></h3>
-<p>To take items from a shelf or container bump into it.</p>
-<p>To take items from the ground : move the mouse on the item in the ground inventory, Left-Click.</p>
-<p>To drop items on a tile : move the mouse on the item in your inventory, Right-Click.</p>
-<p>Dropping an useless item will discard it.</p>
-<h3 id="s4-equiping-unequiping-and-using-items-mouse-default-shortcuts-control-number">EQUIPING/UNEQUIPING AND USING ITEMS <span class="h-key"><span class="h-src">mouse</span> <kbd>Ctrl</kbd><span class="h-plus">+</span><kbd>1</kbd>&hellip;<kbd>0</kbd></span></h3>
-<p>Move the mouse on your inventory.</p>
-<p><b>To use/equip/unquip an item</b> : Left-Click.</p>
-<p>Equiping/unequiping an item does not end your turn, but using an item does.</p>
-<p>Using items usually consumes them.</p>
-<h3 id="s4-giving-items-mouse-then-default-g">GIVING ITEMS <span class="h-key"><span class="h-src">mouse</span><span class="h-then">then</span><kbd>G</kbd></span></h3>
-<p>Move the mouse on the item in your inventory, press the key, then choose someone next to you in a direction.</p>
-<p>Giving item ends both your turn and the other actor turn.</p>
-<p>The other actor must be awake and not an enemy.</p>
-<h3 id="s4-barricading-objects-default-b">BARRICADING OBJECTS <span class="h-key"><span class="h-src">default</span> <kbd>B</kbd></span></h3>
-<p>Use the barricade mode. You can barricade doors, windows and repair fortifications.</p>
-<p>You need to have barricading material such as wooden planks and barricading consumes one quantity of such an item.</p>
-<p>You can barricade up to a maximum limit.</p>
-<h3 id="s4-breaking-objects-default-k">BREAKING OBJECTS <span class="h-key"><span class="h-src">default</span> <kbd>K</kbd></span></h3>
-<p>You can break or dismantle some map objects. You can get barricading material from some of them.</p>
-<p>You need to have a melee weapon equiped, you're not insane enough yet to break stuff barehanded.</p>
-<h3 id="s4-pushing-objects-shoving-people-default-p">PUSHING OBJECTS/SHOVING PEOPLE <span class="h-key"><span class="h-src">default</span> <kbd>P</kbd></span></h3>
-<p>Push an object or shove someone in a direction. Only movable objects can be pushed.</p>
-<p>Pushing is a tiring action, it costs as much STA as the object weight.</p>
-<p>If you push the object away from you, you will move with it. You cannot pull the object to your position.</p>
-<p>Usefull to block paths and make mobile barricades, or escaping crowds of zombies.</p>
-<h3 id="s4-mark-enemies-default-ctrl-e">MARK ENEMIES <span class="h-key"><span class="h-src">default</span> <kbd>Ctrl</kbd><span class="h-plus">-</span><kbd>E</kbd></span></h3>
-<p>Enter the mark as enemies mode.</p>
-<p>Allows you to declare some nearby actors as personal enemies.</p>
-<p>Takes effect immediatly and is a free action.</p>
-<p>Be careful, remember you can't cancel the personnal enemy status.</p>
-<h3 id="s4-building-fortifications-default-n-and-control-n">BUILDING FORTIFICATIONS <span class="h-key"><span class="h-src">default</span> <kbd>N</kbd> <kbd>Ctrl</kbd><span class="h-plus">-</span><kbd>N</kbd></span></h3>
-<p>You need the carpentry skill.</p>
-<p>You can build small (N) or large (Control-N) fortifications next to you.</p>
-<h4 id="s4-small-fortification">Small fortification </h4>
-<ul class="nested">
-<li>transparent.
-</li>
-<li>breaks easily.
-</li>
-<li>can be jumped on.
-</li>
-<li>can be pushed.
-</li>
-<li>use 2 barricading materials to build.
-</li></ul>
-<h4 id="s4-large-fortification">Large fortification </h4>
-<ul class="nested">
-<li>opaque.
-</li>
-<li>stronger.
-</li>
-<li>blocks movement.
-</li>
-<li>cannot be moved.
-</li>
-<li>use 4 barrading materials to build.  
-</li></ul>
-<p>A level 3 carpentry skill lowers the amount of material you need to build fortifications.</p>
-<h3 id="s4-repairing-fortifications-default-b">REPAIRING FORTIFICATIONS <span class="h-key"><span class="h-src">default</span> <kbd>B</kbd></span></h3>
-<p>Use the <q>Barricading</q> action on a fortification.</p>
-<p>You do not need the carpentry skill to repair fortifications.</p>
-<h3 id="s4-leading-default-t">LEADING <span class="h-key"><span class="h-src">default</span> <kbd>T</kbd></span></h3>
-<p>Take or leave a follower. See the Followers section for more details.</p>
-<h3 id="s4-switching-place-default-ctrl-s">SWITCHING PLACE <span class="h-key"><span class="h-src">default</span> <kbd>Ctrl</kbd><span class="h-plus">-</span><kbd>S</kbd></span></h3>
-<p>You can switch place with one of your follower.</p>
-<p>Usefull when he is blocking your way or you want to use him as meatshield.</p>
-<h3 id="s4-order-default-o">ORDER <span class="h-key"><span class="h-src">default</span> <kbd>O</kbd></span></h3>
-<p>Give orders or directives to your followers.</p>
-<p>See the Followers section for more details.</p>
-<h3 id="s4-shouting-default-s">SHOUTING <span class="h-key"><span class="h-src">default</span> <kbd>S</kbd></span></h3>
-<p>Make a lot of noise.</p>
-<p>Useful to try to wake up nearby sleepers.</p>
-<p>The closer you are when shouting the more chance they have to wake up.</p>
-<h3 id="s4-use-spray-default-a">USE SPRAY <span class="h-key"><span class="h-src">default</span> <kbd>A</kbd></span></h3>
-<p>Use the spray you have equipped in your left hang.</p>
-<p>The action depends on the type of spray. See below for the different actions.</p>
-<h3 id="s4-spray-a-tag-use-spray-with-a-spray-paint-item-equipped">SPRAY A TAG  (Use Spray with a Spray Paint item equipped)</h3>
-<p>Tag a symbol on a wall or a floor.</p>
-<p>If the option is enabled, the tag will also appear on your minimap as a colored dot.</p>
-<p>You need to have some spraint paint equiped. Tagging use one quantity of paint.</p>
-<p>Usefull to mark places or paths you want to remember.</p>
-<h3 id="s4-spray-or-erase-a-scent-use-spray-with-a-spray-scent-item-equipped">SPRAY OR ERASE A SCENT  (Use Spray with a Spray Scent item equipped)</h3>
-<p>Add special perfume that kills or strengthen other scents at the tile your are standing.</p>
-<p>Read the item description to learn what it does.</p>
-<p>Eg: <q>Stench Killer</q> add a perfume that remove some of the odor of living creatures for a short time.</p>
-<p>Useful to cover your tracks from the undeads.</p>
-<p>One spraying on a tile is often enough to confuse the pursuers.</p>
-<p>Also remember that in addition to having smell, some undeads have a visual memory (they know where they last saw a prey) so don't be surprise if it still chases you...</p>
-<h3 id="s4-city-info-default-i">CITY INFO <span class="h-key"><span class="h-src">default</span> <kbd>I</kbd></span></h3>
-<p>Show information you know about the city, such as the city districts layout.</p>
-<h3 id="s4-messages-log-default-shift-m">MESSAGES LOG <span class="h-key"><span class="h-src">default</span> <kbd>Shift</kbd><span class="h-plus">-</span><kbd>M</kbd></span></h3>
-<p>Show more recent messages.</p>
-<h3 id="s4-advisor-hint-default-shift-h">ADVISOR HINT <span class="h-key"><span class="h-src">default</span> <kbd>Shift</kbd><span class="h-plus">-</span><kbd>H</kbd></span></h3>
-<p>Display the advisor hint.</p>
-<h3 id="s4-system-abandoning-quitting-default-shift-a-shift-q">(System) ABANDONING &amp; QUITTING <span class="h-key"><span class="h-src">default</span> <kbd>Shift</kbd><span class="h-plus">-</span><kbd>A</kbd> <kbd>Shift</kbd><span class="h-plus">-</span><kbd>Q</kbd></span></h3>
-<p>Abandoning by suicide gets you back to the main menu.</p>
-<p>Quitting the game exits the program.</p>
-<h3 id="s4-system-saving-loading-default-shift-s-shift-l">(System) SAVING &amp; LOADING <span class="h-key"><span class="h-src">default</span> <kbd>Shift</kbd><span class="h-plus">-</span><kbd>S</kbd> <kbd>Shift</kbd><span class="h-plus">-</span><kbd>L</kbd></span></h3>
-<p>You have only one save slot.</p>
-<p>The game doesn't enforce permadeath, after your death you can reload your last save, but a true rogue survivor never reloads the game, only his weapons.</p>
-<p>Saving and especially loading can take some time, please be patient or consider lowering some game options.</p>
-<h3 id="s4-system-options-keybindings-default-shift-o-shift-k">(System) OPTIONS &amp; KEYBINDINGS <span class="h-key"><span class="h-src">default</span> <kbd>Shift</kbd><span class="h-plus">-</span><kbd>O</kbd> <kbd>Shift</kbd><span class="h-plus">-</span><kbd>K</kbd></span></h3>
-<p>You can set some game options and redefine the keys.</p>
-<p>Your options and keys preferences are automatically saved between games.</p>
-<p>Options are applied immediatly but some take effect only when starting a new game.</p>
-<p>See the Options sections for more information.</p>
-<h3 id="s4-system-screenshot-default-shift-n">(System) SCREENSHOT <span class="h-key"><span class="h-src">default</span> <kbd>Shift</kbd><span class="h-plus">-</span><kbd>N</kbd></span></h3>
-<p>Takes a screenshot of the game.</p>
-<p>Screenshots are saved in your game installation folder.</p>
-</section>
-<section id="section-5">
-<h2 id="s5-5-skills">5. SKILLS</h2>
-<p>All skills are automatically used when appropriate, they add bonuses to actions and abilities.</p>
-<p>Skill levels range from 0 to 5.</p>
-<p>Skills are helpful but contrary to traditional roguelikes you will never become extremely powerful.</p>
-<p>When leveling up you get to choose one skill to learn or improve.</p>
-<p>Undeads do not have skills and can only improve by evolving.</p>
-<h3 id="s5-agile">AGILE</h3>
-<p>Helps you fight better.</p>
-<p>Increases your Melee Atk and your Def.</p>
-<h3 id="s5-awake">AWAKE</h3>
-<p>Helps you staying awake longer.</p>
-<p>Increases your maximum SLP points and your SLP recovery speed when sleeping.</p>
-<h3 id="s5-bows">BOWS</h3>
-<p>Improve your efficiency with bows (ranged weapons).</p>
-<p>Increases the Atk and Dmg value when shooting bows.</p>
-<h3 id="s5-carpentry">CARPENTRY</h3>
-<p>Helps you build stronger barricades and allows you to build fortifications.</p>
-<p>Increases the barricading/repairing value of barricading items you use.</p>
-<p>At level 3 consume one less barricading material when building fortifications.</p>
-<h3 id="s5-charismatic">CHARISMATIC</h3>
-<p>Helps you building trust with your follower faster and get more trade offers.</p>
-<p>Increases trust of your followers each turn.</p>
-<p>Increase chance of other people wanting to trade an item they would otherwise have no interest in.</p>
-<h3 id="s5-firearms">FIREARMS</h3>
-<p>Improves your efficiency with firearms (ranged weapons).</p>
-<p>Increases the Atk and Dmg value when shooting firearms.</p>
-<h3 id="s5-hardy">HARDY</h3>
-<p>Sleeping anywhere can heal you - no more bed needed.</p>
-<p>Increase chance of healing while sleeping.</p>
-<h3 id="s5-hauler">HAULER</h3>
-<p>Helps your carrying more items.</p>
-<p>Increases the number of slots in your inventory.</p>
-<h3 id="s5-high-stamina">HIGH STAMINA</h3>
-<p>Helps you running and fighting longer.</p>
-<p>Increases your maximum STA.</p>
-<h3 id="s5-leadership">LEADERSHIP</h3>
-<p>Allows you to get more followers.</p>
-<p>Increases your maximum followers.</p>
-<h3 id="s5-light-eater">LIGHT EATER</h3>
-<p>Helps you ignore your stomach.</p>
-<p>Increases your maximum FOO and the nutrition value of food items you eat.</p>
-<h3 id="s5-light-sleeper">LIGHT SLEEPER</h3>
-<p>More prone to waking up when sleeping.</p>
-<p>When sleeping, increases distance at which you can notice loud noises and increase chances of such noises waking you up.</p>
-<h3 id="s5-martial-arts">MARTIAL ARTS</h3>
-<p>Helps you fight better when unarmed.</p>
-<p>The skill only applies when fighting unarmed.</p>
-<p>Increase your unarmed melee Atk and Dmg and increase chance to disarm your opponent.</p>
-<h3 id="s5-medic">MEDIC</h3>
-<p>Improves the benefits of medicine.</p>
-<p>Increases the values of medicine items you use.</p>
-<p>Allows you to revive corpse with a medikit.</p>
-<h3 id="s5-necrology">NECROLOGY</h3>
-<p>Deal more Dmg vs undeads (in melee and ranged).</p>
-<p>Get more information on corpses :</p>
-<p>at level 1 = estimation of date of death.</p>
-<p>at level 3 = estimation of infection.</p>
-<p>at level 5 = estimation of chances to rise as a zombie within a day.</p>
-<h3 id="s5-strong">STRONG</h3>
-<p>Helps you kick ass.</p>
-<p>Increases your Dmg for Melee attacks.</p>
-<p>Reduce chances of being disarmed.</p>
-<p>Increase your throwing range.</p>
-<h3 id="s5-tough">TOUGH</h3>
-<p>Helps you stay alive a bit longer.</p>
-<p>Increases the maximum value of your HP.</p>
-<h3 id="s5-unsuspicious">UNSUSPICIOUS</h3>
-<p>Helps you avoid getting noticed by law enforcers and gangs.</p>
-<p>Increase the chances for a nearby law enforcer or gang member to ignore you.</p>
-</section>
-<section id="section-6">
-<h2 id="s6-6-items">6. ITEMS</h2>
-<p>You can find various items in the city. Some are necessary to survive, others improve your chances of dying tomorrow rather than today.</p>
-<ul>
-<li><b>Ammo items</b> : reload weapons; use to reload.
-</li>
-<li><b>Barricade Material</b> : reinforce doors and windows; use the barricade action.
-</li>
-<li><b>Body Armor</b> : reduce damage when hit or shot, but can slow you down or hinder your movements; has a chance to break; use to equip.
-</li>
-<li><b>Food</b> : you must eat; use to eat.
-</li>
-<li><b>Light</b> : see farther; use to equip.
-</li>
-<li><b>Medicine</b> : heal yourself or get energized; use to heal.
-</li>
-<li><b>Melee Weapon</b> : just beat it, has a chance to break; use to equip.
-</li>
-<li><b>Ranged Weapon</b> : beat it from afar; but ammunition is spent fast; use to equip; fire action to fire.
-<ul class="nested">
-<li><b>Firearms</b> : the best ranged weapons.
-</li>
-<li><b>Bows</b> : weaker and shorter range but more ammunitions.
-</li></ul>
-</li>
-<li><b>Explosives</b> : blow stuff up, explosives have a fuse that last a few turns before exploding.
-<ul class="nested">
-<li><b>Grenades</b> : throw them to clear a zone, fire action to throw.
-</li></ul>
-</li>
-<li><b>Spray Paint</b> : tag places you want to remember or just fulfill your fantasy of vandalizing your neighbours house; use the tag action.
-</li>
-<li><b>Spray Scent</b> : add or neutralize odors, typically to erase your tracks.
-</li>
-<li><b>Tracker</b> : keep contact with your people; use to equip.
-</li></ul>
-</section>
-<section id="section-7">
-<h2 id="s7-7-followers">7. FOLLOWERS</h2>
-<p>This section describes what are followers and what you can expect from them.</p>
-<p>Undeads do not get followers.</p>
-<h3 id="s7-getting-followers">GETTING FOLLOWERS</h3>
-<p>With no Leadership skill you cannot have followers.</p>
-<p>You can ask other people to join you and stay in a group with you. Those are your followers.</p>
-<p>The number of followers you can have at anytime is limited by your Leadership skill level.</p>
-<p>To ask someone to follow you, use the Lead command.</p>
-<h3 id="s7-leaving-followers">LEAVING FOLLOWERS</h3>
-<p>You can tell a follower to leave at anytime. Well not if he is sleeping, that would be harsh.</p>
-<h3 id="s7-leveling-up">LEVELING UP</h3>
-<p>Followers level up with you. Nice.</p>
-<h3 id="s7-exiting-maps-with-you">EXITING MAPS WITH YOU</h3>
-<p>When you leave a map your followers will try to follow you into the new map.</p>
-<p>To travel with you a follower must be adjacent to you when you leave the map and he must have a walkable spot next to you on the new map.</p>
-<p>If he can't follow you he will leave you.</p>
-<h3 id="s7-trust">TRUST</h3>
-<p>Followers have to trust you before accepting your orders or directives, or knowing how many murders he committed.</p>
-<p>Trust slowly increase by time, +1 point per turn.</p>
-<p>Giving them items increase trust, especially items they feel they need.</p>
-<p>Killing their target or an adjacent enemy also increase trust.</p>
-<p>You basically have to show them you care about them and means good.</p>
-<p>Ordering them to give or drop items decrease trust.</p>
-<p>If a follower trust you, you can see his number murders in the actor description.</p>
-<h3 id="s7-civilian-followers-directives-and-orders">CIVILIAN FOLLOWERS DIRECTIVES AND ORDERS</h3>
-<p>You can set directives for your civilian followers. A directive allow or disallow a specific behavior. All the behaviors are allowed by default.</p>
-<p>You can also order your civilian followers to execute specific tasks.</p>
-<p>When giving directives or orders you and the follower must be visible to each other, or you both must have a tracker equiped (such as a cell phone).</p>
-<p>A follower can handle only one task at a time. If the task is no longer possible the follower will abandon it.</p>
-<p>When performing a task a follower will focus on the task at hand and will ignore everything else, including his own safety.</p>
-<p>This means trouble, so order your mates wisely.</p>
-<p>When giving orders the target position must be visible by both you and the follower.</p>
-<h4 id="s7-directives">Directives</h4>
-<ul>
-<li><b>Take items</b> : can the follower take items on his own (default yes).
-</li>
-<li><b>Fire weapons</b> : can the follower fire his ranged weapons (default yes).
-</li>
-<li><b>Throw grenades</b> : can the follower throw his grenades (default yes).
-</li>
-<li><b>Sleep</b> : can the follower sleep when he needs to (default yes).
-</li>
-<li><b>Trade</b> : is the follower allowed to trade with other people (default yes).
-</li>
-<li><b>Fighting</b> : should the follower fight courageously, with caution or run away (default cautious).
-</li></ul>
-<p><b>Coward</b> : always flee melee.</p>
-<p><b>Cautious</b> : try fighting in melee intelligently.</p>
-<p><b>Courageous</b> : always fight in melee when you do.</p>
-<h4 id="s7-orders">Orders</h4>
-<ul>
-<li><b>Cancel Order</b> : Give up current order.
-</li>
-<li><b>Barricade (one)</b> : Move to the position and barricade one time.
-</li>
-<li><b>Barricade (max)</b> : Move to the position and barricade as much as possible.
-</li>
-<li><b>Guard</b> : Move to the position and stand guard.
-</li>
-<li><b>Patrol</b> : Move to the position and patrol the zone(s).
-</li>
-<li><b>Drop all items</b> : Unequiped and drop all the items.
-</li>
-<li><b>Build small fort</b> : Move to the position and build a small fortification.
-</li>
-<li><b>Build large fort</b> : Move to the position and build a large fortification.
-</li>
-<li><b>Report events</b> : Tell you what they saw.
-</li>
-<li><b>Give me</b> : Give you one of their item - you must be next to him.
-</li></ul>
-<p>When on guard or patrol duty, the follower will have a very restricted behavior :</p>
-<ul class="nested">
-<li><b>when seeing an enemy</b> : shout or phone you to warn you and stop duty (cancel order).
-</li>
-<li>when hungry : eat.
-</li>
-<li>when injured : heal.
-</li></ul>
-<h4 id="s7-typical-orders-use">Typical orders use</h4>
-<ul>
-<li><b>Guard</b> : guard the entrace of your shelter while you sleep or are away.
-</li>
-<li><b>Patrol</b> : scout a zone.
-</li>
-<li><b>Drop all items</b> : unload your mule.
-</li>
-<li><b>Report events</b> : you wake up or come back to the base and want to know if anything happened.
-</li></ul>
-<h3 id="s7-tracking-followers">TRACKING FOLLOWERS</h3>
-<p>You can know where a follower is with cell phones.</p>
-<p>If you and your follower have a cell phone equiped you will see his position on the mini map as a blue dot.</p>
-<p>Useful when you get separated and want to find him or want to give him orders and directives when out of sight.</p>
-<h3 id="s7-follower-behavior">FOLLOWER BEHAVIOR</h3>
-<p>Your followers will most of the time stick with you, but those guys have their own mind too.</p>
-<p>Sometimes they will help you fight, other times they will attempt to flee from danger.</p>
-<p>If they see an interesting item they might go and pick it up, unless told not to.</p>
-<p>If they need to eat or sleep they will do so, unless your directives disallow it.</p>
-<p>There are pattern to their behaviors which you can use to your benefit.</p>
-<p>You can give items to them with the Give action. You can also still trade items with them like a normal civilian or ask them to drop all their items.</p>
-<p>From time to time you will see other people hanging with followers too. You're not the only wanna be hero in town you know.</p>
-<h3 id="s7-leader-strategy">LEADER STRATEGY</h3>
-<p>As a Leader you can use followers to your advantage.</p>
-<p>Four typical uses for followers.</p>
-<h4 id="s7-meatshields">MEATSHIELDS</h4>
-<p>They are here to do the dirty jobs and help you escape.</p>
-<p>You don't have to care about them too much. Find ways to make them fight in your place or distract your enemies.</p>
-<p>But remember they might haunt you back as zombies and you don't have an unlimited amount of <q>slaves</q>.</p>
-<h4 id="s7-mules">MULES</h4>
-<p>Living backpacks.</p>
-<p>Use the directives to disallow them everything, let them sleep only when you want.</p>
-<p>Give them whatever you want, for instance a bunch of planks, and later trade them back.</p>
-<p>When they die, go get the items back later.</p>
-<h4 id="s7-companions">COMPANIONS</h4>
-<p>You want to keep the same guys around and make them powerful.</p>
-<p>To keep them alive longer you should give them precious items they are lacking -such as fireweapons, medicine and food- and avoid exposing them to unnecessary dangers. If they are in trouble seriously consider helping them rather than selfishly fleeing.</p>
-<p>If they lag behind wait for them. If they are sleeping cover them.</p>
-<p>It might be a tedious and challenging task but potentially very rewarding.</p>
-<h4 id="s7-farming">FARMING</h4>
-<p>The idea here is to train a lot of civilians to make them stronger, which will indirectly make your survival easier.</p>
-<p>Take followers for a short time, care for them like you would do for Companions and when strong enough release them.</p>
-<p>Having a bunch of strong gun-toting civilians running around is bad news for Zombies and good news for you.</p>
-</section>
-<section id="section-8">
-<h2 id="s8-8-friends-foes">8. FRIENDS &amp; FOES</h2>
-<p>There are two kinds of people in this world : those who are dead, and those who are not dead yet.</p>
-<h3 id="s8-undeads">UNDEADS</h3>
-<p>They want to eat brains.</p>
-<p>They fumble around chasing anything that is alive.</p>
-<p>Most of them are slower that living humans, but they never tire and are quite resistant to damage, because you know, they are already dead.</p>
-<p>Some of them are dumb. Some of them can follow tracks or remember where they last saw that tasy meatbag.</p>
-<p>Some of them can break doors, windows and furnitures to get to you.</p>
-<p>Some of them attract other undeads.</p>
-<p>Some of them can turn your dead friends into zombies.</p>
-<p>Some of them are ex-friends.</p>
-<p>Experience and looking at their descriptions will help you recognize the different threats they pose.</p>
-<h3 id="s8-livings">LIVINGS</h3>
-<h4 id="s8-civilians">CIVILIANS</h4>
-<p>Civilians want one thing : survive.</p>
-<p>They mind their own business and see you as just another regular joe so don't expect them to treat you differently than that other dude over there. They are quite independent.</p>
-<p>They can be fun to watch in a headless chicken kind of way. Or frustrate your great escape/barricading/fight plan.</p>
-<p>Unless lead by a hero they are easily scared and try to avoid danger.</p>
-<p>They have different names and different looks. And a brain.</p>
-<h4 id="s8-char-employees">CHAR EMPLOYEES</h4>
-<p>They appear to be very agressive and don't hesistate to shoot anyone near their offices.</p>
-<p>You shouldn't get near them unless prepared.</p>
-<h4 id="s8-national-guards">NATIONAL GUARDS</h4>
-<p>They are doing their duty to clean this mess and don't have time for your requests.</p>
-<h4 id="s8-others">OTHERS</h4>
-<p>You might encounter some other people. Friendly or hostile, it is for you to find out.</p>
-</section>
-<section id="section-9">
-<h2 id="s9-9-hints">9. HINTS</h2>
-<p>Some hints that can be useful for a beginner.</p>
-<h3 id="s9-living">LIVING</h3>
-<h4 id="s9-character-creation">Character creation</h4>
-<p>A few typical good starting builds. Note that the suggested 2nd skills may not be available when it is</p>
-<p>time to upgrade.</p>
-<div class="build">
-<p class="build__title">1. <q>Solo Survivalist</q></p>
-<p class="build__meta">Male/Female, Hauler</p>
-<p>Your plan is to hide in your base and survive alone, making raids outside for loot. The extra starting inventory slot is very useful to carry more loot. 2nd skill:</p>
-<ul class="sublist">
-<li>Light Eater to start economizing on food.
-</li>
-<li>Hauler to hoard even more.
-</li>
-<li>Hardy to be able sleep heal in your base.
-</li>
-<li>Carpentry to build up your base.
-</li>
-<li>Strong Psyche to survive alone.
-</li></ul>
-</div>
-<div class="build">
-<p class="build__title">2. <q>Social</q></p>
-<p class="build__meta">Male/Female, Leadership</p>
-<p>Rely on other people to increase your survival chances. Go get a follower as soon as the game starts to level him/her up early. You can try to care for your followers to build them up or just use them as disposable meat shields. 2nd skill:</p>
-<ul class="sublist">
-<li>Charismatic to gain trust faster and get better trade deals.
-</li>
-<li>High Stamina to run away from bad situations.
-</li>
-<li>Leadership to get even more people in your group.
-</li>
-<li>Hauler to give them items.
-</li></ul>
-</div>
-<div class="build">
-<p class="build__title">3. <q>Ranged Assassin</q></p>
-<p class="build__meta">Female, Firearms</p>
-<p>Female for the extra defence. Get your hands on a rifle with ammo asap and kill from afar. 2nd skill:</p>
-<ul class="sublist">
-<li>Hauler to carry the ammos.
-</li>
-<li>Firearms to keep improving your attacks.
-</li>
-<li>Agile to dodge other people bullets.
-</li>
-<li>High Stamina to run to keep your distance.
-</li></ul>
-</div>
-<div class="build">
-<p class="build__title">4. <q>Melee Fighter</q></p>
-<p class="build__meta">Male, Strong or Martial Arts</p>
-<p>Male for the extra hp and melee damage. A melee character to kill zombies with. It is risky but the idea is you won't have to reserve slots for a ranged weapon and the ammo. Strong for weapons, Martial Arts if you want to economize even more slot. 2nd skill:</p>
-<ul class="sublist">
-<li>High Stamina to keep fighting or running.
-</li>
-<li>Any of Strong/Martial Arts/Agile/Though to improve your attack or durability.
-</li></ul>
-</div>
-<h4 id="s9-beginner-early-strategy">Beginner early strategy</h4>
-<p>A simple early strategy to get vital items : food, medikits and protection.</p>
-<ul>
-<li>Avoid combat or use hit-and-run tactics against slower enemies.
-</li>
-<li>Get a lot of food : visit kitchens, grocery stores or trade for food.
-</li>
-<li>Explore the city to find a Shopping District.
-</li>
-<li>Make a base in a shop with good stuff, pushing shelves to block or open the entrance.
-</li>
-<li>Find a long range weapon, rifle or pistol.
-</li>
-<li>Loot items and store them in your base behind layers of shelves.
-</li>
-<li>Secure your base with traps. Use the Stench Killer to cover your tracks.
-</li>
-<li>Explore places like the Police Station and the Hospital.
-</li>
-<li>When you are ready, explore the CHAR Offices.
-</li>
-<li>The rest is up to you.
-</li></ul>
-<h3 id="s9-undead">UNDEAD</h3>
-<p>The game as undead is extremly difficult and is not the main focus of the game.</p>
-<p>It is there mostly to make you understand <q>the other side</q>.</p>
-<p>You can die very easily due to your low speed. But you need kills to get stronger.</p>
-<p>So your best bet is to keep a low profile and go only for the easy kills.</p>
-<p>Try to follow a zombie master to form a horde and get lucky finishing blows.</p>
-<p>Or lay in ambush for instance in basements and be very patient.</p>
-<p>In other words, you have to think like a predator!</p>
-<p>With patience, skill and a lot of luck you will get to know the nice feeling of being a powerful undead</p>
-<p>tearing flesh apart.</p>
-<p>Good luck and have fun!</p>
-</section>
-    </article>
-  </div>
-</main>
+      <article class="manual">
+        <input class="manual-filter" type="search" id="manual-filter" placeholder="Filter the manual&hellip;"
+          aria-label="Filter the manual">
 
-<footer class="site-footer">
-  <div class="wrap">
-    <div class="site-footer__grid">
-      <div>
-        <h4>Pages</h4>
-        <ul>
-          <li><a href="index.html">Home</a></li>
-          <li><a href="manual.html">Manual</a></li>
-          <li><a href="controls.html">Controls</a></li>
-          <li><a href="guide.html">Guide</a></li>
-          <li><a href="info.html">About the port</a></li>
-        </ul>
+        <div class="callout callout--note">
+          <span class="callout__label">About this text</span>
+          <p>The manual was written for alpha 10 of the original game and is
+            slightly out of date. Parts of the game have changed since. Where this
+            page and the running game disagree, the game is right.</p>
+        </div>
+
+        <div class="card" style="margin-bottom:2.5rem">
+          <p class="toc__label">The nine chapters</p>
+          <ol style="columns:2;column-gap:2rem;margin-bottom:0">
+            <li>THE GAME</li>
+            <li>THE CITY</li>
+            <li>THE PLAYER SHEET</li>
+            <li>ACTIONS &amp; COMMANDS</li>
+            <li>SKILLS</li>
+            <li>ITEMS</li>
+            <li>FOLLOWERS</li>
+            <li>FRIENDS &amp; FOES</li>
+            <li>HINTS</li>
+          </ol>
+        </div>
+
+        <section id="section-1">
+          <h2 id="s1-1-the-game">1. THE GAME</h2>
+          <p>On the stroke of midnight you suddenly wake up and find someone in the corner of your bedroom staring at
+            you.</p>
+          <p>What was THAT noise?</p>
+          <p>'Hey! What are you doing in...</p>
+          <p>-Brains! :D</p>
+          <p>-What?</p>
+          <p>-Brrrrrr! :)</p>
+          <p>-What the hell dude? Get out of my bedroom!</p>
+          <p>-Mmmh? :(</p>
+          <p>-Plus you stink! Why do you... ZOMG YOU ARE A ZOMBIE!</p>
+          <p>-Mhhgmgg ;)'</p>
+          <p>Yes. It was a Zombie and it wanted your brain. Just like in those movies. So you kicked and punched till it
+            did not move anymore. That's how a Zombie dies.</p>
+          <p>Then another came through the window.</p>
+          <p>And another through the door.</p>
+          <p>And another.</p>
+          <p>And then it never ended.</p>
+          <h3 id="s1-setting-objective">SETTING &amp; OBJECTIVE</h3>
+          <p>You must survive an urban Zombie apocalypse.</p>
+          <p>You have to find ways to survive : food, shelter, weapons and companions.</p>
+          <p>Your city has a persistent urban legend about some sort of monster lurking in the Sewers.</p>
+          <p>Your home town is also known for being the headquarters of the world famous C.H.A.R. Corporation. Recently
+            you've heard strange rumors about them...</p>
+          <p>You can also play the game as an undead or reincarnate into different characters. These play modes are
+            mostly for fun.</p>
+          <p>Most of the manual is written with playing a survivor in mind.</p>
+          <h3 id="s1-game-mode">GAME MODE</h3>
+          <p>There are 3 different game modes, each enabling or disabling some aspects of the game.</p>
+          <p>STANDARD - STD</p>
+          <ul>
+            <li>The default game setting.
+            </li>
+          </ul>
+          <p>CORPSES AND INFECTION - C&amp;I</p>
+          <ul>
+            <li>Adds infection and corpses.
+            </li>
+          </ul>
+          <p>VINTAGE - VTG</p>
+          <ul>
+            <li>C&amp;I and a limited selection of zombies for a more classic feel.
+            </li>
+          </ul>
+          <h3 id="s1-character-creation">CHARACTER CREATION</h3>
+          <p>You can start as a living (a civilian survivor) or an undead.</p>
+          <p>Starting as a living you choose a gender and a starting skill, or you can let the game make random choices
+            for you.</p>
+          <p>When starting as an undead you can choose your race.</p>
+          <p>See the Skills section for mode details about skills.</p>
+          <h3 id="s1-progression">PROGRESSION</h3>
+          <p>Livings and undeads progress differently.</p>
+          <ul>
+            <li>Livings
+            </li>
+          </ul>
+          <p>Each time the sun rise and you're still alive you gain a level.</p>
+          <p>You can upgrade a skill from a set of skills chosen at random.</p>
+          <ul>
+            <li>Undead
+            </li>
+          </ul>
+          <p>You need to kill to evolve into a more powerful undead.</p>
+          <p>Not all undeads evolve.</p>
+          <h3 id="s1-surviving">SURVIVING</h3>
+          <p>You need to eat and sleep.</p>
+          <p>If you ignore your basic needs your unhappy body will make your life much more difficult.</p>
+          <p>You can die if you become starved.</p>
+          <p>Undeads do not need to eat or sleep.</p>
+          <p>Some livings do not need to eat, and in rare case do not need to sleep either.</p>
+          <h3 id="s1-basic-gameplay">BASIC GAMEPLAY</h3>
+          <p>Rogue Survivor handles combat and progression differently than most roguelikes.</p>
+          <p>You're just an average human and you have to be cautious.</p>
+          <p>Don't expect to be able to bash zombies left and right recklessly, even at high levels.</p>
+          <p>Don't hesitate to FLEE and HIDE, you don't HAVE to kill every baddie in sight. The game is about SURVIVING
+            not killing.</p>
+          <p>The game doesn't change the difficulty depending on your level and there is no obvious difficulty
+            progression.</p>
+          <p>The game can be harsh on you, that's part of the fun.</p>
+          <p>If some places or foes are too hard for you, just don't stay there and flee.</p>
+          <p>You should FEAR for your life and use the Run action a lot.</p>
+          <p>Undeads play very differently from livings.</p>
+          <h3 id="s1-events">EVENTS</h3>
+          <p>From time to time something special will happen. The game will inform you.</p>
+          <p>You will learn them as you play.</p>
+          <p>You can miss some events notification when sleeping.</p>
+          <h3 id="s1-infection-if-enabled-in-game-mode">INFECTION (if enabled in game mode)</h3>
+          <p>Some undeads infect livings whe they damage them.</p>
+          <p>Infection does not worsen or heals by itself over time.</p>
+          <p>You only get more infected with bites and you can only heal with meds.</p>
+          <h3 id="s1-corpses-if-enabled-in-game-mode">CORPSES (if enabled in game mode)</h3>
+          <p>Dead people become corpses.</p>
+          <p>Corpses decay over time and will rot away.</p>
+          <p>Infected corpses might rise as new undeads.</p>
+          <p>They are more likely to rise if they are fresh, infected and at night.</p>
+          <h3 id="s1-advisor">ADVISOR</h3>
+          <p>The game has a hint system for new players called the Advisor.</p>
+          <p>The hints will teach you most game controls and the gameplay basics.</p>
+          <p>You can think of them as a simplified tutorial.</p>
+          <p>You can enable or disable the Advisor in the options.</p>
+          <p>The advisor is focused on learning the game as a survivor.</p>
+          <h3 id="s1-reincarnation">REINCARNATION</h3>
+          <p>After your character dies you can get the chance to reincarnate into another character in the same
+            district.</p>
+          <p>That means you can continue playing the game with an actor that was previously controlled by the AI (a
+            NPC).</p>
+          <p>You get a variety of choices, some which may not be available at the time of your death.</p>
+          <p>The game will pick an actor for each choice and you can select one or end the game altogether.</p>
+          <ul>
+            <li><b>Random Actor</b> : an actor.
+            </li>
+            <li><b>Random Living</b> : a living actor.
+            </li>
+            <li><b>Random Undead</b> : an undead actor.
+            </li>
+            <li><b>Random Follower</b> : one of your follower.
+            </li>
+            <li><b>Your Killer</b> : the actor who directly killed you.
+            </li>
+            <li><b>Your Zombie Self</b> : if zombified, your ex-character turned zombie.
+            </li>
+          </ul>
+          <p>You then reincarnate into the body of the avatar and continue the game from there.</p>
+          <p>You can set some options to control how reincarnation works (see the options section).</p>
+          <p>You can set yourself various challenges if you restrict yourself to picking only certain kinds of avatars :
+          </p>
+          <ul>
+            <li><b>Succession game</b> : your followers.
+            </li>
+            <li><b>Killer game</b> : your killer.
+            </li>
+            <li><b>Till the Last Survivor</b> : only living civilians.
+            </li>
+            <li><b>The Equalizer</b> : the opposite side (living as undead, undead as living).
+            </li>
+            <li><b>Life After Death</b> : your zombified self.
+            </li>
+          </ul>
+          <p>Obviously this feature can be abused.</p>
+          <p>It breaks one of the fundemental game design notion of frustration vs reward.</p>
+          <p>It jumps the shark. Breaks the fourth wall.</p>
+          <p>Its a choice given to you to explore new ways to play the game.</p>
+        </section>
+        <section id="section-2">
+          <h2 id="s2-2-the-city">2. THE CITY</h2>
+          <h3 id="s2-districts">DISTRICTS</h3>
+          <p>The City is divided into Districts. Districts are numbered by their coordinates on the city map starting at
+            0-0 for the northwest district.</p>
+          <p>Each District is a different map. You can move in the city by exiting a district on the borders.</p>
+          <p>When entering a district the game will simulate the district if you have the option enabled. See Options
+            for more details.</p>
+          <p>There are different kinds of districts, each being likely to have different types of buildings.</p>
+          <ul>
+            <li><b>District</b> : generic district, a bit of everything.
+            </li>
+            <li><b>Business Districts</b> : mostly CHAR Corp offices and houses.
+            </li>
+            <li><b>Green District</b> : mostly parks and houses.
+            </li>
+            <li><b>Residential District</b> : mostly houses.
+            </li>
+            <li><b>Shopping District</b> : mostly shops and houses.
+            </li>
+          </ul>
+          <p>You can see what you know about the city by using the City Info command (default I).</p>
+          <h3 id="s2-sewers">SEWERS</h3>
+          <p>A sewers network runs under each district.</p>
+          <p>Sewers networks are linked to the surface and to each neighbouring network.</p>
+          <p>You can visit the sewers by finding a ladder and climbing down.</p>
+          <p>It's dark there and you should bring some light.</p>
+          <p>You've heard an urban legend about a monster lurking down there.</p>
+          <h3 id="s2-subway">SUBWAY</h3>
+          <p>A Subway line runs through the middle city from the west to the east.</p>
+          <p>Only those districts are linked by the subway.</p>
+          <p>You can visit the sewers by finding a station on the surface and going down stairs.</p>
+          <p>Like sewers it's dark down there.</p>
+          <h3 id="s2-shops">SHOPS</h3>
+          <p>Shops provide different items.</p>
+          <p>Business and deliveries doesn't work well during apocalypses. First arrived, first served. Sooner or later
+            there will be nothing left.</p>
+          <ul>
+            <li><b>Construction</b> : tools and construction material.
+            </li>
+            <li><b>General Store</b> : a bit of everything.
+            </li>
+            <li><b>Grocery</b> : food.
+            </li>
+            <li><b>Gunshop</b> : guns, the shopkeeper barricaded the doors but that shouldn't stop you.
+            </li>
+            <li><b>Pharmacy</b> : medicine.
+            </li>
+            <li><b>Sportswear</b> : bats, clubs and if you are lucky hunting tools or weapons.
+            </li>
+          </ul>
+          <h3 id="s2-other-buildings">OTHER BUILDINGS</h3>
+          <ul>
+            <li><b>Sewers Maintenance</b> : there is usually one of them in each district, but not always.
+            </li>
+            <li><b>Subway Station</b> : there is usually one in each district linked by the subway line.
+            </li>
+            <li><b>CHAR Agency</b> : open 24/24.
+            </li>
+            <li><b>CHAR Offices</b> : private property, you are not supposed to go there...
+            </li>
+          </ul>
+          <h3 id="s2-day-and-night">DAY AND NIGHT</h3>
+          <p>During the night your FoV (field of view = distance at which you can see) diminish and you tire faster.</p>
+          <p>Undeads are not affected by day or night.</p>
+          <h3 id="s2-weather">WEATHER</h3>
+          <p>Weather can change daily, improving or worsening. Some weather types have an effect.</p>
+          <ul>
+            <li><b>Sunny and Cloudy</b> : no effect.
+            </li>
+            <li><b>Rain</b> : livings FoV - 1; scents decay faster.
+            </li>
+            <li><b>Heavy rain</b> : livings FoV - 2; scents decay even faster.
+            </li>
+          </ul>
+          <p>Undeads are no affect by FoV changes, but undeads using smell will have more trouble following their prey
+            since scents fade faster.</p>
+          <p>As far as you are concerned, going outside at night under heavy rain with no flashlight and zombies around
+            doesn't sound very safe...</p>
+          <p>Rain has also a chance to put out fires, such as burning cars.</p>
+          <h3 id="s2-personal-enemies">PERSONAL ENEMIES</h3>
+          <p>Some actors are normally friendly with each other but might become personal enemies.</p>
+          <p>For all intend and purpose personal enemies are treated like normal enemies by the game.</p>
+          <p>Personal enemies are for life, you can't make peace with them.</p>
+          <p>A leader will share personal enemies with his followers, and vice-versa, but followers won't share enemies
+            between them.</p>
+          <p>Making an enemy of someone can have additional consequences, depending on the actor faction.</p>
+          <p>It is generally not a good idea to make an enemy of a cop or a soldier.</p>
+          <p>Undeads cannot have personal enemies.</p>
+          <h3 id="s2-murder-law">MURDER &amp; LAW</h3>
+          <p>In the game a <q>murder</q> is killing a living that is not in an enemy faction, even if they are personal
+            enemies.</p>
+          <p>For instance a civilian killing a civilian.</p>
+          <p>Killing in self-defence is not considered a murder and the tooltip on the agressor will say so.</p>
+          <p>Gangs and the like are not considered murderers since they are already ennemies with the law abiding
+            citizens.</p>
+          <p>Citizens might try to murder people for food if they desperatly need it.</p>
+          <p>One can avoid confrontation by giving in to their demands : drop food and let them take it or directly give
+            them food.</p>
+          <p>As soon as they can get food they will stop being aggressive. But once fighting has started it is too late.
+          </p>
+          <p>Cops are law enforcers and are on the look out for murderers.</p>
+          <p>Cops might recognize a murderer when they see him and will always spot a murder being committed if they see
+            it.</p>
+          <p>Murderers who move closer to cops and who have committed more murders have more chance to get recognized.
+          </p>
+          <p>Cops have licence to kill murderers and do not get penalized for it.</p>
+          <p>Times are harsh, and sometimes you will have no choice but to commit murder to save your own life or defend
+            your possessions.</p>
+        </section>
+        <section id="section-3">
+          <h2 id="s3-3-player-sheet">3. PLAYER SHEET</h2>
+          <h3 id="s3-name">NAME</h3>
+          <p>Your name and occupation.</p>
+          <p>Your name and appearance are generated when you start a new game.</p>
+          <h3 id="s3-hit-points-hp">HIT POINTS (HP)</h3>
+          <p>How many damage you can take.</p>
+          <p>At zero or less HP you die.</p>
+          <p>Damage dealt to your HP is also dealt to your STA.</p>
+          <p>Sleeping on a couch can slowly heal you.</p>
+          <p>Use of some Medicine items heals you.</p>
+          <h3 id="s3-stamina-sta">STAMINA (STA)</h3>
+          <p>Some actions tires you and cost STA.</p>
+          <p>To perform certain actions you need enough stamina.</p>
+          <p>You automatically recover a small amount of STA each turn.</p>
+          <p>Below a certain level you become Tired and your Speed decrease.</p>
+          <p>Waiting recovers more STA.</p>
+          <p>Use of some Medicine items recovers STA.</p>
+          <p>Performing tiring actions during the night cost more than during the day.</p>
+          <h3 id="s3-food-foo">FOOD (FOO)</h3>
+          <p>You need to eat food to survive.</p>
+          <p>Food points slowly decrease each turn.</p>
+          <p>Below a certain level you become Hungry and at zero points you are Starved.</p>
+          <p><b>Hungry</b> : you cannot sleep.</p>
+          <p><b>Starved</b> : in addition you have a chance to die of starvation each turn.</p>
+          <p>Use Food items to recover FOO.</p>
+          <p>Eating spoiled food will recover much less points and you risk vomitting.</p>
+          <p>Eating expired food is less severe.</p>
+          <h3 id="s3-sleep-slp">SLEEP (SLP)</h3>
+          <p>To stay in shape you have to sleep.</p>
+          <p>Sleep points slowly decrease each turn, and decrease more rapidly at night.</p>
+          <p>Below a certain level you become Sleepy and at zero points you are Exhausted.</p>
+          <p><b>Sleepy</b> : your Speed, Attack, Defence and FOV decrease.</p>
+          <p><b>Exhausted</b> : the penalties are much worse.</p>
+          <p>Use of some Medicine items recovers SLP.</p>
+          <p>Sleeping recovers SLP. See the Sleeping action for more details.</p>
+          <h3 id="s3-infection-inf">INFECTION (INF)</h3>
+          <p>Only in C&amp;I and VTG game modes.</p>
+          <p>Some undeads deal infection damage.</p>
+          <p>As your infection % increase, you feel more and more sick.</p>
+          <p>When infection reaches 100% you may die.</p>
+          <p>Your infection <q>hit points</q> is the sum of your max HPs and max STA.</p>
+          <h3 id="s3-melee-stats-atk-dmg">MELEE STATS (Atk, Dmg)</h3>
+          <p>You have natural base values for Melee Attack (Atk) and Melee Damage (Dmg).</p>
+          <p><b>Atk</b> : influence how likely you are to score a hit vs an enemy defence value.</p>
+          <p><b>Dmg</b> : maximum damage you can do in a hit vs livings/undeads.</p>
+          <p>Attacking is a tiring action and cost STA.</p>
+          <p>Use of Melee Weapons increase your Melee Atk and Melee Dmg, but might cost additional STA.</p>
+          <h3 id="s3-ranged-stats-atk-dmg-rng-amo">RANGED STATS (Atk, Dmg, Rng, Amo)</h3>
+          <p>You have no natural ranged attack. Atk and Dmg values works the same as Melee.</p>
+          <p>Ranged attacks have an additional Range (Rng) value.</p>
+          <p><b>Rng</b> : How far the weapon can fire and the weapon efficient range.</p>
+          <p><b>Amo</b> : How many ammunitions left in the weapon.</p>
+          <p>Attacking with a ranged weapon usually cost no STA.</p>
+          <p>See the Firing action description for more details.</p>
+          <h3 id="s3-defence-def">DEFENCE (Def)</h3>
+          <p>You have a natural base value for Defence (Def).</p>
+          <p>Used when defending from all kinds of attacks.</p>
+          <h3 id="s3-armor-arm">ARMOR (Arm)</h3>
+          <p>Reduces amount of damage dealt to you when hit or shot at.</p>
+          <p>You have no natural protection.</p>
+          <p>Equiping some items improves your armor ratings.</p>
+          <h3 id="s3-speed-spd">SPEED (Spd)</h3>
+          <p>How fast you are. The higher the better.</p>
+          <p>You start with a base value of 1.0, meaning you can perform one standard action per turn.</p>
+          <p>Undeads are generally slower.</p>
+          <p>In certain circumstances your Spd will temporary increase or decrease.</p>
+          <p>Under the hood the game use an Action Points (AP) system : every action cost a number of AP and Spd measure
+            how much AP you recover each turn.</p>
+          <h3 id="s3-field-of-view-fov">FIELD OF VIEW (FOV)</h3>
+          <p>How far you can see.</p>
+          <p>During the night your FoV will progressively diminish.</p>
+          <p>During the day your FoV will progressively increase back to its maximum value.</p>
+          <p>Weather can also diminish your FoV.</p>
+          <h3 id="s3-smell-sml-undeads-only">SMELL (SML) - Undeads only.</h3>
+          <p>Smell rating for undeads.</p>
+          <h3 id="s3-followers">FOLLOWERS</h3>
+          <p>How many followers are in your party.</p>
+          <p>See the Followers section for more details.</p>
+          <h3 id="s3-inventory">INVENTORY</h3>
+          <p>The items you are carrying.</p>
+          <p>Items highlighted in green are currently equiped.</p>
+          <p>Ranged weapons are shown with an ammo gauge.</p>
+          <p>You have a limited number of slots in your inventory but you can stack some items together.</p>
+          <p>Stackable items are shown with a quantity number.</p>
+          <p>Manage your items with using the mouse over items, or use/equip one item by using the item slot shortcut.
+          </p>
+          <p>To equip/unequip or use an item : Left-Click.</p>
+          <p><b>To drop an item</b> : Right-Click.</p>
+          <h3 id="s3-items-on-ground">ITEMS ON GROUND</h3>
+          <p>List the items on the tile you are currently standing.</p>
+          <p>They are displayed in the same way as your items.</p>
+          <p>Manage items on the ground with the mouse.</p>
+          <p><b>To take an item</b> : Left-Click.</p>
+          <h3 id="s3-skills">SKILLS</h3>
+          <p>List your current skills, their level and their name.</p>
+          <p>See the Skills section for more details.</p>
+        </section>
+        <section id="section-4">
+          <h2 id="s4-4-actions-commands">4. ACTIONS &amp; COMMANDS</h2>
+          <p>This section describes the actions you can perform in the game and the interactions with other actors and
+            objects.</p>
+          <p>You can redefine the keys in game (default Shift-K).</p>
+          <h3 id="s4-help-default-h">HELP <span class="h-key"><span class="h-src">default</span> <kbd>H</kbd></span>
+          </h3>
+          <p>Read this manual ingame.</p>
+          <h3 id="s4-looking-mouse">LOOKING <span class="h-key"><span class="h-src">mouse</span></span></h3>
+          <p>Move the mouse on the map to look at a tile.</p>
+          <p>Gives you usefull descriptions for learning the game or analyzing the tactical situation.</p>
+          <h3 id="s4-moving-default-numpad">MOVING <span class="h-key"><span class="h-src">default</span> <kbd>Q W E / A S D / Z C</kbd></span></h3>
+          <p>Walk or run around.</p>
+          <p>If you try to move where you cannot you might <q>bump</q> into something.</p>
+          <p><q>Bumping</q> allows you to perform some actions.</p>
+          <h3 id="s4-bumping">&quot;BUMPING&quot;</h3>
+          <p><q>Bumping</q> is trying to move into a tile occupied by someone or something.</p>
+          <p>Some interactions are triggered by bumping into various things :</p>
+          <p>Jumping on or over an obstacle.</p>
+          <p>Opening doors.</p>
+          <p>Taking items from shelves and containers.</p>
+          <p>Chatting or trading with an actor.</p>
+          <p>Attacking an actor.</p>
+          <p>Attacking a barricade.</p>
+          <h3 id="s4-using-an-exit-default-x">USING AN EXIT <span class="h-key"><span class="h-src">default</span> <kbd>.</kbd></span></h3>
+          <p>Some exits (such as ladders and holes) allow you to move between maps.</p>
+          <p>Stand on an exit and use the command.</p>
+          <h3 id="s4-running-default-r">RUNNING <span class="h-key"><span class="h-src">default</span>
+              <kbd>R</kbd></span></h3>
+          <p>You can start and stop running. When running you move 2x faster but it cost you STA.</p>
+          <p>You need to be not tired to start or continue running. If you are tired while running you automatically
+            stop.</p>
+          <h3 id="s4-waiting-resting-default-numpad5">WAITING/RESTING <span class="h-key"> <span class="h-src">default</span> <kbd>X, or NumPad5</kbd></span></h3>
+          <p>Do nothing. You recover STA faster this way.</p>
+          <h3 id="s4-waiting-one-hour-default-w">WAITING ONE HOUR <span class="h-key"> <span class="h-src">default</span> <kbd>Shift</kbd>-<kbd>W</kbd></span></h3>
+          <p>Wait for one hour. Interrupted if you see enemies, become hungry or sleepy, or witness something important
+            happening.</p>
+          <p>Useful if you want to wait for the day to rise, the night to fall or just to waste time.</p>
+          <h3 id="s4-closing-a-door-window-default-c">CLOSING A DOOR/WINDOW <span class="h-key"> <span class="h-src">default</span> <kbd>Shift</kbd>-<kbd>T</kbd></span></h3>
+          <p>Closes an adjacent door or window.</p>
+          <h3 id="s4-sleeping-default-z">SLEEPING <span class="h-key"> <span class="h-src">default</span> <kbd>Shift</kbd>-<kbd>Z</kbd></span></h3>
+          <p>Sleeping recovers SLP points and can slowly heal you.</p>
+          <p>You can sleep anywhere but sleeping on a couch recovers your points faster and can slowly heal you.</p>
+          <p>You cannot sleep while Hungry, apart from that you can sleep anytime you wish.</p>
+          <p>While sleeping you cannot see, hear or do anything and are entirely vulnerable to attacks. An attack will
+            wake you up immediately.</p>
+          <p>You will wake up when your SLP points are fully restored or when you become hungry.</p>
+          <p>You should be carefull where and when you sleep. It is safer and healthier to find a couch and barricade
+            the room for the night.</p>
+          <p>You will miss some events if they happen during your sleep.</p>
+          <p>The game performs some simulation while you sleep if you have the option enabled.</p>
+          <p>Loud noises within a close distance have a chance to wake you up. The closer the noise the higher the
+            chances.</p>
+          <h3 id="s4-bumping-jumping">(Bumping) JUMPING</h3>
+          <p>Jump or climb on something that is marked as jumpable.</p>
+          <p>Jumping is a tiring action and cost some STA.</p>
+          <h3 id="s4-bumping-trading">(Bumping) TRADING</h3>
+          <p>The actor must be willing to trade and have an item to offer. Look for the <q>can trade</q> $ icon on the
+            map.</p>
+          <p>He will offer you an exhange of items and you can accept or decline the deal.</p>
+          <p>You can try trading as many times as you want.</p>
+          <p>Before trading you should look at the actor to see what items he is carrying.</p>
+          <p>Some actors will not be interesting in any of your items and will refuse to trade.</p>
+          <p>It is a fast and easy way to trade but the items you are offered might not be the best.</p>
+          <p>Use the negociating trade command if you want more control and better deals.</p>
+          <h3 id="s4-negociating-trade-with-an-actor-default-e">NEGOCIATING TRADE WITH AN ACTOR <span
+              class="h-key"><span class="h-src">default</span> <kbd>E</kbd></span></h3>
+          <p>You can initiate a more detailled trade negociation with this command.</p>
+          <p>Press the key and with the direction keys select an adjacent actor willing to trade.</p>
+          <p>This works like normal trading, except you chose which items you want to exhange instead of getting a
+            semi-random offer from an actor.</p>
+          <p>You can select an item to offer and see what items you can ask for in exhange, or the other way around.</p>
+          <p>If you have the charismatic skill you have chances to convince the actor to give up items it would not give
+            away otherwise.</p>
+          <p>If you are the leader of the actor and he trust you he will accept all your offers.</p>
+          <h3 id="s4-bumping-attacking-an-actor">(Bumping) ATTACKING AN ACTOR</h3>
+          <p>Perform a melee attack on an enemy. This is a quite tiring action and cost STA.</p>
+          <p>Melee weapons increase your Atk and Dmg. Most weapons cost additional STA to handle, those are usually
+            larger or heavier weapons.</p>
+          <h3 id="s4-bumping-attacking-a-barricade">(Bumping) ATTACKING A BARRICADE</h3>
+          <p>Perform a sure-to-hit full damage melee attack on a barricade to eventually break it.</p>
+          <p>The material used to build the barricade is lost because of the destruction.</p>
+          <h3 id="s4-firing-default-f">FIRING <span class="h-key"><span class="h-src">default</span> <kbd>F</kbd></span>
+          </h3>
+          <p>Enter fire mode. You need to have an available ranged attack, such as a ranged weapon.</p>
+          <p>You can switch fire mode to <q>rapid</q>. In rapid fire mode you shoot twice with the same action but each
+            shot has less chance of hitting, depending on the weapon used.</p>
+          <p>You must have a clear line of fire to your target. You cannot shoot through actors and only shoot through
+            some objects such as windows or fences.</p>
+          <p>A ranged weapon has an Efficient Range which is usually half its maximum range.</p>
+          <p>Below the efficient range the target is easier to hit, over the efficient range the target is harder to
+            hit.</p>
+          <p>When firing the line of fire is drawn:</p>
+          <ul>
+            <li>in red if you have no clear line of fire;
+            </li>
+            <li>in yellow when the target is beyond the efficient range;
+            </li>
+            <li>in green when the target is within the efficient range.
+            </li>
+          </ul>
+          <p>Your aiming accuracy is penalized if you are sleepy, exhausted, tired or your stamina bar is not full.</p>
+          <h3 id="s4-firing-throwing-grenades">(Firing) THROWING GRENADES</h3>
+          <p>Equip a grenade and use the Fire action.</p>
+          <p>You can throw the grenade on a tile. The distance of the throw depends on the grenade item and your Strong
+            skill.</p>
+          <p>The throw is blocked only blocking tiles and objects. You can lob grenades over people and some objects.
+          </p>
+          <p>You do not need to have a view on the targeted tile, in other words you can often throw farther than your
+            FoV.</p>
+          <p>Once thrown the grenade is primed and will explode soon. Better run away.</p>
+          <p>The explosion always hit people or objects that stands in the blast zone. It does more damage the closer
+            one is to the center of the blast.</p>
+          <h3 id="s4-taking-and-droping-items-mouse">TAKING AND DROPING ITEMS <span class="h-key"><span
+                class="h-src">mouse</span></span></h3>
+          <p>To take items from a shelf or container bump into it.</p>
+          <p>To take items from the ground : move the mouse on the item in the ground inventory, Left-Click.</p>
+          <p>To drop items on a tile : move the mouse on the item in your inventory, Right-Click.</p>
+          <p>Dropping an useless item will discard it.</p>
+          <h3 id="s4-equiping-unequiping-and-using-items-mouse-default-shortcuts-control-number">EQUIPING/UNEQUIPING AND
+            USING ITEMS <span class="h-key"><span class="h-src">mouse</span> <kbd>Ctrl</kbd><span
+                class="h-plus">+</span><kbd>1</kbd>&hellip;<kbd>0</kbd></span></h3>
+          <p>Move the mouse on your inventory.</p>
+          <p><b>To use/equip/unquip an item</b> : Left-Click.</p>
+          <p>Equiping/unequiping an item does not end your turn, but using an item does.</p>
+          <p>Using items usually consumes them.</p>
+          <h3 id="s4-giving-items-mouse-then-default-g">GIVING ITEMS <span class="h-key"><span
+                class="h-src">mouse</span><span class="h-then">then</span><kbd>G</kbd></span></h3>
+          <p>Move the mouse on the item in your inventory, press the key, then choose someone next to you in a
+            direction.</p>
+          <p>Giving item ends both your turn and the other actor turn.</p>
+          <p>The other actor must be awake and not an enemy.</p>
+          <h3 id="s4-barricading-objects-default-b">BARRICADING OBJECTS <span class="h-key"> <span class="h-src">default</span> <kbd>B, or mouse</kbd></span></h3>
+          <p>Use the barricade mode. You can barricade doors, windows and repair fortifications.</p>
+          <p>You need to have barricading material such as wooden planks and barricading consumes one quantity of such
+            an item.</p>
+          <p>You can barricade up to a maximum limit.</p>
+          <h3 id="s4-breaking-objects-default-k">BREAKING OBJECTS <span class="h-key"><span class="h-src">default</span> <kbd>K, or mouse</kbd></span></h3>
+          <p>You can break or dismantle some map objects. You can get barricading material from some of them.</p>
+          <p>You need to have a melee weapon equiped, you're not insane enough yet to break stuff barehanded.</p>
+          <h3 id="s4-pushing-objects-shoving-people-default-p">PUSHING OBJECTS/SHOVING PEOPLE <span class="h-key"><span
+                class="h-src">default</span> <kbd>P</kbd></span></h3>
+          <p>Push an object or shove someone in a direction. Only movable objects can be pushed.</p>
+          <p>Pushing is a tiring action, it costs as much STA as the object weight.</p>
+          <p>If you push the object away from you, you will move with it. You cannot pull the object to your position.
+          </p>
+          <p>Usefull to block paths and make mobile barricades, or escaping crowds of zombies.</p>
+          <h3 id="s4-mark-enemies-default-ctrl-e">MARK ENEMIES <span class="h-key"> <span class="h-src">default</span> <kbd>Ctrl</kbd>-<kbd>E</kbd></span></h3>
+          <p>Enter the mark as enemies mode.</p>
+          <p>Allows you to declare some nearby actors as personal enemies.</p>
+          <p>Takes effect immediatly and is a free action.</p>
+          <p>Be careful, remember you can't cancel the personnal enemy status.</p>
+          <h3 id="s4-building-fortifications-default-n-and-control-n">BUILDING FORTIFICATIONS <span class="h-key"> <span class="h-src">default</span> <kbd>N and Control-N</kbd></span></h3>
+          <p>You need the carpentry skill.</p>
+          <p>You can build small (N) or large (Control-N) fortifications next to you.</p>
+          <h4 id="s4-small-fortification">Small fortification </h4>
+          <ul class="nested">
+            <li>transparent.
+            </li>
+            <li>breaks easily.
+            </li>
+            <li>can be jumped on.
+            </li>
+            <li>can be pushed.
+            </li>
+            <li>use 2 barricading materials to build.
+            </li>
+          </ul>
+          <h4 id="s4-large-fortification">Large fortification </h4>
+          <ul class="nested">
+            <li>opaque.
+            </li>
+            <li>stronger.
+            </li>
+            <li>blocks movement.
+            </li>
+            <li>cannot be moved.
+            </li>
+            <li>use 4 barrading materials to build.
+            </li>
+          </ul>
+          <p>A level 3 carpentry skill lowers the amount of material you need to build fortifications.</p>
+          <h3 id="s4-repairing-fortifications-default-b">REPAIRING FORTIFICATIONS <span class="h-key"><span
+                class="h-src">default</span> <kbd>B</kbd></span></h3>
+          <p>Use the <q>Barricading</q> action on a fortification.</p>
+          <p>You do not need the carpentry skill to repair fortifications.</p>
+          <h3 id="s4-leading-default-t">LEADING <span class="h-key"><span class="h-src">default</span>
+              <kbd>T</kbd></span></h3>
+          <p>Take or leave a follower. See the Followers section for more details.</p>
+          <h3 id="s4-switching-place-default-ctrl-s">SWITCHING PLACE <span class="h-key"> <span class="h-src">default</span> <kbd>Ctrl</kbd>-<kbd>S</kbd></span></h3>
+          <p>You can switch place with one of your follower.</p>
+          <p>Usefull when he is blocking your way or you want to use him as meatshield.</p>
+          <h3 id="s4-order-default-o">ORDER <span class="h-key"><span class="h-src">default</span> <kbd>O</kbd></span>
+          </h3>
+          <p>Give orders or directives to your followers.</p>
+          <p>See the Followers section for more details.</p>
+          <h3 id="s4-shouting-default-s">SHOUTING <span class="h-key"><span class="h-src">default</span> <kbd>U</kbd></span></h3>
+          <p>Make a lot of noise.</p>
+          <p>Useful to try to wake up nearby sleepers.</p>
+          <p>The closer you are when shouting the more chance they have to wake up.</p>
+          <h3 id="s4-use-spray-default-a">USE SPRAY <span class="h-key"><span class="h-src">default</span> <kbd>M</kbd></span></h3>
+          <p>Use the spray you have equipped in your left hang.</p>
+          <p>The action depends on the type of spray. See below for the different actions.</p>
+          <h3 id="s4-spray-a-tag-use-spray-with-a-spray-paint-item-equipped">SPRAY A TAG (Use Spray with a Spray Paint
+            item equipped)</h3>
+          <p>Tag a symbol on a wall or a floor.</p>
+          <p>If the option is enabled, the tag will also appear on your minimap as a colored dot.</p>
+          <p>You need to have some spraint paint equiped. Tagging use one quantity of paint.</p>
+          <p>Usefull to mark places or paths you want to remember.</p>
+          <h3 id="s4-spray-or-erase-a-scent-use-spray-with-a-spray-scent-item-equipped">SPRAY OR ERASE A SCENT (Use
+            Spray with a Spray Scent item equipped)</h3>
+          <p>Add special perfume that kills or strengthen other scents at the tile your are standing.</p>
+          <p>Read the item description to learn what it does.</p>
+          <p>Eg: <q>Stench Killer</q> add a perfume that remove some of the odor of living creatures for a short time.
+          </p>
+          <p>Useful to cover your tracks from the undeads.</p>
+          <p>One spraying on a tile is often enough to confuse the pursuers.</p>
+          <p>Also remember that in addition to having smell, some undeads have a visual memory (they know where they
+            last saw a prey) so don't be surprise if it still chases you...</p>
+          <h3 id="s4-city-info-default-i">CITY INFO <span class="h-key"><span class="h-src">default</span>
+              <kbd>I</kbd></span></h3>
+          <p>Show information you know about the city, such as the city districts layout.</p>
+          <h3 id="s4-messages-log-default-shift-m">MESSAGES LOG <span class="h-key"> <span class="h-src">default</span> <kbd>Shift</kbd>-<kbd>M</kbd></span></h3>
+          <p>Show more recent messages.</p>
+          <h3 id="s4-advisor-hint-default-shift-h">ADVISOR HINT <span class="h-key"> <span class="h-src">default</span> <kbd>Shift</kbd>-<kbd>H</kbd></span></h3>
+          <p>Display the advisor hint.</p>
+          <h3 id="s4-system-abandoning-quitting-default-shift-a-shift-q">(System) ABANDONING &amp; QUITTING <span
+              class="h-key"><span class="h-src">default</span> <kbd>Shift</kbd><span class="h-plus">-</span><kbd>A</kbd>
+              <kbd>Shift</kbd><span class="h-plus">-</span><kbd>Q</kbd></span></h3>
+          <p>Abandoning by suicide gets you back to the main menu.</p>
+          <p>Quitting the game exits the program.</p>
+          <h3 id="s4-system-saving-loading-default-shift-s-shift-l">(System) SAVING &amp; LOADING <span
+              class="h-key"><span class="h-src">default</span> <kbd>Shift</kbd><span class="h-plus">-</span><kbd>S</kbd>
+              <kbd>Shift</kbd><span class="h-plus">-</span><kbd>L</kbd></span></h3>
+          <p>You have only one save slot.</p>
+          <p>The game doesn't enforce permadeath, after your death you can reload your last save, but a true rogue
+            survivor never reloads the game, only his weapons.</p>
+          <p>Saving and especially loading can take some time, please be patient or consider lowering some game options.
+          </p>
+          <h3 id="s4-system-options-keybindings-default-shift-o-shift-k">(System) OPTIONS &amp; KEYBINDINGS <span
+              class="h-key"><span class="h-src">default</span> <kbd>Shift</kbd><span class="h-plus">-</span><kbd>O</kbd>
+              <kbd>Shift</kbd><span class="h-plus">-</span><kbd>K</kbd></span></h3>
+          <p>You can set some game options and redefine the keys.</p>
+          <p>Your options and keys preferences are automatically saved between games.</p>
+          <p>Options are applied immediatly but some take effect only when starting a new game.</p>
+          <p>See the Options sections for more information.</p>
+          <h3 id="s4-system-screenshot-default-shift-n">(System) SCREENSHOT <span class="h-key"> <span class="h-src">default</span> <kbd>Shift</kbd>-<kbd>N</kbd></span></h3>
+          <p>Takes a screenshot of the game.</p>
+          <p>Screenshots are saved in your game installation folder.</p>
+        </section>
+        <section id="section-5">
+          <h2 id="s5-5-skills">5. SKILLS</h2>
+          <p>All skills are automatically used when appropriate, they add bonuses to actions and abilities.</p>
+          <p>Skill levels range from 0 to 5.</p>
+          <p>Skills are helpful but contrary to traditional roguelikes you will never become extremely powerful.</p>
+          <p>When leveling up you get to choose one skill to learn or improve.</p>
+          <p>Undeads do not have skills and can only improve by evolving.</p>
+          <h3 id="s5-agile">AGILE</h3>
+          <p>Helps you fight better.</p>
+          <p>Increases your Melee Atk and your Def.</p>
+          <h3 id="s5-awake">AWAKE</h3>
+          <p>Helps you staying awake longer.</p>
+          <p>Increases your maximum SLP points and your SLP recovery speed when sleeping.</p>
+          <h3 id="s5-bows">BOWS</h3>
+          <p>Improve your efficiency with bows (ranged weapons).</p>
+          <p>Increases the Atk and Dmg value when shooting bows.</p>
+          <h3 id="s5-carpentry">CARPENTRY</h3>
+          <p>Helps you build stronger barricades and allows you to build fortifications.</p>
+          <p>Increases the barricading/repairing value of barricading items you use.</p>
+          <p>At level 3 consume one less barricading material when building fortifications.</p>
+          <h3 id="s5-charismatic">CHARISMATIC</h3>
+          <p>Helps you building trust with your follower faster and get more trade offers.</p>
+          <p>Increases trust of your followers each turn.</p>
+          <p>Increase chance of other people wanting to trade an item they would otherwise have no interest in.</p>
+          <h3 id="s5-firearms">FIREARMS</h3>
+          <p>Improves your efficiency with firearms (ranged weapons).</p>
+          <p>Increases the Atk and Dmg value when shooting firearms.</p>
+          <h3 id="s5-hardy">HARDY</h3>
+          <p>Sleeping anywhere can heal you - no more bed needed.</p>
+          <p>Increase chance of healing while sleeping.</p>
+          <h3 id="s5-hauler">HAULER</h3>
+          <p>Helps your carrying more items.</p>
+          <p>Increases the number of slots in your inventory.</p>
+          <h3 id="s5-high-stamina">HIGH STAMINA</h3>
+          <p>Helps you running and fighting longer.</p>
+          <p>Increases your maximum STA.</p>
+          <h3 id="s5-leadership">LEADERSHIP</h3>
+          <p>Allows you to get more followers.</p>
+          <p>Increases your maximum followers.</p>
+          <h3 id="s5-light-eater">LIGHT EATER</h3>
+          <p>Helps you ignore your stomach.</p>
+          <p>Increases your maximum FOO and the nutrition value of food items you eat.</p>
+          <h3 id="s5-light-sleeper">LIGHT SLEEPER</h3>
+          <p>More prone to waking up when sleeping.</p>
+          <p>When sleeping, increases distance at which you can notice loud noises and increase chances of such noises
+            waking you up.</p>
+          <h3 id="s5-martial-arts">MARTIAL ARTS</h3>
+          <p>Helps you fight better when unarmed.</p>
+          <p>The skill only applies when fighting unarmed.</p>
+          <p>Increase your unarmed melee Atk and Dmg and increase chance to disarm your opponent.</p>
+          <h3 id="s5-medic">MEDIC</h3>
+          <p>Improves the benefits of medicine.</p>
+          <p>Increases the values of medicine items you use.</p>
+          <p>Allows you to revive corpse with a medikit.</p>
+          <h3 id="s5-necrology">NECROLOGY</h3>
+          <p>Deal more Dmg vs undeads (in melee and ranged).</p>
+          <p>Get more information on corpses :</p>
+          <p>at level 1 = estimation of date of death.</p>
+          <p>at level 3 = estimation of infection.</p>
+          <p>at level 5 = estimation of chances to rise as a zombie within a day.</p>
+          <h3 id="s5-strong">STRONG</h3>
+          <p>Helps you kick ass.</p>
+          <p>Increases your Dmg for Melee attacks.</p>
+          <p>Reduce chances of being disarmed.</p>
+          <p>Increase your throwing range.</p>
+          <h3 id="s5-tough">TOUGH</h3>
+          <p>Helps you stay alive a bit longer.</p>
+          <p>Increases the maximum value of your HP.</p>
+          <h3 id="s5-unsuspicious">UNSUSPICIOUS</h3>
+          <p>Helps you avoid getting noticed by law enforcers and gangs.</p>
+          <p>Increase the chances for a nearby law enforcer or gang member to ignore you.</p>
+        </section>
+        <section id="section-6">
+          <h2 id="s6-6-items">6. ITEMS</h2>
+          <p>You can find various items in the city. Some are necessary to survive, others improve your chances of dying
+            tomorrow rather than today.</p>
+          <ul>
+            <li><b>Ammo items</b> : reload weapons; use to reload.
+            </li>
+            <li><b>Barricade Material</b> : reinforce doors and windows; use the barricade action.
+            </li>
+            <li><b>Body Armor</b> : reduce damage when hit or shot, but can slow you down or hinder your movements; has
+              a chance to break; use to equip.
+            </li>
+            <li><b>Food</b> : you must eat; use to eat.
+            </li>
+            <li><b>Light</b> : see farther; use to equip.
+            </li>
+            <li><b>Medicine</b> : heal yourself or get energized; use to heal.
+            </li>
+            <li><b>Melee Weapon</b> : just beat it, has a chance to break; use to equip.
+            </li>
+            <li><b>Ranged Weapon</b> : beat it from afar; but ammunition is spent fast; use to equip; fire action to
+              fire.
+              <ul class="nested">
+                <li><b>Firearms</b> : the best ranged weapons.
+                </li>
+                <li><b>Bows</b> : weaker and shorter range but more ammunitions.
+                </li>
+              </ul>
+            </li>
+            <li><b>Explosives</b> : blow stuff up, explosives have a fuse that last a few turns before exploding.
+              <ul class="nested">
+                <li><b>Grenades</b> : throw them to clear a zone, fire action to throw.
+                </li>
+              </ul>
+            </li>
+            <li><b>Spray Paint</b> : tag places you want to remember or just fulfill your fantasy of vandalizing your
+              neighbours house; use the tag action.
+            </li>
+            <li><b>Spray Scent</b> : add or neutralize odors, typically to erase your tracks.
+            </li>
+            <li><b>Tracker</b> : keep contact with your people; use to equip.
+            </li>
+          </ul>
+        </section>
+        <section id="section-7">
+          <h2 id="s7-7-followers">7. FOLLOWERS</h2>
+          <p>This section describes what are followers and what you can expect from them.</p>
+          <p>Undeads do not get followers.</p>
+          <h3 id="s7-getting-followers">GETTING FOLLOWERS</h3>
+          <p>With no Leadership skill you cannot have followers.</p>
+          <p>You can ask other people to join you and stay in a group with you. Those are your followers.</p>
+          <p>The number of followers you can have at anytime is limited by your Leadership skill level.</p>
+          <p>To ask someone to follow you, use the Lead command.</p>
+          <h3 id="s7-leaving-followers">LEAVING FOLLOWERS</h3>
+          <p>You can tell a follower to leave at anytime. Well not if he is sleeping, that would be harsh.</p>
+          <h3 id="s7-leveling-up">LEVELING UP</h3>
+          <p>Followers level up with you. Nice.</p>
+          <h3 id="s7-exiting-maps-with-you">EXITING MAPS WITH YOU</h3>
+          <p>When you leave a map your followers will try to follow you into the new map.</p>
+          <p>To travel with you a follower must be adjacent to you when you leave the map and he must have a walkable
+            spot next to you on the new map.</p>
+          <p>If he can't follow you he will leave you.</p>
+          <h3 id="s7-trust">TRUST</h3>
+          <p>Followers have to trust you before accepting your orders or directives, or knowing how many murders he
+            committed.</p>
+          <p>Trust slowly increase by time, +1 point per turn.</p>
+          <p>Giving them items increase trust, especially items they feel they need.</p>
+          <p>Killing their target or an adjacent enemy also increase trust.</p>
+          <p>You basically have to show them you care about them and means good.</p>
+          <p>Ordering them to give or drop items decrease trust.</p>
+          <p>If a follower trust you, you can see his number murders in the actor description.</p>
+          <h3 id="s7-civilian-followers-directives-and-orders">CIVILIAN FOLLOWERS DIRECTIVES AND ORDERS</h3>
+          <p>You can set directives for your civilian followers. A directive allow or disallow a specific behavior. All
+            the behaviors are allowed by default.</p>
+          <p>You can also order your civilian followers to execute specific tasks.</p>
+          <p>When giving directives or orders you and the follower must be visible to each other, or you both must have
+            a tracker equiped (such as a cell phone).</p>
+          <p>A follower can handle only one task at a time. If the task is no longer possible the follower will abandon
+            it.</p>
+          <p>When performing a task a follower will focus on the task at hand and will ignore everything else, including
+            his own safety.</p>
+          <p>This means trouble, so order your mates wisely.</p>
+          <p>When giving orders the target position must be visible by both you and the follower.</p>
+          <h4 id="s7-directives">Directives</h4>
+          <ul>
+            <li><b>Take items</b> : can the follower take items on his own (default yes).
+            </li>
+            <li><b>Fire weapons</b> : can the follower fire his ranged weapons (default yes).
+            </li>
+            <li><b>Throw grenades</b> : can the follower throw his grenades (default yes).
+            </li>
+            <li><b>Sleep</b> : can the follower sleep when he needs to (default yes).
+            </li>
+            <li><b>Trade</b> : is the follower allowed to trade with other people (default yes).
+            </li>
+            <li><b>Fighting</b> : should the follower fight courageously, with caution or run away (default cautious).
+            </li>
+          </ul>
+          <p><b>Coward</b> : always flee melee.</p>
+          <p><b>Cautious</b> : try fighting in melee intelligently.</p>
+          <p><b>Courageous</b> : always fight in melee when you do.</p>
+          <h4 id="s7-orders">Orders</h4>
+          <ul>
+            <li><b>Cancel Order</b> : Give up current order.
+            </li>
+            <li><b>Barricade (one)</b> : Move to the position and barricade one time.
+            </li>
+            <li><b>Barricade (max)</b> : Move to the position and barricade as much as possible.
+            </li>
+            <li><b>Guard</b> : Move to the position and stand guard.
+            </li>
+            <li><b>Patrol</b> : Move to the position and patrol the zone(s).
+            </li>
+            <li><b>Drop all items</b> : Unequiped and drop all the items.
+            </li>
+            <li><b>Build small fort</b> : Move to the position and build a small fortification.
+            </li>
+            <li><b>Build large fort</b> : Move to the position and build a large fortification.
+            </li>
+            <li><b>Report events</b> : Tell you what they saw.
+            </li>
+            <li><b>Give me</b> : Give you one of their item - you must be next to him.
+            </li>
+          </ul>
+          <p>When on guard or patrol duty, the follower will have a very restricted behavior :</p>
+          <ul class="nested">
+            <li><b>when seeing an enemy</b> : shout or phone you to warn you and stop duty (cancel order).
+            </li>
+            <li>when hungry : eat.
+            </li>
+            <li>when injured : heal.
+            </li>
+          </ul>
+          <h4 id="s7-typical-orders-use">Typical orders use</h4>
+          <ul>
+            <li><b>Guard</b> : guard the entrace of your shelter while you sleep or are away.
+            </li>
+            <li><b>Patrol</b> : scout a zone.
+            </li>
+            <li><b>Drop all items</b> : unload your mule.
+            </li>
+            <li><b>Report events</b> : you wake up or come back to the base and want to know if anything happened.
+            </li>
+          </ul>
+          <h3 id="s7-tracking-followers">TRACKING FOLLOWERS</h3>
+          <p>You can know where a follower is with cell phones.</p>
+          <p>If you and your follower have a cell phone equiped you will see his position on the mini map as a blue dot.
+          </p>
+          <p>Useful when you get separated and want to find him or want to give him orders and directives when out of
+            sight.</p>
+          <h3 id="s7-follower-behavior">FOLLOWER BEHAVIOR</h3>
+          <p>Your followers will most of the time stick with you, but those guys have their own mind too.</p>
+          <p>Sometimes they will help you fight, other times they will attempt to flee from danger.</p>
+          <p>If they see an interesting item they might go and pick it up, unless told not to.</p>
+          <p>If they need to eat or sleep they will do so, unless your directives disallow it.</p>
+          <p>There are pattern to their behaviors which you can use to your benefit.</p>
+          <p>You can give items to them with the Give action. You can also still trade items with them like a normal
+            civilian or ask them to drop all their items.</p>
+          <p>From time to time you will see other people hanging with followers too. You're not the only wanna be hero
+            in town you know.</p>
+          <h3 id="s7-leader-strategy">LEADER STRATEGY</h3>
+          <p>As a Leader you can use followers to your advantage.</p>
+          <p>Four typical uses for followers.</p>
+          <h4 id="s7-meatshields">MEATSHIELDS</h4>
+          <p>They are here to do the dirty jobs and help you escape.</p>
+          <p>You don't have to care about them too much. Find ways to make them fight in your place or distract your
+            enemies.</p>
+          <p>But remember they might haunt you back as zombies and you don't have an unlimited amount of <q>slaves</q>.
+          </p>
+          <h4 id="s7-mules">MULES</h4>
+          <p>Living backpacks.</p>
+          <p>Use the directives to disallow them everything, let them sleep only when you want.</p>
+          <p>Give them whatever you want, for instance a bunch of planks, and later trade them back.</p>
+          <p>When they die, go get the items back later.</p>
+          <h4 id="s7-companions">COMPANIONS</h4>
+          <p>You want to keep the same guys around and make them powerful.</p>
+          <p>To keep them alive longer you should give them precious items they are lacking -such as fireweapons,
+            medicine and food- and avoid exposing them to unnecessary dangers. If they are in trouble seriously consider
+            helping them rather than selfishly fleeing.</p>
+          <p>If they lag behind wait for them. If they are sleeping cover them.</p>
+          <p>It might be a tedious and challenging task but potentially very rewarding.</p>
+          <h4 id="s7-farming">FARMING</h4>
+          <p>The idea here is to train a lot of civilians to make them stronger, which will indirectly make your
+            survival easier.</p>
+          <p>Take followers for a short time, care for them like you would do for Companions and when strong enough
+            release them.</p>
+          <p>Having a bunch of strong gun-toting civilians running around is bad news for Zombies and good news for you.
+          </p>
+        </section>
+        <section id="section-8">
+          <h2 id="s8-8-friends-foes">8. FRIENDS &amp; FOES</h2>
+          <p>There are two kinds of people in this world : those who are dead, and those who are not dead yet.</p>
+          <h3 id="s8-undeads">UNDEADS</h3>
+          <p>They want to eat brains.</p>
+          <p>They fumble around chasing anything that is alive.</p>
+          <p>Most of them are slower that living humans, but they never tire and are quite resistant to damage, because
+            you know, they are already dead.</p>
+          <p>Some of them are dumb. Some of them can follow tracks or remember where they last saw that tasy meatbag.
+          </p>
+          <p>Some of them can break doors, windows and furnitures to get to you.</p>
+          <p>Some of them attract other undeads.</p>
+          <p>Some of them can turn your dead friends into zombies.</p>
+          <p>Some of them are ex-friends.</p>
+          <p>Experience and looking at their descriptions will help you recognize the different threats they pose.</p>
+          <h3 id="s8-livings">LIVINGS</h3>
+          <h4 id="s8-civilians">CIVILIANS</h4>
+          <p>Civilians want one thing : survive.</p>
+          <p>They mind their own business and see you as just another regular joe so don't expect them to treat you
+            differently than that other dude over there. They are quite independent.</p>
+          <p>They can be fun to watch in a headless chicken kind of way. Or frustrate your great
+            escape/barricading/fight plan.</p>
+          <p>Unless lead by a hero they are easily scared and try to avoid danger.</p>
+          <p>They have different names and different looks. And a brain.</p>
+          <h4 id="s8-char-employees">CHAR EMPLOYEES</h4>
+          <p>They appear to be very agressive and don't hesistate to shoot anyone near their offices.</p>
+          <p>You shouldn't get near them unless prepared.</p>
+          <h4 id="s8-national-guards">NATIONAL GUARDS</h4>
+          <p>They are doing their duty to clean this mess and don't have time for your requests.</p>
+          <h4 id="s8-others">OTHERS</h4>
+          <p>You might encounter some other people. Friendly or hostile, it is for you to find out.</p>
+        </section>
+        <section id="section-9">
+          <h2 id="s9-9-hints">9. HINTS</h2>
+          <p>Some hints that can be useful for a beginner.</p>
+          <h3 id="s9-living">LIVING</h3>
+          <h4 id="s9-character-creation">Character creation</h4>
+          <p>A few typical good starting builds. Note that the suggested 2nd skills may not be available when it is</p>
+          <p>time to upgrade.</p>
+          <div class="build">
+            <p class="build__title">1. <q>Solo Survivalist</q></p>
+            <p class="build__meta">Male/Female, Hauler</p>
+            <p>Your plan is to hide in your base and survive alone, making raids outside for loot. The extra starting
+              inventory slot is very useful to carry more loot. 2nd skill:</p>
+            <ul class="sublist">
+              <li>Light Eater to start economizing on food.
+              </li>
+              <li>Hauler to hoard even more.
+              </li>
+              <li>Hardy to be able sleep heal in your base.
+              </li>
+              <li>Carpentry to build up your base.
+              </li>
+              <li>Strong Psyche to survive alone.
+              </li>
+            </ul>
+          </div>
+          <div class="build">
+            <p class="build__title">2. <q>Social</q></p>
+            <p class="build__meta">Male/Female, Leadership</p>
+            <p>Rely on other people to increase your survival chances. Go get a follower as soon as the game starts to
+              level him/her up early. You can try to care for your followers to build them up or just use them as
+              disposable meat shields. 2nd skill:</p>
+            <ul class="sublist">
+              <li>Charismatic to gain trust faster and get better trade deals.
+              </li>
+              <li>High Stamina to run away from bad situations.
+              </li>
+              <li>Leadership to get even more people in your group.
+              </li>
+              <li>Hauler to give them items.
+              </li>
+            </ul>
+          </div>
+          <div class="build">
+            <p class="build__title">3. <q>Ranged Assassin</q></p>
+            <p class="build__meta">Female, Firearms</p>
+            <p>Female for the extra defence. Get your hands on a rifle with ammo asap and kill from afar. 2nd skill:</p>
+            <ul class="sublist">
+              <li>Hauler to carry the ammos.
+              </li>
+              <li>Firearms to keep improving your attacks.
+              </li>
+              <li>Agile to dodge other people bullets.
+              </li>
+              <li>High Stamina to run to keep your distance.
+              </li>
+            </ul>
+          </div>
+          <div class="build">
+            <p class="build__title">4. <q>Melee Fighter</q></p>
+            <p class="build__meta">Male, Strong or Martial Arts</p>
+            <p>Male for the extra hp and melee damage. A melee character to kill zombies with. It is risky but the idea
+              is you won't have to reserve slots for a ranged weapon and the ammo. Strong for weapons, Martial Arts if
+              you want to economize even more slot. 2nd skill:</p>
+            <ul class="sublist">
+              <li>High Stamina to keep fighting or running.
+              </li>
+              <li>Any of Strong/Martial Arts/Agile/Though to improve your attack or durability.
+              </li>
+            </ul>
+          </div>
+          <h4 id="s9-beginner-early-strategy">Beginner early strategy</h4>
+          <p>A simple early strategy to get vital items : food, medikits and protection.</p>
+          <ul>
+            <li>Avoid combat or use hit-and-run tactics against slower enemies.
+            </li>
+            <li>Get a lot of food : visit kitchens, grocery stores or trade for food.
+            </li>
+            <li>Explore the city to find a Shopping District.
+            </li>
+            <li>Make a base in a shop with good stuff, pushing shelves to block or open the entrance.
+            </li>
+            <li>Find a long range weapon, rifle or pistol.
+            </li>
+            <li>Loot items and store them in your base behind layers of shelves.
+            </li>
+            <li>Secure your base with traps. Use the Stench Killer to cover your tracks.
+            </li>
+            <li>Explore places like the Police Station and the Hospital.
+            </li>
+            <li>When you are ready, explore the CHAR Offices.
+            </li>
+            <li>The rest is up to you.
+            </li>
+          </ul>
+          <h3 id="s9-undead">UNDEAD</h3>
+          <p>The game as undead is extremly difficult and is not the main focus of the game.</p>
+          <p>It is there mostly to make you understand <q>the other side</q>.</p>
+          <p>You can die very easily due to your low speed. But you need kills to get stronger.</p>
+          <p>So your best bet is to keep a low profile and go only for the easy kills.</p>
+          <p>Try to follow a zombie master to form a horde and get lucky finishing blows.</p>
+          <p>Or lay in ambush for instance in basements and be very patient.</p>
+          <p>In other words, you have to think like a predator!</p>
+          <p>With patience, skill and a lot of luck you will get to know the nice feeling of being a powerful undead</p>
+          <p>tearing flesh apart.</p>
+          <p>Good luck and have fun!</p>
+        </section>
+      </article>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <div class="site-footer__grid">
+        <div>
+          <h4>Pages</h4>
+          <ul>
+            <li><a href="index.html">Home</a></li>
+            <li><a href="manual.html">Manual</a></li>
+            <li><a href="controls.html">Controls</a></li>
+            <li><a href="guide.html">Guide</a></li>
+            <li><a href="info.html">About the port</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Project</h4>
+          <ul>
+            <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded">Source on GitHub</a></li>
+            <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded/issues">Report an issue</a></li>
+            <li><a
+                href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/plans/BROWSER_PORT_PLAN.md">Porting
+                plan</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Original game</h4>
+          <ul>
+            <li><a href="http://roguesurvivor.blogspot.com/">roguedjack's blog</a></li>
+            <li><a href="http://roguesurvivor.proboards.com/">Original forum</a></li>
+          </ul>
+        </div>
       </div>
-      <div>
-        <h4>Project</h4>
-        <ul>
-          <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded">Source on GitHub</a></li>
-          <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded/issues">Report an issue</a></li>
-          <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/BROWSER_PORT_PLAN.md">Porting plan</a></li>
-        </ul>
-      </div>
-      <div>
-        <h4>Original game</h4>
-        <ul>
-          <li><a href="http://roguesurvivor.blogspot.com/">roguedjack's blog</a></li>
-          <li><a href="http://roguesurvivor.proboards.com/">Original forum</a></li>
-        </ul>
+      <div class="site-footer__legal">
+        <p><em>Rogue Survivor</em> was created by Jacques Ruiz (roguedjack) in 2012.
+          This site and the browser port are reimplementations of that work and are
+          distributed under the GNU General Public License v3.0 &mdash; see
+          <a href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/LICENSE.txt">LICENSE.txt</a>.
+        </p>
+        <p>Game text, manual and artwork &copy; Jacques Ruiz. Rogue Survivor Reloaded
+          is not affiliated with or endorsed by the original author.</p>
       </div>
     </div>
-    <div class="site-footer__legal">
-      <p><em>Rogue Survivor</em> was created by Jacques Ruiz (roguedjack) in 2012.
-      This site and the browser port are reimplementations of that work and are
-      distributed under the GNU General Public License v3.0 &mdash; see
-      <a href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/LICENSE.txt">LICENSE.txt</a>.</p>
-      <p>Game text, manual and artwork &copy; Jacques Ruiz. Rogue Survivor Reloaded
-      is not affiliated with or endorsed by the original author.</p>
-    </div>
-  </div>
-</footer>
+  </footer>
 
-<script src="assets/js/manual.js"></script>
+  <script src="assets/js/manual.js"></script>
 </body>
+
 </html>

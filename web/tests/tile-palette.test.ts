@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { GameTiles, TileID } from "@gameplay/GameTiles";
 import { Color } from "@engine/Color";
 import { DollPart } from "@data/Doll";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 /**
  * Regression tests for the six §1.1f fidelity bugs in the four previously
@@ -113,7 +115,19 @@ describe("§1.1f bug 56: DollPart._FIRST exists", () => {
     expect(DollPart.FEET).toBe(6);
     expect(DollPart.SKIN).toBe(7);
     expect(DollPart.EYES).toBe(8);
-    expect(DollPart._COUNT).toBe(9);
+    // `BACK` (Still Alive, Release 8-2, the backpack slot) took 9 precisely because
+    // `LEFT_ARM` (Release 7-2, the police riot shield) did not exist; that was this
+    // file's stated reason for `BACK` not being the C#'s 10. `LEFT_ARM` now does
+    // exist -- `POLICE_RIOT_SHIELD` is registered on it -- and it takes 10, which
+    // leaves `BACK` at 9 rather than renumbering a live part. So the two are now
+    // the C#'s values with `BACK` and `LEFT_ARM` swapped, and `LEFT_ARM` is the last
+    // part rather than `BACK`. The relationship that matters is unchanged: `_COUNT`
+    // is one past the last part, because `Doll`'s decoration array is
+    // `new Array(DollPart._COUNT).fill(null)` and a part with no slot in it is a
+    // part nothing can be decorated on. See the comment on `DollPart.LEFT_ARM`.
+    expect(DollPart.BACK).toBe(9);
+    expect(DollPart.LEFT_ARM).toBe(10);
+    expect(DollPart._COUNT).toBe(DollPart.LEFT_ARM + 1);
   });
 });
 
@@ -136,25 +150,132 @@ describe("the tile table is fully populated", () => {
     }
   });
 
+  /**
+   * Prefixes whose members are walkable and transparent. Everything else in the
+   * enum is a wall.
+   *
+   * This replaces an assertion that read `id <= TileID.RAIL_EW` to decide what a
+   * floor is, which silently assumed the enum is ordered floors-first. It is,
+   * today — but the Still Alive content pack interleaves new walls *and* new
+   * floors (`wall_mall`, `floor_white_tile`, `wall_pillar_concrete`,
+   * `parking_asphalt_ns` all arrive in one batch), so the next person to append
+   * a wall tile would have had to remember that appending a wall is illegal.
+   * Deriving it from the name instead means the table can grow in any order, and
+   * a *wrong* flag is caught rather than being reclassified by a boundary that
+   * moves.
+   */
+  const WALKABLE_PREFIXES = ["FLOOR_", "ROAD_", "RAIL_", "PARKING_", "WALK_"];
+
   it("keeps isWalkable and isTransparent consistent with the C# table", () => {
-    // GameTiles.cs passes (walkable, transparent); floors are both true,
-    // walls both false. A swapped pair would make walls walkable.
+    // GameTiles.cs passes (walkable, transparent) and the two always agree:
+    // floors are both true, walls both false. A swapped pair would make walls
+    // walkable, so that agreement is the invariant.
     for (let i = 1; i < TileID._COUNT; i++) {
       const model = tiles.get(i);
+      expect(
+        model.isWalkable,
+        `TileID ${i} (${tileName(i as TileID)}) has isWalkable !== isTransparent`,
+      ).toBe(model.isTransparent);
+    }
+  });
+
+  it("agrees with what the tile is called, not with its position in the enum", () => {
+    for (let i = 1; i < TileID._COUNT; i++) {
       const id = i as TileID;
-      const isFloor = id <= TileID.RAIL_EW;
-      expect(model.isWalkable, `TileID ${i} walkable`).toBe(isFloor);
-      expect(model.isTransparent, `TileID ${i} transparent`).toBe(isFloor);
+      const shouldBeWalkable = WALKABLE_PREFIXES.some((p) => tileName(id).startsWith(p));
+      expect(
+        tiles.get(id).isWalkable,
+        `TileID ${i} (${tileName(id)}) isWalkable disagrees with its name`,
+      ).toBe(shouldBeWalkable);
     }
   });
 
   it("gives every wall a minimap colour that is not the UNDEF pink", () => {
     // A missing colour shows as magenta; catching it here beats seeing it.
-    for (let id = TileID.WALL_BRICK; id < TileID._COUNT; id++) {
-      const c = tiles.get(id).minimapColor;
-      expect(`${c.r},${c.g},${c.b}`, `wall ${id} is UNDEF pink`).not.toBe(
+    // Keyed on `isWalkable` rather than on `id >= WALL_BRICK`, for the same
+    // reason as above.
+    for (let i = 1; i < TileID._COUNT; i++) {
+      if (tiles.get(i).isWalkable) continue;
+      const c = tiles.get(i).minimapColor;
+      expect(`${c.r},${c.g},${c.b}`, `wall ${i} (${tileName(i as TileID)}) is UNDEF pink`).not.toBe(
         `${Color.Pink.r},${Color.Pink.g},${Color.Pink.b}`
       );
     }
+  });
+
+  it("would not have accepted a wall inserted before the last floor", () => {
+    // The premise behind the two tests above, asserted so they cannot pass
+    // vacuously: the old `id <= RAIL_EW` check really did classify by position,
+    // so appending a wall to the middle of the table would have flipped the
+    // walkable/transparent expectation for it *and* for everything after it.
+    const lastFloor = WALKABLE_PREFIXES.length > 0 ? tiles.get(TileID.RAIL_EW) : null;
+    expect(lastFloor?.isWalkable).toBe(true);
+    expect(tileName(TileID.RAIL_EW).startsWith("RAIL_")).toBe(true);
+  });
+});
+
+/**
+ * The Still Alive tiles, pinned against the flags the C# declares.
+ *
+ * The name-prefix test above is a *consistency* check: it proves the port agrees
+ * with itself, that a tile called `WALL_` is a wall. That is not the same as
+ * agreeing with the C#, and the difference is the whole risk here — a tile that
+ * the fork made a wall and the port made a floor is passable, and a floor the
+ * port made a wall is a place the player cannot stand. Neither shows up in a
+ * self-consistent table.
+ *
+ * `tests/fixtures/still-alive-tiles.json` is the C#'s own `new TileModel(...)`
+ * flags, extracted by `scripts/port-tile-models.py --fixture`. It is committed
+ * rather than read from `_refs/` at test time because `_refs/` is gitignored,
+ * so a test that opened `GameTiles.cs` would fail in CI and pass locally — the
+ * worst possible arrangement. The script is the way to regenerate it.
+ */
+interface ForkTileFlags {
+  walkable: boolean;
+  transparent: boolean;
+  water: boolean;
+  waterCover: string | null;
+  flammableInFork: boolean;
+  canDecayInFork: boolean;
+}
+
+/** The enum key for an id, or "" past the end. */
+const tileName = (id: TileID): string => TileID[id] ?? "";
+
+const forkFlags = JSON.parse(
+  readFileSync(resolve(__dirname, "fixtures/still-alive-tiles.json"), "utf-8"),
+) as Record<string, ForkTileFlags>;
+
+describe("Still Alive tiles carry the C#'s flags", () => {
+  it("has a fixture entry for every tile in the enum", () => {
+    // The reverse direction: a tile added to GameTiles without a fixture entry
+    // would otherwise be checked by nothing at all.
+    const missing: string[] = [];
+    for (let i = 1; i < TileID._COUNT; i++) {
+      const name = tileName(i as TileID);
+      if (name && !(name in forkFlags)) missing.push(name);
+    }
+    // The 19 vanilla tiles are not in the fixture: they predate the fork and
+    // are checked by the other suites. Only the appended ones must appear.
+    const vanilla = new Set(["FLOOR_ASPHALT", "FLOOR_CONCRETE", "FLOOR_GRASS",
+      "FLOOR_OFFICE", "FLOOR_PLANKS", "FLOOR_SEWER_WATER", "FLOOR_TILES",
+      "FLOOR_WALKWAY", "ROAD_ASPHALT_EW", "ROAD_ASPHALT_NS", "RAIL_EW",
+      "WALL_BRICK", "WALL_CHAR_OFFICE", "WALL_HOSPITAL", "WALL_POLICE_STATION",
+      "WALL_SEWER", "WALL_STONE", "WALL_SUBWAY"]);
+    expect(missing.filter((m) => !vanilla.has(m)), "Still Alive tiles with no fixture entry").toEqual([]);
+  });
+
+  it.each(Object.keys(forkFlags))("%s matches the C#", (name) => {
+    const id = (TileID as unknown as Record<string, number>)[name];
+    expect(id, `${name} is in the fixture but not in TileID`).toBeTypeOf("number");
+    const model = tiles.get(id);
+    const want = forkFlags[name];
+    expect(model.isWalkable, `${name} isWalkable`).toBe(want.walkable);
+    expect(model.isTransparent, `${name} isTransparent`).toBe(want.transparent);
+    // Water is a TileModel field rather than a constructor argument, so it is
+    // the one flag a transcription pass is most likely to miss.
+    expect(model.isWater, `${name} isWater`).toBe(want.water);
+    expect(model.waterCoverImageId || null, `${name} waterCoverImageId`)
+      .toBe(want.waterCover);
   });
 });

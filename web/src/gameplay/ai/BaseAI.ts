@@ -2,10 +2,12 @@ import { Activity } from '@data/Activity';
 import { Actor, Actor as ActorClass } from '@data/Actor';
 import { ActorDirective, ActorCourage } from '@data/ActorDirective';
 import { ActorModel } from '@data/ActorModel';
+import { euclideanDistance } from '@engine/NoiseDistance';
 import { ActorOrder } from '@data/ActorOrder';
 import { AIController } from '@data/AIController';
 import { Map as GameMap, Lighting, Exit } from '@data/Map';
 import { Item } from '@data/Item';
+import { ItemID } from '@gameplay/GameItems';
 import { Location } from '@data/Location';
 import { MapObject } from '@data/MapObject';
 import { Direction } from '@engine/Direction';
@@ -21,6 +23,7 @@ import { Inventory } from '@data/Inventory';
 import { Attack, FireMode } from '@data/Attack';
 import { DollPart } from '@data/Doll';
 import { SkillID } from '@gameplay/Skills';
+import { TileID } from '@gameplay/GameTiles';
 import { LOS } from '@engine/LOS';
 import { ItemTracker } from '@engine/items/ItemTracker';
 import { ItemMeleeWeapon, ItemRangedWeapon, ItemRangedWeaponModel, ItemAmmo, ItemWeapon } from '@engine/items/ItemWeapon';
@@ -31,6 +34,7 @@ import { DoorWindow, Fortification } from '@engine/mapobjects/MapObjects';
 import { ItemTrap } from '@engine/items/ItemTrap';
 import { ItemMedicine } from '@engine/items/ItemMedicine';
 import { Session } from '@engine/Session';
+import { Feature, hasFeature } from '@engine/FeatureFlags';
 import { WorldTime } from '@engine/WorldTime';
 import { Corpse } from '@data/Corpse';
 import { ItemGrenade, ItemGrenadeModel, ItemPrimedExplosive, ItemExplosive, ItemExplosiveModel } from '@engine/items/ItemExplosive';
@@ -96,6 +100,19 @@ export const enum TradeRating {
   REFUSE = 0,
   MAYBE = 1,  // will need a charisma roll, accept if success refuse if failed.
   ACCEPT = 3,
+}
+
+/**
+ * The three tiles the fork calls "grass", for the animals' benefit.
+ *
+ * C# spells the triple out twice, inline and in the same order: `BaseAI.cs:682`
+ * (where an animal wanders) and `UnintelligentAnimalAI.cs:97` (where one flees).
+ * `FLOOR_PLANTED` is in the list although nothing in the port can plant anything
+ * -- the farming system is alpha10-era and was never ported -- because including
+ * it costs nothing and keeps the list honest against the original.
+ */
+export function isGrassLikeTile(tileId: number): boolean {
+  return tileId === TileID.FLOOR_GRASS || tileId === TileID.FLOOR_PLANTED || tileId === TileID.FLOOR_DIRT;
 }
 
 
@@ -461,6 +478,110 @@ export abstract class BaseAI extends AIController {
     return chooseDir ? new ActionBump(this.controlledActor, game, chooseDir.choice) : null;
   }
 
+  /**
+   * C# `BaseAI.BehaviorSimpleAnimalWander` (BaseAI.cs:650-709), added Release
+   * 7-6. "Designed for unintelligent animals (rabbits, chickens)".
+   *
+   * It is not `behaviorWander` under another name. That one chases unexplored
+   * ground and prefers doorways, and its `UNEXPLORED_LOC` bonus of 1000 would
+   * send a rabbit marching off down the map; this one is a stay-put shuffle
+   * carried entirely by one term -- `+200` for grass against `-1000` for
+   * anything else, which the `Roll(0, 50)` can never out-vote.
+   */
+  protected behaviorSimpleAnimalWander(
+    game: Game,
+    goodWanderLocFn: ((l: Location) => boolean) | null = null
+  ): ActorAction | null {
+    const actor = this.controlledActor;
+    const map = actor.location.map;
+    if (!map) return null;
+
+    const chooseRandomDir = this.choose<Direction>(
+      game,
+      Direction.COMPASS,
+      dir => {
+        const next = actor.location.addDirection(dir);
+        if (goodWanderLocFn && !goodWanderLocFn(next)) return false;
+        const bumpAction = game.rules.isBumpableFor(actor, game, next.map!, next.position.x, next.position.y).action;
+        return this.isValidWanderAction(game, bumpAction);
+      },
+      dir => {
+        const next = actor.location.addDirection(dir);
+        // The whole base score is a roll, so every legal direction is a
+        // candidate and the tie-break in `choose` decides -- the C# is identical,
+        // and deliberately so: a rabbit's walk is not meant to be predictable.
+        let score = game.rules.roll(0, 50);
+        // discourage backtracking, based on alpha10.1
+        if (next.equals(this.m_prevLocation)) score -= 50;
+        if (map.isAnyTileWaterThere(next.position)) score -= 100;
+        else if (map.isAnyTileFireThere(next.position)) score -= 2000;
+        // keep them on grass, which is where they were originally spawned
+        const tile = map.getTileAt(next.position.x, next.position.y);
+        // The C# dereferences `GetTileAt` unguarded, which is a null reference
+        // for the animal standing on the last row of the map; the `tile &&` is
+        // what keeps the off-map neighbour on the -1000 branch instead.
+        if (tile && isGrassLikeTile(tile.model.id)) score += 200;
+        else score -= 1000;
+        return score;
+      },
+      (a, b) => a > b
+    );
+
+    // Unconditional in the C# too (BaseAI.cs:691), and it stays unconditional
+    // here: a wandering animal is not running away from anything.
+    actor.isRunning = false;
+    return chooseRandomDir ? new ActionBump(actor, game, chooseRandomDir.choice) : null;
+  }
+
+  /**
+   * C# `BaseAI.BehaviorFleeFromFires` (BaseAI.cs:4441-4485), Release 4.
+   *
+   * **Tile** fire only. A burning map object and a burning *actor* both leave
+   * this behaviour cold, and that is upstream's design rather than an omission:
+   * the C# asks `Map.IsAnyTileFireThere`, which since Release 6-1 is a flag on
+   * the `Tile` itself rather than a scan for scorch decorations. Nothing here
+   * needs `Actor.isOnFire`, which the port does not have and another subsystem
+   * owns; if it ever gets one, this is the method that would grow a second arm.
+   */
+  protected behaviorFleeFromFires(game: Game, location: Location): ActorAction | null {
+    const map = location.map;
+    if (!map) return null;
+
+    // if no fire, no need
+    if (!map.isAnyTileFireThere(location.position)) return null;
+
+    const bestAwayDir = this.choose<Direction>(
+      game,
+      Direction.COMPASS,
+      dir => {
+        const next = this.controlledActor.location.addDirection(dir);
+        const bumpAction = game.rules.isBumpableFor(this.controlledActor, game, next.map!, next.position.x, next.position.y).action;
+        return this.isValidFleeingAction(bumpAction);
+      },
+      dir => {
+        const next = this.controlledActor.location.addDirection(dir);
+        // check that the next dir isn't also fire
+        let safetyValue = 1;
+        // water is a good place to flee from fires (Release 6-1)
+        if (map.isAnyTileWaterThere(next.position)) safetyValue += 6;
+        // -2, not -1 (Release 5-2). At -1 a burning tile and a trapped tile both
+        // scored 0, so the two cancelled and the animal could pick either; the
+        // extra point is what makes it prefer the *possible* pain of a snare to
+        // the *guaranteed* pain of standing in flames.
+        else if (map.isAnyTileFireThere(next.position)) safetyValue -= 2;
+        if (this.isAnyUnsafeDamagingTrapThere(game, map, next.position)) safetyValue -= 1;
+        return safetyValue;
+      },
+      (a, b) => a > b
+    );
+
+    // moving is always better than not moving -- the C# drops its
+    // "bestAwayDir.Value > notMovingValue" guard and says so (BaseAI.cs:4474)
+    if (!bestAwayDir) return null;
+    this.runIfPossible(game.rules);
+    return new ActionBump(this.controlledActor, game, bestAwayDir.choice);
+  }
+
   protected behaviorBumpToward(
     game: Game,
     goal: Point,
@@ -595,6 +716,86 @@ export abstract class BaseAI extends AIController {
 
       return distance;
     });
+  }
+
+  /**
+   * C# `BehaviorGoFish(RogueGame)` -- `BaseAI.cs:5550-5599`, Release 7-6.
+   *
+   * Three turns, not one, and the shape is the interesting part:
+   *
+   *  - **no rod equipped** -- equip it and `ActionWait(..., isFishing: false)`;
+   *  - **rod equipped but not in hand** -- `ActionWait(..., false)`, because the
+   *    equip takes a turn;
+   *  - **rod in hand** -- `ActionWait(..., isFishing: true)`, which is the cast.
+   *
+   * So the same method returns a wait three times with different flags, and the
+   * *caller* is what advances the state. That is why the C# notes "we only want to
+   * wait one turn for NPCs, because if we lock them into fishing they might get
+   * attacked" -- `ActionWait` is not a fishing lock, it is a single turn.
+   *
+   * `MarkEquipmentSlotAsTaboo(LEFT_HAND)` is load-bearing and easy to drop:
+   * `BehaviorEquipBestItems` would otherwise immediately unequip the rod to put
+   * something more useful in the off hand, and the NPC would equip and unequip
+   * forever.
+   */
+  protected behaviorGoFish(game: Game): ActorAction | null {
+    const actor = this.controlledActor;
+    let fishingRod: Item | null = null;
+    for (const it of actor.inventory?.items ?? []) {
+      if (it.model.id !== ItemID.FISHING_ROD) continue;
+      fishingRod = it;
+      if (it.isEquipped) break;
+    }
+
+    if (fishingRod === null) return null; // the calling paths pre-check for a rod
+    if (!fishingRod.isEquipped) {
+      const canEquip = game.rules.canActorEquipFishingRod(actor, fishingRod);
+      if (!canEquip.ok) return null;
+      this.markEquipmentSlotAsTaboo(DollPart.LEFT_HAND);
+      game.doEquipItem(actor, fishingRod);
+      return new ActionWait(actor, game, false);
+    }
+
+    // An equipped rod means we started fishing on a previous turn. We have not caught
+    // anything, because this action is only reached when the actor has no food, so
+    // keep waiting for a fish to land.
+    return new ActionWait(actor, game, true);
+  }
+
+  /**
+   * C# `BehaviorGoToNearestVisibleWater(RogueGame, HashSet<Point> FOV)` --
+   * `BaseAI.cs:1125-1164`, Release 6-1.
+   *
+   * Scans the actor's field of view for the **nearest** water tile by *Euclidean*
+   * distance (`StdDistance`) and bumps toward it. Returns null when there is no
+   * water in view, which is the signal the caller uses to give up on fishing.
+   *
+   * The scan is over the FOV set rather than the whole map on purpose: an NPC that
+   * cannot see the pond should not walk toward it, and the C#'s comment says as much.
+   */
+  protected behaviorGoToNearestVisibleWater(game: Game, fov: Point[]): ActorAction | null {
+    const actor = this.controlledActor;
+    const map = actor.location.map;
+    if (map === null) return null;
+
+    let waterPos: Point | null = null;
+    let nearestDist = Number.MAX_VALUE;
+    for (const p of fov) {
+      const tile = map.getTileAt(p.x, p.y);
+      if (tile === null || !tile.model.isWater) continue;
+        const dist = euclideanDistance(actor.location.position, p);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        waterPos = p;
+      }
+    }
+
+    // if we see water, try to get there.
+    if (waterPos !== null) {
+      const moveThere = this.behaviorIntelligentBumpToward(game, waterPos, false, false);
+      if (moveThere !== null) return moveThere;
+    }
+    return null; // no water i can see
   }
 
   protected behaviorGoEatCorpse(game: Game, corpsesPercepts: Percept[] | null): ActorAction | null {
@@ -1316,37 +1517,49 @@ export abstract class BaseAI extends AIController {
     }
     // left-hand items
     if (canUseLeftHand) {
-      // ordered by priority: cellphone -> lights -> spray
+      // Ordered by priority: **lights -> cellphone -> spray**.
+      //
+      // Vanilla is cellphone -> lights -> spray, and swapping the first two is
+      // the entire feature. The C#'s comment is the reason: "lights are now more
+      // important than cellphones now that darkness is revamped" (Release 6-1).
+      // With only one left hand, a survivor who has both will drop the phone --
+      // and under vanilla it is the other way round, so an NPC walks into a
+      // pitch-black basement holding a cell phone it will never switch on. Before
+      // `DarknessFov` that was a cosmetic oddity; now it means the AI is blind,
+      // which is why this was parked at Stage 2 until 2a landed.
       const eqCellphone = this.getEquippedCellPhone();
       const eqLight = this.getEquippedLight();
       const eqStenchKiller = this.getEquippedStenchKiller();
-      // cellphone
-      if (allowCellPhones && this.wantsCellPhoneEquipped(game)) {
-        action = this.behaviorEquipBestCellPhone(game);
-        if (action) {
-          return action;
+
+      // Still Alive, Release 6-1, reorders the first two blocks. Rather than keep
+      // two copies of the same code, the *order* is chosen and each step is a
+      // small method. The comments on each step say why it is the way it is.
+      const lightsFirst = hasFeature(Session.get().ruleset, Feature.LightPriority);
+      const stepLight = (): ActorAction | null => {
+        if (this.needsLight(game)) return this.behaviorEquipBestLight(game);
+        // doesnt need light, unequip if equipped.
+        if (eqLight) return new ActionUnequipItem(this.controlledActor, game, eqLight);
+        return null;
+      };
+      const stepPhone = (): ActorAction | null => {
+        // The `!eqLight` guard is where the fix is felt, and it is the whole
+        // feature: an NPC already holding a light falls into the else and actively
+        // *unequips* the phone to free the hand. So this is not merely "prefer
+        // light" -- it is "prefer light enough to throw the phone away".
+        if (!eqLight && allowCellPhones && this.wantsCellPhoneEquipped(game)) {
+          return this.behaviorEquipBestCellPhone(game);
         }
-      } else {
-        if (eqCellphone) {
-          return new ActionUnequipItem(this.controlledActor, game, eqCellphone);
-        }
+        if (eqCellphone) return new ActionUnequipItem(this.controlledActor, game, eqCellphone);
+        return null;
+      };
+
+      for (const step of lightsFirst ? [stepLight, stepPhone] : [stepPhone, stepLight]) {
+        const a = step();
+        if (a) return a;
       }
-      // lights, if no cellphone equipped
-      if (!eqCellphone) {
-        if (this.needsLight(game)) {
-          action = this.behaviorEquipBestLight(game);
-          if (action) {
-            return action;
-          }
-        } else {
-          // doesnt need light, unequip if equipped.
-          if (eqLight) {
-            return new ActionUnequipItem(this.controlledActor, game, eqLight);
-          }
-        }
-      }
+
       // spray scent, if no cellphone or light equipped
-      if (!eqCellphone && !eqLight) {
+      if (eqCellphone == null && eqLight == null) {
         if (allowStenchKiller) {
           action = this.behaviorEquipBestStenchKiller(game);
           if (action) {
@@ -1583,6 +1796,29 @@ export abstract class BaseAI extends AIController {
         if (dist < nearestDist) {
           nearestDist = dist;
           couchPos = p;
+          //@@MP (Release 7-3)
+        }
+      }
+
+      // Still Alive, Release 7-3 (`BaseAI.cs:2524-2536`): a sleeping bag dropped on
+      // an empty tile is a couch. This is one `else if`'s worth of the reference's
+      // `if` block -- the C# runs the couch test and then, *regardless of its
+      // outcome*, looks at the tile's ground inventory, guarded by `mapObj == null`
+      // so a bag cannot be chosen underneath a parked car.
+      //
+      // Gated on `Feature.ResourcesAvailability`, the same flag as
+      // `RogueGame.HandlePlayerUseSleepingBag` and the sleep-regen OR in the turn
+      // loop, so a bag rates as a bed in all three places or in none.
+      const groundInv = hasFeature(Session.get().ruleset, Feature.ResourcesAvailability)
+        ? map.getItemsAt(p)
+        : null;
+      if (mapObj == null && groundInv != null) {
+        if (groundInv.hasItemMatching((it) => it.model.id === ItemID.SLEEPING_BAG)) {
+          const dist = game.rules.stdDistance(this.controlledActor.location.position, p);
+          if (dist < nearestDist) {
+            nearestDist = dist;
+            couchPos = p;
+          }
         }
       }
     }
@@ -2461,6 +2697,19 @@ export abstract class BaseAI extends AIController {
     /////////////////////////////////////
     const map = this.controlledActor.location.map;
     if (!map) return null;
+    // Bail if the actor's tile is indoors, i.e. cannot see the sky. This loop
+    // closes doors and barricades windows, and on a level with no sky -- a
+    // basement, the sewers, the police station jails, the CHAR underground --
+    // there is nothing to secure against, so the only thing it does is ping-pong
+    // the same door: the level's AI fights over one doorway and never does
+    // anything else. Reported as an infinite loop in the animal shelter kennels.
+    // The fork's fix, BaseAI.cs:4209.
+    //
+    // `tile.isInside` is the same test the weather code uses for "outside"
+    // (Rules.decayOdorsAt), so indoors is one meaning in this codebase and not two.
+    const here = this.controlledActor.location.position;
+    const tile = map.getTileAt(here.x, here.y);
+    if (!tile || tile.isInside) return null;
     for (const p of LOS.fovPoints(fov)) {
       const { x, y } = p;
       const mapObj = map.getMapObjectAt(x, y);
@@ -3670,6 +3919,18 @@ export abstract class BaseAI extends AIController {
       return nScore > oScore ? TradeRating.ACCEPT :
         nScore < oScore ? TradeRating.REFUSE :
         TradeRating.MAYBE;
+    }
+    // Still Alive, Release 8-1 (`BaseAI.cs:6981-6985`). Sits between the C#'s
+    // fishing-rod and shield branches and its `ItemPrimedExplosive` branch, so it
+    // lands immediately before the primed-explosive check below.
+    //
+    // The `EquipmentPart == LEFT_ARM` branch the C# has directly above this
+    // (`BaseAI.cs:6970-6979`, the shield) is deliberately NOT ported: the port has
+    // no LEFT_ARM doll decoration or shield item, so the condition would match
+    // nothing and could only ever fall through. Porting it as a literal
+    // translation would add an unreachable branch ahead of a rule that does work.
+    if (oIt.model === game.GameItems.SIPHON_KIT || oIt.model === game.GameItems.CHAR_LAPTOP) {
+      return TradeRating.REFUSE;
     }
     if (oIt instanceof ItemPrimedExplosive) { // also ItemGrenadePrimed
       // refuse any primed explosive

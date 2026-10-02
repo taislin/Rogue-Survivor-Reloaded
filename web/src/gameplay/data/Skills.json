@@ -230,5 +230,13 @@
     "VALUE2": 0,
     "VALUE3": 0,
     "VALUE4": 0
+  },
+  {
+    "ID": "BOWS_EXPLOSIVES",
+    "NAME": "Bows & Explosives",
+    "VALUE1": 10,
+    "VALUE2": 4,
+    "VALUE3": 0,
+    "VALUE4": 0
   }
 ]

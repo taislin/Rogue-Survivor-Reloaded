@@ -24,6 +24,18 @@ export const enum ActorFlags {
   IS_DEAD = 1 << 3,
   IS_RUNNING = 1 << 4,
   IS_SLEEPING = 1 << 5,
+  /**
+   * Still Alive, Release 5-7. The actor is alight.
+   *
+   * **Distinct from standing in a tile fire.** `Feature.TileFires` deals
+   * `BASE_TILE_FIRE_DAMAGE` to anyone standing on a burning tile; this bit is a
+   * separate state that follows the actor, is extinguished by rain or by
+   * stop-drop-and-roll, and is drawn as a torso decoration. Conflating the two is
+   * how a walker ends up on fire and shrugs it off by stepping off the tile.
+   */
+  IS_ON_FIRE = 1 << 6,
+  /** Still Alive, Release 6-1. Standing in water; a hard block on ignition. */
+  IS_IN_WATER = 1 << 7,
 }
 
 export interface TrustRecord {
@@ -63,6 +75,55 @@ export class Actor {
 
   previousHitPoints: number = 0;
   previousStaminaPoints: number = 0;
+  /**
+   * Still Alive, Release 7-6: contracted from raw meat, cleared by a per-turn
+   * roll or by antiviral pills. A plain own field, so the graph writer carries
+   * it with no spec entry -- which is the plan's "0 lines of serialisation" for
+   * this feature, and the reason to prefer a bool here over anything richer.
+   *
+   * `infection` is the *other* status and is easy to confuse with this one: it
+   * rises from zombie bites and is cured by antivirals too, but it is a level
+   * rather than a flag, and a food-poisoned actor has `infection === 0`.
+   */
+  isFoodPoisoned: boolean = false;
+
+  /**
+   * Blood alcohol, in turns' worth of a standard drink. Still Alive, Release 7-1.
+   *
+   * A plain int, not a float, because the C#'s is one: one unit of drink is
+   * `WorldTime.TURNS_PER_HOUR` (30), and passing out is five units (150). It
+   * decays by exactly one per turn, so a survivor who downs five beers is out for
+   * two and a half in-game hours. Modelling it as a level rather than a flag is
+   * what lets the accuracy penalties have four tiers instead of one.
+   *
+   * Plain own fields, so the graph writer carries them with no spec entry -- the
+   * same as `isFoodPoisoned`.
+   */
+  /**
+   * What killed this actor, as a free-form string: "fire", "zombie bite", ...
+   *
+   * Still Alive, Release 7-6. Only one value is read today -- butchering checks
+   * for `"fire"`, because meat off a body burnt to death comes out *cooked* and
+   * anything else comes out raw. That is the whole feature, and it is a
+   * surprising one: fire is a cooking method you do not choose.
+   *
+   * A string rather than an enum because the C# has a string, and because the set
+   * of causes is open (every weapon, every hazard). A plain own field, so the
+   * graph writer carries it with no spec entry.
+   */
+  causeOfDeath: string = "";
+
+  bloodAlcohol: number = 0;
+  /**
+   * Last turn's `bloodAlcohol`, snapshotted at the top of the turn.
+   *
+   * Needed because the drink effects are *thresholds crossings*, not levels:
+   * "vomit if you have just crossed 80%" cannot be expressed as "if BAC >= 80%",
+   * or a survivor who is already at 85% would vomit on every can. The
+   * `previous < T && current >= T` shape is the C#'s.
+   */
+  previousBloodAlcohol: number = 0;
+
   previousFoodPoints: number = 0;
   previousSleepPoints: number = 0;
   previousSanity: number = 0;
@@ -238,6 +299,22 @@ export class Actor {
 
   get isPluralName(): boolean { return (this.flags & ActorFlags.IS_PLURAL_NAME) !== 0; }
   set isPluralName(v: boolean) { this.setFlag(ActorFlags.IS_PLURAL_NAME, v); }
+
+  /**
+   * Is this actor on fire? See `ActorFlags.IS_ON_FIRE`.
+   *
+   * Set and cleared only by `RogueGame.SetActorOnFire` and
+   * `RogueGame.ExtinguishOnFireActor` -- the C# keeps the same discipline
+   * (`RogueGame.cs:24737` and `:24819`), and it matters: ignition is where fire
+   * resistance is consulted, so a bare assignment would let an actor walk through
+   * a fire-resistant suit and end up alight anyway.
+   */
+  get isOnFire(): boolean { return (this.flags & ActorFlags.IS_ON_FIRE) !== 0; }
+  set isOnFire(v: boolean) { this.setFlag(ActorFlags.IS_ON_FIRE, v); }
+
+  /** Still Alive, Release 6-1. Water is a hard block on being set alight. */
+  get isInWater(): boolean { return (this.flags & ActorFlags.IS_IN_WATER) !== 0; }
+  set isInWater(v: boolean) { this.setFlag(ActorFlags.IS_IN_WATER, v); }
 
   get isDead(): boolean { return (this.flags & ActorFlags.IS_DEAD) !== 0; }
   set isDead(v: boolean) { this.setFlag(ActorFlags.IS_DEAD, v); }
@@ -486,6 +563,27 @@ export class Actor {
   getEquippedRangedWeapon(): ItemRangedWeapon | null {
     const it = this.getEquippedItem(DollPart.RIGHT_HAND);
     return it instanceof ItemRangedWeapon ? it : null;
+  }
+
+  /**
+   * C# `GetEquippedShield` (`Actor.cs:1133-1136`), Still Alive, Release 7-2.
+   *
+   * Returns a plain `Item`, not a subclass, and that is the C#'s too: there is no
+   * `ItemShieldModel` in the fork, so "is a shield" is decided by *which arm the
+   * item is on* rather than by what it is. A plain cast means the same thing here.
+   *
+* **Anything on the left arm is a shield.** There is no `ItemShieldModel` in
+	 * the fork, so "is this a shield" is decided by which arm the item is on and by
+	 * nothing else -- a crowbar on the left arm blocks. Tightening that to a type
+	 * check would be a silent divergence that reads as a correctness improvement.
+	 *
+	 * Read by `DoMeleeAttack`'s block roll (`RogueGame.cs:18368-18390`), where it
+	 * gates the whole hit/miss resolution, and by `Rules.actorShieldChanceToBlock`.
+	 * It is `null` for nearly every actor in practice, because `POLICE_RIOT_SHIELD`
+	 * has no drop site yet.
+	 */
+  getEquippedShield(): Item | null {
+    return this.getEquippedItem(DollPart.LEFT_ARM);
   }
 }
 

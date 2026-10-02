@@ -89,6 +89,135 @@ export class GameImages {
   static readonly TILE_WALL_SEWER = "Tiles/wall_sewer";
   static readonly TILE_WALL_STONE = "Tiles/wall_stone";
 
+  // ── Still Alive tiles (scripts/port-tile-models.py). Paths are verbatim
+  // from the fork's GameImages.cs, which is why TILE_RAIL_ES names a
+  // rail_ew file and FLOOR_ARMY reuses the office floor texture.
+  static readonly TILE_FLOOR_BASKETBALL_COURT_18 = "Tiles/basketball_court/floor_basketball_court_18";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_19 = "Tiles/basketball_court/floor_basketball_court_19";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_20 = "Tiles/basketball_court/floor_basketball_court_20";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_21 = "Tiles/basketball_court/floor_basketball_court_21";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_22 = "Tiles/basketball_court/floor_basketball_court_22";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_23 = "Tiles/basketball_court/floor_basketball_court_23";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_24 = "Tiles/basketball_court/floor_basketball_court_24";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_25 = "Tiles/basketball_court/floor_basketball_court_25";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_27 = "Tiles/basketball_court/floor_basketball_court_27";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_28 = "Tiles/basketball_court/floor_basketball_court_28";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_29 = "Tiles/basketball_court/floor_basketball_court_29";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_30 = "Tiles/basketball_court/floor_basketball_court_30";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_31 = "Tiles/basketball_court/floor_basketball_court_31";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_32 = "Tiles/basketball_court/floor_basketball_court_32";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_33 = "Tiles/basketball_court/floor_basketball_court_33";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_34 = "Tiles/basketball_court/floor_basketball_court_34";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_36 = "Tiles/basketball_court/floor_basketball_court_36";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_37 = "Tiles/basketball_court/floor_basketball_court_37";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_38 = "Tiles/basketball_court/floor_basketball_court_38";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_39 = "Tiles/basketball_court/floor_basketball_court_39";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_40 = "Tiles/basketball_court/floor_basketball_court_40";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_41 = "Tiles/basketball_court/floor_basketball_court_41";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_42 = "Tiles/basketball_court/floor_basketball_court_42";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_43 = "Tiles/basketball_court/floor_basketball_court_43";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_45 = "Tiles/basketball_court/floor_basketball_court_45";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_46 = "Tiles/basketball_court/floor_basketball_court_46";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_47 = "Tiles/basketball_court/floor_basketball_court_47";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_48 = "Tiles/basketball_court/floor_basketball_court_48";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_49 = "Tiles/basketball_court/floor_basketball_court_49";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_50 = "Tiles/basketball_court/floor_basketball_court_50";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_51 = "Tiles/basketball_court/floor_basketball_court_51";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_52 = "Tiles/basketball_court/floor_basketball_court_52";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_54 = "Tiles/basketball_court/floor_basketball_court_54";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_55 = "Tiles/basketball_court/floor_basketball_court_55";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_56 = "Tiles/basketball_court/floor_basketball_court_56";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_57 = "Tiles/basketball_court/floor_basketball_court_57";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_58 = "Tiles/basketball_court/floor_basketball_court_58";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_59 = "Tiles/basketball_court/floor_basketball_court_59";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_60 = "Tiles/basketball_court/floor_basketball_court_60";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_61 = "Tiles/basketball_court/floor_basketball_court_61";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_63 = "Tiles/basketball_court/floor_basketball_court_63";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_64 = "Tiles/basketball_court/floor_basketball_court_64";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_65 = "Tiles/basketball_court/floor_basketball_court_65";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_66 = "Tiles/basketball_court/floor_basketball_court_66";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_67 = "Tiles/basketball_court/floor_basketball_court_67";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_68 = "Tiles/basketball_court/floor_basketball_court_68";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_69 = "Tiles/basketball_court/floor_basketball_court_69";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_70 = "Tiles/basketball_court/floor_basketball_court_70";
+  static readonly TILE_FLOOR_BASKETBALL_COURT_OUTER = "Tiles/basketball_court/floor_basketball_court_outer";
+  static readonly TILE_FLOOR_BLUE_CARPET = "Tiles/floor_blue_carpet";
+  static readonly TILE_FLOOR_DIRT = "Tiles/floor_dirt";
+  static readonly TILE_FLOOR_FOOD_COURT_POOL = "Tiles/floor_food_court_pool";
+  static readonly TILE_FLOOR_PLANTED = "Tiles/floor_planted";
+  static readonly TILE_FLOOR_POND_CENTER = "Tiles/floor_pond_center";
+  static readonly TILE_FLOOR_POND_E_EDGE = "Tiles/floor_pond_east-edge";
+  static readonly TILE_FLOOR_POND_NE_CORNER = "Tiles/floor_pond_ne-corner";
+  static readonly TILE_FLOOR_POND_NW_CORNER = "Tiles/floor_pond_nw-corner";
+  static readonly TILE_FLOOR_POND_N_EDGE = "Tiles/floor_pond_north-edge";
+  static readonly TILE_FLOOR_POND_SE_CORNER = "Tiles/floor_pond_se-corner";
+  static readonly TILE_FLOOR_POND_SW_CORNER = "Tiles/floor_pond_sw-corner";
+  static readonly TILE_FLOOR_POND_S_EDGE = "Tiles/floor_pond_south-edge";
+  static readonly TILE_FLOOR_POND_WATER_COVER = "Tiles/floor_pond_water_cover";
+  static readonly TILE_FLOOR_POND_W_EDGE = "Tiles/floor_pond_west-edge";
+  static readonly TILE_FLOOR_POOL_WATER_COVER = "Tiles/floor_pool_water_cover";
+  static readonly TILE_FLOOR_RED_CARPET = "Tiles/floor_red_carpet";
+  static readonly TILE_FLOOR_TENNIS_COURT_10 = "Tiles/tennis_court/floor_tennis_court_10";
+  static readonly TILE_FLOOR_TENNIS_COURT_11 = "Tiles/tennis_court/floor_tennis_court_11";
+  static readonly TILE_FLOOR_TENNIS_COURT_12 = "Tiles/tennis_court/floor_tennis_court_12";
+  static readonly TILE_FLOOR_TENNIS_COURT_13 = "Tiles/tennis_court/floor_tennis_court_13";
+  static readonly TILE_FLOOR_TENNIS_COURT_14 = "Tiles/tennis_court/floor_tennis_court_14";
+  static readonly TILE_FLOOR_TENNIS_COURT_15 = "Tiles/tennis_court/floor_tennis_court_15";
+  static readonly TILE_FLOOR_TENNIS_COURT_18 = "Tiles/tennis_court/floor_tennis_court_18";
+  static readonly TILE_FLOOR_TENNIS_COURT_19 = "Tiles/tennis_court/floor_tennis_court_19";
+  static readonly TILE_FLOOR_TENNIS_COURT_20 = "Tiles/tennis_court/floor_tennis_court_20";
+  static readonly TILE_FLOOR_TENNIS_COURT_21 = "Tiles/tennis_court/floor_tennis_court_21";
+  static readonly TILE_FLOOR_TENNIS_COURT_22 = "Tiles/tennis_court/floor_tennis_court_22";
+  static readonly TILE_FLOOR_TENNIS_COURT_23 = "Tiles/tennis_court/floor_tennis_court_23";
+  static readonly TILE_FLOOR_TENNIS_COURT_26 = "Tiles/tennis_court/floor_tennis_court_26";
+  static readonly TILE_FLOOR_TENNIS_COURT_27 = "Tiles/tennis_court/floor_tennis_court_27";
+  static readonly TILE_FLOOR_TENNIS_COURT_28 = "Tiles/tennis_court/floor_tennis_court_28";
+  static readonly TILE_FLOOR_TENNIS_COURT_29 = "Tiles/tennis_court/floor_tennis_court_29";
+  static readonly TILE_FLOOR_TENNIS_COURT_30 = "Tiles/tennis_court/floor_tennis_court_30";
+  static readonly TILE_FLOOR_TENNIS_COURT_31 = "Tiles/tennis_court/floor_tennis_court_31";
+  static readonly TILE_FLOOR_TENNIS_COURT_34 = "Tiles/tennis_court/floor_tennis_court_34";
+  static readonly TILE_FLOOR_TENNIS_COURT_35 = "Tiles/tennis_court/floor_tennis_court_35";
+  static readonly TILE_FLOOR_TENNIS_COURT_36 = "Tiles/tennis_court/floor_tennis_court_36";
+  static readonly TILE_FLOOR_TENNIS_COURT_37 = "Tiles/tennis_court/floor_tennis_court_37";
+  static readonly TILE_FLOOR_TENNIS_COURT_38 = "Tiles/tennis_court/floor_tennis_court_38";
+  static readonly TILE_FLOOR_TENNIS_COURT_39 = "Tiles/tennis_court/floor_tennis_court_39";
+  static readonly TILE_FLOOR_TENNIS_COURT_42 = "Tiles/tennis_court/floor_tennis_court_42";
+  static readonly TILE_FLOOR_TENNIS_COURT_43 = "Tiles/tennis_court/floor_tennis_court_43";
+  static readonly TILE_FLOOR_TENNIS_COURT_44 = "Tiles/tennis_court/floor_tennis_court_44";
+  static readonly TILE_FLOOR_TENNIS_COURT_45 = "Tiles/tennis_court/floor_tennis_court_45";
+  static readonly TILE_FLOOR_TENNIS_COURT_46 = "Tiles/tennis_court/floor_tennis_court_46";
+  static readonly TILE_FLOOR_TENNIS_COURT_47 = "Tiles/tennis_court/floor_tennis_court_47";
+  static readonly TILE_FLOOR_TENNIS_COURT_50 = "Tiles/tennis_court/floor_tennis_court_50";
+  static readonly TILE_FLOOR_TENNIS_COURT_51 = "Tiles/tennis_court/floor_tennis_court_51";
+  static readonly TILE_FLOOR_TENNIS_COURT_52 = "Tiles/tennis_court/floor_tennis_court_52";
+  static readonly TILE_FLOOR_TENNIS_COURT_53 = "Tiles/tennis_court/floor_tennis_court_53";
+  static readonly TILE_FLOOR_TENNIS_COURT_54 = "Tiles/tennis_court/floor_tennis_court_54";
+  static readonly TILE_FLOOR_TENNIS_COURT_55 = "Tiles/tennis_court/floor_tennis_court_55";
+  static readonly TILE_FLOOR_TENNIS_COURT_58 = "Tiles/tennis_court/floor_tennis_court_58";
+  static readonly TILE_FLOOR_TENNIS_COURT_59 = "Tiles/tennis_court/floor_tennis_court_59";
+  static readonly TILE_FLOOR_TENNIS_COURT_60 = "Tiles/tennis_court/floor_tennis_court_60";
+  static readonly TILE_FLOOR_TENNIS_COURT_61 = "Tiles/tennis_court/floor_tennis_court_61";
+  static readonly TILE_FLOOR_TENNIS_COURT_62 = "Tiles/tennis_court/floor_tennis_court_62";
+  static readonly TILE_FLOOR_TENNIS_COURT_63 = "Tiles/tennis_court/floor_tennis_court_63";
+  static readonly TILE_FLOOR_TENNIS_COURT_66 = "Tiles/tennis_court/floor_tennis_court_66";
+  static readonly TILE_FLOOR_TENNIS_COURT_67 = "Tiles/tennis_court/floor_tennis_court_67";
+  static readonly TILE_FLOOR_TENNIS_COURT_68 = "Tiles/tennis_court/floor_tennis_court_68";
+  static readonly TILE_FLOOR_TENNIS_COURT_69 = "Tiles/tennis_court/floor_tennis_court_69";
+  static readonly TILE_FLOOR_TENNIS_COURT_70 = "Tiles/tennis_court/floor_tennis_court_70";
+  static readonly TILE_FLOOR_TENNIS_COURT_71 = "Tiles/tennis_court/floor_tennis_court_71";
+  static readonly TILE_FLOOR_TENNIS_COURT_OUTER = "Tiles/tennis_court/floor_tennis_court_outer";
+  static readonly TILE_FLOOR_WHITE_TILE = "Tiles/floor_white_tile";
+  static readonly TILE_PARKING_ASPHALT_EW = "Tiles/parking_asphalt_ew";
+  static readonly TILE_PARKING_ASPHALT_NS = "Tiles/parking_asphalt_ns";
+  static readonly TILE_WALL_ARMY_BASE = "Tiles/wall_army_base";
+  static readonly TILE_WALL_CONCRETE = "Tiles/wall_concrete";
+  static readonly TILE_WALL_FUEL_STATION = "Tiles/wall_fuel_station";
+  static readonly TILE_WALL_LIGHT_BROWN = "Tiles/wall_light_brown";
+  static readonly TILE_WALL_MALL = "Tiles/wall_mall";
+  static readonly TILE_WALL_PILLAR_CONCRETE = "Tiles/wall_pillar_concrete";
+  static readonly TILE_WALL_RED_CURTAINS = "Tiles/wall_red_curtains";
+  static readonly TILE_WALL_WOOD_PLANKS = "Tiles/wall_wood_planks";
+
   // ── Decorations ───────────────────────────────────────────────────────────
   static readonly DECO_BLOODIED_FLOOR = "Tiles/Decoration/bloodied_floor";
   static readonly DECO_BLOODIED_WALL = "Tiles/Decoration/bloodied_wall";
@@ -110,7 +239,38 @@ export class GameImages {
   static readonly DECO_SHOP_PHARMACY = "Tiles/Decoration/shop_pharmacy";
   static readonly DECO_SHOP_SPORTSWEAR = "Tiles/Decoration/shop_sportswear";
   static readonly DECO_SHOP_HUNTING = "Tiles/Decoration/shop_hunting";
+  /** `Feature.FuelStation`. C# `GameImages.cs`, the two `midX +/- 2` signboards. */
+  static readonly DECO_SHOP_FUEL_STATION = "Tiles/Decoration/shop_fuel_station";
   static readonly DECO_CHAR_OFFICE = "Tiles/Decoration/char_office";
+  // ── Army base underground (Release 6-3) ───────────────────────────────────
+  /** `GameImages.cs:290` — `//@@MP (Release 6-3)`. The floor logo at the entry stairs. */
+  static readonly DECO_ARMY_FLOOR_LOGO = "Tiles/Decoration/army_floor_logo";
+  /** `GameImages.cs:291-293`. Three sprites, chosen by a roll on every wall tile. */
+  static readonly DECO_ARMY_POSTER1 = "Tiles/Decoration/army_poster1";
+  static readonly DECO_ARMY_POSTER2 = "Tiles/Decoration/army_poster2";
+  static readonly DECO_ARMY_POSTER3 = "Tiles/Decoration/army_poster3";
+  /**
+   * `GameImages.cs:255` and the wall twin — `//@@MP (Release 2)`.
+   *
+   * The *small* blood pair, which is the 20% arm of the base's per-tile blood roll.
+   * The large pair was already ported (`GameImages.cs:253-254`); these two are what
+   * make the fork's three-way split reachable rather than two-way.
+   */
+  static readonly DECO_BLOODIED_FLOOR_SMALL = "Tiles/Decoration/bloodied_floor_small";
+  static readonly DECO_BLOODIED_WALL_SMALL = "Tiles/Decoration/bloodied_wall_small";
+  /** The command room's cupboards. Sprite verified on disk. */
+  static readonly OBJ_ARMY_RADIO_CUPBOARD = "MapObjects/army_radio_cupboard";
+  /** The rec room's beds — a bed object with a different sprite, not a new class. */
+  static readonly OBJ_ARMY_BUNK_BED = "MapObjects/army_bunk_bed";
+  /** The rec room's footlockers, which are the containers the rucksacks sit in. */
+  static readonly OBJ_ARMY_FOOTLOCKER = "MapObjects/army_footlocker";
+  /**
+   * `GameImages.cs:368` — the generic office's outside-wall decoration, against
+   * `DECO_CHAR_OFFICE` (`:244`). The file name really is `generic_offices`, plural:
+   * the C# constant is singular and the sprite is not, and both spellings are kept as
+   * they are rather than reconciled.
+   */
+  static readonly DECO_GENERIC_OFFICE = "Tiles/Decoration/generic_offices";
   static readonly DECO_CHAR_FLOOR_LOGO = "Tiles/Decoration/char_floor_logo";
   static readonly DECO_CHAR_POSTER1 = "Tiles/Decoration/char_poster1";
   static readonly DECO_CHAR_POSTER2 = "Tiles/Decoration/char_poster2";
@@ -129,6 +289,306 @@ export class GameImages {
   static readonly DECO_POWER_SIGN_BIG = "Tiles/Decoration/power_sign_big";
   static readonly DECO_POLICE_STATION = "Tiles/Decoration/police_station";
   static readonly DECO_HOSPITAL = "Tiles/Decoration/hospital";
+  // Still Alive Release 4, first reader `Feature.Bank`.
+  static readonly DECO_BANK_SIGN = "Tiles/Decoration/bank_sign";
+  // ── Still Alive, Release 2 and 6-3 (`GameImages.cs:332-337`). The five scorch
+  // marks `ScorchBurntTile` (`RogueGame.cs:24556-24608`) picks by blast damage
+  // tier and by whether the tile is a wall, and all five ship in the *classic*
+  // pack, so every path here already resolves to a file on disk --
+  // `tests/sprite-assets.test.ts` is what keeps that true.
+  //
+  // The centre and inner floor marks are "flat", so the same drawing serves
+  // every heading; the wall pair is "slightly tilted to give the appearance of
+  // being on a vertical" (the C#'s words, at `:334` and `:336`). That is why
+  // the wall and floor variants are five separate sprites rather than one pair
+  // plus a rotation, and why `damage > 120` drops the wall branch entirely and
+  // lays the flat centre mark over a wall too.
+  static readonly DECO_SCORCH_MARK_CENTER_FLOOR = "Tiles/Decoration/scorched_center_floor";
+  static readonly DECO_SCORCH_MARK_INNER_FLOOR = "Tiles/Decoration/scorched_inner_floor";
+  static readonly DECO_SCORCH_MARK_OUTER_FLOOR = "Tiles/Decoration/scorched_outer_floor";
+  static readonly DECO_SCORCH_MARK_INNER_WALL = "Tiles/Decoration/scorched_inner_wall";
+  static readonly DECO_SCORCH_MARK_OUTER_WALL = "Tiles/Decoration/scorched_outer_wall";
+
+  // ── Damaged walls ─────────────────────────────────────────────────────────
+  // The nine rubble drawings `ReplaceDestroyedWall` (`RogueGame.cs:20134-20232`,
+  // first reader Release 3) lays over the floor it drops a blown-up wall onto.
+  // C# `GameImages.cs:340-348`.
+  //
+  // **Nine decorations for eleven wall cases, and that gap is the C#'s, not an
+  // omission here.** `wall_wood_planks` spawns a wooden plank item instead of a
+  // drawing, and `wall_red_curtains` leaves a bare gap, so neither has a sprite
+  // to name here.
+  //
+  // **`wall_army_base_damaged`, `wall_fuel_station_damaged` and
+  // `wall_mall_damaged` are Release 6-3/7-3, and `wall_light_brown_damaged` is
+  // Release 4** -- the other five are original.
+  //
+  // The reader switches on `TileModel.imageId`, and **that is why the police
+  // station and subway walls do not need names of their own.** Both are
+  // registered with `GameImages.TILE_WALL_STONE` as their image (`GameTiles.cs`,
+  // and the port at `GameTiles.ts:247,250`), so they arrive here already
+  // spelled `Tiles/wall_stone` and take the stone rubble. The reference's own
+  // comment above its model table warns to keep `IsDestructibleWallModel()` and
+  // `ReplaceDestroyedWall()` in step; they are *not* in step by name, and the
+  // stone alias is what keeps the `default:` throw from being reachable.
+  static readonly DECO_WALL_BRICK_DAMAGED = "Tiles/Decoration/wall_brick_damaged";
+  static readonly DECO_WALL_CHAR_OFFICE_DAMAGED = "Tiles/Decoration/wall_char_office_damaged";
+  static readonly DECO_WALL_HOSPITAL_DAMAGED = "Tiles/Decoration/wall_hospital_damaged";
+  static readonly DECO_WALL_SEWER_DAMAGED = "Tiles/Decoration/wall_sewer_damaged";
+  static readonly DECO_WALL_STONE_DAMAGED = "Tiles/Decoration/wall_stone_damaged";
+  // Release 4.
+  static readonly DECO_WALL_LIGHT_BROWN_DAMAGED = "Tiles/Decoration/wall_light_brown_damaged";
+  // Release 6-3.
+  static readonly DECO_WALL_ARMY_BASE_DAMAGED = "Tiles/Decoration/wall_army_base_damaged";
+  // Release 7-3.
+  static readonly DECO_WALL_FUEL_STATION_DAMAGED = "Tiles/Decoration/wall_fuel_station_damaged";
+  // Release 7-3.
+  static readonly DECO_WALL_MALL_DAMAGED = "Tiles/Decoration/wall_mall_damaged";
+
+  // ── World decay: tile decorations ─────────────────────────────────────────
+  // Still Alive, Release 7-6 -- the C# puts `//@@MP (Release 7-6)` on every row of
+  // its own `#region World decay` (`GameImages.cs:370-571`) and preloads the whole
+  // block in the same commit (`:1601-1802`). The blank lines below are the C#'s own
+  // grouping, one per tile image.
+  //
+  // **174 ids for 21 tile images, and the ratio is the design.** Each image has two
+  // or three hand-drawn variants of each phase, and
+  // `ChooseRelevantDecayDecorationForTile` rolls over the variants so that no two
+  // neighbouring tiles crack identically.
+  //
+  // One naming scheme throughout, which the C# keeps without exception:
+  // `DECO_` + what is decaying + `_DECAY` + `_V<n>` + `_PHASE<n>`. The departures
+  // from that pattern are all the C#'s, and all readable off the list:
+  //
+  // - `DECO_WALL_GENERIC_INTERIOR_DECAY_PHASE<n>` carries no `_V<n>` at all,
+  //   because there is one drawing per phase for *every* interior wall rather than
+  //   one per material (`RogueGame.cs:9350-9352`).
+  // - Wood is `DECO_FLOOR_PLANKS_*` and `DECO_WALL_PLANKS_*` -- named for the
+  //   material with FLOOR/WALL in the middle, not for the images they go on
+  //   (`TILE_FLOOR_PLANKS`, `TILE_WALL_WOOD_PLANKS`).
+  // - `*_SHOP_TILE_*` and `*_WHITE_TILE_*` decorate `TILE_FLOOR_TILES` and
+  //   `TILE_FLOOR_WHITE_TILE`; `*_CHAR_*` decorates `TILE_WALL_CHAR_OFFICE`. Again
+  //   named for the material, and the `CHAR_wall_*` file names say so too.
+  //
+  // **The `_phase<n>` suffix is load-bearing twice, which is why none of these may
+  // be renamed.** `ApplyWorldDecayPhase` finds the *previous* phase's drawing in
+  // order to remove it by asking whether a decoration id contains `"_phase"`
+  // (`RogueGame.cs:9327`), and the map-object arm asks whether an object already
+  // wears the phase it is about to apply by looking for `phase<n>` in its image
+  // name (`:9377`, `:9385`, `:9390`). The same coupling the nine `*_DAMAGED` ids
+  // above have with the scorch guard's `_damaged` test, and for the same reason: a
+  // rename is invisible to the type-checker and silently stops the sweep from ever
+  // replacing a phase.
+  //
+  // **The variant count is uneven, and the unevenness is the C#'s.** Three for most
+  // pairs; two for stone walls and plank walls; and phases 1 and 2 only for four
+  // indoor floors -- `office`, `planks`, `shop_tile`, `white_tile` -- because an
+  // indoor floor never reaches phase 3 (`:9296-9298`). The C#'s comment on those
+  // four explains that they still answer phase 3 with a phase-2 drawing "in case
+  // entrance tiles count as !IsInside, and are thus missed by the filters in the
+  // calling parent function". The array lengths are the roll's range inside
+  // `ChooseRelevantDecayDecorationForTile`, so dropping a variant narrows the roll
+  // rather than failing loudly.
+  //
+  // **The two court pairs key on a substring, not an id.** `basketball_court_*` and
+  // `tennis_court_*` are sixty-odd distinct floor images between them, and the reader
+  // matches them with `ImageID.Contains` (`:9578`, `:9596`) -- "need to use this
+  // broad method, as courts are made up of dozens of unique tiles".
+  static readonly DECO_FLOOR_WALKWAY_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/walkway_v1_phase1";
+  static readonly DECO_FLOOR_WALKWAY_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/walkway_v1_phase2";
+  static readonly DECO_FLOOR_WALKWAY_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/walkway_v1_phase3";
+  static readonly DECO_FLOOR_WALKWAY_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/walkway_v2_phase1";
+  static readonly DECO_FLOOR_WALKWAY_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/walkway_v2_phase2";
+  static readonly DECO_FLOOR_WALKWAY_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/walkway_v2_phase3";
+  static readonly DECO_FLOOR_WALKWAY_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/walkway_v3_phase1";
+  static readonly DECO_FLOOR_WALKWAY_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/walkway_v3_phase2";
+  static readonly DECO_FLOOR_WALKWAY_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/walkway_v3_phase3";
+
+  static readonly DECO_FLOOR_ROAD_NS_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/road_asphalt_NS_v1_phase1";
+  static readonly DECO_FLOOR_ROAD_NS_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/road_asphalt_NS_v1_phase2";
+  static readonly DECO_FLOOR_ROAD_NS_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/road_asphalt_NS_v1_phase3";
+  static readonly DECO_FLOOR_ROAD_NS_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/road_asphalt_NS_v2_phase1";
+  static readonly DECO_FLOOR_ROAD_NS_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/road_asphalt_NS_v2_phase2";
+  static readonly DECO_FLOOR_ROAD_NS_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/road_asphalt_NS_v2_phase3";
+  static readonly DECO_FLOOR_ROAD_NS_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/road_asphalt_NS_v3_phase1";
+  static readonly DECO_FLOOR_ROAD_NS_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/road_asphalt_NS_v3_phase2";
+  static readonly DECO_FLOOR_ROAD_NS_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/road_asphalt_NS_v3_phase3";
+
+  static readonly DECO_FLOOR_ROAD_EW_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/road_asphalt_EW_v1_phase1";
+  static readonly DECO_FLOOR_ROAD_EW_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/road_asphalt_EW_v1_phase2";
+  static readonly DECO_FLOOR_ROAD_EW_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/road_asphalt_EW_v1_phase3";
+  static readonly DECO_FLOOR_ROAD_EW_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/road_asphalt_EW_v2_phase1";
+  static readonly DECO_FLOOR_ROAD_EW_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/road_asphalt_EW_v2_phase2";
+  static readonly DECO_FLOOR_ROAD_EW_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/road_asphalt_EW_v2_phase3";
+  static readonly DECO_FLOOR_ROAD_EW_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/road_asphalt_EW_v3_phase1";
+  static readonly DECO_FLOOR_ROAD_EW_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/road_asphalt_EW_v3_phase2";
+  static readonly DECO_FLOOR_ROAD_EW_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/road_asphalt_EW_v3_phase3";
+
+  static readonly DECO_FLOOR_ASPHALT_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/asphalt_floor_v1_phase1";
+  static readonly DECO_FLOOR_ASPHALT_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/asphalt_floor_v1_phase2";
+  static readonly DECO_FLOOR_ASPHALT_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/asphalt_floor_v1_phase3";
+  static readonly DECO_FLOOR_ASPHALT_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/asphalt_floor_v2_phase1";
+  static readonly DECO_FLOOR_ASPHALT_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/asphalt_floor_v2_phase2";
+  static readonly DECO_FLOOR_ASPHALT_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/asphalt_floor_v2_phase3";
+  static readonly DECO_FLOOR_ASPHALT_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/asphalt_floor_v3_phase1";
+  static readonly DECO_FLOOR_ASPHALT_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/asphalt_floor_v3_phase2";
+  static readonly DECO_FLOOR_ASPHALT_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/asphalt_floor_v3_phase3";
+
+  static readonly DECO_FLOOR_OFFICE_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/office_floor_v1_phase1";
+  static readonly DECO_FLOOR_OFFICE_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/office_floor_v1_phase2";
+  static readonly DECO_FLOOR_OFFICE_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/office_floor_v2_phase1";
+  static readonly DECO_FLOOR_OFFICE_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/office_floor_v2_phase2";
+  static readonly DECO_FLOOR_OFFICE_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/office_floor_v3_phase1";
+  static readonly DECO_FLOOR_OFFICE_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/office_floor_v3_phase2";
+
+  static readonly DECO_FLOOR_PLANKS_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/planks_floor_v1_phase1";
+  static readonly DECO_FLOOR_PLANKS_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/planks_floor_v1_phase2";
+  static readonly DECO_FLOOR_PLANKS_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/planks_floor_v2_phase1";
+  static readonly DECO_FLOOR_PLANKS_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/planks_floor_v2_phase2";
+  static readonly DECO_FLOOR_PLANKS_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/planks_floor_v3_phase1";
+  static readonly DECO_FLOOR_PLANKS_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/planks_floor_v3_phase2";
+
+  static readonly DECO_FLOOR_SHOP_TILE_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/shop_tile_v1_phase1";
+  static readonly DECO_FLOOR_SHOP_TILE_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/shop_tile_v1_phase2";
+  static readonly DECO_FLOOR_SHOP_TILE_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/shop_tile_v2_phase1";
+  static readonly DECO_FLOOR_SHOP_TILE_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/shop_tile_v2_phase2";
+  static readonly DECO_FLOOR_SHOP_TILE_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/shop_tile_v3_phase1";
+  static readonly DECO_FLOOR_SHOP_TILE_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/shop_tile_v3_phase2";
+
+  static readonly DECO_FLOOR_CONCRETE_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/concrete_floor_v1_phase1";
+  static readonly DECO_FLOOR_CONCRETE_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/concrete_floor_v1_phase2";
+  static readonly DECO_FLOOR_CONCRETE_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/concrete_floor_v1_phase3";
+  static readonly DECO_FLOOR_CONCRETE_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/concrete_floor_v2_phase1";
+  static readonly DECO_FLOOR_CONCRETE_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/concrete_floor_v2_phase2";
+  static readonly DECO_FLOOR_CONCRETE_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/concrete_floor_v2_phase3";
+  static readonly DECO_FLOOR_CONCRETE_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/concrete_floor_v3_phase1";
+  static readonly DECO_FLOOR_CONCRETE_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/concrete_floor_v3_phase2";
+  static readonly DECO_FLOOR_CONCRETE_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/concrete_floor_v3_phase3";
+
+  static readonly DECO_FLOOR_WHITE_TILE_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/white_floor_tile_v1_phase1";
+  static readonly DECO_FLOOR_WHITE_TILE_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/white_floor_tile_v1_phase2";
+  static readonly DECO_FLOOR_WHITE_TILE_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/white_floor_tile_v2_phase1";
+  static readonly DECO_FLOOR_WHITE_TILE_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/white_floor_tile_v2_phase2";
+  static readonly DECO_FLOOR_WHITE_TILE_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/white_floor_tile_v3_phase1";
+  static readonly DECO_FLOOR_WHITE_TILE_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/white_floor_tile_v3_phase2";
+
+  static readonly DECO_FLOOR_BASKETBALL_COURT_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/basketball_court_v1_phase1";
+  static readonly DECO_FLOOR_BASKETBALL_COURT_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/basketball_court_v1_phase2";
+  static readonly DECO_FLOOR_BASKETBALL_COURT_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/basketball_court_v1_phase3";
+  static readonly DECO_FLOOR_BASKETBALL_COURT_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/basketball_court_v2_phase1";
+  static readonly DECO_FLOOR_BASKETBALL_COURT_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/basketball_court_v2_phase2";
+  static readonly DECO_FLOOR_BASKETBALL_COURT_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/basketball_court_v2_phase3";
+  static readonly DECO_FLOOR_BASKETBALL_COURT_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/basketball_court_v3_phase1";
+  static readonly DECO_FLOOR_BASKETBALL_COURT_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/basketball_court_v3_phase2";
+  static readonly DECO_FLOOR_BASKETBALL_COURT_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/basketball_court_v3_phase3";
+
+  static readonly DECO_FLOOR_TENNIS_COURT_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/tennis_court_v1_phase1";
+  static readonly DECO_FLOOR_TENNIS_COURT_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/tennis_court_v1_phase2";
+  static readonly DECO_FLOOR_TENNIS_COURT_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/tennis_court_v1_phase3";
+  static readonly DECO_FLOOR_TENNIS_COURT_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/tennis_court_v2_phase1";
+  static readonly DECO_FLOOR_TENNIS_COURT_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/tennis_court_v2_phase2";
+  static readonly DECO_FLOOR_TENNIS_COURT_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/tennis_court_v2_phase3";
+  static readonly DECO_FLOOR_TENNIS_COURT_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/tennis_court_v3_phase1";
+  static readonly DECO_FLOOR_TENNIS_COURT_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/tennis_court_v3_phase2";
+  static readonly DECO_FLOOR_TENNIS_COURT_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/tennis_court_v3_phase3";
+
+  static readonly DECO_WALL_GENERIC_INTERIOR_DECAY_PHASE1 = "Tiles/Decoration/decay/interior_walls_generic_decay_phase1";
+  static readonly DECO_WALL_GENERIC_INTERIOR_DECAY_PHASE2 = "Tiles/Decoration/decay/interior_walls_generic_decay_phase2";
+  static readonly DECO_WALL_GENERIC_INTERIOR_DECAY_PHASE3 = "Tiles/Decoration/decay/interior_walls_generic_decay_phase3";
+
+  static readonly DECO_WALL_BRICK_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/brick_wall_v1_phase1";
+  static readonly DECO_WALL_BRICK_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/brick_wall_v1_phase2";
+  static readonly DECO_WALL_BRICK_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/brick_wall_v1_phase3";
+  static readonly DECO_WALL_BRICK_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/brick_wall_v2_phase1";
+  static readonly DECO_WALL_BRICK_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/brick_wall_v2_phase2";
+  static readonly DECO_WALL_BRICK_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/brick_wall_v2_phase3";
+  static readonly DECO_WALL_BRICK_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/brick_wall_v3_phase1";
+  static readonly DECO_WALL_BRICK_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/brick_wall_v3_phase2";
+  static readonly DECO_WALL_BRICK_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/brick_wall_v3_phase3";
+
+  static readonly DECO_WALL_CHAR_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/CHAR_wall_v1_phase1";
+  static readonly DECO_WALL_CHAR_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/CHAR_wall_v1_phase2";
+  static readonly DECO_WALL_CHAR_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/CHAR_wall_v1_phase3";
+  static readonly DECO_WALL_CHAR_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/CHAR_wall_v2_phase1";
+  static readonly DECO_WALL_CHAR_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/CHAR_wall_v2_phase2";
+  static readonly DECO_WALL_CHAR_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/CHAR_wall_v2_phase3";
+  static readonly DECO_WALL_CHAR_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/CHAR_wall_v3_phase1";
+  static readonly DECO_WALL_CHAR_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/CHAR_wall_v3_phase2";
+  static readonly DECO_WALL_CHAR_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/CHAR_wall_v3_phase3";
+
+  static readonly DECO_WALL_STONE_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/stone_wall_v1_phase1";
+  static readonly DECO_WALL_STONE_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/stone_wall_v1_phase2";
+  static readonly DECO_WALL_STONE_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/stone_wall_v1_phase3";
+  static readonly DECO_WALL_STONE_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/stone_wall_v2_phase1";
+  static readonly DECO_WALL_STONE_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/stone_wall_v2_phase2";
+  static readonly DECO_WALL_STONE_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/stone_wall_v2_phase3";
+
+  static readonly DECO_WALL_LIGHT_BROWN_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/light_brown_wall_v1_phase1";
+  static readonly DECO_WALL_LIGHT_BROWN_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/light_brown_wall_v1_phase2";
+  static readonly DECO_WALL_LIGHT_BROWN_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/light_brown_wall_v1_phase3";
+  static readonly DECO_WALL_LIGHT_BROWN_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/light_brown_wall_v2_phase1";
+  static readonly DECO_WALL_LIGHT_BROWN_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/light_brown_wall_v2_phase2";
+  static readonly DECO_WALL_LIGHT_BROWN_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/light_brown_wall_v2_phase3";
+  static readonly DECO_WALL_LIGHT_BROWN_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/light_brown_wall_v3_phase1";
+  static readonly DECO_WALL_LIGHT_BROWN_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/light_brown_wall_v3_phase2";
+  static readonly DECO_WALL_LIGHT_BROWN_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/light_brown_wall_v3_phase3";
+
+  static readonly DECO_WALL_CONCRETE_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/concrete_wall_v1_phase1";
+  static readonly DECO_WALL_CONCRETE_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/concrete_wall_v1_phase2";
+  static readonly DECO_WALL_CONCRETE_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/concrete_wall_v1_phase3";
+  static readonly DECO_WALL_CONCRETE_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/concrete_wall_v2_phase1";
+  static readonly DECO_WALL_CONCRETE_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/concrete_wall_v2_phase2";
+  static readonly DECO_WALL_CONCRETE_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/concrete_wall_v2_phase3";
+  static readonly DECO_WALL_CONCRETE_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/concrete_wall_v3_phase1";
+  static readonly DECO_WALL_CONCRETE_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/concrete_wall_v3_phase2";
+  static readonly DECO_WALL_CONCRETE_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/concrete_wall_v3_phase3";
+
+  static readonly DECO_WALL_ARMY_BASE_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/army_base_wall_v1_phase1";
+  static readonly DECO_WALL_ARMY_BASE_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/army_base_wall_v1_phase2";
+  static readonly DECO_WALL_ARMY_BASE_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/army_base_wall_v1_phase3";
+  static readonly DECO_WALL_ARMY_BASE_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/army_base_wall_v2_phase1";
+  static readonly DECO_WALL_ARMY_BASE_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/army_base_wall_v2_phase2";
+  static readonly DECO_WALL_ARMY_BASE_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/army_base_wall_v2_phase3";
+  static readonly DECO_WALL_ARMY_BASE_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/army_base_wall_v3_phase1";
+  static readonly DECO_WALL_ARMY_BASE_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/army_base_wall_v3_phase2";
+  static readonly DECO_WALL_ARMY_BASE_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/army_base_wall_v3_phase3";
+
+  static readonly DECO_WALL_FUEL_STATION_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/fuel_station_wall_v1_phase1";
+  static readonly DECO_WALL_FUEL_STATION_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/fuel_station_wall_v1_phase2";
+  static readonly DECO_WALL_FUEL_STATION_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/fuel_station_wall_v1_phase3";
+  static readonly DECO_WALL_FUEL_STATION_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/fuel_station_wall_v2_phase1";
+  static readonly DECO_WALL_FUEL_STATION_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/fuel_station_wall_v2_phase2";
+  static readonly DECO_WALL_FUEL_STATION_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/fuel_station_wall_v2_phase3";
+  static readonly DECO_WALL_FUEL_STATION_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/fuel_station_wall_v3_phase1";
+  static readonly DECO_WALL_FUEL_STATION_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/fuel_station_wall_v3_phase2";
+  static readonly DECO_WALL_FUEL_STATION_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/fuel_station_wall_v3_phase3";
+
+  static readonly DECO_WALL_PLANKS_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/planks_wall_v1_phase1";
+  static readonly DECO_WALL_PLANKS_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/planks_wall_v1_phase2";
+  static readonly DECO_WALL_PLANKS_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/planks_wall_v1_phase3";
+  static readonly DECO_WALL_PLANKS_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/planks_wall_v2_phase1";
+  static readonly DECO_WALL_PLANKS_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/planks_wall_v2_phase2";
+  static readonly DECO_WALL_PLANKS_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/planks_wall_v2_phase3";
+
+  static readonly DECO_WALL_HOSPITAL_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/hospital_wall_v1_phase1";
+  static readonly DECO_WALL_HOSPITAL_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/hospital_wall_v1_phase2";
+  static readonly DECO_WALL_HOSPITAL_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/hospital_wall_v1_phase3";
+  static readonly DECO_WALL_HOSPITAL_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/hospital_wall_v2_phase1";
+  static readonly DECO_WALL_HOSPITAL_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/hospital_wall_v2_phase2";
+  static readonly DECO_WALL_HOSPITAL_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/hospital_wall_v2_phase3";
+  static readonly DECO_WALL_HOSPITAL_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/hospital_wall_v3_phase1";
+  static readonly DECO_WALL_HOSPITAL_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/hospital_wall_v3_phase2";
+  static readonly DECO_WALL_HOSPITAL_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/hospital_wall_v3_phase3";
+
+  static readonly DECO_WALL_MALL_DECAY_V1_PHASE1 = "Tiles/Decoration/decay/mall_wall_v1_phase1";
+  static readonly DECO_WALL_MALL_DECAY_V1_PHASE2 = "Tiles/Decoration/decay/mall_wall_v1_phase2";
+  static readonly DECO_WALL_MALL_DECAY_V1_PHASE3 = "Tiles/Decoration/decay/mall_wall_v1_phase3";
+  static readonly DECO_WALL_MALL_DECAY_V2_PHASE1 = "Tiles/Decoration/decay/mall_wall_v2_phase1";
+  static readonly DECO_WALL_MALL_DECAY_V2_PHASE2 = "Tiles/Decoration/decay/mall_wall_v2_phase2";
+  static readonly DECO_WALL_MALL_DECAY_V2_PHASE3 = "Tiles/Decoration/decay/mall_wall_v2_phase3";
+  static readonly DECO_WALL_MALL_DECAY_V3_PHASE1 = "Tiles/Decoration/decay/mall_wall_v3_phase1";
+  static readonly DECO_WALL_MALL_DECAY_V3_PHASE2 = "Tiles/Decoration/decay/mall_wall_v3_phase2";
+  static readonly DECO_WALL_MALL_DECAY_V3_PHASE3 = "Tiles/Decoration/decay/mall_wall_v3_phase3";
 
   // ── Map Objects ───────────────────────────────────────────────────────────
   static readonly OBJ_TREE = "MapObjects/tree";
@@ -146,6 +606,16 @@ export class GameImages {
   static readonly OBJ_WINDOW_BROKEN = "MapObjects/window_broken";
   static readonly OBJ_BENCH = "MapObjects/bench";
   static readonly OBJ_FENCE = "MapObjects/fence";
+  /**
+   * The rescue helicopter, in the three pieces the C# dissects it into.
+   *
+   * C# `GameImages.cs:639-641`. The C# then arranges them as 1-2-3 (see
+   * `BaseMapGenerator.MakeObjHelicopter`), so the landing site is a 3x1 patch and
+   * not the 4x2 one the C#'s own comments still claim in three places.
+   */
+  static readonly OBJ_HELICOPTER1 = "MapObjects/helicopter1";
+  static readonly OBJ_HELICOPTER2 = "MapObjects/helicopter2";
+  static readonly OBJ_HELICOPTER3 = "MapObjects/helicopter3";
   static readonly OBJ_CAR1 = "MapObjects/car1";
   static readonly OBJ_CAR2 = "MapObjects/car2";
   static readonly OBJ_CAR3 = "MapObjects/car3";
@@ -159,6 +629,22 @@ export class GameImages {
   static readonly OBJ_CHAIR = "MapObjects/chair";
   static readonly OBJ_NIGHT_TABLE = "MapObjects/nighttable";
   static readonly OBJ_CHAR_CHAIR = "MapObjects/char_chair";
+  /**
+   * `GameImages.cs:674` — `//@@MP (Release 3)`. The lab's vat. The constant is named
+   * `OBJ_CHAR_VAT` and the file is `piped_vat`; both spellings are the C#'s.
+   */
+  static readonly OBJ_CHAR_VAT = "MapObjects/piped_vat";
+  /** The lab's trolley. `GameImages.cs`, unmarked, so it is not fork-only. */
+  static readonly OBJ_CHAR_TROLLEY = "MapObjects/char_trolley";
+  /** The lab's workstation. `GameImages.cs:673` — `//@@MP (Release 3)`. */
+  static readonly OBJ_CHAR_DESKTOP = "MapObjects/char_desktop";
+  /**
+   * Still Alive, `GameImages.cs:744`. The plain office's workstation, against
+   * `OBJ_CHAR_DESKTOP` (`:673`, Release 3) which the CHAR office uses. Both files are
+   * shipped, and both are the Release 3 pair that split "a computer" into "a CHAR
+   * computer" and "a normal one".
+   */
+  static readonly OBJ_DESKTOP_COMPUTER = "MapObjects/desktop_computer";
   static readonly OBJ_CHAR_TABLE = "MapObjects/char_table";
   static readonly OBJ_IRON_BENCH = "MapObjects/iron_bench";
   static readonly OBJ_IRON_DOOR_OPEN = "MapObjects/iron_door_open";
@@ -183,6 +669,94 @@ export class GameImages {
   static readonly OBJ_HOSPITAL_DOOR_BROKEN = "MapObjects/hospital_door_broken";
   static readonly OBJ_GARDEN_FENCE = "MapObjects/garden_fence";
   static readonly OBJ_WIRE_FENCE = "MapObjects/wire_fence";
+  static readonly OBJ_COUCH = "MapObjects/couch";
+  // Still Alive Release 4/6-5, the bank's three. `Feature.Bank` is the reader.
+  static readonly OBJ_BANK_TELLER = "MapObjects/bank_teller";
+  static readonly OBJ_BANK_SAFE_CLOSED = "MapObjects/bank_safe_closed";
+  static readonly OBJ_BANK_SAFE_OPEN = "MapObjects/bank_safe_open";
+
+  // ── World decay: map objects ──────────────────────────────────────────────
+  // Still Alive, Release 7-6. The C# keeps the picket / chainwire / chainwire-gate
+  // trio in its own `#region Decay` (`GameImages.cs:788-825`) and the car phase ids
+  // in the block just above it (`:761-786`, "the trailing number indicates its level
+  // of decay state"); the same commit preloads both (`:1991-2056`).
+  //
+  // **30 decay drawings** -- 9 picket fence, 12 chainwire fence, 9 chainwire gate --
+  // in the tile decorations' scheme, with `OBJ_` where that block has `DECO_`. The
+  // file names disagree with the constant names: four sets of chainwire fence are
+  // `fence_v1..v4_*` and all three gates are `fence_gate_v1..v3_*`, while the picket
+  // fence files keep their direction (`picket_fence_EW_*`, `picket_fence_NS_left_*`,
+  // `picket_fence_NS_right_*`) because it is the only one of the three whose sprites
+  // are orientation-specific.
+  //
+  // **The picket fence arm is dead in the reference, and stays dead here.** Nothing
+  // in the C#'s generators places one -- `GameImages.cs:610-612` declares the three
+  // phase-0 sprites and no `BaseMapGenerator` factory ever asks for them -- so
+  // `ChooseRelevantPicketFenceSprite` (`RogueGame.cs:9799-9831`) has no reachable
+  // caller. The three base ids are therefore *not* declared here: the port's preload
+  // manifest is derived from the constants rather than written out, and nothing in
+  // the port would ever name them.
+  //
+  // **The car phase ids are named by nobody, which is why the 18 rows below are the
+  // whole of the car block.** `ApplyWorldDecayPhase`'s car arm never asks for a car
+  // sprite: it reads the trailing digit off the object's current image and rebuilds
+  // the name around a new one (`RogueGame.cs:9394-9405`). They are here because the
+  // C# declares and preloads them, and because the port's car factory names cars
+  // after the *vanilla* `car1..car4` rather than after these (see the five
+  // `*_PHASE0` rows under `Feature.Junkyard`), so that string surgery lands on
+  // `MapObjects/car1`..`car4` instead. `RogueGame.ApplyWorldDecayPhase` says what
+  // that costs.
+  static readonly OBJ_CAR_RED_PHASE1 = "MapObjects/car_red_phase1";
+  static readonly OBJ_CAR_RED_PHASE2 = "MapObjects/car_red_phase2";
+  static readonly OBJ_CAR_RED_PHASE3 = "MapObjects/car_red_phase3";
+  static readonly OBJ_CAR_WHITE_PHASE1 = "MapObjects/car_white_phase1";
+  static readonly OBJ_CAR_WHITE_PHASE2 = "MapObjects/car_white_phase2";
+  static readonly OBJ_CAR_WHITE_PHASE3 = "MapObjects/car_white_phase3";
+  static readonly OBJ_CAR_GREEN_PHASE1 = "MapObjects/car_green_phase1";
+  static readonly OBJ_CAR_GREEN_PHASE2 = "MapObjects/car_green_phase2";
+  static readonly OBJ_CAR_GREEN_PHASE3 = "MapObjects/car_green_phase3";
+  static readonly OBJ_CAR_BLUE_PHASE1 = "MapObjects/car_blue_phase1";
+  static readonly OBJ_CAR_BLUE_PHASE2 = "MapObjects/car_blue_phase2";
+  static readonly OBJ_CAR_BLUE_PHASE3 = "MapObjects/car_blue_phase3";
+  static readonly OBJ_VAN_PHASE1 = "MapObjects/van_phase1";
+  static readonly OBJ_VAN_PHASE2 = "MapObjects/van_phase2";
+  static readonly OBJ_VAN_PHASE3 = "MapObjects/van_phase3";
+  static readonly OBJ_POLICE_CAR_PHASE1 = "MapObjects/police_car_phase1";
+  static readonly OBJ_POLICE_CAR_PHASE2 = "MapObjects/police_car_phase2";
+  static readonly OBJ_POLICE_CAR_PHASE3 = "MapObjects/police_car_phase3";
+
+  static readonly OBJ_PICKET_FENCE_EW_V1_PHASE1 = "MapObjects/decay/picket_fence_EW_v1_phase1";
+  static readonly OBJ_PICKET_FENCE_EW_V1_PHASE2 = "MapObjects/decay/picket_fence_EW_v1_phase2";
+  static readonly OBJ_PICKET_FENCE_EW_V1_PHASE3 = "MapObjects/decay/picket_fence_EW_v1_phase3";
+  static readonly OBJ_PICKET_FENCE_NS_LEFT_V1_PHASE1 = "MapObjects/decay/picket_fence_NS_left_v1_phase1";
+  static readonly OBJ_PICKET_FENCE_NS_LEFT_V1_PHASE2 = "MapObjects/decay/picket_fence_NS_left_v1_phase2";
+  static readonly OBJ_PICKET_FENCE_NS_LEFT_V1_PHASE3 = "MapObjects/decay/picket_fence_NS_left_v1_phase3";
+  static readonly OBJ_PICKET_FENCE_NS_RIGHT_V1_PHASE1 = "MapObjects/decay/picket_fence_NS_right_v1_phase1";
+  static readonly OBJ_PICKET_FENCE_NS_RIGHT_V1_PHASE2 = "MapObjects/decay/picket_fence_NS_right_v1_phase2";
+  static readonly OBJ_PICKET_FENCE_NS_RIGHT_V1_PHASE3 = "MapObjects/decay/picket_fence_NS_right_v1_phase3";
+
+  static readonly OBJ_CHAINWIRE_FENCE_V1_PHASE1 = "MapObjects/decay/fence_v1_phase1";
+  static readonly OBJ_CHAINWIRE_FENCE_V1_PHASE2 = "MapObjects/decay/fence_v1_phase2";
+  static readonly OBJ_CHAINWIRE_FENCE_V1_PHASE3 = "MapObjects/decay/fence_v1_phase3";
+  static readonly OBJ_CHAINWIRE_FENCE_V2_PHASE1 = "MapObjects/decay/fence_v2_phase1";
+  static readonly OBJ_CHAINWIRE_FENCE_V2_PHASE2 = "MapObjects/decay/fence_v2_phase2";
+  static readonly OBJ_CHAINWIRE_FENCE_V2_PHASE3 = "MapObjects/decay/fence_v2_phase3";
+  static readonly OBJ_CHAINWIRE_FENCE_V3_PHASE1 = "MapObjects/decay/fence_v3_phase1";
+  static readonly OBJ_CHAINWIRE_FENCE_V3_PHASE2 = "MapObjects/decay/fence_v3_phase2";
+  static readonly OBJ_CHAINWIRE_FENCE_V3_PHASE3 = "MapObjects/decay/fence_v3_phase3";
+  static readonly OBJ_CHAINWIRE_FENCE_V4_PHASE1 = "MapObjects/decay/fence_v4_phase1";
+  static readonly OBJ_CHAINWIRE_FENCE_V4_PHASE2 = "MapObjects/decay/fence_v4_phase2";
+  static readonly OBJ_CHAINWIRE_FENCE_V4_PHASE3 = "MapObjects/decay/fence_v4_phase3";
+
+  static readonly OBJ_CHAINWIRE_FENCE_GATE_V1_PHASE1 = "MapObjects/decay/fence_gate_v1_phase1";
+  static readonly OBJ_CHAINWIRE_FENCE_GATE_V1_PHASE2 = "MapObjects/decay/fence_gate_v1_phase2";
+  static readonly OBJ_CHAINWIRE_FENCE_GATE_V1_PHASE3 = "MapObjects/decay/fence_gate_v1_phase3";
+  static readonly OBJ_CHAINWIRE_FENCE_GATE_V2_PHASE1 = "MapObjects/decay/fence_gate_v2_phase1";
+  static readonly OBJ_CHAINWIRE_FENCE_GATE_V2_PHASE2 = "MapObjects/decay/fence_gate_v2_phase2";
+  static readonly OBJ_CHAINWIRE_FENCE_GATE_V2_PHASE3 = "MapObjects/decay/fence_gate_v2_phase3";
+  static readonly OBJ_CHAINWIRE_FENCE_GATE_V3_PHASE1 = "MapObjects/decay/fence_gate_v3_phase1";
+  static readonly OBJ_CHAINWIRE_FENCE_GATE_V3_PHASE2 = "MapObjects/decay/fence_gate_v3_phase2";
+  static readonly OBJ_CHAINWIRE_FENCE_GATE_V3_PHASE3 = "MapObjects/decay/fence_gate_v3_phase3";
 
   // ── Actors ────────────────────────────────────────────────────────────────
   static readonly PLAYER_FOLLOWER = "Actors/player_follower";
@@ -204,6 +778,14 @@ export class GameImages {
   static readonly ACTOR_RAT_ZOMBIE = "Actors/rat_zombie";
   static readonly ACTOR_SEWERS_THING = "Actors/sewers_thing";
   static readonly ACTOR_JASON_MYERS = "Actors/jason_myers";
+  // Still Alive's two additions that need no new ability or AI: the deranged
+  // patient is the fork's replacement for Jason Myers ("was Jason Myers",
+  // Release 8-1) and keeps his InsaneHumanAI and RAGE sheet, and the CHAR
+  // scientist is a second CHARGuardAI. Both are skinned and dressed rather than
+  // drawn whole-body, so `actorImageMap` maps them to null and these constants
+  // exist for the same reason `ACTOR_JASON_MYERS` does.
+  static readonly ACTOR_DERANGED_PATIENT = "Actors/deranged_patient";
+  static readonly ACTOR_CHAR_SCIENTIST = "Actors/CHAR_scientist";
   static readonly ACTOR_BIG_BEAR = "Actors/big_bear";
   static readonly ACTOR_FAMU_FATARU = "Actors/famu_fataru";
   static readonly ACTOR_SANTAMAN = "Actors/santaman";
@@ -291,6 +873,13 @@ export class GameImages {
   static readonly GANGSTA_SHIRT = "Actors/Decoration/gangsta_shirt";
   static readonly CHARGUARD_HAIR = "Actors/Decoration/charguard_hair";
   static readonly CHARGUARD_PANTS = "Actors/Decoration/charguard_pants";
+  // Still Alive, Release 8-1 (GameImages.cs:981-983). The CHAR research raid's
+  // scientists. Unlike CHARGUARD_* these are single fixed decorations, not an
+  // alternatives array — `BaseMapGenerator.dressCHARScientist` has one sprite per
+  // doll part, so there is nothing to roll between.
+  static readonly CHARSCIENTIST_HEAD = "Actors/Decoration/charscientist_head";
+  static readonly CHARSCIENTIST_SHIRT = "Actors/Decoration/charscientist_shirt";
+  static readonly CHARSCIENTIST_PANTS = "Actors/Decoration/charscientist_pants";
   static readonly POLICE_HAT = "Actors/Decoration/police_hat";
   static readonly POLICE_UNIFORM = "Actors/Decoration/police_uniform";
   static readonly POLICE_PANTS = "Actors/Decoration/police_pants";
@@ -304,6 +893,15 @@ export class GameImages {
   static readonly DOG_SKIN1 = "Actors/Decoration/dog_skin1";
   static readonly DOG_SKIN2 = "Actors/Decoration/dog_skin2";
   static readonly DOG_SKIN3 = "Actors/Decoration/dog_skin3";
+  // Still Alive's two food animals, Release 7-6 (GameImages.cs:971-975). East and
+  // west pairs rather than a single sprite, because
+  // `UnintelligentAnimalAI.faceSpriteForDirection` swaps the SKIN decoration as
+  // the animal turns. There is no north/south pair: a head-on or rear view is the
+  // same drawing either way, so the C# keeps the current skin for those headings.
+  static readonly RABBIT_SKIN_EAST = "Actors/Decoration/rabbit_skin_east";
+  static readonly RABBIT_SKIN_WEST = "Actors/Decoration/rabbit_skin_west";
+  static readonly CHICKEN_SKIN_EAST = "Actors/Decoration/chicken_skin_east";
+  static readonly CHICKEN_SKIN_WEST = "Actors/Decoration/chicken_skin_west";
 
   // ── Items ─────────────────────────────────────────────────────────────────
   static readonly ITEM_SLOT = "Items/itemslot";
@@ -376,9 +974,597 @@ export class GameImages {
   static readonly ITEM_SPRAYPAINT4 = "Items/item_spraypaint4";
   static readonly ITEM_STENCH_KILLER = "Items/item_stench_killer";
   static readonly ITEM_SUBWAY_BADGE = "Items/item_subway_badge";
+
+  // ── Still Alive food and entertainment (scripts/port-item-models.py). Paths
+  // verbatim from the fork's GameImages.cs, hence item_book_CHAR.
+  static readonly ITEM_BOOK_BLUE = "Items/item_book_blue";
+  static readonly ITEM_BOOK_CHAR = "Items/item_book_CHAR";
+  static readonly ITEM_BOOK_GREEN = "Items/item_book_green";
+  static readonly ITEM_BOOK_RED = "Items/item_book_red";
+  static readonly ITEM_CHICKEN_EGG = "Items/item_chicken_egg";
+  static readonly ITEM_COOKED_CHICKEN = "Items/item_cooked_chicken";
+  static readonly ITEM_COOKED_DOG_MEAT = "Items/item_cooked_dog_meat";
+  static readonly ITEM_COOKED_FISH = "Items/item_cooked_fish";
+  static readonly ITEM_COOKED_HUMAN_FLESH = "Items/item_cooked_human_flesh";
+  static readonly ITEM_COOKED_RABBIT = "Items/item_cooked_rabbit";
+  static readonly ITEM_GRAPES = "Items/item_grapes";
+  static readonly ITEM_MAGAZINE1 = "Items/item_magazine1";
+  static readonly ITEM_MAGAZINE2 = "Items/item_magazine2";
+  static readonly ITEM_MAGAZINE3 = "Items/item_magazine3";
+  static readonly ITEM_MAGAZINE4 = "Items/item_magazine4";
+  static readonly ITEM_PEANUTS = "Items/item_peanuts";
+  static readonly ITEM_RAW_CHICKEN = "Items/item_raw_chicken";
+  static readonly ITEM_RAW_DOG_MEAT = "Items/item_raw_dog_meat";
+  static readonly ITEM_RAW_FISH = "Items/item_raw_fish";
+  static readonly ITEM_RAW_HUMAN_FLESH = "Items/item_raw_human_flesh";
+  static readonly ITEM_RAW_RABBIT = "Items/item_raw_rabbit";
+  static readonly ITEM_SNACK_BAR = "Items/item_snack_bar";
+  static readonly ITEM_VEGETABLES = "Items/item_vegetables";
+  static readonly ITEM_WILD_BERRIES = "Items/item_wild_berries";
+
+  // ── Still Alive weapons, armour and lights (scripts/port-item-models.py).
+  static readonly ITEM_ARMY_PRECISION_RIFLE = "Items/item_army_precision_rifle";
+  static readonly ITEM_ARMY_RIFLE1 = "Items/item_army_rifle1";
+  static readonly ITEM_ARMY_RIFLE2 = "Items/item_army_rifle2";
+  static readonly ITEM_ARMY_RIFLE3 = "Items/item_army_rifle3";
+  static readonly ITEM_ARMY_RIFLE4 = "Items/item_army_rifle4";
+  static readonly ITEM_BARBED_WIRE_BAT = "Items/item_barbed_wire_bat";
+  static readonly ITEM_BINOCULARS = "Items/item_binoculars";
+  static readonly ITEM_BIOHAZARD_SUIT = "Items/item_biohazard_suit";
+  // The fork's GameImages.cs spells this "Items\\item_bio_force_gun", but the
+  // file it ships is `item_Bio_Force_Gun.png`. That works on Windows, whose
+  // filesystem is case-insensitive, and 404s here. The only such mismatch of
+  // 1050 constants in the fork -- checked, not assumed.
+  //
+  // It said 1051, and the off-by-one is worth keeping in mind rather than
+  // quietly rounding: `grep -c 'public const string' GameImages.cs` is 1050
+  // *live* lines plus one commented-out declaration at `GameImages.cs:77`
+  // (`//public const string ICON_SCENT_LIVING_SUPRESSOR`). A count that takes the
+  // commented line with the live ones is not a smaller error, it is a different
+  // question, and "1051" was the answer to it.
+  static readonly ITEM_BIO_FORCE_GUN = "Items/item_Bio_Force_Gun";
+  static readonly ITEM_BONESAW = "Items/item_bonesaw";
+  static readonly ITEM_BRASS_KNUCKLES = "Items/item_brass_knuckles";
+  static readonly ITEM_CHAINSAW = "Items/item_chainsaw";
+  static readonly ITEM_CLEAVER = "Items/item_cleaver";
+  static readonly ITEM_DOUBLE_BARREL = "Items/item_double_barrel";
+  static readonly ITEM_FIRE_AXE = "Items/item_fire_axe";
+  static readonly ITEM_FIRE_HAZARD_SUIT = "Items/item_fire_hazard_suit";
+  static readonly ITEM_FLAIL = "Items/item_flail";
+  static readonly ITEM_FLAMETHROWER = "Items/item_flamethrower";
+  static readonly ITEM_FRYING_PAN = "Items/item_frying_pan";
+  static readonly ITEM_GRENADE_LAUNCHER = "Items/item_grenade_launcher";
+
+  // ── Still Alive medicine, paint and explosives (scripts/port-item-models.py).
+  static readonly ITEM_AMMO_FUEL = "Items/item_ammo_fuel";
+  static readonly ITEM_SIPHON_KIT = "Items/item_siphon_kit";
+  /**
+   * The last eleven Still Alive item rows, and the ten sprites they need that
+   * were not already declared here (`GameItems.cs:2233-3043`). Every path below
+   * is the fork's own `GameImages.cs` value (`:998-1003`, `:1036`, `:1065`,
+   * `:1072`, `:1127`, `:1143`) and every one ships in the *classic* pack, so
+   * `tests/sprite-assets.test.ts` is what keeps them true.
+   *
+   * Two of the eleven need no id of their own, and both are the reference's
+   * doing rather than a shortcut:
+   *
+   * - `AMMO_NAILS` draws `ITEM_AMMO_NAILS`, whose value is **`item_ammo_nail_gun`**
+   *   -- singular, and the gun's own filename. `GameImages.cs:998` really does
+   *   point the nail *ammo* row at that file, and it is the only nail-ammunition
+   *   sprite the fork ships, so it is transcribed rather than "corrected".
+   * - `UNIQUE_ARMY_ACCESS_BADGE` draws `ITEM_SUBWAY_BADGE` (`:2918`), deliberately
+   *   sharing the subway worker's badge art. That constant is declared at `:931`
+   *   above, so there is nothing to add for it.
+   */
+  static readonly ITEM_AMMO_NAILS = "Items/item_ammo_nail_gun";
+  static readonly ITEM_AMMO_PRECISION_RIFLE = "Items/item_ammo_precision_rifle";
+  static readonly ITEM_AMMO_MINIGUN = "Items/item_ammo_minigun";
+  static readonly ITEM_AMMO_GRENADES = "Items/item_ammo_grenades";
+  static readonly ITEM_AMMO_PLASMA = "Items/item_ammo_plasma";
+  static readonly ITEM_CANDLES_BOX = "Items/item_candles_box";
+  static readonly ITEM_FLARES_KIT = "Items/item_flares_kit";
+  static readonly ITEM_GLOWSTICKS_BOX = "Items/item_glowsticks_box";
+  static readonly ITEM_POLICE_RIOT_SHIELD = "Items/item_police_riot_shield";
+  static readonly ITEM_SLEEPING_BAG = "Items/item_sleeping_bag";
+  // Still Alive, Release 7-6. The sprite shipped with the classic pack, so this
+  // is only the id: the fork's `GameImages.cs:1062` has the same path.
+  static readonly ITEM_FISHING_ROD = "Items/item_fishing_rod";
+  // Still Alive, Release 8-1 (GameImages.cs:1041). `Feature.CHARResearchRaid`'s
+  // laptop — the sprite the scientists are carrying, and the only thing an NPC
+  // will refuse to trade for.
+  static readonly ITEM_CHAR_LAPTOP = "Items/item_CHAR_laptop";
+  // ── Feature.ShelterBackpacks: the five `Items_Backpacks.csv` rows. Still Alive,
+  // Release 8-2 (`GameImages.cs:1013, 1053, 1080, 1135, 1168`). All five ship in
+  // the *classic* sprite pack, so every path here already resolves to a file on
+  // disk -- `tests/sprite-assets.test.ts` is what keeps that true.
+  static readonly ITEM_WAIST_POUCH = "Items/item_waist_pouch";
+  static readonly ITEM_SATCHEL = "Items/item_satchel";
+  static readonly ITEM_DAYPACK = "Items/item_daypack";
+  static readonly ITEM_HIKING_PACK = "Items/item_hiking_pack";
+  static readonly ITEM_ARMY_RUCKSACK = "Items/item_army_rucksack";
+  // `ITEM_BACKPACK_SLOT` (`GameImages.cs:990`) is the C#'s *inventory slot
+  // chrome* for the open bag panel, not an item sprite, so it has no port id and
+  // no file: the nested panel is drawn from slots, like every other panel.
+  // Still Alive, Release 7-1. One of the ~420 constants the sprite commit
+  // deferred; added here because `DarknessFov` 2b reads it.
+  static readonly DECO_LIT_CANDLE = "Tiles/Decoration/lit_candle";
+  static readonly ITEM_BEER_BOTTLE_BROWN = "Items/item_beer_bottle_brown";
+  static readonly ITEM_BEER_BOTTLE_GREEN = "Items/item_beer_bottle_green";
+  static readonly ITEM_BEER_CAN_BLUE = "Items/item_beer_can_blue";
+  static readonly ITEM_BEER_CAN_RED = "Items/item_beer_can_red";
+  static readonly ITEM_C4 = "Items/item_c4";
+  static readonly ITEM_CIGARETTES = "Items/item_cigarettes";
+  static readonly ITEM_DYNAMITE = "Items/item_dynamite";
+  static readonly ITEM_ENERGY_DRINK = "Items/item_energy_drink";
+  static readonly ITEM_FIRE_EXTINGUISHER = "Items/item_fire_extinguisher";
+  static readonly ITEM_FLASHBANG = "Items/item_flashbang";
+  static readonly ITEM_HOLY_HAND_GRENADE = "Items/item_Holy_Hand_Grenade";
+  static readonly ITEM_LARGE_MEDIKIT = "Items/item_large_medikit";
+  static readonly ITEM_MOLOTOV = "Items/item_molotov";
+  static readonly ITEM_PAINT_THINNER = "Items/item_paint_thinner";
+  static readonly ITEM_PLASMA_BURST_PRIMED = "Items/item_plasma_burst_primed";
+  static readonly ITEM_SMALL_MEDIKIT = "Items/item_small_medikit";
+  static readonly ITEM_SMOKE_GRENADE = "Items/item_smoke_grenade";
+  static readonly OBJ_FUEL_PUMP = "MapObjects/fuel_pump";
+  /**
+   * `Feature.FuelStation`. C# `GameImages.cs` `OBJ_FUEL_PUMP_BROKEN`, the wreck
+   * `ExplodeFuelPump` (`RogueGame.cs:20128`) drops where the intact pump stood.
+   */
+  static readonly OBJ_FUEL_PUMP_BROKEN = "MapObjects/fuel_pump_broken";
+  /** `Feature.FuelStation`. The `Super: 1.17, Regular: 1.14` board, C# `:2851`. */
+  static readonly OBJ_FUEL_PRICE_BOARD = "MapObjects/fuel_price_board";
+  static readonly ITEM_HOCKEY_STICK = "Items/item_hockey_stick";
+  static readonly ITEM_KATANA = "Items/item_katana";
+  static readonly ITEM_KEYBOARD = "Items/item_keyboard";
+  static readonly ITEM_KITCHEN_KNIFE = "Items/item_kitchen_knife";
+  static readonly ITEM_LIT_FLARE = "Items/item_lit_flare";
+  static readonly ITEM_LIT_GLOWSTICK = "Items/item_lit_glowstick";
+  static readonly ITEM_MACE = "Items/item_mace";
+  static readonly ITEM_MACHETE = "Items/item_machete";
+  static readonly ITEM_MINIGUN = "Items/item_minigun";
+  static readonly ITEM_NAIL_GUN = "Items/item_nail_gun";
+  static readonly ITEM_NIGHT_VISION = "Items/item_night_vision";
+  static readonly ITEM_NUNCHAKU = "Items/item_nunchaku";
+  static readonly ITEM_PICKAXE = "Items/item_pickaxe";
+  static readonly ITEM_PIPE_WRENCH = "Items/item_pipe_wrench";
+  static readonly ITEM_PITCH_FORK = "Items/item_pitch_fork";
+  static readonly ITEM_REVOLVER = "Items/item_revolver";
+  static readonly ITEM_SCIMITAR = "Items/item_scimitar";
+  static readonly ITEM_SCYTHE = "Items/item_scythe";
+  static readonly ITEM_SICKLE = "Items/item_sickle";
+  static readonly ITEM_SMG = "Items/item_SMG";
+  static readonly ITEM_SPEAR = "Items/item_spear";
+  static readonly ITEM_SPIKED_MACE = "Items/item_spiked_mace";
+  static readonly ITEM_STANDARD_AXE = "Items/item_standard_axe";
+  static readonly ITEM_STUN_GUN = "Items/item_stun_gun";
+  static readonly ITEM_TACTICAL_SHOTGUN = "Items/item_tactical_shotgun";
+  static readonly ITEM_TENNIS_RACKET = "Items/item_tennis_racket";
+  static readonly ITEM_VINTAGE_PISTOL = "Items/item_vintage_pistol";
   static readonly ITEM_TRUNCHEON = "Items/item_truncheon";
   static readonly ITEM_WOODEN_PLANK = "Items/item_wooden_plank";
   static readonly ITEM_ZTRACKER = "Items/item_ztracker";
+
+  // ── Still Alive primed explosives, one sprite each.
+  static readonly ITEM_MOLOTOV_PRIMED = "Items/item_molotov_primed";
+  static readonly ITEM_DYNAMITE_PRIMED = "Items/item_dynamite_primed";
+  static readonly ITEM_C4_PRIMED = "Items/item_c4_primed";
+  static readonly ITEM_SMOKE_GRENADE_PRIMED = "Items/item_smoke_grenade_primed";
+  static readonly ITEM_FLASHBANG_PRIMED = "Items/item_flashbang_primed";
+  static readonly ITEM_HOLY_HAND_GRENADE_PRIMED = "Items/item_Holy_Hand_Grenade_primed";
+
+  // ── Feature.Church: the church building generator.
+  //
+  // The eight ids `MakeChurchBuilding` (`BaseTownGenerator.cs:2187`) draws, and
+  // the one item sprite its antique-weapon roll needs. All nine are Release 7-6
+  // additions the sprite commit left as bare constants, and all nine ship in the
+  // *classic* pack, so every path here already resolves to a file on disk --
+  // `tests/sprite-assets.test.ts` is what keeps that true.
+  //
+  // Kept in one block rather than filed next to the `DECO_`/`OBJ_` rows they
+  // resemble, so a reader can see the whole of one building's art at once.
+  static readonly DECO_CHURCH_HANGING1 = "Tiles/Decoration/hanging_purple";
+  static readonly DECO_CHURCH_HANGING2 = "Tiles/Decoration/hanging_red";
+  static readonly DECO_CHURCH_HANGING3 = "Tiles/Decoration/hanging_green";
+  static readonly DECO_CHURCH_HANGING4 = "Tiles/Decoration/hanging_blue";
+  static readonly DECO_CHURCH = "Tiles/Decoration/church_sign";
+  static readonly OBJ_CHURCH_PEW = "MapObjects/church_pew";
+  static readonly OBJ_LECTERN = "MapObjects/lectern";
+  static readonly OBJ_DISPLAY_CASE = "MapObjects/display_case";
+  static readonly ITEM_UNIQUE_BOOK = "Items/item_unique_book";
+
+  // ── Feature.Bar: the bar building generator (`BaseTownGenerator.cs:2387`).
+  //
+  // The five ids `makeBarBuilding` draws. `DECO_BAR` and `DECO_VELVET_ROPE` are
+  // Release 4 additions, the three map objects are vanilla furniture the port
+  // had no reader for until this building, and all five ship in the *classic*
+  // pack, so every path here already resolves to a file on disk --
+  // `tests/sprite-assets.test.ts` is what keeps that true.
+  //
+  // Note the spelling: the C# calls the doorway art `DECO_BAR` and points it at
+  // `shop_bar` (`GameImages.cs:327`); it is the bar sign, named after the shop
+  // series it was drawn for.
+  static readonly DECO_BAR = "Tiles/Decoration/shop_bar";
+  static readonly DECO_VELVET_ROPE = "Tiles/Decoration/velvet_rope";
+  static readonly OBJ_BAR_SHELVES = "MapObjects/bar_shelves";
+  static readonly OBJ_KITCHEN_SINK = "MapObjects/kitchen_sink";
+  static readonly OBJ_KITCHEN_COUNTER = "MapObjects/kitchen_counter";
+  /**
+   * The two liquor bottles, Release 7-1 (`GameImages.cs:1095-1096`).
+   *
+   * **`makeItemAlcohol`'s third of a bottle**, the one the C#'s
+   * `MakeItemLiquorForMolotov` (`BaseMapGenerator.cs:1946`) reaches on a `Roll(0, 2)`.
+   * They are not "bar" art in the way the shelf and the counter above are — they are
+   * what the shelf and the counter *hold* — and they are named after the glass rather
+   * than the drink, which is also why the two `liquor` models share a name and a
+   * plural and differ only here.
+   *
+   * Both ship in the *classic* pack, so both paths already resolve to a file on disk
+   * — `tests/sprite-assets.test.ts` is what keeps that true. Note the C#'s file
+   * names are lower-case (`GameImages.cs:1095-1096`) even though the ids are not:
+   * `imagePath()` concatenates rather than resolving, so the spelling on disk is
+   * the one that has to survive.
+   */
+  static readonly ITEM_LIQUOR_BOTTLE_AMBER = "Items/item_liquor_bottle_amber";
+  static readonly ITEM_LIQUOR_BOTTLE_CLEAR = "Items/item_liquor_bottle_clear";
+
+  // ── Feature.Clinic: the clinic building generator (`BaseTownGenerator.cs:3358`).
+  //
+  // The six ids `makeClinicBuilding` draws. `DECO_CLINIC_SIGN` and the five
+  // `clinic_*` objects are Release 4 additions the port had no reader for until
+  // this building, and all six ship in the *classic* pack, so every path here
+  // already resolves to a file on disk -- `tests/sprite-assets.test.ts` is what
+  // keeps that true.
+  //
+  // `OBJ_POWERGEN_OFF` / `_ON` are *not* here: the port already had both for the
+  // sewers and the CHAR offices, so they sit in the `OBJ_` rows above
+  // (`GameImages.ts:301-302`) and are only listed in the clinic's own factory
+  // table. `OBJ_CLINIC_DESK` is shared with the shopping mall, which the C# draws
+  // from `MakeObjCheckout` (`BaseTownGenerator.cs:9978`) and not from the
+  // reception desk -- one sprite, two names, as `MakeObjCounter` /
+  // `MakeObjKitchenCounter` are.
+  static readonly DECO_CLINIC_SIGN = "Tiles/Decoration/clinic_sign";
+  static readonly OBJ_CLINIC_BED = "MapObjects/clinic_bed";
+  static readonly OBJ_CLINIC_CUPBOARD = "MapObjects/clinic_cupboard";
+  static readonly OBJ_CLINIC_CURTAIN = "MapObjects/clinic_curtain";
+  static readonly OBJ_CLINIC_DESK = "MapObjects/clinic_desk";
+  static readonly OBJ_CLINIC_MACHINERY = "MapObjects/clinic_machinery";
+
+  // ── Feature.Library: the library building generator
+  // (`BaseTownGenerator.cs:1908`).
+  //
+  // The three ids `makeLibraryBuilding` draws. `DECO_LIBRARY` is a Release 4
+  // addition and the two map objects are vanilla furniture the port had no
+  // reader for until this building; all three ship in the *classic* pack, so
+  // every path here already resolves to a file on disk --
+  // `tests/sprite-assets.test.ts` is what keeps that true.
+  //
+  // Note the spelling: the C# calls the doorway art `DECO_LIBRARY` and points it
+  // at `shop_library` (`GameImages.cs:322`), like `DECO_BAR` above. The books
+  // the shelves drop are `ITEM_BOOK_BLUE` / `_GREEN` / `_RED` at `:526-529`,
+  // already present for the item models' sake.
+  static readonly DECO_LIBRARY = "Tiles/Decoration/shop_library";
+  static readonly OBJ_BOOK_SHELVES = "MapObjects/bookshelves";
+  static readonly OBJ_CASH_REGISTER = "MapObjects/cash_register";
+
+  // ── Feature.Junkyard: the junkyard building generator
+  // (`BaseTownGenerator.cs:3537`).
+  //
+  // The eight ids `makeJunkyard` draws. `OBJ_BARRELS` and `OBJ_JUNK` are *not*
+  // here: the port already had both for the sewers and the park, so they sit in
+  // the `OBJ_` rows above (`GameImages.ts:299-300`) and are only listed in the
+  // junkyard's own factory table. The other six are Release 4 additions the port
+  // had no reader for until this building, and all six ship in the *classic*
+  // pack, so every path here already resolves to a file on disk --
+  // `tests/sprite-assets.test.ts` is what keeps that true.
+  //
+  // `DECO_JUNKYARD` is kept even though nothing ever draws it: the C#'s
+  // `DecorateOutsideWalls` at `:3628` skips walkable tiles, and `:3557` has
+  // already made the whole perimeter walkable dirt, so the sign is unreachable
+  // in the reference. See the note in `makeJunkyard.ts`.
+  static readonly DECO_JUNKYARD = "Tiles/Decoration/junkyard";
+  static readonly OBJ_CHAINWIRE_FENCE = "MapObjects/chainwire_fence";
+  static readonly OBJ_EMPTY_BARREL = "MapObjects/empty_barrel";
+  // The roller door is `MakeObjRollerDoor` (`BaseMapGenerator.cs:421`), a
+  // three-state metal door of its own, not a recoloured `MakeObjIronDoor`.
+  static readonly OBJ_ROLLER_DOOR_CLOSED = "MapObjects/roller_door_closed";
+  static readonly OBJ_ROLLER_DOOR_OPEN = "MapObjects/roller_door_open";
+  static readonly OBJ_ROLLER_DOOR_BROKEN = "MapObjects/roller_door_broken";
+  // C# `BaseMapGenerator.cs:552`, the `CARS` row `MakeObjWreckedCar` picks from:
+  // four coloured cars plus the police car the fork added in Release 7-6. The
+  // port's own protected `makeObjWreckedCar` uses the *vanilla* `car1..car4`
+  // instead, which is why these five had no ids until now. The five ids' phase 1-3
+  // siblings are under "World decay: map objects", and
+  // `RogueGame.ApplyWorldDecayPhase` is where the consequence of the `car1..car4`
+  // choice shows up.
+  static readonly OBJ_CAR_BLUE_PHASE0 = "MapObjects/car_blue_phase0";
+  static readonly OBJ_CAR_GREEN_PHASE0 = "MapObjects/car_green_phase0";
+  static readonly OBJ_CAR_RED_PHASE0 = "MapObjects/car_red_phase0";
+  static readonly OBJ_CAR_WHITE_PHASE0 = "MapObjects/car_white_phase0";
+  static readonly OBJ_POLICE_CAR_PHASE0 = "MapObjects/police_car_phase0";
+
+  // ── Feature.FireStation: the fire station building generator
+  // (`BaseTownGenerator.cs:3181`).
+  //
+  // The six ids `makeFireStationBuilding` draws that the port had no reader for.
+  // `OBJ_EMPTY_BARREL` and the three `OBJ_ROLLER_DOOR_*` are *not* here: the
+  // junkyard above already added both for the same C# factories
+  // (`BaseMapGenerator.cs:758` and `:421`), so they are only listed in the fire
+  // station's own factory table. `OBJ_POWERGEN_OFF` / `_ON` were in the `OBJ_`
+  // rows from the sewers onwards. That leaves the sign and the truck.
+  //
+  // The truck is four sprites because the C# cuts one 32x64 (east-west) or 64x32
+  // (north-south) image in half and lays the pieces down back-to-front
+  // (`BaseMapGenerator.cs:1133`), which is also why there are four rather than
+  // one. Only `DECO_FIRE_STATION` carries a `//@@MP` marker in the reference
+  // (`GameImages.cs:317`, Release 7-3); the four trucks and the workbench are
+  // vanilla art the port had no reader for until this building, added in the same
+  // fork release without the marker. All six ship in the *classic* pack, so every
+  // path here resolves to a file on disk -- `tests/sprite-assets.test.ts` is what
+  // keeps that true.
+  static readonly DECO_FIRE_STATION = "Tiles/Decoration/fire_station";
+  static readonly OBJ_WORKBENCH = "MapObjects/workbench";
+  static readonly OBJ_FIRE_TRUCK_EW_BACK = "MapObjects/fire_truck_EW_back";
+  static readonly OBJ_FIRE_TRUCK_EW_FRONT = "MapObjects/fire_truck_EW_front";
+  static readonly OBJ_FIRE_TRUCK_NS_BACK = "MapObjects/fire_truck_NS_back";
+  static readonly OBJ_FIRE_TRUCK_NS_FRONT = "MapObjects/fire_truck_NS_front";
+
+  // ── Actor on fire (Still Alive, Release 5-7) ───────────────────────────
+  //
+  // Torso decorations, not actor graphics: the body sheet is unchanged and the
+  // alight look is layered over it. `ExtinguishOnFireActor` removes whichever one
+  // it finds, so the four have to be mutually distinguishable -- two actors
+  // sharing a decoration would leave the second one burning with nothing drawn.
+  static readonly MALE_ON_FIRE = "Actors/Decoration/male_on_fire";
+  static readonly FEMALE_ON_FIRE = "Actors/Decoration/female_on_fire";
+  static readonly ZOMBIE_ON_FIRE = "Actors/Decoration/zombie_on_fire";
+  static readonly OTHER_UNDEAD_ON_FIRE = "Actors/Decoration/other_undead_on_fire";
+
+  // ── Feature.ArmyBase ────────────────────────────────────────────────────
+  //
+  // The army underground office's two furniture pieces. Both sprites already ship
+  // in the classic pack; these are the ids the C# hands to `MakeObjTable` and
+  // `MakeObjWorkstation` (`BaseTownGenerator.cs:5493`, `:5514`).
+  static readonly OBJ_ARMY_TABLE = "MapObjects/army_table";
+  static readonly OBJ_ARMY_COMPUTER_STATION = "MapObjects/army_computer_station";
+
+  // ── Feature.Fishing, Release 7-6 ──────────────────────────────────────────
+  //
+  // The unlit bin a too-small-for-a-pond park gets instead (`BaseTownGenerator.cs:5721`),
+  // passed straight to `makeObjFireBarrel`. The C# names it `OBJ_EMPTY_BIN` even
+  // though it builds a fire barrel from it -- "empty bin" is what the sprite is,
+  // not what the object becomes.
+  static readonly OBJ_EMPTY_BIN = "MapObjects/empty_bin";
+
+  // ── Feature.Cooking / Feature.FireBarrels, Release 7-6 ────────────────────
+  //
+  // `ITEM_MATCHBOX` (`GameImages.cs:1105`). The sprite has always shipped in the
+  // classic pack; the id did not exist, so nothing could reference it.
+  //
+  // `ITEM_MATCHES_PRIMED` is declared one line below it in the C# (`:1106`) and
+  // **used nowhere** -- the C# never draws a lit-match sprite. Not ported, and not
+  // because it was forgotten: porting a constant nothing reads is how a table stops
+  // being the C#'s.
+  static readonly ITEM_MATCHES = "Items/item_matchbox";
+
+  /** C# `GameImages.OBJ_CAMPFIRE` (`:687`) -- the object `DoMakeFireForCooking` places. */
+  static readonly OBJ_CAMPFIRE = "MapObjects/campfire";
+
+  // ── Feature.Graveyard ───────────────────────────────────────────────────
+  //
+  // A graveyard is not its own generator: the C# passes `isgraveyard` into
+  // `MakeParkBuilding` and branches three times inside it. Only the tombstones
+  // are new art; the trees it reuses are the four park trees below.
+  static readonly OBJ_PLAIN_TOMBSTONE = "MapObjects/plain_tombstone";
+  static readonly OBJ_CROSS_TOMBSTONE = "MapObjects/cross_tombstone";
+  static readonly OBJ_TREE1 = "MapObjects/tree1";
+  static readonly OBJ_TREE2 = "MapObjects/tree2";
+  static readonly OBJ_TREE3 = "MapObjects/tree3";
+  static readonly OBJ_TREE4 = "MapObjects/tree4";
+
+  // ── Feature.AnimalShelter: the animal shelter building generator
+  // (`BaseTownGenerator.cs:3945`).
+  //
+  // The six ids `makeAnimalShelterBuilding` draws that no earlier building wanted.
+  // `OBJ_CHAINWIRE_FENCE` and the four `OBJ_TREE*` are *not* here: the junkyard
+  // block above and the graveyard block below already added both for the same C#
+  // factories (`BaseMapGenerator.cs:444` and `:535`), so they are only listed in
+  // the shelter's own factory table.
+  //
+  // The chain link gate is `MakeObjChainFenceGate` (`BaseMapGenerator.cs:1176`) --
+  // a three-state door of its own, like the junkyard's roller door and not a
+  // recoloured iron door -- and the shelter is its first reader: one closed gate
+  // at the yard's pedestrian entrance, one *open* gate where the office driveway
+  // reaches the walkway, and one closed gate per kennel cell.
+  //
+  // `DECO_ANIMAL_SHELTER` is `animal_shelter_sign`, not `animal_shelter`: the C#'
+  // `GameImages.cs:318` is the only place either spelling appears, and the sprite
+  // on disk is `animal_shelter_sign.webp`. All six ship in the *classic* pack, so
+  // every path here resolves to a file on disk -- `tests/sprite-assets.test.ts` is
+  // what keeps that true.
+  static readonly OBJ_CHAINWIRE_GATE_CLOSED = "MapObjects/chainwire_gate_closed";
+  static readonly OBJ_CHAINWIRE_GATE_OPEN = "MapObjects/chainwire_gate_open";
+  static readonly OBJ_CHAINWIRE_GATE_BROKEN = "MapObjects/chainwire_gate_broken";
+  static readonly OBJ_VAN_PHASE0 = "MapObjects/van_phase0";
+
+  // ── Feature.SportsCourts ──────────────────────────────────────────────────
+  //
+  // The basketball ring, placed by `MakeBasketballCourt`
+  // (`BaseTownGenerator.cs:6028`) on the two floor tiles its own tile list carries
+  // rings in -- sheet cells r4c2 and r4c9, the two ends of the centre line.
+  //
+  // **No `OBJ_EMPTY_BIN` here.** The court hands `makeObjFireBarrel` that sprite
+  // for its single 5%-per-tile barrel (`:6031`), but the constant already existed
+  // for `makeObjFireBarrel`'s own sake and is declared above at `:871`; a second
+  // declaration of the same id would be a duplicate identifier, and two constants
+  // for one sprite is two places for the basketball court and the fire barrel to
+  // disagree about.
+  static readonly OBJ_BASKETBALL_RING = "MapObjects/basketball_ring";
+
+  // ── Feature.Farm ──────────────────────────────────────────────────────────
+  //
+  // Three fence orientations, chosen by which neighbour is the path
+  // (`BaseTownGenerator.cs:3713-3717`), and three plant sprites for the crop
+  // objects `MapObjectFill` puts one of on every inside-rect tile
+  // (`:3736-3738`). The plants are the farm's *only* produce: the crop is a
+  // `MapObject`, not a `FLOOR_PLANTED` tile, which is why `Feature.Farm` never
+  // needed the farming substrate and why `CheckIfPlantsFruit`'s map-object arm is
+  // the one that matters. Note `MakeObjFarmPlant` is handed the name *without* an
+  // article -- `"berry bush"`, not `"a berry bush"` -- because `MapObject` adds
+  // the article itself and the fruiting code matches on the result.
+  // The C# spells these `farm_fence_EW`, `farm_fence_NS_right` and
+  // `farm_fence_NS_left` — `GameImages.cs:619-621` — and the fork ships the files
+  // with that capitalisation. The port had them lowercased, which works on Windows
+  // and 404s on every filesystem the browser and the desktop build actually run
+  // on, so the farm's fence posts rendered as nothing.
+  //
+  // **This is the same defect as `ITEM_BIO_FORCE_GUN` above, twice over**: a
+  // transcription that is a faithful *string* and an unfaithful *file*. That one
+  // is caught by `sprite-assets.test.ts`, and so is this — which is how the three
+  // ids below were found sitting in the tree with no file, declared by the farm
+  // building that arrived in the same commit. Two of five sprite paths being
+  // mis-cased is a strong argument for the check being the rule rather than the
+  // exception.
+  static readonly OBJ_FARM_FENCE_EW = "MapObjects/farm_fence_EW";
+  static readonly OBJ_FARM_FENCE_NS_RIGHT = "MapObjects/farm_fence_NS_right";
+  static readonly OBJ_FARM_FENCE_NS_LEFT = "MapObjects/farm_fence_NS_left";
+  static readonly OBJ_BERRY_BUSH = "MapObjects/berry_bush";
+  static readonly OBJ_PEANUT_PLANT = "MapObjects/peanut_plant";
+  static readonly OBJ_GRAPE_VINE = "MapObjects/grape_vine";
+  /**
+   * C# `GameImages.cs:723`, used by the farm's shed at `BaseTownGenerator.cs:3863`.
+   *
+   * The sprite always shipped -- `tractor.webp` is on disk -- so this is a constant
+   * that was never declared rather than an asset that never arrived. It was briefly
+   * declared locally inside `makeFarmBuilding.ts`, which is exactly the failure mode
+   * `tests/sprite-assets.test.ts` cannot see: that test enumerates
+   * `Object.getOwnPropertyNames(GameImages)`, so a local id resolves fine and is
+   * never checked. An id that is not on `GameImages` is not preloaded and not
+   * covered.
+   */
+  static readonly OBJ_TRACTOR = "MapObjects/tractor";
+  static readonly DECO_ANIMAL_SHELTER = "Tiles/Decoration/animal_shelter_sign";
+  static readonly DECO_KENNEL = "Tiles/Decoration/kennel";
+  /**
+   * The seed packet, Release 5-5 (`GameImages.cs:1165`).
+   *
+   * Half of a farm shed's contents: `MakeFarmShedItem`
+   * (`BaseTownGenerator.cs:7877-7887`) draws one of these on five of its twelve arms
+   * and on `case 11`'s 85%. The sprite shipped with the classic pack all along —
+   * this is the id, not the asset.
+   */
+  static readonly ITEM_VEGETABLE_SEEDS = "Items/item_vegetable_seeds";
+
+  // ── Feature.ShoppingMall ───────────────────────────────────────────────────
+  //
+  // Every one of these shipped with the *classic* pack -- `mall_sign_the.webp`,
+  // `wigs_display1.webp`, `supermarket_checkout.webp` and the rest were already in
+  // `assets/images/classic/` before this building existed, because Release 7-3 art
+  // for a feature nobody in this port had wired is still art. So this is 22
+  // constants and no vendoring: `tests/sprite-assets.test.ts` enumerates
+  // `Object.getOwnPropertyNames(GameImages)` against the pack, and every path below
+  // already resolves to a file on disk.
+  //
+  // The eight shop signs and the two mall signs are wall *decorations*, so they
+  // ride a tile rather than standing on one, which is why they are `DECO_` and not
+  // `OBJ_`. `DECO_SHOP_SPORTSWEAR`, `DECO_SHOP_PHARMACY`, `DECO_SHOP_GROCERY` and
+  // `DECO_STAIRS_UP`/`_DOWN` are **not** declared here: the port already had them
+  // for the shop generator and the firstperson stairs, and two constants for one
+  // sprite is two places for the mall and its neighbour to disagree about it.
+  // (`DECO_CINEMA_SIGN` was listed there once and had never in fact been declared
+  // -- it is one of the twenty-two below, added with the upper level.)
+  //
+  // **`OBJ_COUCH` (`:627`), `OBJ_CAR1..CAR4` (`:593-595`) and `OBJ_EMPTY_BIN` /
+  // `OBJ_SHOP_SHELF` / `OBJ_BOOK_SHELVES` / `OBJ_FRIDGE` are not here for the same
+  // reason.** The dealership's eight display cars (`MakeObjDisplayCar`,
+  // `BaseMapGenerator.cs:582`) are drawn out of the very `CARS` table the wrecked
+  // cars use and those four ids are already declared, which is also the answer to
+  // whether this building needs to vendor anything: it does not, not even a car.
+  static readonly DECO_MALL_SIGN_THE = "Tiles/Decoration/mall_sign_the";
+  static readonly DECO_MALL_SIGN_MALL = "Tiles/Decoration/mall_sign_mall";
+  static readonly DECO_SHOP_BARBER = "Tiles/Decoration/shop_barber";
+  static readonly DECO_SHOP_BOOKSTORE = "Tiles/Decoration/shop_bookstore";
+  static readonly DECO_SHOP_DEALERSHIP = "Tiles/Decoration/shop_dealership";
+  static readonly DECO_SHOP_MOBILES = "Tiles/Decoration/shop_mobiles";
+  static readonly DECO_SHOP_ELECTRONICS = "Tiles/Decoration/shop_electronics";
+  static readonly DECO_SHOP_CLOTHES_STORE = "Tiles/Decoration/shop_clothes_store";
+  static readonly DECO_SHOP_LIQUOR = "Tiles/Decoration/shop_liquor";
+  static readonly OBJ_WIGS_DISPLAY1 = "MapObjects/wigs_display1";
+  static readonly OBJ_WIGS_DISPLAY2 = "MapObjects/wigs_display2";
+  static readonly OBJ_WIGS_DISPLAY3 = "MapObjects/wigs_display3";
+  static readonly OBJ_CLOTHES_WALL1 = "MapObjects/clothes_wall1";
+  static readonly OBJ_CLOTHES_WALL2 = "MapObjects/clothes_wall2";
+  static readonly OBJ_SHOES_WALL = "MapObjects/shoes_wall";
+  static readonly OBJ_MOBILES_TABLE = "MapObjects/mobiles_table";
+  static readonly OBJ_TELEVISION = "MapObjects/television";
+  static readonly OBJ_LAPTOPS_TABLE = "MapObjects/laptops_table";
+  static readonly OBJ_WASHING_MACHINE = "MapObjects/washing_machine";
+  static readonly OBJ_DRYER = "MapObjects/dryer";
+  static readonly OBJ_DISHWASHER = "MapObjects/dishwasher";
+  static readonly OBJ_POTTED_PLANT = "MapObjects/potted_plant";
+  static readonly OBJ_BARBER_CHAIR = "MapObjects/barber_chair";
+  static readonly OBJ_BATHROOM_BASIN = "MapObjects/bathroom_basin";
+
+  // ── Feature.ShoppingMall: the upper level and the car park ─────────────────
+  //
+  // The other twenty-one mall ids, for `GenerateShoppingMall_UpperLevel`
+  // (`BaseTownGenerator.cs:10178`) and `GenerateShoppingMall_Parking` (`:10490`).
+  // Same story as the block above and for the same reason: Release 7-3 art for a
+  // feature nobody in this port had wired is still art, so every one of these was
+  // already in `assets/images/classic/` before the levels existed. No vendoring;
+  // `tests/sprite-assets.test.ts` enumerates `Object.getOwnPropertyNames(GameImages)`
+  // against the pack, and every path below already resolves to a file on disk.
+  //
+  // The upper level's five food-court price boards and the two cinema signs are
+  // wall decorations; the two cinema signs are `cinema1`/`cinema2`, which are the
+  // *numbers on the doors* rather than a drawing of a cinema, and the C# places one
+  // of each on either side of a pair of doorways.
+  //
+  // `OBJ_LECTERN` (C# `GameImages.cs:626`) and `OBJ_BANK_TELLER` (`:630`) are **not**
+  // here: the church already added both. The cinema foyer reuses the bank's teller
+  // sprite for six reception desks (`MakeObjReceptionDesk(GameImages.OBJ_BANK_TELLER)`,
+  // `BaseTownGenerator.cs:10408-10413`) and the church's lectern for the one drawer at
+  // the ticket check (`:10418`) -- one sprite each, two names, as `OBJ_CLINIC_DESK` is
+  // for the mall's registers. `TILE_PARKING_ASPHALT_EW` / `_NS`,
+  // `TILE_WALL_PILLAR_CONCRETE`, `TILE_WALL_RED_CURTAINS` and
+  // `TILE_FLOOR_FOOD_COURT_POOL` are **not** here either: they are tile images already
+  // declared above for world decay, and their `TileModel`s were registered in
+  // `GameTiles.ts` all along.
+  static readonly DECO_FOOD_COURT_PRICEBOARD1 = "Tiles/Decoration/food_court_priceboard1";
+  static readonly DECO_FOOD_COURT_PRICEBOARD2 = "Tiles/Decoration/food_court_priceboard2";
+  static readonly DECO_FOOD_COURT_PRICEBOARD3 = "Tiles/Decoration/food_court_priceboard3";
+  static readonly DECO_FOOD_COURT_PRICEBOARD4 = "Tiles/Decoration/food_court_priceboard4";
+  static readonly DECO_FOOD_COURT_PRICEBOARD5 = "Tiles/Decoration/food_court_priceboard5";
+  static readonly DECO_CINEMA_SIGN = "Tiles/Decoration/cinema_sign";
+  static readonly DECO_CINEMA1 = "Tiles/Decoration/cinema1";
+  static readonly DECO_CINEMA2 = "Tiles/Decoration/cinema2";
+  static readonly OBJ_FOOD_COURT_COUNTER1 = "MapObjects/food_court_counter1";
+  static readonly OBJ_FOOD_COURT_COUNTER2 = "MapObjects/food_court_counter2";
+  static readonly OBJ_FOOD_COURT_COUNTER3 = "MapObjects/food_court_counter3";
+  static readonly OBJ_FOOD_COURT_COUNTER4 = "MapObjects/food_court_counter4";
+  static readonly OBJ_FOOD_COURT_COUNTER5 = "MapObjects/food_court_counter5";
+  static readonly OBJ_FOOD_COURT_TABLE = "MapObjects/food_court_table";
+  static readonly OBJ_FOOD_COURT_CHAIR = "MapObjects/food_court_chair";
+  static readonly OBJ_FOOD_COURT_PALM_TREE = "MapObjects/food_court_palm_tree";
+  static readonly OBJ_SUPERMARKET_CHECKOUT = "MapObjects/supermarket_checkout";
+  static readonly OBJ_TOILET = "MapObjects/toilet";
+  static readonly OBJ_CINEMA_SEAT = "MapObjects/cinema_seat";
+  static readonly OBJ_CINEMA_SCREEN = "MapObjects/cinema_screen";
+  static readonly OBJ_RAILING = "MapObjects/railing";
+
+  // ── The six CHAR documents: Release 3 ──────────────────────────────────────
+  //
+  // One sprite for `UNIQUE_CHAR_DOCUMENT1..6` (`GameItems.cs:2886-2916`), which is
+  // the C#'s own arrangement: six items, six flavour texts, one page of art. It is
+  // here rather than in a feature block because nothing in the port draws it yet.
+  // The one place that has ever dropped one is `MakeCHARLabRoom`
+  // (`BaseTownGenerator.cs:8613`) -- the **lab** room, which Release 3 added to
+  // replace the CHAR living room, and not the storage room, which is what two
+  // comments in this port used to say. The port has a living room and no lab, so
+  // the room is missing; the roll and the six models are not, and are
+  // `BaseTownGenerator.makeCHARDocument`. Only five of the six are reachable: the
+  // C# rolls `Roll(0, 5)` half-open, so `UNIQUE_CHAR_DOCUMENT6` never appears.
+  // See the report on `ItemID.UNIQUE_CHAR_DOCUMENT1`.
+  static readonly ITEM_CHAR_DOCUMENT = "Items/item_CHAR_document";
 
   // ── Effects & Misc ────────────────────────────────────────────────────────
   static readonly EFFECT_BARRICADED = "Effects/barricaded";

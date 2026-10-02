@@ -6,6 +6,8 @@
     "NUTRITION": 0.25,
     "BESTBEFORE": 5,
     "STACKINGLIMIT": 1,
+    "CAUSES_POISON": 0,
+    "CAN_BE_COOKED": 0,
     "FLAVOR": "Eat like a good soldier!"
   },
   {
@@ -15,6 +17,8 @@
     "NUTRITION": 0.11,
     "BESTBEFORE": -1,
     "STACKINGLIMIT": 3,
+    "CAUSES_POISON": 0,
+    "CAN_BE_COOKED": 0,
     "FLAVOR": "Better than dog food."
   },
   {
@@ -24,6 +28,184 @@
     "NUTRITION": 0.33,
     "BESTBEFORE": 3,
     "STACKINGLIMIT": 1,
+    "CAUSES_POISON": 0,
+    "CAN_BE_COOKED": 0,
     "FLAVOR": "They eat brains, you eat vegetables."
+  },
+  {
+    "ID": "FOOD_WILD_BERRIES",
+    "NAME": "handful of wild berries",
+    "PLURAL": "wild berries",
+    "NUTRITION": 0.05,
+    "BESTBEFORE": 2,
+    "STACKINGLIMIT": 10,
+    "CAUSES_POISON": 0,
+    "CAN_BE_COOKED": 0,
+    "FLAVOR": "Nature's gift."
+  },
+  {
+    "ID": "FOOD_VEGETABLES",
+    "NAME": "vegetable",
+    "PLURAL": "vegetables",
+    "NUTRITION": 0.33,
+    "BESTBEFORE": 7,
+    "STACKINGLIMIT": 3,
+    "CAUSES_POISON": 0,
+    "CAN_BE_COOKED": 0,
+    "FLAVOR": "Lettuce turnip the beet."
+  },
+  {
+    "ID": "FOOD_SNACK_BAR",
+    "NAME": "snack bar",
+    "PLURAL": "snack bars",
+    "NUTRITION": 0.1,
+    "BESTBEFORE": -1,
+    "STACKINGLIMIT": 6,
+    "CAUSES_POISON": 0,
+    "CAN_BE_COOKED": 0,
+    "FLAVOR": "Includes 6 types of apples."
+  },
+  {
+    "ID": "FOOD_PEANUTS",
+    "NAME": "handful of peanuts",
+    "PLURAL": "peanuts",
+    "NUTRITION": 0.05,
+    "BESTBEFORE": 2,
+    "STACKINGLIMIT": 10,
+    "CAUSES_POISON": 0,
+    "CAN_BE_COOKED": 0,
+    "FLAVOR": "Nuts to that."
+  },
+  {
+    "ID": "FOOD_GRAPES",
+    "NAME": "handful of grapes",
+    "PLURAL": "grapes",
+    "NUTRITION": 0.05,
+    "BESTBEFORE": 2,
+    "STACKINGLIMIT": 10,
+    "CAUSES_POISON": 0,
+    "CAN_BE_COOKED": 0,
+    "FLAVOR": "Grapes of wrath."
+  },
+  {
+    "ID": "FOOD_RAW_FISH",
+    "NAME": "raw fish",
+    "PLURAL": "raw fish",
+    "NUTRITION": 0.25,
+    "BESTBEFORE": 1,
+    "STACKINGLIMIT": 1,
+    "CAUSES_POISON": 1,
+    "CAN_BE_COOKED": 1,
+    "FLAVOR": "Mmmm sashimi."
+  },
+  {
+    "ID": "FOOD_COOKED_FISH",
+    "NAME": "cooked fish",
+    "PLURAL": "cooked fish",
+    "NUTRITION": 0.23,
+    "BESTBEFORE": 2,
+    "STACKINGLIMIT": 1,
+    "CAUSES_POISON": 0,
+    "CAN_BE_COOKED": 0,
+    "FLAVOR": "Tastes a bit fishy."
+  },
+  {
+    "ID": "FOOD_RAW_RABBIT",
+    "NAME": "raw rabbit",
+    "PLURAL": "raw rabbit",
+    "NUTRITION": 0.3,
+    "BESTBEFORE": 1,
+    "STACKINGLIMIT": 1,
+    "CAUSES_POISON": 1,
+    "CAN_BE_COOKED": 1,
+    "FLAVOR": "Not the Easter Bunny."
+  },
+  {
+    "ID": "FOOD_COOKED_RABBIT",
+    "NAME": "cooked rabbit",
+    "PLURAL": "cooked rabbit",
+    "NUTRITION": 0.28,
+    "BESTBEFORE": 2,
+    "STACKINGLIMIT": 1,
+    "CAUSES_POISON": 0,
+    "CAN_BE_COOKED": 0,
+    "FLAVOR": "A bit gamey..."
+  },
+  {
+    "ID": "FOOD_RAW_CHICKEN",
+    "NAME": "raw chicken",
+    "PLURAL": "raw chicken",
+    "NUTRITION": 0.3,
+    "BESTBEFORE": 1,
+    "STACKINGLIMIT": 1,
+    "CAUSES_POISON": 1,
+    "CAN_BE_COOKED": 1,
+    "FLAVOR": "Finger-licking good."
+  },
+  {
+    "ID": "FOOD_COOKED_CHICKEN",
+    "NAME": "cooked chicken",
+    "PLURAL": "cooked chicken",
+    "NUTRITION": 0.28,
+    "BESTBEFORE": 2,
+    "STACKINGLIMIT": 1,
+    "CAUSES_POISON": 0,
+    "CAN_BE_COOKED": 0,
+    "FLAVOR": "Tastes like chicken."
+  },
+  {
+    "ID": "FOOD_RAW_DOG_MEAT",
+    "NAME": "raw dog meat",
+    "PLURAL": "raw dog meat",
+    "NUTRITION": 0.4,
+    "BESTBEFORE": 1,
+    "STACKINGLIMIT": 1,
+    "CAUSES_POISON": 1,
+    "CAN_BE_COOKED": 1,
+    "FLAVOR": "Man's best friend."
+  },
+  {
+    "ID": "FOOD_COOKED_DOG_MEAT",
+    "NAME": "cooked dog meat",
+    "PLURAL": "cooked dog meat",
+    "NUTRITION": 0.38,
+    "BESTBEFORE": 2,
+    "STACKINGLIMIT": 1,
+    "CAUSES_POISON": 0,
+    "CAN_BE_COOKED": 0,
+    "FLAVOR": "This isn't dog food."
+  },
+  {
+    "ID": "FOOD_RAW_HUMAN_FLESH",
+    "NAME": "raw human flesh",
+    "PLURAL": "raw human flesh",
+    "NUTRITION": 0.6,
+    "BESTBEFORE": 1,
+    "STACKINGLIMIT": 1,
+    "CAUSES_POISON": 1,
+    "CAN_BE_COOKED": 1,
+    "FLAVOR": "Not racoon meat."
+  },
+  {
+    "ID": "FOOD_COOKED_HUMAN_FLESH",
+    "NAME": "cooked human flesh",
+    "PLURAL": "cooked human flesh",
+    "NUTRITION": 0.58,
+    "BESTBEFORE": 2,
+    "STACKINGLIMIT": 1,
+    "CAUSES_POISON": 0,
+    "CAN_BE_COOKED": 0,
+    "FLAVOR": "Tastes like chicken?"
+  },
+  {
+    "ID": "FOOD_CHICKEN_EGG",
+    "NAME": "chicken egg",
+    "PLURAL": "chicken eggs",
+    "NUTRITION": 0.5,
+    "BESTBEFORE": 1,
+    "STACKINGLIMIT": 12,
+    "CAUSES_POISON": 0,
+    "CAN_BE_COOKED": 0,
+    "FLAVOR": "Which came first?"
   }
 ]

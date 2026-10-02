@@ -382,9 +382,9 @@ describe("the input wait honours its timeout", () => {
     // that posts too early does not fail; it waits for a clock nobody advances.
     const wait = game.WaitKeyOrMouse(2000);
     await tick();
-    ui.postKey(".");
+    ui.postKey("X");
     const ev = await wait;
-    expect(ev.key?.key).toBe(".");
+    expect(ev.key?.key).toBe("X");
     expect(ev.timedOut).toBe(false);
   });
 

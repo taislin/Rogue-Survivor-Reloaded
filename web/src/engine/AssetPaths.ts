@@ -1,4 +1,5 @@
 import { SOUND_FILES, MUSIC_FILES } from "@gameplay/GameSounds";
+import { AMBIENT_FILES } from "@gameplay/GameAmbients";
 import { BASE_URL } from "@engine/BaseUrl";
 
 /**
@@ -9,6 +10,7 @@ import { BASE_URL } from "@engine/BaseUrl";
  *   <base>assets/images/<imageSet>/<Category>/<name>.webp  sprites
  *   <base>assets/music/RS - <Title>.ogg                     music
  *   <base>assets/sfx/sfx - <name>.ogg                       sound effects
+ *   <base>assets/ambients/<name>.ogg                        ambient beds
  *
  * The base is `import.meta.env.BASE_URL` rather than a literal, which is what
  * lets the same build serve from a domain root and from a subdirectory. See
@@ -22,7 +24,11 @@ import { BASE_URL } from "@engine/BaseUrl";
  * The C# original kept the same three `Resources/` subtrees and resolved them by
  * id, with a `*_FILE` companion constant per id (see `GameSounds.cs`). The web
  * port keeps the ids as the single source of truth and derives the URL here, so
- * no call site builds a path by hand.
+ * no call site builds a path by hand. `Ambients/` is the fork's fourth subtree
+ * (`GameAmbients.cs:9`), added with `Feature.AmbientAudio`; its file names carry
+ * no `sfx - `/`RS - ` decoration, which is why it is a third root and not three
+ * more entries in the two existing tables.
+
  *
  * Sprites are WebP, not PNG. The set is 1 124 32x32 pixel-art images; lossless
  * WebP is 13% of the PNG size for byte-identical visible pixels (see
@@ -36,6 +42,7 @@ export const ASSETS_ROOT = `${BASE_URL}assets`;
 export const IMAGES_ROOT = `${ASSETS_ROOT}/images`;
 export const MUSIC_ROOT = `${ASSETS_ROOT}/music`;
 export const SFX_ROOT = `${ASSETS_ROOT}/sfx`;
+export const AMBIENTS_ROOT = `${ASSETS_ROOT}/ambients`;
 
 /** Sprite file extension. Kept here so no call site hardcodes it. */
 export const IMAGE_EXTENSION = "webp";
@@ -111,7 +118,7 @@ export function imagePathIn(set: ImageSet, imageId: string): string {
 export function musicPath(musicId: string): string {
   const file = MUSIC_FILES[musicId];
   if (file != null) return `${MUSIC_ROOT}/${file}.ogg`;
-  if (musicId.startsWith(ASSETS_ROOT)) return withOgg(musicId);
+  if (musicId.startsWith(ASSETS_ROOT)) return asOgg(musicId);
   return `${MUSIC_ROOT}/${musicId}.ogg`;
 }
 
@@ -119,8 +126,32 @@ export function musicPath(musicId: string): string {
 export function soundPath(soundId: string): string {
   const file = SOUND_FILES[soundId];
   if (file != null) return `${SFX_ROOT}/${file}.ogg`;
-  if (soundId.startsWith(ASSETS_ROOT)) return withOgg(soundId);
+  // `asOgg`, not a replace-only helper, and this line was the whole of a real bug:
+  // see `asOgg`. The shield-block pair is what proved it — `RogueGame`'s
+  // `DoMeleeAttack` played `GameSounds.SHIELD_BLOCK_PLAYER_FILE`, whose value is a
+  // bare path with no extension, so a replace found no suffix to convert and
+  // returned a URL that does not exist. The effect was wired, reached the sfx
+  // channel, got the right gain, and 404'd. `WebAudioSoundManager` dropped the
+  // non-OK response without a word, so the sound was simply silent in play.
+  if (soundId.startsWith(ASSETS_ROOT)) return asOgg(soundId);
   return `${SFX_ROOT}/${soundId}.ogg`;
+}
+
+/**
+ * `wild animals` -> `<base>assets/ambients/night_animals.ogg`; already-resolved
+ * `*_FILE` values pass through.
+ *
+ * The third channel's resolver, and the reason it does not consult `MUSIC_FILES`
+ * or `SOUND_FILES`: an ambient id that is in neither table is a *bug in the
+ * caller*, and guessing a directory for it here would turn that into a wrong file
+ * playing. The C# has the same discipline by construction — `m_AmbientSFXManager`
+ * is a separate player and only ever gets ids from `GameAmbients`.
+ */
+export function ambientPath(ambientId: string): string {
+  const file = AMBIENT_FILES[ambientId];
+  if (file != null) return `${AMBIENTS_ROOT}/${file}.ogg`;
+  if (ambientId.startsWith(ASSETS_ROOT)) return asOgg(ambientId);
+  return `${AMBIENTS_ROOT}/${ambientId}.ogg`;
 }
 
 /**
@@ -158,8 +189,33 @@ export function isKnownAudioId(id: string): boolean {
   return MUSIC_FILES[id] != null || SOUND_FILES[id] != null;
 }
 
-function withOgg(path: string): string {
-  return path.replace(/\.(mp3|ogg|wav)$/i, ".ogg");
+/**
+ * Normalises a path to `.ogg`, **adding** the extension when there is none.
+ *
+ * Adding is the whole point, and the reason this is not a `replace`. The C#'s
+ * `*_FILE` constants carry no extension — `GameAmbients.cs:13` is
+ * `Resources\Ambients\rain_outside_looped` — and the C# loader appends one at load
+ * time (`MDXSoundManager.cs:48-51`, `return fileName + ".ogg";`). So a `*_FILE`
+ * value reaching this file has no suffix, and a replace-only helper hands back a
+ * URL the browser will 404.
+ *
+ * This was a real bug in `soundPath` and `musicPath`, and it was believed not to
+ * be, on the grounds recorded in the sibling comment that "a music id never
+ * arrives that way". A sound id arrived: `RogueGame`'s shield-block roll played
+ * `SHIELD_BLOCK_PLAYER_FILE` and `SHIELD_BLOCK_NEARBY_FILE`, so the shield effect
+ * was 404ing in play and nothing said so — `WebAudioSoundManager` dropped the
+ * non-OK response without a word. `ambientPath` had it right all along, which is
+ * the only reason anything on that channel was ever heard.
+ *
+ * A replace-only twin used to sit beside this one, for the case of an
+ * already-resolved path that carries `.mp3`/`.wav` and needs converting. Nothing
+ * passes such a path — the C#'s do not carry an extension either — so it is gone
+ * rather than left as a second, weaker way to spell the same step. A helper that
+ * silently fails to add a suffix is a trap, and the only way to keep one out of a
+ * file like this is to not have it.
+ */
+function asOgg(path: string): string {
+  return `${path.replace(/\.(mp3|ogg|wav)$/i, "")}.ogg`;
 }
 
 /** Drops the `RS - ` / `sfx - ` file-name decorations, for logging. */

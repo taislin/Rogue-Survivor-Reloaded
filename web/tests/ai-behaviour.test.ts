@@ -28,7 +28,7 @@ import { Map as GameMap } from "@data/Map";
  *     enemy and prefers `behaviorFlee`.
  *
  * What this does *not* prove: that the port matches the C# line for line. That
- * is what the fidelity sweeps in BROWSER_PORT_PLAN §1.1c–h are for. What this
+ * is what the fidelity sweeps in plans/BROWSER_PORT_PLAN §1.1c–h are for. What this
  * does prove is the observable contract, which is where the wiring bugs lived —
  * §1.1 bug 3 was `filterActors` letting a non-Actor percept through, and no
  * amount of reading `selectAction` would have found it.

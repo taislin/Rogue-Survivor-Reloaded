@@ -24,6 +24,19 @@ Feel free to submit PRs/suggestions!
 > [!NOTE]
 > See the [web port README](./web/README.md) for setup, architecture, and technical project overview.
 
+## Design docs
+
+[`plans/`](./plans/) holds the working documents. They are context rather than
+instructions — read [`plans/BROWSER_PORT_PLAN.md`](./plans/BROWSER_PORT_PLAN.md)
+before touching engine code, and the rest when the question is "why":
+
+| | |
+|---|---|
+| [`BROWSER_PORT_PLAN.md`](./plans/BROWSER_PORT_PLAN.md) | Porting plan, phase status, and the bug log |
+| [`STILL_ALIVE_REFERENCE.md`](./plans/STILL_ALIVE_REFERENCE.md) | Audit of the GPLv3 *Still Alive* fork this port merges content from |
+| [`MULTIPLAYER_PLAN.md`](./plans/MULTIPLAYER_PLAN.md) | Networked-play feasibility study and phasing |
+| [`SUGGESTIONS.md`](./plans/SUGGESTIONS.md) | The 2010–11 fan-forum backlog, with a per-item measure of what already shipped |
+
 ## Running the Game
 
 If you're only interested in running the game (not developing), download the latest release from the [Releases page](https://github.com/taislin/Rogue-Survivor-Reloaded/releases/latest). This is ready to run out of the box for Windows, Linux and MacOS. For development instructions, including how to run from the source code, check the [web port README](./web/README.md) (requires NodeJS).

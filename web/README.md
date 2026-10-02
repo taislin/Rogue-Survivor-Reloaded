@@ -81,7 +81,7 @@ All run from `web/`.
 ```
 .
 ├── src/                  Original C# source (reference only — never modified)
-├── BROWSER_PORT_PLAN.md  Porting plan, phase status, and the bug log
+├── plans/                Design docs and audits (see plans/SUGGESTIONS.md)
 ├── docs/                 Static website (GitHub Pages source)
 ├── Dockerfile
 ├── LICENSE.txt           GPLv3 (inherited from the original)
@@ -138,9 +138,10 @@ their original. That is deliberate: it is what makes a regression traceable.
 
 ## Assets
 
-Sprites are **lossless WebP**, 32×32, 1124 files across three sprite sets
-(`classic`, `genesis_classic_1.4`, `deonapocalypse_v9_r1`) plus 27 `.ogg` audio
-tracks — about 25 MB total.
+Sprites are **lossless WebP**, 32×32, 2,175 files across four sprite sets
+(`classic` 1,108, `genesis_classic_1.4` 337, `deonapocalypse_v9_r1` 390,
+`dafttiles_b1` 340) plus 185 `.ogg` sound effects, 27 music tracks and 13 ambient
+beds — about 50 MB in `public/assets`.
 
 ```
 web/public/assets/images/<set>/<Category>/<name>.webp
@@ -163,7 +164,7 @@ without the preload the map paints itself in progressively as files arrive.
 
 - **1366×768 (16:9)**, upscaled with smooth filtering to fit the viewport. C#
   was 1024×768 (4:3).
-- The extra width goes to the map: 31 tiles across instead of 21. Height, the
+- The extra width goes to the map: 27 tiles across instead of 21. Height, the
   right-hand panel, the message area and the minimap are unchanged.
 - Text comes in two sizes: the dense in-game HUD at C#'s 8.25pt, and full-screen
   menus (main menu, character creation, help, manual, options, keybindings,
@@ -180,7 +181,7 @@ triageable without attaching a debugger to someone's browser.
 
 ```bash
 cd web
-npm run verify     # type-check + 409 tests + build
+npm run verify     # type-check + 2,874 tests + build
 npm run sim        # play a full game headless
 ```
 
@@ -192,7 +193,7 @@ This is not a convenience. A clean `tsc` and a clean build do **not** mean the
 port works: the first headless run found nine runtime bugs, two of them fatal,
 and none of them visible to the type-checker. A later audit of the CSV → JSON
 data layer found eighteen more, none of which the sim could see either.
-`BROWSER_PORT_PLAN.md` has the full list. If you change engine code, run the sim.
+`plans/BROWSER_PORT_PLAN.md` has the full list. If you change engine code, run the sim.
 
 The suite covers the primitives, save/load, asset resolution, the input
 contract, actor sprite mapping, map view/visited flags, the minimap cache
@@ -221,7 +222,7 @@ the C# `GameOptions.IDs` list, which has no equivalent:
 | Option | Choices | Notes |
 |---|---|---|
 | **Sprite style** | Classic, Deonapocalypse v9 r1, Genesis Classic 1.4 | Swaps the whole art set from `assets/images/`. Classic is the original. |
-| **Font** | JetBrains Mono (default), Iosevka Term Slab, Hack, IBM Plex Mono, Classic (system) | Four families vendored and subset to the glyphs the game can draw. See `src/ui/fonts.ts` for why they are bundled and subset. |
+| **Font** | JetBrains Mono (default), Iosevka Slab, Hack, IBM Plex Mono, Classic (system) | Four families vendored and subset to the glyphs the game can draw. See `src/ui/fonts.ts` for why they are bundled and subset, and for the advance width the menu layout depends on. |
 | **View mode** | Top-down, First-person | A raycast renderer over the same map and rules. |
 
 The font option is the one most likely to surprise: every family is 0.6 em
@@ -271,7 +272,7 @@ keeps every existing mouse behaviour and adds:
 ### Platform
 
 - **1366×768 (16:9)** instead of the C# 1024×768 (4:3). The extra width goes to
-  the map: 31 tiles across instead of 21. See [Display](#display).
+  the map: 27 tiles across instead of 21. See [Display](#display).
 - **Desktop build.** `npm run build:release` produces zipped per-platform
   archives — Windows, Linux, macOS — via Neutralino. See `scripts/build-release.mjs`.
   It runs `neu update` first, which is a prerequisite rather than a nicety:
@@ -296,7 +297,7 @@ keeps every existing mouse behaviour and adds:
 
 - **`tests/integration/reproducibility.test.ts` fails on Windows** with
   `spawnSync npx ENOENT`. `execFileSync` cannot spawn `npx.ps1`. Pre-existing
-  and unrelated to engine behaviour; the rest of the suite (409 tests) passes.
+  and unrelated to engine behaviour; the rest of the suite (2,874 tests) passes.
 - Death screenshots default to **off**. C# defaults them on, but there it is a
   silent file write while in a browser it is a download prompt on every death.
   The option is still on the options screen.
@@ -307,10 +308,17 @@ keeps every existing mouse behaviour and adds:
 
 ## Porting notes
 
-`BROWSER_PORT_PLAN.md` is the working document: phase status, per-slice
+`plans/BROWSER_PORT_PLAN.md` is the working document: phase status, per-slice
 breakdown, and a log of every runtime bug found by the simulator. Worth reading
 before touching engine code — several entries describe failures that a
 type-checker is structurally unable to catch.
+
+The rest of `plans/` is context rather than instructions:
+[`STILL_ALIVE_REFERENCE.md`](../plans/STILL_ALIVE_REFERENCE.md) audits the GPLv3
+fork this port is merging content from, [`MULTIPLAYER_PLAN.md`](../plans/MULTIPLAYER_PLAN.md)
+is a networked-play design, and
+[`SUGGESTIONS.md`](../plans/SUGGESTIONS.md) is the 2010–11 fan-forum backlog with
+a per-item measure of what already shipped.
 
 The C# in `src/` is treated as read-only reference. If behaviour is wrong,
 compare against it before "fixing" the port.
@@ -369,7 +377,7 @@ renaming the repository moves the base with it.
 
 **The base path is the part that is easy to get wrong, and the failure is
 silent.** A hardcoded `/assets` under a subdirectory does not fail a test — it
-ships a black screen, because the port preloads all 1 124 sprites before the
+ships a black screen, because the port preloads all 1,009 sprite ids before the
 first frame and cannot draw one it has not fetched. So two things guard it, both
 run in CI:
 

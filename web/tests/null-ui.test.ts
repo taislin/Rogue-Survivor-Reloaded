@@ -28,6 +28,52 @@ describe("NullRogueUI", () => {
     expect(ui.UI_PeekKey()).not.toBeNull();
   });
 
+  it("UI_PeekKey consumes, because UI_PeekKey is a contract and not a name", () => {
+    // `IRogueUI.UI_PeekKey` is the C# `UI_PeekKey`, and C# clears `m_HasKey`
+    // before returning. `InputHandler.peekKey` implements exactly that and says
+    // why in a comment: `WaitKeyOrMouse` and the sim's abort check poll in a loop
+    // and would otherwise be handed the same key forever.
+    //
+    // This was not. `UI_PeekKey` returned the head of the queue without shifting
+    // it, so every poll got the same keystroke — and a `WaitMenuInput` screen,
+    // which reads one key per redraw, re-applied it until the selection wrapped.
+    // `HandleMainMenu` could not be left: pressing ArrowDown eight times and then
+    // Enter re-read `ArrowDown` every frame and landed back on row 0. It surfaced
+    // as a hang in `endgame-exit.test.ts`, and it would have silently broken every
+    // test of every menu in the game.
+    const ui = new NullRogueUI();
+    ui.UI_PostKey({ key: "ArrowDown", keyCode: 40, shift: false, ctrl: false, alt: false });
+    expect(ui.UI_PeekKey()?.key).toBe("ArrowDown");
+    // The next one is a *different* key, not the same one again. Synthesis kicks
+    // in because the queue is empty, and the idle cycle supplies Enter — which is
+    // the whole point of the cycle: two polls, two different keys, progress.
+    expect(ui.UI_PeekKey()?.key).not.toBe("ArrowDown");
+  });
+
+  it("UI_PeekKey does not lose a pushed key to the idle cycle", () => {
+    // The consuming fix must not turn the pushed queue into a shorter one: a
+    // test that queues Enter, Enter has to get two Enters, in order. Without this
+    // the natural repair — peeking without synthesising — would make every
+    // `WaitMenuInput` screen spin again.
+    const ui = new NullRogueUI();
+    ui.pushKeys("ArrowUp", "Enter");
+    expect(ui.UI_PeekKey()?.key).toBe("ArrowUp");
+    expect(ui.UI_PeekKey()?.key).toBe("Enter");
+  });
+
+  it("walks a pushed queue to its end through polling, then resumes the cycle", () => {
+    // What a menu needs, stated as one sequence: consume, consume, and only then
+    // start synthesising. `endgame-exit.test.ts` depends on this to leave the
+    // main menu.
+    const ui = new NullRogueUI();
+    ui.pushKeys("ArrowDown", "ArrowDown", "Enter");
+    expect(ui.UI_PeekKey()?.key).toBe("ArrowDown");
+    expect(ui.UI_PeekKey()?.key).toBe("ArrowDown");
+    expect(ui.UI_PeekKey()?.key).toBe("Enter");
+    // Queue drained: still non-null, so a polling waiter still cannot spin.
+    expect(ui.UI_PeekKey()).not.toBeNull();
+  });
+
   it("cycles through the keys the blocking waiters each require", async () => {
     // WaitEnter wants Enter, WaitEscape wants Escape, WaitYesOrNo wants y/n or
     // Escape. A single synthesised key would wedge two of those three.

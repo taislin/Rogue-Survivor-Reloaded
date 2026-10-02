@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
+import { readFileSync, readdirSync } from "node:fs";
+import { resolve } from "node:path";
 import { GameActors, ActorID } from "@gameplay/GameActors";
 import { GameItems, ItemID } from "@gameplay/GameItems";
 import actorsData from "@gameplay/data/Actors.json";
@@ -34,6 +36,9 @@ import { ItemLightModel } from "@engine/items/ItemLight";
  */
 
 const rows = actorsData as any[];
+
+/** The merged content tables this suite also checks. */
+const dataDir = resolve(__dirname, "../src/gameplay/data");
 
 /** Enum member name -> its numeric ID, excluding TS's reverse-mapped keys. */
 const ID_BY_NAME: Record<string, ActorID> = {};
@@ -164,5 +169,107 @@ describe("medicine binds by ID, not by row position", () => {
       ItemID.MEDICINE_PILLS_SLP, ItemID.MEDICINE_PILLS_SAN, ItemID.MEDICINE_PILLS_ANTIVIRAL,
     ].map((id) => items.get(id).imageId);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+/**
+ * Every `ItemID` must resolve to a real model.
+ *
+ * The gap this closes, and it is the one that matters for the Still Alive
+ * content pack: each of the ten hand-written `{id, img}` maps in `GameItems.ts`
+ * binds its CSV rows with `if (!meta) continue;`. A row with no map entry — a
+ * new `FOOD_RAW_RABBIT`, say — is therefore *silently skipped*, and its
+ * `ItemID` resolves to a hole in `this.models`. Nothing throws, nothing warns,
+ * the enum says the item exists, and the game is simply short one item.
+ *
+ * The enum is where the compiler stops helping: adding `FOOD_RAW_RABBIT` to
+ * `ItemID` and forgetting the map entry is a clean type-check. So the check
+ * that the two agree has to live here.
+ *
+ * `get` returns `this.models[id]` with no fallback, so a hole is `undefined`
+ * rather than a sentinel — which makes the assertion direct.
+ */
+describe("every ItemID resolves to a model", () => {
+  it("has no hole in the model array", () => {
+    const holes: string[] = [];
+    for (let i = 0; i < ItemID._COUNT; i++) {
+      const model = items.get(i);
+      if (model === undefined || model === null) {
+        holes.push(`${i} (${ItemID[i]})`);
+      }
+    }
+    expect(holes, "ItemIDs with no model — usually a CSV row missing from one of the maps")
+      .toEqual([]);
+  });
+
+  it("gives every model the id it was registered under", () => {
+    // Catches a copy-paste slip where the entry exists but points at another
+    // item's id, which is the shape of the original binding bug: every field
+    // valid, every field someone else's.
+    const wrong: string[] = [];
+    for (let i = 0; i < ItemID._COUNT; i++) {
+      const model = items.get(i);
+      if (model && model.id !== i) wrong.push(`${i} (${ItemID[i]}) has model.id ${model.id}`);
+    }
+    expect(wrong).toEqual([]);
+  });
+});
+
+/**
+ * Every row of every merged `Items_*.json` binds to a model.
+ *
+ * The other direction of the pair above, and the one that actually goes wrong
+ * when content is added. The ten maps bind with `if (!meta) continue;`, so a
+ * row nothing maps to is skipped in total silence — the CSV says the item
+ * exists, the enum may even have a member for it, and the game has no model.
+ * Adding a row to a merged table is a one-line data change with no compiler
+ * anywhere near it, so this is the only place it can be caught.
+ *
+ * The exception list used to hold the five backpacks, and it is now empty: they
+ * were `ShelterBackpacks` (plans/BROWSER_PORT_PLAN §5.6d) — a nested `Inventory` on an
+ * `Item`, a `DollPart.BACK`, slot tiers gated on the Hauler skill — and that
+ * feature landed, so they have models like everything else. An empty list is kept
+ * rather than deleted because "this list is empty *and it is supposed to be*"
+ * is a different claim from "this list does not exist", and only the first one
+ * fails when a new row binds to nothing.
+ */
+const ROWS_WITHOUT_MODELS_YET: string[] = [];
+
+describe("every item CSV row binds to a model", () => {
+  const rows: Array<{ table: string; id: string }> = [];
+  for (const file of readdirSync(dataDir).filter((f) => /^Items_.*\.json$/.test(f))) {
+    for (const r of JSON.parse(readFileSync(resolve(dataDir, file), "utf-8"))) {
+      rows.push({ table: file, id: r.ID });
+    }
+  }
+
+  it("found the merged tables", () => {
+    // Guards this suite from passing vacuously on an empty directory read.
+    expect(rows.length).toBeGreaterThan(150);
+  });
+
+  it("has an ItemID and a model for every row", () => {
+    const orphans: string[] = [];
+    for (const { table, id } of rows) {
+      const numeric = (ItemID as unknown as Record<string, number>)[id];
+      if (typeof numeric !== "number") {
+        orphans.push(`${id} (${table}) has no ItemID`);
+      } else if (!items.get(numeric)) {
+        orphans.push(`${id} (${table}) has an ItemID but no model`);
+      }
+    }
+    const known = new Set(ROWS_WITHOUT_MODELS_YET);
+    expect(orphans.filter((o) => !known.has(o.split(" ")[0])),
+           "CSV rows that bind to nothing -- a map entry is missing").toEqual([]);
+  });
+
+  it("has no stale entries in the exception list", () => {
+    // The list is allowed to shrink, not to grow, and an entry that no longer
+    // describes a real gap is documentation that has quietly become a lie.
+    const unaccounted = ROWS_WITHOUT_MODELS_YET.filter((id) => {
+      const numeric = (ItemID as unknown as Record<string, number>)[id];
+      return typeof numeric === "number" && !!items.get(numeric);
+    });
+    expect(unaccounted, "these now have models; drop them from the list").toEqual([]);
   });
 });

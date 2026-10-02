@@ -1,5 +1,11 @@
 export class ZoneAttributes {
   static readonly IS_CHAR_OFFICE = "CHAR Office";
+  /**
+   * Still Alive, Release 6-3. Set on the zone of a generated army office, and the
+   * hook the helicopter site picker wants: the C# reads it when deciding where a
+   * helicopter may land.
+   */
+  static readonly IS_ARMY_OFFICE = "Army Office";
 }
 
 export class GameTips {

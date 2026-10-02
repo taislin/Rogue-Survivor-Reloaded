@@ -88,6 +88,18 @@ __pycache__/
 # nothing references, and committing it would add it to the Pages deploy for
 # every visitor to download nothing from.
 /docs/assets/img/screens/screens.psd
+/web/public/icons.psd
 web/neutralinojs.log
 
 _refs/
+# python bytecode from the merge/codegen scripts
+__pycache__/
+
+# The C# reference's sources. Anchored to the repo root on purpose: an unanchored
+# `src/` matches a `src` directory at *any* depth, which includes `web/src/` --
+# the entire ported source tree. That is invisible while every file under it is
+# already tracked, and silently drops any *new* one from `git add`, so anchor it.
+# `_refs/` above already covers the reference anyway.
+/src/
+
+/run_dev.bat

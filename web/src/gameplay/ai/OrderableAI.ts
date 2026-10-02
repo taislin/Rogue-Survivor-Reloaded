@@ -435,6 +435,13 @@ export abstract class OrderableAI extends BaseAI {
       case RaidType.ARMY_SUPLLIES:
         raidDesc = 'a chopper hovering';
         break;
+      //@@MP (Release 7-4). `Feature.HelicopterRescue` is what raises it; the
+      // description is on this side of the gate because it is only ever *asked*
+      // for by `SpawnArmyHelicopterOnMap`, which is gated, and a gate here would
+      // have no second answer to give.
+      case RaidType.HELICOPTER_RESCUE:
+        raidDesc = 'a chopper landing';
+        break;
       case RaidType.BIKERS:
         raidDesc = 'motorcycles coming';
         break;
