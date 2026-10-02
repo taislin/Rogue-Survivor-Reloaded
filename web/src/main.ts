@@ -8,6 +8,7 @@ import { WebAudioSoundManager } from "@engine/audio/WebAudioSoundManager";
 import { loadGameFonts }        from "@ui/fonts";
 import { InputTranslator }      from "@engine/Keybindings";
 import { PlayerCommand }        from "@engine/PlayerCommand";
+import { storage }              from "@engine/storage";
 
 async function main(): Promise<void> {
   // ── Bootstrap ──────────────────────────────────────────────────────────────
@@ -18,6 +19,8 @@ async function main(): Promise<void> {
       console.warn("[Neutralino] init failed:", e);
     }
   }
+
+  registerStorageExitFlush();
 
   registerServiceWorker();
 
@@ -93,6 +96,43 @@ async function main(): Promise<void> {
     // Phase 4 lands slice by slice: show which method is still missing instead
     // of dying silently in the console.
     drawError(ui, e as Error);
+  }
+}
+
+/**
+ * Best-effort write-out when the page goes away.
+ *
+ * The desktop backend writes through an async RPC to the Neutralino server, and a
+ * process that exits with one in flight loses it. Every `setItem` schedules a
+ * write on a microtask, so the window is small — but small is not zero, and it is
+ * exactly the window a player hits by quitting right after changing an option.
+ *
+ * The DOM events are the ones a Neutralino webview actually fires; the
+ * `Neutralino.events` names are registered as well because a server-side exit
+ * never reaches the page at all, and a handler that does not fire costs nothing.
+ * There is no guarantee any of them runs long enough for the RPC — that is
+ * inherent to writing over a socket, and the reason the write is scheduled on
+ * every change rather than only at exit.
+ */
+function registerStorageExitFlush(): void {
+  const flush = () => {
+    // Not awaited: nothing can await during unload. A rejection here means the
+    // write did not land, and `flush` already reported it.
+    void storage.flush?.().catch(() => undefined);
+  };
+  for (const ev of ["pagehide", "beforeunload", "visibilitychange"]) {
+    window.addEventListener(ev, flush);
+  }
+  const events = (window as any).Neutralino?.events;
+  if (events && typeof events.on === "function") {
+    for (const ev of ["windowExit", "windowClose", "appExit"]) {
+      try {
+        events.on(ev, flush);
+      } catch {
+        // An event name this client does not know. The DOM handlers above are the
+        // ones that matter; this is belt and braces.
+      }
+    }
   }
 }
 

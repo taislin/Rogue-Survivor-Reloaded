@@ -178,7 +178,7 @@ import {
 	UniqueMap,
 } from "@engine/Session";
 import { reattachPlayer } from "@engine/serialization/sessionGraphRoot";
-import { storage } from "@engine/storage";
+import { storage, whenStorageReady } from "@engine/storage";
 import { TextFile } from "@engine/TextFile";
 import { TaskRemoveDecoration } from "@engine/tasks/TaskRemoveDecoration";
 import { DayPhase, WorldTime } from "@engine/WorldTime";
@@ -3987,6 +3987,14 @@ export class RogueGame {
 
 	// C# LoadHiScoreTable — RogueGame.cs:2146
 	async LoadHiScoreTable(): Promise<void> {
+		// Before the read, not after: on the desktop backend the file is read
+		// asynchronously, and these three loaders were the only readers of it. They
+		// were `async` in signature only, so on a cold desktop start they read an
+		// empty map, took the defaults, and wrote them back over the player's real
+		// scores. `storage.ts` documents the race; awaiting the read is this half of
+		// it, and `whenStorageReady` is a no-op on the two synchronous backends.
+		await whenStorageReady();
+
 		this.m_UI.UI_Clear(Color.Black);
 		this.m_UI.UI_DrawStringBoldLarge(
 			Color.White,
@@ -31492,6 +31500,11 @@ inv.removeAllQuantity(it);
 
 	// C# LoadOptions — RogueGame.cs:19843
 	async LoadOptions(): Promise<void> {
+		// See `LoadHiScoreTable`: the desktop read is asynchronous, and this is one
+		// of the three readers that would otherwise have read an empty map and
+		// written the defaults back over the player's options.
+		await whenStorageReady();
+
 		// load. (C# `s_Options = GameOptions.Load(path)` — s_Options *is* the
 		// shared Options singleton, so copy into it instead of replacing it.)
 		s_Options.copyFrom(GameOptions.load());
@@ -31543,6 +31556,10 @@ inv.removeAllQuantity(it);
 
 	// C# LoadKeybindings — RogueGame.cs:19873
 	async LoadKeybindings(): Promise<void> {
+		// See `LoadHiScoreTable`: without this the desktop build read keybindings
+		// from an empty map and then saved the defaults over the player's own.
+		await whenStorageReady();
+
 		this.m_UI.UI_Clear(Color.Black);
 		this.m_UI.UI_DrawStringBoldLarge(
 			Color.White,

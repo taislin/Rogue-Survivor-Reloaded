@@ -47,16 +47,20 @@ describe("no failure is swallowed without a trace", () => {
   });
 
   it("every empty catch either reports, or says why silence is correct", () => {
-    // Not "no empty catch anywhere": some are genuinely benign. `storage.ts`
-    // ignores `createDirectory` failing (it is idempotent — the directory usually
-    // already exists) and a missing `storage.json` (it does not exist on a first
-    // run). Warning on those would train the reader to ignore the log, which is
-    // the failure mode this whole file is about.
+    // Not "no empty catch anywhere": some are genuinely benign. The rule is:
+    // silence must be *justified in the source*. An empty catch with no comment
+    // next to it is the "I forgot" case, and that is the one that must fail.
+    // Comments are stripped first, because `Diagnostics.ts` documents the pattern
+    // `catch (e) {}` in prose and a naive scan flags its own rule.
     //
-    // So the rule is: silence must be *justified in the source*. An empty catch
-    // with no comment next to it is the "I forgot" case, and that is the one that
-    // must fail. Comments are stripped first, because `Diagnostics.ts` documents
-    // the pattern `catch (e) {}` in prose and a naive scan flags its own rule.
+    // This test used to name `storage.ts` as its worked example of a justified
+    // silence — the `createDirectory` catch, and a catch that swallowed both "no
+    // storage.json yet" and "the storage.json is corrupt / unreadable / written
+    // through an API this client does not have". Only the first is benign. The
+    // second meant a corrupt file was indistinguishable from a first run, so the
+    // game loaded defaults and wrote them back over the player's real settings,
+    // which is the one outcome the surrounding code exists to prevent. Both are
+    // gone; the first stays, because it is genuinely idempotent-by-design.
     const unjustified: string[] = [];
     for (const file of walk(SRC)) {
       // Blank out block-comment *bodies* while preserving line numbers, so a

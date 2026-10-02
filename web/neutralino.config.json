@@ -6,6 +6,7 @@
   "defaultMode": "window",
   "port": 0,
   "enableServer": true,
+  "enableNativeAPI": true,
   "documentRoot": "/dist/",
   "url": "/index.html",
   "logging": {
@@ -22,7 +23,8 @@
       "fullScreen": false,
       "icon": "dist/icon-reloaded.png",
       "enableInspector": false,
-      "maximize": false
+      "maximize": false,
+      "injectGlobals": true
     }
   },
   "cli": {
