@@ -40,6 +40,12 @@ import type { ISoundManager } from "@engine/audio/ISoundManager";
 import { ActorID, GameActors } from "@gameplay/GameActors";
 import { GameItems } from "@gameplay/GameItems";
 import { GameSounds } from "@gameplay/GameSounds";
+import {
+	bandForDistance,
+	NOISE_RADII,
+	NO_NOISE_RADIUS,
+	NoiseBand,
+} from "@engine/NoiseDistance";
 import { NullRogueUI } from "@ui/NullRogueUI";
 
 const survivors = new Faction("The Survivors", "survivor");
@@ -139,6 +145,74 @@ describe("the inert distance tiers, now wired", () => {
       undead.model = Models.actors.get(ActorID.UNDEAD_ZOMBIE);
       await game.DoShout(undead, "brains");
       expect(sfx.played).toEqual([]);
+    });
+  });
+
+  describe("shove: audibility outside, the inverse of melee", () => {
+    it("is silent for a player out of earshot, which the melee shape would not be", async () => {
+      // The whole reason this pair is shaped the other way round. Written like the
+      // melee pair -- `isPlayer ? _PLAYER : audible ? _NEARBY` -- the player's own
+      // shove would ring at any distance, because `isPlayer` is answered before
+      // audibility is ever asked.
+      Session.get().ruleset = Ruleset.STILL_ALIVE;
+      // The shovee goes somewhere empty; the shover is the one being judged, and it is
+      // 30 tiles from the player. `DoShove` places the *target*, so the target must not
+      // already be standing where it lands.
+      const shover = neighbour(30, 0);
+      const target = neighbour(31, 0);
+      await game.DoShove(shover, target, target.location.position);
+      expect(sfx.played).toEqual([]);
+    });
+
+    it("plays the player's tier when they are close enough to hear themselves", async () => {
+      Session.get().ruleset = Ruleset.STILL_ALIVE;
+      const near = neighbour(1, 0);
+      await game.DoShove(player, near, near.location.position);
+      expect(sfx.played).toEqual([GameSounds.SHOVE_PLAYER]);
+    });
+  });
+
+  describe("chainsaw: the only three-rung ladder", () => {
+    // The C# uses **two** radii (`:18360-18364`): `QUIET` for `_NEARBY`, then
+    // `MODERATE` for `_FAR`. Collapsing it to one `bandForDistance` call would be
+    // wrong across the 5-to-8 tile band, where a single ladder says `_NEARBY` and the
+    // fork says `_FAR`.
+    it("uses QUIET then MODERATE, not one band", () => {
+      expect(NOISE_RADII.QUIET).toBe(5);
+      expect(NOISE_RADII.MODERATE).toBe(8);
+      // A single `bandForDistance` ladder puts 5..8 in `Moderate`, so it would call a
+      // saw 7 tiles off `_NEARBY` -- the one case where collapsing the fork's two radii
+      // into one band is audible. `QUIET` ends at 5 and `MODERATE` at 8, and the fork
+      // re-tests at `MODERATE` precisely to claim that gap.
+      expect(bandForDistance(7)).toBe(NoiseBand.Moderate);
+      expect(bandForDistance(7)).not.toBe(NoiseBand.Quiet);
+    });
+
+    it("has three ids, and all three are fork additions", () => {
+      for (const id of [
+        GameSounds.CHAINSAW_PLAYER,
+        GameSounds.CHAINSAW_NEARBY,
+        GameSounds.CHAINSAW_FAR,
+      ]) {
+        expect(id).toBeTruthy();
+      }
+    });
+  });
+
+  describe("vomit: the one pair with no radius at all", () => {
+    it("passes no noise radius on its NPC arm, unlike every other pair", () => {
+      // `IsAudibleToPlayer(actor.Location)` at `:21774` -- the overload's default of
+      // `NO_NOISE_RADIUS`, so the check is the player's own `AudioRange` with nothing
+      // added. Reading it as `QUIET`, which is what shout and extinguisher do, would
+      // silence the NPC tier from 6 tiles out.
+      expect(NO_NOISE_RADIUS).toBe(0);
+      expect(NOISE_RADII.QUIET).toBeGreaterThan(NO_NOISE_RADIUS);
+    });
+
+    it("still sounds for the player", () => {
+      Session.get().ruleset = Ruleset.STILL_ALIVE;
+      game.DoVomit(player);
+      expect(sfx.played).toEqual([GameSounds.VOMIT_PLAYER]);
     });
   });
 

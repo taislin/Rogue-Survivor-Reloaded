@@ -18236,6 +18236,35 @@ inv.removeAllQuantity(it);
 			// cost STA.
 			this.SpendActorStaminaPoints(actor, Rules.STAMINA_COST_JUMP);
 
+			//@@MP (Release 2), "order them by most common descending" -- the C#'s own
+			// comment at `:17315`. Fence before car, and both behind **one** audible gate
+			// rather than a player test outside it, so this is the shove's shape and not
+			// the melee one's.
+			if (this.isAudibleToPlayer(newLocation, NOISE_RADII.QUIET)) {
+				if (mapObj.theName === "the chain wire fence") {
+					// Note this compares the door-style *name* string, while the bash and
+					// break ladders key on the bare `"chain fence"` **material**. Two
+					// different lookups for one object in one class, both ported.
+					if (actor.isPlayer) {
+						if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+							this.m_SoundManager.play(GameSounds.CLIMB_FENCE_PLAYER);
+					} else {
+						if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+							this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.CLIMB_FENCE_NEARBY);
+					}
+				} else if (mapObj instanceof Car) {
+					//@@MP (Release 7-3): a `Car` **type** test, where the fence above is a
+					// name string. The fork tightened this one and left the other alone.
+					if (actor.isPlayer) {
+						if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+							this.m_SoundManager.play(GameSounds.CLIMB_CAR_PLAYER);
+					} else {
+						if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+							this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.CLIMB_CAR_NEARBY);
+					}
+				}
+			}
+
 			// show.
 			if (this.IsVisibleToPlayer(actor))
 				this.AddMessage(
@@ -20373,6 +20402,37 @@ inv.removeAllQuantity(it);
 		}
 
 		// Hit vs Missed
+		//@@MP (Release 7-1): the chainsaw revs **whether or not the swing lands**
+		// (`RogueGame.cs:18356-18365`), which is why this sits *above* the hit test
+		// rather than inside it. A saw that only made noise on a hit would be silent
+		// through every miss, which is most of them.
+		//
+		// It is also the only three-rung ladder in the fork, and the only one using
+		// **two different radii**: `QUIET` for `_NEARBY`, then `MODERATE` for `_FAR`.
+		// Read as one `bandForDistance` call it would be wrong at both ends -- a saw 7
+		// tiles off is `FAR` here but only `NEARBY` to a single band, because `QUIET`
+		// ends at 5 and `MODERATE` at 8.
+		// The C# casts `attacker.GetEquippedWeapon()` to `ItemMeleeWeapon` first and
+		// compares the *model*, so a non-melee equipped weapon cannot match. Comparing
+		// models directly is equivalent here and avoids the cast; the `instanceof`
+		// would be the closer transcription if `ItemMeleeWeapon` ever gained subclasses
+		// with different fuel rules.
+		if (
+			attacker.getEquippedWeapon()?.model ===
+			Models.items.get(ItemID.MELEE_CHAINSAW)
+		) {
+			if (isPlayer) {
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					await this.m_SoundManager.play(GameSounds.CHAINSAW_PLAYER);
+			} else if (this.isAudibleToPlayer(attacker.location, NOISE_RADII.QUIET)) {
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					await this.m_SoundManager.play(GameSounds.CHAINSAW_NEARBY);
+			} else if (this.isAudibleToPlayer(attacker.location, NOISE_RADII.MODERATE)) {
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					await this.m_SoundManager.play(GameSounds.CHAINSAW_FAR);
+			}
+		}
+
 		if (hitRoll > defRoll) {
 			//@@MP (Release 2), the **hit** counterpart of the `_MISS` pair above.
 			// `RogueGame.cs:18407-18410`, sitting between the chainsaw sanity block and
@@ -23108,6 +23168,23 @@ inv.removeAllQuantity(it);
 				),
 			);
 		}
+
+		//@@MP (Release 2), and the audible arm passes **no radius at all**
+		// (`RogueGame.cs:21772-21775`): `IsAudibleToPlayer(actor.Location)`, not the
+		// `QUIET` every other pair in the fork uses. That is the overload's default of
+		// `audioRadius = 0` -- `NO_NOISE_RADIUS` -- so the check degrades to "is the
+		// actor within the player's own `AudioRange`" with no noise radius added.
+		//
+		// Reading it as `QUIET` (the obvious transcription, and what the shout and
+		// extinguisher pairs do) would make the NPC tier inaudible from 6 tiles out
+		// instead of audible, so the two are different sounds over a 5-tile band.
+		if (actor.isPlayer) {
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.play(GameSounds.VOMIT_PLAYER);
+		} else if (this.isAudibleToPlayer(actor.location)) {
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.VOMIT_NEARBY);
+		}
 	}
 
 	// C# DoUseMedicineItem — RogueGame.cs:15304
@@ -24078,6 +24155,22 @@ inv.removeAllQuantity(it);
 			}
 		}
 
+		//@@MP (Release 3), and the gate is **outside** the player test
+		// (`RogueGame.cs:22802-22808`) -- the inverse of the melee pair, which tests
+		// `isPlayer` first and audibility second. Written the melee way this is not
+		// merely a different shape, it is a different sound: that form plays
+		// `SHOVE_PLAYER` for the player at any distance, and the C# deliberately does
+		// not, because at that range the shove is silent.
+		if (this.isAudibleToPlayer(actor.location, NOISE_RADII.QUIET)) {
+			if (actor.isPlayer) {
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					this.m_SoundManager.play(GameSounds.SHOVE_PLAYER);
+			} else {
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.SHOVE_NEARBY);
+			}
+		}
+
 		// message.
 		const isVisible =
 			this.IsVisibleToPlayer(actor) ||
@@ -24294,6 +24387,18 @@ inv.removeAllQuantity(it);
 		// alight. `RogueGame.cs:23450-23452`.
 		const target = map.getActorAtPoint(pos);
 		if (target !== null && target.isOnFire) this.ExtinguishOnFireActor(target);
+
+		//@@MP (Release 7-6), and note the sound and the message are on **separate**
+		// gates -- `IsAudibleToPlayer` for the hiss, `IsVisibleToPlayer` for the line.
+		// The port had only the message, so an extinguisher used in the dark worked and
+		// said nothing.
+		if (sprayer.isPlayer) {
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.play(GameSounds.FIRE_EXTINGUISHER_PLAYER);
+		} else if (this.isAudibleToPlayer(sprayer.location, NOISE_RADII.QUIET)) {
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.play(GameSounds.FIRE_EXTINGUISHER_NEARBY);
+		}
 
 		// message.
 		if (this.IsVisibleToPlayer(sprayer)) {
@@ -28451,6 +28556,20 @@ inv.removeAllQuantity(it);
 		// is unconditional by construction.
 		if (actor.isPlayer && hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
 			this.m_SoundManager.play(GameSounds.MATCH_STRIKE_START_FIRE_PLAYER);
+		//@@MP (Release 7-6), the sizzle. `RogueGame.cs:21749-21752`.
+		//
+		// `PlayIfNotAlreadyPlaying` for **both** tiers, unlike almost every other pair
+		// in the fork where the player's own is a plain `Play`. A fire already hissing
+		// should not gain a second hiss from one match, so the two tiers differ only in
+		// *which* id, not in how it is started -- and the `_PLAYER` half is the one case
+		// where that costs the player something: two matches in a turn is one hiss.
+		if (actor.isPlayer) {
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.COOKING_SIZZLE_PLAYER);
+		} else if (this.isAudibleToPlayer(actor.location, NOISE_RADII.QUIET)) {
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.COOKING_SIZZLE_NEARBY);
+		}
 		if (this.IsVisibleToPlayer(actor) || (mapObj !== null && this.IsVisibleToPlayer(mapObj))) {
 			this.AddMessage(
 				usedWood
