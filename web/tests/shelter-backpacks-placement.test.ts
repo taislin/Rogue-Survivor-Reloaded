@@ -230,7 +230,7 @@ describe("the four sites that did not land", () => {
 		expect(townSource).not.toMatch(/makeHuntingShopItem[\s\S]{0,2000}?BACKPACK_/);
 	});
 
-	it("the ordinary office site has landed; the army rec room's is still unreachable", () => {
+	it("six of the eight sites are ported; the bedroom's is dead and the office's is unwired", () => {
 		// **Inverted.** This used to assert `makeRandomOrdinaryOfficeItem` was absent
 		// from the port, on the reasoning that it had "nowhere to go" without
 		// `MakeOrdinaryOffice`. Both of those are ported now, along with the item
@@ -245,15 +245,21 @@ describe("the four sites that did not land", () => {
 		// *reached*, which are different claims and were being conflated.
 		expect(townSource).toMatch(/makeRandomOrdinaryOfficeItem/);
 		expect(townSource).toMatch(/makeOrdinaryOffice/);
-		// `MakeArmyRecRoom` is still unported, and so is the army base underground it
-		// belongs to — that site is genuinely not reachable.
-		expect(townSource).not.toMatch(/makeArmyRecRoom/);
+		// **All eight are now ported**, which is the end of this list. The two that were
+		// left are the bedroom's `case 20` — dead in the reference too, under a half-open
+		// `roll(0, 20)`, and deliberately not widened — and this office's dispatch arm,
+		// which is off for the dice reasons its call site records.
+		expect(townSource).toMatch(/makeArmyRecRoom/);
+		// The rec room's rucksack arm is 18%, not 54%: `rucksackChance = (int)rucksackChance / 3`
+		// at `BaseTownGenerator.cs:11231`, where the CHAR lab has the same line
+		// *commented out*. Two rooms whose C# looks alike and which run at different rates.
+		expect(townSource).toMatch(/Math\.floor\(rucksackChance \/ 3\)/);
 		// And the dispatch really is off, rather than merely unwired in a comment.
 		expect(townSource).not.toMatch(/else this\.makeOrdinaryOffice\(map, b\)/);
-		// Which leaves one of the five models with no reachable producer. Said out
-		// loud rather than left to the unused-constant audit: the army rucksack is
-		// declared, tabled, on disk and unplaceable.
+		// All five models now have a factory. The army rucksack's only caller is the rec
+		// room, so it is the last thing that needed adding.
 		expect(BACKPACK_IDS).toContain(ItemID.BACKPACK_ARMY_RUCKSACK);
+		expect(townSource).toMatch(/makeItemArmyRucksack/);
 	});
 });
 

@@ -173,6 +173,18 @@ export class UniqueMap {
 }
 
 export class UniqueMaps {
+  /**
+   * `ArmyBase` — `UniqueMaps.ArmyBase` at `RogueGame.cs:4289`.
+   *
+   * Generated **before** the CHAR underground and independently of it: the two calls
+   * are adjacent and neither gates the other, and the army one returns early from
+   * `NewGame` if it fails (`:4290-4291`). First in the class because it is first in
+   * the C#'s own generation order, which is the only ordering evidence available.
+   *
+   * Appended rather than inserted ahead of `charUndergroundFacility` for the usual
+   * reason: this class is read by name and the save blob does not carry it.
+   */
+  armyBase = new UniqueMap();
   charUndergroundFacility = new UniqueMap();
   policeStation_OfficesLevel = new UniqueMap();
   policeStation_JailsLevel = new UniqueMap();

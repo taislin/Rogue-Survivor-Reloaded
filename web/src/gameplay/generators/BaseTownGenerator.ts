@@ -130,6 +130,19 @@ const MAX_CHAR_GUARDS_PER_OFFICE = 3;
  * cascades into the bare-tile count and the loop's dice -- so the cost is measured
  * and recorded in this method's header rather than glossed here.
  */
+/**
+ * `ARMY_POSTERS` — `BaseTownGenerator.cs:11016`.
+ *
+ * A module const rather than a class static, alongside the other sprite tables in this
+ * file. Three sprites, chosen by `roll(0, 3)` on every non-walkable tile that passes
+ * the 25% gate.
+ */
+const ARMY_POSTERS: readonly string[] = [
+  GameImages.DECO_ARMY_POSTER1,
+  GameImages.DECO_ARMY_POSTER2,
+  GameImages.DECO_ARMY_POSTER3,
+];
+
 const CHAR_STORAGE_JUNK_CHANCE = 47;
 /**
  * C# `:8527` -- `else if (m_DiceRoller.RollChance(3)) //@@MP (Release 7-6)`.
@@ -6041,6 +6054,713 @@ export class BaseTownGenerator extends BaseMapGenerator {
    * `placedBioForceGun` is the C#'s `ref bool` and stays a `ref`: it is one gun per
    * *game*, not per room, so it cannot be a field of this class without saying so.
    */
+  /**
+   * C# `GenerateUniqueMap_ArmyBase` — `BaseTownGenerator.cs:10711` (Release 6-3).
+   *
+   * The army base underground: a 4-quarter floorplan split by a crossed corridor,
+   * with one of each room type per quarter and a power room in every corner.
+   *
+   * ## What is faithful here and what is not
+   *
+   * The **structure** is the C#'s throughout: the `(surfaceMap.Seed << 3) ^
+   * surfaceMap.Seed` map seed, `Lighting.DARKNESS`, `IsSecret`, the four quarters at
+   * `corridorHalfWidth = 1`, `minRoomSize = 6`, the iron doors closing both corridors,
+   * the corner test for power rooms, the role dispatch by quarter, the 25%/10% blood
+   * and 25% poster per tile, and `nbZombies = underground.Width`.
+   *
+   * The **surface link** is where this departs, and it is a real gap rather than a
+   * choice: the C# needs a `Zone officeZone` from a generated army office on the
+   * surface, and it looks for that zone by name (`z.Name.Contains("room")`) — a search
+   * the fork then commented out and replaced with a walkable-tile search
+   * (`BaseTownGenerator.cs:10747-10764`). The port's surface army office pass runs
+   * inside a district generator, before this one is called, so the zone is looked up
+   * here from `Session` rather than passed in. The loop that finds it keeps the C#'s
+   * shape: up to 100 attempts for a walkable tile, and an outer retry that never
+   * actually retries because the C#'s `continue` has nothing to change.
+   *
+   * `armyOfficeZone` therefore has a default of `null` and the method returns `null`
+   * when there is no army office to link to — which is the C#'s own failure path
+   * (`RogueGame.cs:4290`: "the army base couln't be generated for some reason").
+   */
+  // TODO(rogue): not yet called from `RogueGame.NewGame`, where the C# does
+  // `CreateUniqueMap_ArmyUndegroundBase(world)` at `:4289`. See the note in the
+  // docblock below for why that is staged rather than missing.
+  createUniqueMap_ArmyBase(surfaceMap: GameMap, mapSize: number): { map: GameMap; baseEntryPos: Point } | null {
+    /////////////////////////
+    // 1. Create basic secret map.
+    //////////////////////###
+    // huge map.
+    // `GameMap`, not `Map`: bare `Map` in this file is TypeScript's built-in, and the
+    // C#'s `new Map(...)` is the game's. The alias is imported at the top of the file
+    // and the shadowing is the whole reason this line has a comment on it.
+    const underground = new GameMap(
+      ((surfaceMap.seed << 3) ^ surfaceMap.seed) >>> 0,
+      'Army Base',
+      mapSize,
+      mapSize
+    );
+    underground.lighting = Lighting.DARKNESS;
+    underground.isSecret = true;
+    // fill & enclose.
+    this.tileFill(underground, Models.tiles.get(TileID.FLOOR_ARMY)!, (tile) => {
+      tile.isInside = true;
+    });
+    this.tileRectangle(
+      underground,
+      Models.tiles.get(TileID.WALL_ARMY_BASE)!,
+      new Rect(0, 0, underground.width, underground.height)
+    );
+
+    /////////////////////////
+    // 2. Link to above ground office.
+    /////////////////////////
+    const officeZone = this.armyOfficeZone(surfaceMap);
+    if (officeZone === null) return null;
+
+    // find somewhere walkable inside.
+    let surfaceExit = new Point(0, 0);
+    let foundSurfaceExit = false;
+    let attempts = 0;
+    do {
+      surfaceExit = new Point(
+        this.m_DiceRoller.roll(officeZone.bounds.left, officeZone.bounds.right),
+        this.m_DiceRoller.roll(officeZone.bounds.top, officeZone.bounds.bottom)
+      );
+      foundSurfaceExit = surfaceMap.isWalkable(surfaceExit.x, surfaceExit.y);
+      attempts++;
+    } while (attempts < 100 && !foundSurfaceExit);
+
+    if (!foundSurfaceExit) return null;
+
+    const baseEntryPos = surfaceExit;
+
+    // stairs.
+    // underground : in the middle of the map.
+    const undergroundStairs = new Point(
+      Math.floor(underground.width / 2),
+      Math.floor(underground.height / 2)
+    );
+    underground.addExit(undergroundStairs, new Exit(surfaceMap, surfaceExit));
+    underground
+      .getTileAt(undergroundStairs.x, undergroundStairs.y)
+      ?.addDecoration(GameImages.DECO_STAIRS_UP);
+    surfaceMap.addExit(surfaceExit, new Exit(underground, undergroundStairs));
+    surfaceMap
+      .getTileAt(surfaceExit.x, surfaceExit.y)
+      ?.addDecoration(GameImages.DECO_STAIRS_DOWN);
+    // floor logo.
+    this.forEachAdjacent(underground, undergroundStairs.x, undergroundStairs.y, (pt) =>
+      underground.getTileAt(pt.x, pt.y)?.addDecoration(GameImages.DECO_ARMY_FLOOR_LOGO)
+    );
+
+    /////////////////////////
+    // 3. Create floorplan & rooms.
+    /////////////////////////
+    // make 4 quarters, splitted by a crossed corridor.
+    const corridorHalfWidth = 1;
+    const qTopLeft = new Rect(0, 0, Math.floor(underground.width / 2) - corridorHalfWidth, Math.floor(underground.height / 2) - corridorHalfWidth);
+    const qTopRight = new Rect(
+      Math.floor(underground.width / 2) + 1 + corridorHalfWidth,
+      0,
+      underground.width,
+      qTopLeft.bottom
+    );
+    const qBotLeft = new Rect(
+      0,
+      Math.floor(underground.height / 2) + 1 + corridorHalfWidth,
+      qTopLeft.right,
+      underground.height
+    );
+    const qBotRight = new Rect(qTopRight.left, qBotLeft.top, underground.width, underground.height);
+
+    // split all the map in rooms.
+    const minRoomSize = 6;
+    const roomsList: Rect[] = [];
+    this.makeRoomsPlan(underground, roomsList, qBotLeft, minRoomSize, minRoomSize);
+    this.makeRoomsPlan(underground, roomsList, qBotRight, minRoomSize, minRoomSize);
+    this.makeRoomsPlan(underground, roomsList, qTopLeft, minRoomSize, minRoomSize);
+    this.makeRoomsPlan(underground, roomsList, qTopRight, minRoomSize, minRoomSize);
+
+    // make the rooms walls.
+    for (const roomRect of roomsList) {
+      this.tileRectangle(underground, Models.tiles.get(TileID.WALL_ARMY_BASE)!, roomRect);
+    }
+
+    // add room doors.
+    // quarters have door side preferences to lead toward the central corridors.
+    for (const roomRect of roomsList) {
+      const westEastDoorPos =
+        roomRect.left < underground.width / 2
+          ? new Point(roomRect.right - 1, roomRect.top + Math.floor(roomRect.height / 2))
+          : new Point(roomRect.left, roomRect.top + Math.floor(roomRect.height / 2));
+      if (underground.getMapObjectAt(westEastDoorPos.x, westEastDoorPos.y) === null) {
+        this.placeDoorIfAccessibleAndNotAdjacent(
+          underground,
+          westEastDoorPos.x,
+          westEastDoorPos.y,
+          Models.tiles.get(TileID.FLOOR_ARMY)!,
+          6,
+          this.makeObjIronDoor()
+        );
+      }
+
+      const northSouthDoorPos =
+        roomRect.top < underground.height / 2
+          ? new Point(roomRect.left + Math.floor(roomRect.width / 2), roomRect.bottom - 1)
+          : new Point(roomRect.left + Math.floor(roomRect.width / 2), roomRect.top);
+      if (underground.getMapObjectAt(northSouthDoorPos.x, northSouthDoorPos.y) === null) {
+        this.placeDoorIfAccessibleAndNotAdjacent(
+          underground,
+          northSouthDoorPos.x,
+          northSouthDoorPos.y,
+          Models.tiles.get(TileID.FLOOR_ARMY)!,
+          6,
+          this.makeObjIronDoor()
+        );
+      }
+    }
+
+    // add iron doors closing each corridor.
+    for (let x = qTopLeft.right; x < qBotRight.left; x++) {
+      this.placeDoor(underground, x, qTopLeft.bottom - 1, Models.tiles.get(TileID.FLOOR_ARMY)!, this.makeObjIronDoor());
+      this.placeDoor(underground, x, qBotLeft.top, Models.tiles.get(TileID.FLOOR_ARMY)!, this.makeObjIronDoor());
+    }
+    for (let y = qTopLeft.bottom; y < qBotLeft.top; y++) {
+      this.placeDoor(underground, qTopLeft.right - 1, y, Models.tiles.get(TileID.FLOOR_ARMY)!, this.makeObjIronDoor());
+      this.placeDoor(underground, qTopRight.left, y, Models.tiles.get(TileID.FLOOR_ARMY)!, this.makeObjIronDoor());
+    }
+
+    /////////////////////////
+    // 4. Rooms, furniture & items.
+    /////////////////////////
+    // - corners room : Power Room.
+    // - top left quarter : armory.
+    // - top right quarter : command.
+    // - bottom left quarter : living.
+    // - bottom right quarter : pharmacy or storage.
+    for (const roomRect of roomsList) {
+      const insideRoomRect = new Rect(
+        roomRect.left + 1,
+        roomRect.top + 1,
+        roomRect.width - 2,
+        roomRect.height - 2
+      );
+      let roomName = '<noname>';
+
+      // special room?
+      // one power room in each corner.
+      const isPowerRoom =
+        (roomRect.left === 0 && roomRect.top === 0) ||
+        (roomRect.left === 0 && roomRect.bottom === underground.height) ||
+        (roomRect.right === underground.width && roomRect.top === 0) ||
+        (roomRect.right === underground.width && roomRect.bottom === underground.height);
+      if (isPowerRoom) {
+        roomName = 'Power Room';
+        this.makeArmyPowerRoom(underground, roomRect, insideRoomRect);
+      } else {
+        // common room.
+        const roomRole =
+          roomRect.left < underground.width / 2 && roomRect.top < underground.height / 2
+            ? 0
+            : roomRect.left >= underground.width / 2 && roomRect.top < underground.height / 2
+              ? 1
+              : roomRect.left < underground.width / 2 && roomRect.top >= underground.height / 2
+                ? 2
+                : 3;
+        switch (roomRole) {
+          case 0: // armory room.
+            roomName = 'Armory';
+            this.makeArmyArmoryRoom(underground, insideRoomRect);
+            break;
+          case 1: // command room
+            roomName = 'Command';
+            this.makeArmyCommandRoom(underground, insideRoomRect);
+            break;
+          case 2: // living room.
+            roomName = 'Living';
+            this.makeArmyRecRoom(underground, insideRoomRect);
+            break;
+          case 3: // pharmacy or storage room.
+            if (this.m_DiceRoller.rollChance(50)) {
+              roomName = 'Storage';
+              this.makeArmyStorageRoom(underground, insideRoomRect);
+              break;
+            }
+            roomName = 'Pharmacy';
+            this.makeArmyPharmacyRoom(underground, insideRoomRect);
+            break;
+          default:
+            throw new RangeError('unhandled role');
+        }
+      }
+
+      underground.addZone(this.makeUniqueZone(roomName, insideRoomRect));
+    }
+
+    /////////////////////////
+    // 5. Posters & Blood.
+    /////////////////////////
+    // army posters & blood almost everywhere.
+    for (let x = 0; x < underground.width; x++) {
+      for (let y = 0; y < underground.height; y++) {
+        // poster on wall?
+        if (this.m_DiceRoller.rollChance(25)) {
+          const tile = underground.getTileAt(x, y);
+          if (tile === null || tile.model.isWalkable) continue;
+          tile.addDecoration(ARMY_POSTERS[this.m_DiceRoller.roll(0, ARMY_POSTERS.length)]!);
+        }
+
+        // large blood?  `//@@MP - was 20 (Release 3)`
+        if (this.m_DiceRoller.rollChance(10)) {
+          const tile = underground.getTileAt(x, y);
+          if (tile === null) continue;
+          tile.addDecoration(
+            tile.model.isWalkable ? GameImages.DECO_BLOODIED_FLOOR : GameImages.DECO_BLOODIED_WALL
+          );
+        } else if (this.m_DiceRoller.rollChance(20)) {
+          // small blood? //@@MP (Release 3)
+          const tile = underground.getTileAt(x, y);
+          if (tile === null) continue;
+          tile.addDecoration(
+            tile.model.isWalkable
+              ? GameImages.DECO_BLOODIED_FLOOR_SMALL
+              : GameImages.DECO_BLOODIED_WALL_SMALL
+          );
+        }
+      }
+    }
+
+    /////////////////////////
+    // 6. Populate.
+    /////////////////////////
+    // leveled up undeads!
+    const nbZombies = underground.width; // 100 for 100.
+    for (let i = 0; i < nbZombies; i++) {
+      const undead = this.createNewUndead(0);
+      for (;;) {
+        const upID: ActorID = this.m_Game.NextUndeadEvolution(undead.model.id);
+        if (upID === undead.model.id) break;
+        undead.model = Models.actors.get(upID)!;
+      }
+      this.actorPlace(
+        this.m_DiceRoller,
+        underground.width * underground.height,
+        underground,
+        undead,
+        (pt) => underground.getExitAt(pt) === null // don't block exits!
+      );
+    }
+
+    /////////////////////////
+    // 7. Add uniques.
+    /////////////////////////
+    // Empty in the C#, and the C# says why: "looks like RoguedJack had some plans for
+    // a boss or special items for the CHAR underground that the army base is copied
+    // from". The block is kept as a comment rather than deleted, because that note is
+    // the reason this map is shaped the way it is.
+
+    /////////////////////////
+    // 8. Music.   // alpha10
+    /////////////////////////
+    // The C# assigns `CHAR_UNDERGROUND_FACILITY` here, not the army track, because the
+    // base was copied from the CHAR facility. Kept: a track that fits better is not
+    // the track the game plays.
+    underground.bgMusic = GameMusics.CHAR_UNDERGROUND_FACILITY;
+
+    return { map: underground, baseEntryPos };
+  }
+
+  /**
+   * The surface army office this base hangs under, or `null`.
+   *
+   * The C# receives a `Zone` from `RogueGame.CreateUniqueMap_ArmyUndegroundBase` and
+   * never looks for one itself — and the commented-out search at
+   * `BaseTownGenerator.cs:10747-10764` shows the fork abandoned name-based lookup
+   * (`z.Name.Contains("room")`) in favour of "any walkable tile in the zone". So the
+   * port looks the zone up by the same marker the surface pass leaves: the army
+   * office's own zone.
+   */
+  private armyOfficeZone(surfaceMap: GameMap): Zone | null {
+    for (const z of surfaceMap.zones) {
+      if (z.name.startsWith('Army Office@') || z.name.startsWith('ArmyBase@')) return z;
+    }
+    return null;
+  }
+
+    /**
+   * C# `MakeArmyCommandRoom` — `BaseTownGenerator.cs:11155`.
+   *
+   * Two `MapObjectFill` passes: radios and computer stations along the walls
+   * (`CountAdjWalls >= 3`, 66% something), tables and more stations in the middle.
+   *
+   * The Black Ops GPS is `//@@MP - moved from the armory (Release 7-6)`: the fork took
+   * it *out* of the armory's 34-way roll and put it here at a flat 10%, and both
+   * changes are visible here and absent from `makeArmyArmoryRoom` respectively.
+   *
+   * `DECO_ARMY_FLOOR_LOGO` is commented out on the floor line, so the room is plain
+   * `FLOOR_ARMY` — the same "a commented line is not a description of a release"
+   * reading applied to the CHAR lab.
+   */
+  makeArmyCommandRoom(map: GameMap, roomRect: Rect): void {
+    // Replace floor with tiles with painted logo.
+    this.tileFill(map, Models.tiles.get(TileID.FLOOR_ARMY)!, roomRect);
+
+    // Objects.
+    // radios along walls.
+    this.mapObjectFill(map, roomRect, (pt) => {
+      if (this.countAdjWalls(map, pt.x, pt.y) < 3) return null;
+      // dont block exits!
+      if (map.getExitAt(pt) !== null) return null;
+
+      // computer/radio?
+      if (this.m_DiceRoller.rollChance(66)) {
+        if (this.m_DiceRoller.rollChance(25)) {
+          return this.makeObjWorkstation(GameImages.OBJ_ARMY_COMPUTER_STATION);
+        }
+        if (this.m_DiceRoller.rollChance(10)) {
+          map.dropItemAt(this.makeItemBlackOpsGPS(), pt); //@@MP - moved from the armory (Release 7-6)
+        }
+        return this.makeObjArmyRadioCupboard(GameImages.OBJ_ARMY_RADIO_CUPBOARD);
+      }
+      return null;
+    });
+
+    // desktops and tables in the middle of the room
+    this.mapObjectFill(map, roomRect, (pt) => {
+      if (this.countAdjWalls(map, pt.x, pt.y) > 0) return null;
+      if (map.getExitAt(pt) !== null) return null;
+
+      // tables/chairs.
+      if (this.m_DiceRoller.rollChance(25)) {
+        if (this.m_DiceRoller.rollChance(75)) {
+          return this.makeObjWorkstation(GameImages.OBJ_ARMY_COMPUTER_STATION);
+        }
+        return this.makeObjTable(GameImages.OBJ_ARMY_TABLE);
+      }
+      return null;
+    });
+  }
+
+  /**
+   * C# `MakeArmyRecRoom` — `:11209`. **The eighth-and-last backpack site.**
+   *
+   * Beds and footlockers along the walls, tables and chairs in the middle. The
+   * rucksack sits in the bed arm at `ResourcesAvailability / 3` — and *this* room
+   * divides, where `makeArmyArmoryRoom`'s `armorChance` does not:
+   *
+   * ```
+   * int rucksackChance = GameOptions.ResourcesAvailabilityToInt(...);
+   * rucksackChance = (int)rucksackChance / 3;
+   * ```
+   *
+   * The CHAR lab has the identical shape with its `armorChance / 3` line **commented
+   * out** (`BaseTownGenerator.cs:8600`). Both are transcribed as written: this one
+   * divides, the lab does not. At the default MED option that is 54/3 = 18% against
+   * the lab's 54%, which is a visible difference between two rooms whose C# looks
+   * almost identical.
+   */
+  makeArmyRecRoom(map: GameMap, roomRect: Rect): void {
+    // Replace floor with tiles with painted logo.
+    this.tileFill(map, Models.tiles.get(TileID.FLOOR_ARMY)!, roomRect);
+
+    // Objects.
+    // Beds/Footlockers along walls.
+    this.mapObjectFill(map, roomRect, (pt) => {
+      if (this.countAdjWalls(map, pt.x, pt.y) < 3) return null;
+      if (map.getExitAt(pt) !== null) return null;
+
+      // bed/fridge?
+      if (this.m_DiceRoller.rollChance(50)) {
+        if (this.m_DiceRoller.rollChance(50)) {
+          let rucksackChance = this.armyResourcesChance();
+          rucksackChance = Math.floor(rucksackChance / 3);
+          if (this.m_DiceRoller.rollChance(rucksackChance)) {
+            map.dropItemAt(this.makeItemArmyRucksack(), pt); //@@MP - added (Release 8-2)
+          }
+          return this.makeObjBed(GameImages.OBJ_ARMY_BUNK_BED);
+        }
+        return this.makeObjArmyFootlocker(GameImages.OBJ_ARMY_FOOTLOCKER);
+      }
+      return null;
+    });
+
+    // Tables(with canned food) & Chairs in the middle.
+    const resourcesChance = this.armyResourcesChance();
+    this.mapObjectFill(map, roomRect, (pt) => {
+      if (this.countAdjWalls(map, pt.x, pt.y) > 0) return null;
+      if (map.getExitAt(pt) !== null) return null;
+
+      // tables/chairs.
+      if (this.m_DiceRoller.rollChance(30)) {
+        if (this.m_DiceRoller.rollChance(30)) {
+          //@@MP - Resources Availability option (Release 7-4)
+          if (this.m_DiceRoller.rollChance(resourcesChance)) {
+            map.dropItemAt(this.makeItemCannedFood(), pt);
+          }
+          return this.makeObjTable(GameImages.OBJ_ARMY_TABLE);
+        }
+        return this.makeObjChair(GameImages.OBJ_HOSPITAL_CHAIR);
+      }
+      return null;
+    });
+  }
+
+  /**
+   * C# `MakeArmyPowerRoom` — `:11296`.
+   *
+   * The only one of the six taking **two** rectangles: `wallsRect` for the door signs
+   * and `roomRect` for the generators. Both C# call sites pass `roomRect` for both
+   * (`//@@MP - unused parameter (Release 5-7)` on both), so in practice the walls pass
+   * runs over the interior and finds no doors and does nothing.
+   *
+   * **That is kept.** Collapsing to one rectangle would be a tidy-up that changes what
+   * the method does the moment a caller does pass a real `wallsRect`, and the C#'s
+   * comment is the only evidence anyone ever will.
+   */
+  makeArmyPowerRoom(map: GameMap, wallsRect: Rect, roomRect: Rect): void {
+    // Replace floor with concrete.
+    this.tileFill(map, Models.tiles.get(TileID.FLOOR_CONCRETE)!, roomRect);
+
+    // add deco power sign next to doors.
+    this.doForEachTile(map, wallsRect, (pt) => {
+      if (!(map.getMapObjectAt(pt.x, pt.y) instanceof DoorWindow)) return;
+      this.doForEachAdjacentInMap(map, pt, (ptAdj) => {
+        const tile = map.getTileAt(ptAdj.x, ptAdj.y);
+        if (tile === null || tile.model.isWalkable) return;
+        tile.removeAllDecorations();
+        tile.addDecoration(GameImages.DECO_POWER_SIGN_BIG);
+      });
+    });
+
+    // add power generators along walls.
+    this.doForEachTile(map, roomRect, (pt) => {
+      const tile = map.getTileAt(pt.x, pt.y);
+      if (tile === null || !tile.model.isWalkable) return;
+      if (map.getExitAt(pt) !== null) return;
+      if (this.countAdjWalls(map, pt.x, pt.y) < 3) return;
+
+      this.mapObjectPlace(
+        map,
+        pt.x,
+        pt.y,
+        this.makeObjPowerGenerator(GameImages.OBJ_POWERGEN_OFF, GameImages.OBJ_POWERGEN_ON)
+      );
+    });
+  }
+
+  /**
+   * C# `MakeArmyArmoryRoom` — `BaseTownGenerator.cs:11018`.
+   *
+   * One `MapObjectFill` over the wall tiles, each getting a shop shelf and, behind
+   * `Feature.ResourcesAvailability`, an item off a 34-way roll.
+   *
+   * **The 34-way roll keeps two `default:` arms as content.** `case 30-31` is the
+   * minigun *the first time only* and `case 32-33` the grenade launcher likewise —
+   * `//@@MP - only one per game (Release 7-6)`. Both flags are method locals in the C#
+   * and are locals here, so a second armory in the same base would get ammo for the
+   * second minigun. A class field would have made them once per district.
+   *
+   * `case 25` is C4, which the C# spells `MakeItemC4Explosive`.
+   */
+  makeArmyArmoryRoom(map: GameMap, roomRect: Rect): void {
+    //@@MP - only one per game (Release 7-6)
+    let minigunSpawned = false;
+    let grenadelauncherSpawned = false;
+
+    const resourcesChance = this.armyResourcesChance();
+
+    // Shelves with weapons/ammo along walls.
+    this.mapObjectFill(map, roomRect, (pt) => {
+      if (this.countAdjWalls(map, pt.x, pt.y) < 2) return null;
+      // don't block doors
+      if (this.isADoorNSEW(map, pt.x, pt.y)) return null; //@@MP (Release 7-6)
+      // dont block exits!
+      if (map.getExitAt(pt) !== null) return null;
+
+      // table + tracker/armor/weapon.
+      if (this.m_DiceRoller.rollChance(resourcesChance)) {
+        const randomItem = this.m_DiceRoller.roll(0, 34);
+        let it: Item;
+        switch (randomItem) {
+          case 0:
+            it = this.makeItemArmyRifle();
+            break;
+          case 1:
+          case 2:
+          case 3:
+          case 4:
+          case 5:
+          case 6:
+            it = this.makeItemHeavyRifleAmmo();
+            break;
+          case 7:
+            it = this.makeItemArmyPistol();
+            break;
+          case 8:
+          case 9:
+          case 10:
+            it = this.makeItemHeavyPistolAmmo();
+            break;
+          case 11:
+            it = this.makeItemTacticalShotgun();
+            break;
+          case 12:
+          case 13:
+          case 14:
+          case 15:
+          case 16:
+            it = this.makeItemShotgunAmmo();
+            break;
+          case 17:
+            it = this.makeItemGrenade();
+            break;
+          case 18:
+          case 19:
+            it = this.makeItemArmyBodyArmor();
+            break;
+          case 20:
+            it = this.makeItemArmyPrecisionRifle();
+            break;
+          case 21:
+          case 22:
+          case 23:
+            it = this.makeItemPrecisionRifleAmmo();
+            break; //@@MP (Release 6-6)
+          case 24:
+            it = this.makeItemNightVisionGoggles();
+            break;
+          case 25:
+            it = this.makeItemC4Explosive();
+            break;
+          case 26:
+            it = this.makeItemFlamethrower();
+            break; //@@MP (Release 7-1)
+          case 27:
+          case 28:
+          case 29:
+            it = this.makeItemMinigunAmmo();
+            break; //@@MP (Release 7-6)
+          case 30:
+          case 31:
+            if (!minigunSpawned) {
+              //@@MP - only one per game (Release 7-6)
+              it = this.makeItemMinigun();
+              minigunSpawned = true;
+            } else {
+              it = this.makeItemMinigunAmmo();
+            }
+            break;
+          case 32:
+          case 33:
+            if (!grenadelauncherSpawned) {
+              //@@MP - only one per game (Release 7-6)
+              it = this.makeItemGrenadeLauncher();
+              grenadelauncherSpawned = true;
+            } else {
+              it = this.makeItemGrenadeLauncherAmmo();
+            }
+            break;
+          default:
+            throw new RangeError('unhandled roll');
+        }
+        map.dropItemAt(it, pt);
+      }
+
+      return this.makeObjShelf(GameImages.OBJ_SHOP_SHELF);
+    });
+  }
+
+  /**
+   * C# `MakeArmyPharmacyRoom` — `:11269`.
+   *
+   * Shelves along the walls, each with a `MakeHospitalItem` behind the Resources
+   * Availability option. `CountAdjWalls < 2` here rather than the armory's — the C# has
+   * both numbers and they are not the same test.
+   */
+  makeArmyPharmacyRoom(map: GameMap, roomRect: Rect): void {
+    // Shelves with medicine along walls.
+    const resourcesChance = this.armyResourcesChance();
+    this.mapObjectFill(map, roomRect, (pt) => {
+      if (this.countAdjWalls(map, pt.x, pt.y) < 2) return null;
+      // don't block doors
+      if (this.isADoorNSEW(map, pt.x, pt.y)) return null; //@@MP (Release 7-6)
+      // dont block exits!
+      if (map.getExitAt(pt) !== null) return null;
+
+      // table + meds.
+      if (this.m_DiceRoller.rollChance(resourcesChance)) {
+        //@@MP - Resources Availability option (Release 7-4)
+        map.dropItemAt(this.makeHospitalItem(), pt);
+      }
+
+      return this.makeObjShelf(GameImages.OBJ_SHOP_SHELF);
+    });
+  }
+
+  /**
+   * C# `MakeArmyStorageRoom` — `:11106`.
+   *
+   * The base's junk room, and the only one of the six that replaces its floor: the
+   * base's `FLOOR_ARMY` becomes `FLOOR_CONCRETE` here, exactly as the CHAR storage
+   * room does.
+   *
+   * The three 5% drops are `//@@MP - added items that were in the armory before
+   * (Release 7-6)` — the fork moved some of the armory's stock in here, which is why
+   * a storage room can now hand you a flashbang.
+   */
+  makeArmyStorageRoom(map: GameMap, roomRect: Rect): void {
+    // Replace floor with concrete.
+    this.tileFill(map, Models.tiles.get(TileID.FLOOR_CONCRETE)!, roomRect);
+
+    // Objects.
+    // Barrels & Junk in the middle of the room.
+    this.mapObjectFill(map, roomRect, (pt) => {
+      if (this.countAdjWalls(map, pt.x, pt.y) > 0) return null;
+      // dont block exits!
+      if (map.getExitAt(pt) !== null) return null;
+
+      // barrels/junk?
+      if (this.m_DiceRoller.rollChance(50)) {
+        //@@MP - added items that were in the armory before (Release 7-6)
+        if (this.m_DiceRoller.rollChance(5)) map.dropItemAt(this.makeItemFlaresKit(), pt);
+        if (this.m_DiceRoller.rollChance(5)) map.dropItemAt(this.makeItemSmokeGrenade(), pt);
+        if (this.m_DiceRoller.rollChance(5)) map.dropItemAt(this.makeItemFlashbang(), pt);
+        return this.m_DiceRoller.rollChance(50)
+          ? this.makeObjJunk(GameImages.OBJ_JUNK)
+          : this.makeObjBarrels(GameImages.OBJ_BARRELS);
+      }
+      return null;
+    });
+
+    // Items.
+    const resourcesChance = this.armyResourcesChance();
+    for (let x = roomRect.left; x < roomRect.right; x++) {
+      for (let y = roomRect.top; y < roomRect.bottom; y++) {
+        if (this.countAdjWalls(map, x, y) > 0) continue;
+        if (map.getMapObjectAt(x, y) !== null) continue;
+        //@@MP - Resources Availability option (Release 7-4)
+        if (this.m_DiceRoller.rollChance(resourcesChance))
+          map.dropItemAt(this.makeItemArmyRation(), new Point(x, y));
+      }
+    }
+  }
+
+  /**
+   * The Resources Availability chance, read once and gated.
+   *
+   * Four of the six army rooms call this and each one reads it in the C#, at the point
+   * of the roll. Gating on the flag *before* the roll matters for the same reason it
+   * does in `makeCHARStorageRoom`: `DiceRoller.rollChance` delegates to `roll`
+   * (`DiceRoller.ts:40-42`) and spends a die even at 0%, so a Classic room that asked
+   * would spend four dice the C# never spends for Classic.
+   *
+   * Private and named so the four call sites cannot drift apart on the gate.
+   */
+  private armyResourcesChance(): number {
+    if (!hasFeature(Session.get().ruleset, Feature.ResourcesAvailability)) return 0;
+    return GameOptions.resourcesAvailabilityToInt(Options.resourcesAvailability);
+  }
+
   makeCHARLabRoom(map: GameMap, roomRect: Rect, placedBioForceGun: { value: boolean }): void {
     let placedCHARdocument = false;
     // Replace floor with tiles with painted logo.

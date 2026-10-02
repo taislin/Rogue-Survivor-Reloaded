@@ -1041,6 +1041,69 @@ export abstract class BaseMapGenerator extends MapGenerator {
     return trolley;
   }
 
+  /**
+   * C# `MakeObjArmyRadioCupboard` — `BaseMapGenerator.cs:1069`.
+   *
+   * A container you can push, and `Weight = 15` for a reason: it is the base's
+   * heaviest movable, so the shove ladder and the hauling rules both care about it.
+   */
+  protected makeObjArmyRadioCupboard(armyRadioCupboardImageID: string): MapObject {
+    const cupboard = new MapObject(
+      'radio equipment',
+      armyRadioCupboardImageID,
+      MapObjectBreak.BREAKABLE,
+      MapObjectFire.BURNABLE,
+      DoorWindow.BASE_HITPOINTS * 2
+    );
+    cupboard.isContainer = true;
+    cupboard.givesWood = true;
+    cupboard.isMovable = true;
+    cupboard.weight = 15;
+    return cupboard;
+  }
+
+  /** C# `MakeObjArmyFootlocker` — `BaseMapGenerator.cs:1080`. Unflammable, unlike the cupboard. */
+  protected makeObjArmyFootlocker(armyFootlockerImageID: string): MapObject {
+    const locker = new MapObject(
+      'footlocker',
+      armyFootlockerImageID,
+      MapObjectBreak.BREAKABLE,
+      MapObjectFire.UNINFLAMMABLE,
+      DoorWindow.BASE_HITPOINTS
+    );
+    locker.isMaterialTransparent = true;
+    locker.isContainer = true;
+    locker.isMovable = true;
+    locker.jumpLevel = 1;
+    locker.weight = 5;
+    return locker;
+  }
+
+  /**
+   * C# `MakeItemFlaresKit` — `BaseMapGenerator.cs`, a box of forty.
+   *
+   * `isForbiddenToAI` carries the C#'s own `//TODO in the future?`, kept because a
+   * TODO that changes behaviour is worth seeing rather than tidying.
+   */
+  makeItemFlaresKit(): Item {
+    const item = new Item(Models.items.get(ItemID.FLARES_KIT));
+    item.quantity = 40;
+    item.isForbiddenToAI = true; //TODO in the future?
+    return item;
+  }
+
+  /**
+   * C# `MakeItemArmyRucksack` — the fifth and last backpack factory.
+   *
+   * Ungated for the same reason as its four siblings: the C#'s factory has no feature
+   * check, and the gate belongs on the roll site that spawns it — here, the rec room's
+   * 25% arm. That arm is in `MakeArmyRecRoom` and this factory is its only caller, so
+   * this is the last backpack model to acquire a producer.
+   */
+  makeItemArmyRucksack(): Item {
+    return this.makeUngatedBackpack(ItemID.BACKPACK_ARMY_RUCKSACK);
+  }
+
   protected makeObjChair(chairImageID: string): MapObject {
     const chair = new MapObject(
       'chair',

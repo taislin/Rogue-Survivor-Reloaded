@@ -242,6 +242,28 @@ export class GameImages {
   /** `Feature.FuelStation`. C# `GameImages.cs`, the two `midX +/- 2` signboards. */
   static readonly DECO_SHOP_FUEL_STATION = "Tiles/Decoration/shop_fuel_station";
   static readonly DECO_CHAR_OFFICE = "Tiles/Decoration/char_office";
+  // ── Army base underground (Release 6-3) ───────────────────────────────────
+  /** `GameImages.cs:290` — `//@@MP (Release 6-3)`. The floor logo at the entry stairs. */
+  static readonly DECO_ARMY_FLOOR_LOGO = "Tiles/Decoration/army_floor_logo";
+  /** `GameImages.cs:291-293`. Three sprites, chosen by a roll on every wall tile. */
+  static readonly DECO_ARMY_POSTER1 = "Tiles/Decoration/army_poster1";
+  static readonly DECO_ARMY_POSTER2 = "Tiles/Decoration/army_poster2";
+  static readonly DECO_ARMY_POSTER3 = "Tiles/Decoration/army_poster3";
+  /**
+   * `GameImages.cs:255` and the wall twin — `//@@MP (Release 2)`.
+   *
+   * The *small* blood pair, which is the 20% arm of the base's per-tile blood roll.
+   * The large pair was already ported (`GameImages.cs:253-254`); these two are what
+   * make the fork's three-way split reachable rather than two-way.
+   */
+  static readonly DECO_BLOODIED_FLOOR_SMALL = "Tiles/Decoration/bloodied_floor_small";
+  static readonly DECO_BLOODIED_WALL_SMALL = "Tiles/Decoration/bloodied_wall_small";
+  /** The command room's cupboards. Sprite verified on disk. */
+  static readonly OBJ_ARMY_RADIO_CUPBOARD = "MapObjects/army_radio_cupboard";
+  /** The rec room's beds — a bed object with a different sprite, not a new class. */
+  static readonly OBJ_ARMY_BUNK_BED = "MapObjects/army_bunk_bed";
+  /** The rec room's footlockers, which are the containers the rucksacks sit in. */
+  static readonly OBJ_ARMY_FOOTLOCKER = "MapObjects/army_footlocker";
   /**
    * `GameImages.cs:368` — the generic office's outside-wall decoration, against
    * `DECO_CHAR_OFFICE` (`:244`). The file name really is `generic_offices`, plural:
