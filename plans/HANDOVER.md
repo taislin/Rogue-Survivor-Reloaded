@@ -1,17 +1,20 @@
 # Handover — Still Alive fidelity backlog
 
-Written at `9561a3e` on `feature/still-alive-ruleset`. **Not pushed.** Baseline at that
+Written at `e133b88` on `feature/still-alive-ruleset`. **Not pushed.** Baseline at that
 commit: **138 files / 2,955 tests passing, `tsc` clean.**
 
 Start here, then §"Where things stand".
 
 ## The one-paragraph version
 
-Three of your original four items are banked: the army base, ten of sixteen distance-tier
-sound families, and the fork's hunting-shop and bedroom item tables. The fourth — the
-ordinary-office dispatch — is **implemented but uncommitted and red on 22 tests**, and is
-the first thing to pick up. The pattern that explains almost every failure in this backlog
-is recorded in §"The recurring defect", because it is worth more than any single fix in it.
+All four of the original items are now banked: the army base, ten of sixteen distance-tier
+sound families, the fork's hunting-shop and bedroom item tables, and the ordinary-office
+dispatch. The office dispatch could not be wired on its own — it turned out to be blocked
+on the business region being handed the wrong pool of blocks — and fixing *that* was a
+larger job than the dispatch it unblocked. Both are done, with measurements in §"The
+business region: merged". The re-merge exposed two further gaps, one of them real and
+still open: §"What the re-merge uncovered". The pattern that explains almost every failure
+in this backlog is recorded in §"The recurring defect".
 
 ## Repo facts
 
@@ -29,55 +32,179 @@ is recorded in §"The recurring defect", because it is worth more than any singl
 | Army base | ✅ `96bd511`, `7c22cd5` — code complete, dispatch deliberately not wired |
 | Sounds, distance tiers | ✅ `9ec647d`, `8a870a4`, `b2435b2` — 10 of 16 families, 23 of 52 ids |
 | Item tables | ✅ `9561a3e` — hunting shop + bedroom, 10 pins re-based |
-| **Office dispatch** | ⚠️ **uncommitted, 22 failures / 7 files — start here** |
+| **Business-region pool** | ✅ **merged into one C#-shaped loop; office dispatched** |
+| Coverage gate | ✅ re-measured on 138 files / 2,955 tests; thresholds 67/55/78/68 |
+| **`MakeNarrowPark` housing fallback** | 🔴 **new — blocks too small to house are left bare** |
 | Sounds, non-tier | ⏸ ~60 ids untouched |
-| Coverage gate | ⚠️ unmeasured since `4b45c66` |
+| Sounds, tier | ⏸ 29 ids — throwables, traps, dog, BFG, fishing |
+| Army-base *dispatch* | ⏸ still not wired; a decision about minimum city size |
 
-### Uncommitted work
+## The business region: merged
 
-`web/src/gameplay/generators/BaseTownGenerator.ts`, **+15/−17**. It replaces the
-staged-not-wired comment block with the live arm of `BaseTownGenerator.cs:531`:
+The office dispatch **is** delivered. It could not be delivered on its own, so this
+section is both the diagnosis that blocked it and the change that unblocked it.
 
-```ts
-else {
-  placed = this.makeOrdinaryOffice(map, b);
-}
+### What was wrong
+
+The uncommitted work from the previous session was a **dead store**: `else { placed =
+this.makeOrdinaryOffice(map, b); }`, with nothing reading `placed` afterwards. The office
+was built and then a later pass built a house or a park on the same block.
+
+The reason it could not simply be fixed is that the cascade is offered the **wrong pool of
+blocks**. The C# runs *one* loop over `emptyBlocks` at `BaseTownGenerator.cs:472-536`; the
+port ran three — a CHAR loop, a library pass over the pool, then a cascade over the pool
+again. Two facts only the nesting carries were lost:
+
+- `int rolled = m_DiceRoller.Roll(0, 99)` at `:478` gates the CHAR attempt at
+  `rolled < 30 || charOfficesCount == 0` (`:479`), so the business *interior* only runs on
+  the ~10% of blocks that entered on `RollChance(CHARBuildingChance)`.
+- `completedBlocks.Add(b)` at `:535` is inside that `if`, so an office finishes its block
+  exactly as a bar does.
+
+Measured over 40 × 40 general districts (~5.3 blocks each):
+
+| | before | after | C# shape |
+|---|---|---|---|
+| business blocks / district | 2.8 | **0.4** | 0.5 |
+| parks-region districts with a park | 0/40 | **11/40** | — |
+| churches / graveyards / farms | 4 / 1 / 0 | **16 / 3 / 5** | — |
+
+The old `if (placed) completedBlocks.push(b)` was *load-bearing*: it was the only thing
+letting a block out of the cascade and down to the parks. Wiring the office **and**
+completing the block, as `:535` says, gave **Housing 32 → 0, Park 5 → 0, Church 4 → 0, and
+`TOWN_BUILDING_PASSES` offered 0 blocks instead of 38** — half the game's block content
+deleted by a "fidelity fix".
+
+### What was done
+
+One loop, C#-shaped, at `BaseTownGenerator.generate()`:
+
+- outer gate `BUSINESS || rollChance(charBuildingChance)`;
+- `const rolled = cascadeEnabled ? this.m_DiceRoller.roll(0, 99) : 0;` and
+  `NoCHARBuildingMade` tracking;
+- `if (rolled < 30 || charOfficesCount === 0)` → `makeCHARBuilding`, which `continue`s past
+  the interior on success;
+- `if (cascadeEnabled && (rolled >= 30 || noCHARBuildingMade))` → library, then the
+  `roll(0, 4)` cascade, then the **general store** (`:519-526`, the arm that was missing
+  entirely, which needed `makeShopBuilding`'s new nullable `desiredShopType` at `:1436`),
+  then `if (!placed) makeOrdinaryOffice`, then `completedBlocks.push(b)` unconditionally;
+- `makeLibraryBuildings(map, emptyBlocks)` became `tryMakeLibrary(map, b)`, a per-block
+  attempt, because reproducing the C#'s control flow by *pool membership* only works while
+  the pool **is** the C#'s pool.
+
+**`rolled` is gated on `cascadeEnabled`, deliberately.** In the C# the `Roll(0, 99)` sits
+outside every feature gate, so a faithful transcription spends a die per block under
+CLASSIC and moves both pinned Classic digests — invalidating every saved Classic world —
+for a region whose four arms are Still Alive only. Under Classic `rolled` is 0, which makes
+`rolled < 30` always true and `rolled >= 30` always false, so Classic is byte-identical to
+what it was. **Both digests still pass.** Removing the gate is one `?:` if they are ever
+re-taken on purpose.
+
+### How rare the interior actually is — read before believing "delivered"
+
+The dispatch is wired and faithful. It is also, at the sizes measured, **nearly inert**,
+and that is worth stating plainly rather than letting "office dispatch: done" imply a
+building you will see.
+
+Over **300 districts at 50x50** (the reference's own minimum), instrumented at the arm:
+
+    interior entries : 21
+    roll2            : bar 8, bank 5, clinic 5, mechanic 3
+    store attempts   : 3   (3 succeeded)
+    office calls     : 0
+
+Two compounding reasons, both faithful:
+
+- **The interior is entered ~7% of districts.** `:479`'s `|| charOfficesCount == 0`
+  forces a CHAR attempt on the district's first business-region block and
+  `MakeCHARBuilding` does not decline, so the interior waits for a *second* block with
+  `rolled >= 30`. At 100x100 it is far commoner (bar in 16% of districts, clinic in 21%).
+- **When it is entered, the general store takes every decline.** `:519` sits before
+  `:529`, and it succeeds on any block with a 5x5 inside rect -- which is every block
+  the interior is offered. So `roll2 === 3` (the mechanic workshop, **unported**, so an
+  empty arm) is the only route to the office, and it needs the store to have been
+  capped out first.
+
+So the honest claim is: *the arm is transcribed and reachable, and the reference's own
+arithmetic makes it rare.* Whether the reference is really this sparse is **unverified** —
+that would need the C# run side by side, which nothing here can do. Treat "the office
+rarely appears" as an open question rather than a matched behaviour.
+
+`tests/business-cascade.test.ts` is new and covers the structure the per-arm suites
+cannot see: the store arm's `if (!placed)` guard, its `round(floor(width / 10) / 3)`
+cap (reached by exactly 3 districts in a 1200-seed sweep at width 100 — seeds 529, 1170,
+1187 — so the cap is pinned on those rather than swept), the switch's exclusivity, and
+the library being above the switch.
+
+### What it cost
+
+17 failures across 6 files, all re-derived rather than papered over. The instructive part:
+**`graveyard`, `church-building`, `junkyard-building` and `helicopter-rescue` started
+passing**, because the parks region had been starved and now works. Re-basing seeds to
+"fix" those would have destroyed a working generator to satisfy a broken fixture — the
+recurring defect, running the other way.
+
+- `library-building` — `makeLibraryBuildings` is no longer a stage, so `LibrarySpy` counts
+  attempts instead, and the pool-arithmetic assertion became a map-level one: a library's
+  rect carries a `Library@` zone and none of `Bar@`/`Bank@`/`Clinic@`/`GeneralStore@`/
+  `Business@`. That holds however the control flow is spelled; the pool version did not.
+  Added `LIBRARY_SEED`, swept.
+- `animal-shelter` — re-swept. Seeds 24/47 no longer build one; `1..300` finds eleven
+  (59, 63, 106, …). The header already said "chosen, not swept for", which was the tell.
+- `bank-building`, `clinic-building` — see below.
+- `bar-building` — `DISTRICT_SEED` 3 → 8 and `DISTRICT_WIDTH` 40 → 50; new `WIDE_SEED = 28`
+  for the 100-wide half of the cap test.
+- `fire-station-building` — the fuel-pump assertion scanned the **whole district** rather
+  than the fire station's rect, so it failed as soon as a district could contain a fuel
+  station *and* a fire station. Scoped to the zone's rect.
+- `feature-flags` — the `Library` multiset lost a site (the pass-level gate went away with
+  the pass). Regenerated with `scripts/gen-feature-flag-sites.mjs`, never hand-edited.
+- **`business-cascade` is new** — the interior had no suite at all before, which is how the
+  missing general-store arm survived.
+
+### The 40x40 trap, which cost three suites
+
+**`MAP = 40` in the bank, clinic and bar suites is smaller than any district the reference
+can generate.** `districtsSizeFloor` is 50 under Still Alive (Release 7-3 raised
+`DistrictSize` from 30 to 50 for the shopping mall). At 40 × 40 the business interior is
+*never reached*: `:479`'s `|| charOfficesCount == 0` forces a CHAR attempt on the
+district's first business-region block, `MakeCHARBuilding` does not decline, and the
+interior wants a second block with `rolled >= 30`. Over 60 seeds: **no bar, no bank and no
+clinic at all**, and every content assertion in those three suites was iterating an empty
+set and passing vacuously.
+
+Fixed by moving the content assertions to 50 × 50 with swept seeds (`ARM_MAP`, `ARM_SEED`),
+and leaving `MAP`/`SEED` alone for the Classic digest tests — that fingerprint is a 40 × 40
+seed-1 value seven suites assert. **If a suite here grows a "no X appeared" failure, check
+the district size before the seed.**
+
+### What the re-merge uncovered
+
+**`MakeNarrowPark` is ported but never called.** C# `:604-605`, in the housing tail:
+
+```csharp
+if (!completed) MakeNarrowPark(map, b);
 ```
 
-`makeOrdinaryOffice` was already ported and tested; `tests/ordinary-office.test.ts` passes
-(7/7). **Do not `git checkout` this file** — the dispatch is the deliverable, not debris.
+The function exists in `buildings/makeShoppingMall.ts` (for the mall's degenerate quads) as
+a module-private. The port's housing loop calls `makeHousingBuilding` unconditionally, so
+every block too small to house is **left bare** — no grass, no trees, no zone. The re-merge
+made this worse: the pool reaching the tail went from ~2.5 blocks to ~4.9 per district, so
+bare blocks went from ~1.4 to ~2.4. Housing itself did not move (0.8/district against the
+~4.3 the region's arithmetic predicts) for exactly this reason.
 
-## Start here: the office dispatch, 22 failures / 7 files
+The fix is small — export `makeNarrowPark`, call it — but it spends dice under CLASSIC too,
+so it moves both digests. **It is a decision, not a drive-by, and it is the next item.**
 
-| file | n | what it is | kind |
-|---|---:|---|---|
-| `bar-building` | 10 | `expected null not to be null` — no bar at its fixed seed | mechanical |
-| `animal-shelter` | 5 | failure text literally reads **"seed 24 generated no animal shelter; pick another seed"** | mechanical |
-| `church-building` | 2 | "at least one of **twenty** seeds built a church" → 0 | mechanical (widen sweep) |
-| `junkyard-building` | 2 | zones 4 → 8 | judgement |
-| `fire-station-building` | 1 | `inside 31,68 is not indoors` | judgement |
-| `graveyard` | 1 | "the scoped scan can see park furniture at all: expected false to be true" | judgement |
-| `helicopter-rescue` | 1 | `(12,18) should be closer to the chopper than (12,18): expected 10 to be less than 10` | judgement |
+Also recorded, both in the same region and neither urgent:
 
-Roughly **17 mechanical** (re-pick a seed, widen a sweep), **5 needing judgement**.
-
-Two notes that will save time:
-
-- **`bar-building` already has the machinery** — a comment at `:345` says "The first seed
-  in a fixed range that builds a bar", and `buildBar()` at `:320` takes a seed. The failing
-  tests hardcode `DISTRICT_SEED = 3` (`:142`) instead of using it. A comment at `:392`
-  already explains why the seed moved once before.
-- **`animal-shelter`'s header states the policy**: *"the seeds below are chosen, not swept
-  for… seed 24 and seed 47 do, and seeds 3, 5 and 8 do not."* After the dispatch neither
-  works. Districts are 40×40 (`MAP = 40`, `:76`) and ~45 ms each; a scratch sweep over
-  `1..250` is the way to find replacements. A throwaway test importing `BaseTownGenerator`
-  + `Parameters` and writing hits to a file works — but note `Parameters` is exported from
-  `BaseTownGenerator`, not its own module.
-
-The helicopter failure is worth reading before "fixing": it compares a point with itself
-(`expected 10 to be less than 10`), which is what a strict inequality degenerates into when
-the fixture's chosen site *is* the helicopter. Probably a real assertion bug rather than a
-seed problem.
+- The port spends **two** `RollChance(ParkBuildingChance)` per block where the C# spends
+  one: the parks loop (`generate()`) and the green cascade inside `makeJunkyards` (a
+  misleading name — it runs the graveyard/shelter/farm/junkyard arms too). The C# has one
+  gate and one `roll(0, 99)` behind it.
+- The green cascade has no arm for `rolled >= 64`, which in the C# is the ordinary park
+  (35%). The port does it in the *other* pass, on a different die.
+- The army base runs **after** the business region; the C# runs it before the shops.
 
 ## The recurring defect — read this before fixing any of the above
 
@@ -94,12 +221,23 @@ instances, all found in two days:
 3. `generator-integrity`'s tunnel-fragmentation test asserted `components > 1` using a
    `passable` helper that counts closed doors as openable — so it was demanding the player
    be unable to walk everywhere. **The generator was right.** See below.
-4. Now 17 of the office dispatch's 22.
+4. 17 of the office dispatch's 22 — *and every one of the 22 turned out to be downstream
+   of the dispatch being wrong*, which is the case where the rule above misleads: the
+   seeds were incidental, and re-basing them would have buried the real defect.
+5. Three suites (bar, bank, clinic) were **passing vacuously** at a district size the
+   reference cannot generate. See §"The 40x40 trap". This is the mirror of #4 and just as
+   expensive: a green test asserting nothing is not a test, and re-basing it would have
+   kept it that way.
 
 **The rule this suggests:** when a re-base fails, ask whether the assertion is about the
-*property* or about a *dice outcome*. If the test's own comment describes an intent the
-assertion doesn't implement (as in #3), fix the assertion to the stated intent. If it
-asserts a content count, sweep for the content rather than pinning a seed.
+*property* or about a *dice outcome*, and — before assuming it is the dice — ask whether
+the *generator* moved for a reason that makes the old answer wrong. Then ask whether the
+test was passing at all. Sweeping seeds is the last resort, not the first.
+
+**A corollary worth stating: a test that was green before your change is evidence, not
+noise.** When the re-merge broke 17 tests, four suites went *green that had been red for
+the right reason*, and nine were fixtures. Sorting them that way took minutes; sorting them
+by "re-base whatever is red" would have taken an afternoon and produced a worse port.
 
 ## The subway finding (measured, keep it)
 
@@ -194,10 +332,11 @@ sound and message on separate gates; **the door ladder** is ordered so `givesWoo
 
 ## Also outstanding
 
-- **Coverage gate** (`vitest.config.mts:55-95`) was measured at 58 files / 867 tests and is
-  now stale — thresholds are statements 58 / branches 48 / functions 69 / lines 59. Re-measure
-  with `--coverage --no-file-parallelism` (parallel runs are not a measurement; per-file
-  numbers are stable, the aggregate is not).
+- ~~**Coverage gate**~~ — **done.** Re-measured serially on 138 files / 2,955 tests:
+  statements 69.87 / branches 57.93 / functions 80.64 / lines 71.29. The old gates were
+  sitting ~12 points under the tree and gating nothing; re-pinned ~2.5 below actual at
+  **67 / 55 / 78 / 68**. Two serial runs agreed to the digit, which confirms the config's
+  claim that the aggregate wobble is a parallel-run artefact.
 - **Chainsaw sanity penalty** is missing entirely — `CAUSE_GRUESOME_DEATH_SANITY_PENALTY`
   (Release 7-2) sits in the same `if (hitRoll > defRoll)` block as the melee hit sound added
   in `8a870a4`. A gameplay mechanic, deliberately not added inside a sounds commit.
@@ -214,11 +353,16 @@ sound and message on separate gates; **the door ladder** is ordered so `givesWoo
 
 ## Suggested order
 
-1. Office dispatch — 17 mechanical fixes, then the 5 judgement calls.
+1. **`MakeNarrowPark` in the housing tail** — ~2.4 bare blocks per district, and the fix
+   is ~5 lines. Take the Classic-digest decision first; it is the same one the `rolled`
+   gate dodged, and dodging it twice in one region is a pattern.
 2. The throwables, scoped as their own piece (explosion presentation, not audio).
 3. Traps, then the fishing NPC arm.
-4. Coverage gate re-measure.
-5. Non-tier sounds, which have never been looked at.
+4. Non-tier sounds, which have never been looked at.
+5. The three parks-region items at the end of §"What the re-merge uncovered" — one
+   `RollChance(ParkBuildingChance)` instead of two, the `rolled >= 64` park arm, and the
+   army base's position.
 
-Commit per step. Green before every commit — that rule is what kept this backlog from
-accumulating a red tree, and the office dispatch is the one place it currently applies.
+**Check `df -h /` before any coverage run.** Commit per step, green before every commit.
+The office dispatch is the case that proves why: it was green-able by re-basing 22 seeds,
+and every one of those 22 was a symptom of a change that deleted half the game's blocks.

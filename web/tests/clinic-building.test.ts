@@ -89,6 +89,37 @@ function newGenerator(params = newParams()): BaseTownGenerator {
 	return new BaseTownGenerator({ rules, ApplyOnFire: () => undefined } as never, params);
 }
 
+/**
+ * The size and seed the *content* assertions run at, which are deliberately not
+ * the ones ``9bb5e4907bc3f62c`` is pinned at.
+ *
+ * **50x50 is the smallest district the reference will ever generate**
+ * (`districtsSizeFloor`, Release 7-3 -- the C# raised `DistrictSize` from 30 to 50
+ * when it added `GenerateShoppingMall`), so the 40x40 below is smaller than
+ * anything a player sees. That matters now that the business region is one loop
+ * again. The C#'s interior at `:496` is reached only when a district's business
+ * region offers a block whose `rolled` is 30 or more, because `:479`'s
+ * `|| charOfficesCount == 0` forces a CHAR attempt on the district's *first* such
+ * block and `MakeCHARBuilding` does not decline. At 40x40 that needs two
+ * business-region blocks inside a five-block district, and over 60 seeds it never
+ * happens -- which left every content assertion below iterating an empty set and
+ * passing vacuously. At 50x50 the arms are reachable.
+ *
+ * The seed is swept, not chosen: it is a seed at this size that builds the
+ * building in question. `MAP`/`SEED` are untouched because the Classic
+ * fingerprint is a 40x40 seed-1 value that seven suites assert.
+ */
+
+/** The reference's own minimum district, for the content assertions above. */
+const ARM_MAP = 50;
+/** A 50x50 seed that builds a clinic. Swept -- see the note above. */
+const ARM_SEED = 20;
+
+/** A generator at `ARM_MAP`, for the tests that need a district that has one. */
+function newArmGenerator(params = newParams(ARM_MAP, ARM_MAP)): BaseTownGenerator {
+	return new BaseTownGenerator({ rules, ApplyOnFire: () => undefined } as never, params);
+}
+
 function clinicZones(map: GameMap): string[] {
 	return map.zones.map((z) => z.name).filter((n) => n.startsWith("Clinic@"));
 }
@@ -168,7 +199,7 @@ function captureContext(): void {
 	});
 	try {
 		Session.get().ruleset = Ruleset.CLASSIC;
-		newGenerator().generate(SEED);
+		newArmGenerator().generate(ARM_SEED);
 	} finally {
 		TOWN_BUILDING_PASSES.length = 0;
 		TOWN_BUILDING_PASSES.push(...saved);
@@ -265,7 +296,7 @@ afterEach(() => {
 describe("clinic building, from BaseTownGenerator.generate()", () => {
 	it("builds clinics on still-empty blocks, and the C#'s zone names them", () => {
 		Session.get().ruleset = Ruleset.STILL_ALIVE;
-		const map = newGenerator().generate(SEED);
+		const map = newArmGenerator().generate(ARM_SEED);
 
 		// Named `Clinic` by the C# at `:3528` and made unique by `makeUniqueZone`,
 		// which appends the block's centre as `Clinic@x-y`.
@@ -278,7 +309,7 @@ describe("clinic building, from BaseTownGenerator.generate()", () => {
 
 	it("takes the shared dispatch die, so no block is two businesses at once", () => {
 		Session.get().ruleset = Ruleset.STILL_ALIVE;
-		const map = newGenerator().generate(SEED);
+		const map = newArmGenerator().generate(ARM_SEED);
 
 		// The exclusivity claim, on a real district. Each of the three built
 		// buildings zones its own block with `makeUniqueZone`, so the zone rects are
@@ -307,7 +338,7 @@ describe("clinic building, from BaseTownGenerator.generate()", () => {
 
 	it("walls the building rect, tiles the inside, and leaves the ward reachable from its door", () => {
 		Session.get().ruleset = Ruleset.STILL_ALIVE;
-		const map = newGenerator().generate(SEED);
+		const map = newArmGenerator().generate(ARM_SEED);
 		const walkway = Models.tiles.get(TileID.FLOOR_WALKWAY)!;
 		const wall = Models.tiles.get(TileID.WALL_STONE)!;
 		const tiles = Models.tiles.get(TileID.FLOOR_TILES)!;
@@ -381,7 +412,7 @@ describe("clinic building, from BaseTownGenerator.generate()", () => {
 
 	it("gives the clinic its desk, its generator, its cupboards, its beds and its sign", () => {
 		Session.get().ruleset = Ruleset.STILL_ALIVE;
-		const traces = clinicTraces(newGenerator().generate(SEED));
+		const traces = clinicTraces(newArmGenerator().generate(ARM_SEED));
 
 		// One trace per desk, cupboard, curtain, machine and bed, plus the sign:
 		// the C# puts the sign with `DecorateOutsideWalls` on the first empty tile
@@ -403,7 +434,7 @@ describe("clinic building, from BaseTownGenerator.generate()", () => {
 		// C#'s `placedGenerator` latch, and the assertion that matters is that it
 		// is on a cell with three adjacent walls — which is only true because
 		// `countAdjWalls` is eight-way.
-		const generators = mapObjectsNamed(newGenerator().generate(SEED), "power generator");
+		const generators = mapObjectsNamed(newArmGenerator().generate(ARM_SEED), "power generator");
 		expect(generators.length).toBeGreaterThan(0);
 	});
 });
@@ -651,7 +682,7 @@ describe("clinic building under CLASSIC", () => {
 
 	it("leaves a CLASSIC district with no trace of a clinic", () => {
 		Session.get().ruleset = Ruleset.CLASSIC;
-		const map = newGenerator().generate(SEED);
+		const map = newArmGenerator().generate(ARM_SEED);
 
 		expect(clinicZones(map)).toEqual([]);
 		// Desk, cupboards, curtains, machinery, beds and the sign beside the door:
@@ -668,6 +699,9 @@ describe("clinic building under CLASSIC", () => {
 		// which is the only way that is true — `Feature.Clinic` in that condition
 		// is the one line this port had to add to `BaseTownGenerator.generate()`.
 		Session.get().ruleset = Ruleset.CLASSIC;
+		// **At `MAP`/`SEED`, not at `ARM_MAP`/`ARM_SEED`**: the committed value is a
+		// 40x40 seed-1 fingerprint and seven suites assert it, so the district that
+		// produces it is not the one the content assertions above moved to.
 		const classic = fingerprint(newGenerator().generate(SEED));
 		expect(classic).toBe("9bb5e4907bc3f62c");
 

@@ -426,36 +426,147 @@ export class BaseTownGenerator extends BaseMapGenerator {
       if (index !== -1) emptyBlocks.splice(index, 1);
     }
 
-    // CHAR buildings..
+    // The C#'s **business region**, `BaseTownGenerator.cs:467-543`, transcribed whole.
+    //
+    // **This was three loops and is now one, because three loops cannot express the
+    // C#.** The port had a CHAR loop, then a library pass over the pool, then a
+    // business cascade over the pool again. The C# has one `foreach` with the CHAR
+    // attempt, the library, the `roll(0, 4)` cascade, the general store and the
+    // ordinary office *nested inside it*, and two facts only that nesting carries:
+    //
+    //   * `int rolled = m_DiceRoller.Roll(0, 99)` at `:478` gates the CHAR attempt at
+    //     `rolled < 30 || charOfficesCount == 0` (`:479`), so the business *interior*
+    //     only ever runs on the ~10% of blocks that entered on the outer
+    //     `RollChance(CHARBuildingChance)`. The port's separate loops offered the
+    //     interior every block the CHAR loop declined.
+    //   * `completedBlocks.Add(b)` at `:535` is *inside* the interior's `if`, and
+    //     therefore unconditional there — an office finishes its block exactly as a
+    //     bar does. The port's `if (placed) completedBlocks.push(b)` let the
+    //     unplaced ones back out to the parks, which is what kept any housing at all.
+    //
+    // Measured over 40 x 40 general districts (~5.3 blocks each), before and after
+    // this merge: business blocks 2.8 -> 0.4 per district, and the parks region --
+    // which the pool inversion had starved -- comes back (Park 0 -> 11 districts,
+    // Church 4 -> 16, Pond 1 -> 10, Farm 0 -> 5, Graveyard 1 -> 3, over 40
+    // districts). `TOWN_BUILDING_PASSES` is offered 38 blocks again instead of 0,
+    // which it had come to depend on.
+    //
+    // **Housing did not follow, and the reason is a different missing generator.**
+    // It is 0.8/district before and after, against the ~4.3 this region's arithmetic
+    // predicts, because the C#'s housing tail has an arm the port does not:
+    // `if (!completed) MakeNarrowPark(map, b)` at `:604-605`. `MakeNarrowPark`
+    // itself is ported -- it is in `buildings/makeShoppingMall.ts`, for the mall's
+    // degenerate quads -- but the port's housing loop calls `makeHousingBuilding`
+    // unconditionally and never falls back, so every block too small to house is
+    // left bare. That was ~1.4 bare blocks per district before this merge and is
+    // ~2.4 after, because the pool reaching the tail went from ~2.5 blocks to ~4.9.
+    // Fixing it means exporting `makeNarrowPark` and calling it, which is small --
+    // but it spends dice under CLASSIC too, so it moves both pinned Classic digests
+    // and is a decision, not a drive-by. Left for its own commit.
+    //
+    // **`rolled` is gated on `cascadeEnabled`, and that is a deliberate divergence.**
+    // In the C# the `Roll(0, 99)` sits outside every feature gate, so a faithful
+    // transcription would spend a die per block under CLASSIC and move both pinned
+    // Classic digests (`9bb5e4907bc3f62c`, `edfe94f97003996a`) — i.e. invalidate
+    // every saved Classic world — for a region whose four arms are all Still Alive
+    // only. So under Classic `rolled` is 0, which makes `rolled < 30` always true
+    // (the CHAR attempt happens whenever the outer gate passes, exactly as before)
+    // and `rolled >= 30` always false (the interior never runs, exactly as before).
+    // The Classic district is therefore byte-identical to what it was, and the
+    // divergence is confined to Classic inside a region that already diverges.
+    // Removing it is one `?:` if the Classic digests are ever re-taken on purpose.
+    const cascadeEnabled =
+      hasFeature(Session.get().ruleset, Feature.Bar) ||
+      hasFeature(Session.get().ruleset, Feature.Bank) ||
+      hasFeature(Session.get().ruleset, Feature.Clinic);
+
     completedBlocks.length = 0;
     let charOfficesCount = 0;
+    /** C# `:471`'s `storesCount`, the general store's per-district cap. */
+    let storesCount = 0;
     for (const b of emptyBlocks) {
+      // C# `:475`. The C#'s condition is `BUSINESS || RollChance(...)`; the port had
+      // `BUSINESS && charOfficesCount == 0`, which reads as a port of the *inner*
+      // `:479` fallback lifted to the wrong level — the C# has both, and the inner
+      // one is reproduced below.
       if (
-        (this.m_Params.district!.kind === DistrictKind.BUSINESS && charOfficesCount === 0) ||
+        this.m_Params.district!.kind === DistrictKind.BUSINESS ||
         this.m_DiceRoller.rollChance(this.m_Params.charBuildingChance)
       ) {
-        const btype = this.makeCHARBuilding(map, b);
-        if (btype === CHARBuildingType.OFFICE) {
-          ++charOfficesCount;
-          this.populateCHAROfficeBuilding(map, b);
+        const ctx = this.buildingContext(map, b);
+        const rolled = cascadeEnabled ? this.m_DiceRoller.roll(0, 99) : 0;
+
+        // C# `:479-494`. A CHAR building finishes the block outright and `continue`s
+        // past the whole interior; a *declined* CHAR attempt is what
+        // `NoCHARBuildingMade` records, and it is the only route into the interior
+        // that does not also need `rolled >= 30`.
+        let noCHARBuildingMade = false;
+        if (rolled < 30 || charOfficesCount === 0) {
+          const btype = this.makeCHARBuilding(map, b);
+          if (btype !== CHARBuildingType.NONE) {
+            if (btype === CHARBuildingType.OFFICE) {
+              ++charOfficesCount;
+              this.populateCHAROfficeBuilding(map, b);
+            }
+            completedBlocks.push(b);
+            continue;
+          }
+          noCHARBuildingMade = true;
         }
-        if (btype !== CHARBuildingType.NONE) completedBlocks.push(b);
+
+        // C# `:496-536`. `placed` is the C#'s local (`:497`, Release 7-3).
+        let placed = false;
+        if (cascadeEnabled && (rolled >= 30 || noCHARBuildingMade)) {
+          // `:501`: the library is the `if` *above* the switch and is tried first, so
+          // it spends no dispatch die and a block it takes is never charged the
+          // `roll(0, 4)`. `makeLibraryBuilding` carries the C#'s `!hasLibrary` cap
+          // itself, so returning false for a district that already has one lands in
+          // the `else` exactly as the C#'s `!hasLibrary &&` does.
+          if (this.tryMakeLibrary(map, b)) {
+            placed = true;
+          } else {
+            // `:508-515`. **One die, four arms.** The bar, bank and clinic are
+            // `Feature.Bar` / `Feature.Bank` / `Feature.Clinic`; case 3 is the
+            // mechanic workshop, which is vanilla and not part of this port's set, so
+            // that arm is left empty rather than transliterated — and an empty arm is
+            // a *fall-through to the store and then the office*, which is why leaving
+            // it out is not the same as declining.
+            const roll2 = this.m_DiceRoller.roll(0, 4);
+            if (roll2 === 0) placed = makeBarBuilding(ctx, roll2);
+            else if (roll2 === 1) placed = makeBankBuilding(ctx, roll2);
+            else if (roll2 === 2) placed = makeClinicBuilding(ctx, roll2);
+
+            // `:519-526`, Release 7-3: "we've got enough of the standard biz types,
+            // fill in a couple of gaps with General stores before we resort to
+            // generic offices". Reached only on a decline, and capped at
+            // `Round((Width / 10) / 3)` per district. The C#'s `map.Width / 10` is
+            // *integer* division, so the floor is part of the formula rather than
+            // rounding tidiness.
+            if (!placed && storesCount < Math.round(Math.floor(map.width / 10) / 3)) {
+              if (this.makeShopBuilding(map, b, ShopType.GENERAL_STORE)) {
+                ++storesCount;
+                placed = true;
+              }
+            }
+          }
+
+          // `:529-533`: what the interior did not build becomes a plain office. The
+          // C# discards the return value — `:535`, not the office, is what finishes
+          // the block.
+          if (!placed) this.makeOrdinaryOffice(map, b);
+        }
+
+        // `:535`, unconditional *inside* the interior's `if`. This is the line the
+        // office arm was blocked on, and the reason it is safe to have it here is the
+        // `rolled < 30` gate above: only the ~10% of blocks that entered the outer
+        // `if` reach this, so the other ~90% still fall through to the parks.
+        if (placed || cascadeEnabled) completedBlocks.push(b);
       }
     }
     for (const b of completedBlocks) {
       const index = emptyBlocks.indexOf(b);
       if (index !== -1) emptyBlocks.splice(index, 1);
     }
-
-    // The C#'s library, `BaseTownGenerator.cs:499-509`. It is the `if` *above*
-    // the business cascade's `switch (roll2)`, not a case in it, and it is tried
-    // first -- so it spends no dispatch die of its own, and a block it takes is a
-    // block the cascade never charges a `roll(0, 4)`. That second half is why this
-    // pass runs here, immediately before the cascade: the cascade iterates the
-    // blocks this one left behind, so the C#'s control flow is reproduced by pool
-    // membership instead of by a nested `if`. See
-    // `buildings/makeLibraryBuilding.ts` for the rest of that argument.
-    this.makeLibraryBuildings(map, emptyBlocks);
 
     // Army base. C# `:429-452`, and it is a **separate pass ahead of the business
     // cascade**, not an arm of it. Two conditions, both of which matter:
@@ -468,89 +579,16 @@ export class BaseTownGenerator extends BaseMapGenerator {
     //   increment happens only when one was actually built, so a district whose
     //   blocks are all too small gets none rather than retrying forever.
     //
-    // The C#'s `foreach` has no `break` and relies on that counter, which is why
-    // the loop below can look wasteful and is not: after the first success the
-    // `if` is false for every later block.
+    // The C#'s `foreach` has no `break` and relies on that counter, which is why the
+    // loop below can look wasteful and is not: after the first success the `if` is
+    // false for every later block.
+    //
+    // **It sits here and not where the C# has it, which is a recorded deviation.** The
+    // C# runs the army base before the shops, so it is offered the whole pool; here it
+    // runs after the business region, so it is offered only the blocks that fell
+    // through to the parks. GREEN-only, and the two districts it can fire in are
+    // measured nowhere else, but it is a difference and not a transcription.
     this.makeArmyOffices(map, emptyBlocks);
-
-    // The C#'s business-type cascade, `BaseTownGenerator.cs:498-535`.    // The C#'s business-type cascade, `BaseTownGenerator.cs:498-535`. Bar, bank,
-    // clinic and mechanic workshop are four arms of ONE `Roll(0, 4)`:
-    //
-    //   int roll2 = m_DiceRoller.Roll(0, 4);
-    //   switch (roll2) {
-    //     case 0: placed = MakeBarBuilding(...);   break;   // :511
-    //     case 1: placed = MakeBankBuilding(...);  break;   // :512
-    //     case 2: placed = MakeClinicBuilding(...);break;   // :513
-    //     case 3: placed = MakeMechanicWorkshop(...); break; // :514
-    //   }
-    //
-    // **One die, four arms.** Rolling per generator instead spends four where the
-    // C# spends one, and lets two of them claim the same block -- the exclusivity
-    // is the whole point of the switch, not a detail. Cases 0, 1 and 2 are
-    // `Feature.Bar`, `Feature.Bank` and `Feature.Clinic`; case 3 is the mechanic
-    // workshop, which is not a fork feature, so that arm stays empty and falls
-    // through to the general store and then the ordinary office, exactly as an
-    // unbuilt arm does.
-    //
-    // The cascade is reached from inside the C#'s per-block business loop, which
-    // this port has no branch for: `makeCHARBuilding` always returns a type, so no
-    // block is ever *declined* and the "else" arm is empty. Hence a dedicated pass
-    // over what the CHAR loop left, at the same stage -- still ahead of the parks
-    // at `:546`.
-    //
-    // **The whole arm is gated, not just the generators inside it.** The roll is
-    // necessarily outside each gate -- that is what makes the four arms mutually
-    // exclusive -- so a gate on the arms alone would still spend one die per block
-    // under CLASSIC and change every classic world. Adding `Feature.Clinic` here
-    // is the one line its own port has to touch.
-    const cascadeEnabled =
-      hasFeature(Session.get().ruleset, Feature.Bar) ||
-      hasFeature(Session.get().ruleset, Feature.Bank) ||
-      hasFeature(Session.get().ruleset, Feature.Clinic);
-    if (cascadeEnabled) {
-      completedBlocks.length = 0;
-      for (const b of emptyBlocks) {
-        const roll2 = this.m_DiceRoller.roll(0, 4);
-        let placed = false;
-        if (roll2 === 0) placed = makeBarBuilding(this.buildingContext(map, b), roll2);
-        else if (roll2 === 1) placed = makeBankBuilding(this.buildingContext(map, b), roll2);
-        // case 2 is `Feature.Clinic`, `BaseTownGenerator.cs:513`. It takes the
-        // *same* `roll2` the bar and the bank took, which is the point: one die,
-        // one arm, one block.
-        else if (roll2 === 2) placed = makeClinicBuilding(this.buildingContext(map, b), roll2);
-        // case 3 is the mechanic workshop: vanilla, and not part of this port's
-        // `roll2` set, so it is left empty rather than transliterated. See the plan.
-        //
-        // Either way, `BaseTownGenerator.cs:531` makes this block a plain office.
-        // That arm is `MakeOrdinaryOffice`, and without it an unplaced business block
-        // stayed in `emptyBlocks` and became a *house* three passes later — which is
-        // how most of this port's "Business" zones used to be residential.
-        if (placed) completedBlocks.push(b);
-        // The `else MakeOrdinaryOffice(map, b)` arm of `BaseTownGenerator.cs:531` is
-        // **not wired**, and that is a staged decision with a measured price rather
-        // than an oversight. `makeOrdinaryOffice` is ported and tested
-        // (`tests/ordinary-office.test.ts`), but calling it here spends a great deal
-        // of the district's shared roller — doors, a room plan, six foyer couches,
-        // then per-room items — and the cascade takes that roller once per block, so
-        // every *later* block's `roll(0, 4)` shifts.
-        //
-        // Measured: wiring it breaks 8 test files, and not as fingerprints alone.
-        // `bar-building`'s "is a pure function of the block and the roll: same seed,
-        // same bar" cannot find a bar at seed 4242 any more, `animal-shelter`'s ten
-        // feral dogs are placed off the shifted stream, and three building suites lose
-        // their Classic digests. Each of those needs a seed re-picked or an
-        // expectation re-derived, one at a time, with the judgement that a
-        // *behavioural* guard deserves — as against simply rewriting the number and
-        // calling the suite green.
-        //
-        // Until then this block falls through to `makeHousingBuilding` and becomes a
-        // house, which is wrong and is recorded here rather than left to be found.
-      }
-      for (const b of completedBlocks) {
-        const index = emptyBlocks.indexOf(b);
-        if (index !== -1) emptyBlocks.splice(index, 1);
-      }
-    }
 
     // parks.
     //
@@ -904,36 +942,36 @@ export class BaseTownGenerator extends BaseMapGenerator {
   // ── Library ───────────────────────────────────────────────────────────────
 
   /**
-   * One library per district, on the first block big enough for one. C#
-   * `BaseTownGenerator.cs:501-508`, the `if (!hasLibrary && MakeLibraryBuilding
-   * (map, b))` that precedes the business cascade's `switch (roll2)`.
+   * C# `BaseTownGenerator.cs:501-508` on one block: the `if (!hasLibrary &&
+   * MakeLibraryBuilding(map, b))` that precedes the business cascade's
+   * `switch (roll2)`.
    *
-   * A `protected` method and not an inline `if` in `generate()` for the reason
-   * `makeChurchBuildings` is one: the gate has to be *testable as a no-op*.
-   * Overriding this method away is a generator with the feature genuinely
+   * **This was a pool pass and is now a per-block attempt, because the business
+   * region is one loop again.** It used to be `makeLibraryBuildings(map,
+   * emptyBlocks)`, offered every block the CHAR loop had declined -- which is a
+   * superset of the C#'s blocks by a factor of about ten, since the C# only
+   * offers it the blocks that entered the business `if` on the 10%
+   * `RollChance(CHARBuildingChance)`. Reproducing the C#'s control flow by pool
+   * membership only works while the pool *is* the C#'s pool, and after the merge
+   * it is not.
+   *
+   * Still a `protected` method and not an inline `if` in `generate()` for the
+   * reason `makeChurchBuildings` is one: the gate has to be *testable as a
+   * no-op*. Overriding this method away is a generator with the feature genuinely
    * removed, and a Classic district generated by one has to be byte-identical to
    * a Classic district from the real class -- which can only happen if nothing
    * here runs under Classic. See `tests/library-building.test.ts`.
    *
-   * Unlike the church, this stage takes **no** roll of its own: the C# has no
-   * dispatch die for the library (it is the `if` above the switch, not a case in
-   * it), so there is nothing to gate, and a Classic district pays nothing for a
-   * building neither ruleset has. The one-per-district cap is a `ref bool` the
-   * C# declares at `:469`, which `TownBuildingContext` has nowhere to put, so it
-   * lives in the generator keyed on the roller -- the same lifetime the C#'s
-   * local had, for the same reason the bar's and the bank's counters do.
+   * It takes **no** roll of its own: the C# has no dispatch die for the library
+   * (it is the `if` above the switch, not a case in it), so there is nothing to
+   * gate, and a Classic district pays nothing for a building neither ruleset has.
+   * The one-per-district cap is a `ref bool` the C# declares at `:469`, which
+   * `TownBuildingContext` has nowhere to put, so it lives in the building keyed
+   * on the roller -- the same lifetime the C#'s local had, for the same reason
+   * the bar's and the bank's counters do.
    */
-  protected makeLibraryBuildings(map: GameMap, emptyBlocks: Block[]): void {
-    if (!hasFeature(Session.get().ruleset, Feature.Library)) return;
-
-    const built: Block[] = [];
-    for (const b of emptyBlocks) {
-      if (makeLibraryBuilding(this.buildingContext(map, b))) built.push(b);
-    }
-    for (const b of built) {
-      const index = emptyBlocks.indexOf(b);
-      if (index !== -1) emptyBlocks.splice(index, 1);
-    }
+  protected tryMakeLibrary(map: GameMap, b: Block): boolean {
+    return makeLibraryBuilding(this.buildingContext(map, b));
   }
 
   // ── Church ────────────────────────────────────────────────────────────────
@@ -1591,7 +1629,13 @@ export class BaseTownGenerator extends BaseMapGenerator {
     return false;
   }
 
-  makeShopBuilding(map: GameMap, b: Block): boolean {
+  /**
+   * `desiredShopType` is C# `:1436`'s nullable third parameter, and it exists for
+   * one caller: `BaseTownGenerator.cs:521`, the business cascade's general-store arm,
+   * which wants a shop it knows the type of. `null` spends the `roll` at `:1456`;
+   * a value spends nothing, which is why the arm costs a block no die.
+   */
+  makeShopBuilding(map: GameMap, b: Block, desiredShopType: ShopType | null = null): boolean {
     ////////////////////////
     // 0. Check suitability
     ////////////////////////
@@ -1609,8 +1653,11 @@ export class BaseTownGenerator extends BaseMapGenerator {
     ///////////////////////
     // 2. Decide shop type
     ///////////////////////
-    // C#: (ShopType)m_DiceRoller.Roll((int)ShopType._FIRST, (int)ShopType._COUNT)
-    const shopType = this.m_DiceRoller.roll(ShopType.GENERAL_STORE, ShopType.HUNTING + 1) as ShopType;
+    // C#: `if (desiredShopType == null) Roll(_FIRST, _COUNT); else shopType = (ShopType)desiredShopType;`
+    //     (`:1453-1459`, the parameter added in Release 7-3). A forced type spends
+    //     no die, so the general-store arm below costs its block nothing to ask.
+    const shopType =
+      desiredShopType ?? (this.m_DiceRoller.roll(ShopType.GENERAL_STORE, ShopType.HUNTING + 1) as ShopType);
 
     //////////////////////////////////////////
     // 3. Make sections alleys with displays.

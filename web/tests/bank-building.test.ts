@@ -75,6 +75,37 @@ function newGenerator(params = newParams()): BaseTownGenerator {
 	return new BaseTownGenerator({ rules, ApplyOnFire: () => undefined } as never, params);
 }
 
+/**
+ * The size and seed the *content* assertions run at, which are deliberately not
+ * the ones ``9bb5e4907bc3f62c`` is pinned at.
+ *
+ * **50x50 is the smallest district the reference will ever generate**
+ * (`districtsSizeFloor`, Release 7-3 -- the C# raised `DistrictSize` from 30 to 50
+ * when it added `GenerateShoppingMall`), so the 40x40 below is smaller than
+ * anything a player sees. That matters now that the business region is one loop
+ * again. The C#'s interior at `:496` is reached only when a district's business
+ * region offers a block whose `rolled` is 30 or more, because `:479`'s
+ * `|| charOfficesCount == 0` forces a CHAR attempt on the district's *first* such
+ * block and `MakeCHARBuilding` does not decline. At 40x40 that needs two
+ * business-region blocks inside a five-block district, and over 60 seeds it never
+ * happens -- which left every content assertion below iterating an empty set and
+ * passing vacuously. At 50x50 the arms are reachable.
+ *
+ * The seed is swept, not chosen: it is a seed at this size that builds the
+ * building in question. `MAP`/`SEED` are untouched because the Classic
+ * fingerprint is a 40x40 seed-1 value that seven suites assert.
+ */
+
+/** The reference's own minimum district, for the content assertions above. */
+const ARM_MAP = 50;
+/** A 50x50 seed that builds a bank. Swept -- see the note above. */
+const ARM_SEED = 22;
+
+/** A generator at `ARM_MAP`, for the tests that need a district that has one. */
+function newArmGenerator(params = newParams(ARM_MAP, ARM_MAP)): BaseTownGenerator {
+	return new BaseTownGenerator({ rules, ApplyOnFire: () => undefined } as never, params);
+}
+
 function bankZones(map: GameMap): string[] {
 	return map.zones.map((z) => z.name).filter((n) => n.startsWith("Bank@"));
 }
@@ -154,7 +185,7 @@ function captureContext(): void {
 	});
 	try {
 		Session.get().ruleset = Ruleset.CLASSIC;
-		newGenerator().generate(SEED);
+		newArmGenerator().generate(ARM_SEED);
 	} finally {
 		TOWN_BUILDING_PASSES.length = 0;
 		TOWN_BUILDING_PASSES.push(...saved);
@@ -266,7 +297,7 @@ afterEach(() => {
 describe("bank building, from BaseTownGenerator.generate()", () => {
 	it("builds banks on still-empty blocks, and the C#'s zone names them", () => {
 		Session.get().ruleset = Ruleset.STILL_ALIVE;
-		const map = newGenerator().generate(SEED);
+		const map = newArmGenerator().generate(ARM_SEED);
 
 		// Named `Bank` by the C# at `:4284` and made unique by `makeUniqueZone`,
 		// which appends the block's centre as `Bank@x-y`.
@@ -279,7 +310,7 @@ describe("bank building, from BaseTownGenerator.generate()", () => {
 
 	it("walls the building rect, carpets the inside, and leaves the room reachable from its door", () => {
 		Session.get().ruleset = Ruleset.STILL_ALIVE;
-		const map = newGenerator().generate(SEED);
+		const map = newArmGenerator().generate(ARM_SEED);
 		const walkway = Models.tiles.get(TileID.FLOOR_WALKWAY)!;
 		const wall = Models.tiles.get(TileID.WALL_LIGHT_BROWN)!;
 		const carpet = Models.tiles.get(TileID.FLOOR_BLUE_CARPET)!;
@@ -347,7 +378,7 @@ describe("bank building, from BaseTownGenerator.generate()", () => {
 
 	it("gives the bank its counters, its safes and its sign", () => {
 		Session.get().ruleset = Ruleset.STILL_ALIVE;
-		const traces = bankTraces(newGenerator().generate(SEED));
+		const traces = bankTraces(newArmGenerator().generate(ARM_SEED));
 
 		// One trace per teller counter and per safe, plus the sign: the C# puts it
 		// with `DecorateOutsideWalls` on the first empty tile with an adjacent
@@ -587,7 +618,7 @@ describe("bank building under CLASSIC", () => {
 
 	it("leaves a CLASSIC district with no trace of a bank", () => {
 		Session.get().ruleset = Ruleset.CLASSIC;
-		const map = newGenerator().generate(SEED);
+		const map = newArmGenerator().generate(ARM_SEED);
 
 		expect(bankZones(map)).toEqual([]);
 		// Teller counters, both safes, and the sign beside the door: the C# has no
@@ -602,6 +633,9 @@ describe("bank building under CLASSIC", () => {
 		// pays nothing for the bank, not even a die. The bank gate runs before
 		// `roll(0, 4)`, which is the only way that is true.
 		Session.get().ruleset = Ruleset.CLASSIC;
+		// **At `MAP`/`SEED`, not at `ARM_MAP`/`ARM_SEED`**: the committed value is a
+		// 40x40 seed-1 fingerprint and seven suites assert it, so the district that
+		// produces it is not the one the content assertions above moved to.
 		const classic = fingerprint(newGenerator().generate(SEED));
 		expect(classic).toBe("9bb5e4907bc3f62c");
 
