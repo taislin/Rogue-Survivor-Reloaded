@@ -2,12 +2,31 @@
 
 > **Status:** Phases 1–7 ported and playable, and the Still Alive ruleset is
 > complete (§5.6). Phase 8 tasks 1–11 done; only 12 (optional touch support)
-> remains. `npm run verify` is **green** — **2 940 tests across 137 files**,
+> remains. `npm run verify` is **green** — **2 959 tests across 138 files**,
 > type-check clean, measured 2026-10-02. The coverage gate's branch floor was
 > lowered from 75% to a measured ~48% with the reasoning recorded in
 > `vitest.config.mts`; 75% came from the first 6-file suite and is unreachable now
 > that `RogueGame.ts` alone is thousands of branches. Read
 > [Current State & Handover](#1-current-state--handover).
+>
+> **A black screen on startup was fixed 2026-10-02**, and it is worth reading as a
+> pattern rather than a patch. `index.html` loads `/js/neutralino.js`
+> unconditionally, in the browser build as well as the packaged one, so
+> `Neutralino.os` and `Neutralino.filesystem` exist even in a browser with no
+> Neutralino server behind them — `hasNeutralino` was therefore true, and
+> `awaitClientLibrary` — which probes for the client library's API surface — also
+> returned true. The first real call, `getPath("data")`, then waited for a reply
+> that never came. That await had **no timeout**, `m_Ready` stayed pending, and
+> `LoadOptions` is the first thing `Run()` awaits after `InitDirectories` while
+> painting nothing — so the entire symptom was a black canvas and a console that
+> never reported an error, in both the desktop app and the browser. Two lessons:
+> **a boot path must not contain an unbounded await** (nothing is drawn before it,
+> so a hang there is indistinguishable from a slow start), and **a timeout must
+> abandon a backend, not assume it worked** — resolving the race while leaving the
+> empty map readable would have let the next save overwrite the player's
+> `storage.json` with defaults, which is the exact destruction `whenReady` exists
+> to prevent. Pinned by a test that fails with `whenReady() never settled` if the
+> deadline is ever removed.
 >
 > **Numbers in this file were stale by a wide margin until 2026-10-02** — the test
 > count alone was quoted as 1 542 in eight places when it was over 2 800, and

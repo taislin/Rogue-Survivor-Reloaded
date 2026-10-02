@@ -159,39 +159,69 @@ function registerServiceWorker(): void {
 }
 
 /** Explains an unported slice-4 method (or any boot error) on the canvas. */
-function drawError(ui: CanvasUI, e: Error): void {
+function drawError(ui: CanvasUI, e: unknown): void {
   console.error("[RogueSurvivor]", e);
 
-  const notYetPorted = e.message.includes("not yet ported");
-  ui.UI_Clear(Color.Black);
+  // **Nothing in here may throw.** This runs from a `catch`, so a fault in the
+  // error reporter is a fault nobody can see: the canvas keeps whatever the boot
+  // left on it — which, for a failure before the first draw, is nothing at all.
+  // That is a black screen with no message, which is the least diagnosable
+  // outcome available and strictly worse than the error it was hiding.
+  //
+  // Two ways that used to happen, both now closed:
+  //   - `e.message` on a thrown *string*, `null` or `undefined`. `undefined.message`
+  //     throws, and it threw *before* `UI_Clear`, so not even the red heading was
+  //     painted.
+  //   - the paint itself throwing, e.g. before the font finished loading.
+  const message =
+    e instanceof Error
+      ? e.message
+      : typeof e === "string"
+        ? e
+        : (() => {
+            try {
+              return String(e);
+            } catch {
+              return "an unknown value was thrown";
+            }
+          })();
+  const notYetPorted = message.includes("not yet ported");
 
-  let y = 120;
-  ui.UI_DrawStringBold(
-    notYetPorted ? Color.Yellow : Color.Red,
-    notYetPorted ? "Rogue Survivor Reloaded — Phase 4 in progress" : "Rogue Survivor Reloaded — error",
-    40,
-    y
-  );
-  y += 40;
+  try {
+    ui.UI_Clear(Color.Black);
 
-  ui.UI_DrawString(Color.White, e.message, 40, y);
-  y += 40;
+    let y = 120;
+    ui.UI_DrawStringBold(
+      notYetPorted ? Color.Yellow : Color.Red,
+      notYetPorted ? "Rogue Survivor Reloaded — Phase 4 in progress" : "Rogue Survivor Reloaded — error",
+      40,
+      y
+    );
+    y += 40;
 
-  if (notYetPorted) {
-    const lines = [
-      "The main menu, loading screens and character creation already work.",
-      "The next Phase 4 slices port world generation, player commands and",
-      "the play-screen renderer, then this boots into the game itself.",
-    ];
-    for (const line of lines) {
-      ui.UI_DrawString(Color.LightGray, line, 40, y);
-      y += 20;
+    ui.UI_DrawString(Color.White, message, 40, y);
+    y += 40;
+
+    if (notYetPorted) {
+      const lines = [
+        "The main menu, loading screens and character creation already work.",
+        "The next Phase 4 slices port world generation, player commands and",
+        "the play-screen renderer, then this boots into the game itself.",
+      ];
+      for (const line of lines) {
+        ui.UI_DrawString(Color.LightGray, line, 40, y);
+        y += 20;
+      }
+    } else {
+      ui.UI_DrawString(Color.LightGray, "See the browser console for the stack trace.", 40, y);
     }
-  } else {
-    ui.UI_DrawString(Color.LightGray, "See the browser console for the stack trace.", 40, y);
-  }
 
-  ui.UI_Repaint();
+    ui.UI_Repaint();
+  } catch (drawFailure) {
+    // The console line above is the last resort and it has already happened, so
+    // this only has to not make things worse.
+    console.error("[RogueSurvivor] drawError could not paint:", drawFailure);
+  }
 }
 
 main().catch(console.error);
