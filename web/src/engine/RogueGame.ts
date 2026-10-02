@@ -163,7 +163,7 @@ import {
 import { PlayerCommand } from "@engine/PlayerCommand";
 import { Point } from "@engine/Point";
 import { Rect } from "@engine/Rect";
-import { Feature, hasFeature } from "@engine/FeatureFlags";
+import { Feature, featureCount, hasFeature } from "@engine/FeatureFlags";
 import type { RuleResult } from "@engine/Rules";
 import { Rules } from "@engine/Rules";
 import { AchievementIDs, DifficultySide, Scoring } from "@engine/Scoring";
@@ -2645,43 +2645,16 @@ export class RogueGame {
 		// to be the one the roller uses.
 		const roller = new DiceRoller(this.m_Session.seed);
 
-		// Ruleset, before the game mode: the two compose, and the ruleset is the
-		// coarser question, so it is asked first and the mode screen can describe
-		// itself in the context it was picked for.
-		if (!(await this.HandleSelectRuleset())) return false;
+		// Ruleset and game mode on one screen. They compose, and the ruleset is the
+		// coarser question, so putting them on one screen answers both without
+		// sending the player away and back to change the first after realising the
+		// second is wrong.
+		if (!(await this.HandleSelectRulesetAndMode())) return false;
 
-		// Game Mode
-		if (!(await this.HandleNewGameMode())) return false;
-
-		// Choose living/undead
-		const race = await this.HandleNewCharacterRace(roller, false);
-		if (!race.ok) return false;
-		this.m_CharGen.isUndead = race.isUndead;
-
-		// Choose gender/undead type
-		if (race.isUndead) {
-			const undead = await this.HandleNewCharacterUndeadType(
-				roller,
-				ActorID.UNDEAD_MALE_ZOMBIFIED,
-			);
-			if (!undead.ok) return false;
-			this.m_CharGen.undeadModel = undead.modelID;
-		} else {
-			const gender = await this.HandleNewCharacterGender(roller, true);
-			if (!gender.ok) return false;
-			this.m_CharGen.isMale = gender.isMale;
-		}
-
-		// Choose skill (living only)
-		if (!race.isUndead) {
-			const skill = await this.HandleNewCharacterSkill(roller, SkillID.AGILE);
-			if (!skill.ok) return false;
-			this.m_CharGen.startingSkill = skill.skID;
-			// scoring : starting skill.
-			this.m_Session.scoring.startingSkill = skill.skID;
-		} else {
-			// undead.
-		}
+		// Character details on one screen too, or a quick start. This replaced three
+		// screens (race, then sex-or-undead-type, then skill) whose row set depended
+		// on the answer to the previous one.
+		if (!(await this.HandleNewCharacterDetails(roller))) return false;
 
 		// Choose difficulty, including the helicopter rescue day.
 		// C# RogueGame.cs:2881-2887 — the screen is *not* gated on the player
@@ -2696,499 +2669,451 @@ export class RogueGame {
 		return true;
 	}
 
-	/**
-	 * Which content/mechanic ruleset to play. No C# original — this screen is new
-	 * in the port, because `GameMode` has no Still Alive equivalent to hang it on.
-	 * The axis is separate from gameMode and the two compose, so it gets its own
-	 * screen rather than more rows on that one. See plans/BROWSER_PORT_PLAN §5.6b.
+/**
+	 * One horizontal row of mutually exclusive options: `Label :  a  < b >  c`.
+	 *
+	 * Every other menu screen in the game is a vertical list drawn by
+	 * `DrawMenuOrOptions`, where up/down picks a row and Enter takes it. A row
+	 * whose entries are *peers* rather than *alternatives to confirm* wants
+	 * left/right instead: changing one then costs a single keypress and shows, on
+	 * every frame, what is currently chosen. Drawn as a vertical list it would
+	 * hide the choice until Enter, and a later left/right would be ambiguous about
+	 * which row it moves. So this is a separate primitive, not a mode of the old.
+	 *
+	 * The selected entry is bracketed as well as coloured. `active` and inactive
+	 * are close enough shades on a black canvas that colour alone would be the
+	 * only cue for which row the left/right keys are about to affect.
 	 */
-	async HandleSelectRuleset(): Promise<boolean> {
-		const menuEntries: string[] = [
-			Session.descRuleset(Ruleset.CLASSIC),
-			Session.descRuleset(Ruleset.STILL_ALIVE),
+	private DrawOptionRow(
+		label: string,
+		options: readonly string[],
+		selected: number,
+		gx: number,
+		gy: number,
+		active: boolean,
+	): void {
+		this.m_UI.UI_DrawStringBoldLarge(
+			active ? Color.White : Color.LightGray,
+			`${label} :`,
+			gx,
+			gy,
+		);
+		let x = gx + (label.length + 3) * MENU_CHAR_WIDTH;
+		for (let i = 0; i < options.length; i++) {
+			const text = i === selected ? `< ${options[i]} >` : `  ${options[i]}  `;
+			const color =
+				i === selected
+					? active
+						? Color.Yellow
+						: Color.White
+					: active
+						? Color.LightGray
+						: Color.Gray;
+			this.m_UI.UI_DrawStringBoldLarge(color, text, x, gy);
+			x += text.length * MENU_CHAR_WIDTH;
+		}
+	}
+
+	/**
+	 * Ruleset and game mode on one screen: two rows of two.
+	 *
+	 * These were two screens and are now two rows of one. The reason is a round
+	 * trip, not a preference -- the two compose, so a player who picks Vintage and
+	 * then realises they wanted the Still Alive content set had to back out of one
+	 * screen to change the other, and the mode screen's own text describes undeads
+	 * that the ruleset decides whether exist at all.
+	 *
+	 * Up/down picks the row, left/right changes that row's value without leaving
+	 * it, and Enter commits **both**. Neither is applied as it changes: a screen
+	 * that mutated the session on every left/right would leave the ruleset already
+	 * changed if Escape were pressed afterwards.
+	 *
+	 * No C# original for the ruleset half -- this axis is the port's own, because
+	 * `GameMode` has no Still Alive equivalent to hang it on. The mode half is C#
+	 * `HandleNewGameMode` (`RogueGame.cs:1477`), whose option list and text are
+	 * carried over verbatim into `modeDescription`.
+	 */
+	async HandleSelectRulesetAndMode(): Promise<boolean> {
+		const rulesetEntries = [
+			Session.descShortRuleset(Ruleset.CLASSIC),
+			Session.descShortRuleset(Ruleset.STILL_ALIVE),
 		];
-		const descs: string[] = [
-			"Rogue Survivor, as it has always been played.",
-			"The Still Alive fork: more of everything.",
+		const modeEntries = [
+			Session.descGameMode(GameMode.GM_STANDARD),
+			Session.descGameMode(GameMode.GM_CORPSES_INFECTION),
+			Session.descGameMode(GameMode.GM_VINTAGE),
 		];
+
+		// Seed both rows from the session, not from zero, so returning to this
+		// screen (Escape on the next one) shows what is actually set instead of
+		// silently offering Classic/Standard again.
+		//
+		// **The ruleset row is seeded through `featureCount`, not by comparing the
+		// session's ruleset to `Ruleset.STILL_ALIVE`.** `feature-flags.test.ts`
+		// forbids any file outside the registry from comparing against a `Ruleset`
+		// member, and it is right to: a direct comparison is the shape that lets
+		// fork behaviour leak past `Feature`. Asking the registry "does this ruleset
+		// enable anything" is the same question the picker is actually asking --
+		// Classic enables nothing, Still Alive enables everything -- and it is the
+		// question that stays true if a third ruleset ever appears, which a
+		// two-way comparison would not.
+		let row = 0;
+		let rulesetIdx = featureCount(this.m_Session.ruleset) > 0 ? 1 : 0;
+		let modeIdx =
+			this.m_Session.gameMode === GameMode.GM_CORPSES_INFECTION
+				? 1
+				: this.m_Session.gameMode === GameMode.GM_VINTAGE
+					? 2
+					: 0;
 
 		let loop = true;
-		let choiceDone = false;
-		let selected = 0;
+		let ok = false;
 		do {
 			this.m_UI.UI_Clear(Color.Black);
-			const gx = 0;
 			let gy = 0;
-			this.m_UI.UI_DrawStringBoldLarge(
-				Color.Yellow,
-				"New Game - Choose Ruleset",
-				gx,
-				gy,
-			);
+			this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "New Game", 0, gy);
 			gy += 2 * MENU_BOLD_LINE_SPACING;
-			const gyRef = { value: gy };
-			this.DrawMenuOrOptions(
-				selected,
-				Color.White,
-				menuEntries,
-				Color.LightGray,
-				descs,
-				gx,
-				gyRef,
-			);
-			gy = gyRef.value;
-			gy += 2 * BOLD_LINE_SPACING;
 
-			let descMode: string[] = [];
-			switch (selected) {
-				case 0:
-					descMode = [
-						"Classic - Rogue Survivor Alpha 10.1.",
-						"",
-						"The original rules, unchanged. This is what the port has",
-						"been running since the start, and the default.",
-						"",
-						"- The original weapons, items and buildings.",
-						"- The original light, sound and scoring.",
-					];
-					break;
-				case 1:
-					descMode = [
-						"Still Alive - the Rogue Survivor: Still Alive fork.",
-						"",
-						"More weapons, more buildings, and a harder world.",
-						"",
-						"- More weapons, armour, food and explosives.",
-						"- Churches, banks, bars, clinics, farms, fuel stations,",
-						"  fire stations, animal shelters, junkyards and more.",
-						"- Alcohol, cooking, fishing and butchering.",
-						"- Darker nights, and fire that spreads.",
-						"",
-						"NOTE:",
-						"Most of this is not implemented yet. Choosing it today",
-						"plays the same game as Classic - see the project plan.",
-					];
-					break;
-			}
-			for (const str of descMode) {
-				this.m_UI.UI_DrawStringBoldLarge(Color.Gray, str, gx, gy);
+			this.DrawOptionRow("Ruleset  ", rulesetEntries, rulesetIdx, 0, gy, row === 0);
+			gy += MENU_BOLD_LINE_SPACING;
+			this.DrawOptionRow("Game mode", modeEntries, modeIdx, 0, gy, row === 1);
+			gy += 2 * MENU_BOLD_LINE_SPACING;
+
+			// Only the active row's text. Both blocks are long -- the mode one is
+			// twenty lines -- and printing both overflowed the canvas.
+			const lines =
+				row === 0 ? this.rulesetDescription(rulesetIdx) : this.modeDescription(modeIdx);
+			for (const line of lines) {
+				this.m_UI.UI_DrawStringBoldLarge(Color.Gray, line, 0, gy);
 				gy += MENU_BOLD_LINE_SPACING;
 			}
 
 			this.DrawFootnote(
 				Color.White,
-				"cursor to move, ENTER to select, ESC to cancel",
+				"UP/DOWN picks a row, LEFT/RIGHT changes it, ENTER confirms both, ESC cancels",
 			);
 			this.m_UI.UI_Repaint();
 
 			const key = await this.m_UI.UI_WaitKey();
 			switch (key.key) {
 				case "ArrowUp":
-					if (selected > 0) --selected;
-					else selected = menuEntries.length - 1;
+					row = 1 - row;
 					break;
 				case "ArrowDown":
-					selected = (selected + 1) % menuEntries.length;
+					row = 1 - row;
 					break;
-
+				case "ArrowLeft":
+					if (row === 0) rulesetIdx = (rulesetIdx + 1) % 2;
+					else modeIdx = (modeIdx + modeEntries.length - 1) % modeEntries.length;
+					break;
+				case "ArrowRight":
+					if (row === 0) rulesetIdx = (rulesetIdx + 1) % 2;
+					else modeIdx = (modeIdx + 1) % modeEntries.length;
+					break;
 				case "Escape":
-					choiceDone = false;
+					ok = false;
 					loop = false;
 					break;
-
 				case "Enter":
 					this.m_Session.ruleset =
-						selected === 1 ? Ruleset.STILL_ALIVE : Ruleset.CLASSIC;
-					choiceDone = true;
+						rulesetIdx === 1 ? Ruleset.STILL_ALIVE : Ruleset.CLASSIC;
+					this.m_Session.gameMode =
+						modeIdx === 1
+							? GameMode.GM_CORPSES_INFECTION
+							: modeIdx === 2
+								? GameMode.GM_VINTAGE
+								: GameMode.GM_STANDARD;
+					ok = true;
 					loop = false;
 					break;
 			}
 		} while (loop);
 
-		return choiceDone;
+		return ok;
 	}
 
-	// C# HandleNewGameMode — RogueGame.cs:1477
-	async HandleNewGameMode(): Promise<boolean> {
-		const menuEntries: string[] = [
-			Session.descGameMode(GameMode.GM_STANDARD),
-			Session.descGameMode(GameMode.GM_CORPSES_INFECTION),
-			Session.descGameMode(GameMode.GM_VINTAGE),
+	/** The two ruleset blurbs, carried over from `HandleSelectRuleset`. */
+	private rulesetDescription(idx: number): string[] {
+		return idx === 1
+			? [
+					"Still Alive - the Rogue Survivor: Still Alive fork.",
+					"",
+					"More weapons, more buildings, and a harder world.",
+					"",
+					"- More weapons, armour, food and explosives.",
+					"- Churches, banks, bars, clinics, farms, fuel stations,",
+					"  fire stations, animal shelters, junkyards and more.",
+					"- Alcohol, cooking, fishing and butchering.",
+					"- Darker nights, and fire that spreads.",
+					"",
+					"Most of this is not implemented yet. Choosing it today",
+					"plays the same game as Classic - see the project plan.",
+				]
+			: [
+					"Classic - Rogue Survivor Alpha 10.1.",
+					"",
+					"The original rules, unchanged. This is what the port has",
+					"been running since the start, and the default.",
+					"",
+					"- The original weapons, items and buildings.",
+					"- The original light, sound and scoring.",
+				];
+	}
+
+	/** The three mode blurbs, carried over from `HandleNewGameMode`. */
+	private modeDescription(idx: number): string[] {
+		switch (idx) {
+			case 1:
+				return [
+					"This is the standard game setting plus corpses and infection.",
+					"Recommended to experience all the features of the game.",
+					"- All the kinds of undeads.",
+					"- Undeads can evolve to stronger forms.",
+					"- Infection:",
+					"  - some undeads can infect livings when biting them.",
+					"  - infected livings can become ill and die.",
+					"  - infected corpses have more chances to rise as zombies.",
+					"- Corpses:",
+					"  - livings that die drop corpses that will rot away.",
+					"  - corpses may rise as zombies.",
+					"  - undeads can eat corpses.",
+					"  - livings can eat corpses if desperate.",
+				];
+			case 2:
+				return [
+					"This is the classic zombies for hardcore zombie fans.",
+					"Recommended if you want classic movies zombies.",
+					"- Undeads are only zombified men and women.",
+					"- Undeads don't evolve to stronger forms.",
+					"- Infection:",
+					"  - some undeads can infect livings when biting them.",
+					"  - infected livings can become ill and die.",
+					"  - infected corpses have more chances to rise as zombies.",
+					"- Corpses:",
+					"  - livings that die drop corpses that will rot away.",
+					"  - corpses may rise as zombies.",
+					"  - undeads can eat corpses.",
+					"  - livings can eat corpses if desperate.",
+					"",
+					"NOTE:",
+					"This mode force some options OFF.",
+					"Remember to set them back ON again when you play other modes!",
+				];
+			default:
+				return [
+					"This is the standard game setting.",
+					"Recommended for beginners.",
+					"- All the kinds of undeads.",
+					"- Undeads can evolve to stronger forms.",
+					"- Livings can zombify instantly when dead.",
+					"- No infection.",
+					"- No corpses.",
+				];
+		}
+	}
+
+	/**
+	 * Character details on one screen, or a quick start.
+	 *
+	 * Folds what were three further screens - race, then sex-or-undead-type, then
+	 * skill - into one, because they are one decision with three parts and the
+	 * parts change each other: choosing Undead removes the sex and skill rows, so
+	 * on separate screens the player confirmed the race, was sent to a screen whose
+	 * shape had just changed, and answered a Yes/No for a race they never picked.
+	 *
+	 * The sub-options therefore **refresh in place** instead of being a
+	 * consequence of a later Enter. That is the point of the layout: you can see
+	 * that Undead offers a type and Human offers a sex and a skill *before*
+	 * committing to either.
+	 *
+	 * `Shift+Enter` is the quick start -- random human, random sex, random skill --
+	 * resolved immediately without drawing a frame. It is the shortcut for "just
+	 * play", which used to cost three screens and a confirmation per random.
+	 *
+	 * Roll semantics are the C#'s, from the screens this replaces: `rollChance(50)`
+	 * for sex (`RogueGame.cs:1719`) and `Skills.rollLiving` for the skill. The race
+	 * has **no** random entry here -- quick start is how you get a random character
+	 * and it is always human -- which is why the C#'s `WaitYesOrNo` "Is that OK?"
+	 * after a random race roll has nothing left to confirm.
+	 *
+	 * The undead list is the C#'s five (`HandleNewCharacterUndeadType`), with
+	 * `roll(0, 5)` exclusive at the top end exactly as the reference rolls it.
+	 */
+	async HandleNewCharacterDetails(roller: DiceRoller): Promise<boolean> {
+		const maleModel = this.gameActors.get(ActorID.MALE_CIVILIAN);
+		const femaleModel = this.gameActors.get(ActorID.FEMALE_CIVILIAN);
+		const undeadIds = [
+			ActorID.UNDEAD_SKELETON,
+			ActorID.UNDEAD_ZOMBIE,
+			ActorID.UNDEAD_MALE_ZOMBIFIED,
+			ActorID.UNDEAD_FEMALE_ZOMBIFIED,
+			ActorID.UNDEAD_ZOMBIE_MASTER,
 		];
-		const descs: string[] = [
-			"Rogue Survivor standard game.",
-			"Don't get a cold. Keep an eye on your deceased diseased friends.",
-			"The classic zombies next door.",
-		];
+		const undeadModels = undeadIds.map((id) => this.gameActors.get(id));
+
+		const raceEntries = ["Human", "Undead"];
+		const sexEntries = ["*Random*", maleModel.name, femaleModel.name];
+		const typeEntries = ["*Random*", ...undeadModels.map((m) => m.name)];
+		const skillEntries = ["*Random*"];
+		for (let i = Skills.FIRST_LIVING; i <= Skills.LAST_LIVING; i++) {
+			skillEntries.push(Skills.name(i));
+		}
+
+		// Rows depend on the race, so the count is derived: 0 = race,
+		// 1 = sex or type, 2 = skill (human only).
+		let row = 0;
+		let raceIdx = 0;
+		let sexIdx = 0;
+		let typeIdx = 0;
+		let skillIdx = 0;
 
 		let loop = true;
-		let choiceDone = false;
-		let selected = 0;
+		let ok = false;
 		do {
-			// display.
+			const isUndead = raceIdx === 1;
+			// Switching race can leave `row` past the end (2 -> 1 rows for undead).
+			const rows = isUndead ? 2 : 3;
+			if (row >= rows) row = rows - 1;
+
+			const n = isUndead ? typeEntries.length : sexEntries.length;
+			const cur = isUndead ? typeIdx : sexIdx;
+
 			this.m_UI.UI_Clear(Color.Black);
-			const gx = 0;
 			let gy = 0;
 			this.m_UI.UI_DrawStringBoldLarge(
 				Color.Yellow,
-				"New Game - Choose Game Mode",
-				gx,
+				`[${Session.descGameMode(this.m_Session.gameMode)} / ${Session.descShortRuleset(this.m_Session.ruleset)}] New Character`,
+				0,
 				gy,
 			);
 			gy += 2 * MENU_BOLD_LINE_SPACING;
-			const gyRef = { value: gy };
-			this.DrawMenuOrOptions(
-				selected,
-				Color.White,
-				menuEntries,
-				Color.LightGray,
-				descs,
-				gx,
-				gyRef,
-			);
-			gy = gyRef.value;
-			gy += 2 * BOLD_LINE_SPACING;
 
-			let descMode: string[] = [];
-			switch (selected) {
-				case 0:
-					descMode = [
-						"This is the standard game setting.",
-						"Recommended for beginners.",
-						"- All the kinds of undeads.",
-						"- Undeads can evolve to stronger forms.",
-						"- Livings can zombify instantly when dead.",
-						"- No infection.",
-						"- No corpses.",
-					];
-					break;
-				case 1:
-					descMode = [
-						"This is the standard game setting plus corpses and infection.",
-						"Recommended to experience all the features of the game.",
-						"- All the kinds of undeads.",
-						"- Undeads can evolve to stronger forms.",
-						"- Infection:",
-						"  - some undeads can infect livings when biting them.",
-						"  - infected livings can become ill and die.",
-						"  - infected corpses have more chances to rise as zombies.",
-						"- Corpses:",
-						"  - livings that die drop corpses that will rot away.",
-						"  - corpses may rise as zombies.",
-						"  - undeads can eat corpses.",
-						"  - livings can eat corpses if desperate.",
-					];
-					break;
-				case 2:
-					descMode = [
-						"This is the classic zombies for hardcore zombie fans.",
-						"Recommended if you want classic movies zombies.",
-						"- Undeads are only zombified men and women.",
-						"- Undeads don't evolve to stronger forms.",
-						"- Infection:",
-						"  - some undeads can infect livings when biting them.",
-						"  - infected livings can become ill and die.",
-						"  - infected corpses have more chances to rise as zombies.",
-						"- Corpses:",
-						"  - livings that die drop corpses that will rot away.",
-						"  - corpses may rise as zombies.",
-						"  - undeads can eat corpses.",
-						"  - livings can eat corpses if desperate.",
-						"",
-						"NOTE:",
-						"This mode force some options OFF.",
-						"Remember to set them back ON again when you play other modes!",
-					];
-					break;
+			this.m_UI.UI_DrawStringBoldLarge(
+				Color.LightGray,
+				"SHIFT+ENTER quick start: random human, random sex, random skill.",
+				0,
+				gy,
+			);
+			gy += 2 * MENU_BOLD_LINE_SPACING;
+
+			this.DrawOptionRow("Race  ", raceEntries, raceIdx, 0, gy, row === 0);
+			gy += MENU_BOLD_LINE_SPACING;
+			if (isUndead) {
+				this.DrawOptionRow("Type  ", typeEntries, typeIdx, 0, gy, row === 1);
+			} else {
+				this.DrawOptionRow("Sex   ", sexEntries, sexIdx, 0, gy, row === 1);
+				gy += MENU_BOLD_LINE_SPACING;
+				this.DrawOptionRow("Skill ", skillEntries, skillIdx, 0, gy, row === 2);
 			}
-			for (const str of descMode) {
-				this.m_UI.UI_DrawStringBoldLarge(Color.Gray, str, gx, gy);
+			gy += MENU_BOLD_LINE_SPACING;
+
+			// Stat lines for whatever the active row offers, carried over from the
+			// screens this replaces, so each choice stays an informed one.
+			const details: string[] = [];
+			if (row === 0) {
+				details.push(
+					isUndead ? "Undead: eat brains, and die again." : "Human: try to survive.",
+				);
+			} else if (isUndead) {
+				details.push(
+					typeIdx === 0
+						? "(a type will be picked at random)"
+						: this.DescribeUndeadModelStatLine(undeadModels[typeIdx - 1]),
+				);
+			} else if (row === 1) {
+				if (sexIdx === 0) details.push("(a sex will be picked at random)");
+				else {
+					const m = sexIdx === 1 ? maleModel : femaleModel;
+					details.push(
+						`HP:${padZero(m.startingSheet.baseHitPoints, 2)}  Def:${padZero(m.startingSheet.baseDefence.value, 2)}  Dmg:${m.startingSheet.unarmedAttack.damageValue}`,
+					);
+				}
+			} else if (skillIdx === 0) {
+				details.push("(a skill will be picked at random)");
+			} else {
+				const sk = skillIdx as SkillID;
+				details.push(
+					`${Skills.maxSkillLevel(sk)} max - ${this.DescribeSkillShort(sk)}`,
+				);
+			}
+			for (const line of details) {
+				this.m_UI.UI_DrawStringBoldLarge(Color.Gray, line, 0, gy);
 				gy += MENU_BOLD_LINE_SPACING;
 			}
 
 			this.DrawFootnote(
 				Color.White,
-				"cursor to move, ENTER to select, ESC to cancel",
+				"UP/DOWN picks a row, LEFT/RIGHT changes it, ENTER starts, ESC cancels",
 			);
 			this.m_UI.UI_Repaint();
 
-			// get menu action.
 			const key = await this.m_UI.UI_WaitKey();
-			switch (key.key) {
-				case "ArrowUp": // move up
-					if (selected > 0) --selected;
-					else selected = menuEntries.length - 1;
-					break;
-				case "ArrowDown": // move down
-					selected = (selected + 1) % menuEntries.length;
-					break;
 
+			// Shift+Enter is tested before Enter: the UI reports the key as "Enter"
+			// with a separate modifier flag, so a plain Enter would swallow it.
+			if (key.key === "Enter" && key.shift) {
+				this.m_CharGen.isUndead = false;
+				this.m_CharGen.isMale = roller.rollChance(50);
+				const skID = Skills.rollLiving(roller);
+				this.m_CharGen.startingSkill = skID;
+				// scoring : starting skill.
+				this.m_Session.scoring.startingSkill = skID;
+				ok = true;
+				loop = false;
+				continue;
+			}
+
+			const step = (v: number, count: number, delta: number): number =>
+				(v + delta + count * 2) % count;
+
+			switch (key.key) {
+				case "ArrowUp":
+					row = (row + rows - 1) % rows;
+					break;
+				case "ArrowDown":
+					row = (row + 1) % rows;
+					break;
+				case "ArrowLeft":
+					if (row === 0) raceIdx = step(raceIdx, raceEntries.length, -1);
+					else if (isUndead) typeIdx = step(cur, n, -1);
+					else if (row === 1) sexIdx = step(cur, n, -1);
+					else skillIdx = step(skillIdx, skillEntries.length, -1);
+					break;
+				case "ArrowRight":
+					if (row === 0) raceIdx = step(raceIdx, raceEntries.length, 1);
+					else if (isUndead) typeIdx = step(cur, n, 1);
+					else if (row === 1) sexIdx = step(cur, n, 1);
+					else skillIdx = step(skillIdx, skillEntries.length, 1);
+					break;
 				case "Escape":
-					choiceDone = false;
+					ok = false;
 					loop = false;
 					break;
-
 				case "Enter":
-					// validate
-					switch (selected) {
-						case 0: // standard
-							this.m_Session.gameMode = GameMode.GM_STANDARD;
-							choiceDone = true;
-							loop = false;
-							break;
-
-						case 1: // corpses & infection
-							this.m_Session.gameMode = GameMode.GM_CORPSES_INFECTION;
-							choiceDone = true;
-							loop = false;
-							break;
-
-						case 2: // vintage
-							this.m_Session.gameMode = GameMode.GM_VINTAGE;
-
-							// force some options off.
-							s_Options.allowUndeadsEvolution = false;
-							s_Options.shamblersUpgrade = false;
-							s_Options.ratsUpgrade = false;
-							s_Options.skeletonsUpgrade = false;
-							this.ApplyOptions(false);
-
-							choiceDone = true;
-							loop = false;
-							break;
+					if (isUndead) {
+						this.m_CharGen.isUndead = true;
+						this.m_CharGen.undeadModel =
+							typeIdx === 0
+								? undeadIds[roller.roll(0, undeadIds.length)]
+								: undeadIds[typeIdx - 1];
+					} else {
+						this.m_CharGen.isUndead = false;
+						this.m_CharGen.isMale = sexIdx === 0 ? roller.rollChance(50) : sexIdx === 1;
+						const skID = skillIdx === 0 ? Skills.rollLiving(roller) : (skillIdx as SkillID);
+						this.m_CharGen.startingSkill = skID;
+						// scoring : starting skill.
+						this.m_Session.scoring.startingSkill = skID;
 					}
+					ok = true;
+					loop = false;
 					break;
 			}
 		} while (loop);
 
-		// done.
-		return choiceDone;
+		return ok;
 	}
 
-	// C# HandleNewCharacterRace — RogueGame.cs:1627
-	async HandleNewCharacterRace(
-		roller: DiceRoller,
-		isUndead: boolean,
-	): Promise<{ ok: boolean; isUndead: boolean }> {
-		const menuEntries: string[] = ["*Random*", "Living", "Undead"];
-		const descs: string[] = [
-			"(picks a race at random for you)",
-			"Try to survive.",
-			"Eat brains and die again.",
-		];
-
-		// C# `out bool isUndead` — seeded with the caller's value (C# assigns `false` first).
-		let undead = isUndead;
-		let loop = true;
-		let choiceDone = false;
-		let selected = 0;
-		do {
-			// display.
-			this.m_UI.UI_Clear(Color.Black);
-			const gx = 0;
-			let gy = 0;
-			this.m_UI.UI_DrawStringBoldLarge(
-				Color.Yellow,
-				`[${Session.descGameMode(this.m_Session.gameMode)} / ${Session.descShortRuleset(this.m_Session.ruleset)}] New Character - Choose Race`,
-				gx,
-				gy,
-			);
-			gy += 2 * MENU_BOLD_LINE_SPACING;
-			const gyRef = { value: gy };
-			this.DrawMenuOrOptions(
-				selected,
-				Color.White,
-				menuEntries,
-				Color.LightGray,
-				descs,
-				gx,
-				gyRef,
-			);
-			gy = gyRef.value;
-			gy += 2 * BOLD_LINE_SPACING;
-
-			this.DrawFootnote(
-				Color.White,
-				"cursor to move, ENTER to select, ESC to cancel",
-			);
-			this.m_UI.UI_Repaint();
-
-			// get menu action.
-			const key = await this.m_UI.UI_WaitKey();
-			switch (key.key) {
-				case "ArrowUp": // move up
-					if (selected > 0) --selected;
-					else selected = menuEntries.length - 1;
-					break;
-				case "ArrowDown": // move down
-					selected = (selected + 1) % menuEntries.length;
-					break;
-
-				case "Escape":
-					choiceDone = false;
-					loop = false;
-					break;
-
-				case "Enter":
-					// validate
-					switch (selected) {
-						case 0: // random
-							undead = roller.rollChance(50);
-
-							gy += MENU_BOLD_LINE_SPACING;
-							this.m_UI.UI_DrawStringBoldLarge(
-								Color.White,
-								`Race : ${undead ? "Undead" : "Living"}.`,
-								gx,
-								gy,
-							);
-							gy += MENU_BOLD_LINE_SPACING;
-							this.m_UI.UI_DrawStringBoldLarge(
-								Color.Yellow,
-								"Is that OK? Y to confirm, N to cancel.",
-								gx,
-								gy,
-							);
-							this.m_UI.UI_Repaint();
-							if (await this.WaitYesOrNo()) {
-								choiceDone = true;
-								loop = false;
-							}
-							break;
-
-						case 1: // living
-							undead = false;
-							choiceDone = true;
-							loop = false;
-							break;
-
-						case 2: // undead
-							undead = true;
-							choiceDone = true;
-							loop = false;
-							break;
-					}
-					break;
-			}
-		} while (loop);
-
-		// done.
-		return { ok: choiceDone, isUndead: undead };
-	}
-
-	// C# HandleNewCharacterGender — RogueGame.cs:1719
-	async HandleNewCharacterGender(
-		roller: DiceRoller,
-		isMale: boolean,
-	): Promise<{ ok: boolean; isMale: boolean }> {
-		const maleModel = this.gameActors.get(ActorID.MALE_CIVILIAN);
-		const femaleModel = this.gameActors.get(ActorID.FEMALE_CIVILIAN);
-
-		const menuEntries: string[] = ["*Random*", "Male", "Female"];
-		const descs: string[] = [
-			"(picks a gender at random for you)",
-			`HP:${padZero(maleModel.startingSheet.baseHitPoints, 2)}  Def:${padZero(maleModel.startingSheet.baseDefence.value, 2)}  Dmg:${maleModel.startingSheet.unarmedAttack.damageValue}`,
-			`HP:${padZero(femaleModel.startingSheet.baseHitPoints, 2)}  Def:${padZero(femaleModel.startingSheet.baseDefence.value, 2)}  Dmg:${femaleModel.startingSheet.unarmedAttack.damageValue}`,
-		];
-
-		// C# `out bool isMale` — seeded with the caller's value (C# assigns `true` first).
-		let male = isMale;
-		let loop = true;
-		let choiceDone = false;
-		let selected = 0;
-		do {
-			// display.
-			this.m_UI.UI_Clear(Color.Black);
-			const gx = 0;
-			let gy = 0;
-			this.m_UI.UI_DrawStringBoldLarge(
-				Color.Yellow,
-				`[${Session.descGameMode(this.m_Session.gameMode)} / ${Session.descShortRuleset(this.m_Session.ruleset)}] New Living - Choose Gender`,
-				gx,
-				gy,
-			);
-			gy += 2 * MENU_BOLD_LINE_SPACING;
-			const gyRef = { value: gy };
-			this.DrawMenuOrOptions(
-				selected,
-				Color.White,
-				menuEntries,
-				Color.LightGray,
-				descs,
-				gx,
-				gyRef,
-			);
-			gy = gyRef.value;
-			this.DrawFootnote(
-				Color.White,
-				"cursor to move, ENTER to select, ESC to cancel",
-			);
-			this.m_UI.UI_Repaint();
-
-			// get menu action.
-			const key = await this.m_UI.UI_WaitKey();
-			switch (key.key) {
-				case "ArrowUp": // move up
-					if (selected > 0) --selected;
-					else selected = menuEntries.length - 1;
-					break;
-				case "ArrowDown": // move down
-					selected = (selected + 1) % menuEntries.length;
-					break;
-
-				case "Escape":
-					choiceDone = false;
-					loop = false;
-					break;
-
-				case "Enter":
-					// validate
-					switch (selected) {
-						case 0: // random
-							male = roller.rollChance(50);
-
-							gy += MENU_BOLD_LINE_SPACING;
-							this.m_UI.UI_DrawStringBoldLarge(
-								Color.White,
-								`Gender : ${male ? "Male" : "Female"}.`,
-								gx,
-								gy,
-							);
-							gy += MENU_BOLD_LINE_SPACING;
-							this.m_UI.UI_DrawStringBoldLarge(
-								Color.Yellow,
-								"Is that OK? Y to confirm, N to cancel.",
-								gx,
-								gy,
-							);
-							this.m_UI.UI_Repaint();
-							if (await this.WaitYesOrNo()) {
-								choiceDone = true;
-								loop = false;
-							}
-							break;
-
-						case 1: // male
-							male = true;
-							choiceDone = true;
-							loop = false;
-							break;
-
-						case 2: // female
-							male = false;
-							choiceDone = true;
-							loop = false;
-							break;
-					}
-					break;
-			}
-		} while (loop);
-
-		// done.
-		return { ok: choiceDone, isMale: male };
-	}
-
-	// C# DescribeUndeadModelStatLine — RogueGame.cs:1812
+	// C# DescribeUndeadModelStatLine ÔÇö RogueGame.cs:1812
 	DescribeUndeadModelStatLine(m: ActorModel): string {
 		const sheet = m.startingSheet;
 		return (
@@ -3198,276 +3123,6 @@ export class RogueGame {
 			`  Sml:${sheet.baseSmellRating.toFixed(2)}`
 		);
 	}
-
-	// C# HandleNewCharacterUndeadType — RogueGame.cs:1820
-	async HandleNewCharacterUndeadType(
-		roller: DiceRoller,
-		modelID: ActorID,
-	): Promise<{ ok: boolean; modelID: ActorID }> {
-		const skeletonModel = this.gameActors.get(ActorID.UNDEAD_SKELETON);
-		const shamblerModel = this.gameActors.get(ActorID.UNDEAD_ZOMBIE);
-		const maleModel = this.gameActors.get(ActorID.UNDEAD_MALE_ZOMBIFIED);
-		const femaleModel = this.gameActors.get(ActorID.UNDEAD_FEMALE_ZOMBIFIED);
-		const masterModel = this.gameActors.get(ActorID.UNDEAD_ZOMBIE_MASTER);
-
-		const menuEntries: string[] = [
-			"*Random*",
-			skeletonModel.name,
-			shamblerModel.name,
-			maleModel.name,
-			femaleModel.name,
-			masterModel.name,
-		];
-		const descs: string[] = [
-			"(picks a type at random for you)",
-			this.DescribeUndeadModelStatLine(skeletonModel),
-			this.DescribeUndeadModelStatLine(shamblerModel),
-			this.DescribeUndeadModelStatLine(maleModel),
-			this.DescribeUndeadModelStatLine(femaleModel),
-			this.DescribeUndeadModelStatLine(masterModel),
-		];
-
-		// C# `out ActorID modelID` — seeded with the caller's value (C# assigns UNDEAD_MALE_ZOMBIFIED).
-		let model = modelID;
-		let loop = true;
-		let choiceDone = false;
-		let selected = 0;
-		do {
-			// display.
-			this.m_UI.UI_Clear(Color.Black);
-			const gx = 0;
-			let gy = 0;
-			this.m_UI.UI_DrawStringBoldLarge(
-				Color.Yellow,
-				`[${Session.descGameMode(this.m_Session.gameMode)} / ${Session.descShortRuleset(this.m_Session.ruleset)}] New Undead - Choose Type`,
-				gx,
-				gy,
-			);
-			gy += 2 * MENU_BOLD_LINE_SPACING;
-			const gyRef = { value: gy };
-			this.DrawMenuOrOptions(
-				selected,
-				Color.White,
-				menuEntries,
-				Color.LightGray,
-				descs,
-				gx,
-				gyRef,
-			);
-			gy = gyRef.value;
-			this.DrawFootnote(
-				Color.White,
-				"cursor to move, ENTER to select, ESC to cancel",
-			);
-			this.m_UI.UI_Repaint();
-
-			// get menu action.
-			const key = await this.m_UI.UI_WaitKey();
-			switch (key.key) {
-				case "ArrowUp": // move up
-					if (selected > 0) --selected;
-					else selected = menuEntries.length - 1;
-					break;
-				case "ArrowDown": // move down
-					selected = (selected + 1) % menuEntries.length;
-					break;
-
-				case "Escape":
-					choiceDone = false;
-					loop = false;
-					break;
-
-				case "Enter":
-					// validate
-					switch (selected) {
-						case 0: // random
-							selected = roller.roll(0, 5);
-							switch (selected) {
-								case 0:
-									model = ActorID.UNDEAD_SKELETON;
-									break;
-								case 1:
-									model = ActorID.UNDEAD_ZOMBIE;
-									break;
-								case 2:
-									model = ActorID.UNDEAD_MALE_ZOMBIFIED;
-									break;
-								case 3:
-									model = ActorID.UNDEAD_FEMALE_ZOMBIFIED;
-									break;
-								case 4:
-									model = ActorID.UNDEAD_ZOMBIE_MASTER;
-									break;
-								default:
-									throw new RangeError("unhandled select " + selected);
-							}
-
-							gy += MENU_BOLD_LINE_SPACING;
-							this.m_UI.UI_DrawStringBoldLarge(
-								Color.White,
-								`Type : ${this.gameActors.get(model).name}.`,
-								gx,
-								gy,
-							);
-							gy += MENU_BOLD_LINE_SPACING;
-							this.m_UI.UI_DrawStringBoldLarge(
-								Color.Yellow,
-								"Is that OK? Y to confirm, N to cancel.",
-								gx,
-								gy,
-							);
-							this.m_UI.UI_Repaint();
-							if (await this.WaitYesOrNo()) {
-								choiceDone = true;
-								loop = false;
-							}
-							break;
-
-						case 1: // skeleton
-							model = ActorID.UNDEAD_SKELETON;
-							choiceDone = true;
-							loop = false;
-							break;
-
-						case 2: // shambler
-							model = ActorID.UNDEAD_ZOMBIE;
-							choiceDone = true;
-							loop = false;
-							break;
-
-						case 3: // male zombified
-							model = ActorID.UNDEAD_MALE_ZOMBIFIED;
-							this.m_CharGen.isMale = true;
-							choiceDone = true;
-							loop = false;
-							break;
-
-						case 4: // female zombified
-							model = ActorID.UNDEAD_FEMALE_ZOMBIFIED;
-							this.m_CharGen.isMale = false;
-							choiceDone = true;
-							loop = false;
-							break;
-
-						case 5: // zm
-							model = ActorID.UNDEAD_ZOMBIE_MASTER;
-							choiceDone = true;
-							loop = false;
-							break;
-					}
-					break;
-			}
-		} while (loop);
-
-		// done.
-		return { ok: choiceDone, modelID: model };
-	}
-
-	// C# HandleNewCharacterSkill — RogueGame.cs:1952
-	async HandleNewCharacterSkill(
-		roller: DiceRoller,
-		skID: SkillID,
-	): Promise<{ ok: boolean; skID: SkillID }> {
-		// Make table of all skills.
-		const allSkills: SkillID[] = new Array<SkillID>(Skills.LAST_LIVING + 1);
-		const menuEntries: string[] = new Array<string>(allSkills.length + 1);
-		const skillDesc: string[] = new Array<string>(allSkills.length + 1);
-		menuEntries[0] = "*Random*";
-		skillDesc[0] = "(picks a skill at random for you)";
-		for (let i = Skills.FIRST_LIVING; i < Skills.LAST_LIVING + 1; i++) {
-			allSkills[i] = i as SkillID;
-			menuEntries[i + 1] = Skills.name(allSkills[i]);
-			skillDesc[i + 1] =
-				`${Skills.maxSkillLevel(allSkills[i])} max - ${this.DescribeSkillShort(allSkills[i])}`;
-		}
-
-		// Loop until choice done
-		// C# `out Skills.IDs skID` — seeded with the caller's value (C# assigns _FIRST).
-		let skill = skID;
-		let loop = true;
-		let choiceDone = false;
-		let selected = 0;
-		do {
-			// display.
-			this.m_UI.UI_Clear(Color.Black);
-			const gx = 0;
-			let gy = 0;
-			this.m_UI.UI_DrawStringBoldLarge(
-				Color.Yellow,
-				`[${Session.descGameMode(this.m_Session.gameMode)} / ${Session.descShortRuleset(this.m_Session.ruleset)}] New ${this.m_CharGen.isMale ? "Male" : "Female"} Character - Choose Starting Skill`,
-				gx,
-				gy,
-			);
-			gy += 2 * MENU_BOLD_LINE_SPACING;
-			const gyRef = { value: gy };
-			this.DrawMenuOrOptions(
-				selected,
-				Color.White,
-				menuEntries,
-				Color.LightGray,
-				skillDesc,
-				gx,
-				gyRef,
-			);
-			gy = gyRef.value;
-			this.DrawFootnote(
-				Color.White,
-				"cursor to move, ENTER to select, ESC to cancel",
-			);
-			this.m_UI.UI_Repaint();
-
-			// get menu action.
-			const key = await this.m_UI.UI_WaitKey();
-			switch (key.key) {
-				case "ArrowUp": // move up
-					if (selected > 0) --selected;
-					else selected = menuEntries.length - 1;
-					break;
-				case "ArrowDown": // move down
-					selected = (selected + 1) % menuEntries.length;
-					break;
-
-				case "Escape":
-					choiceDone = false;
-					loop = false;
-					break;
-
-				case "Enter":
-					// validate
-					if (selected === 0)
-						// random
-						skill = Skills.rollLiving(roller);
-					else skill = (selected - 1 + Skills.FIRST_LIVING) as SkillID;
-
-					gy += MENU_BOLD_LINE_SPACING;
-					this.m_UI.UI_DrawStringBoldLarge(
-						Color.White,
-						`Skill : ${Skills.name(skill)}.`,
-						gx,
-						gy,
-					);
-					gy += MENU_BOLD_LINE_SPACING;
-					this.m_UI.UI_DrawStringBoldLarge(
-						Color.Yellow,
-						"Is that OK? Y to confirm, N to cancel.",
-						gx,
-						gy,
-					);
-					this.m_UI.UI_Repaint();
-					if (await this.WaitYesOrNo()) {
-						choiceDone = true;
-						loop = false;
-					}
-					break;
-			}
-		} while (loop);
-
-		// done.
-		return { ok: choiceDone, skID: skill };
-	}
-
-
-
 	/**
 	 * C# `HandleNewCharacterDifficulty(out int chosenDay)` — `RogueGame.cs:3782`,
 	 * called from `RogueGame.cs:2884`. The fork's answer to "a player should not be

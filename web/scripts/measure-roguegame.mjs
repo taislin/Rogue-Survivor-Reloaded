@@ -122,7 +122,15 @@ function classify(name) {
 
 	// ── Wave 3: the new-game flow. A named list, not a pattern: §6.7 names sixteen
 	// methods and the rest of the file is not part of it. ─────────────────────
-	if (/^(Run|GameLoop|HandleMainMenu|HandleNewCharacter|HandleSelectRuleset|HandleNewGameMode|StartNewGame|InitDirectories|LoadData|LoadOptions|SaveOptions|LoadKeybindings|SaveKeybindings|LoadHiScoreTable|SaveHiScoreTable|HandleHelpMode|HandleHintsScreen|HandleCredits)$/.test(name)) {
+	//
+	// `HandleSelectRuleset` and `HandleNewGameMode` were the two rows' worth of
+	// pickers before they merged into one screen, and are now
+	// `HandleSelectRulesetAndMode`; the three character screens became
+	// `HandleNewCharacterDetails`. The list is anchored, so a rename drops the
+	// method out of Wave 3 entirely and into `STATE` below — which reads as a
+	// one-member wobble in a bucket it does not belong to rather than as a
+	// classifier that has lost track of the file.
+	if (/^(Run|GameLoop|HandleMainMenu|HandleNewCharacter|HandleSelectRulesetAndMode|HandleNewCharacterDetails|StartNewGame|InitDirectories|LoadData|LoadOptions|SaveOptions|LoadKeybindings|SaveKeybindings|LoadHiScoreTable|SaveHiScoreTable|HandleHelpMode|HandleHintsScreen|HandleCredits)$/.test(name)) {
 		return { region: "WAVE 3", extract: "engine", note: "new-game flow" };
 	}
 

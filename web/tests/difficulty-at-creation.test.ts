@@ -79,31 +79,39 @@ function optionsScreenRows(): OptionIDs[] {
 const down = (n: number): string[] => new Array<string>(n).fill("ArrowDown");
 
 /**
- * The keys that walk the whole of `HandleNewCharacter` to the difficulty screen,
- * for a living male in standard mode under Still Alive.
+ * The keys that walk the whole of `HandleNewCharacter` to the difficulty screen.
+ *
+ * **Two keys, where it used to be nine**, because the new-game screens were merged
+ * into two:
+ *
+ * 1. `Enter` — commits the ruleset and game-mode rows. **No arrow first**, which is
+ *    the part worth reading: `runFlow` presets `Session.ruleset`, and the screen
+ *    seeds both rows from the session rather than from zero. An `ArrowRight` here
+ *    used to walk the ruleset *off* Still Alive and on to Classic, which gates the
+ *    difficulty screen off — so the flow reported "never reached" for a screen it
+ *    had skipped by accident.
+ * 2. `Enter` — character details at their defaults: Human, `*Random*` sex,
+ *    `*Random*` skill. The old flow spent three screens and a `y` to reach the same
+ *    place, because the race screen's `*Random*` row asked Y/N and the sex and
+ *    skill screens each wanted their own Enter.
  *
  * Spelled out rather than left to the idle key cycle, because the idle cycle
- * hands back Escape every fourth key and `HandleNewCharacterRace` then cancels —
- * so an "unattended" run never reaches the difficulty screen at all, and a test
- * asserting that it does would be asserting nothing. Each group is one screen:
- * ruleset (row 1 = Still Alive), game mode (standard), race (row 1 = Living,
- * which is the one that does not then ask Y/N — row 0 is *Random* and does),
- * gender (row 1 = Male), skill (row 0 = *Random*, then `y` for the Y/N).
+ * hands back Escape every fourth key and the first screen then cancels — so an
+ * "unattended" run never reaches the difficulty screen at all, and a test
+ * asserting that it does would be asserting nothing.
  */
-const FLOW_TO_DIFFICULTY: string[] = [
-	"ArrowDown",
-	"Enter",
-	"Enter",
-	"ArrowDown",
-	"Enter",
-	"ArrowDown",
-	"Enter",
-	"Enter",
-	"y",
-];
+const FLOW_TO_DIFFICULTY: string[] = ["Enter", "Enter"];
 
-/** The same, for classic: the ruleset screen takes its row 0 and goes no further. */
-const FLOW_CLASSIC: string[] = ["Enter", ...FLOW_TO_DIFFICULTY.slice(2)];
+/**
+ * The same keys for classic, and they are the same keys.
+ *
+ * They used to differ: classic took `Enter` at the ruleset screen and then the
+ * *rest* of the still-alive sequence, because the two rulesets needed different
+ * arrow counts. Now that both rows are seeded from the session, the only
+ * difference between the two flows is the session field `runFlow` sets before it
+ * starts — and that is the point being tested, not something the keys express.
+ */
+const FLOW_CLASSIC: string[] = ["Enter", "Enter"];
 
 /**
  * Runs the whole flow, counting how many times the difficulty screen was reached.
