@@ -38,17 +38,19 @@ interface MenuRow {
 	bottom: number;
 }
 
-// RogueGame.cs layout constants
-const CANVAS_HEIGHT = 768;
-const MENU_BOLD_LINE_SPACING = 18;
-const MENU_LINE_SPACING = 16;
-const RIGHT_PADDING = 400;
+// RogueGame.cs layout constants.
+//
+// All five of these used to be written out here as well as in `RogueGame.ts` — the
+// canvas height, both menu line steps, and the version string — each with a comment
+// saying the other copy must agree and nothing checking that it did. They are
+// imported now; `tests/version.test.ts` asserts the version, and the layout numbers
+// are the same constants the rest of the game measures against, so a menu cannot
+// drift from the HUD by editing a literal.
+import { CANVAS_HEIGHT } from "@engine/CanvasSize";
+import { MENU_BOLD_LINE_SPACING, MENU_LINE_SPACING } from "@engine/MenuChrome";
+import { GAME_VERSION } from "@engine/GameVersion";
 
-// C# `SetupConfig.GAME_VERSION`. The other half of the pair: the same constant
-// also lives in `engine/RogueGame.ts`, which says why it is duplicated rather
-// than shared. Both must read the same, and both must agree with
-// `web/package.json`'s `version`.
-const GAME_VERSION = "0.9.2";
+const RIGHT_PADDING = 400;
 
 /**
  * Browser port of `RogueGame.HandleOptions(bool ingame)` (RogueGame.cs ≈ line 2294).

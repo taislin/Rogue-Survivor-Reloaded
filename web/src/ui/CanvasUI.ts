@@ -27,16 +27,18 @@ export const MINIMAP_W = 100;
 export const MINIMAP_H = 100;
 
 /**
- * The game's logical drawing surface, 16:9 like `RogueGame.CANVAS_WIDTH`/
- * `CANVAS_HEIGHT`.
+ * The game's logical drawing surface, 16:9 — `LOGICAL_W`/`LOGICAL_H` from
+ * `@engine/CanvasSize`, which `RogueGame` re-exports as
+ * `CANVAS_WIDTH`/`CANVAS_HEIGHT`.
  *
- * Spelled out here rather than imported from the engine: the renderer must not
- * depend on `RogueGame.ts`, which is ~19 000 lines and pulls the whole
- * simulation in behind it. Every drawing call in the game uses these logical
- * coordinates — see `CanvasUI.layout()` for how they reach the screen.
+ * These were spelled out here rather than imported because "the renderer must not
+ * depend on `RogueGame.ts`, which pulls the whole simulation in behind it". That
+ * constraint was right and the conclusion drawn from it was wrong: avoiding the
+ * dependency on a 36 000-line module does not require duplicating the numbers, only
+ * a third module that declares them. Every drawing call in the game uses these
+ * logical coordinates — see `CanvasUI.layout()` for how they reach the screen.
  */
-const LOGICAL_W = 1366;
-const LOGICAL_H = 768;
+import { LOGICAL_W, LOGICAL_H } from "@engine/CanvasSize";
 
 /** What `CanvasUI.computeLayout` decided, in CSS pixels and backing-store pixels. */
 export interface CanvasLayout {
@@ -839,8 +841,10 @@ export class CanvasUI implements IRogueUI {
    * that is the point of the move: the engine has exactly one copy of the tile
    * size, so this cannot drift from it. The obvious alternative — importing
    * `TILE_SIZE` — is the thing the file header already rules out, since
-   * `CanvasUI` must not depend on `RogueGame`; that is also why `LOGICAL_W` and
-   * `LOGICAL_H` are repeated here and agree only by convention.
+   * `CanvasUI` must not depend on `RogueGame`; `LOGICAL_W` and `LOGICAL_H` used
+   * to be repeated here for the same reason and "agree only by convention", which
+   * is now `engine/CanvasSize.ts` — one declaration neither this file nor
+   * `RogueGame` has to duplicate.
    *
    * Answers in 32px-tile units rather than screen pixels on purpose: the map zoom
    * is applied *after* this by the caller's draw scope, so a screen-pixel answer

@@ -207,6 +207,19 @@ import {
 	graveFilePath,
 	screenshotFilePath,
 } from "@engine/Paths";
+import {
+	drawFootnote,
+	drawHeader,
+	drawMenuOrOptions,
+	menuRowAt,
+	menuRowAtMouse,
+	waitMenuInput,
+	type MenuInput,
+} from "@engine/MenuChrome";
+// `CANVAS_WIDTH`/`CANVAS_HEIGHT` are re-exported from here for `OptionsScreen` and
+// the tests; imported as well, for the ~30 uses in this file.
+import { CANVAS_WIDTH, CANVAS_HEIGHT } from "@engine/CanvasSize";
+import { GAME_VERSION } from "@engine/GameVersion";
   import {
     APPEARANCE_LAYERS,
     APPEARANCE_LAYER_LABELS,
@@ -265,7 +278,7 @@ import { OptionsScreen } from "@ui/OptionsScreen";
 type TimeSpan = number;
 
 /**
- * C# `SetupConfig.GAME_VERSION` (also duplicated in `ui/OptionsScreen.ts`).
+ * C# `SetupConfig.GAME_VERSION` — now `engine/GameVersion.ts`, imported above.
  *
  * The user-facing version: the window title, the options screen's heading, the
  * graveyard lines, and the header of the high-score *text export*. That last one
@@ -274,11 +287,13 @@ type TimeSpan = number;
  * bumping this cannot orphan anyone's scores. The C# also builds a docs path
  * from it (`RogueGame.cs:2531`), which has no equivalent in a browser port.
  *
- * Must stay equal to `web/package.json`'s `version`, which is the same number
- * from the other direction. Duplicated rather than shared because the C# keeps
- * one `SetupConfig` constant and this port has no equivalent module to put it in.
+ * It used to be declared here as well as in `ui/OptionsScreen.ts`, each with a
+ * comment saying the other must agree and nothing checking it — so a release could
+ * bump `package.json` and leave the About box advertising the previous build. The
+ * stated reason for the duplication ("this port has no equivalent module to put it
+ * in") is why `GameVersion.ts` exists. `tests/version.test.ts` asserts all three
+ * agree.
  */
-const GAME_VERSION = "0.9.2";
 
 /** C# numeric/string format alignment: `{0,3}`, `{0,6}` (right aligned). */
 export function padLeft(s: string | number, width: number): string {
@@ -422,8 +437,11 @@ export const SIDEPANEL_TITLE_LEADING: number = LINE_SPACING;
  */
 export const MAP_PANEL_WIDTH: number = TILE_SIZE * TILE_VIEW_WIDTH;
 export const MAP_PANEL_HEIGHT: number = TILE_SIZE * TILE_VIEW_HEIGHT;
-export const CANVAS_WIDTH: number = 1366;
-export const CANVAS_HEIGHT: number = 768;
+// `CANVAS_WIDTH`/`CANVAS_HEIGHT` now live in `engine/CanvasSize.ts`, which also
+// holds `CanvasUI`'s copy. Re-exported here rather than renamed because ~30 sites
+// in this file and the HUD/action-menu tests use these names against them; the
+// values come from `LOGICAL_W`/`LOGICAL_H`, so there is one number.
+export { CANVAS_WIDTH, CANVAS_HEIGHT } from "@engine/CanvasSize";
 export const DAMAGE_DX: number = 10;
 export const DAMAGE_DY: number = 10;
 export const RIGHTPANEL_X: number = TILE_SIZE * TILE_VIEW_WIDTH + 4;
@@ -483,30 +501,26 @@ export const DELAY_LONG: number = 1000;
  * would push the last row to y=783, past the 768 px canvas.
  */
 export const LOCATIONPANEL_LINE_SPACING: number = 12;
-/**
- * Line steps for full-screen menus and reading screens, paired with the 12pt
- * menu font (`UI_DrawStringLarge`). The HUD keeps 12/14; menus have room, so
- * they get airier leading to match the larger glyphs.
- */
-export const MENU_LINE_SPACING: number = 16;
-export const MENU_BOLD_LINE_SPACING: number = 18;
-/**
- * Nominal advance of one glyph in the 12pt menu font, in logical pixels.
- *
- * The font stack is `"Lucida Console", "Courier New", monospace` -- all three
- * are 0.6em monospace, so 0.6 * 16px = 9.6px. Rounded up to 10 to leave a
- * little slack, because this is used to place a column *before* drawing, and
- * a column that is a pixel short overlaps rather than merely looking tight.
- */
-export const MENU_CHAR_WIDTH: number = 10;
-/** Blank columns between a menu label and its value text. */
-export const MENU_COLUMN_GAP: number = 24;
-/**
- * Glyphs `DrawMenuOrOptions` puts in front of every label: `"---> "` when the
- * row is selected, five spaces when it is not. The selected form is the wider
- * of the two, and it is the one that has to clear the value column.
- */
-export const MENU_LABEL_PREFIX: number = 6;
+// The five menu-font constants below moved to `engine/MenuChrome.ts`, with the
+// code that measures menus against them. Imported *and* re-exported: the re-export
+// is for `OptionsScreen` and the tests, which import them from this module, and the
+// import is for the ~150 uses that stayed behind as HUD lines, dialogs and
+// hit-test arithmetic. Re-exporting alone would not put the names in scope here.
+import {
+	MENU_BOLD_LINE_SPACING,
+	MENU_CHAR_WIDTH,
+	MENU_LINE_SPACING,
+} from "@engine/MenuChrome";
+export {
+	MENU_LINE_SPACING,
+	MENU_BOLD_LINE_SPACING,
+	MENU_CHAR_WIDTH,
+	MENU_COLUMN_GAP,
+	MENU_LABEL_PREFIX,
+	menuValueColumnX,
+	menuEntryWidth,
+} from "@engine/MenuChrome";
+export type { MenuRowBand } from "@engine/MenuChrome";
 
 /**
  * Rows a single wheel notch moves the selection in a `DrawMenuOrOptions` menu.
@@ -529,61 +543,6 @@ export const MENU_WHEEL_ROWS: number = 1;
  * and the advisor screen would otherwise each have to guess at.
  */
 export const ADVISOR_BANNER_Y: number = 2 * LINE_SPACING;
-
-/**
- * X at which `DrawMenuOrOptions` should start the value column, given the menu
- * labels it has to clear.
- *
- * `rightPadding` is a floor, not the answer: it keeps the generous gap the C#
- * menus had for their short labels, and anything wider than that is measured
- * from the text so the column moves rather than overlapping. See the comment in
- * `DrawMenuOrOptions` for why the fixed offset stopped working at 12pt.
- */
-export function menuValueColumnX(
-	gx: number,
-	entries: readonly string[],
-	rightPadding: number,
-): number {
-	let labelGlyphs = 0;
-	for (const e of entries)
-		labelGlyphs = Math.max(labelGlyphs, MENU_LABEL_PREFIX + e.length);
-	return (
-		gx + Math.max(rightPadding, labelGlyphs * MENU_CHAR_WIDTH + MENU_COLUMN_GAP)
-	);
-}
-
-/**
- * Width of the widest menu label, in pixels, including the `---> ` prefix.
- *
- * The right edge of a label-only row's clickable band. Shares its measurement
- * with `menuValueColumnX` on purpose: both derive the label width from
- * `MENU_LABEL_PREFIX + e.length` over the same `MENU_CHAR_WIDTH`, so a row's
- * clickable width and the text that was drawn cannot drift apart when the font
- * constant or the prefix changes.
- */
-export function menuEntryWidth(entries: readonly string[]): number {
-	let labelGlyphs = 0;
-	for (const e of entries)
-		labelGlyphs = Math.max(labelGlyphs, MENU_LABEL_PREFIX + e.length);
-	return labelGlyphs * MENU_CHAR_WIDTH;
-}
-
-/**
- * Where one menu row was drawn, in logical canvas pixels.
- *
- * `top`/`bottom` are the *band* the row occupies, not the glyph box: the
- * baseline-to-baseline span. A row's text sits at `top`, so the band starts
- * where the previous row's descender ends — which is what stops rows
- * overlapping and a click landing one row low. See `m_MenuRowBands`.
- */
-export interface MenuRowBand {
-	/** Index into the caller's `entries` array, not the visible row number. */
-	index: number;
-	top: number;
-	bottom: number;
-	left: number;
-	right: number;
-}
 
 export const CREDIT_CHAR_SPACING: number = 8;
 export const CREDIT_LINE_SPACING: number = LINE_SPACING;
@@ -1700,24 +1659,6 @@ export class RogueGame implements ActionGame {
 	 * different name, so it is reached through `globalThis`.
 	 */
 	private readonly m_AnimOffsets = new globalThis.Map<Actor, Point>();
-
-	/**
-	 * Where each menu row was drawn last frame, for mouse hit-testing.
-	 *
-	 * Written by `DrawMenuOrOptions` as it draws, so a click is resolved against
-	 * the same numbers that placed the text rather than a second set of layout
-	 * maths that can disagree with the first. That is the bug `OptionsScreen`
-	 * already documents for its own rows — an earlier version spanned
-	 * `baseline ± line`, so every row covered a strip of its neighbour's and a
-	 * click landed one row low, consistently.
-	 *
-	 * Replaced (not appended to) at the top of every `DrawMenuOrOptions` call,
-	 * because a menu draws its list once per frame after a `UI_Clear` and the
-	 * bands must describe *this* frame. Anything drawn outside that helper is not
-	 * here, which is the reason a menu that is not built on it has no mouse
-	 * support rather than a broken one.
-	 */
-	private m_MenuRowBands: MenuRowBand[] = [];
 
 	/**
 	 * The advisor hint currently on screen and not yet dismissed, or -1.
@@ -32501,6 +32442,18 @@ async HandleActionMenu(): Promise<PlayerCommand | null> {
 		s_Hints.saveToStorage();
 	}
 
+	// ── Menu chrome — moved to `engine/MenuChrome.ts` ─────────────────────────
+	//
+	// §6.5's second Wave 1 extraction: six methods, ~215 lines, and zero outbound
+	// edges beyond `m_UI`. The 43 call sites across this file, `OptionsScreen` and
+	// the tests use these names, so they stay as one-line delegations.
+	//
+	// `m_MenuRowBands` moved too, and that is the substantive part. `DrawMenuOrOptions`
+	// records where each row landed as it draws and `MenuRowAt` reads those bands
+	// back — a hit-test that is only correct for the list drawn by the most recent
+	// draw, living 100 lines away from it. The state now sits beside both methods
+	// in one file, so the coupling is visible instead of inferred.
+
 	// C# DrawMenuOrOptions — RogueGame.cs:19932
 	DrawMenuOrOptions(
 		currentChoice: number,
@@ -32512,119 +32465,33 @@ async HandleActionMenu(): Promise<PlayerCommand | null> {
 		gy: { value: number },
 		valuesOnNewLine = false,
 		rightPadding = 256,
-		/**
-		 * Maximum rows to draw. When the list is longer, a window around the
-		 * selection is shown and follows it as it moves (arrow keys wrap, so every
-		 * entry stays reachable). Lets long lists — 53 keybindings, 30 skills —
-		 * use the large menu size instead of shrinking to fit.
-		 *
-		 * Omit for short lists, which draw whole as before.
-		 */
 		maxRows?: number,
 	): void {
-		// The value column starts past the widest *label*, not at a fixed offset.
-		// See `menuValueColumnX` for why a flat offset stopped working at 12pt.
-		const right = menuValueColumnX(gx, entries, rightPadding);
-
-		// Fresh for this call — see the comment on `m_MenuRowBands` below.
-		this.m_MenuRowBands = [];
-
-		if (values != null && entries.length !== values.length)
-			throw new RangeError("values length!= choices length");
-
-		// Scroll window: keep the selection visible, clamped to the list.
-		let first = 0;
-		let count = entries.length;
-		if (maxRows !== undefined && maxRows < count) {
-			const half = Math.floor(maxRows / 2);
-			first = Math.min(Math.max(0, currentChoice - half), count - maxRows);
-			count = maxRows;
-		}
-
-		// display.
-		for (let r = 0; r < count; r++) {
-			const i = first + r;
-			const choiceStr =
-				i === currentChoice ? `---> ${entries[i]}` : `     ${entries[i]}`;
-			// Record the row's clickable band as it is drawn, so a menu that wants
-			// mouse input can hit-test against the same numbers that put the text
-			// on screen rather than recomputing them here. Reset per call, not
-			// accumulated: every menu draws its list once per frame after a
-			// `UI_Clear`, so one call is the whole frame's list, and a stale entry
-			// surviving into a differently-shaped menu is a click landing on a row
-			// that is not there.
-			this.m_MenuRowBands.push({
-				index: i,
-				top: gy.value,
-				bottom: gy.value + MENU_BOLD_LINE_SPACING,
-				left: gx,
-				right: values == null ? gx + menuEntryWidth(entries) : right,
-			});
-			this.m_UI.UI_DrawStringBoldLarge(entriesColor, choiceStr, gx, gy.value);
-
-			if (values != null) {
-				const valueStr =
-					i === currentChoice && !valuesOnNewLine
-						? `${values[i]} <---`
-						: values[i];
-
-				if (valuesOnNewLine) {
-					gy.value += MENU_BOLD_LINE_SPACING;
-					this.m_UI.UI_DrawStringBoldLarge(
-						valuesColor,
-						valueStr,
-						gx + right,
-						gy.value,
-					);
-				} else {
-					this.m_UI.UI_DrawStringBoldLarge(
-						valuesColor,
-						valueStr,
-						right,
-						gy.value,
-					);
-				}
-			}
-
-			gy.value += MENU_BOLD_LINE_SPACING;
-		}
-
-		// Scroll position hint when windowed.
-		if (count < entries.length) {
-			this.m_UI.UI_DrawStringLarge(
-				Color.Gray,
-				`(${currentChoice + 1}/${entries.length} - list scrolls)`,
-				gx,
-				gy.value,
-			);
-			gy.value += MENU_LINE_SPACING;
-		}
+		drawMenuOrOptions(
+			this.m_UI,
+			currentChoice,
+			entriesColor,
+			entries,
+			valuesColor,
+			values,
+			gx,
+			gy,
+			valuesOnNewLine,
+			rightPadding,
+			maxRows,
+		);
 	}
 
 	/**
 	 * The menu row under a screen point, or null. Takes **logical canvas
 	 * coordinates** — the space the menus are drawn in.
 	 *
-	 * `UI_GetMousePosition` reports CSS pixels, so a caller must convert first.
-	 * `ScreenToLogicalMouse` does that, and every menu uses it rather than
-	 * dividing by the scale itself: the scale is a *display* property of the
-	 * canvas, and a menu's layout is in logical pixels regardless of how big the
-	 * window is. Getting this wrong is invisible at 1366 CSS px — where scale is
-	 * 1 — and wrong by that factor everywhere else.
-	 *
-	 * Reads the bands `DrawMenuOrOptions` recorded, so this is a lookup rather
-	 * than a second piece of layout maths. Last match wins, so a row drawn lower
-	 * on screen wins over one that shares its band. The bands do not overlap, so
-	 * this only matters if a caller drew two lists into the same frame's bands,
-	 * which `DrawMenuOrOptions` cannot do.
+	 * `UI_GetMousePosition` reports CSS pixels, so a caller must convert first;
+	 * `MenuRowAtMouse` does that. See `MenuChrome.menuRowAt` for why the bands are
+	 * read rather than the layout recomputed.
 	 */
 	MenuRowAt(x: number, y: number): number | null {
-		let hit: number | null = null;
-		for (const band of this.m_MenuRowBands) {
-			if (x >= band.left && x <= band.right && y >= band.top && y < band.bottom)
-				hit = band.index;
-		}
-		return hit;
+		return menuRowAt(x, y);
 	}
 
 	/**
@@ -32632,97 +32499,28 @@ async HandleActionMenu(): Promise<PlayerCommand | null> {
 	 * first. This is what a menu should call; `MenuRowAt` is the raw lookup.
 	 */
 	MenuRowAtMouse(mousePos: Point): number | null {
-		return this.MenuRowAt(
-			Math.trunc(mousePos.x / this.m_UI.UI_GetCanvasScaleX()),
-			Math.trunc(mousePos.y / this.m_UI.UI_GetCanvasScaleY()),
-		);
+		return menuRowAtMouse(this.m_UI, mousePos);
 	}
 
 	/**
 	 * Waits for a key, a mouse button, a wheel notch, or the cursor moving.
 	 *
-	 * The menu equivalent of `WaitKeyOrMouse`, and it exists for the same reason
-	 * `OptionsScreen.waitForInput` does: a menu whose selection follows the cursor
-	 * has to redraw when the cursor moves, and `UI_WaitKey` only wakes on a key —
-	 * so hover would mean polling, and a blocking wait cannot poll.
-	 *
-	 * Returns the cursor movement as a *result* rather than as activity, so a
-	 * caller can move its selection without also treating the brush as a click.
-	 * That distinction is the whole reason this is not just `WaitKeyOrMouse`:
-	 * in the play loop, a cursor that moves is a look request; in a menu, it is a
-	 * hover.
-	 *
-	 * `UI_PeekMouseButtons` and `UI_PeekWheel` consume, so a press and a notch
-	 * are each delivered once and a held button is not re-reported. That is
-	 * load-bearing and not a detail: this polls, so a non-consuming version would
-	 * return immediately and forever and repaint the menu in a tight loop with
-	 * the keyboard never getting a turn. The same is already true of
-	 * `UI_PeekKey`, which is why the properties are spelled out in `IRogueUI`.
+	 * The menu equivalent of `WaitKeyOrMouse`. Returns the cursor movement as a
+	 * *result* rather than as activity, so a caller can move its selection without
+	 * also treating the brush as a click.
 	 */
-	async WaitMenuInput(prevMouse: Point): Promise<{
-		key: GameKeyEvent | null;
-		mousePos: Point;
-		mouseButtons: MouseButton | null;
-		wheel: number;
-		moved: boolean;
-	}> {
-		for (;;) {
-			const key = this.m_UI.UI_PeekKey();
-			if (key !== null) {
-				return {
-					key,
-					mousePos: this.m_UI.UI_GetMousePosition(),
-					mouseButtons: null,
-					wheel: 0,
-					moved: false,
-				};
-			}
-			const wheel = this.m_UI.UI_PeekWheel();
-			if (wheel !== 0) {
-				return {
-					key: null,
-					mousePos: this.m_UI.UI_GetMousePosition(),
-					mouseButtons: null,
-					wheel,
-					moved: false,
-				};
-			}
-			const mousePos = this.m_UI.UI_GetMousePosition();
-			const mouseButtons = this.m_UI.UI_PeekMouseButtons();
-			if (mouseButtons !== null) {
-				return { key: null, mousePos, mouseButtons, wheel: 0, moved: false };
-			}
-			if (!mousePos.equals(prevMouse)) {
-				return {
-					key: null,
-					mousePos,
-					mouseButtons: null,
-					wheel: 0,
-					moved: true,
-				};
-			}
-			await new Promise<void>((r) => setTimeout(r, 0));
-		}
+	async WaitMenuInput(prevMouse: Point): Promise<MenuInput> {
+		return waitMenuInput(this.m_UI, prevMouse);
 	}
 
 	// C# DrawHeader — RogueGame.cs:19975
 	DrawHeader(): void {
-		this.m_UI.UI_DrawStringBoldLarge(
-			Color.Red,
-			`ROGUE SURVIVOR - ${GAME_VERSION}`,
-			0,
-			0,
-		);
+		drawHeader(this.m_UI);
 	}
 
 	// C# DrawFootnote — RogueGame.cs:19980
 	DrawFootnote(color: Color, text: string): void {
-		this.m_UI.UI_DrawStringBoldLarge(
-			color,
-			`<${text}>`,
-			0,
-			CANVAS_HEIGHT - MENU_BOLD_LINE_SPACING,
-		);
+		drawFootnote(this.m_UI, color, text);
 	}
 
 	// ── C# `GetUser*` paths — moved to `engine/Paths.ts` ──────────────────────

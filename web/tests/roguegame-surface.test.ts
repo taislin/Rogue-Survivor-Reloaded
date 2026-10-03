@@ -101,33 +101,35 @@ describe("RogueGame's measured surface", () => {
     // §6.2 calls this "the god object", and the argument for splitting is the
     // ratio rather than the size. Pinned so the ratio has a history.
     //
-    // **845, and that is the first time this number has gone down.** §6 is a
-    // decomposition, and until the `GetUser*` extraction nothing had actually left
-    // the class — the previous changes all *added* members (the action menu, the
-    // customiser) or changed none. One went out with the paths move:
-    // `m_ScreenshotCounter`, a private field only the screenshot-naming methods
-    // could reach, now module state in `engine/Paths.ts`. It was the whole reason
-    // those methods were a field rather than free functions.
+    // **844, down from 846 when this decomposition started moving code.** Until the
+    // `GetUser*` extraction nothing had actually left the class — the earlier
+    // changes all *added* members (the action menu, the character customiser) or
+    // changed none. Two private fields have now gone, and both were private for the
+    // same reason: each existed only because the methods that used it had nowhere
+    // else to live.
     //
-    // Private went 91 -> 90 for the same reason, which is the direction §6.4's
-    // "the `private` boundary is effectively absent" note cares about: a member
-    // left the class rather than being hidden inside it.
-    expect(m.members).toBe(845);
+    //   - `m_ScreenshotCounter`, with the `GetUser*` paths -> `engine/Paths.ts`.
+    //   - `m_MenuRowBands`, with the menu chrome -> `engine/MenuChrome.ts`. That one
+    //     is the interesting removal: a frame's hit-test bands are scratch, not game
+    //     state, and putting them beside the draw that writes them and the lookup
+    //     that reads them is the only reason the coupling between those two is
+    //     visible at all.
+    //
+    // Private went 91 -> 89. Public is unchanged at 755, which is the point: the
+    // methods stayed as delegations, so nothing a caller can see moved.
+    expect(m.members).toBe(844);
     expect(m.methods).toBe(760);
-    // The *reachable* surface is 117, up one. The `GetUser*` methods stayed on the
-    // class as delegations, which is what keeps this a pure move; the new name is
-    // `CURRENT_SAVE_SLOT`, reached because `paths.test.ts` checks the module's copy
-    // of the slot number against the class's. A test creating a dependency, not
-    // code needing one.
+    // The *reachable* surface is 117. It has not moved for either extraction: both
+    // regions kept their methods on the class, which is what keeps them pure moves.
     expect(m.external).toBe(117);
-  // §6.4: "567 of 584 methods are public — only 17 are `private`. The
+// §6.4: "567 of 584 methods are public — only 17 are `private`. The
   // `private` boundary is effectively absent." That is still true, and the
   // direction is worth pinning: public is unchanged at 755 while private has come
-  // down from 91 to 90. Public not falling is the point — the extraction left
+  // down from 91 to 89. Public not falling is the point — both extractions left
   // delegations behind rather than deleting callers' entry points, so the ratio
   // has not improved and is not claimed to have.
   expect(m.public).toBe(755);
-  expect(m.private).toBe(90);
+  expect(m.private).toBe(89);
 	});
 
 	it("§6's stop condition is not met: nothing private is reached from outside", () => {
