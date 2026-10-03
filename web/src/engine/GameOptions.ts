@@ -1564,8 +1564,8 @@ export class GameOptions {
       );
     case OptionIDs.GAME_AUTOSAVE_PERIOD: // alpha10.1
       return "Will autosave at regular intervals when you start sleeping, start a long wait or change map.\nManually saving the game will reschedule the next autosave.";
-    case OptionIDs.UI_SPRITE_STYLE:
-      return "Which sprite set to draw the game with.\nThe other sets are variations of the classic one and do not contain every sprite: anything they are missing is drawn from classic, so a missing entry falls back rather than leaving a hole.";
+      case OptionIDs.UI_SPRITE_STYLE:
+        return "Which sprite set to draw the game with.\nNone of the sets contain every sprite, so each is a list rather than one folder: anything missing is taken from the next set in the chain, ending at classic, which is complete.\n\"Genesis actors, Deonapocalypse world\" is such a chain - actors from Genesis, everything else from Deonapocalypse - and needs no merged folder.";
     case OptionIDs.UI_FONT_CHOICE:
         return "Which typeface to draw the text with.\nFour are bundled, so they look the same everywhere and work offline: JetBrains Mono (the default), Iosevka Slab, Hack and IBM Plex Mono. Classic uses the system's own monospace font, which is what this game was drawn with before.";
     case OptionIDs.UI_VIEW_MODE:
@@ -1708,6 +1708,12 @@ export class GameOptions {
    * fallback invisible and the player does not need to know it is happening.
    */
   static spriteStyleName(set: ImageSet): string {
+    // The combined style is not a folder, so the folder-name prettifier cannot
+    // describe it — "genesis actors on deonapocalypse" reads like a path. Named
+    // here instead, because what the player is choosing is *where the art comes
+    // from*, and that is the only part of the chain they cannot infer from it.
+    if (set === "genesis_actors_on_deonapocalypse")
+      return "Genesis actors, Deonapocalypse world";
     const pretty = set.replace(/_/g, " ");
     return set === DEFAULT_IMAGE_SET ? `${pretty}  (complete set)` : pretty;
   }

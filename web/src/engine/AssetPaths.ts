@@ -59,10 +59,107 @@ export const IMAGE_SETS = [
   "deonapocalypse_v9_r1",
   "genesis_classic_1.4",
   "dafttiles_b1",
+  "genesis_actors_on_deonapocalypse",
 ] as const;
 export type ImageSet = (typeof IMAGE_SETS)[number];
 
 export const DEFAULT_IMAGE_SET: ImageSet = "classic";
+
+/**
+ * Where a sprite looks, in order, for one category of ids.
+ *
+ * `prefix` is matched against the image id with `/` separators, so `"Actors/"`
+ * covers every actor and doll sprite. Routes are tried in order and the first
+ * match wins, so a catch-all belongs **last**.
+ */
+export interface SpriteRoute {
+  readonly prefix: string;
+  readonly chain: readonly ImageSet[];
+}
+
+/**
+ * How each style resolves a sprite.
+ *
+ * **Routes, not one chain, and that is not over-engineering.** Genesis is a
+ * *variant of the classic set* rather than an actors-only pack: it ships all seven
+ * categories — `Actors`, `Tiles`, `Items`, `Icons`, `MapObjects`, `Activities`,
+ * `Effects`. So a single ordered chain would have answered "Genesis first" for
+ * every sprite, and the combination people actually want — Genesis actors over a
+ * Deonapocalypse world — would have quietly come out as Genesis *everything*,
+ * with Deonaposecond supplying only the handful of sprites Genesis lacks (three).
+ * Measured on the two folders: 336 of Genesis's 339 sprites also exist in
+ * Deonapocalypse, and *zero* are Genesis-only.
+ *
+ * So a style is a list of routes, and prefix is what distinguishes an actor from
+ * a wall. A style with no routes is the ordinary case: one catch-all, its own
+ * directory first and `classic` after it, which is exactly what the hardcoded
+ * fallback did before.
+ *
+ * Every chain ends in `classic`, which is the complete set — so an id missing from
+ * all of them still draws, from the original game, rather than leaving a hole.
+ *
+ * **No merging and no copying.** The folders stay exactly as they are on disk and
+ * the routing decides which one each sprite comes from.
+ */
+const IMAGE_SET_ROUTES: Readonly<Record<ImageSet, readonly SpriteRoute[]>> = {
+  classic: [{ prefix: "", chain: ["classic"] }],
+  deonapocalypse_v9_r1: [
+    { prefix: "", chain: ["deonapocalypse_v9_r1", "classic"] },
+  ],
+  "genesis_classic_1.4": [
+    { prefix: "", chain: ["genesis_classic_1.4", "classic"] },
+  ],
+  dafttiles_b1: [{ prefix: "", chain: ["dafttiles_b1", "classic"] }],
+  // Actors from Genesis, everything else from Deonapocalypse. Not a directory —
+  // there is no such folder, and there does not need to be one.
+  genesis_actors_on_deonapocalypse: [
+    { prefix: "Actors/", chain: ["genesis_classic_1.4", "classic"] },
+    { prefix: "", chain: ["deonapocalypse_v9_r1", "classic"] },
+  ],
+};
+
+/**
+ * The routes for a style. Exported as a function rather than the table so the
+ * table stays private and no caller can reorder it in place.
+ */
+export function imageRoutes(set: ImageSet): readonly SpriteRoute[] {
+  return IMAGE_SET_ROUTES[set] ?? [{ prefix: "", chain: [set, DEFAULT_IMAGE_SET] }];
+}
+
+/**
+ * Whether a style is a folder of sprites rather than a routing between folders.
+ *
+ * The distinction is load-bearing for anything that inspects the disk: a routed
+ * style has no folder of its own *by design* — there is nothing in it to be
+ * missing — so "every advertised style has a folder" is true of the
+ * folder-backed ones and meaningless for the rest.
+ */
+export function isFolderBacked(set: ImageSet): boolean {
+  const routes = imageRoutes(set);
+  return routes.length === 1 && routes[0]!.chain[0] === set;
+}
+
+/** The styles that are folders on disk, in `IMAGE_SETS` order. */
+export function folderBackedSets(): ImageSet[] {
+  return IMAGE_SETS.filter(isFolderBacked);
+}
+/**
+ * The lookup order for one sprite under a style.
+ *
+ * First matching route wins, so a catch-all (`prefix: ""`, which matches
+ * everything) has to be last in its list - and a style that forgot to order them
+ * would resolve actors from Deonapocalypse while claiming to be Genesis.
+ */
+export function spriteChainFor(set: ImageSet, imageId: string): readonly ImageSet[] {
+  const routes = imageRoutes(set);
+  const id = imageId.replace(/\\/g, "/");
+  for (const route of routes) {
+    if (route.prefix === "" || id.startsWith(route.prefix)) return route.chain;
+  }
+  // Unreachable while every route list ends in a catch-all, but a chain is needed
+  // and the last route is the least surprising answer.
+  return routes[routes.length - 1]?.chain ?? [DEFAULT_IMAGE_SET];
+}
 
 let currentImageSet: ImageSet = DEFAULT_IMAGE_SET;
 

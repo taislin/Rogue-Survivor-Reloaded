@@ -1,10 +1,9 @@
 import { IRogueUI, GameKeyEvent, MouseButton, type MapView } from "@engine/IRogueUI";
 import {
-  DEFAULT_IMAGE_SET,
   getImageSet,
   getImageSetGeneration,
   imagePathIn,
-  type ImageSet,
+  spriteChainFor,
 } from "@engine/AssetPaths";
 import { Color } from "@engine/Color";
 import { Point } from "@engine/Point";
@@ -937,32 +936,48 @@ export class CanvasUI implements IRogueUI {
     this.invalidateImagesIfSetChanged();
     if (this.imageLoading.has(imageId)) return this.imageLoading.get(imageId)!;
 
-    const attempt = (set: ImageSet): Promise<HTMLImageElement | null> => {
-      const src = imagePathIn(set, imageId);
-      return new Promise<HTMLImageElement | null>((resolve) => {
-        const img  = new Image();
-        img.onload  = () => { this.imageCache.set(imageId, img); resolve(img); };
-        img.onerror = () => {
-          if (set !== DEFAULT_IMAGE_SET) {
-            // Not in this set: fall back to `classic` and remember, so the next
-            // ask for this id goes straight there.
-            this.imageFallbacks.set(imageId, DEFAULT_IMAGE_SET);
-            resolve(attempt(DEFAULT_IMAGE_SET));
-            return;
-          }
+      // The chain is per *sprite*, not per style: under a routed style an actor and a
+      // wall resolve from different sets, so this cannot be hoisted out of the function.
+      const chain = spriteChainFor(getImageSet(), imageId);
+      // Where in the chain to *start*. A sprite that already answered further down
+      // is not re-requested from the top on every repaint, which matters because
+      // the miss is the common case: a variant set is missing most of the original's
+      // 360-odd sprites, so without this every one of them would cost a failed
+      // request per frame.
+      const attempt = (index: number): Promise<HTMLImageElement | null> => {
+        if (index >= chain.length) {
           // Cache the failure, or every frame would retry it forever. Report it
           // once: a silent skip is what made this class of bug hard to see.
           this.imageCache.set(imageId, null);
           this.failedImages.add(imageId);
-          console.warn(`[RogueSurvivor] sprite failed to load: ${src}`);
-          resolve(null);
-        };
-        img.src     = src;
+          console.warn(
+            `[RogueSurvivor] sprite failed to load in any set (${chain.join(", ")}): ${imageId}`,
+          );
+          return Promise.resolve(null);
+        }
+        const src = imagePathIn(chain[index], imageId);
+        return new Promise<HTMLImageElement | null>((resolve) => {
+          const img  = new Image();
+          img.onload  = () => {
+            this.imageChainIndex.set(imageId, index);
+            this.imageCache.set(imageId, img);
+            resolve(img);
+          };
+          img.onerror = () => {
+            // Not in this one: step down the chain and remember how far we got, so
+            // the next ask for this id starts where this one finished.
+            this.imageChainIndex.set(imageId, index + 1);
+            resolve(attempt(index + 1));
+          };
+          img.src     = src;
       });
     };
 
-    const set = this.imageFallbacks.get(imageId) ?? getImageSet();
-    const promise = attempt(set);
+    // Resume where the last attempt for this id got to, so a sprite that lives two
+    // sets down is not re-requested from the top on the next frame. Without this a
+    // variant style costs a failed request per missing sprite *per frame*, which is
+    // most of the original's 360-odd ids.
+    const promise = attempt(this.imageChainIndex.get(imageId) ?? 0);
     this.imageLoading.set(imageId, promise);
     return promise;
   }
@@ -988,9 +1003,10 @@ export class CanvasUI implements IRogueUI {
     this.imageCacheGeneration = getImageSetGeneration();
     this.imageCache.clear();
     this.imageLoading.clear();
-    // The fallbacks are per-set, so they are stale too: a sprite that was
-    // missing from the old style may well be present in the new one.
-    this.imageFallbacks.clear();
+      // The chain positions are per-style, so they are stale too: a sprite missing
+      // from the old style's chain may well be present in the new one, and an
+      // index into one chain means nothing against a different chain.
+      this.imageChainIndex.clear();
     // And so is the grayscale cache, which was the one omission here.
     //
     // `grayVariant` is a cache *of the rasterised sprite*, keyed only by image
@@ -1005,8 +1021,15 @@ export class CanvasUI implements IRogueUI {
     this.grayCache.clear();
   }
 
-  /** Which set each sprite was actually found in, when it was not the current one. */
-  private readonly imageFallbacks = new Map<string, ImageSet>();
+  /**
+   * How far down the current style's chain each sprite got.
+   *
+   * An index rather than a set name, because a chain has more than one step: the
+   * useful fact about a sprite is *how far down* it was found, so the next ask
+   * starts there instead of walking past two sets that do not have it. Cleared
+   * when the style changes — the chain it indexes into is a different one.
+   */
+  private readonly imageChainIndex = new Map<string, number>();
 
   /** The set generation `imageCache` was filled under. */
   private imageCacheGeneration = getImageSetGeneration();

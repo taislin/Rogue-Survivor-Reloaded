@@ -37,7 +37,7 @@ type Frame = {
   ctx: { fillStyle: string; fillRect(x: number, y: number, w: number, h: number): void };
   imageCache: Map<string, unknown>;
   imageLoading: Map<string, unknown>;
-  imageFallbacks: Map<string, string>;
+  imageChainIndex: Map<string, number>;
   /** The rasterised *grayscale* sprite, keyed by id alone -- see the note below. */
   grayCache: Map<string, unknown>;
   imageCacheGeneration: number;
@@ -56,7 +56,7 @@ function warmFrame(): Frame {
   ui.ctx = { fillStyle: "", fillRect: () => {} };
   ui.imageCache = cache;
   ui.imageLoading = new Map();
-  ui.imageFallbacks = new Map();
+  ui.imageChainIndex = new Map();
   // A memorised grayscale tile. The player has been here before, so this is
   // populated in any real session -- and it is invisible to `imageCache` because
   // it is keyed by id alone and consulted without one.
@@ -108,13 +108,13 @@ describe("the sprite cache follows the sprite style", () => {
     // -- which is most of a visited map -- stayed in the old one.
     const ui = warmFrame();
     ui.imageLoading.set("Actors/zombie", Promise.resolve(null));
-    ui.imageFallbacks.set("Actors/undead_master", DEFAULT_IMAGE_SET);
+    ui.imageChainIndex.set("Actors/undead_master", 1);
 
     setImageSet("genesis_classic_1.4");
     frame(ui);
 
     expect(ui.imageLoading.size, "an in-flight load survived the style change").toBe(0);
-    expect(ui.imageFallbacks.size, "a remembered fallback survived the style change").toBe(0);
+    expect(ui.imageChainIndex.size, "a remembered chain position survived the style change").toBe(0);
     expect(ui.grayCache.size, "a memorised grayscale tile survived the style change").toBe(0);
   });
 

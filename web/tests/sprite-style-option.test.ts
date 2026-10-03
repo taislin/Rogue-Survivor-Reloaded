@@ -9,6 +9,8 @@ import {
   getImageSetGeneration,
   imagePath,
   imagePathIn,
+  imageRoutes,
+  folderBackedSets,
   setImageSet,
   type ImageSet,
 } from "@engine/AssetPaths";
@@ -17,6 +19,16 @@ import { storage } from "@engine/storage";
 import { BASE } from "./helpers/assetPath";
 
 const IMAGES_DIR = join(__dirname, "../public/assets/images");
+
+/**
+ * The styles that are folders on disk.
+ *
+ * A style may instead be a *routing* between folders — `Actors/` from one set and
+ * everything else from another — and then there is no folder of its own to check.
+ * The disk assertions below are about the folder-backed ones; a routed style is
+ * held to the sharper property that every set it names has a folder.
+ */
+const FOLDER_BACKED = folderBackedSets();
 
 /** Every file under `dir`, recursively. Sprites are nested by category. */
 function countFiles(dir: string): number {
@@ -79,6 +91,7 @@ describe("the sprite sets on disk", () => {
       "deonapocalypse_v9_r1",
       "genesis_classic_1.4",
       "dafttiles_b1",
+      "genesis_actors_on_deonapocalypse",
     ]);
     expect(DEFAULT_IMAGE_SET).toBe("classic");
     expect(IMAGE_SETS).toContain(DEFAULT_IMAGE_SET);
@@ -88,11 +101,29 @@ describe("the sprite sets on disk", () => {
     // The option cycles over `IMAGE_SETS`, so a set with no folder is a row in
     // the options screen that leads to a blank game. Checked against the disk
     // rather than against `imagePathIn`, which only builds a string.
-    for (const set of IMAGE_SETS) {
+    //
+    // **Folder-backed styles only.** A routed style such as
+    // `genesis_actors_on_deonapocalypse` is a routing between two folders and has
+    // no folder of its own *by design* — there is nothing in it to be missing, and
+    // demanding one would push the design back towards merging the art, which is
+    // the thing it exists to avoid. Its correctness is asserted where it belongs:
+    // that every set it names is one of these.
+    for (const set of FOLDER_BACKED) {
       expect(
         existsSync(join(IMAGES_DIR, set)),
         `assets/images/${set} is advertised as a sprite set but has no folder`,
       ).toBe(true);
+    }
+    for (const set of IMAGE_SETS) {
+      if (FOLDER_BACKED.includes(set)) continue;
+      for (const route of imageRoutes(set)) {
+        for (const entry of route.chain) {
+          expect(
+            FOLDER_BACKED,
+            `routed style ${set} resolves through ${entry}, which has no folder`,
+          ).toContain(entry);
+        }
+      }
     }
   });
 
@@ -107,7 +138,7 @@ describe("the sprite sets on disk", () => {
     // in per-category subdirectories, so a root-level check sees about 20 of
     // `dafttiles_b1`'s 340 files and would pass with a PNG sitting in `Actors/`.
     // Verified: adding one there leaves the shallow version green.
-    for (const set of IMAGE_SETS) {
+    for (const set of FOLDER_BACKED) {
       const files = listFiles(join(IMAGES_DIR, set));
       expect(files.length, `assets/images/${set} has no sprite files at all`).toBeGreaterThan(0);
       for (const name of files) {
@@ -123,8 +154,11 @@ describe("the sprite sets on disk", () => {
     // The fallback is only sound if `classic` actually has the sprites the
     // others lack. If a future set were *larger*, the fallback would silently
     // become the wrong direction and this assertion is what would notice.
-    const count = (set: ImageSet): number => countFiles(join(IMAGES_DIR, set));
-    const sizes = IMAGE_SETS.map((set) => [set, count(set)] as const);
+      const count = (set: ImageSet): number => countFiles(join(IMAGES_DIR, set));
+      // Folder-backed only, for the same reason as the folder assertions: a routed
+      // style has no directory to count, and counting one would either be zero or
+      // measure the wrong thing.
+      const sizes = FOLDER_BACKED.map((set) => [set, count(set)] as const);
     const largest = sizes.reduce((a, b) => (b[1] > a[1] ? b : a));
     expect(largest[0], `the biggest set is "${largest[0]}", not the fallback`).toBe(DEFAULT_IMAGE_SET);
   });

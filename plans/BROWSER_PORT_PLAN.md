@@ -5,7 +5,7 @@
 > This file used to be the whole port: a completion record for Phases 1–7 and 8, a
 > phase-status table, the Still Alive stage board (§5.6), a milestone list in §1.7, and
 > a fixed-defect log in §1.1a. **All of that was history and is now gone** — 2,490
-> lines down to ~1,550. What is left is the part that is *not* finished and the part
+> lines down to 1,151. What is left is the part that is *not* finished and the part
 > that would be expensive to re-derive:
 >
 > - **§1.5 "Open work"** — the live backlog, and the single place to look first.
@@ -15,6 +15,11 @@
 > - **§2 porting rules**, **§1.6 known non-bugs** — the do-not-repeat-this list.
 > - **§5.1 / §5.3 / §5.4 forward design** — touch, renderer, first-person.
 > - **§4.1b deploy**, **§4.2 harness**, **§4.3 test strategy** — for whoever extends them.
+>
+> The sprite-routing note below was added by `607b622` during this same merge and is
+> kept verbatim: it is a shipped feature, but the *reasoning* is the durable part and
+> the measurement behind it (336 of 339 Genesis sprites also exist in Deonapocalypse)
+> is what stops anyone re-introducing the plain ordered chain.
 >
 > **Removed, and where it went:**
 >
@@ -32,6 +37,30 @@
 > **69.74 / 57.53 / 80.56 / 71.18** against a gate of **67 / 55 / 78 / 68**
 > (`web/vitest.config.mts:118-124`). ~4 min for a full suite; a coverage run writes
 > ~44 MB, so check `df -h /` first.
+>
+> **Sprite styles are routed, not just switched, 2026-10-02.** The fallback used
+> to be hardcoded to `classic`, so a style could only ever say "this set, else the
+> original". The request that broke it was *Genesis actors over a Deonapocalypse
+> world* — two sets in an order, **and** a way to say which sprites the first one
+> applies to. The second half is the part that is easy to miss, and it is
+> measurable: Genesis is a *variant of the classic set*, not an actors-only pack.
+> It ships all seven categories, and **336 of its 339 sprites also exist in
+> Deonapocalypse, with zero Genesis-only**. So a plain ordered chain would have
+> answered "Genesis first" for everything and produced Genesis tiles, items and
+> icons as well — an option that looked right and was quietly wrong.
+>
+> Hence `SpriteRoute`: a style is a list of `{prefix, chain}`, first match wins,
+> catch-all **last**, and every chain ends at `classic` so a missing id still
+> draws. `spriteChainFor(set, imageId)` resolves per sprite, because under a routed
+> style an actor and a wall come from different sets. Nothing is merged or copied —
+> the folders stay as they are on disk and the routing decides. `isFolderBacked`
+> exists because a routed style has no folder *by design*, and "every advertised
+> style has a folder" is true of the others and meaningless for it.
+>
+> The reminder that caught this: measure the data before designing the feature.
+> Three of the four tests that failed on this change were existing ones doing their
+> job — the credits had no line for the new style, and two sprite-style tests
+> assumed one set meant one folder.
 >
 > **Citations in this file are unverified.** This pass fixed the claims that had become
 > false and did not re-grep the line numbers — see §"Citation drift" at the end.
