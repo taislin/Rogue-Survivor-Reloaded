@@ -174,6 +174,19 @@ h1, h2, h3, h4 {
 }
 h1 { font-size: clamp(1.9rem, 4.5vw, 2.9rem); font-family: var(--font-display);}
 h2 { font-size: clamp(1.4rem, 3vw, 1.85rem); font-family: var(--font-display);}
+
+/* The manual's section headings use the body face rather than the display one.
+   Its h2s are numbered all-caps section titles — "4. ACTIONS & COMMANDS" — which
+   run long enough that the display face reads as a different kind of thing from
+   the text under it. Scoped to the page rather than folded into the `h2` rule
+   above, because every other page uses that rule too and this was asked for here;
+   drop the `.page-manual` qualifier to make it site-wide.
+
+   Weight stays 400, inherited from the shared heading rule, and that is now a
+   real weight rather than a workaround: Storm Gust ships no bold face, which is
+   why the comment on that rule explains the 400, whereas JetBrains Mono has one
+   and is already the body face. */
+.page-manual h2 { font-family: var(--font-mono); }
 h3 { font-size: 1.15rem; font-family: var(--font-mono); font-weight: bold;}
 h4 { font-size: 1rem; font-family: var(--font-mono); font-weight: bold;}
 
@@ -349,6 +362,7 @@ hr {
   text-transform: uppercase;
   margin-bottom: 0.8rem;
   font-size: 2em;
+  line-height: 1em;
 }
 
 .hero__meta {
