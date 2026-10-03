@@ -687,6 +687,7 @@ export const CREDITS_LINES: readonly string[] = [
 	"  deonapocalypse v9 r1 : Deon - \"DEONAPOCALYPSE\" Rogue Survivor mod 1.2",
 	"  genesis classic 1.4  : Deon - \"Genesis Classic\" Rogue Survivor mod 1.4",
 	"  dafttiles b1         : daftigod - \"Daft Tiles\", on the Rogue Survivor forum",
+	"  Genesis actors, Deonapocalypse world : Deon - the two mods above, combined",
 	"",
 	"  The two Deon mods and the Daft Tiles pack are on dffd.bay12games.com and",
 	"  on roguesurvivor.proboards.com. Thanks to all of them, and to the players",

@@ -135,7 +135,7 @@ describe("the grayscale sprite cache is invalidated with the rest of the image c
     const clears = [...body![1].matchAll(/this\.(\w+)\.clear\(\)/g)].map((m) => m[1]);
     expect(clears).toContain("imageCache");
     expect(clears).toContain("imageLoading");
-    expect(clears).toContain("imageFallbacks");
+    expect(clears).toContain("imageChainIndex");
     // The one that was missing.
     expect(clears, "grayCache must be cleared with the others").toContain("grayCache");
   });

@@ -134,6 +134,30 @@
 >   exist and type-checked anyway because `rules` is typed loosely. A scan of all
 >   95 `rules.*` call sites found no other gap.
 >
+> **Sprite styles are routed, not just switched, 2026-10-02.** The fallback used
+> to be hardcoded to `classic`, so a style could only ever say "this set, else the
+> original". The request that broke it was *Genesis actors over a Deonapocalypse
+> world* — two sets in an order, **and** a way to say which sprites the first one
+> applies to. The second half is the part that is easy to miss, and it is
+> measurable: Genesis is a *variant of the classic set*, not an actors-only pack.
+> It ships all seven categories, and **336 of its 339 sprites also exist in
+> Deonapocalypse, with zero Genesis-only**. So a plain ordered chain would have
+> answered "Genesis first" for everything and produced Genesis tiles, items and
+> icons as well — an option that looked right and was quietly wrong.
+>
+> Hence `SpriteRoute`: a style is a list of `{prefix, chain}`, first match wins,
+> catch-all **last**, and every chain ends at `classic` so a missing id still
+> draws. `spriteChainFor(set, imageId)` resolves per sprite, because under a routed
+> style an actor and a wall come from different sets. Nothing is merged or copied —
+> the folders stay as they are on disk and the routing decides. `isFolderBacked`
+> exists because a routed style has no folder *by design*, and "every advertised
+> style has a folder" is true of the others and meaningless for it.
+>
+> The reminder that caught this: measure the data before designing the feature.
+> Three of the four tests that failed on this change were existing ones doing their
+> job — the credits had no line for the new style, and two sprite-style tests
+> assumed one set meant one folder.
+>
 > **Known-slow, now opt-in:** `tests/idle-district-sim.test.ts` and
 > `tests/idle-auto-advance.test.ts` boot the real world generator with district
 > simulation at FULL and play real turns several times over, so they are measured

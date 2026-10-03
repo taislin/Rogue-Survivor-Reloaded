@@ -12,6 +12,9 @@ import {
   clampCreditsLine,
 } from "@engine/RogueGame";
 import { IMAGE_SETS } from "@engine/AssetPaths";
+import { GameOptions } from "@engine/GameOptions";
+
+const spriteStyleName = GameOptions.spriteStyleName.bind(GameOptions);
 
 /**
  * The credits screen has to name everyone whose work is in the build, and it has
@@ -80,11 +83,18 @@ it("has a line naming every set in IMAGE_SETS, by its display name", () => {
     // called. And the compare is case-insensitive, because the credits carry the
     // proper name of each piece of art in the value column — "Daft Tiles b1" is
     // `dafttiles b1` in the options row and *Daft Tiles* to its author — and a
-    // player matches the two by eye, not by string. The folder name this derives
-    // from is what still ties the two together: a set renamed in `AssetPaths`
-    // stops matching here.
+    // player matches the two by eye, not by string.
+    //
+    // Derived from `spriteStyleName`, which is what the options row actually
+    // shows, rather than from the folder name. That matters for a style with a
+    // proper name: the combined one reads "Genesis actors, Deonapocalypse world"
+    // in the options and "genesis_actors_on_deonapocalypse" as a folder — and a
+    // player looking for the row they picked would never find a credits line
+    // spelled like a path.
     for (const set of IMAGE_SETS) {
-      const name = set.replace(/_/g, " ").toLowerCase();
+      const name = spriteStyleName(set)
+        .replace("  (complete set)", "")
+        .toLowerCase();
       expect(
         CREDITS_LINES.some((l) => l.toLowerCase().includes(name)),
         `no credits line names the "${name}" sprite style`,
