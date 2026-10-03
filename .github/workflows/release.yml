@@ -211,6 +211,19 @@ jobs:
     # `web/dist-release/`, which is not where anything is.
 
     steps:
+      - uses: actions/checkout@v4
+        # Required, and the reason this job failed. `gh release create` creates the
+        # tag through a local repository, so without a checkout it aborts with
+        # `fatal: not a git repository` - this job downloads an artifact and
+        # otherwise never puts a `.git` on disk.
+        #
+        # `fetch-depth: 0` because `--target` may name a commit that a shallow
+        # checkout of the default branch does not contain: this workflow can be
+        # dispatched from a feature branch with `allow_off_default_branch`, and the
+        # archives are built from that branch's commit.
+        with:
+          fetch-depth: 0
+
       - uses: actions/download-artifact@v4
         with:
           name: release-archives

@@ -207,12 +207,22 @@ describe("the preview cues exist for the rows that adjust", () => {
 });
 
 describe("a melee miss is not gated on the ruleset", () => {
+	// The fork annotates its additions with `//@@MP`, but not consistently in one
+	// place: some constants carry it trailing on the declaration, most carry it on
+	// a standalone comment line above it. The fixture records the trailing form,
+	// which is the one that marks a single declaration unambiguously, and says so.
+	const fixture = JSON.parse(
+		readFileSync(join(__dirname, "fixtures", "gamesounds-fork-marked.json"), "utf-8"),
+	) as {
+		marked: { name: string; line: number }[];
+		unmarkedButAsserted: { name: string; line: number }[];
+	};
+
 	it("because the constant carries no `@@MP` marker on its declaration", () => {
-		// `GameSounds.cs:119`. The fork annotates every constant it *adds*, on the
-		// declaration — `UNDEAD_EAT_PLAYER` is marked `- added a NEARBY (Release 3)`
-		// at `GameSounds.cs:15`. This one is marked nowhere; only its call site is
-		// (`//@@MP (Release 2)` at `RogueGame.cs:18547`), which is the fork wiring up
-		// a sound the original game already shipped.
+		// `GameSounds.cs:119`. `UNDEAD_EAT_PLAYER` *is* marked on its declaration,
+		// which is what makes this a real distinction rather than a formality: only
+		// its call site is marked for this one (`//@@MP (Release 2)` at
+		// `RogueGame.cs:18547`), the fork wiring up a sound the original shipped.
 		//
 		// So the sound belongs to both rulesets and `tests/extended-audio.test.ts`
 		// lists it in `VANILLA_IDS` rather than demanding an `ExtendedAudio` gate —
@@ -220,18 +230,29 @@ describe("a melee miss is not gated on the ruleset", () => {
 		// plays. Read the declaration, not the call site; reading the wrong one is
 		// how this constant was misfiled in the first place.
 		//
-		// Asserted against the C# rather than against the port, because the port's
-		// copy carries no marker to read and inventing one would make this test
-		// pass for any value.
-		const source = readFileSync(
-			join(__dirname, "..", "..", "_refs", "StillAlive-master",
-            "Rogue Survivor Still Alive", "Gameplay", "GameSounds.cs"),
-			"utf-8",
+		// **Asserted against a committed fixture rather than the C#.** `_refs/` is
+		// gitignored, so opening `GameSounds.cs` here passed locally and failed in
+		// CI — the worst arrangement available, and the reason the other five
+		// reference-checking tests already commit fixtures. The fixture's header
+		// records how to regenerate it.
+		const marked = new Set(fixture.marked.map((e) => e.name));
+		const meleeMiss = fixture.unmarkedButAsserted.find(
+			(e) => e.name === "MELEE_ATTACK_MISS_PLAYER",
 		);
-		const line = source
-			.split("\n")
-			.find((l) => l.includes("string MELEE_ATTACK_MISS_PLAYER ="));
-		expect(line, "the declaration moved or was renamed").toBeDefined();
-		expect(line, "a marker here would make the sound fork-only").not.toContain("@@MP");
+		expect(meleeMiss, "the fixture lost the entry").toBeDefined();
+		expect(
+			marked.has("MELEE_ATTACK_MISS_PLAYER"),
+			"a marker here would make the sound fork-only",
+		).toBe(false);
+	});
+
+	it("and the fixture is not vacuous", () => {
+		// A committed fixture that lists nothing, or lists everything, would make the
+		// assertion above pass for any input. So it is pinned against the marker the
+		// C# demonstrably carries, and against being empty.
+		const marked = new Set(fixture.marked.map((e) => e.name));
+		expect(marked.size).toBeGreaterThan(0);
+		expect(marked.has("UNDEAD_EAT_PLAYER")).toBe(true);
+		expect(marked.has("BUILDING_NEARBY")).toBe(true);
 	});
 });
