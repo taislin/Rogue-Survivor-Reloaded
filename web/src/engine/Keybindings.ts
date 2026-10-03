@@ -299,6 +299,18 @@ export class Keybindings {
     this.set(PlayerCommand.VIEW_MODE_TOGGLE, 'Shift+F');
 
     /*
+     * Port-only: the in-game action menu. `Tab` is used because nothing in the C#
+     * or the port binds it and no F-key is taken either, so it costs no existing
+     * binding — checked rather than assumed, since `Tab` is the kind of key a
+     * browser or an accessibility setting might also want.
+     *
+     * It is a shortcut, not the only way to reach the actions: every entry in the
+     * menu keeps its own key, shown next to it, which is what makes the menu worth
+     * opening at all rather than a slower way to type a letter.
+     */
+    this.set(PlayerCommand.ACTION_MENU, 'Tab');
+
+    /*
      * Still Alive, Release 8-2. C# `Keybindings.cs:88` binds
      * `SWAP_INVENTORY` to `Keys.Y`, and the port takes the letter rather than a
      * physical key code because `Keybindings` is a browser table throughout.

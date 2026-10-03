@@ -125,4 +125,16 @@ export enum PlayerCommand {
    * rather than the C#'s bare `U`.
    */
   UNLOAD_AMMO,
+
+  /**
+   * The in-game action menu: a modal grid of buttons drawn over the minimap.
+   *
+   * Port-only, and appended at the end for the reason the header of this file
+   * gives at length: a stored `Keybindings` pair is `[commandNumber, key]`, so a
+   * command's number is part of the save format and inserting one silently
+   * re-points every binding above it. It dispatches no action of its own — it
+   * runs `HandleActionMenu`, which chooses one of the commands already here and
+   * hands it back to the same `switch` the keybinding would have reached.
+   */
+  ACTION_MENU,
 }

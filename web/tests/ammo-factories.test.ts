@@ -225,16 +225,33 @@ describe("makeItemRandomCommonAmmo", () => {
 describe("PlayerCommand.UNLOAD_AMMO", () => {
 	const keyBindings = RogueGame.keyBindings;
 
-	it("is appended, not inserted, because a command's number is in the save format", () => {
-		// A stored `Keybindings` pair is `[commandNumber, key]`. Inserting a member
-		// re-points every binding above it, silently, for every player who has ever
-		// rebound something. So the value must be the last one in the enum.
-		const names = Object.keys(PlayerCommand).filter(
-			(k) => typeof (PlayerCommand as unknown as Record<string, unknown>)[k] === "number",
-		);
-		expect(names[names.length - 1]).toBe("UNLOAD_AMMO");
-		expect(PlayerCommand.UNLOAD_AMMO).toBe(names.length - 1);
-	});
+  it("is appended, not inserted, because a command's number is in the save format", () => {
+    // A stored `Keybindings` pair is `[commandNumber, key]`. Inserting a member
+    // re-points every binding above it, silently, for every player who has ever
+    // rebound something. So the value must be the last one in the enum.
+    //
+    // **Asserted as the invariant, not as a name.** Pinning the name meant that
+    // adding any command broke a test written about `UNLOAD_AMMO` specifically —
+    // which is the test telling you it is watching the wrong thing. What has to
+    // hold is that the highest number in the enum belongs to the last member, so
+    // that is what is checked, and the name is only reported if it fails.
+    const names = Object.keys(PlayerCommand).filter(
+      (k) => typeof (PlayerCommand as unknown as Record<string, unknown>)[k] === "number",
+    );
+    const last = names[names.length - 1]!;
+    const lastValue = (PlayerCommand as unknown as Record<string, number>)[last]!;
+    expect(
+      lastValue,
+      `"${last}" does not hold the highest command number, so something was inserted above it`,
+    ).toBe(names.length - 1);
+
+    // And every value is distinct and contiguous from zero, which is what makes
+    // `[commandNumber, key]` a stable thing to have written down.
+    const values = names.map((n) => (PlayerCommand as unknown as Record<string, number>)[n]!);
+    expect(new Set(values).size, "a command number is reused").toBe(values.length);
+    expect(Math.min(...values)).toBe(0);
+    expect(Math.max(...values)).toBe(values.length - 1);
+  });
 
 	it("has a binding, and the input layer resolves it", () => {
 		// `keyToCommand(keybindings, key, ctrl, alt, shift, code)`, and the browser

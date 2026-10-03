@@ -152,6 +152,14 @@ import {
 	ItemWeaponModel,
 } from "@engine/items/ItemWeapon";
 import { InputTranslator, Keybindings } from "@engine/Keybindings";
+import {
+  ACTION_ENTRIES,
+  layoutButtons,
+  buttonAt,
+  moveSelection,
+  ACTION_MENU_COLUMNS,
+  type ActionMenuLayout,
+} from "@ui/ActionMenu";
 import { type FOV, LOS } from "@engine/LOS";
 import { coordKey } from "@engine/CoordKey";
 import { MessageManager } from "@engine/MessageManager";
@@ -4501,9 +4509,13 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 			{ label: "Turn Left (first person)", command: PlayerCommand.LOOK_LEFT },
 			{ label: "Turn Right (first person)", command: PlayerCommand.LOOK_RIGHT },
 			{ label: "Toggle View Mode", command: PlayerCommand.VIEW_MODE_TOGGLE },
-			{ label: "Zoom in", command: PlayerCommand.ZOOM_IN },
-			{ label: "Zoom out", command: PlayerCommand.ZOOM_OUT },
-		];
+		{ label: "Zoom in", command: PlayerCommand.ZOOM_IN },
+		{ label: "Zoom out", command: PlayerCommand.ZOOM_OUT },
+		// Browser port: the action menu's own hotkey. It has to be listed here or
+		// the key would be one the game reads and the player cannot change, which is
+		// the single thing this screen exists to prevent.
+		{ label: "Action menu", command: PlayerCommand.ACTION_MENU },
+	];
 		const menuEntries: string[] = rows.map((r) => r.label);
 
 		let loop = true;
@@ -7565,7 +7577,19 @@ inv.removeAllQuantity(it);
 			(pos as any).y = y;
 			/* trim */ pos;
 
-			if (map.getTileAt(pos.x, pos.y)!.isInside) continue;
+			// `pos` is `nearPoint` plus a signed offset, so it can land outside the
+			// map entirely -- and it usually does: every caller passes the position
+			// of a leader just spawned by `SpawnActorOnMapBorder`, i.e. a tile on
+			// x=0, y=0, width-1 or height-1, which ±maxDistToPoint walks straight off
+			// the edge. `Map.getTileAt` answers `null` off-map, so the `!` here threw
+			// `TypeError: Cannot read properties of null (reading 'isInside')` out of
+			// `FireEvent_BikersRaid` and killed the turn. Same upstream shape as the
+			// occupied-tile fix in `SpawnActorOnMapBorder` -- C# reads `.isInside`
+			// off a `getTileAt` that returns null out of bounds too -- so it is
+			// corrected here rather than in `src/`: no tile means no spawn, which is
+			// just another reason for the retry loop to try the next candidate.
+			const tile = map.getTileAt(pos.x, pos.y);
+			if (tile == null || tile.isInside) continue;
 			// Same dead-check bug as SpawnActorOnMapBorder: the C# uses the bool
 			// overload (Rules.cs:1241, called at RogueGame.cs:5053) and the port was
 			// testing a RuleResult object for truthiness.
@@ -8314,7 +8338,7 @@ inv.removeAllQuantity(it);
 				// here, on the translated command, so the binding table keeps one
 				// meaning per key and no key is bound to two commands. The top-down
 				// view makes this the identity, which is asserted in the tests.
-				const command = remapForView(
+				let command = remapForView(
 					InputTranslator.keyToCommand(
 						RogueGame.KeyBindings(),
 						inKey.key,
@@ -8336,403 +8360,424 @@ inv.removeAllQuantity(it);
 						return;
 					}
 				} else {
-					switch (command) {
-						// options, menu etc...
-						case PlayerCommand.ABANDON_GAME:
-							if (await this.HandleAbandonGame()) {
-								this.StopSimThread(true); // alpha10 abort allowed when quitting
-								loop = false;
-								await this.KillActor(null, this.m_Player, "suicide");
-							}
-							break;
+				// Re-entered once when the action menu hands a command back, so the chosen
+				// action goes through *this* switch rather than a second copy of it that
+				// could drift from the one the keys reach. One extra pass at most: the menu
+				// is the only case that reassigns command, and it cannot return itself.
+				let again = true;
+				while (again) {
+					again = false;
+						switch (command) {
+							// options, menu etc...
+							case PlayerCommand.ABANDON_GAME:
+								if (await this.HandleAbandonGame()) {
+									this.StopSimThread(true); // alpha10 abort allowed when quitting
+									loop = false;
+									await this.KillActor(null, this.m_Player, "suicide");
+								}
+								break;
 
-						case PlayerCommand.HELP_MODE:
-							await this.HandleHelpMode();
-							break;
+							case PlayerCommand.HELP_MODE:
+								await this.HandleHelpMode();
+								break;
 
-						case PlayerCommand.HINTS_SCREEN_MODE:
-							await this.HandleHintsScreen();
-							break;
+							case PlayerCommand.HINTS_SCREEN_MODE:
+								await this.HandleHintsScreen();
+								break;
 
-						case PlayerCommand.ADVISOR:
-							await this.HandleAdvisor(player);
-							break;
+							case PlayerCommand.ADVISOR:
+								await this.HandleAdvisor(player);
+								break;
 
-						case PlayerCommand.OPTIONS_MODE:
-							await this.HandleOptions(true);
-							this.ApplyOptions(true);
-							break;
+							case PlayerCommand.ACTION_MENU: {
+								// Hands the chosen command back to this same switch, so
+								// clicking "Sleep" runs the same code the `S` keybinding
+								// would have. The `while (again)` above exists for this and
+								// nothing else.
+								const chosen = await this.HandleActionMenu();
+								if (chosen !== null) {
+									command = chosen;
+									again = true;
+								}
+								break;
+							}
 
-						case PlayerCommand.KEYBINDING_MODE:
-							await this.HandleRedefineKeys();
-							break;
+							case PlayerCommand.OPTIONS_MODE:
+								await this.HandleOptions(true);
+								this.ApplyOptions(true);
+								break;
 
-						case PlayerCommand.MESSAGE_LOG:
-							await this.HandleMessageLog();
-							break;
+							case PlayerCommand.KEYBINDING_MODE:
+								await this.HandleRedefineKeys();
+								break;
 
-						// alpha10.1 moved sim thread responsability out to DoLoadGame
-						case PlayerCommand.LOAD_GAME:
-							// load.
-							this.HandleLoadGame();
-							// refresh player local variable!!
-							player = this.m_Player;
-							// stop looping.
-							loop = false;
-							// stop the update loop!
-							this.m_HasLoadedGame = true;
-							break;
-						// alpha10.1 moved sim thread responsability out to DoSaveGame
-						case PlayerCommand.SAVE_GAME:
-							this.HandleSaveGame();
-							break;
+							case PlayerCommand.MESSAGE_LOG:
+								await this.HandleMessageLog();
+								break;
 
-						case PlayerCommand.SCREENSHOT:
-							this.HandleScreenshot();
-							break;
+							// alpha10.1 moved sim thread responsability out to DoLoadGame
+							case PlayerCommand.LOAD_GAME:
+								// load.
+								this.HandleLoadGame();
+								// refresh player local variable!!
+								player = this.m_Player;
+								// stop looping.
+								loop = false;
+								// stop the update loop!
+								this.m_HasLoadedGame = true;
+								break;
+							// alpha10.1 moved sim thread responsability out to DoSaveGame
+							case PlayerCommand.SAVE_GAME:
+								this.HandleSaveGame();
+								break;
 
-						// Browser port: map zoom. Like SCREENSHOT, this redraws and leaves
-						// `loop` alone, so it costs no turn and the player keeps their AP.
-						case PlayerCommand.ZOOM_IN:
-							this.StepMapZoom(1);
-							break;
+							case PlayerCommand.SCREENSHOT:
+								this.HandleScreenshot();
+								break;
 
-						case PlayerCommand.ZOOM_OUT:
-							this.StepMapZoom(-1);
-							break;
+							// Browser port: map zoom. Like SCREENSHOT, this redraws and leaves
+							// `loop` alone, so it costs no turn and the player keeps their AP.
+							case PlayerCommand.ZOOM_IN:
+								this.StepMapZoom(1);
+								break;
 
-						// Browser port: first-person turning. Like the zoom keys, this
-						// redraws and leaves `loop` alone, so it costs no turn and no
-						// action point — turning is for looking, not for acting. The
-						// arrow keys reach these through `remapForView` below rather
-						// than through the binding table, so no key is bound twice.
-						case PlayerCommand.LOOK_LEFT:
-							this.TurnFirstPerson(-1);
-							break;
+							case PlayerCommand.ZOOM_OUT:
+								this.StepMapZoom(-1);
+								break;
 
-						case PlayerCommand.LOOK_RIGHT:
-							this.TurnFirstPerson(1);
-							break;
+							// Browser port: first-person turning. Like the zoom keys, this
+							// redraws and leaves `loop` alone, so it costs no turn and no
+							// action point — turning is for looking, not for acting. The
+							// arrow keys reach these through `remapForView` below rather
+							// than through the binding table, so no key is bound twice.
+							case PlayerCommand.LOOK_LEFT:
+								this.TurnFirstPerson(-1);
+								break;
 
-						// Browser port: switch view. Writes the option and then runs the
-						// *same* `ApplyOptions` the options screen runs, so there is one
-						// place a view change takes effect. Also free, like the zoom and
-						// look keys: it redraws and leaves `loop` alone.
-						case PlayerCommand.VIEW_MODE_TOGGLE:
-							this.ToggleViewMode();
-							break;
+							case PlayerCommand.LOOK_RIGHT:
+								this.TurnFirstPerson(1);
+								break;
 
-						case PlayerCommand.CITY_INFO:
-							await this.HandleCityInfo();
-							break;
+							// Browser port: switch view. Writes the option and then runs the
+							// *same* `ApplyOptions` the options screen runs, so there is one
+							// place a view change takes effect. Also free, like the zoom and
+							// look keys: it redraws and leaves `loop` alone.
+							case PlayerCommand.VIEW_MODE_TOGGLE:
+								this.ToggleViewMode();
+								break;
 
-						// actual game actions.
-						case PlayerCommand.WAIT_OR_SELF:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
+							case PlayerCommand.CITY_INFO:
+								await this.HandleCityInfo();
 								break;
-							}
-							loop = false;
-							this.DoWait(player);
-							break;
 
-						case PlayerCommand.WAIT_LONG:
-							if (await this.TryPlayerUnwell()) {
+							// actual game actions.
+							case PlayerCommand.WAIT_OR_SELF:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
 								loop = false;
+								this.DoWait(player);
 								break;
-							}
-							loop = false;
-							this.StartPlayerWaitLong(player);
-							break;
 
-						// Browser port: the eight compass moves collapse into one case,
-						// because in first person two of them turn instead and the
-						// other two walk *relative* to the camera. The direction is
-						// resolved by `resolveMoveDirection` rather than named here, so
-						// the top-down behaviour is the identity and the first-person
-						// behaviour is a function of the facing — both in one place,
-						// and both unit-testable without a browser.
-						case PlayerCommand.MOVE_N:
-						case PlayerCommand.MOVE_NE:
-						case PlayerCommand.MOVE_E:
-						case PlayerCommand.MOVE_SE:
-						case PlayerCommand.MOVE_S:
-						case PlayerCommand.MOVE_SW:
-						case PlayerCommand.MOVE_W:
-						case PlayerCommand.MOVE_NW:
-							if (await this.TryPlayerUnwell()) {
+							case PlayerCommand.WAIT_LONG:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
 								loop = false;
+								this.StartPlayerWaitLong(player);
 								break;
-							}
-							loop = !(await this.DoPlayerBump(
-								player,
-								this.resolveMoveDirection(command),
-							));
-							break;
-						case PlayerCommand.USE_EXIT:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
-								break;
-							}
-							loop = !(await this.DoUseExit(player, player.location.position));
-							break;
 
-						case PlayerCommand.ITEM_SLOT_0:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
+							// Browser port: the eight compass moves collapse into one case,
+							// because in first person two of them turn instead and the
+							// other two walk *relative* to the camera. The direction is
+							// resolved by `resolveMoveDirection` rather than named here, so
+							// the top-down behaviour is the identity and the first-person
+							// behaviour is a function of the facing — both in one place,
+							// and both unit-testable without a browser.
+							case PlayerCommand.MOVE_N:
+							case PlayerCommand.MOVE_NE:
+							case PlayerCommand.MOVE_E:
+							case PlayerCommand.MOVE_SE:
+							case PlayerCommand.MOVE_S:
+							case PlayerCommand.MOVE_SW:
+							case PlayerCommand.MOVE_W:
+							case PlayerCommand.MOVE_NW:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.DoPlayerBump(
+									player,
+									this.resolveMoveDirection(command),
+								));
 								break;
-							}
-							loop = !(await this.DoPlayerItemSlot(player, 0, inKey));
-							break;
-						case PlayerCommand.ITEM_SLOT_1:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
+							case PlayerCommand.USE_EXIT:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.DoUseExit(player, player.location.position));
 								break;
-							}
-							loop = !(await this.DoPlayerItemSlot(player, 1, inKey));
-							break;
-						case PlayerCommand.ITEM_SLOT_2:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
-								break;
-							}
-							loop = !(await this.DoPlayerItemSlot(player, 2, inKey));
-							break;
-						case PlayerCommand.ITEM_SLOT_3:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
-								break;
-							}
-							loop = !(await this.DoPlayerItemSlot(player, 3, inKey));
-							break;
-						case PlayerCommand.ITEM_SLOT_4:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
-								break;
-							}
-							loop = !(await this.DoPlayerItemSlot(player, 4, inKey));
-							break;
-						case PlayerCommand.ITEM_SLOT_5:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
-								break;
-							}
-							loop = !(await this.DoPlayerItemSlot(player, 5, inKey));
-							break;
-						case PlayerCommand.ITEM_SLOT_6:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
-								break;
-							}
-							loop = !(await this.DoPlayerItemSlot(player, 6, inKey));
-							break;
-						case PlayerCommand.ITEM_SLOT_7:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
-								break;
-							}
-							loop = !(await this.DoPlayerItemSlot(player, 7, inKey));
-							break;
-						case PlayerCommand.ITEM_SLOT_8:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
-								break;
-							}
-							loop = !(await this.DoPlayerItemSlot(player, 8, inKey));
-							break;
-						case PlayerCommand.ITEM_SLOT_9:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
-								break;
-							}
-							loop = !(await this.DoPlayerItemSlot(player, 9, inKey));
-							break;
 
-						case PlayerCommand.RUN_TOGGLE:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
+							case PlayerCommand.ITEM_SLOT_0:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.DoPlayerItemSlot(player, 0, inKey));
 								break;
-							}
-							this.HandlePlayerRunToggle(player);
-							break;
+							case PlayerCommand.ITEM_SLOT_1:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.DoPlayerItemSlot(player, 1, inKey));
+								break;
+							case PlayerCommand.ITEM_SLOT_2:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.DoPlayerItemSlot(player, 2, inKey));
+								break;
+							case PlayerCommand.ITEM_SLOT_3:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.DoPlayerItemSlot(player, 3, inKey));
+								break;
+							case PlayerCommand.ITEM_SLOT_4:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.DoPlayerItemSlot(player, 4, inKey));
+								break;
+							case PlayerCommand.ITEM_SLOT_5:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.DoPlayerItemSlot(player, 5, inKey));
+								break;
+							case PlayerCommand.ITEM_SLOT_6:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.DoPlayerItemSlot(player, 6, inKey));
+								break;
+							case PlayerCommand.ITEM_SLOT_7:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.DoPlayerItemSlot(player, 7, inKey));
+								break;
+							case PlayerCommand.ITEM_SLOT_8:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.DoPlayerItemSlot(player, 8, inKey));
+								break;
+							case PlayerCommand.ITEM_SLOT_9:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.DoPlayerItemSlot(player, 9, inKey));
+								break;
 
-						case PlayerCommand.CLOSE_DOOR:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
+							case PlayerCommand.RUN_TOGGLE:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								this.HandlePlayerRunToggle(player);
 								break;
-							}
-							loop = !(await this.HandlePlayerCloseDoor(player));
-							break;
-						case PlayerCommand.BARRICADE_MODE:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
-								break;
-							}
-							loop = !(await this.HandlePlayerBarricade(player));
-							break;
-						case PlayerCommand.BREAK_MODE:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
-								break;
-							}
-							loop = !(await this.HandlePlayerBreak(player));
-							break;
-						case PlayerCommand.BUILD_LARGE_FORTIFICATION:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
-								break;
-							}
-							loop = !(await this.HandlePlayerBuildFortification(player, true));
-							break;
-						case PlayerCommand.BUILD_SMALL_FORTIFICATION:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
-								break;
-							}
-							loop = !(await this.HandlePlayerBuildFortification(
-								player,
-								false,
-							));
-							break;
-						case PlayerCommand.ORDER_MODE:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
-								break;
-							}
-							loop = !(await this.HandlePlayerOrderMode(player));
-							break;
-						case PlayerCommand.PULL_MODE: // alpha10
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
-								break;
-							}
-							loop = !(await this.HandlePlayerPull(player));
-							break;
-						case PlayerCommand.PUSH_MODE:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
-								break;
-							}
-							loop = !(await this.HandlePlayerPush(player));
-							break;
-						case PlayerCommand.FIRE_MODE:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
-								break;
-							}
-							loop = !(await this.HandlePlayerFireMode(player));
-							break;
 
-						case PlayerCommand.SHOUT:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
+							case PlayerCommand.CLOSE_DOOR:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.HandlePlayerCloseDoor(player));
 								break;
-							}
-							loop = !(await this.HandlePlayerShout(player, null));
-							break;
-
-						case PlayerCommand.SLEEP:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
+							case PlayerCommand.BARRICADE_MODE:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.HandlePlayerBarricade(player));
 								break;
-							}
-							loop = !(await this.HandlePlayerSleep(player));
-							break;
-
-						case PlayerCommand.SWITCH_PLACE:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
+							case PlayerCommand.BREAK_MODE:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.HandlePlayerBreak(player));
 								break;
-							}
-							loop = !(await this.HandlePlayerSwitchPlace(player));
-							break;
-
-						case PlayerCommand.USE_SPRAY:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
+							case PlayerCommand.BUILD_LARGE_FORTIFICATION:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.HandlePlayerBuildFortification(player, true));
 								break;
-							}
-							loop = !(await this.HandlePlayerUseSpray(player));
-							break;
-
-						case PlayerCommand.SWAP_INVENTORY: //@@MP (Release 8-2)
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
+							case PlayerCommand.BUILD_SMALL_FORTIFICATION:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.HandlePlayerBuildFortification(
+									player,
+									false,
+								));
 								break;
-							}
-							loop = !this.HandlePlayerSwapItemInventory(player, mousePos);
-							break;
-
-						case PlayerCommand.MAKE_COOKING_FIRE: //@@MP (Release 7-6)
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
+							case PlayerCommand.ORDER_MODE:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.HandlePlayerOrderMode(player));
 								break;
-							}
-							loop = !(await this.HandlePlayerMakeFireForCooking(player));
-							break;
-
-						case PlayerCommand.UNLOAD_AMMO: //@@MP (Release 7-6)
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
+							case PlayerCommand.PULL_MODE: // alpha10
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.HandlePlayerPull(player));
 								break;
-							}
-							loop = !this.HandlePlayerUnloadAmmo(player);
-							break;
-
-						case PlayerCommand.LEAD_MODE:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
+							case PlayerCommand.PUSH_MODE:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.HandlePlayerPush(player));
 								break;
-							}
-							loop = !(await this.HandlePlayerTakeLead(player));
-							break;
-
-						case PlayerCommand.GIVE_ITEM:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
+							case PlayerCommand.FIRE_MODE:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.HandlePlayerFireMode(player));
 								break;
-							}
-							loop = !(await this.HandlePlayerGiveItem(player, mousePos));
-							break;
 
-						case PlayerCommand.NEGOCIATE_TRADE: // alpha10
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
+							case PlayerCommand.SHOUT:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.HandlePlayerShout(player, null));
 								break;
-							}
-							loop = !(await this.HandlePlayerNegociateTrade(player)); // alpha10
-							break;
 
-						case PlayerCommand.MARK_ENEMIES_MODE:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
+							case PlayerCommand.SLEEP:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.HandlePlayerSleep(player));
 								break;
-							}
-							await this.HandlePlayerMarkEnemies(player);
-							break;
 
-						case PlayerCommand.EAT_CORPSE:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
+							case PlayerCommand.SWITCH_PLACE:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.HandlePlayerSwitchPlace(player));
 								break;
-							}
-							loop = !this.HandlePlayerEatCorpse(player, mousePos);
-							break;
 
-						case PlayerCommand.REVIVE_CORPSE:
-							if (await this.TryPlayerUnwell()) {
-								loop = false;
+							case PlayerCommand.USE_SPRAY:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.HandlePlayerUseSpray(player));
 								break;
-							}
-							loop = !this.HandlePlayerReviveCorpse(player, mousePos);
-							break;
 
-						case PlayerCommand.NONE:
-							break;
+							case PlayerCommand.SWAP_INVENTORY: //@@MP (Release 8-2)
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !this.HandlePlayerSwapItemInventory(player, mousePos);
+								break;
 
-						default:
-							throw new TypeError("command unhandled");
-					}
+							case PlayerCommand.MAKE_COOKING_FIRE: //@@MP (Release 7-6)
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.HandlePlayerMakeFireForCooking(player));
+								break;
+
+							case PlayerCommand.UNLOAD_AMMO: //@@MP (Release 7-6)
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !this.HandlePlayerUnloadAmmo(player);
+								break;
+
+							case PlayerCommand.LEAD_MODE:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.HandlePlayerTakeLead(player));
+								break;
+
+							case PlayerCommand.GIVE_ITEM:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.HandlePlayerGiveItem(player, mousePos));
+								break;
+
+							case PlayerCommand.NEGOCIATE_TRADE: // alpha10
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.HandlePlayerNegociateTrade(player)); // alpha10
+								break;
+
+							case PlayerCommand.MARK_ENEMIES_MODE:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								await this.HandlePlayerMarkEnemies(player);
+								break;
+
+							case PlayerCommand.EAT_CORPSE:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !this.HandlePlayerEatCorpse(player, mousePos);
+								break;
+
+							case PlayerCommand.REVIVE_CORPSE:
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !this.HandlePlayerReviveCorpse(player, mousePos);
+								break;
+
+							case PlayerCommand.NONE:
+								break;
+
+							default:
+								throw new TypeError("command unhandled");
+						}
+				}
 				}
 			} else {
 				////////////////
@@ -30335,6 +30380,162 @@ const model = isUndead
 		layer(DollPart.EYES);
 		layer(DollPart.HEAD);
 	}
+
+/**
+ * The in-game action menu: a modal grid of buttons drawn over the minimap.
+ *
+ * **Modal**, so the world is frozen while it is open and a click cannot fall
+ * through onto the map underneath. That matches every other in-play mode here —
+ * `BARRICADE_MODE`, `FIRE_MODE` and the inventory click handling are all loops
+ * inside a turn — and it means the menu cannot be left open by accident or
+ * clicked twice into two actions.
+ *
+ * It does not consume a turn: the loop returns without ending the player's action
+ * unless a command was actually chosen, so opening it to look costs nothing. That
+ * is the whole reason it is worth having.
+ *
+ * Each button shows the action's **current** keybinding, read live from
+ * `s_KeyBindings`. That is what makes it worth opening rather than a slower way to
+ * type a letter: after rebinding `F`, the menu says so.
+ *
+ * Returns the chosen command, or null when dismissed. The caller re-dispatches it
+ * through the same switch the keys use.
+ */
+async HandleActionMenu(): Promise<PlayerCommand | null> {
+	const rows = Math.ceil(ACTION_ENTRIES.length / ACTION_MENU_COLUMNS);
+	const layout: ActionMenuLayout = {
+		originX: MINIMAP_X + 2,
+		originY: MINIMAP_Y + 2,
+		buttonWidth: 62,
+		buttonHeight: 14,
+		columns: ACTION_MENU_COLUMNS,
+		gap: 2,
+	};
+	const buttons = layoutButtons(ACTION_ENTRIES, layout);
+	let selected = 0;
+	let done = false;
+	let chosen: PlayerCommand | null = null;
+
+	while (!done) {
+		// **No `RedrawPlayScreen()` here, deliberately.** The play screen is already
+		// on the canvas - the menu is an overlay on the frame the last turn left, and
+		// redrawing it would mean needing a live world (player, map, districts) just
+		// to open a menu over one. It also threw `isDead` of undefined when the
+		// screen was exercised outside a game.
+		//
+		// **The panel is painted before anything is drawn on it.** Without this the
+		// map shows through the gaps between the buttons and behind their labels,
+		// which is what it did at first: the buttons were drawn straight onto the map
+		// and it read as a styling choice. There is no alpha in this UI, so an opaque
+		// fill is the only way to get a panel rather than a tint.
+		const headerY = layout.originY - MENU_BOLD_LINE_SPACING;
+		const footerY =
+			layout.originY + (rows + 1) * (layout.buttonHeight + layout.gap);
+		this.m_UI.UI_FillRect(
+			Color.Black,
+			new Rect(
+				layout.originX - 3,
+				headerY - 2,
+				layout.columns * (layout.buttonWidth + layout.gap) + 2,
+				footerY - headerY + MENU_BOLD_LINE_SPACING + 2,
+			),
+		);
+
+		this.m_UI.UI_DrawStringBoldLarge(
+			Color.Yellow,
+			"ACTIONS",
+			layout.originX,
+			headerY,
+		);
+
+		for (const b of buttons) {
+			const active = b.index === selected;
+			// The key hint is read live, so a rebind shows up here without this
+			// file being touched. Clipped because a two-key binding like `Ctrl+F`
+			// would otherwise run into the next column at this width.
+			const keys = s_KeyBindings.getAll(b.entry.command).join("/").slice(0, 5);
+			// Black on the selected row: the selection has to be unmistakable at a
+			// glance, and `UI_DrawRect` is an outline with no fill, so the label
+			// colour is what carries it.
+			this.m_UI.UI_DrawStringBoldLarge(
+				active ? Color.Black : Color.White,
+				b.entry.label,
+				b.rect.x + 1,
+				b.rect.y,
+			);
+			this.m_UI.UI_DrawStringBoldLarge(
+				active ? Color.Black : Color.LightGray,
+				keys,
+				b.rect.x + b.rect.width - 6,
+				b.rect.y,
+			);
+			this.m_UI.UI_DrawRect(active ? Color.Yellow : Color.DimGray, b.rect);
+		}
+
+		this.m_UI.UI_DrawStringBoldLarge(
+			Color.LightGray,
+			"ENTER or click to choose, ESC to close",
+			layout.originX,
+			layout.originY + (rows + 1) * (layout.buttonHeight + layout.gap),
+		);
+		this.m_UI.UI_Repaint();
+
+		const ev = await this.WaitKeyOrMouse();
+		// A timeout means the player did nothing. Closing on it is what keeps an
+		// unattended or backgrounded tab from leaving the world frozen behind a
+		// menu nobody is looking at.
+		if (ev.timedOut) break;
+
+		if (ev.key != null) {
+			switch (ev.key.key) {
+				case "Escape":
+					done = true;
+					break;
+				case "Enter":
+					chosen = ACTION_ENTRIES[selected]!.command;
+					done = true;
+					break;
+				case "ArrowUp":
+				case "ArrowDown":
+				case "ArrowLeft":
+				case "ArrowRight":
+					selected = moveSelection(
+						selected,
+						ev.key.key,
+						ACTION_ENTRIES.length,
+						ACTION_MENU_COLUMNS,
+					);
+					break;
+				default:
+					// The hotkey itself closes it, and any other key is ignored
+					// rather than falling through to the world: this loop is the
+					// only thing reading input while it is open.
+					if (
+						RogueGame.KeyBindings().getCommand(
+							Keybindings.makeKey(
+								ev.key.key,
+								ev.key.ctrl,
+								ev.key.alt,
+								ev.key.shift,
+								ev.key.code,
+							),
+						) === PlayerCommand.ACTION_MENU
+					) {
+						done = true;
+					}
+					break;
+			}
+		} else if (ev.mouseButtons === MouseButton.Left) {
+			const hit = buttonAt(buttons, ev.mousePos);
+			// A click that misses every button closes the menu, which is the least
+			// surprising reading of a click that was not on anything.
+			done = true;
+			chosen = hit === null ? null : hit.entry.command;
+		}
+	}
+
+	return chosen;
+}
 
 // C# DrawActorEquipment — RogueGame.cs:18777
 	DrawActorEquipment(

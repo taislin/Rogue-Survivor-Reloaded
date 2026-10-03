@@ -101,16 +101,23 @@ describe("RogueGame's measured surface", () => {
 		// §6.2 calls this "the god object", and the argument for splitting is the
 		// ratio rather than the size. Pinned so the ratio has a history.
 		//
-  // **845 / 759 with the character customiser**, measured. The customiser's
-  // members are two: `preloadCharacterPreviewSprites`, which exists because a menu
-  // redraws only on a keypress and so cannot afford a lazy sprite, and the
-  // `firstHintLineY` the hints screen's scroll clamp is derived from.
+  // **846 / 760 with the character customiser and the action menu**, measured.
+  // The action menu added one member, `HandleActionMenu`, and the grid behind it
+  // lives in `src/ui/ActionMenu.ts` precisely so the layout does not: every
+  // question it answers — how many columns, which button is at a point, where
+  // arrow-down goes from the last one — is settled in a test without a browser.
   //
-  // `public` is 754 and `external` 114 — both up by one, from the sprite-style
-  // routing's `spriteStyleName` becoming reachable and the extra measured
-  // surface. Neither is new *behaviour* called from outside: §6.10's stop
-  // condition is that nothing private is reached from a test, and the script still
-  // reports `private members reached from a test: 0`.
+  // Dispatching the chosen action needed no new member either. `HandleActionMenu`
+  // returns a `PlayerCommand` and the play loop's own `switch` re-runs with it,
+  // so clicking "Sleep" executes the same code the `S` keybinding would have,
+  // with the same pre-checks, rather than a second copy that could drift.
+  //
+  // The customiser's members are two: `preloadCharacterPreviewSprites`, which
+  // exists because a menu redraws only on a keypress and so cannot afford a lazy
+  // sprite, and the `firstHintLineY` the hints screen's scroll clamp derives from.
+  //
+  // The script still reports `private members reached from a test: 0`, which is
+  // §6.10's actual stop condition.
   //
   // The customiser's *state* went to `CharacterAppearance.ts` and its persistence
   // to `NewGameConfig.ts` rather than onto this class. Measured, keeping them here
@@ -124,8 +131,8 @@ describe("RogueGame's measured surface", () => {
   // `HandleNewCharacterDetails`) plus three private helpers. That happened
   // by deleting screens rather than by hiding them behind `private` — the
   // measurement cannot tell those apart, which is the caveat.
-  expect(m.members).toBe(845);
-  expect(m.methods).toBe(759);
+  expect(m.members).toBe(846);
+  expect(m.methods).toBe(760);
   // The *reachable* surface is unchanged at 113, which is the number that matters
   // — nothing new is called from outside.
   expect(m.external).toBe(114);
@@ -134,7 +141,7 @@ describe("RogueGame's measured surface", () => {
   // direction is worth pinning: the public count grew, and so did the private
   // one, from 17 to 91. A naive reading of §6.4 would say the file has become
   // better encapsulated in a way it has not.
-  expect(m.public).toBe(754);
+  expect(m.public).toBe(755);
   expect(m.private).toBe(91);
 	});
 

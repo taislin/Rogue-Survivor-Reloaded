@@ -38,6 +38,48 @@
 > (`web/vitest.config.mts:118-124`). ~4 min for a full suite; a coverage run writes
 > ~44 MB, so check `df -h /` first.
 >
+> **An in-game action menu, 2026-10-02.** `Tab` opens a modal grid of buttons
+> drawn over the minimap: wait, wait long, sleep, barricade, break, fortify, fortify
+> big, close door, eat corpse, give item, revive, shout, use exit, use spray, cook,
+> fire. Clickable, or arrows and Enter; Escape closes.
+>
+> Three decisions are worth recording, because each was the opposite of the obvious
+> answer:
+>
+> - **A grid, not a list, because the box is the minimap's.** 200x200 fits about
+>   eleven rows at the menu's line height and the list is sixteen, so it would
+>   either overflow or need scrolling. Filled **column by column**, which keeps the
+>   six building actions together instead of splitting them across a row boundary.
+> - **The dispatch reuses the play loop's own `switch`.** `HandleActionMenu`
+>   returns a `PlayerCommand` and the loop re-runs with it, so clicking "Sleep"
+>   executes the same code the `S` keybinding would have, with the same pre-checks.
+>   The alternative — the menu calling handlers itself — is a second copy that
+>   drifts. It needed a one-extra-pass `while` around a 400-line switch rather than
+>   an extraction, because those cases close over `loop`.
+> - **No `RedrawPlayScreen`.** The play screen is already on the canvas; redrawing
+>   it meant needing a live world just to open a menu over one, and it threw
+>   `isDead` of undefined outside a game.
+>
+> **The panel has to be filled, not outlined.** There is no alpha in this UI, so
+> drawing buttons straight onto the play screen left the map visible through the
+> gaps and behind the labels — which read as a styling choice rather than a missing
+> `UI_FillRect`. The screen test asserts the fill *encloses every button*, because
+> a count of draws cannot say where anything landed.
+>
+> Two existing tests caught things here, both right. The append-only guard on
+> `PlayerCommand` was pinned to the name `UNLOAD_AMMO`, so adding any command broke
+> a test written about that one member; it now asserts the invariant instead — the
+> highest number belongs to the last member, values contiguous from zero. And the
+> key-redefine screen listed every bound command but not the new one, which is the
+> one thing that screen exists to prevent.
+>
+> A testing note worth not rediscovering: `WaitKeyOrMouse` opens with
+> `UI_PeekKey()`, which **consumes** — that is the C# contract, and it is what stops
+> a held key auto-repeating into the menu. In game the key that opened the menu was
+> already consumed by the turn loop's own wait, so the peek finds nothing pending
+> and the player presses afresh. A test that queues keys has no such key, so its
+> first one is eaten and every assertion lands a step out.
+>
 > **Sprite styles are routed, not just switched, 2026-10-02.** The fallback used
 > to be hardcoded to `classic`, so a style could only ever say "this set, else the
 > original". The request that broke it was *Genesis actors over a Deonapocalypse

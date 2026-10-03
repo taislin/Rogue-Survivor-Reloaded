@@ -268,7 +268,36 @@ export class NullRogueUI implements IRogueUI {
   UI_DrawPoint(_color: Color, _gx: number, _gy: number): void { this.count("UI_DrawPoint"); }
   UI_DrawLine(_color: Color, _gxFrom: number, _gyFrom: number, _gxTo: number, _gyTo: number): void { this.count("UI_DrawLine"); }
   UI_DrawRect(_color: Color, _rect: Rect): void { this.count("UI_DrawRect"); }
-  UI_FillRect(_color: Color, _rect: Rect): void { this.count("UI_FillRect"); }
+  UI_FillRect(_color: Color, rect: Rect): void {
+    this.count("UI_FillRect");
+    // Recorded for the same reason as the strings below: whether a panel was
+    // painted is a claim about *where*, and a count cannot answer it. A menu that
+    // fills nothing looks identical to one that fills behind its buttons until you
+    // are looking at a map through the gaps.
+    if (this.recordText) this.recordedFills.push(rect);
+  }
+
+  /** Every rect passed to `UI_FillRect`, in order. Empty unless recording. */
+  get drawnFills(): readonly Rect[] { return this.recordedFills; }
+
+  private readonly recordedFills: Rect[] = [];
+
+  /**
+   * Whether `inner` lies inside `outer`.
+   *
+   * Off by default like the rest of the recording, and a method rather than a
+   * loop at each call site because the inclusive/exclusive edge question has one
+   * right answer: a fill that stops one pixel short of a button leaves that button
+   * on the map, which is the bug this exists to catch.
+   */
+  coversRect(outer: Rect, inner: Rect): boolean {
+    return (
+      outer.x <= inner.x &&
+      outer.y <= inner.y &&
+      outer.right >= inner.right &&
+      outer.bottom >= inner.bottom
+    );
+  }
 
   // The scale/clip is a property of the drawing surface, which headless has
   // none of: counted like any other call so the tally still balances.
@@ -301,7 +330,7 @@ export class NullRogueUI implements IRogueUI {
   private readonly recordedText: string[] = [];
 
   /** Forgets everything recorded so far, so one test can drive several screens. */
-  clearRecordedText(): void { this.recordedText.length = 0; }
+  clearRecordedText(): void { this.recordedText.length = 0; this.recordedFills.length = 0; }
 
   UI_DrawPopup(
     _lines: string[], _textColor: Color, _borderColor: Color, _fillColor: Color, _gx: number, _gy: number
