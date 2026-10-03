@@ -3,11 +3,14 @@ import { Map as GameMap } from "@data/Map";
 import { Actor } from "@data/Actor";
 import { Faction } from "@data/Faction";
 import { Point } from "@engine/Point";
+import { Models } from "@data/Models";
 import { GameActors, ActorID } from "@gameplay/GameActors";
+import { GameItems, ItemID } from "@gameplay/GameItems";
 import { GameTiles, TileID } from "@gameplay/GameTiles";
 import { GameImages } from "@gameplay/GameImages";
+import { ItemSprayPaint, type ItemSprayPaintModel } from "@engine/items/ItemMisc";
+import { NullRogueUI } from "@ui/NullRogueUI";
 import { RogueGame } from "@engine/RogueGame";
-import { grepAll } from "./helpers/grepAll";
 
 /**
  * The minimap raster cache in `RogueGame.DrawMiniMap` is only correct if the
@@ -196,13 +199,65 @@ describe("the player-tag scan is cached, not repeated per frame", () => {
     expect(collect(map2)).toEqual([]);
   });
 
-  it("nothing in the game ever adds a player tag, so the scan is dormant in the C# too", () => {
-    // Worth recording: the C# only ever *reads* DECO_PLAYER_TAG1..4
-    // (RogueGame.cs:19059-19065). The loop is faithful, not a port omission, and
-    // it is why caching the list was the right call rather than deleting it.
-    const readers = grepAll("src", /addDecoration\(GameImages\.DECO_PLAYER_TAG/);
-    expect(readers, "a player tag is now added at runtime; the revision contract must be revisited")
-      .toEqual([]);
+  it("DoTag really does add a player tag, and it reaches the minimap", () => {
+    // **This replaced a source scan, and the scan was wrong.**
+    //
+    // It read `grepAll("src", /addDecoration\(GameImages\.DECO_PLAYER_TAG/)` and
+    // asserted zero hits, concluding "nothing in the game ever adds a player
+    // tag". But `DoTag` (RogueGame.ts:24507) does exactly that — it just goes
+    // through the item model rather than a literal:
+    //
+    //     getTileAt(pos.x, pos.y)?.addDecoration(
+    //       (spray.model as ItemSprayPaintModel).tagImageId)
+    //
+    // and `GameItems.ts` points `SPRAY_PAINT1..4`'s `tagImg` at
+    // `DECO_PLAYER_TAG1..4`. So the scan was green because a regex cannot see
+    // through a property access, not because the code was dormant — it guarded
+    // nothing, which is exactly the failure mode §6.9 of the port plan warns
+    // about for source scans.
+    //
+    // The comment's other claim is still true and still worth keeping: the C#
+    // only ever *reads* `DECO_PLAYER_TAG1..4`, so the caching was worth doing
+    // rather than deleting. That is a claim about the C#, which no test here can
+    // check, so it stays a comment.
+    //
+    // What this asserts instead is the thing that actually matters: tagging a
+    // wall produces a decoration that `collectPlayerTagTiles` finds, so the
+    // cached list and the tagging path agree with each other.
+    new GameItems();
+    const map = newMap(10);
+    const game = new RogueGame(new NullRogueUI());
+    const faction = new Faction("Testers", "tester");
+    const actor = new Actor(actorsDB.get(ActorID.MALE_CIVILIAN), faction, "Alice");
+    map.placeActor(actor, new Point(5, 5));
+    game.m_Player = actor;
+
+    const spray = new ItemSprayPaint(Models.items.get(ItemID.SPRAY_PAINT1));
+    // The model's tag image is the player tag, which is the link the scan missed.
+    // `spray.model` is typed as the base `ItemModel`; `DoTag` casts to
+    // `ItemSprayPaintModel` for the same reason.
+    const tagImageId = (spray.model as ItemSprayPaintModel).tagImageId;
+    expect(tagImageId).toBe(GameImages.DECO_PLAYER_TAG1);
+
+    const at = new Point(2, 2);
+    expect(map.getTileAt(at.x, at.y)!.hasDecoration(GameImages.DECO_PLAYER_TAG1)).toBe(false);
+    game.DoTag(actor, spray, at);
+    expect(
+      map.getTileAt(at.x, at.y)!.hasDecoration(GameImages.DECO_PLAYER_TAG1),
+      "DoTag must stamp the tile with the model's tag image",
+    ).toBe(true);
+
+    // And the cached minimap scan sees it, once the tile is visited. Unvisited
+    // is still excluded, which is the original guard this whole cache exists for.
+    const collect = (m: GameMap) =>
+      (RogueGame as unknown as {
+        collectPlayerTagTiles: (m: GameMap) => Array<{ x: number; y: number; minitag: string }>;
+      }).collectPlayerTagTiles(m);
+    expect(collect(map), "an unvisited tagged tile is still skipped").toEqual([]);
+    map.markVisited(at.x, at.y);
+    expect(collect(map)).toEqual([
+      { x: at.x, y: at.y, minitag: GameImages.MINI_PLAYER_TAG1 },
+    ]);
   });
 });
 

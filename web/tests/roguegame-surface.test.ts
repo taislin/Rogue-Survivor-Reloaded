@@ -98,44 +98,22 @@ function measure(): {
 describe("RogueGame's measured surface", () => {
 	it("reports a class whose shape §6's own plan is measured against", () => {
 		const m = measure();
-		// §6.2 calls this "the god object", and the argument for splitting is the
-		// ratio rather than the size. Pinned so the ratio has a history.
-		//
-  // **846 / 760 with the character customiser and the action menu**, measured.
-  // The action menu added one member, `HandleActionMenu`, and the grid behind it
-  // lives in `src/ui/ActionMenu.ts` precisely so the layout does not: every
-  // question it answers — how many columns, which button is at a point, where
-  // arrow-down goes from the last one — is settled in a test without a browser.
-  //
-  // Dispatching the chosen action needed no new member either. `HandleActionMenu`
-  // returns a `PlayerCommand` and the play loop's own `switch` re-runs with it,
-  // so clicking "Sleep" executes the same code the `S` keybinding would have,
-  // with the same pre-checks, rather than a second copy that could drift.
-  //
-  // The customiser's members are two: `preloadCharacterPreviewSprites`, which
-  // exists because a menu redraws only on a keypress and so cannot afford a lazy
-  // sprite, and the `firstHintLineY` the hints screen's scroll clamp derives from.
-  //
-  // The script still reports `private members reached from a test: 0`, which is
-  // §6.10's actual stop condition.
-  //
-  // The customiser's *state* went to `CharacterAppearance.ts` and its persistence
-  // to `NewGameConfig.ts` rather than onto this class. Measured, keeping them here
-  // cost ten private members for a self-contained read/validate/write of one JSON
-  // record, and §6 is about taking members *off* this class.
-  //
-  // The history below is why this number is worth reading rather than just
-  // bumping: the last time the public count went *down*, six public picker methods
-  // (`HandleSelectRuleset`, `HandleNewGameMode`, and the race / sex / skill /
-  // undead-type screens) became two (`HandleSelectRulesetAndMode`,
-  // `HandleNewCharacterDetails`) plus three private helpers. That happened
-  // by deleting screens rather than by hiding them behind `private` — the
-  // measurement cannot tell those apart, which is the caveat.
-  expect(m.members).toBe(846);
-  expect(m.methods).toBe(760);
-  // The *reachable* surface is unchanged at 113, which is the number that matters
-  // — nothing new is called from outside.
-  expect(m.external).toBe(114);
+    // §6.2 calls this "the god object", and the argument for splitting is the
+    // ratio rather than the size. Pinned so the ratio has a history.
+    expect(m.members).toBe(846);
+    expect(m.methods).toBe(760);
+    // The *reachable* surface is 116, up from 114 — and both new names are in
+    // hubs, which is the direction that helps. Replacing source scans with
+    // behavioural tests (§6.9's instruction, before any region moves) reached two
+    // members the scans never could: `DoTag`, by calling it to prove a tagged tile
+    // reaches the minimap, and `HandlePlayerTradeNegociation`, by driving the real
+    // trade screen to read the trusted-leader line. Both were reachable all along
+    // and simply untested; the scans asserted about them without calling them.
+    //
+    // `moving` is unchanged at 84, so this is the same trade the last two batches
+    // made: tests grew the surface that must stay signature-compatible without
+    // growing the surface a wave has to relocate.
+    expect(m.external).toBe(116);
   // §6.4: "567 of 584 methods are public — only 17 are `private`. The
   // `private` boundary is effectively absent." That is now *more* true, and the
   // direction is worth pinning: the public count grew, and so did the private
@@ -159,36 +137,26 @@ describe("RogueGame's measured surface", () => {
 		expect(m.privateReached).toBe(0);
 	});
 
-	it("the outside world depends on 110 members, and §6 assumed far fewer", () => {
+	it("the outside world depends on 116 members, and §6 assumed far fewer", () => {
+		const m = measure();
 		// §6.4's `GameContext` was to name "the 11 service fields … plus `m_Player`,
 		// `m_PlayerFOV`, `m_MapViewRect`, `m_Overlays`, `m_FirstPersonFacing`" —
 		// about sixteen names. The measured number is nearly seven times that, and
 		// it is the number §6.10's gate turns on: every one is a signature a wave
 		// must not break.
 		//
-		// The 2024 deferral said "thread a `game` reference through ~500 call
-		// sites". At 110 names the pessimistic figure is not the real one, and that
-		// is the answer to the question §6.4 deferred until "the game runs and the
-		// real cross-method dependencies are known".
-		//
-		// 112 since the inert sound tiers were wired: `DoShout` and `DoCloseDoor` were
-		// reachable but untested, and the test that drives them is what made them
-		// reachable *as named members* (`DoCloseDoor`'s camelCase alias was already
-		// called from elsewhere).
-		//
-		// Note what did **not** move: `moving` is still 83, across both batches now.
-		// Every new name is `Do*`,
-		// so both landed in HUB 1 -- which §6.8 says never moves. Adding tests grew the
-		// surface that must be kept signature-compatible without growing the surface a
-		// wave has to relocate, which is the good direction for this number to go.
-		const m = measure();
-		expect(m.external).toBe(114);
-		expect(m.external).toBeGreaterThan(83);
+    // The 2024 deferral said "thread a `game` reference through ~500 call
+    // sites". At 116 names the pessimistic figure is not the real one, and that
+    // is the answer to the question §6.4 deferred until "the game runs and the
+    // real cross-method dependencies are known".
+    expect(m.external).toBe(116);
+    expect(m.external).toBeGreaterThan(83);
 	});
 
-	it("classifies all 110, with no residual", () => {
-		// This is the finding that forced the re-derivation, and the number that keeps
-		// it fixed. §6.2's region table left **68 of the 110** in no region at all —
+	it("classifies all 116, with no residual", () => {
+    // This is the finding that forced the re-derivation, and the number that keeps
+    // it fixed. §6.2's region table left **68 of the 110** (as measured then) in no
+    // region at all —
 		// including `AddMessage`, `KillActor`, `AdvancePlay`, `UpdatePlayerFOV` and the
 		// whole map-zoom triple — which is larger than Wave 1's entire 2,079-line budget.
 		// A wave plan whose residual is unclassified is not a plan.
@@ -203,18 +171,18 @@ describe("RogueGame's measured surface", () => {
 		expect(m.buckets.get("STATE")?.length ?? 0).toBeLessThan(30);
 	});
 
-	it("splits the reachable surface into 30 hub and 83 movable, and the hubs stay", () => {
-		// §6.8: the two hubs "are the reason the split is worth doing rather than the
-		// reason it fails". Still true, and now measured on the current file.
-		const m = measure();
-		expect(m.moving).toBe(84);
-		expect(m.hubs).toBe(30);
-		expect(m.moving + m.hubs).toBe(m.external);
-		// HUB 1 is 23 of the 30: `DoShout` and `DoCloseDoor` joined when their sound
-		// tiers were wired and tested, and one more joined with the second batch.
-		// HUB 2 is unchanged at 7.
-		expect(m.buckets.get("HUB 1  Do*/On* action primitives")?.length ?? m.buckets.get("HUB 1")?.length).toBe(23);
-	});
+  it("splits the reachable surface into 32 hub and 84 movable, and the hubs stay", () => {
+    // §6.8: the two hubs "are the reason the split is worth doing rather than the
+    // reason it fails". Still true, and now measured on the current file.
+    const m = measure();
+    expect(m.moving).toBe(84);
+    expect(m.hubs).toBe(32);
+    expect(m.moving + m.hubs).toBe(m.external);
+    // HUB 1 is 24 of the 32. `DoTag` joined when the minimap tag test replaced a
+    // source scan with a real call to it; HUB 2 is 8, `HandlePlayerTradeNegociation`
+    // joining when the trusted-leader test drove the actual trade screen.
+    expect(m.buckets.get("HUB 1  Do*/On* action primitives")?.length ?? m.buckets.get("HUB 1")?.length).toBe(24);
+  });
 
 	it("names 23 members GameContext has to carry, not 11", () => {
 		// §6.4 proposed naming "the 11 service fields (`m_UI`, `m_Rules`, `m_Session`,
@@ -263,9 +231,9 @@ describe("RogueGame's measured surface", () => {
 		// leaf or a region pattern, it would be scheduled to move out from under the
 		// render loop that calls it, and nothing else here would notice.
 		const m = measure();
-		const hubs = new Set(m.buckets.get("HUB 1") ?? []);
-		for (const name of m.buckets.get("HUB 2") ?? []) hubs.add(name);
-		expect(hubs.size).toBe(30);
+    const hubs = new Set(m.buckets.get("HUB 1") ?? []);
+    for (const name of m.buckets.get("HUB 2") ?? []) hubs.add(name);
+    expect(hubs.size).toBe(32);
 		for (const [region, list] of m.buckets) {
 			if (region.startsWith("HUB")) continue;
 			for (const name of list) expect(hubs.has(name), `${name} is in two regions`).toBe(false);
