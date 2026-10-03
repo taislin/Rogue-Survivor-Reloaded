@@ -60,6 +60,17 @@
 >   it meant needing a live world just to open a menu over one, and it threw
 >   `isDead` of undefined outside a game.
 >
+> **The grid is measured from the font, not guessed.** The second version shipped a
+> grid whose columns drew over each other, because the button width was compared
+> against a label length in *characters* while the budget is in pixels - the bold
+> face is MENU_CHAR_WIDTH (10) per character, so "Fortify Big" needs 114px and
+> the button was 62. Nothing in the metrics showed it; the arithmetic had mixed
+> units. computeLayout now derives the width from the two longest strings the grid
+> draws and the column count from the room available, and the panel is **anchored to
+> the right margin and grown leftward**: the minimap leaves only ~340px to its right,
+> budgeting the panel that much dropped it to a single column, and an opaque modal
+> overlay may as well grow over the map as run off the screen.
+>
 > **The panel has to be filled, not outlined.** There is no alpha in this UI, so
 > drawing buttons straight onto the play screen left the map visible through the
 > gaps and behind the labels — which read as a styling choice rather than a missing

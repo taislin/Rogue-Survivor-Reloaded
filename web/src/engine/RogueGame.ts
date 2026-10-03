@@ -158,7 +158,8 @@ import {
   buttonAt,
   moveSelection,
   ACTION_MENU_COLUMNS,
-  type ActionMenuLayout,
+  MAX_KEY_CHARS,
+  computeLayout,
 } from "@ui/ActionMenu";
 import { type FOV, LOS } from "@engine/LOS";
 import { coordKey } from "@engine/CoordKey";
@@ -30402,15 +30403,34 @@ const model = isUndead
  * through the same switch the keys use.
  */
 async HandleActionMenu(): Promise<PlayerCommand | null> {
-	const rows = Math.ceil(ACTION_ENTRIES.length / ACTION_MENU_COLUMNS);
-	const layout: ActionMenuLayout = {
-		originX: MINIMAP_X + 2,
-		originY: MINIMAP_Y + 2,
-		buttonWidth: 62,
-		buttonHeight: 14,
-		columns: ACTION_MENU_COLUMNS,
-		gap: 2,
-	};
+	// Measured from the font, not guessed: the bold face is `MENU_CHAR_WIDTH` per
+	// character, so a button has to be as wide as its longest label and its longest
+	// key hint together. Hardcoding a width here is what made the first version draw
+	// every column over the next one.
+	const keyHints = ACTION_ENTRIES.map((e) => s_KeyBindings.getAll(e.command).join("/"));
+	const margin = 8;
+	const footer = "ENTER or click to choose, ESC to close";
+	const footerWidth = footer.length * MENU_CHAR_WIDTH;
+	const layout = computeLayout(ACTION_ENTRIES, {
+		charWidth: MENU_CHAR_WIDTH,
+		// Anchored to the right margin and grown leftward by `computeLayout`: the
+		// minimap leaves only ~340px to its right and the grid wants more.
+		rightEdgeX: CANVAS_WIDTH - margin,
+		topY: MINIMAP_Y,
+		// The **whole** canvas width, not the space right of the minimap. The panel is
+		// opaque and modal and is anchored to the right margin, so it grows leftward
+		// over the map rather than off the edge - and budgeting it only the ~340px to
+		// the minimap's right would drop it to a single column, which is the layout the
+		// screenshot showed failing.
+		availableWidth: CANVAS_WIDTH - margin * 2,
+		availableHeight: CANVAS_HEIGHT - 2 * MENU_BOLD_LINE_SPACING - MINIMAP_Y,
+		preferredColumns: ACTION_MENU_COLUMNS,
+		keyChars: Math.max(...keyHints.map((h) => h.length), 1),
+	});
+	// The panel is as wide as the grid *or* the footer line, whichever is wider, so
+	// the hint text is never left hanging outside the fill.
+	const panelWidth = Math.max(layout.gridWidth, footerWidth);
+	const rows = Math.ceil(ACTION_ENTRIES.length / layout.columns);
 	const buttons = layoutButtons(ACTION_ENTRIES, layout);
 	let selected = 0;
 	let done = false;
@@ -30436,7 +30456,7 @@ async HandleActionMenu(): Promise<PlayerCommand | null> {
 			new Rect(
 				layout.originX - 3,
 				headerY - 2,
-				layout.columns * (layout.buttonWidth + layout.gap) + 2,
+				panelWidth + 6,
 				footerY - headerY + MENU_BOLD_LINE_SPACING + 2,
 			),
 		);
@@ -30451,22 +30471,25 @@ async HandleActionMenu(): Promise<PlayerCommand | null> {
 		for (const b of buttons) {
 			const active = b.index === selected;
 			// The key hint is read live, so a rebind shows up here without this
-			// file being touched. Clipped because a two-key binding like `Ctrl+F`
-			// would otherwise run into the next column at this width.
-			const keys = s_KeyBindings.getAll(b.entry.command).join("/").slice(0, 5);
+			// file being touched, and clipped to the width the layout reserved for
+			// it - a two-key binding like `Shift+U` would otherwise run into the
+			// next column.
+			const keys = keyHints[b.index]!.slice(0, MAX_KEY_CHARS);
 			// Black on the selected row: the selection has to be unmistakable at a
 			// glance, and `UI_DrawRect` is an outline with no fill, so the label
 			// colour is what carries it.
 			this.m_UI.UI_DrawStringBoldLarge(
 				active ? Color.Black : Color.White,
 				b.entry.label,
-				b.rect.x + 1,
+				b.rect.x + 4,
 				b.rect.y,
 			);
+			// Right-aligned against the button's own edge, in characters rather than
+			// pixels, so it lands in the space `computeLayout` measured for it.
 			this.m_UI.UI_DrawStringBoldLarge(
 				active ? Color.Black : Color.LightGray,
 				keys,
-				b.rect.x + b.rect.width - 6,
+				b.rect.x + b.rect.width - 4 - keys.length * MENU_CHAR_WIDTH,
 				b.rect.y,
 			);
 			this.m_UI.UI_DrawRect(active ? Color.Yellow : Color.DimGray, b.rect);
@@ -30474,7 +30497,7 @@ async HandleActionMenu(): Promise<PlayerCommand | null> {
 
 		this.m_UI.UI_DrawStringBoldLarge(
 			Color.LightGray,
-			"ENTER or click to choose, ESC to close",
+			footer,
 			layout.originX,
 			layout.originY + (rows + 1) * (layout.buttonHeight + layout.gap),
 		);

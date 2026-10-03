@@ -67,6 +67,8 @@ export interface ActionMenuLayout {
   readonly buttonHeight: number;
   readonly columns: number;
   readonly gap: number;
+  /** Width of the whole grid. */
+  readonly gridWidth: number;
 }
 
 export interface ActionButton {
@@ -75,14 +77,75 @@ export interface ActionButton {
   readonly rect: Rect;
 }
 
-const DEFAULT_LAYOUT: ActionMenuLayout = {
-  originX: 0,
-  originY: 0,
-  buttonWidth: 62,
-  buttonHeight: 16,
-  columns: 3,
-  gap: 2,
-};
+const GAP = 2;
+const PADDING = 4;
+/** Key hints are clipped to this many characters, to fit beside a label. */
+export const MAX_KEY_CHARS = 6;
+
+export interface LayoutOptions {
+  /** Pixels per character of the bold face - `RogueGame.MENU_CHAR_WIDTH`. */
+  readonly charWidth: number;
+  /** The panel's right edge and top. */
+  readonly rightEdgeX: number;
+  readonly topY: number;
+  /** The room available, and how many columns would be preferred. */
+  readonly availableWidth: number;
+  readonly availableHeight: number;
+  readonly preferredColumns?: number;
+  /** The longest key hint that will be drawn, in characters. */
+  readonly keyChars?: number;
+}
+
+/**
+ * The grid's measurements, derived from the font rather than guessed.
+ *
+ * **The first version hardcoded a 62px button and compared it against the label's
+ * length in *characters*.** The bold face is 10px per character, so "Fortify Big"
+ * needed 110px and every column drew over the next one, and the panel came out a
+ * third of the width it needed to be. Nothing about that was visible in the
+ * metrics: the arithmetic had mixed pixels with characters, and the only place it
+ * shows up is on screen.
+ *
+ * So the width comes from the two longest strings the grid actually draws - the
+ * longest label and the longest key hint - and the column count is whatever fits
+ * the room, capped at the preferred number. The panel is **anchored to its right
+ * edge** and grows leftward: the minimap sits with only ~340px to its right and a
+ * grid sized to its labels wants more than that, and growing a little into the map
+ * beats clipping off the edge of the screen.
+ */
+export function computeLayout(
+  entries: readonly ActionEntry[],
+  opts: LayoutOptions,
+): ActionMenuLayout {
+  const keyChars = Math.min(MAX_KEY_CHARS, opts.keyChars ?? MAX_KEY_CHARS);
+  const buttonWidth =
+    Math.ceil((longestLabel(entries) + keyChars) * opts.charWidth) + PADDING * 2;
+  const buttonHeight = opts.charWidth + 4;
+
+  const preferred = opts.preferredColumns ?? 3;
+  const gridHeight = (columns: number): number =>
+    Math.ceil(entries.length / columns) * (buttonHeight + GAP) - GAP;
+
+  // As many columns as the width allows, then more if the height is short too.
+  // Fewer columns means more rows, so width binds first and height only decides
+  // whether to add another column.
+  let columns = Math.max(
+    1,
+    Math.min(preferred, Math.floor((opts.availableWidth + GAP) / (buttonWidth + GAP))),
+  );
+  while (columns < preferred && gridHeight(columns) > opts.availableHeight) columns++;
+
+  const gridWidth = columns * (buttonWidth + GAP) - GAP;
+  return {
+    originX: opts.rightEdgeX - gridWidth,
+    originY: opts.topY,
+    buttonWidth,
+    buttonHeight,
+    columns,
+    gap: GAP,
+    gridWidth,
+  };
+}
 
 /**
  * The button rectangles, in reading order.
@@ -98,7 +161,7 @@ const DEFAULT_LAYOUT: ActionMenuLayout = {
  */
 export function layoutButtons(
   entries: readonly ActionEntry[],
-  layout: ActionMenuLayout = DEFAULT_LAYOUT,
+  layout: ActionMenuLayout,
 ): ActionButton[] {
   const buttons: ActionButton[] = [];
   for (let i = 0; i < entries.length; i++) {
@@ -203,4 +266,3 @@ export function longestLabel(entries: readonly ActionEntry[]): number {
 
 export const ACTION_MENU_COLUMNS = 3;
 
-export { DEFAULT_LAYOUT };
