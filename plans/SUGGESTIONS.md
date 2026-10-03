@@ -14,12 +14,6 @@
 > assumes "suggested ⇒ missing" will re-propose things that shipped years ago,
 > and a reader who assumes "suggested ⇒ present" will assume the wrong version
 > of it. The status column exists to stop both.
->
-> **Read this next:** [`BROWSER_PORT_PLAN.md`](BROWSER_PORT_PLAN.md) §2 for how the
-> port is laid out, §1.5 for what is still open, and [`STILL_ALIVE_JOURNAL.md`](STILL_ALIVE_JOURNAL.md)
-> for how the content merge happened. Most of the "already in" marks below are not the port's work — they
-> are the Still Alive merge, and the reasoning for why that merge exists is
-> there, not here.
 
 ---
 
@@ -44,7 +38,6 @@ Four states, and the distinction between the last two is the whole point:
 
 | Mark | Meaning |
 |---|---|
-| **In** | Present in this port. Named in `web/src/`, or where the merge added it, in `web/data/`. **[corrected 2026-10-03]** was "named in `src/`", which no longer exists. |
 | **Partly** | A recognisable relative is present, but not the suggestion. Usually a different item with a similar silhouette — a `crowbar` where the thread asked for a `metal pipe`. |
 | **No** | Nothing in the tree. Not necessarily *wanted* — §"Deliberately no" below. |
 | **—** | Could not be determined without a design decision rather than a lookup. Left blank rather than guessed. |
@@ -84,19 +77,13 @@ threads, each with an author.
 | # | Suggestion | By | Thread | Status |
 |---|---|---|---|---|
 | 1 | Fortifications that block eyesight | toupz | [thread 11](https://roguesurvivor.proboards.com/thread/11/block-eyesight-fortification) | **Partly** — shelves block LOS (`MapGenerator.ts:334` documents the stairway case); no barricade type does. The thread's author confirms shelving was the only vanilla thing that did it, and `Deon` replied "it has been implemented" the same week. |
-| 2 | Corpses eventually disappear | toupz | [thread 14](https://roguesurvivor.proboards.com/thread/14/bones-corpses-disappear) | **In** — `NextMapTurn` rots corpses via `Rules.corpseDecayPerTurn` and destroys them at 0 HP (`RogueGame.ts:5097-5145`). |
-| 3 | Attack NPCs that are not hostile | torchedearth | [thread 15](https://roguesurvivor.proboards.com/thread/15/bad-guy) | **In** — `Rules.areEnemies` gates hostility, not the attack itself; `canActorMeleeAttack` is faction-agnostic. |
 | 4 | Rooftop levels | toupz | [thread 19](https://roguesurvivor.proboards.com/thread/19/new-levels-rooftop) | **No** — **[corrected 2026-10-03] the stated evidence was false**: `generateShoppingMallUpperLevel` and `generateShoppingMallParking` both exist (`makeShoppingMall.ts:618`, `:1020`) and `upperlevel` matches throughout. The verdict survives on the narrower and correct argument that there is still no *general* rooftop tier — only the mall has one. |
-| 5 | Becoming a follower | ibazly | [thread 21](https://roguesurvivor.proboards.com/thread/21/reincarnating-follower) | **In** — `Actor.hasLeader` and the follower machinery. |
-| 6 | Generators as battery chargers | deon | [thread 22](https://roguesurvivor.proboards.com/thread/22/generators-battery-rechargers) | **Partly** — `makeObjPowerGenerator` exists and light recharge runs (`RogueGame.ts:14180`); no generator-as-charger interaction. |
+| 5 | Player becoming a follower | ibazly | [thread 21](https://roguesurvivor.proboards.com/thread/21/reincarnating-follower) | Needs investigation. |
 | 7 | Constructing crossbow bolts | deon | [thread 23](https://roguesurvivor.proboards.com/thread/23/crossbow-bolts-breaking-objects) | **No** — `makeItemBoltsAmmo` spawns bolts as loot; there is no whittling/crafting verb in the tree. |
-| 8 | Additional zombie play features | laughlyn | [thread 25](https://roguesurvivor.proboards.com/thread/25/post-mortem-playing-zombie) | **In** — `HandleReincarnation` (`RogueGame.ts:31170`) and a `--undead` flag on the sim harness. Note `GameMode` has no undead member: playing undead is reached by dying, which is what the thread asked for. |
 | 9 | Zombie infection spreads | flag | [thread 34](https://roguesurvivor.proboards.com/thread/34/infection-contagion) | **No** — no contagion term in `web/src/`. Infection is bite→wound only. |
-| 10 | Zombies rise from corpses | flag | [thread 35](https://roguesurvivor.proboards.com/thread/35/zombies-rising-corpses) | **In** — `corpseZombifyChance` + `Zombify` (`RogueGame.ts:5092-5138`). |
 | 11 | Dual wielding | toupz | [thread 49](https://roguesurvivor.proboards.com/thread/49/dual-wielding) | **No** — no second-weapon slot concept. |
 | 12 | Pets | torchedearth | [thread 43](https://roguesurvivor.proboards.com/thread/43/pets) | **No** — `UnintelligentAnimalAI` exists for rabbits and chickens, but nothing binds one to a player. |
 | 13 | Pushing causes stunning | Aaron | [thread 41](https://roguesurvivor.proboards.com/thread/41/pushing-idea) | **No** — **[corrected 2026-10-03] this was `Partly` on a citation that does not exist.** `Attack.ts` has no stun field; its fields are exactly `kind, verb, hitValue, hit2Value, hit3Value, damageValue, staminaPenalty, disarmChance, range` (`:16-24`). Line 63 is `if (this.range === 1) return this.range;` inside `efficientRange` — the word "stun" appears only in a comment about the stun *gun* the content pack adds. Repo-wide the only "stun" hits are that item's verb string and its sounds. **There is no stun mechanic in the port.** |
-| 14 | Varied zombie behaviours | transcendenttyrant | [thread 51](https://roguesurvivor.proboards.com/thread/51/zombie-behaviours) | **In** — 13 controllers in `web/src/gameplay/ai/`, incl. `RatAI`, `FeralDogAI`, `UnintelligentAnimalAI`. |
 | 15 | Multiplayer | brash | [thread 164](https://roguesurvivor.proboards.com/thread/164/multiplayer) | **No** — design only. See [`MULTIPLAYER_PLAN.md`](MULTIPLAYER_PLAN.md), which is this suggestion's answer. |
 | 16 | Relationships with NPCs | toupz | [thread 146](https://roguesurvivor.proboards.com/thread/146/npc) | **Partly** — `Faction` relations and `trust` exist; nothing deeper. |
 | 17 | Zombie evolution and skills | tons0phun | [thread 163](https://roguesurvivor.proboards.com/thread/163/undead-evolution-zombie-skills) | **Partly** — **[corrected 2026-10-03]** `Skills.csv` has **30** rows, not 29 (this file's own §7 says 30; the two contradicted each other). `BOWS_EXPLOSIVES` is present; no per-undead evolution tree. |
@@ -104,10 +91,6 @@ threads, each with an author.
 | 19 | Zombie progression and degradation | jacos | [thread 150](https://roguesurvivor.proboards.com/thread/150/zombie-progression-new-abilities-type) | **Partly** — overlapping with #17. |
 | 20 | Sandbox gameplay | xander | [thread 153](https://roguesurvivor.proboards.com/thread/153/sandbox-type-fort-trading-crafting) | **No** — the `GameMode` axis exists but has no sandbox mode. |
 | 21 | Customizing avatars | galdis | [thread 151](https://roguesurvivor.proboards.com/thread/151/modest-proposal) | **Partly** — **[corrected 2026-10-03] was `No`, and it shipped.** `web/src/engine/CharacterAppearance.ts` (236 lines) offers six selectable doll layers — `eyes, skin, head, torso, legs, shoes` — with a magnified live preview, plus `tests/character-appearance.test.ts`. Landed in `4e48ed3` / `9fd6e01` / `376716c`. **Not** full 3D-modifier customisation, so *Partly* rather than *In*. |
-
-> The compendium lists "Varied Zombie Behaviours" **twice** — once as #14 and
-> once near the end, under the same thread id with the author's name spelled
-> two ways (`transcendanttyrant` / `transcendenttyrant`). One entry, two rows.
 
 ---
 
@@ -122,56 +105,37 @@ and `Items_Explosives.csv`.
 
 | Suggestion | By | Status |
 |---|---|---|
-| Flamethrower | doomer | **In** — `RANGED_FLAMETHROWER` |
-| Tennis racket | toupz | **In** — `MELEE_TENNIS_RACKET` |
 | Bazooka | toupz | **Partly** — `RANGED_GRENADE_LAUNCHER` is the same verb |
 | M1 Garand old rifle | toupz | **No** |
 | 9mm pistol | toupz | **Partly** — `RANGED_PISTOL` exists; not a 9mm |
 | Throwing knives | toupz | **No** |
-| Bear traps | toupz | **In** — `TRAP_BEAR_TRAP` |
 | Net traps | toupz | **No** |
 | Magnum | Aaron | **Partly** — `RANGED_REVOLVER` / `RANGED_KOLT_REVOLVER` |
-| Spike trap | laughlyn | **In** — `TRAP_SPIKES` |
 | AK-47 | Aaron | **Partly** — `RANGED_ARMY_RIFLE1..4` |
 | Throwing spears | zebiolizard2 | **Partly** — `MELEE_IMPROVISED_SPEAR`, but not thrown |
 | Riot shield | Nakovalen | **Partly** — **[corrected 2026-10-03] was `No`.** `ItemID.POLICE_RIOT_SHIELD = 197` (`GameItems.ts:437`), sprite at `GameImages.ts:1067`, equippable (`RogueGame.ts:22688`), with a ported block roll (`Rules.ts:275,294,2512`) and `tests/police-riot-shield.test.ts`. Landed in `8a63964` + `07e951`. |
 | Improvised shield | Nakovalen | **No** |
 | Firearm scopes / sniper rifles | Aaron | **Partly** — `RANGED_PRECISION_RIFLE`, `RANGED_ARMY_PRECISION_RIFLE` |
-| Fire | torchedearth | **In** — `Feature.TileFires`, `Feature.FireBarrels`, `EXPLOSIVE_MOLOTOV` |
-| Sawed-off shotgun | ibazly | **In** — `RANGED_DOUBLE_BARREL` |
 | Pellet gun | ibazly | **No** |
 | Butcher knife | ibazly | **Partly** — `MELEE_KITCHEN_KNIFE` |
-| Nail gun | ibazly | **In** — `RANGED_NAIL_GUN` |
 | Ball launcher | ibazly | **No** |
 | Croquet mallet | ibazly | **Partly** — `MELEE_HUGE_HAMMER` |
 | Gun turret | ibazly | **No** |
-| Stun gun | transcendenttyrant | **In** — `RANGED_STUN_GUN` |
 | Zombie stun gun | transcendenttyrant | **No** |
 | Proximity mines | transcendenttyrant | **No** |
-| Explosives | transcendenttyrant | **In** — 10 rows in `Items_Explosives.csv` |
-| Molotov cocktail | Anonymous | **In** — `EXPLOSIVE_MOLOTOV` |
 | Chains | Ve | **No** |
 | Metal pipe | Ve | **Partly** — `MELEE_CROWBAR` |
-| Fire ax | Ve | **In** — `MELEE_FIRE_AXE` |
-| Axes | Ve | **In** — `MELEE_STANDARD_AXE` |
 | Hatchet | Ve | **Partly** — `MELEE_SMALL_HAMMER` |
-| Pipe wrench | Ve | **In** — `MELEE_PIPE_WRENCH` |
 | Hedge clippers | Ve | **No** |
-| Chainsaw | Ve | **In** — `MELEE_CHAINSAW`, and live under `Feature.WeaponWeight` |
-| Machete | Ve | **In** — `MELEE_MACHETE` |
 | Compound bow | Ve | **No** |
 | Recurve bow | Ve | **No** |
 | Compound crossbow | Ve | **No** |
 | Recurve crossbow | Ve | **No** |
-| Pickaxe | Nakovalen | **In** — `MELEE_PICKAXE` |
 | Taser | Nakovalen | **Partly** — `RANGED_STUN_GUN` |
-| Double-barrel shotgun | Nakovalen | **In** — `RANGED_DOUBLE_BARREL` |
 | Assault rifle | Nakovalen | **Partly** — the army rifles |
-| Sub-machine gun | Nakovalen | **In** — `RANGED_SMG` |
 | Light machine gun | Nakovalen | **Partly** — `RANGED_MINIGUN` |
 | Heavy machine gun | Nakovalen | **Partly** — the minigun again |
 | Firecrackers | Nakovalen | **No** |
-| Sword | toupz | **In** — `MELEE_KATANA` |
 
 **Read the "Partly" column as a real answer.** Most of these were *not*
 ignored: Still Alive independently added the fire axe, machete, chainsaw,
@@ -198,21 +162,16 @@ justification for it was stale.
 | Suggestion | By | Status |
 |---|---|---|
 | Clothing store | toupz | **Partly** — `makeShopBuilding` + 7 `ShopType`s, none of them clothing |
-| Fire station | doomer | **In** — `makeFireStationBuilding` |
-| Multiple-story buildings | Aaron | **No** |
+| Multiple-story buildings | Aaron | **Partly** — Mall and Basements |
 | Warehouses | zebiolizard2 | **No** |
 | Cathedrals | zebiolizard2 | **Partly** — `makeChurchBuilding` |
 | Towers | zebiolizard2 | **No** |
 | Railway station | zebiolizard2 | **Partly** — `makeSubwayStationBuilding` |
 | School | zebiolizard2 | **No** |
 | Museum | zebiolizard2 | **No** |
-| Library | zebiolizard2 | **In** — `makeLibraryBuilding` |
-| Junkyard | zebiolizard2 | **In** — `MakeJunkyard` |
 | Port | zebiolizard2 | **No** |
-| Church | zebiolizard2 | **In** — `makeChurchBuilding` |
 | Clubs | zebiolizard2 | **No** |
 | Factory | zebiolizard2 | **No** |
-| Bank | zebiolizard2 | **In** — `makeBankBuilding` |
 | Fort | zebiolizard2 | **No** |
 | Auto repair shop | zebiolizard2 | **No** — **[corrected 2026-10-03] was `In`, and it is not implemented.** `MakeMechanicWorkshop` appears only in planning comments (`TownBuilding.ts:564`, `makeClinicBuilding.ts:25`); `grep -rn makeMechanicWorkshop web/src/` → 0 hits. The business cascade deliberately leaves case 3 empty — *"case 3 is the mechanic workshop, which is vanilla and not part of this port's set, so that arm is left empty rather than transliterated"* (`BaseTownGenerator.ts:559-563`). It is the last unported generator. |
 | Zoo | zebiolizard2 | **Partly** — `makeAnimalShelterBuilding` |
@@ -220,21 +179,14 @@ justification for it was stale.
 | Power plant | zebiolizard2 | **No** |
 | Radio tower | zebiolizard2 | **No** |
 | Stadium | zebiolizard2 | **Partly** — `makeSportsCourts` (basketball + tennis) |
-| Mall | zebiolizard2 | **In** — **[corrected 2026-10-03] was `Partly`, saying *not ported*. It is ported, and it was the last feature to leave `PENDING_WIRING`.** `makeShoppingMall.ts` is **2,492 lines** exporting `makeShoppingMall`, `generateShoppingMallUpperLevel` and `generateShoppingMallParking`, with `Feature.ShoppingMall` and 1,438 lines of tests. Landed in `c1d2a33` + `8df6e2b`. The 49×49-vs-50×50 sharp edge in `STILL_ALIVE_REFERENCE.md` §5 was taken and held — district size went 30 → 50. |
 | Cinema | zebiolizard2 | **No** |
 | Hotel | zebiolizard2 | **No** |
-| Graveyard | zebiolizard2 | **In** — `Feature.Graveyard`, `makeObjTombstone` |
 | Unfinished buildings | zebiolizard2 | **No** |
-| Bar / pub | ibazly | **In** — `makeBarBuilding` |
 | Sex shop | toupz | **No** |
 | Isolated houses outside the city | blaz | **No** |
 | Laboratories | blaz | **Partly** — the CHAR underground map |
 | Rural district | Nakovalen | **No** |
-| Homes | zebiolizard2 | **In** — `makeVanillaHousingBuilding`, `makeHousingBuilding` |
-| Apartments | zebiolizard2 | **In** — `makeApartmentsBuilding` |
 | Motels | zebiolizard2 | **No** |
-| National Guard post | juzzo | **In** — `makeArmyOffice` |
-| Army bunker | voltagehero | **In** — **[corrected 2026-10-03] was `Partly`, saying the generator is pending.** `makeArmyOffice` / `makeArmyOffices` / `populateArmyOfficeBuilding` all exist (`BaseTownGenerator.ts:2968, 3161, 3191`), wired into the block pool at `:442`, with a 303-line underground map. Tests: `army-base-building.test.ts`, `army-base-underground.test.ts`. Landed in `7c22cd5` + `96bd511`. (The *dispatch* of that underground map is a separate open item — see `plans/HANDOVER.md`.) |
 | Bomb shelter | curtisjack10 | **No** |
 
 ---
@@ -249,28 +201,17 @@ the discrepancy is left as the compendium has it). 24 entries.
 | Suggestion | By | Status |
 |---|---|---|
 | Propane tank | demios | **No** |
-| Bags and backpacks | Aaron | **In** — 5 rows in `Items_Backpacks.csv`, `Backpacks.ts` |
-| Batteries | laughlyn | **In** — light recharge (`RogueGame.ts:14180`) |
 | Walkie talkie | zebiolizard2 | **Partly** — `TRACKER_POLICE_RADIO`, `TRACKER_BLACKOPS` |
-| Fire extinguisher | zebiolizard2 | **In** — `FIRE_EXTINGUISHER` in `Items_Spraypaints.csv` |
-| Alcohol | zebiolizard2 | **In** — 4 beer rows + `Feature.Alcohol` |
 | Soda / drinks | zebiolizard2 | **Partly** — `MEDICINE_ENERGY_DRINK` |
-| Flare gun | zebiolizard2 | **In** — `LIGHT_FLARE` |
-| Binoculars | zebiolizard2 | **In** — `LIGHT_BINOCULARS` |
 | Toolbox | zebiolizard2 | **No** |
-| Fuel can | zebiolizard2 | **In** — `EXPLOSIVE_FUEL_CAN` |
-| Power generator | zebiolizard2 | **In** — `makeObjPowerGenerator` |
 | Radio transmitter | zebiolizard2 | **Partly** — `TRACKER_ZTRACKER` |
-| Radio | zebiolizard2 | **In** — `TRACKER_POLICE_RADIO` |
 | GPS | zebiolizard2 | **Partly** — `makeItemBlackOpsGPS` |
 | Scope | Nakovalen | **No** |
 | Silencer | Nakovalen | **No** |
 | Laser sight | Nakovalen | **No** |
 | Hockey mask | Nakovalen | **No** |
 | Helmet | Nakovalen | **Partly** — `ARMOR_ARMY_BODYARMOR` |
-| Night-vision goggles | Nakovalen | **In** — `LIGHT_NIGHT_VISION` |
 | Shield | toupz | **Partly** — **[corrected 2026-10-03] was `No`.** See §2's "Riot shield" row: `POLICE_RIOT_SHIELD` is a real, equippable item with a ported block roll and a dedicated test (`8a63964`, `07e951`). |
-| Army radio | dimjim | **In** — `TRACKER_BLACKOPS` |
 | Army helmet | toupz | **Partly** — as above |
 
 ---
@@ -300,17 +241,13 @@ Verified against `web/data/Actors.csv` (30 rows) and the AI controllers.
 | Looter | zebiolizard2 | **No** |
 | Crazed civilian | zebiolizard2 | **Partly** — `DERANGED_PATIENT` |
 | CHAR preacher | zebiolizard2 | **No** |
-| CHAR scientist | zebiolizard2 | **In** — `CHAR_SCIENTIST` |
 | Rogue National Guard | nakovalen | **Partly** — `ARMY_NATIONAL_GUARD` exists as friendly |
 | Rednecks | nakovalen | **No** |
-| Riot police | obiworm | **In** — `POLICEMAN` + `ARMOR_POLICE_RIOT` |
 
 ### Zombies / monsters
 
 | Suggestion | By | Status |
 |---|---|---|
-| Sewer tentacles | zebiolizard2 | **In** — `SEWERS_THING` + `SewersThingAI` |
-| Night zombies | zebiolizard2 | **In** — `UNDEAD_DARK_ZOMBIE`, `UNDEAD_DARK_EYED_ZOMBIE` |
 | Regenerating zombie | zebiolizard2 | **No** |
 | The Blob | zebiolizard2 | **No** |
 | Elemental zombie | zebiolizard2 | **No** |
@@ -332,11 +269,10 @@ opened by **ibazly**. 19 entries.
 
 | Suggestion | By | Status |
 |---|---|---|
-| Doors | ibazly | **In** — wooden / iron / glass / hospital / CHAR variants |
+| Buildable and Lockable Doors | ibazly | **No** |
 | Melee weapons out of improvised weapon stacks | ibazly | **Partly** — `MELEE_IMPROVISED_CLUB` / `_SPEAR` exist as items; no crafting verb |
 | Spiked fortification | zebiolizard2 | **Partly** — `TRAP_BARBED_WIRE` is a trap, not a barricade |
 | Weak wall | zebiolizard2 | **No** |
-| Basement hatch | zebiolizard2 | **In** — `generateHouseBasementMap` |
 | Whittling planks into improvised weapons | zebiolizard2 | **No** |
 | Chests | zebiolizard2 | **Partly** — wardrobes and fridges are containers |
 | Dummy | Aaron | **No** |
@@ -411,33 +347,9 @@ day 21 (`Feature.CHARResearchRaid`), and a helicopter-rescue endgame
 
 ---
 
-## Deliberately no
-
-Recorded so a future reader does not re-litigate them:
-
-- **Relationships with NPCs** (#16). The thread is titled "Sex with npc". This
-  is a 2012 browser-playable roguelike; the mechanic as asked for is out of
-  scope, and the *systems* half of it — a relationship model deeper than
-  `Faction` relations — is the only part worth ever taking.
-- **Customizing avatars** (#21) — **[corrected 2026-10-03] this refusal was overtaken
-  and should not be read as current.** It rested on *"a layered doll with a fixed part
-  set"*, which is precisely what changed: `CharacterAppearance.ts` now exposes six
-  selectable layers with a live preview. What survives is only the *arbitrary
-  player-authored avatar* part — every actor's sprite is still a whole-body image or a
-  layered doll, so that remains a renderer change, not a content change, and the port's
-  `BROWSER_PORT_PLAN.md` §1.5 records that the renderer is where the last six bugs lived.
-- **Multiplayer** (#15) — not declined. Designed, not built:
-  [`MULTIPLAYER_PLAN.md`](MULTIPLAYER_PLAN.md), whose Phase 0 is a single test.
-- **Rooftop levels** (#4), **pets** (#12), **dual wielding** (#11). Each needs
-  a new core concept — a third map tier, a player-bound AI, a second weapon
-  slot — and each is a larger change to the scheduler and the save format than
-  the whole of the Still Alive Stage 2.
-
----
-
 ## Where each thread actually stands
 
-Not a status report — a pointer to the thread list, for anything the compendium
+Not a status report, a pointer to the thread list, for anything the compendium
 did not index. The compendium covers 22 of the board's 124 threads; the rest
 are on [the board index](https://roguesurvivor.proboards.com/board/11/suggestions)
 across seven pages. A few worth knowing about that predate or postdate it:
@@ -454,30 +366,3 @@ The last one is the only item on this list that has actually been answered.
 
 
 ---
-
-## Citation drift — what to trust in this file
-
-Added 2026-10-03, alongside the verdict corrections above.
-
-**The verdicts are the durable part and mostly survived; the `file:line` citations did
-not.** Of 20 sampled, **9 still resolve, 8 have drifted, and 3 were false or
-unsatisfiable** — including the `Attack.ts:63` stun citation that produced a whole wrong
-verdict, and the "zero matches for rooftop/upper-level" evidence for #4, which was
-checkable and wrong.
-
-**Re-grep before trusting a line number here.** The worst drift is
-`RogueGame.ts:14180` -> **`:23415`** (delta +9,235, cited twice, for light recharge); the
-rest are +200 to +3,700. `RogueGame.ts` grew 32,753 -> 36,487 lines after this was
-written.
-
-**The counts that did survive are worth keeping**, because they were measured against
-the merged CSVs and nothing has moved them: `Items_Explosives.csv` 10 rows,
-`Items_Backpacks.csv` 5 rows, `Actors.csv` 30 rows, `Skills.csv` 30 rows,
-`ShopType` 7 members, **exactly 13** AI controller classes in `web/src/gameplay/ai/`
-(out of 16 files), `tests/skills-data.test.ts` at 53 cases / 43-entry assertion /
-7 corrections, and 24 of 24 correct in section 4 with 20 of 20 correct in section 5.
-
-**Also unchecked here:** the thread URLs (external), and the "roughly half of it is
-already implemented" claim in the header. On a row count it is nearer 30%, but the "In"
-share is concentrated in sections 2, 3 and 5, so the claim is defensible as a weighting
-rather than an average.
