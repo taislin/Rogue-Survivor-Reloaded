@@ -3,6 +3,7 @@ import { HeadlessRunner } from "../src/sim/HeadlessRunner";
 import { NullRogueUI } from "@ui/NullRogueUI";
 import { CanvasUI } from "@ui/CanvasUI";
 import { GameOptions } from "@engine/GameOptions";
+import { getUserNewScreenshotName, resetScreenshotCounter } from "@engine/Paths";
 
 /**
  * Screenshot naming.
@@ -66,9 +67,27 @@ describe("screenshot name generation", () => {
   });
 
   it("zero-pads to three digits, as the C# does", () => {
-    const game = new HeadlessRunner(918, new NullRogueUI()).rogueGame;
-    expect(game.GetUserNewScreenshotName()).toBe("screenshot_000");
-    expect(game.GetUserNewScreenshotName()).toBe("screenshot_001");
+    // Asserted against `Paths` directly rather than through a game.
+    //
+    // It used to build a `HeadlessRunner` and expect "screenshot_000", which only
+    // held because the counter was a field: a fresh game meant a fresh count. The
+    // counter is module state now — which is the scope the naming rule actually
+    // describes, "two shots in one session never collide", since two games in one
+    // page load are one session — so the reset is explicit and the padding rule is
+    // stated on its own terms instead of through a side effect.
+    resetScreenshotCounter();
+    expect(getUserNewScreenshotName()).toBe("screenshot_000");
+    expect(getUserNewScreenshotName()).toBe("screenshot_001");
+  });
+
+  it("counts on across games, because a session outlives one RogueGame", () => {
+    // The behaviour change this extraction makes explicit, pinned so it cannot be
+    // undone by accident: two games in one page load share the counter, so the
+    // second game's first screenshot is not "screenshot_000" again.
+    resetScreenshotCounter();
+    expect(getUserNewScreenshotName()).toBe("screenshot_000");
+    const second = new HeadlessRunner(918, new NullRogueUI()).rogueGame;
+    expect(second.GetUserNewScreenshotName()).toBe("screenshot_001");
   });
 });
 

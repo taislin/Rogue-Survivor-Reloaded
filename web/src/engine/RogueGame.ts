@@ -189,6 +189,24 @@ import {
 } from "@engine/Session";
 import { reattachPlayer } from "@engine/serialization/sessionGraphRoot";
 import { storage, whenStorageReady } from "@engine/storage";
+import {
+	getUserBasePath,
+	getUserConfigPath,
+	getUserDocsPath,
+	getUserGraveyardPath,
+	getUserHiScoreFilePath,
+	getUserHiScorePath,
+	getUserHiScoreTextFilePath,
+	getUserManualFilePath,
+	getUserNewGraveyardName,
+	getUserNewScreenshotName,
+	getUserOptionsFilePath,
+	getUserSave,
+	getUserSavesPath,
+	getUserScreenshotsPath,
+	graveFilePath,
+	screenshotFilePath,
+} from "@engine/Paths";
   import {
     APPEARANCE_LAYERS,
     APPEARANCE_LAYER_LABELS,
@@ -1632,12 +1650,6 @@ export class RogueGame implements ActionGame {
 	 */
 	m_PlayerFOV: FOV = new Set<number>();
 	m_MapViewRect!: Rect;
-	/**
-	 * Sequence number for screenshot filenames, so two shots in one session get
-	 * different names. See `GetUserNewScreenshotName` for why the C#'s
-	 * free-filename loop cannot be ported literally.
-	 */
-	private m_ScreenshotCounter = 0;
 
 	/**
 	 * How long the player must be idle before neighbouring districts are caught
@@ -32713,91 +32725,81 @@ async HandleActionMenu(): Promise<PlayerCommand | null> {
 		);
 	}
 
+	// ── C# `GetUser*` paths — moved to `engine/Paths.ts` ──────────────────────
+	//
+	// Fourteen methods, ~140 lines, and no edge into either hub, so this was the
+	// first region §6.5's Wave 1 got right. They are delegations rather than
+	// removals because ~20 call sites inside this file, plus
+	// `screenshot-naming.test.ts`, use the `GetUser*` spelling, and §6.10's rule is
+	// that a wave is a pure move: no signature a caller can notice changes.
+	//
+	// `CreateDirectory`, `CheckDirectory` and `CheckCopyOfManual` are C# siblings
+	// of this region and sit between its members in the source, but they are not
+	// paths — two draw to `m_UI` and one calls `logInit` — so they stayed. See
+	// `Paths.ts` for why that distinction is the one that matters.
+
 	// C# GetUserBasePath — RogueGame.cs:19988
-	// Browser: no user directory — `SetupConfig.DirPath` has no equivalent, so
-	// all derived paths are relative keys (see GetUserSavesPath below).
 	GetUserBasePath(): string {
-		return "";
+		return getUserBasePath();
 	}
 
 	// C# GetUserSavesPath — RogueGame.cs:19997
-	// The browser port has no filesystem; `HiScoreTable` stores into localStorage and
-	// ignores the path, so these only matter as display/`TextFile` keys.
 	GetUserSavesPath(): string {
-		return "";
+		return getUserSavesPath();
 	}
 
 	// C# GetUserSave — RogueGame.cs:20002
-	// C# returns a filesystem path; the browser port keys saves by IndexedDB slot.
 	GetUserSave(): string {
-		return String(RogueGame.CURRENT_SAVE_SLOT);
+		return getUserSave();
 	}
 
 	// C# GetUserDocsPath — RogueGame.cs:20007
 	GetUserDocsPath(): string {
-		return `${this.GetUserBasePath()}Docs/`;
+		return getUserDocsPath();
 	}
 
 	// C# GetUserGraveyardPath — RogueGame.cs:20012
 	GetUserGraveyardPath(): string {
-		return `${this.GetUserBasePath()}Graveyard/`;
+		return getUserGraveyardPath();
 	}
 
 	// C# GetUserNewGraveyardName — RogueGame.cs:20021
-	// C# loops until `!File.Exists(GraveFilePath(name))`; in the browser graves are
-	// stored in localStorage under `textfile:` (see `TextFile.save`).
 	GetUserNewGraveyardName(): string {
-		let name = "";
-		let i = 0;
-		let isFreeID = false;
-		do {
-			name = `grave_${String(i).padStart(3, "0")}`;
-			isFreeID =
-				storage.getItem(`textfile:${this.GraveFilePath(name)}`) === null;
-			++i;
-		} while (!isFreeID);
-
-		return name;
+		return getUserNewGraveyardName();
 	}
 
 	// C# GraveFilePath — RogueGame.cs:20037
-	// C# appends the user graveyard directory (`GetUserGraveyardPath()`, a filesystem
-	// path); `TextFile.save` keys by file name alone, so the directory is dropped.
 	GraveFilePath(graveName: string): string {
-		return `${graveName}.txt`;
+		return graveFilePath(graveName);
 	}
 
 	// C# GetUserConfigPath — RogueGame.cs:20042
 	GetUserConfigPath(): string {
-		return `${this.GetUserBasePath()}Config/`;
+		return getUserConfigPath();
 	}
 
 	// C# GetUserOptionsFilePath — RogueGame.cs:20047
 	GetUserOptionsFilePath(): string {
-		return `${this.GetUserConfigPath()}options.dat`;
+		return getUserOptionsFilePath();
 	}
 
 	// C# GetUserScreenshotsPath — RogueGame.cs:20052
 	GetUserScreenshotsPath(): string {
-		return `${this.GetUserBasePath()}Screenshots/`;
+		return getUserScreenshotsPath();
 	}
 
 	// C# GetUserNewScreenshotName — RogueGame.cs:20061
-	// Browser divergence: C# loops until it finds a filename that is not already
-	// on disk. A browser cannot see the Downloads folder, so the loop could never
-	// terminate honestly — and the port's `isFreeID = true` made it return
-	// "screenshot_000" every single time, so with the renderer hardcoding the
-	// download name too, every screenshot in the game overwrote the one before it.
-	// A counter is the browser's equivalent of "pick a name that is not taken":
-	// it is monotonic, so two shots in one session never collide.
+	//
+	// The monotonic counter behind this moved with the method; see `Paths.ts`.
+	// `resetScreenshotCounter` is how `screenshot-naming.test.ts` asserts the
+	// rule without standing up a game to observe a side effect.
 	GetUserNewScreenshotName(): string {
-		const name = `screenshot_${String(this.m_ScreenshotCounter++).padStart(3, "0")}`;
-		return name;
+		return getUserNewScreenshotName();
 	}
 
 	// C# ScreenshotFilePath — RogueGame.cs:20077
 	ScreenshotFilePath(shotname: string): string {
-		return `${this.GetUserScreenshotsPath()}${shotname}.${this.m_UI.UI_ScreenshotExtension()}`;
+		return screenshotFilePath(shotname, this.m_UI.UI_ScreenshotExtension());
 	}
 
 	// C# CreateDirectory — RogueGame.cs:20082
@@ -32838,24 +32840,23 @@ async HandleActionMenu(): Promise<PlayerCommand | null> {
 	}
 
 	// C# GetUserManualFilePath — RogueGame.cs:20127
-	// Browser: the manual ships as a static asset (web/public/assets/manual.txt).
 	GetUserManualFilePath(): string {
-		return "assets/manual.txt";
+		return getUserManualFilePath();
 	}
 
 	// C# GetUserHiScorePath — RogueGame.cs:20132
 	GetUserHiScorePath(): string {
-		return this.GetUserSavesPath();
+		return getUserHiScorePath();
 	}
 
 	// C# GetUserHiScoreFilePath — RogueGame.cs:20137
 	GetUserHiScoreFilePath(): string {
-		return this.GetUserHiScorePath() + "hiscores.dat";
+		return getUserHiScoreFilePath();
 	}
 
 	// C# GetUserHiScoreTextFilePath — RogueGame.cs:20142
 	GetUserHiScoreTextFilePath(): string {
-		return this.GetUserHiScorePath() + "hiscores.txt";
+		return getUserHiScoreTextFilePath();
 	}
 
 	// C# GenerateWorld — RogueGame.cs:20149

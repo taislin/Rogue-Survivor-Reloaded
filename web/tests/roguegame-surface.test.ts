@@ -96,31 +96,38 @@ function measure(): {
 }
 
 describe("RogueGame's measured surface", () => {
-	it("reports a class whose shape §6's own plan is measured against", () => {
+  it("reports a class whose shape §6's own plan is measured against", () => {
 		const m = measure();
     // §6.2 calls this "the god object", and the argument for splitting is the
     // ratio rather than the size. Pinned so the ratio has a history.
-    expect(m.members).toBe(846);
-    expect(m.methods).toBe(760);
-    // The *reachable* surface is 116, up from 114 — and both new names are in
-    // hubs, which is the direction that helps. Replacing source scans with
-    // behavioural tests (§6.9's instruction, before any region moves) reached two
-    // members the scans never could: `DoTag`, by calling it to prove a tagged tile
-    // reaches the minimap, and `HandlePlayerTradeNegociation`, by driving the real
-    // trade screen to read the trusted-leader line. Both were reachable all along
-    // and simply untested; the scans asserted about them without calling them.
     //
-    // `moving` is unchanged at 84, so this is the same trade the last two batches
-    // made: tests grew the surface that must stay signature-compatible without
-    // growing the surface a wave has to relocate.
-    expect(m.external).toBe(116);
+    // **845, and that is the first time this number has gone down.** §6 is a
+    // decomposition, and until the `GetUser*` extraction nothing had actually left
+    // the class — the previous changes all *added* members (the action menu, the
+    // customiser) or changed none. One went out with the paths move:
+    // `m_ScreenshotCounter`, a private field only the screenshot-naming methods
+    // could reach, now module state in `engine/Paths.ts`. It was the whole reason
+    // those methods were a field rather than free functions.
+    //
+    // Private went 91 -> 90 for the same reason, which is the direction §6.4's
+    // "the `private` boundary is effectively absent" note cares about: a member
+    // left the class rather than being hidden inside it.
+    expect(m.members).toBe(845);
+    expect(m.methods).toBe(760);
+    // The *reachable* surface is 117, up one. The `GetUser*` methods stayed on the
+    // class as delegations, which is what keeps this a pure move; the new name is
+    // `CURRENT_SAVE_SLOT`, reached because `paths.test.ts` checks the module's copy
+    // of the slot number against the class's. A test creating a dependency, not
+    // code needing one.
+    expect(m.external).toBe(117);
   // §6.4: "567 of 584 methods are public — only 17 are `private`. The
-  // `private` boundary is effectively absent." That is now *more* true, and the
-  // direction is worth pinning: the public count grew, and so did the private
-  // one, from 17 to 91. A naive reading of §6.4 would say the file has become
-  // better encapsulated in a way it has not.
+  // `private` boundary is effectively absent." That is still true, and the
+  // direction is worth pinning: public is unchanged at 755 while private has come
+  // down from 91 to 90. Public not falling is the point — the extraction left
+  // delegations behind rather than deleting callers' entry points, so the ratio
+  // has not improved and is not claimed to have.
   expect(m.public).toBe(755);
-  expect(m.private).toBe(91);
+  expect(m.private).toBe(90);
 	});
 
 	it("§6's stop condition is not met: nothing private is reached from outside", () => {
@@ -137,7 +144,7 @@ describe("RogueGame's measured surface", () => {
 		expect(m.privateReached).toBe(0);
 	});
 
-	it("the outside world depends on 116 members, and §6 assumed far fewer", () => {
+	it("the outside world depends on 117 members, and §6 assumed far fewer", () => {
 		const m = measure();
 		// §6.4's `GameContext` was to name "the 11 service fields … plus `m_Player`,
 		// `m_PlayerFOV`, `m_MapViewRect`, `m_Overlays`, `m_FirstPersonFacing`" —
@@ -146,14 +153,14 @@ describe("RogueGame's measured surface", () => {
 		// must not break.
 		//
     // The 2024 deferral said "thread a `game` reference through ~500 call
-    // sites". At 116 names the pessimistic figure is not the real one, and that
+    // sites". At 117 names the pessimistic figure is not the real one, and that
     // is the answer to the question §6.4 deferred until "the game runs and the
     // real cross-method dependencies are known".
-    expect(m.external).toBe(116);
+    expect(m.external).toBe(117);
     expect(m.external).toBeGreaterThan(83);
 	});
 
-	it("classifies all 116, with no residual", () => {
+  it("classifies all 117, with no residual", () => {
     // This is the finding that forced the re-derivation, and the number that keeps
     // it fixed. §6.2's region table left **68 of the 110** (as measured then) in no
     // region at all —
@@ -171,11 +178,11 @@ describe("RogueGame's measured surface", () => {
 		expect(m.buckets.get("STATE")?.length ?? 0).toBeLessThan(30);
 	});
 
-  it("splits the reachable surface into 32 hub and 84 movable, and the hubs stay", () => {
+  it("splits the reachable surface into 32 hub and 85 movable, and the hubs stay", () => {
     // §6.8: the two hubs "are the reason the split is worth doing rather than the
     // reason it fails". Still true, and now measured on the current file.
     const m = measure();
-    expect(m.moving).toBe(84);
+    expect(m.moving).toBe(85);
     expect(m.hubs).toBe(32);
     expect(m.moving + m.hubs).toBe(m.external);
     // HUB 1 is 24 of the 32. `DoTag` joined when the minimap tag test replaced a
@@ -184,20 +191,26 @@ describe("RogueGame's measured surface", () => {
     expect(m.buckets.get("HUB 1  Do*/On* action primitives")?.length ?? m.buckets.get("HUB 1")?.length).toBe(24);
   });
 
-	it("names 23 members GameContext has to carry, not 11", () => {
+  it("names 24 members GameContext has to carry, not 11", () => {
 		// §6.4 proposed naming "the 11 service fields (`m_UI`, `m_Rules`, `m_Session`,
 		// …) plus `m_Player`, `m_PlayerFOV`, `m_MapViewRect`, `m_Overlays`,
-		// `m_FirstPersonFacing`" — about sixteen. The measured figure is 23, and the
+		// `m_FirstPersonFacing`" — about sixteen. The measured figure is 24, and the
 		// list is not only fields: `TAG_MODE_TEXT`, `MAX_THROWABLE_DISTANCE` and
 		// `VERB_UNLOAD` are constants reached from the UI, and `simulateOneBehindDistrictTurn`
 		// and `stepActorsOnFire` are *methods* reached from the sim rather than state at all.
 		//
 		// That last pair is why "a context of fields" is the wrong shape and the taxonomy
 		// has a `carry` classification rather than assuming everything here is data.
+		//
+		// `CURRENT_SAVE_SLOT` is the newest, and it is there because `paths.test.ts`
+		// asserts the module's private copy of the slot number against the class's.
+		// That is a test creating a dependency rather than code needing one — worth
+		// recording, because it means this bucket counts what the *tests* reach and not
+		// only what the game does.
 		const m = measure();
 		const carry = m.buckets.get("STATE") ?? [];
-		expect(carry.length).toBe(23);
-		for (const name of ["player", "session", "rules", "m_PlayerFOV", "m_CharGen", "m_IsGameRunning", "m_PlayerWasRescued", "TAG_MODE_TEXT", "simulateOneBehindDistrictTurn", "stepActorsOnFire"]) {
+		expect(carry.length).toBe(24);
+		for (const name of ["player", "session", "rules", "m_PlayerFOV", "m_CharGen", "m_IsGameRunning", "m_PlayerWasRescued", "TAG_MODE_TEXT", "simulateOneBehindDistrictTurn", "stepActorsOnFire", "CURRENT_SAVE_SLOT"]) {
 			expect(carry, `${name} should be classified as carried`).toContain(name);
 		}
 	});
