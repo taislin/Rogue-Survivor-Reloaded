@@ -1,0 +1,23 @@
+{
+  "source": "Rogue Survivor Still Alive/Gameplay/GameSounds.cs",
+  "note": "The constants whose DECLARATION LINE carries the fork's own `//@@MP` marker. Committed rather than read from `_refs/`, which is gitignored: a test that opened GameSounds.cs passed locally and failed in CI, which is the worst arrangement available. Regenerate with `grep -n '@@MP' 'Rogue Survivor Still Alive/Gameplay/GameSounds.cs'` and keep only the lines that also declare a constant.",
+  "why-declaration-line-only": "The fork is inconsistent about where it puts the marker. Some constants carry it as a trailing comment on the declaration (`UNDEAD_EAT_PLAYER`, line 15); most carry it on a standalone comment line ABOVE the declaration (line 22 and twenty others). This fixture records the trailing form only, because that is the form that marks a single declaration unambiguously - a standalone marker above a declaration belongs to whatever follows it, which is a question about the next line rather than about this one. A constant with no trailing marker may still be fork-only by the other form; that is a different question and `tests/extended-audio.test.ts` is where the port's gating is actually decided.",
+  "extractedFromLineCount": 26,
+  "marked": [
+    { "name": "UNDEAD_EAT_PLAYER", "line": 15, "marker": "- added a NEARBY (Release 3)" },
+    { "name": "BUILDING_NEARBY", "line": 225, "marker": "(Release 7-4)" },
+    { "name": "DYNAMITE_VISIBLE", "line": 248, "marker": "- renamed from Release 2" },
+    { "name": "DYNAMITE_VISIBLE_FILE", "line": 249, "marker": "- renamed from Release 2" },
+    { "name": "DYNAMITE_AUDIBLE", "line": 250, "marker": "- renamed from Release 2" },
+    { "name": "DYNAMITE_AUDIBLE_FILE", "line": 251, "marker": "- renamed from Release 2" },
+    { "name": "DIG_GROUND", "line": 331, "marker": "- was called 'PLANT_SEEDS' before also being used when burying corpses (Release 7-6)" }
+  ],
+  "unmarkedButAsserted": [
+    {
+      "name": "MELEE_ATTACK_MISS_PLAYER",
+      "line": 119,
+      "declaration": "public const string MELEE_ATTACK_MISS_PLAYER = \"player misses melee attack\";",
+      "why": "Only its CALL SITE is marked (`//@@MP (Release 2)` where RogueGame.cs wires it up), which is the fork playing a sound the original game already shipped. So the sound belongs to both rulesets, and `extended-audio.test.ts` lists it in VANILLA_IDS rather than demanding an ExtendedAudio gate. Read the declaration, not the call site: reading the wrong one is how this constant was misfiled in the first place."
+    }
+  ]
+}
