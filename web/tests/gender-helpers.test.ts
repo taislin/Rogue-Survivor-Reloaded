@@ -1,7 +1,17 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { Actor } from "@data/Actor";
+import { Faction } from "@data/Faction";
+import { Map as GameMap } from "@data/Map";
+import { Models } from "@data/Models";
+import { PlayerController } from "@data/PlayerController";
+import { Point } from "@engine/Point";
+import { Rules } from "@engine/Rules";
+import { Ruleset, Session } from "@engine/Session";
 import { RogueGame } from "@engine/RogueGame";
-import { GameActors, ActorID } from "@gameplay/GameActors";
+import { NullRogueUI } from "@ui/NullRogueUI";
+import { ActorID, GameActors } from "@gameplay/GameActors";
+import { GameItems } from "@gameplay/GameItems";
+import { GameTiles } from "@gameplay/GameTiles";
 
 /**
  * Regression test for §1.1f bug 52.
@@ -26,6 +36,9 @@ import { GameActors, ActorID } from "@gameplay/GameActors";
  */
 
 const actorsDB = new GameActors();
+
+/** The trade screen below builds actors, which need a faction. */
+const survivors = new Faction("The Survivors", "survivor");
 
 /** The helpers are pure and read only `actor.model.dollBody.isMale`. */
 function stubActor(isMale: boolean): any {
@@ -80,37 +93,109 @@ describe("gender helpers return the right case", () => {
 });
 
 describe("the trusted-leader line uses the possessive helper", () => {
-  // The line is built inside a `do {} while (state != ...)` trade-screen loop
-  // whose closure captures a dozen pieces of trade state, so it cannot be
-  // invoked in isolation without reproducing the whole trade flow. This is
-  // therefore a source assertion rather than a behavioural one. It is
-  // deliberately narrow -- it looks for this one sentence -- so it fails only
-  // if that specific call site regresses, not on unrelated edits.
-  const source = readFileSync(
-    new URL("../src/engine/RogueGame.ts", import.meta.url),
-    "utf8"
-  );
+  // **Behavioural, not a source scan.** This used to read `RogueGame.ts` as text
+  // and assert the sentence appeared exactly once on a line calling `HisOrHer(`.
+  // §6 of the port plan flags that shape as the thing to remove before any region
+  // moves — a scan over one file "either fails for the wrong reason or stops
+  // matching and guards nothing" once the text is relocated.
+  //
+  // It does not have to be a scan. The trade screen is a `do { draw; wait }` loop,
+  // and what it draws is an `OverlayPopupTitleColors` whose `lines` are a public
+  // field, pushed by a public `AddOverlay`. So the string the player reads is
+  // reachable without reproducing the closure: feed the UI an Escape, let the
+  // loop draw once and leave, and read the overlay. `fire-extinguishers.test.ts`
+  // already reads `m_Overlays` this way.
+  //
+  // Driving the real screen also covers what the scan could not: that the *right*
+  // NPC is described. A scan proved the sentence existed; it could not tell a
+  // male NPC from a female one, which is the entire bug — female NPCs were
+  // unaffected, which is why it survived.
 
-  it("the sentence exists exactly once", () => {
-    const matches = source.match(
-      /trusted leader, will accept all trades\./g
+  /**
+   * Runs the trade screen once and returns the title and lines it drew.
+   *
+   * The lines are captured *at the redraw*, not read afterwards: the screen ends
+   * with `ClearOverlays()`, so reading `m_Overlays` once the call returns finds
+   * nothing — the loop ran, drew, and tidied up behind itself. That is also why
+   * the `RedrawPlayScreen` stub is where the capture goes: it is the one call in
+   * the loop that happens while the overlays are still on screen, and it is the
+   * call that throws on an unstarted game (it reads `m_MapViewRect`, which only
+   * `StartNewGame` sets) — the same stub `fire-extinguishers.test.ts` and
+   * `inert-sound-tiers.test.ts` use.
+   *
+   * The title is captured too, because it is how the negative test below proves
+   * the screen really ran: without it, "the line is absent" would also be what
+   * an empty capture looks like.
+   */
+  async function tradeScreen(
+    isMale: boolean,
+    { trustsPlayer = true }: { trustsPlayer?: boolean } = {},
+  ): Promise<{ title: string; lines: string }> {
+    new GameItems();
+    new GameTiles();
+    const ui = new NullRogueUI();
+    const game = new RogueGame(ui);
+    Session.useSeed(1);
+    const map = new GameMap(1, "test", 30, 30);
+    Session.get().ruleset = Ruleset.CLASSIC;
+
+    const you = new Actor(Models.actors.get(ActorID.MALE_CIVILIAN), survivors, "you");
+    you.controller = new PlayerController();
+    map.placeActor(you, new Point(10, 10));
+    game.m_Player = you;
+
+    const npc = new Actor(
+      Models.actors.get(isMale ? ActorID.MALE_CIVILIAN : ActorID.FEMALE_CIVILIAN),
+      survivors,
+      "trader",
     );
-    expect(matches, "trusted-leader sentence not found -- was it reworded?").toHaveLength(1);
+    if (trustsPlayer) {
+      // The line is gated on `npc.leader === player && isActorTrustingLeader(npc)`,
+      // and that rule returns false for anyone without a leader or below
+      // `TRUST_TRUSTING_THRESHOLD`. `hasLeader` also requires a living leader.
+      npc.leader = you;
+      npc.trustInLeader = Rules.TRUST_TRUSTING_THRESHOLD + 1;
+    }
+    map.placeActor(npc, new Point(11, 10));
+
+    let title = "";
+    let lines: string[] = [];
+    const overlays = (
+      game as unknown as { m_Overlays: { title?: string; lines?: string[] | null }[] }
+    ).m_Overlays;
+    (game as unknown as { RedrawPlayScreen(): void }).RedrawPlayScreen = () => {
+      title = overlays.map((o) => o.title ?? "").join("\n");
+      lines = overlays.flatMap((o) => o.lines ?? []);
+    };
+    // One Escape: the loop draws, waits, and at `state === 0` an Escape leaves.
+    ui.pushKeys("Escape");
+    await game.HandlePlayerTradeNegociation(you, npc);
+    return { title, lines: lines.join("\n") };
+  }
+
+  it("reads 'his' for a male trusted leader, not 'him'", async () => {
+    const { lines } = await tradeScreen(true);
+    expect(lines).toContain("You are his trusted leader, will accept all trades.");
+    expect(lines).not.toContain("You are him ");
   });
 
-  it("calls HisOrHer, not HimOrHer", () => {
-    const line = source
-      .split("\n")
-      .find((l) => l.includes("trusted leader, will accept all trades."));
-    expect(line, "trusted-leader line not found").toBeDefined();
-    expect(line).toContain("HisOrHer(");
-    // \b matters: "HisOrHer" contains no "HimOrHer", but a naive substring
-    // check for "imOrHer" would also match nothing useful. Be explicit.
-    expect(line).not.toMatch(/\bHimOrHer\(/);
+  it("reads 'her' for a female trusted leader", async () => {
+    const { lines } = await tradeScreen(false);
+    expect(lines).toContain("You are her trusted leader, will accept all trades.");
+  });
+
+  it("only says it to a follower who trusts the player", async () => {
+    // The negative case, which the source scan could not express at all: the line
+    // is gated on the leader relationship, so an NPC who does not follow the
+    // player must not be described as a trusting follower.
+    const { title, lines } = await tradeScreen(true, { trustsPlayer: false });
+    expect(lines).not.toContain("trusted leader, will accept all trades.");
+    // And the screen really did draw, so the negative above is not vacuous.
+    expect(title).toContain("Trading with trader");
   });
 
   it("produces grammatical English for both genders", () => {
-    // The real assertion, spelled out: this is what the player reads.
+    // The helpers themselves, spelled out rather than through the screen.
     for (const isMale of [true, false]) {
       const rendered = `You are ${callHelper("HisOrHer", isMale)} trusted leader, will accept all trades.`;
       expect(rendered).toMatch(/^You are (his|her) trusted leader, will accept all trades\.$/);
