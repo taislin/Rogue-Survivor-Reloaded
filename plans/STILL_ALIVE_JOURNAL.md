@@ -5,18 +5,23 @@
 > the corrections were. It is kept verbatim because every lesson in it cost a real
 > session to learn, and because the *shape* of the mistakes is the durable part.
 >
-> [`BROWSER_PORT_PLAN.md`](BROWSER_PORT_PLAN.md) §5.6 carries the current
-> position — what landed, what is still owed, and the handful of rules that
-> prevent the mistakes recurring. This file is the long answer to "why is it
-> like that?", and it is **not** a statement of current state. Where the two
-> disagree about what exists today, the plan is right.
+> **This file is now the primary record of the Still Alive port.** Its stage board
+> (§5.6) was deleted from [`BROWSER_PORT_PLAN.md`](BROWSER_PORT_PLAN.md) at the
+> 2026-10-03 trim, along with `STILL_ALIVE_REFERENCE.md` and `HANDOVER.md` — the port
+> shipped and merged (`27c63aa`), so the board had nothing left to say that the
+> corrections below do not say better. The surviving open work is in the plan's
+> **§1.5 "Open work"**. This file is the long answer to "why is it like that?", and
+> it is **not** a statement of current state: where the two disagree about what
+> exists today, the §"Currency re-check" below is right, because it was measured.
 >
-> Sections are the plan's own, so `§5.6e` means the same thing in both files.
+> Section numbers are the plan's old ones (`§5.6a`–`§5.6g`), kept because renaming
+> them would break every cross-reference in the surviving files. They no longer
+> resolve into `BROWSER_PORT_PLAN.md`, which is trimmed.
 > Lines moved when this file was split out, so re-grep rather than trusting a
 > `file:line` citation from inside it.
 >
 > Extracted from `BROWSER_PORT_PLAN.md` when it was ~4 259 lines; §5.6c–5.6f were
-> ~2 450 of them.
+> ~2 450 of them. That plan is now 1,121 lines after the trim.
 
 ---
 
@@ -26,13 +31,78 @@
 > `8df6e2b` ("mall: the upper level's fit-out and the parking level") landed
 > both, and `PARKING_ASPHALT_NS`/`_EW` have models. Also `MakeOrdinaryOffice` was
 > ported in `beb822d`, so the "two C# generators never ported" note below is down
-> to `MakeMechanicWorkshop` alone. The current position is the table in
-> `BROWSER_PORT_PLAN.md` §5.6; this file is the diary, and a diary is allowed to
-> be behind.
+> to `MakeMechanicWorkshop` alone — still unported, and now item 3 of the plan's
+> §1.5 backlog. This file is the diary, and a diary is allowed to be behind.
+
+---
+
+> ## Currency re-check, 2026-10-03 against `master` `8d5dfc8`
+>
+> The note above was written for two specific rows. A full audit found **nine more
+> places where this file says something is not done and it is done and shipped**,
+> plus one safety property that was lost. Each is corrected inline with a
+> **[corrected 2026-10-03]** marker; the list is here so a reader does not have to
+> find them by accident.
+>
+> **Now false — the feature shipped:**
+>
+> | Claim | Reality |
+> |---|---|
+> | §5.6e **`Fishing` is NOT done**; `BaseAI` has no `BehaviorGoFish`; nothing spawns the rod | `BaseAI.behaviorGoFish` (`BaseAI.ts:741`), called from `CivilianAI:161,469`; `makeParkPond` sets `map.hasFishing` (`BaseTownGenerator.ts:3572`); **6** rod spawn sites, not none |
+> | §5.6d **`DarknessFov` 2b not here**; a basement shows one tile | `LOS.addOtherLitTiles` (`LOS.ts:419`, gated `:381-388`); both stated blockers cleared |
+> | §5.6f **5 helicopter ambients not wired** | `checkLandedHelicopterSFX` (`RogueGame.ts:26819`), both session map fields exist |
+> | §5.6f **2 church bells not wired**; `Map.hasChurch` does not exist | `Map._hasChurch` (`Map.ts:108`), set by `makeChurchBuilding.ts:370`, played `RogueGame.ts:26790` |
+> | §5.6f **`UI_AMBIENTSFXS` + `_VOLUME` rows not ported** | Both exist (`GameOptions.ts:116,127,460-462,606`) |
+> | §5.6d **~711 `GameImages` constants deferred**; manifest 395 ids; 713 files orphaned | **1 023** constants, manifest **1 023**, **85** files still orphaned |
+> | §5.6d **12 hand-written maps, 9 of 10 done** | all 12, incl. `backpackMap` (`GameItems.ts:1603-1611`) |
+> | §5.6f **`ExtendedAudio` 3 gates, 177 unwired** | **43** gates; ids 183 → **211** |
+> | §5.6f **no `m_SoundManager` at all** | `RogueGame.ts:1801`, assigned `:1965` |
+>
+> **Now false — prose contradicted by this same file's own summary table** (which was
+> right in every case): `ArmorResist` "half done" (both halves wired, `RogueGame.ts:27340`);
+> `Cooking`'s heat source missing and `FireBarrels` "nothing can light these"
+> (`canStartCookingFire` `:12939`, `DoMakeFireForCooking` `:28471`, `MAKE_COOKING_FIRE` `:8616`);
+> `Actor.isOnFire` absent and the extinguisher's third target missing (`Actor.ts:312`, called `:19110,24346`);
+> `GameSounds.EQUIP` pending (wired `:22183,22214`); `TileFires` fuel-pump arm owed
+> (`ExplodeFuelPump` `:21198`); `ItemBackpack`/`SLEEPING_BAG` "do not exist"
+> (`RogueGame.ts:105,21918`, exempt `:22747`).
+>
+> **Lost:** the *"the Still Alive merge did not disturb classic"* suite is deleted and
+> **the property is unpinned** — see the corrected block in §5.6d. This is the one that
+> matters.
+>
+> **Numbers that moved:** `ItemID._COUNT` 168 → **199**; image sets 3 → **4**;
+> `makeItem*` factories 123 → **141**; `GameImages` 1023; `GameSounds` 211 ids;
+> `Feature` count 37 → **38**; `tile-palette.test.ts` 17 → **160** tests; Classic
+> fingerprint 7 files/11 sites → **11 files** (now `9bb5e4907bc3f62c`); `BaseAI.ts`
+> 255 → **277** lines; `BaseTownGenerator` 5 813 → **8 663**; `RogueGame.ts` 26 878 →
+> **36 487**.
+>
+> **Still correct, and worth not re-deriving:** the 16-table row-growth table (all 16
+> rows exact), the Stage 2 13-row fix table, the §5.6c 15-defect table, all 26 sampled
+> fork C# citations, the fork's own `Data/*.csv` row counts (16 tables, verified),
+> `TileID` = 143,
+> `Actors.csv` = 30 rows, `SOUND_FILES` = 183, `SFX_GAINS` left at 3 entries,
+> `subdivisionsFor` 8/4/2/1, and the Stage 4/5 per-feature summary table at ~1850-1892
+> — which is the most accurate table in the file.
+>
+> **Genuinely still open** (verified absent, not just unmentioned): `MakeMechanicWorkshop`
+> — the last unported generator; the `BOWS` → `BOWS_EXPLOSIVES` rename; the blast path's
+> other `itemModel` uses (3 SFX switches, BFG plasma icon, plasma-charge's 4 cases);
+> `barbed_wire_nearby.ogg` and `trip_mine_trigger_visible.ogg` (no constant);
+> `RS - Reincarnate.ogg` in both `music/` and `sfx/`; `MakeParkPond`'s C# `else` arm
+> (fire barrel in small parks); `isOneHanded` as a CSV column; and
+> `DarknessGating`'s burning-*tile* branch.
+>
+> **Port-side `file:line` citations: re-grep.** Of 22 sampled, **5 resolve, 17 drifted**,
+> and 3 point at lines that cannot exist at all (a journal citation of
+> `data-tables.test.ts:89-106` in an 84-line file). The cause is structural: the port
+> moved `engine/*` to `gameplay/*` and every god-file grew. **Cite symbols, not lines,
+> in this file.** The fork C# citations are the durable part and are fine.
 
 #### 5.6c Stage 2 — the fifteen bug fixes
 
-`STILL_ALIVE_REFERENCE.md` §6 lists fifteen defects in vanilla Alpha 10.1 that
+Fifteen defects in vanilla Alpha 10.1 that
 the fork fixed. They split by whether gating them is defensible, and the split
 matters: **a correctness fix behind a flag is still a bug in the other mode.**
 
@@ -210,6 +280,38 @@ strictly appended. Mutation-checked — it fails when `FOOD_ARMY_RATION`'s
 nutrition is set to the fork's 0.33, which is exactly the accident it exists to
 prevent.
 
+> **[corrected 2026-10-03] This test has been DELETED, and the property it pinned is
+> now unpinned. This is the single most consequential stale claim in this file.**
+>
+> `src/` was removed from the repository's tracking in `cfd19ae`, so there is nothing
+> left to compare against and nothing left to regenerate from. The committed JSON in
+> `web/src/gameplay/data/` is now the only copy. `web/tests/data-tables.test.ts` is
+> **84 lines** (two suites, down from three) and its own header says so:
+>
+> > *"It used to carry a third suite, 'the Still Alive merge did not disturb classic' …
+> > That is gone, and it is not recoverable here: `src/` was removed from the
+> > repository's tracking … **The property that suite asserted is real and is now
+> > unpinned.**"*
+>
+> The property still matters: Still Alive adds a ruleset that plays against these same
+> tables, so the merge is only safe if classic is untouched — and taking the fork's
+> tables wholesale *looks* like the merge while silently rebalancing classic (army
+> ration nutrition 0.25 → 0.33, best-before 5 days → never) at the layer both rulesets
+> read. The two surviving suites still catch a column the code cannot read and a header
+> cell used raw as a key. **What is no longer caught is a value edited in one place and
+> never regenerated in the other.**
+>
+> That header also records the suite pinned an id rename (`Actors.csv` row 0,
+> `_FIRST` → `UNDEAD_SKELETON`) that **nothing else records**. If `src/Resources/Data`
+> is ever restored, bring the suite back rather than writing it fresh.
+>
+> **The same loss applies to every generator script**: `scripts/merge-content-tables.py:44`
+> and the five port-side generators hardcode paths into the gitignored reference tree, so
+> **none of §5.6d/§5.6f's "done" data, sprite, sound and factory steps can be re-run or
+> verified in CI.** The journal's own warning further down — commit fixtures rather than
+> reading `_refs/` at test time — was the right principle for the *tests*; the *scripts*
+> never adopted it.
+
 **Sprites — files on disk done, `GameImages` constants not.** The set is now
 397 → **1 108 files**, added by `scripts/merge-sprite-sets.py` and converted by
 the existing `optimize-sprites.py` (which re-decodes every file it writes and
@@ -250,8 +352,8 @@ Two things still outstanding here, and they are the hand-edited part:
 
 | Change | Where | Count |
 |---|---|---|
-| `GameImages` constants for the 711 new sprites | `GameImages.ts` | ~+711, **deliberately not done yet** — see below |
-| 12 hand-written `{id, img}` maps — the sprite id is **not** in the JSON, it lives in TypeScript | `GameItems.ts` | ~+180 |
+| `GameImages` constants for the 711 new sprites | `GameImages.ts` | **[corrected 2026-10-03] DONE — ~628 of the 711 landed; `GameImages.ts` now carries 1 023 `static readonly` constants (1 024 incl. the class's own), and `allImageIds()` returns 1 023.** Only **85** image files remain unreferenced, down from 713 |
+| 12 hand-written `{id, img}` maps — the sprite id is **not** in the JSON, it lives in TypeScript | `GameItems.ts` | **[corrected 2026-10-03] DONE — all 12, including `backpackMap` (`GameItems.ts:1603-1611`, all 5 rows). The "9 of 10 maps" note below is stale** |
 
 **The 711 constants are deferred on purpose, and the compiler is what makes that
 safe.** §5.6d elsewhere says a sprite with no constant is "never preloaded and
@@ -522,9 +624,9 @@ worse case.
 | `save-graph-roundtrip.test.ts:195-197, 609-611` | field-by-field isomorphism; constructors identical | unaffected, and stronger in a superset: nothing is remapped |
 
 **Payload and preload.** The image set is already 1 108 files; the preload
-manifest is **still 395 ids** (`allImageIds()` at `GameImages.ts` enumerates the
-constants reflectively), because the 711 new constants are deferred — so the
-manifest grows only as the constants are added, not now. The asset payload grew
+manifest is ~~**still 395 ids**~~ **[corrected 2026-10-03] now 1 023 ids**
+(`allImageIds()` at `GameImages.ts` enumerates the constants reflectively) — the
+constants it was waiting on have landed. The asset payload grew
 by 324 KB, not the ~20 MB this section originally estimated. One consequence to
 plan for rather than discover:
 
@@ -536,8 +638,9 @@ plan for rather than discover:
 - **A sprite on disk with no `GameImages` constant is unreferenceable, not just
   undrawn** — as `classic/blank_texture.webp` and `Actors/CHAR_guard` are today.
   Every reference goes through a constant, so this is the cheapest place to save
-  effort *and* a safe one: the type system is the check. 713 files are currently
-  in this state by design, not by oversight.
+  effort *and* a safe one: the type system is the check. **[corrected 2026-10-03] 713
+  files were in this state by design; ~628 of the constants have since landed and only
+  85 files remain in it.**
 
 #### 5.6e Stage 4 — mechanics
 
@@ -919,10 +1022,18 @@ plan for rather than discover:
 > predicate that does not exist. The three dead tint helpers the author abandoned
 > (`LOS.cs:638-680`) are not ported at all.
 >
-> **So today a player in a basement sees exactly one tile**, and a burning barrel
+> ~~**So today a player in a basement sees exactly one tile**, and a burning barrel
 > two tiles away lights nothing. `tests/darkness-fov.test.ts` pins that as the
 > 2a behaviour, so the day 2b lands and starts lighting tiles at a distance, that
-> test fails and says why.
+> test fails and says why.~~
+> **[corrected 2026-10-03] 2b LANDED, as `LOS.addOtherLitTiles`** — 102 lines, gated
+> and called from `computeFOVFor` (`LOS.ts:381-388`, impl at `:419`, with a comment
+> recording it as "Still Alive, Release 6-5, and the second half of
+> `Feature.DarknessFov`"). Both stated blockers cleared: `Map.isAnyTileFireThere`
+> exists (`Map.ts:780`) and the candle branch handles `GameImages.DECO_LIT_CANDLE`
+> (`LOS.ts:471`). The test file still exists with 18 tests but no longer pins the 2a
+> limitation, so it was updated rather than left to fail. The three abandoned tint
+> helpers at `LOS.cs:638-680` are still not ported.
 >
 > `DarknessGating` and `LightPriority` — both parked since Stage 2 as "needs
 > `DarknessFov`" — were unblocked by 2a and are now done.
@@ -1564,7 +1675,7 @@ plan for rather than discover:
 > **Three things the feature needs are *not* here**, each recorded at the site
 > rather than left for someone to find:
 >
-> - **The NPC arm.** `CivilianAI.cs:754` — fish when hungry and holding a rod on a
+> - ~~**The NPC arm.** `CivilianAI.cs:754` — fish when hungry and holding a rod on a
 >   map with `HasFishing`, then `BehaviorGoFish`, then walk to the nearest visible
 >   water, then to the first water tile on the map — plus `BaseAI.cs:6625` for the
 >   equip-and-wait. It is the largest and least testable part of the feature, and
@@ -1572,7 +1683,17 @@ plan for rather than discover:
 >   `Map.hasFishing` is never set `true` by anything. **`Fishing` is therefore NOT
 >   done.** The `DoWait` NPC path (a non-player lands a fish on its first wait,
 >   with no roll) *is* ported, so the arm is a behaviour to switch on rather than a
->   mechanism to build — but nothing reaches it.
+>   mechanism to build — but nothing reaches it.~~
+>   **[corrected 2026-10-03] LANDED — all three parts, and the paragraph above was
+>   wrong on every count.** `BaseAI.behaviorGoFish` exists (`BaseAI.ts:741`) and is
+>   called from `CivilianAI` at two sites (`:161`, `:469-473`); `makeParkPond` sets
+>   `map.hasFishing = true` (`BaseTownGenerator.ts:3572`, pond at `:3414`); and the
+>   rod is spawnable from **six** call sites, not none — `BaseMapGenerator.ts:1293`
+>   defines `makeItemFishingRod`, called from `BaseTownGenerator.ts:3419, 5065, 5103,
+>   5289`, `makeShoppingMall.ts:1759` and `makeFarmBuilding.ts:764`. The claim that
+>   the fork's own `MakeItemFishingRod` "has no callers" was verifiable with one
+>   grep and was wrong. **`Fishing` is done.** Only `FISHING_REEL_NEARBY` remains, and
+>   `extended-audio.test.ts` asserts its absence on purpose.
 > - ~~**`isOneHanded`.**~~ **LANDED.** `ItemWeaponModel.isOneHanded` now exists
 >   (Release 7-2) and the fishing rod's "unequip a two-handed right-hand weapon"
 >   arm (`RogueGame.cs:21945-21956`) is ported with it. The bullet that used to sit
@@ -1776,7 +1897,7 @@ plan for rather than discover:
 >
 > **What is not wired, and on what:**
 >
-> - **The five helicopter tracks — `Feature.HelicopterRescue`, still pending.**
+> - ~~**The five helicopter tracks — `Feature.HelicopterRescue`, still pending.**
 >   `CheckLandedHelicopterSFX` (`RogueGame.cs:10524`) reads
 >   `m_Session.ArmyHelicopterRescue_Map` and `_Coordinates`. The port has the rescue
 >   *day* (`Session.armyHelicopterRescueDay`, written by `DifficultyAtCreation`) and
@@ -1785,10 +1906,25 @@ plan for rather than discover:
 >   `LOUD_NOISE_RADIUS` (`Rules.ts:310`). **There is nothing to stub here** — a
 >   stationary helicopter the player is not rescued by would be a new endgame, not
 >   this feature, and the `StopAllAmbientsExcept` list would have to grow by four
->   the moment it landed.
-> - **The two church bells — `Feature.Church`, still pending.** The C#'s trigger is
+>   the moment it landed.~~
+>   **[corrected 2026-10-03] LANDED.** `Feature.HelicopterRescue` is off
+>   `PENDING_WIRING`; `checkLandedHelicopterSFX` exists (`RogueGame.ts:26819`) and is
+>   called from two sites (`:5070`, `:18303`), with the four distance tiers plus the
+>   flyover at `:5072-5079`; and both session fields exist —
+>   `Session.armyHelicopterRescueMap` (`:389`) and
+>   `armyHelicopterRescueCoordinates` (`:352`). There are six
+>   `Feature.HelicopterRescue` gates (`:19262, 25922, 26084, 33031`).
+>   **The claim "the port has the day and no map to put a helicopter on" was wrong on
+>   both counts**, and it was copied verbatim into a production comment at
+>   `RogueGame.ts:26646` — so the error now lives in two places.
+> - ~~**The two church bells — `Feature.Church`, still pending.** The C#'s trigger is
 >   `m_Player.Location.Map.HasChurch` at sunset (`:5637`). The port's `Map` has no
->   `hasChurch` at all, and inventing one is a guess with a sound attached to it.
+>   `hasChurch` at all, and inventing one is a guess with a sound attached to it.~~
+>   **[corrected 2026-10-03] LANDED.** `Map` grew `_hasChurch` with a defaulting
+>   accessor (`Map.ts:100-115`), `makeChurchBuilding` sets it
+>   (`makeChurchBuilding.ts:370`), and both bell ids are played at sunset gated on
+>   `playerMap.hasChurch && !this.m_Player.isSleeping` (`RogueGame.ts:26790-26792`).
+>   Again the stale claim was copied into a code comment (`RogueGame.ts:26657`).
 > - **`TEST_AMBIENT` — shipped, deliberately unreachable.** Its only C# caller is
 >   `OptionsMenuAudioAdjustment` (`:2244`), a preview cue for the ambient-volume
 >   row in the options screen, and the port has no such row (below). The file is
@@ -1805,7 +1941,7 @@ plan for rather than discover:
 > all eight surviving levels — five hospital, two police station, the CHAR
 > underground — so the list cannot quietly shrink.
 >
-> **The two option rows are not here, and that is the one thing a player would
+> ~~**The two option rows are not here, and that is the one thing a player would
 > notice.** The C# has `UI_AMBIENTSFXS` (an on/off) and `UI_AMBIENTSFXS_VOLUME`
 > ("Ambient sounds volume (rain, church bells, distant animals, etc)",
 > `GameOptions.cs:1038`). The port has neither, so the channel level is the
@@ -1813,7 +1949,14 @@ plan for rather than discover:
 > the C#'s own default, but not player-movable. Adding the two rows is a
 > `GameOptions`/`OptionsScreen` change and nothing about the channel blocks it;
 > it is left out here because it is options work rather than audio work, and
-> because §5.6g's "QA doubles" is worse served by a half-done options screen.
+> because §5.6g's "QA doubles" is worse served by a half-done options screen.~~
+> **[corrected 2026-10-03] LANDED — both rows exist.** `OptionIDs.UI_AMBIENTSFXS`
+> (`GameOptions.ts:116`) and `UI_AMBIENTSFXS_VOLUME` (`:127`), with backing fields at
+> `:460-462` and the read at `:606`. `m_PlayAmbientSFXs` / `m_AmbientSFXVolume` and
+> `PlayAmbientSFXs` came with them.
+>
+> **So `AmbientAudio` is complete except for `TEST_AMBIENT`**, which stays deliberately
+> unreachable for the reason above. That is one of thirteen tracks outstanding, not eight.
 >
 > **The load-time answer is that there is none, and that is a property of the port
 > rather than luck.** 14.0 MB of `.ogg` went into `public/assets/ambients/`, and
@@ -1866,7 +2009,7 @@ zero precisely because of the dump-every-own-field design.
 | Item model flags | `ItemModel` +6 bools | 0 | `isFlameWeapon`, `isThrowable`, `isForbiddenToAI`, `isBatteryPowered`, `causesTileFires`, `canGoInBackpacks` |
 | `Activity` +19 | enum | 0 | cosmetic labels, but they become load-bearing: `CivilianAI` filters trade partners on `isFightingOrFleeing` |
 | 7 new `PlayerCommand`s | enum — **append only** | 0 | bury, cook, destroy item, make fire, unload ammo, inspection mode, swap inventory |
-| `ExtendedAudio` | none (constants + a `Record` per id) | 0 | **table DONE** — 180 pairs in `GameSounds`/`SOUND_FILES`, 182 `.ogg` copied into `assets/sfx/`, generated from `GameSounds.cs` by `scripts/port-game-sounds.py` rather than transcribed. **3 call sites wired** (the two `Fishing` sounds §5.6e deferred, and `DoEatCorpse`'s id choice). The other 177 need the distance model — see its section |
+| `ExtendedAudio` | none (constants + a `Record` per id) | 0 | **table DONE** — 180 pairs in `GameSounds`/`SOUND_FILES`, 182 `.ogg` copied into `assets/sfx/`, generated from `GameSounds.cs` by `scripts/port-game-sounds.py` rather than transcribed. **[corrected 2026-10-03] 43 gates are now wired, not 3** (`grep -c "hasFeature(.*Feature.ExtendedAudio" src/`), and sound ids grew 183 → **211**. The `_NEARBY`/`_FAR` variants are played throughout — `CLIMB_FENCE_NEARBY`, `VOMIT_NEARBY`, `BUILDING_PLAYER`/`_NEARBY`, `SHOVE_NEARBY`, `MAKE_MOLOTOV`, `FLARE`, `GLOWSTICK`. `plans/HANDOVER.md` tracks the 29 that remain, in 7 families |
 | `ScorchBurntTile` | `Map.tileAlreadyHasScorchDecoration` | ~50 C# lines | **DONE** — the method was three lines that set `IS_SCORCHED` and stopped; the flag is what `Map.isInflammableTile` reads, but no player had ever seen it. Now the full C# `:24556-24608`: stairs skipped, damaged-wall guard, three damage tiers x wall/floor, and the `TaskRemoveDecoration(TURNS_PER_DAY * 3)` cleanup, plus the `ApplyExplosionDamage` call site with its plasma-charge exclusion. **`damage > 0` gates the flag too**, not just the drawing — a zero-damage call marks nothing. The damaged-wall guard was ported while vacuous - it looks for a `_damaged` decoration, which only `ReplaceDestroyedWall` (`:20134-20232`) adds - and **is now live**, since that method has landed. Every one of the nine rubble ids ends `_damaged`, so a tile fire now stops at an opened wall instead of blacking over it | 
 | `MakeParkPond` | `makeItemFishingRod`, `Map.hasWaterTiles` | ~100 C# lines | **DONE, except the C#'s `else` arm** — Release 6-1's replacement for alpha10's shed, and the only thing in the game that makes `Map.hasFishing` true, so the player's rod finally has water and the NPC arm has a gate to pass. Gated on `Feature.Fishing` at the step, which is what keeps Classic on the shed and byte-identical. **The `else` (a fire barrel in parks too small for a pond) is deferred**: it is eleven C# lines and it breaks world-generation determinism in a way not yet explained — see the comment at the step | 
 | `MAKE_COOKING_FIRE` | `ItemID.MATCHES`, `Rules.canStartCookingFire`, `DoMakeFireForCooking` | ~230 C# lines | **DONE** — the command both `Cooking` and `FireBarrels` were blocked on: until it landed the only fire in the port came from an explosion. `Ctrl+F`, an eight-check rule with per-refusal messages, MATCHES MODE, and three shapes (new campfire / refuel / relight) | 
@@ -1899,7 +2042,7 @@ dog pack rewrite, cooking/fishing/butchering behaviours) is the fork's
 `BaseAI.cs` 6 422 → 8 322. Two things in it should **not** be copied:
 `ExplorationData.cs` is pre-Alpha-10 and loses `GetExploredAge`, and the fork's
 `BehaviorWander` is a net regression against ours. Both are listed in
-`STILL_ALIVE_REFERENCE.md` §7.
+its own "do not port" list.
 
 **Verification.** A test per feature asserting it is reachable under
 `STILL_ALIVE` and unreachable under `CLASSIC` — the negative half is the one
@@ -1975,8 +2118,8 @@ cycle the other mode never had.
 > **The C# cannot tell the two rulesets apart, because the C# has one ruleset — it *is*
 > the fork.** This port has two and holds Classic byte-identical, and `districtSize` is
 > read by world generation: a global 50 would move the pinned Classic fingerprint
-> `e097b9d976ffac15` (7 test files, 11 assertion sites; `tests/bank-building.test.ts:606`
-> shows the committed value). So the floor is read from the ruleset —
+> **[corrected 2026-10-03] `9bb5e4907bc3f62c`, asserted across 11 test files and 19
+> sites** (it was `e097b9d976ffac15` in 7 files / 11 sites). So the floor is read from the ruleset —
 > `districtsSizeFloor()` in `GameOptions.ts`, `hasFeature(ruleset, Feature.ShoppingMall)
 > ? 50 : 30` — which is also why this feature has a reader in `GameOptions` at all
 > rather than only in its generator.
@@ -2209,8 +2352,10 @@ cycle the other mode never had.
 
 > ### The Classic fingerprint is the real test of all seven buildings
 >
-> Six of the seven building tests commit the *same* constant for a 40x40 Classic
-> district at seed 1: `e097b9d976ffac15`. That is deliberate and it is the only
+> **[corrected 2026-10-03] Six of the seven building tests commit the *same* constant
+> for a 40x40 Classic district at seed 1** — it is now `9bb5e4907bc3f62c`, asserted in
+**11** files rather than seven, since the army-base and shopping-mall work added more.
+That is deliberate and it is the only
 > assertion in the set that actually constrains anything. Each agent verified its
 > own district was unchanged and reported the number; agreeing on one number across
 > six independently written files is the evidence that none of them moved a
@@ -2345,7 +2490,11 @@ cycle the other mode never had.
 > inaudible overlap.
 >
 > **Item 4 — the distance model — is the rest of the feature, and it is the
-> expensive part.** 177 of the 180 ids are still unwired. The `_nearby` / `_far` /
+> expensive part.** ~~177 of the 180 ids are still unwired.~~
+> **[corrected 2026-10-03] Largely landed: 43 gates are wired and the distance rule
+> exists — the four sound shapes (melee / shove / chainsaw / vomit) that
+> the plan's §1.5 item 7 documents are its product.** 29 ids
+> remain, in 7 families, tracked in that file. The `_nearby` / `_far` /
 > `_visible` suffixes are 3 spatial tiers × 15 weapon classes, and the port has no
 > distance-to-volume rule to select between them, so wiring them means building
 > that first. `tests/extended-audio.test.ts` asserts that no fork-only id is
@@ -2396,9 +2545,11 @@ cycle the other mode never had.
 >   for every sfx id. So the three vanilla effects have been playing uncorrected
 >   (`sfx - undead eat` at 1.0 rather than its measured 2.446) and the 180 new
 >   ones would too. `WebAudioSoundManager` gets this right through `sfxGain`, and
->   nothing instantiates it: the port has no `m_SoundManager` at all. It is a
->   one-line change at the call site, but `WebAudioMusicManager` is where the
->   ambients channel is being built, so it is reported rather than touched.
+>   ~~nothing instantiates it: the port has no `m_SoundManager` at all.~~
+>   **[corrected 2026-10-03] It is instantiated.** `RogueGame.m_SoundManager` is
+>   declared at `:1801`, assigned at `:1965`, and handed to a client at `:4343`. The
+>   "no `m_SoundManager` at all" claim was false when written and had been copied into
+>   a code comment.
 > - **Two files ship with no constant.** `barbed_wire_nearby.ogg` and
 >   `trip_mine_trigger_visible.ogg` are in the fork's `Resources/Sfx/` and named by
 >   no `GameSounds` constant. The directory was copied verbatim rather than
@@ -2477,7 +2628,7 @@ Music is a smaller merge: 22 fork tracks against our 24, with different names
 
 **Attribution is settled and not optional.** The fork's media are CC0 / CC-BY
 3.0 with mandatory attribution — roughly 90 `freesound.org` sources plus sprite
-contributions — and every file has been modified. Per `STILL_ALIVE_REFERENCE.md`
+contributions — and every file has been modified. Per the fork survey's
 §8 this lands as a credits page plus a main-menu entry, which is what the fork
 itself did. The port already has `HandleCredits()` (`RogueGame.ts:3121`) to hang
 it from, and `docs/` to publish it.

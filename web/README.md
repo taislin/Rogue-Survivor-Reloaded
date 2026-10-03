@@ -314,8 +314,9 @@ before touching engine code — several entries describe failures that a
 type-checker is structurally unable to catch.
 
 The rest of `plans/` is context rather than instructions:
-[`STILL_ALIVE_REFERENCE.md`](../plans/STILL_ALIVE_REFERENCE.md) audits the GPLv3
-fork this port is merging content from, [`MULTIPLAYER_PLAN.md`](../plans/MULTIPLAYER_PLAN.md)
+[`STILL_ALIVE_JOURNAL.md`](../plans/STILL_ALIVE_JOURNAL.md) records how the GPLv3
+fork's content was merged and what nearly went wrong,
+[`MULTIPLAYER_PLAN.md`](../plans/MULTIPLAYER_PLAN.md)
 is a networked-play design, and
 [`SUGGESTIONS.md`](../plans/SUGGESTIONS.md) is the 2010–11 fan-forum backlog with
 a per-item measure of what already shipped.

@@ -97,7 +97,7 @@ def main():
     if not os.path.isdir(FORK):
         sys.exit(
             "fork images not found at %s\n"
-            "The audit in plans/STILL_ALIVE_REFERENCE.md was done against that tree; "
+            "The audit in plans/STILL_ALIVE_JOURNAL.md was done against that tree; "
             "this script cannot reproduce it without it." % FORK
         )
 

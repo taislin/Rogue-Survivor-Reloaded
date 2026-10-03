@@ -32,8 +32,8 @@ before touching engine code, and the rest when the question is "why":
 
 | | |
 |---|---|
-| [`BROWSER_PORT_PLAN.md`](./plans/BROWSER_PORT_PLAN.md) | Porting plan, phase status, and the bug log |
-| [`STILL_ALIVE_REFERENCE.md`](./plans/STILL_ALIVE_REFERENCE.md) | Audit of the GPLv3 *Still Alive* fork this port merges content from |
+| [`BROWSER_PORT_PLAN.md`](./plans/BROWSER_PORT_PLAN.md) | Porting rules, the open backlog (§1.5), and the `RogueGame.ts` split design |
+| [`STILL_ALIVE_JOURNAL.md`](./plans/STILL_ALIVE_JOURNAL.md) | How the GPLv3 *Still Alive* fork was merged, and the mutation inventory behind it |
 | [`MULTIPLAYER_PLAN.md`](./plans/MULTIPLAYER_PLAN.md) | Networked-play feasibility study and phasing |
 | [`SUGGESTIONS.md`](./plans/SUGGESTIONS.md) | The 2010–11 fan-forum backlog, with a per-item measure of what already shipped |
 

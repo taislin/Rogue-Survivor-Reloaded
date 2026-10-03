@@ -2,7 +2,7 @@
 
 > **Status: design only, 2026-09-30. No code has been written.** This file
 > records a feasibility study and a phasing plan. It is the sibling of
-> `BROWSER_PORT_PLAN.md` the same way `STILL_ALIVE_REFERENCE.md` is: a statement
+> `BROWSER_PORT_PLAN.md` the same way `SUGGESTIONS.md` is: a statement
 > of what a decision *is*, so the next person does not have to rediscover it.
 >
 > **The question asked:** could different human players be in the same world in
@@ -27,6 +27,87 @@ to check before trusting them. This convention is the point: §1.4a of the port
 plan records that this project has shipped a green build and a green simulator
 over a visibly broken game, and the durable lesson there is that *a claim which
 was never checked is indistinguishable from one that was*.
+
+> ### Currency re-check, 2026-10-03 against `master` `8d5dfc8`
+>
+> **The status claim is still exactly true.** Zero networking code exists:
+> `web/package.json` depends on `express` and nothing else (no `ws`, no
+> `socket.io`); `web/server/index.ts` is **28 lines** of `express.static` plus an
+> SPA fallback; there is no `http.createServer`, no `NetUI`, no `PROTOCOL_VERSION`,
+> no `?mp=` handling in `main.ts`, and no multiplayer test among the 140 test files.
+> **Nothing in §8's Phases 0–6 has begun.** This document is in better shape than its
+> siblings precisely because it describes work nobody started.
+>
+> **The `[v]` convention has decayed, and that is the finding.** Of 49 citations
+> sampled, **14 still resolve, 34 have drifted, 1 points at a file that does not
+> exist.** `RogueGame.ts` grew 32,753 → 36,487 lines, so the drift is large:
+> `:15185` → `:5569`, `:14180` → `:23415`, `:30208` → `:36469`, `:28154` → `:34385`,
+> `:16483` → `:19601`, `:26086` → `:31984`. **A `[v]` from 2026-09-30 is now no more
+> reliable than a `[?]`** — which is the convention's own failure mode, and worth
+> recording as such.
+>
+> **One cited rule is false, and it is the document's stated prerequisite** (§1's "the
+> engine is DOM-free"). The rule is attributed to `web/.porting/CONVENTIONS.md`, which
+> **does not exist and never has** (`git log --all -- '*CONVENTIONS.md'` is empty), and
+> the boundary it asserts is violated in three places: `RogueGame.ts:111`
+> (`@ui/BackpackPanel`), `RogueGame.ts:234` (`@ui/OptionsScreen`),
+> `GameOptions.ts:23` (`@ui/fonts`). **The conclusion survives** — nothing in `engine/`
+> or `data/` touches `document` or `window` directly, which is the property that
+> matters — but the rule as written is false and the file backing it is imaginary.
+>
+> **Derived counts to re-take:** 141 `IsVisibleToPlayer` sites → **151**;
+> `m_Player` references 387 → **427**; `IRogueUI` 44 methods → **43** (the "exactly
+> three block" count is still right); "30,000-line engine" → **36,487**; `new RogueGame`
+> now takes a 4th parameter, `sound: ISoundManager` (`RogueGame.ts:1934-1939`).
+>
+> **Two things the plan does not know about, both of which make its job easier:**
+> - **Bot control already exists** and is a ready-made stand-in for a parked remote
+>   player: `BotTakeControl` / `BotReleaseControl` (`RogueGame.ts:7925`, `:7957`),
+>   `m_botControl`, `m_isBotMode`, `Actor.isBotPlayer` (`data/Actor.ts:54`) with 33
+>   `isBotPlayer` sites, and `sim/cli.ts:46` defaults `--bot` on. §2.1 leans on
+>   `30c0075`'s phrase "that is what auto-play … would be", which reads as if auto-play
+>   is hypothetical. It is not, and it predates this document by one commit.
+> - **Eight world-initiated `AddMessagePressEnter` sites already carry an
+>   `isBotPlayer` guard** (`RogueGame.ts:6551, 6626, 6727, 6856, 6942, 7049, 7125,
+>   7246`), which partially pre-mitigates §4.1 item 3 and §10's "modal dialog with no
+>   human behind it" risk. §10's "six world-initiated sites" is also understated: there
+>   are **44** call sites now.
+>
+> **Two claims that need their scope narrowed rather than their value changed:**
+> - `Map.assertActorIntegrity()` "already runs every turn **[v]**" is true of the **sim
+>   harness** only (`HeadlessRunner.ts:207`); there is **no call in `RogueGame.ts`**, so
+>   it is not a free live invariant in a real game.
+> - §1's exclusion of "any change to the C# in `src/`" is now **vacuous** — `src/` is
+>   untracked since `cfd19ae`.
+>
+> **The cheapest live item in this document is closed, and it was not the bug
+> §5.3 thought it was. Measured 2026-10-03.**
+>
+> §5.3 proposed *"Fix in Phase 0, **with a test**, whether or not multiplayer happens"*
+> — a one-line `Math.max(…, 1)` at `Rules.ts:2537`. **The measurement says the clamp
+> should stay as it is**, because the reference has the identical one
+> (`Rules.cs:4680-4681`, "done, speed must be >= 0"), and raising it would be a
+> divergence from the reference for a case that cannot occur.
+>
+> **`actorSpeed === 0` is unreachable, and the floor is 3.** `actorSpeed` applies
+> `base -> x2/3 tired -> /2 exhausted -> -armour -> x0.75 shield -> -weapon -> /2
+> dragging -> max(floor, 0)`, every term off shipped data (heaviest armour 10, heaviest
+> weapon 10, penalty 0.75). `SEWERS_THING` is the only actor below base 100 (33) and
+> looks stranded on that alone — every term applied unconditionally is `-4.6` — but it
+> is undead and so fails **both** ability gates (`canTire`, `hasToSleep`), never taking
+> either multiplier. The low base and the missing multipliers are the same fact. Everyone
+> else is 100, which leaves 3.
+>
+> **Delivered as a pin rather than a clamp**, in `web/tests/actor-speed-floor.test.ts`:
+> six cases that recompute the worst case for every actor model off the real models, and
+> fail with a readable message if any load-capable actor reaches the clamp. Mutation-checked
+> — dropping `POLICEMAN`'s `SPD` to 15 in `Actors.json` fails it, naming the actor. The
+> margin is one CSV cell wide, which is the argument for a test rather than a comment.
+>
+> **What is left is the reachability caveat §5.3 itself flagged:** a *runtime* path to 0
+> needs a temporary actor with base < 33 that can tire, and nothing in the shipped content
+> produces one. That is a content question, not a scheduler bug, and it is the honest
+> residue of this item.
 
 ---
 
@@ -119,7 +200,7 @@ and [§4](#4-what-real-time-actually-costs). The correct figure is ~28 lines of
 engine change.
 
 This is recorded rather than quietly fixed because it is the same failure mode
-`BROWSER_PORT_PLAN.md` §1.1a documents: a plausible mechanism, never opened, and
+`BROWSER_PORT_PLAN.md` documents: a plausible mechanism, never opened, and
 a confident number attached to it. A cost estimate is a claim about code, and it
 has the same failure mode as a claim about a value type.
 
