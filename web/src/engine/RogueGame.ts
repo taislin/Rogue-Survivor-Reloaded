@@ -58,6 +58,7 @@ import {
 	ActionWait,
 	SayFlags,
 } from "@engine/actions/Actions";
+import type { ActionGame } from "@engine/actions/ActionGame";
 import { AMBIENT_SFX_VOLUME, type IAmbientManager } from "@engine/audio/IAmbientManager";
 import { type IMusicManager, MusicPriority } from "@engine/audio/IMusicManager";
 import { NullAmbientManager } from "@engine/audio/NullAmbientManager";
@@ -1321,7 +1322,7 @@ const BASH_DEFAULT: BashSound = {
   audible: GameSounds.BASH_OTHER_OBJECTS_NEARBY,
 };
 
-export class RogueGame {
+export class RogueGame implements ActionGame {
 	/** Browser save slot used by the C# "current save file" (`GetUserSave`). */
 	static readonly CURRENT_SAVE_SLOT = 0;
 

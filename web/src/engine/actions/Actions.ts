@@ -5,10 +5,6 @@
  * Each action holds a reference to the actor and the game, stores extra
  * parameters, and implements IsLegal() + Perform() by delegating to the
  * game's rule-checker and "Do*" mutation methods.
- *
- * The game / rules interfaces are kept as `any` here so that this file has
- * no circular dependency on the RogueGame class (which hasn't been ported yet).
- * Callers must supply the correct game object.
  */
 
 import { Actor } from '@data/Actor';
@@ -21,14 +17,9 @@ import { MapObject } from '@data/MapObject';
 import { Direction } from '@engine/Direction';
 import { Point } from '@engine/Point';
 import { ItemPrimedExplosive } from '@engine/items/ItemExplosive';
-
-// ────────────────────────────────────────────────────────────────────────────
-// Helpers – thin interface used to avoid pulling the whole RogueGame class.
-// ────────────────────────────────────────────────────────────────────────────
-
-/** Subset of RogueGame accessed by actions. */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Game = any;
+import type { ItemSprayScent } from '@engine/items/ItemMisc';
+import type { DoorWindow, PowerGenerator } from '@engine/mapobjects/MapObjects';
+import type { ActionGame } from '@engine/actions/ActionGame';
 
 // ────────────────────────────────────────────────────────────────────────────
 // ActionWait
@@ -45,7 +36,7 @@ type Game = any;
 export class ActionWait extends ActorAction {
   private readonly isFishing: boolean;
 
-  constructor(actor: Actor, game: Game, isFishing = false) {
+  constructor(actor: Actor, game: ActionGame, isFishing = false) {
     super(actor, game);
     this.isFishing = isFishing;
   }
@@ -64,7 +55,7 @@ export class ActionWait extends ActorAction {
 // ────────────────────────────────────────────────────────────────────────────
 
 export class ActionSleep extends ActorAction {
-  constructor(actor: Actor, game: Game) {
+  constructor(actor: Actor, game: ActionGame) {
     super(actor, game);
   }
 
@@ -86,7 +77,7 @@ export class ActionSleep extends ActorAction {
 export class ActionMoveStep extends ActorAction {
   private newLocation: Location;
 
-  constructor(actor: Actor, game: Game, directionOrPoint: Direction | Point) {
+  constructor(actor: Actor, game: ActionGame, directionOrPoint: Direction | Point) {
     super(actor, game);
     if (directionOrPoint instanceof Direction) {
       this.newLocation = actor.location.addDirection(directionOrPoint);
@@ -120,7 +111,7 @@ export class ActionBump extends ActorAction {
   readonly direction: Direction;
   readonly concreteAction: ActorAction | null;
 
-  constructor(actor: Actor, game: Game, direction: Direction) {
+  constructor(actor: Actor, game: ActionGame, direction: Direction) {
     super(actor, game);
     this.direction = direction;
     const newLoc = actor.location.addDirection(direction);
@@ -146,7 +137,7 @@ export class ActionBump extends ActorAction {
 export class ActionMeleeAttack extends ActorAction {
   readonly target: Actor;
 
-  constructor(actor: Actor, game: Game, target: Actor) {
+  constructor(actor: Actor, game: ActionGame, target: Actor) {
     super(actor, game);
     this.target = target;
   }
@@ -172,7 +163,7 @@ export class ActionRangedAttack extends ActorAction {
   readonly mode: FireMode;
   private lof: Point[] = [];
 
-  constructor(actor: Actor, game: Game, target: Actor, mode: FireMode = FireMode.DEFAULT) {
+  constructor(actor: Actor, game: ActionGame, target: Actor, mode: FireMode = FireMode.DEFAULT) {
     super(actor, game);
     this.target = target;
     this.mode = mode;
@@ -197,7 +188,7 @@ export class ActionRangedAttack extends ActorAction {
 export class ActionThrowGrenade extends ActorAction {
   readonly throwPos: Point;
 
-  constructor(actor: Actor, game: Game, throwPos: Point) {
+  constructor(actor: Actor, game: ActionGame, throwPos: Point) {
     super(actor, game);
     this.throwPos = throwPos;
   }
@@ -220,12 +211,22 @@ export class ActionThrowGrenade extends ActorAction {
 
 // ────────────────────────────────────────────────────────────────────────────
 // ActionOpenDoor
+//
+// `door` is `DoorWindow`, not `MapObject`. It was `MapObject` while `Game` was
+// `any`, which hid a real mismatch: `isLegal()` hands it straight to
+// `rules.isOpenableFor(actor, door: DoorWindow)` and `perform()` to
+// `doOpenDoor(actor, door: DoorWindow)`, so the narrow type was already required
+// three call frames away. `Rules.getAction` narrows with `instanceof DoorWindow`
+// before constructing, so nothing needed the wide type. Same for
+// `ActionCloseDoor`, `ActionBashDoor`, `ActionBarricadeDoor`,
+// `ActionSwitchPowerGenerator` (PowerGenerator) and `ActionSprayOdorSuppressor`
+// (ItemSprayScent).
 // ────────────────────────────────────────────────────────────────────────────
 
 export class ActionOpenDoor extends ActorAction {
-  private door: MapObject;
+  private door: DoorWindow;
 
-  constructor(actor: Actor, game: Game, door: MapObject) {
+  constructor(actor: Actor, game: ActionGame, door: DoorWindow) {
     super(actor, game);
     this.door = door;
   }
@@ -246,9 +247,9 @@ export class ActionOpenDoor extends ActorAction {
 // ────────────────────────────────────────────────────────────────────────────
 
 export class ActionCloseDoor extends ActorAction {
-  private door: MapObject;
+  private door: DoorWindow;
 
-  constructor(actor: Actor, game: Game, door: MapObject) {
+  constructor(actor: Actor, game: ActionGame, door: DoorWindow) {
     super(actor, game);
     this.door = door;
   }
@@ -269,9 +270,9 @@ export class ActionCloseDoor extends ActorAction {
 // ────────────────────────────────────────────────────────────────────────────
 
 export class ActionBashDoor extends ActorAction {
-  private door: MapObject;
+  private door: DoorWindow;
 
-  constructor(actor: Actor, game: Game, door: MapObject) {
+  constructor(actor: Actor, game: ActionGame, door: DoorWindow) {
     super(actor, game);
     this.door = door;
   }
@@ -292,9 +293,9 @@ export class ActionBashDoor extends ActorAction {
 // ────────────────────────────────────────────────────────────────────────────
 
 export class ActionBarricadeDoor extends ActorAction {
-  private door: MapObject;
+  private door: DoorWindow;
 
-  constructor(actor: Actor, game: Game, door: MapObject) {
+  constructor(actor: Actor, game: ActionGame, door: DoorWindow) {
     super(actor, game);
     this.door = door;
   }
@@ -317,7 +318,7 @@ export class ActionBarricadeDoor extends ActorAction {
 export class ActionBreak extends ActorAction {
   readonly mapObject: MapObject;
 
-  constructor(actor: Actor, game: Game, obj: MapObject) {
+  constructor(actor: Actor, game: ActionGame, obj: MapObject) {
     super(actor, game);
     this.mapObject = obj;
   }
@@ -341,7 +342,7 @@ export class ActionBuildFortification extends ActorAction {
   readonly buildPos: Point;
   readonly isLarge: boolean;
 
-  constructor(actor: Actor, game: Game, buildPos: Point, isLarge: boolean) {
+  constructor(actor: Actor, game: ActionGame, buildPos: Point, isLarge: boolean) {
     super(actor, game);
     this.buildPos = buildPos;
     this.isLarge = isLarge;
@@ -363,7 +364,7 @@ export class ActionBuildFortification extends ActorAction {
 export class ActionRepairFortification extends ActorAction {
   private fort: MapObject;
 
-  constructor(actor: Actor, game: Game, fort: MapObject) {
+  constructor(actor: Actor, game: ActionGame, fort: MapObject) {
     super(actor, game);
     this.fort = fort;
   }
@@ -384,9 +385,9 @@ export class ActionRepairFortification extends ActorAction {
 // ────────────────────────────────────────────────────────────────────────────
 
 export class ActionSwitchPowerGenerator extends ActorAction {
-  private powGen: MapObject;
+  private powGen: PowerGenerator;
 
-  constructor(actor: Actor, game: Game, powGen: MapObject) {
+  constructor(actor: Actor, game: ActionGame, powGen: PowerGenerator) {
     super(actor, game);
     this.powGen = powGen;
   }
@@ -411,7 +412,7 @@ export class ActionPush extends ActorAction {
   readonly to: Point;
   private obj: MapObject;
 
-  constructor(actor: Actor, game: Game, pushObj: MapObject, pushDir: Direction) {
+  constructor(actor: Actor, game: ActionGame, pushObj: MapObject, pushDir: Direction) {
     super(actor, game);
     this.obj = pushObj;
     this.direction = pushDir;
@@ -439,7 +440,7 @@ export class ActionPull extends ActorAction {
   readonly moveActorTo: Point;
   private obj: MapObject;
 
-  constructor(actor: Actor, game: Game, pullObj: MapObject, moveActorDir: Direction) {
+  constructor(actor: Actor, game: ActionGame, pullObj: MapObject, moveActorDir: Direction) {
     super(actor, game);
     this.obj = pullObj;
     this.moveActorDirection = moveActorDir;
@@ -464,7 +465,7 @@ export class ActionPull extends ActorAction {
 export class ActionUseItem extends ActorAction {
   private item: Item;
 
-  constructor(actor: Actor, game: Game, item: Item) {
+  constructor(actor: Actor, game: ActionGame, item: Item) {
     super(actor, game);
     this.item = item;
   }
@@ -487,7 +488,7 @@ export class ActionUseItem extends ActorAction {
 export class ActionDropItem extends ActorAction {
   private item: Item;
 
-  constructor(actor: Actor, game: Game, item: Item) {
+  constructor(actor: Actor, game: ActionGame, item: Item) {
     super(actor, game);
     this.item = item;
   }
@@ -511,7 +512,7 @@ export class ActionTakeItem extends ActorAction {
   private position: Point;
   private item: Item;
 
-  constructor(actor: Actor, game: Game, position: Point, item: Item) {
+  constructor(actor: Actor, game: ActionGame, position: Point, item: Item) {
     super(actor, game);
     this.position = position;
     this.item = item;
@@ -535,7 +536,7 @@ export class ActionTakeItem extends ActorAction {
 export class ActionGetFromContainer extends ActorAction {
   private position: Point;
 
-  constructor(actor: Actor, game: Game, position: Point) {
+  constructor(actor: Actor, game: ActionGame, position: Point) {
     super(actor, game);
     this.position = position;
   }
@@ -563,7 +564,7 @@ export class ActionGetFromContainer extends ActorAction {
 export class ActionEquipItem extends ActorAction {
   private item: Item;
 
-  constructor(actor: Actor, game: Game, item: Item) {
+  constructor(actor: Actor, game: ActionGame, item: Item) {
     super(actor, game);
     this.item = item;
   }
@@ -586,7 +587,7 @@ export class ActionEquipItem extends ActorAction {
 export class ActionUnequipItem extends ActorAction {
   private item: Item;
 
-  constructor(actor: Actor, game: Game, item: Item) {
+  constructor(actor: Actor, game: ActionGame, item: Item) {
     super(actor, game);
     this.item = item;
   }
@@ -609,7 +610,7 @@ export class ActionUnequipItem extends ActorAction {
 export class ActionRechargeItemBattery extends ActorAction {
   private item: Item;
 
-  constructor(actor: Actor, game: Game, item: Item) {
+  constructor(actor: Actor, game: ActionGame, item: Item) {
     super(actor, game);
     this.item = item;
   }
@@ -632,7 +633,7 @@ export class ActionRechargeItemBattery extends ActorAction {
 export class ActionEatCorpse extends ActorAction {
   readonly target: Corpse;
 
-  constructor(actor: Actor, game: Game, target: Corpse) {
+  constructor(actor: Actor, game: ActionGame, target: Corpse) {
     super(actor, game);
     this.target = target;
   }
@@ -655,7 +656,7 @@ export class ActionEatCorpse extends ActorAction {
 export class ActionEatFoodOnGround extends ActorAction {
   private item: Item;
 
-  constructor(actor: Actor, game: Game, item: Item) {
+  constructor(actor: Actor, game: ActionGame, item: Item) {
     super(actor, game);
     this.item = item;
   }
@@ -678,7 +679,7 @@ export class ActionEatFoodOnGround extends ActorAction {
 export class ActionReviveCorpse extends ActorAction {
   readonly target: Corpse;
 
-  constructor(actor: Actor, game: Game, target: Corpse) {
+  constructor(actor: Actor, game: ActionGame, target: Corpse) {
     super(actor, game);
     this.target = target;
   }
@@ -701,7 +702,7 @@ export class ActionReviveCorpse extends ActorAction {
 export class ActionStartDragCorpse extends ActorAction {
   readonly target: Corpse;
 
-  constructor(actor: Actor, game: Game, target: Corpse) {
+  constructor(actor: Actor, game: ActionGame, target: Corpse) {
     super(actor, game);
     this.target = target;
   }
@@ -724,7 +725,7 @@ export class ActionStartDragCorpse extends ActorAction {
 export class ActionStopDragCorpse extends ActorAction {
   readonly target: Corpse;
 
-  constructor(actor: Actor, game: Game, target: Corpse) {
+  constructor(actor: Actor, game: ActionGame, target: Corpse) {
     super(actor, game);
     this.target = target;
   }
@@ -747,7 +748,7 @@ export class ActionStopDragCorpse extends ActorAction {
 export class ActionChat extends ActorAction {
   readonly target: Actor;
 
-  constructor(actor: Actor, game: Game, target: Actor) {
+  constructor(actor: Actor, game: ActionGame, target: Actor) {
     super(actor, game);
     this.target = target;
   }
@@ -782,7 +783,7 @@ export class ActionSay extends ActorAction {
   readonly text: string;
   readonly flags: SayFlags;
 
-  constructor(actor: Actor, game: Game, target: Actor, text: string, flags: SayFlags = SayFlags.NONE) {
+  constructor(actor: Actor, game: ActionGame, target: Actor, text: string, flags: SayFlags = SayFlags.NONE) {
     super(actor, game);
     this.target = target;
     this.text = text;
@@ -805,7 +806,7 @@ export class ActionSay extends ActorAction {
 export class ActionShout extends ActorAction {
   readonly text: string | null;
 
-  constructor(actor: Actor, game: Game, text: string | null = null) {
+  constructor(actor: Actor, game: ActionGame, text: string | null = null) {
     super(actor, game);
     this.text = text;
   }
@@ -828,7 +829,7 @@ export class ActionShout extends ActorAction {
 export class ActionTrade extends ActorAction {
   readonly target: Actor;
 
-  constructor(actor: Actor, game: Game, target: Actor) {
+  constructor(actor: Actor, game: ActionGame, target: Actor) {
     super(actor, game);
     this.target = target;
   }
@@ -849,7 +850,7 @@ export class ActionTrade extends ActorAction {
 export class ActionSwitchPlace extends ActorAction {
   readonly target: Actor;
 
-  constructor(actor: Actor, game: Game, target: Actor) {
+  constructor(actor: Actor, game: ActionGame, target: Actor) {
     super(actor, game);
     this.target = target;
   }
@@ -870,7 +871,7 @@ export class ActionSwitchPlace extends ActorAction {
 export class ActionTakeLead extends ActorAction {
   readonly target: Actor;
 
-  constructor(actor: Actor, game: Game, target: Actor) {
+  constructor(actor: Actor, game: ActionGame, target: Actor) {
     super(actor, game);
     this.target = target;
   }
@@ -895,7 +896,7 @@ export class ActionTakeLead extends ActorAction {
 export class ActionLeaveMap extends ActorAction {
   readonly exitPoint: Point;
 
-  constructor(actor: Actor, game: Game, exitPoint: Point) {
+  constructor(actor: Actor, game: ActionGame, exitPoint: Point) {
     super(actor, game);
     this.exitPoint = exitPoint;
   }
@@ -918,7 +919,7 @@ export class ActionLeaveMap extends ActorAction {
 export class ActionUseExit extends ActorAction {
   readonly exitPoint: Point;
 
-  constructor(actor: Actor, game: Game, exitPoint: Point) {
+  constructor(actor: Actor, game: ActionGame, exitPoint: Point) {
     super(actor, game);
     this.exitPoint = exitPoint;
   }
@@ -939,10 +940,10 @@ export class ActionUseExit extends ActorAction {
 // ────────────────────────────────────────────────────────────────────────────
 
 export class ActionSprayOdorSuppressor extends ActorAction {
-  private spray: Item;
+  private spray: ItemSprayScent;
   readonly sprayOn: Actor;
 
-  constructor(actor: Actor, game: Game, spray: Item, sprayOn: Actor) {
+  constructor(actor: Actor, game: ActionGame, spray: ItemSprayScent, sprayOn: Actor) {
     super(actor, game);
     this.spray = spray;
     this.sprayOn = sprayOn;
