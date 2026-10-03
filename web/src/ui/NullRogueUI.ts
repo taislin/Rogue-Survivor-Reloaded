@@ -278,7 +278,30 @@ export class NullRogueUI implements IRogueUI {
   UI_DrawString(_color: Color, _text: string, _gx: number, _gy: number, _shadowColor?: Color): void { this.count("UI_DrawString"); }
   UI_DrawStringBold(_color: Color, _text: string, _gx: number, _gy: number, _shadowColor?: Color): void { this.count("UI_DrawStringBold"); }
   UI_DrawStringLarge(_color: Color, _text: string, _gx: number, _gy: number, _shadowColor?: Color): void { this.count("UI_DrawStringLarge"); }
-  UI_DrawStringBoldLarge(_color: Color, _text: string, _gx: number, _gy: number, _shadowColor?: Color): void { this.count("UI_DrawStringBoldLarge"); }
+  UI_DrawStringBoldLarge(_color: Color, text: string, _gx: number, _gy: number, _shadowColor?: Color): void {
+    this.count("UI_DrawStringBoldLarge");
+    // Every string is kept, not just tallied. Counting answers "was this called";
+    // it cannot answer "did the right thing reach the screen", which is the whole
+    // question when a screen scrolls, filters or pages. Off by default so a test
+    // that does not care pays nothing for it.
+    //
+    // Named `recordedText` rather than reusing the `drawnText` that
+    // `tests/idle-district-sim.test.ts`'s probe keeps for its own narrower purpose:
+    // same idea, different contract, and a subclass declaring the same field is a
+    // compile error rather than a silent merge.
+    if (this.recordText) this.recordedText.push(text);
+  }
+
+  /** Every string passed to a bold-large draw, in order. Empty unless recording. */
+  get drawnLines(): readonly string[] { return this.recordedText; }
+
+  /** Whether to keep drawn strings; off by default. See `drawnLines`. */
+  recordText = false;
+
+  private readonly recordedText: string[] = [];
+
+  /** Forgets everything recorded so far, so one test can drive several screens. */
+  clearRecordedText(): void { this.recordedText.length = 0; }
 
   UI_DrawPopup(
     _lines: string[], _textColor: Color, _borderColor: Color, _fillColor: Color, _gx: number, _gy: number

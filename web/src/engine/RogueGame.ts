@@ -3084,6 +3084,51 @@ export class RogueGame {
 	}
 
 	/**
+ * Every sprite the customiser's preview could need, so it is loaded *before* the
+ * first frame rather than during it.
+ *
+ * Sprites load lazily: a draw for an id that is not cached is skipped, and the
+ * load is kicked off in the background. On the map that is invisible, because the
+ * frame after next shows it. **A menu has no next frame** — it redraws only when a
+ * key is pressed — so choosing an outfit drew the doll with the new skin missing,
+ * and the sprite appeared only when the player arrowed away and back. It looked
+ * like the wrong sprite was chosen rather than a missing one.
+ *
+ * Preloading the whole catalogue costs a few dozen small images once, and it fixes
+ * every option rather than the one that was pressed. Both sexes are included
+ * because the Sex row can change the body under the cursor, and the undead models
+ * because the Race row can do the same.
+ */
+private preloadCharacterPreviewSprites(): Promise<unknown> {
+	const ids: string[] = [];
+	const seen = new Set<string>();
+	const add = (id: string | null): void => {
+		if (id === null || seen.has(id)) return;
+		seen.add(id);
+		ids.push(id);
+	};
+	for (const isMale of [true, false]) {
+		const choices = outfitChoices(isMale);
+		for (const layer of APPEARANCE_LAYERS) {
+			for (const id of choices[layer]) add(id);
+		}
+	}
+	for (const id of [
+		ActorID.UNDEAD_SKELETON,
+		ActorID.UNDEAD_ZOMBIE,
+		ActorID.UNDEAD_MALE_ZOMBIFIED,
+		ActorID.UNDEAD_FEMALE_ZOMBIFIED,
+		ActorID.UNDEAD_ZOMBIE_MASTER,
+	]) {
+		add(this.gameActors.get(id)?.imageId ?? null);
+	}
+	// The zombified preview adds this itself, and it is an overlay rather than a
+	// layer, so the catalogues above do not reach it.
+	add(GameImages.BLOODIED);
+	return this.m_UI.UI_PreloadImages(ids);
+}
+
+/**
 	 * Character details on one screen, or a quick start.
 	 *
 	 * Folds what were three further screens - race, then sex-or-undead-type, then
@@ -3121,6 +3166,10 @@ export class RogueGame {
 			ActorID.UNDEAD_ZOMBIE_MASTER,
 		];
 		const undeadModels = undeadIds.map((id) => this.gameActors.get(id));
+
+		// Before the first frame, not during it: see `preloadCharacterPreviewSprites`
+		// for why a menu cannot afford a lazy sprite.
+		await this.preloadCharacterPreviewSprites();
 
 		const raceEntries = ["Human", "Undead"];
 		const sexEntries = ["*Random*", maleModel.name, femaleModel.name];
@@ -9119,6 +9168,10 @@ inv.removeAllQuantity(it);
 			lines.push("");
 		}
 
+		// Where the hint lines start, recorded on each pass so the scroll clamp below
+		// can be derived from the same arithmetic the draw loop uses.
+		let firstHintLineY = 0;
+
 		// display & handle loop.
 		let currentLine = 0;
 		let loop = true;
@@ -9139,6 +9192,9 @@ inv.removeAllQuantity(it);
 				gy,
 			);
 			gy += MENU_BOLD_LINE_SPACING;
+			// Recorded before the hint lines are drawn, because the scroll clamp after
+			// the key is derived from where they start and how much room is left.
+			firstHintLineY = gy;
 			let iLine = currentLine;
 			do {
 				this.m_UI.UI_DrawStringBoldLarge(Color.LightGray, lines[iLine], 0, gy);
@@ -9212,9 +9268,25 @@ inv.removeAllQuantity(it);
 					break;
 			}
 
+			// The window is bounded by *height*, so the last scroll position has to be
+			// computed from the height too.
+			//
+			// `TEXTFILE_LINES_PER_PAGE` is 50, and using it here looked right and was
+			// wrong: only about 36 of those lines fit between the header and the
+			// footnote, so the clamp allowed a `currentLine` that put the final lines
+			// of the hints permanently off the bottom with no way to scroll to them.
+			// Derived from the same arithmetic the draw loop above uses, so the two
+			// cannot drift apart.
+			const visibleLines = Math.max(
+				1,
+				Math.floor(
+					(CANVAS_HEIGHT - 2 * MENU_BOLD_LINE_SPACING - firstHintLineY) /
+						MENU_BOLD_LINE_SPACING,
+				),
+			);
+			const maxFirstLine = Math.max(0, lines.length - visibleLines);
 			if (currentLine < 0) currentLine = 0;
-			if (currentLine + TEXTFILE_LINES_PER_PAGE >= lines.length)
-				currentLine = Math.max(0, lines.length - TEXTFILE_LINES_PER_PAGE);
+			if (currentLine > maxFirstLine) currentLine = maxFirstLine;
 		} while (loop);
 	}
 
