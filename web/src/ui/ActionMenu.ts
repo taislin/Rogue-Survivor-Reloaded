@@ -264,5 +264,14 @@ export function longestLabel(entries: readonly ActionEntry[]): number {
   return entries.reduce((n, e) => Math.max(n, e.label.length), 0);
 }
 
-export const ACTION_MENU_COLUMNS = 3;
+/**
+ * Columns to aim for, when the room allows it.
+ *
+ * **Two, not three.** Three was tried first and the grid came out 538px wide and
+ * 94px tall — wider than the panel anyone wants to look at, and squat. Two is 358px
+ * by 126px for the same sixteen actions, which reads as a list of buttons rather
+ * than a wide strip, and the freed width lets it sit over the skills panel on the
+ * left instead of reaching further across the map.
+ */
+export const ACTION_MENU_COLUMNS = 2;
 

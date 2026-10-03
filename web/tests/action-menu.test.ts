@@ -225,19 +225,46 @@ describe("moveSelection", () => {
     expect(next % rows).toBe(topOfSecondColumn % rows);
   });
 
-  it("handles a short last column", () => {
-    // Columns are filled in turn and the last is short (6/6/4), so modelling the
-    // grid as a rectangle is what produced 16 and 17 - indices past the end of a
-    // sixteen-entry list.
-    const rows = Math.ceil(n / c);
-    expect(n % c, "only interesting when the last column is short").not.toBe(0);
-    for (let i = 0; i < rows + (rows - 1); i++) {
-      const from = Math.min(i, n - 1);
-      for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"] as const) {
-        const next = moveSelection(from, key, n, c);
-        expect(next, `${key} from ${from} landed outside the list`).toBeLessThan(n);
-        expect(next).toBeGreaterThanOrEqual(0);
+  it("never leaves the list, whatever the column count", () => {
+    // Columns are filled in turn and the last is short whenever the count does not
+    // divide evenly — 16 in 3 columns is 6/6/4. Modelling that as a rectangle is
+    // what produced indices 16 and 17 for a sixteen-entry list.
+    //
+    // Checked across several column counts rather than only the shipped one,
+    // because the shipped layout happens to divide evenly (16 in 2) and would
+    // leave the short-column case untested the moment the column count changed.
+    for (const cols of [2, 3, 4, 5, 6, 7]) {
+      const rows = Math.ceil(n / cols);
+      expect(Math.min(rows * cols, n), `${cols} columns`).toBeGreaterThan(0);
+      for (let i = 0; i < n; i++) {
+        for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"] as const) {
+          const next = moveSelection(i, key, n, cols);
+          expect(next, `${key} from ${i} at ${cols} columns landed outside the list`).toBeLessThan(n);
+          expect(next).toBeGreaterThanOrEqual(0);
+        }
       }
+    }
+  });
+
+  it("reaches every entry, so nothing is unreachable", () => {
+    // Walk it the way a player does: down a column, then right, then down again.
+    // ArrowDown alone only ever cycles within one column, which is correct -
+    // expecting it to cross columns is the bug this test was written against.
+    for (const cols of [2, 3, 5]) {
+      const rows = Math.ceil(n / cols);
+      const seen = new Set<number>();
+      let at = 0;
+      seen.add(at);
+      for (let col = 0; col < cols; col++) {
+        const target = Math.min(rows, Math.max(0, n - col * rows));
+        for (let step = 0; step < target + 1; step++) {
+          at = moveSelection(at, "ArrowDown", n, cols);
+          seen.add(at);
+        }
+        at = moveSelection(at, "ArrowRight", n, cols);
+        seen.add(at);
+      }
+      expect(seen.size, `${cols} columns cannot reach every entry`).toBe(n);
     }
   });
 

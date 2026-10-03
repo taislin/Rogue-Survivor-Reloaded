@@ -30475,9 +30475,17 @@ async HandleActionMenu(): Promise<PlayerCommand | null> {
 			// it - a two-key binding like `Shift+U` would otherwise run into the
 			// next column.
 			const keys = keyHints[b.index]!.slice(0, MAX_KEY_CHARS);
-			// Black on the selected row: the selection has to be unmistakable at a
-			// glance, and `UI_DrawRect` is an outline with no fill, so the label
-			// colour is what carries it.
+			if (active) {
+				// **Filled, not outlined.** The first version drew the selected row's
+				// label in black on the theory that the colour "carried" the selection
+				// because `UI_DrawRect` has no fill - and black on the black panel is
+				// invisible, so the selection was a yellow rectangle with nothing in
+				// it. Filling the button and putting the text on top is the other way
+				// round, and it is what makes the row read as a button.
+				this.m_UI.UI_FillRect(Color.Yellow, b.rect);
+			} else {
+				this.m_UI.UI_DrawRect(Color.DimGray, b.rect);
+			}
 			this.m_UI.UI_DrawStringBoldLarge(
 				active ? Color.Black : Color.White,
 				b.entry.label,
@@ -30492,7 +30500,6 @@ async HandleActionMenu(): Promise<PlayerCommand | null> {
 				b.rect.x + b.rect.width - 4 - keys.length * MENU_CHAR_WIDTH,
 				b.rect.y,
 			);
-			this.m_UI.UI_DrawRect(active ? Color.Yellow : Color.DimGray, b.rect);
 		}
 
 		this.m_UI.UI_DrawStringBoldLarge(
