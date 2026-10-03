@@ -6,7 +6,7 @@
 # them fatal. So this runs the engine, not just the compiler:
 #
 #   1. type-check   - includes tests/ (they are in tsconfig.json's include list)
-#   2. coverage     - 148 tests incl. a real headless playthrough, thresholds enforced
+#   2. coverage     - the full suite incl. a real headless playthrough, thresholds enforced
 #   3. build        - the real Vite production build
 #   4. sim          - a short seeded headless run, as an independent smoke check
 #

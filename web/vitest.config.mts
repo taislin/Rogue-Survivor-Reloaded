@@ -77,7 +77,7 @@ export default defineConfig(({ mode }) => ({
       // is deterministic (seeded sim, no wall-clock assertions on behaviour), so
       // the numbers do not drift run to run.
       //
-      // Re-measured on 139 files / 2,960 tests, sitting ~2.5 points below actual
+      // Re-measured on 138 files / 2,956 tests, sitting ~2.5 points below actual
       // so ordinary edits do not flap the build while a real drop still fails CI.
       //
       // **Measure coverage with `--no-file-parallelism`.** The default parallel
@@ -88,8 +88,12 @@ export default defineConfig(({ mode }) => ({
       // stable throughout; only the aggregate moves. Serial runs are bit-identical
       // across repeats, and that is the number recorded here:
       //
-      //   statements 69.88%  branches 57.94%  functions 80.64%  lines 71.30%
+      //   statements 69.74%  branches 57.53%  functions 80.56%  lines 71.18%
       //
+      // (Re-measured 2026-10-03 at `master` `8d5dfc8`; the 69.88/57.94/80.64/71.30
+      // figure previously recorded here, and the "139 files / 2,960 tests" count,
+      // were both stale. **A comment here is a number nobody re-measured** — take
+      // these from a `--no-file-parallelism` run, not from this paragraph.)
       // That is the first measurement since 58 files / 867 tests, and the suite grew
       // coverage by ~10 points on every axis, so the old gates were sitting ~12
       // points under the tree and no longer gating anything. They are re-pinned

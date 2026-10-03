@@ -281,7 +281,7 @@ export enum ReincMode {
  * which step is which. That also means the saved form is the *ordinal*, so
  * inserting a step here renumbers the ones after it. That is safe while the
  * option is unreleased and worth remembering when it is not — the same
- * append-only constraint `STILL_ALIVE_REFERENCE.md` records for `ItemID` and
+ * append-only constraint the Still Alive merge records for `ItemID` and
  * `PlayerCommand`.
  */
 export enum IdleAdvance {
@@ -341,9 +341,11 @@ const MAP_MAX_WIDTH = 100; // RogueGame.MAP_MAX_WIDTH
  *
  * But the C# has **one** ruleset — it *is* the fork — so it never has to say which
  * game the floor is for. This port has two, and its standing rule is that Classic
- * stays byte-identical: the Classic world fingerprint is `e097b9d976ffac15`, pinned
- * by seven test files, and a district size that silently moved from 30 to 50 under
- * Classic would move it. The `//@@MP - was 30` on that C# line *is* the Classic
+ * stays byte-identical: the Classic world fingerprint is `9bb5e4907bc3f62c`, pinned
+ * by eleven test files, and a district size that silently moved from 30 to 50 under
+ * Classic would move it. (It was `e097b9d976ffac15` in seven files before `9561a3e`
+ * re-based it; the value and the count have both moved since, so grep before
+ * quoting either.) The `//@@MP - was 30` on that C# line *is* the Classic
  * value — the comment is the fork recording the number this port must keep.
  *
  * So the floor is read from the ruleset instead of being written into the literal:

@@ -18,7 +18,7 @@
  * ## Why the measurement is a script and not a paragraph
  *
  * §6's own numbers are from 2026-09-29, when `RogueGame.ts` was 27,722 lines. It
- * is now 35,961, and the file grew in the *middle* — ported content landed
+ * is now 36,487, and the file grew in the *middle* — ported content landed
  * between the regions. So **§6.2 through §6.9's `file:line` citations are stale,
  * including the two carrying the argument.** Re-running §6.2's line-range table
  * against the current file puts `DoSay` (`:21697`) and `DoUseItem` (`:22557`) in
@@ -132,7 +132,7 @@ describe("RogueGame's measured surface", () => {
   // §6.4: "567 of 584 methods are public — only 17 are `private`. The
   // `private` boundary is effectively absent." That is now *more* true, and the
   // direction is worth pinning: the public count grew, and so did the private
-  // one, from 17 to 90. A naive reading of §6.4 would say the file has become
+  // one, from 17 to 91. A naive reading of §6.4 would say the file has become
   // better encapsulated in a way it has not.
   expect(m.public).toBe(752);
   expect(m.private).toBe(91);

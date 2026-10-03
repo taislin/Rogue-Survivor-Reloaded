@@ -99,8 +99,8 @@
  * thing the omission existed to prevent. It is Still Alive only, because the
  * `Feature.AnimalShelter` gate is the first statement of
  * {@link makeAnimalShelterBuilding} and runs before the first roll — which is
- * why the CLASSIC fingerprint `e097b9d976ffac15` in `tests/bank-building.test.ts`
- * is unmoved by any of this. A Still Alive district generated before this change
+ * why the CLASSIC fingerprint `9bb5e4907bc3f62c` (asserted across eleven test
+ * files, `tests/bank-building.test.ts` among them) is unmoved by any of this. A Still Alive district generated before this change
  * and one generated after are not the same district, and that belongs in a
  * comment rather than in a pair of worlds somebody has to diff to notice.
  *

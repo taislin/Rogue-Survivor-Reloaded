@@ -94,7 +94,7 @@ it("has a line naming every set in IMAGE_SETS, by its display name", () => {
 
   it("credits the fork's third-party media sources, which are CC-BY", () => {
     // Attribution for the CC-BY subset is a condition, not a courtesy — see
-    // plans/STILL_ALIVE_REFERENCE.md §8. opengameart.org covers the LPC plant
+    // plans/STILL_ALIVE_JOURNAL.md. opengameart.org covers the LPC plant
     // repack and the box symbols; the two audio hosts are the fork's own.
     const all = CREDITS_LINES.join("\n");
     expect(all).toContain("opengameart.org");

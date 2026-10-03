@@ -4203,8 +4203,8 @@ export class BaseTownGenerator extends BaseMapGenerator {
           // **The feature gate is ahead of the roll, not behind it.** `rollChance`
           // delegates to `roll` and so spends a die even at 0%, so a Classic room
           // that rolled a sentinel chance would move every subsequent district roll
-          // — and the Classic district digest (`e097b9d976ffac15`, asserted in seven
-          // suites) is the thing that would notice. This is the same short-circuit
+          // — and the Classic district digest (`9bb5e4907bc3f62c`, asserted in
+          // eleven suites) is the thing that would notice. This is the same short-circuit
           // `resourcesChance` uses two hundred lines down, for the same reason.
           if (hasFeature(Session.get().ruleset, Feature.ShelterBackpacks)) {
             if (this.m_DiceRoller.rollChance(5)) {
@@ -5973,7 +5973,7 @@ export class BaseTownGenerator extends BaseMapGenerator {
    *
    * ## Why this room cannot move the Classic district fingerprint
    *
-   * `e097b9d976ffac15` is a digest of one **surface district entry map**
+   * `9bb5e4907bc3f62c` is a digest of one **surface district entry map**
    * (`tests/bank-building.test.ts:89-113`, `:599-614`). This method is reached only
    * from `generateUniqueMap_CHARUnderground`, which builds a *separate* secret map
    * stored as `uniqueMaps.charUndergroundFacility`

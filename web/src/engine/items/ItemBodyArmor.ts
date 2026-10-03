@@ -19,8 +19,16 @@ export class ItemBodyArmorModel extends ItemModel {
    * not infect. Both are "percent", neither is the other's formula, and the
    * fork's own code uses them differently at the two call sites.
    *
-   * `infectionResistance` has a reader; `fireResistance` does not yet, because
-   * the port has no fire damage to scale — that arrives with `TileFires`.
+   * `infectionResistance` has a reader in `Rules.infectionBlockedByArmor`.
+   * `fireResistance` now has one too: `RogueGame` rolls it with `rollChance` to
+   * decide whether ignition sticks at all (`RogueGame.ts:27340`). **It is a chance,
+   * not a multiplier** — a 30% suit lets you walk into a fire seven times out of
+   * ten and keeps you out of it the eleventh. It never scales damage anywhere, in
+   * the reference or here.
+   *
+   * (This comment said `fireResistance` had no reader and that fire damage was
+   * still pending. Both were true when written and stopped being true with
+   * `Feature.TileFires`. Corrected 2026-10-03.)
    */
   readonly fireResistance: number;
   readonly infectionResistance: number;

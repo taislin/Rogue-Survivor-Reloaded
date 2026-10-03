@@ -639,7 +639,7 @@ export function clampCreditsLine(line: number, length: number): number {
  * read is the licence one. The fork states in its own `CREDITS.txt` that its
  * third-party media are CC0 or CC-BY 3.0 and that *every* file in them has been
  * modified, which makes CC-BY attribution a condition rather than a courtesy
- * (`plans/STILL_ALIVE_REFERENCE.md` §8). Those files are merged into this port's
+ * (see `plans/STILL_ALIVE_JOURNAL.md`, "credits"). Those files are merged into this port's
  * `classic` sprite set and its audio tables, so they are ours to credit.
  */
 export const CREDITS_LINES: readonly string[] = [
@@ -22551,11 +22551,14 @@ inv.removeAllQuantity(it);
 	 * exist yet, and it is the kind of omission that should be a comment rather than a
 	 * silent gap:
 	 *
-	 * - `IsAnyTileFireThere` — a *tile* fire (grass, carpet, a burning floor)
+	 * - ~~`IsAnyTileFireThere` — a *tile* fire (grass, carpet, a burning floor)
 	 *   rather than a burning object. That is `Feature.TileFires`, still pending.
-	 *
-	 * When `TileFires` lands, add the tile-fire check *here*, and the two callers
-	 * below need no change.
+	 *   ... When `TileFires` lands, add the tile-fire check *here*.~~
+	 *   **LANDED** — `Feature.TileFires` is off `PENDING_WIRING`, tile fires exist,
+	 *   and `Map.isAnyTileFireThere` is the predicate this wanted
+	 *   (`Map.ts:780`), which is also what unblocked `DarknessFov` 2b's lit-tile
+	 *   branch. Check whether this branch is still needed here or has been folded
+	 *   into the two callers below. *(Corrected 2026-10-03.)*
 	 *
 	 * **The lit-candle check now *is* here** (`GameImages.DECO_LIT_CANDLE`,
 	 * `RogueGame.cs:33065`, in the C# between the tile-fire test and the actor test).
@@ -26643,23 +26646,29 @@ inv.removeAllQuantity(it);
 	 *   the C#'s inputs. The `StopAllAmbientsExcept` structure is the C#'s verbatim,
 	 *   including the start-before-stop ordering (`:10445-10448`), which is there
 	 *   so the swap has no silent gap.
-	 * - **The five helicopter tracks — not wired, pending `Feature.HelicopterRescue`.**
-	 *   `CheckLandedHelicopterSFX` (`:10524`) reads
-	 *   `m_Session.ArmyHelicopterRescue_Map` and `_Coordinates`, neither of which
-	 *   the port has — it has the *day* (`Session.armyHelicopterRescueDay`, set by
-	 *   `DifficultyAtCreation`) and no map to put a helicopter on. It also needs
-	 *   `Rules.QUIET/MODERATE/BOOMING_NOISE_RADIUS` for the four distance tiers;
-	 *   the port has only `LOUD_NOISE_RADIUS` (`Rules.ts:310`). There is nothing to
-	 *   stub: a stationary helicopter the player is not rescued by would be a new
-	 *   endgame, not this feature.
-	 * - **The two church bells — not wired, pending `Feature.Church`.** The C#'s
-	 *   trigger is `m_Player.Location.Map.HasChurch` at sunset (`:5637`), and the
-	 *   port's `Map` has no `hasChurch` at all. A `true` there would have to be
-	 *   invented, and "wherever the church building generator will eventually put a
-	 *   church" is a guess with a sound attached to it.
+	 * - ~~**The five helicopter tracks — not wired, pending
+	 *   `Feature.HelicopterRescue`.** ... the port has the *day* and no map to put
+	 *   a helicopter on ... the port has only `LOUD_NOISE_RADIUS`.~~
+	 *   **WIRED.** `Feature.HelicopterRescue` is off `PENDING_WIRING`;
+	 *   `checkLandedHelicopterSFX` is called from two sites and plays four distance
+	 *   tiers plus the flyover, and `Session.armyHelicopterRescueMap` /
+	 *   `armyHelicopterRescueCoordinates` both exist. *(This paragraph said the port
+	 *   had neither field; it had both. Corrected 2026-10-03 — the claim had been
+	 *   copied out of the journal, which had been copied out of an earlier reading
+	 *   of the reference.)*
+	 * - ~~**The two church bells — not wired, pending `Feature.Church`.** ... the
+	 *   port's `Map` has no `hasChurch` at all.~~
+	 *   **WIRED.** `Map._hasChurch` with a defaulting accessor (`Map.ts:100-115`),
+	 *   set by `makeChurchBuilding` (`makeChurchBuilding.ts:370`), and both bell ids
+	 *   play at sunset on `playerMap.hasChurch && !this.m_Player.isSleeping`. The
+	 *   guess this paragraph refused to make was the right call — the generator
+	 *   settled it, rather than the audio code. *(Corrected 2026-10-03.)*
 	 * - **`TEST_AMBIENT` — shipped, never triggered.** Its only C# caller is the
-	 *   options screen's ambient-volume preview (`RogueGame.cs:2244`), and the port
-	 *   has no ambient-volume row. See `GameAmbients.TEST_AMBIENT`.
+	 *   options screen's ambient-volume preview (`RogueGame.cs:2244`). The port now
+	 *   has both option rows (`UI_AMBIENTSFXS`, `UI_AMBIENTSFXS_VOLUME`), so if this
+	 *   is still unreachable that is worth a look rather than a note. See
+	 *   `GameAmbients.TEST_AMBIENT`. *(Corrected 2026-10-03: this paragraph said the
+	 *   port had no ambient-volume row. It does.)*
 	 */
 	CheckAmbientAudio(map: Map): void {
 		if (!hasFeature(this.m_Session.ruleset, Feature.AmbientAudio)) return;
@@ -28321,10 +28330,12 @@ inv.removeAllQuantity(it);
 	 * One of the C#'s exemptions is **not** ported, and it is worth saying which
 	 * and why:
 	 *
-	 * - `ItemBackpack` does not exist (`ShelterBackpacks` is pending). The
-	 *   C# exempts backpacks in *both* this function and the sweep; when that
-	 *   feature lands, both sites must be revisited together, or stashed
-	 *   backpacks will start rotting.
+	 * - ~~`ItemBackpack` does not exist (`ShelterBackpacks` is pending).~~
+	 *   **It does.** `RogueGame.ts` imports it and tests `it instanceof
+	 *   ItemBackpack`, and the exemption here is live. The C# exempts backpacks in
+	 *   *both* this function and the sweep, and both sites are handled. *(This
+	 *   paragraph was the third copy of the same stale claim — the journal and the
+	 *   journal's copy in `plans/` both had it too. Corrected 2026-10-03.)*
 	 *
 	 * The `isRecreational` test is the interesting one. Beer, cigarettes and energy
 	 * drinks are all `ItemMedicine` -- historically, to restore a point of sanity --
