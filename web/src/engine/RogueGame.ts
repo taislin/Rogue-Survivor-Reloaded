@@ -35018,7 +35018,7 @@ const model = isUndead
 
 			this.DrawFootnote(
 				Color.White,
-				"cursor to move, ENTER to select, ESC to cancel and end game",
+				"cursor to move, ENTER to select, ESC or N to decline and end game",
 			);
 
 			this.m_UI.UI_Repaint();
@@ -35034,6 +35034,14 @@ const model = isUndead
 					selected = (selected + 1) % entries.length;
 					break;
 				case "Escape": // cancel & end game
+				// **N declines too.** The prompt that got here is a `WaitYesOrNo`, which
+				// has always taken `n` for "no" — and it still does, on the way in. So a
+				// player who answered yes and then pressed N to back out of *this* screen
+				// got nothing at all: no decline, no beep, no redraw, just a Purgatory
+				// that would not go away. Escape alone was the only way out, which is not
+				// discoverable when the screen before it taught the opposite.
+				case "n":
+				case "N":
 					choiceMade = true;
 					avatar = null;
 					break;
