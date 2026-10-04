@@ -13,6 +13,11 @@
   falling through to `DoWait`. §4.0 carries it, and it deletes §4.1's items 1, 2
   and 5 and the whole of §5, moves §4.1 items 3-4 and §11 item 7 into Phase 2,
   and re-scopes Phase 5 from "build it" to "judge it".
+- **Sleep was unpriced and is now priced** **[2026-10-04]**: 300–450 turns,
+  which the tick makes 5–7.5 real minutes against single-player's fraction of a
+  second. Two fixes, both decided — free-run when nobody is pickable (§4.0
+  point 4) and a multiplayer-only regen multiplier with the heal chance riding
+  along (§4.3). The *number* is Phase 5's.
 - **"Is the game over?" is asked in one place.** It was asked in **four**
 >   (`GameLoop`, `HeadlessRunner`, `advancePlayDistrict`, `advancePlayMap`), all
 >   reading `m_Player` — which is "whoever acted last", not "everybody". A second
@@ -154,7 +159,7 @@ was never checked is indistinguishable from one that was*.
 1. [Scope](#1-scope)
 2. [Two corrections](#2-two-corrections)
 3. [The load-bearing finding](#3-the-load-bearing-finding-the-scheduler-already-round-robins)
-4. [What real-time actually costs](#4-what-real-time-actually-costs) — incl. [§4.0 the design](#40-the-design-restated-2026-10-04)
+4. [What real-time actually costs](#4-what-real-time-actually-costs) — [§4.0 the design](#40-the-design-restated-2026-10-04), [§4.3 sleep](#43-sleep-and-the-one-thing-real-time-makes-worse)
 5. [The two traps in the obvious design](#5-the-two-traps-in-the-obvious-design)
 6. [What is expensive: the single-player assumptions](#6-what-is-expensive-the-single-player-assumptions)
 7. [The architecture](#7-the-architecture)
@@ -404,7 +409,15 @@ per second, held by the server:
    and resets the cursor;
 2. each **player** pick in that sweep takes the move queued since the previous
    tick, or `DoWait` if the queue is empty;
-3. NPC picks resolve from the AI exactly as today.
+3. NPC picks resolve from the AI exactly as today;
+4. **when no player can be picked, stop waiting and free-run.** The deadline
+   exists only to bound how long we wait for *input*. A sleeping player is
+   skipped by `getNextActorToAct` (`Rules.ts:2336-2337` **[v]**) and is also
+   withheld the regen (`RogueGame.ts:5666-5667` **[v]**), so when no player is
+   pickable anywhere and none is holding an unresolved pick, there is nothing to
+   wait *for* — advance at CPU speed until one becomes pickable. **This is not a
+   new behaviour. It is exactly what single-player already does when the player
+   sleeps**, and a fixed 1/second cadence is what would take it away. §4.3.
 
 **`actorSpeed` still differentiates, and this is why the tick is a map turn and
 not an action.** `NextMapTurn` grants `actor.actionPoints += actorSpeed(actor)`
@@ -435,6 +448,7 @@ design — the one that parks a player so the world moves past them:
 | §4.1 items 3-4 — blocking-guard, wall clock | **kept, and now Phase 2's.** Item 4 becomes the server's tick rather than a local `GameLoop` timeout; item 3 is *more* urgent, because a modal that holds one pick open now stalls every player's tick rather than one player's turn. |
 | §5 — "the two traps" | **both unreachable under default-wait.** §5's title is now a description of the design we are not building, kept because it is what reintroducing parking would buy back. |
 | §11 item 7 — peek or await? | **largely answered.** There is a hard 1-second deadline and `WaitKeyOrMouse` already has a timeout path that does the right thing, so the shape is "peek with a deadline", not an open poll. |
+| sleep, which nobody had priced | **now has a number and two fixes — see §4.3.** A full sleep is 300–450 turns, which the tick turns into 5–7.5 real minutes where single-player pays a fraction of a second. Free-run (point 4 above) fixes everyone-asleep; a multiplayer-only regen multiplier fixes one-asleep-one-awake, and takes the sleep-heal chance with it or rest and healing come apart. |
 
 The cheap theory, of the parking design this section was originally written for:
 a parked player has `actionPoints <= 0`, so
@@ -516,7 +530,7 @@ already have `isBotPlayer`:
 | `CheckForEvent_NationalGuard` | raid/announce | **bot-guarded** |
 | `CheckForEvent_ArmySupplies`, `_BikersRaid`, `_GangstasRaid`, `_BlackOpsRaid`, `_BandOfSurvivors`, `_CHARScientists` | six more announce/raid events | **bot-guarded** (all six) |
 | `RefugeesEventDistrictFactor` | district-factor event, reads the player | **bot-guarded** |
-| `OnNewNight` / `OnNewDay` | skill-upgrade screen, which also opens a full-screen menu | **unguarded** |
+| `OnNewNight` / `OnNewDay` | skill-upgrade screen, which also opens a full-screen menu | **[corrected 2026-10-04] bot-guarded, not unguarded** — `if (!this.m_Player.isBotPlayer) await this.AddMessagePressEnter()` at `RogueGame.ts:26157` and `:26219` **[v]**. What the plan called "the residue is three, of which the two night/day ones matter most" is now one site. **But the guard is the wrong predicate for free-run:** `!isBotPlayer` is satisfied by a sleeping *human*, so §4.1 item 3 is a predicate change, not a guard addition. |
 | `PlayerDied` → `HandlePostMortem` | three sequential blocks | **unguarded** |
 
 **So eight of the world-initiated sites are done and the residue is three**, of
@@ -528,11 +542,14 @@ parked, awake, living player on their own district gets a hard
 `AddMessagePressEnter` from a dice roll they never made — that part of the
 analysis stands, and it is now the *unguarded* three rather than all nine.
 
-**[?]** The eight guards test `isBotPlayer`, not `m_SimulatingInIdle`. That covers
-the bot case and therefore the auto-play case, but **not** a human who is AFK with
-`IdleAdvance` off — which is the case §4.1 item 3 is actually about. Whether the
-existing guards are the right predicate or whether idle-simulation needs its own
-check is unresolved, and it is the first thing to settle before extending them.
+**[? → sharpened 2026-10-04 by §4.0 point 4]** The guards test `isBotPlayer`,
+not `m_SimulatingInIdle`. That covers the bot case and therefore the auto-play
+case, but **not** a human who is asleep — and free-run (§4.0 point 4) makes
+"asleep" the *common* case rather than a corner one, because it runs turns with
+nobody at the keyboard by design. So the question is no longer "is this the right
+predicate?" in the abstract: **it is "bot, asleep, or gone?" — three states that
+today are one (`isBotPlayer`) and one that does not exist yet (gone).**
+Settling it is Phase 2's item 1 and free-run cannot land before it.
 
 **Item 2's FOV half is not optional.** `UpdatePlayerFOV` does two things and
 both matter:
@@ -590,6 +607,94 @@ gated, and each gates on the 5-turn-recoverable tired state.
 player collapses into sleep at `4882-4907` **[d]**, becoming a sleeping, deaf
 (`AddMessageIfAudibleForPlayer` returns early for sleepers **[d]**), FOV-refreshed
 NPC. That is a design decision, not a bug, and it should be made deliberately.
+
+### 4.3 Sleep, and the one thing real time makes worse
+
+**Measured 2026-10-04.** Sleep is entirely turn-driven, and turns are now
+clocked.
+
+| quantity | value | source |
+|---|---|---|
+| `TURNS_PER_HOUR` | **30** → 1 turn = 2 game-minutes | `WorldTime.ts:20` **[v]** |
+| `SLEEP_BASE_POINTS` | **1800** (60 game-hours of sleep need) | `Rules.ts:304` **[v]**; living actors start full (`GameActors.ts:208` **[v]**) |
+| wake condition | `sleepPoints >= actorMaxSleep` (**1800**) or hungry | `RogueGame.ts:5875-5877` **[v]** |
+| regen, on a couch | **6/turn** | `SLEEP_COUCH_SLEEPING_REGEN`, `Rules.ts:332-333` **[v]** — `1 + 1800/(12×30)` |
+| regen, no couch | **4/turn** | `SLEEP_NOCOUCH_SLEEPING_REGEN`, `Rules.ts:334` **[v]** |
+| full sleep | **300 / 450 turns** | 1800 ÷ 6 / 4 **[d]** |
+| half-rested | **150 / 225 turns** | 900 ÷ 6 / 4 **[d]** |
+
+At §4.0's one tick per second that is **300–450 real seconds — five to seven and
+a half minutes** for a full sleep, and a game day is 720 seconds.
+
+**Single-player does not pay this, and the reason is a mechanism, not a rate.**
+While the player sleeps they are skipped by `getNextActorToAct`
+(`Rules.ts:2336-2337` **[v]**), so nothing in `GameLoop`'s `while` ever blocks on
+input, and the engine runs those 300 turns **at CPU speed** — a fraction of a
+second. A fixed 1/second cadence is what turns that fraction into seven minutes.
+
+**Decided 2026-10-04: both fixes, and they are independent.**
+
+1. **Free-run when nobody is pickable — §4.0 point 4. No balance change.**
+   Restores single-player's behaviour exactly for the case where *every* player
+   is asleep or otherwise unpickable. **It does not fix the common case**: one
+   player asleep while another is awake means the awake one is pickable, the tick
+   must wait for them, and the sleeper still pays the full seven minutes.
+2. **A multiplayer-only sleep-regen multiplier — this is the actual "sleep goes
+   faster".** Scale `actorSleepRegen` (`Rules.ts`), **and the per-turn sleep-heal
+   chance with it.** The heal is `rollChance(healChance)` →
+   `RegenActorHitPoints(…, SLEEP_HEAL_HITPOINTS)` once per sleeping turn
+   (`RogueGame.ts:5865-5870` **[v]**), so it scales with *turn count* and not with
+   sleep points: speeding the rest alone would make a full night's sleep heal
+   **less** than it does today, which is a silent balance change nobody asked for.
+   At ×10 a full sleep is **30–45 turns — 30 to 45 real seconds** instead of 5–7.5
+   minutes.
+
+**But the multiplier does not only shorten the wait, and this is the half to be
+deliberate about.** It buys *turns*, and turns are shared world time: the same
+1800 points of rest now cost **1–1.5 game-hours of world instead of 10–15**
+(`RogueGame.ts:5859` regenerates per turn, so fewer turns of sleep means fewer
+turns the zombies also get). **Sleeping becomes strictly cheaper in multiplayer**
+— you wake fully rested having missed an hour rather than half a day. That is a
+balance buff on top of the quality-of-life fix, it is invisible in the diff, and
+it is the reason the number cannot be picked here.
+
+**Why the two cannot both be free, which is why free-run exists at all.** With
+*another player awake*, the world has to advance under them at 1/second — so a
+sleeper must either sit through 300 shared turns (5 minutes) or take their rest
+in 30 of them (and skip less world). Free-run removes the trade-off only when
+nobody is pickable, which is exactly §4.0 point 4. The two fixes are therefore
+complementary rather than redundant, and neither is a substitute for the other.
+
+**The number is Phase 5's, not this document's.** Phase 5 already says balance
+cannot be judged from a plan, and this is balance — twice over, because it now
+changes how expensive sleep *is*, not only how long it takes. What is settled
+here is that the knob exists, that it is multiplayer-only, that healing rides
+with it, and that the world-time cost is part of what gets judged.
+
+**Three prerequisites, none of which exist yet:**
+
+- **A multiplayer predicate.** `grep -r isMultiplayer web/src` returns nothing
+  **[d, 2026-10-04]** — not in `Session`, not in `GameOptions`. The knob has
+  nothing to hang off, and §6 item 4's clock decision will want the same flag.
+  Phase 2 introduces it.
+- **§4.1 item 3 settled first.** Free-run runs turns with nobody at the keyboard
+  by design, which is precisely when `OnNewNight`/`OnNewDay` open their skill
+  screens — and their guard is `!isBotPlayer` (`RogueGame.ts:26157`, `:26219`
+  **[v]**), which a sleeping *human* satisfies. Phase 2's item 1, and free-run
+  cannot land before it.
+- **A wake path that survives the speed-up.** Noise wakes
+  (`RogueGame.ts:24721-24740` **[v]**) and the infection wake
+  (`:5503-5504` **[v]**) both roll *per turn*, so a sleeper at ×10 sees a tenth
+  as many rolls and is measurably harder to wake than in single-player.
+  **[?]** whether that matters — it is a balance observation and belongs with the
+  number in Phase 5, but it must not be discovered there.
+
+**Divergence from the C#, and why it is an acceptable one.** The multiplier is
+multiplayer-only, so single-player stays byte-identical. That is the same
+discipline §5.3 applied to the `actorSpeed` floor: nothing changes unless the
+multiplayer path is on, and the reason is stated rather than implied.
+
+---
 
 ---
 
@@ -1289,12 +1394,22 @@ was Phase 5 and is now the front half of this phase.** In order:
 
 1. **§4.1 item 3, first and unconditionally.** Extend the `m_SimulatingInIdle`
    guard from `AddMessagePressEnter` to the other blocking primitives and rewrite
-   the comment claiming it is unnecessary. Eight of the sites already carry an
-   `isBotPlayer` guard to copy; the residue is three, of which the two
-   `OnNewDay`/`OnNewNight` skill screens are the dangerous ones. Until this
-   lands, one world-initiated modal stalls *every* player's tick rather than one
-   player's turn — and it is the only item here that gets worse with more players.
-2. **The tick.** One second, one **map turn** (not one action — `actorSpeed` must
+   the comment claiming it is unnecessary. **[corrected while writing this]**
+   Eight sites already carry an `isBotPlayer` guard — **and the two named here
+   as the unguarded residue, `OnNewNight`/`OnNewDay`, are guarded too**
+   (`RogueGame.ts:26157`, `:26219` **[v]**). So the work is not adding guards,
+   it is **changing the predicate**: `!isBotPlayer` is satisfied by a sleeping
+   human, and free-run (item 4) puts a sleeping human in front of these screens
+   by design. "Bot, asleep, or gone" is the question; "gone" does not exist yet.
+   Until this lands, one world-initiated modal stalls *every* player's tick
+   rather than one player's turn — and it is the only item here that gets worse
+   with more players.
+2. **A multiplayer predicate.** There is none: `grep -r isMultiplayer web/src`
+   is empty **[d, 2026-10-04]**. Everything MP-specific below needs to hang off
+   something — free-run, the sleep multiplier, and §6 item 4's clock decision
+   all ask "is this a multiplayer session?" and today there is no answer. A
+   session option, set by the server at join time.
+3. **The tick.** One second, one **map turn** (not one action — `actorSpeed` must
    keep differentiating, §4.0), each player's pick draining its queue or falling
    through to `DoWait`. The queue is per-player and lives on the server.
 
@@ -1314,20 +1429,35 @@ was Phase 5 and is now the front half of this phase.** In order:
    Whether `WaitKeyOrMouse` takes a caller-supplied deadline or the tick computes
    one and pre-drains the queue is a Phase 2 choice; the invariant either way is
    **one tick takes at most one second, whatever N is.**
-3. **All districts, one clock.** §6 item 4: advance every district per tick, and
+4. **Free-run when nobody is pickable (§4.0 point 4, §4.3).** If no player is
+   pickable anywhere in the world and none holds an unresolved pick, do not wait
+   out the deadline — advance at CPU speed until one becomes pickable. This is
+   what single-player already does when the player sleeps, and without it a full
+   sleep costs 5–7.5 real minutes instead of a fraction of a second. **Depends on
+   item 1**: the screens free-run can open are gated on `!isBotPlayer`, which a
+   sleeping human passes. Throttle it (§4.3 leaves the ceiling open) so clients
+   are not handed a thousand turns between snapshots.
+5. **All districts, one clock.** §6 item 4: advance every district per tick, and
    decide which one owns `worldTime.turnCounter`. Record the decision.
-4. **Per-player message gating.** §6 item 2: the server's single `m_PlayerFOV`
+6. **Per-player message gating.** §6 item 2: the server's single `m_PlayerFOV`
    cannot answer "is this visible to *that* player" at 151 call sites.
-5. **§4.1 item 4** as written: the wall clock sits *after* `AdvancePlay` returns,
+7. **§4.1 item 4** as written: the wall clock sits *after* `AdvancePlay` returns,
    so it cannot race a turn.
+8. **The sleep knob (§4.3).** A multiplayer-only multiplier on `actorSleepRegen`
+   **and on the per-turn sleep-heal chance**, landed with a conservative default
+   so the mechanism is testable now. The *number* is Phase 5's — but the flag
+   from item 2 has to exist before it can be gated, which is why it is here.
 
 **Gate:** two `NetUI` connections can drive one `RogueGame` through 50 **ticks**
 with no browser involved — a `HeadlessRunner` variant that owns the one-second
 interval, sends each player a different command on different ticks, and asserts
 (a) the world advanced 50 map turns, (b) a player who sent nothing `DoWait`ed
 every time, and (c) a player who sent two commands on one tick got both, in order.
-This is the real integration test and it is the one that would catch a
-re-entrancy bug — and with a clock in it, also a double-advance.
+Plus (d): **with every player asleep, the run completes 300 turns well inside the
+50-second budget** — the free-run assertion, and the one that fails if the clock
+is applied unconditionally. This is the real integration test and it is the one
+that would catch a re-entrancy bug — and with a clock in it, also a
+double-advance.
 
 ### Phase 3 — client
 
@@ -1378,6 +1508,18 @@ Does the message log hold six lines when two players are producing events at
 once (§6 item 6 — fine with a current FOV, a flood without one)? Does the AI
 come looking for a player who has been standing still for thirty ticks? None of
 that has an answer in a plan, and Phase 2's gate only proves it runs.
+
+**And the sleep multiplier (§4.3), which is the clearest example of the point.**
+Phase 2 lands the knob with a conservative default; here is where it gets its
+number, against four questions that only playing can answer: at what multiplier
+does a 30-turn sleep *feel* like a night rather than a blink? **How much
+world-time should a full rest cost** — the multiplier sets it to 1–1.5 game-hours
+where the C# says 10–15, and that is a buff nobody asked for, not just a shorter
+wait? What does it do to the balance between sleeping and pushing on with
+`-Tired`? And — the one §4.3 flags as **[?]** and insists must not be discovered
+here — with a tenth as many turns in bed, noise and infection wake-rolls fire a
+tenth as often, so sleepers are harder to wake than the C# intends; is that a bug
+or a feature?
 
 Also here: **the AP-discard on resume (§5.1's sibling)**, which §4.1 item 5 left
 behind. It is a *reconnect* concern, not an idle one — an absent player is not an
