@@ -87,6 +87,10 @@ export class HeadlessRunner {
   private readonly game: RogueGame;
   /** The seed this run was pinned to, or 0 for clock-derived. */
   readonly seed: number;
+  /** Wall-clock start of the current `run`, for `step` breadcrumbs. */
+  private startedAt = 0;
+  private traceEnabled = false;
+  private verbose = false;
 
   /**
    * @param seed Pin the RNG seed for a reproducible run (0 = random).
@@ -178,44 +182,18 @@ export class HeadlessRunner {
       step("BotTakeControl done");
     }
 
-    const session = game.session;
-    let turnsPlayed = 0;
+    this.startedAt = started;
+    this.traceEnabled = trace;
+    this.verbose = opts.verbose ?? false;
 
     if (trace) {
       game.debugTrace = (m) => process.stderr.write(`[headless +${Date.now() - started}ms]${m}\n`);
     }
 
     // ── Turn loop ───────────────────────────────────────────────────────────
+    let turnsPlayed = 0;
     try {
-      for (let turn = 0; turn < maxTurns; turn++) {
-        const player = game.player;
-        if (player === null || player.isDead) break;
-
-        const district = session.currentMap?.district;
-        if (district === null || district === undefined) break;
-
-        step(`turn ${turn} -> AdvancePlay`);
-        await game.AdvancePlay(district, SimFlags.NOT_SIMULATING);
-        turnsPlayed++;
-        step(`turn ${turn} done (world turn ${session.worldTime.turnCounter})`);
-
-        // Catch actor-list corruption at the turn it starts. `Map.placeActor`
-        // once appended a duplicate per player step, which surfaced 40 turns
-        // later as an inexplicable starvation death; this makes that class of
-        // bug fail on the turn it begins. O(n) in actors, against a turn that
-        // costs orders of magnitude more, so it stays on in every run.
-        session.currentMap?.assertActorIntegrity();
-
-        if (opts.verbose) {
-          const p = game.player;
-          process.stdout.write(
-            `turn ${String(session.worldTime.turnCounter).padStart(5)} ` +
-              `day ${session.worldTime.day} ` +
-              `hp ${p === null ? "-" : p.hitPoints} ` +
-              `alive ${this.countActors()}\n`
-          );
-        }
-      }
+      turnsPlayed = await this.playTurns(maxTurns);
     } catch (e) {
       const err = e as Error;
       const metrics = this.collect(turnsPlayed, started);
@@ -225,6 +203,79 @@ export class HeadlessRunner {
     }
 
     return this.collect(turnsPlayed, started);
+  }
+
+  /**
+   * Play up to `maxTurns` world turns, returning how many actually happened.
+   *
+   * The loop `run` used to inline, extracted so a test can drive **the real one**
+   * against a world it has already set up — a two-player world, say. That is not
+   * a convenience: a test that writes its own `AdvancePlay` loop never evaluates
+   * this loop's stop condition, and the stop condition is where the engine's
+   * single-player assumption lives. The first version of the Phase 1 gate test
+   * did exactly that and passed while proving nothing about it.
+   *
+   * Nothing here is guarded against being called before `run` has booted the
+   * game; the caller is expected to have generated a world first.
+   */
+  async playTurns(maxTurns: number): Promise<number> {
+    const game = this.game;
+    const session = game.session;
+    let turnsPlayed = 0;
+
+    for (let turn = 0; turn < maxTurns; turn++) {
+      if (!this.anyPlayerLeft()) break;
+
+      const district = session.currentMap?.district;
+      if (district === null || district === undefined) break;
+
+      this.step(`turn ${turn} -> AdvancePlay`);
+      await game.AdvancePlay(district, SimFlags.NOT_SIMULATING);
+      turnsPlayed++;
+      this.step(`turn ${turn} done (world turn ${session.worldTime.turnCounter})`);
+
+      // Catch actor-list corruption at the turn it starts. `Map.placeActor`
+      // once appended a duplicate per player step, which surfaced 40 turns
+      // later as an inexplicable starvation death; this makes that class of
+      // bug fail on the turn it begins. O(n) in actors, against a turn that
+      // costs orders of magnitude more, so it stays on in every run.
+      session.currentMap?.assertActorIntegrity();
+
+      if (this.verbose) {
+        const p = game.player;
+        process.stdout.write(
+          `turn ${String(session.worldTime.turnCounter).padStart(5)} ` +
+            `day ${session.worldTime.day} ` +
+            `hp ${p === null ? "-" : p.hitPoints} ` +
+            `alive ${this.countActors()}\n`
+        );
+      }
+    }
+    return turnsPlayed;
+  }
+
+  /** Write a breadcrumb to stderr if the run asked for them. */
+  private step(msg: string): void {
+    if (this.traceEnabled)
+      process.stderr.write(`[headless +${Date.now() - this.startedAt}ms] ${msg}\n`);
+  }
+
+  /**
+   * Whether the run should continue: **is any player left**, not is *the* player
+   * left.
+   *
+   * This was `if (player === null || player.isDead) break`, reading `game.player`
+   * — one actor, whichever the engine last bound. With two players that stops the
+   * run the moment one of them dies, while the other is still standing on the
+   * map. The single-player phrasing was never a decision; it was written before
+   * there was more than one player to phrase it about.
+   *
+   * Shared with `RogueGame.GameLoop`, which asks the same question in its `while`
+   * condition — see `MULTIPLAYER_PLAN.md` §8 Phase 1. Two copies of "is the game
+   * over" is how they drift.
+   */
+  private anyPlayerLeft(): boolean {
+    return this.game.anyPlayerAlive;
   }
 
   private countActors(): number {

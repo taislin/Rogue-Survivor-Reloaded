@@ -188,7 +188,10 @@ import {
 	UniqueItem,
 	UniqueMap,
 } from "@engine/Session";
-import { reattachPlayers } from "@engine/serialization/sessionGraphRoot";
+import {
+	findPlayerActors,
+	reattachPlayers,
+} from "@engine/serialization/sessionGraphRoot";
 import { storage, whenStorageReady } from "@engine/storage";
 import {
 	getUserBasePath,
@@ -1887,6 +1890,37 @@ export class RogueGame implements ActionGame {
 		return this.m_Player;
 	}
 
+	/**
+	 * Is the game over? — asked as **is any player left**, not is *the* player
+	 * left.
+	 *
+	 * `m_Player` is "whoever acted last", set by `HandlePlayerActor`, so
+	 * `!m_Player.isDead` asks whether the *most recent* actor died rather than
+	 * whether anybody is still playing. With one player those are the same
+	 * question and always were. With two, they come apart the moment one dies
+	 * while the other lives, and the `while` in {@link GameLoop} silently ends
+	 * the run for both.
+	 *
+	 * Scans the world rather than reading a stored list. A roster on `Session`
+	 * would be one more thing to keep in step with `PlayerController` being
+	 * assigned and with actors dying or being removed from their map, and every
+	 * one of those desynchronisations shows up as a game that refuses to end or
+	 * ends early — the two worst failures available. This is derived from state
+	 * that is already maintained correctly, once per turn, against a turn that
+	 * costs orders of magnitude more to simulate than a district walk. See
+	 * `MULTIPLAYER_PLAN.md` §8 Phase 1.
+	 *
+	 * Deliberately world-wide rather than `currentMap`: a player in another
+	 * district is still a player, and this is the question turn-passing exists
+	 * to answer.
+	 */
+	get anyPlayerAlive(): boolean {
+		const world = this.m_Session.world;
+		if (world == null) return false;
+		for (const a of findPlayerActors(world)) if (!a.isDead) return true;
+		return false;
+	}
+
 	get townGenerator(): BaseTownGenerator {
 		return this.m_TownGenerator;
 	}
@@ -2395,9 +2429,12 @@ export class RogueGame implements ActionGame {
 		await this.HandleMainMenu();
 
 		// play until player dies or quits.
+		// Was `m_Player != null && !m_Player.isDead && …` — one actor, and the
+		// *last-bound* one at that. Now "is any player left", which is the same
+		// question with one player and a different one with two. See
+		// `anyPlayerAlive` and MULTIPLAYER_PLAN.md §8 Phase 1.
 		while (
-			this.m_Player != null &&
-			!this.m_Player.isDead &&
+			this.anyPlayerAlive &&
 			this.m_IsGameRunning &&
 			!this.m_PlayerWasRescued //@@MP (Release 6-4)
 		) {
@@ -4643,12 +4680,35 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 				// play this map.
 				await this.AdvancePlay(map, sim);
 				// check for reincarnation.
-				if (this.m_Player.isDead) await this.HandleReincarnation();
+				//
+				// Was `if (this.m_Player.isDead)`, which asks whether *the actor
+				// last bound* died. With two players that fires while the other is
+				// still standing — and then fires again on every iteration of this
+				// loop, because nothing returns and `m_Player` is still the dead
+				// one, so the "Limbo" screen would be re-asked for the rest of the
+				// sweep. Keying it to "no player is left" is not only the right
+				// question, it is what keeps single-player byte-identical: with one
+				// player, dead *is* no players left.
+				//
+				// It also settles the multiplayer shape of reincarnation by not
+				// deciding it — `scoring.reincarnationNumber` is a session-wide
+				// life pool, not a per-actor one, so it is the end-of-game
+				// continuation and belongs to the end of the game. Per-player
+				// reincarnation is an open question, recorded in
+				// MULTIPLAYER_PLAN.md, not something this line invents.
+				if (this.m_Player.isDead && !this.anyPlayerAlive)
+					await this.HandleReincarnation();
 				// check stopping game.
+				//
+				// Same substitution, same reason. `m_Player.isDead` is tested
+				// first so the world walk behind `anyPlayerAlive` only happens on
+				// a turn where somebody died — this loop runs once per actor, so
+				// scanning the world here unconditionally would be quadratic in
+				// actors per turn.
 				if (
 					!this.m_IsGameRunning ||
 					this.m_HasLoadedGame ||
-					this.m_Player.isDead
+					(this.m_Player.isDead && !this.anyPlayerAlive)
 				)
 					return;
 			} while (map.localTime.turnCounter === prevLocalTurn);
@@ -4929,7 +4989,19 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 		} else if (actor.isPlayer) {
 			await this.HandlePlayerActor(actor);
 			// if quit, dead or loaded, don't bother.
-			if (!this.m_IsGameRunning || this.m_HasLoadedGame || this.m_Player.isDead)
+			//
+			// The `m_Player.isDead` half was asking whether the player who just acted
+			// died — the same single-player reading as everywhere else, and here it
+			// aborts the sweep *mid-turn*, so every actor still queued behind them is
+			// skipped: with two players, the survivor loses their action for the turn.
+			// `anyPlayerAlive` is the question that was meant.
+			// `m_Player.isDead` still guards the walk, for the reason on the same
+			// expression in `advancePlayDistrict`.
+			if (
+				!this.m_IsGameRunning ||
+				this.m_HasLoadedGame ||
+				(this.m_Player.isDead && !this.anyPlayerAlive)
+			)
 				return;
 			// Check special player events
 			await this.CheckSpecialPlayerEventsAfterAction(actor);

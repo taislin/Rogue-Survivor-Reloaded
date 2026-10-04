@@ -272,8 +272,12 @@ describe("m_PlayerWasRescued is a per-run flag, not a per-process one", () => {
 		// `m_PlayerWasRescued` is set by `PlayerWasRescued` (the helicopter ending)
 		// and read by `GameLoop`'s play-loop condition:
 		//
-		//     while (m_Player != null && !m_Player.IsDead && m_IsGameRunning
-		//            && !m_PlayerWasRescued)
+		//     while (anyPlayerAlive && m_IsGameRunning && !m_PlayerWasRescued)
+		//
+		// (was `m_Player != null && !m_Player.IsDead && …`, one actor — see
+		// `RogueGame.anyPlayerAlive` and MULTIPLAYER_PLAN.md §8 Phase 1. With a
+		// single player the two readings coincide, which is why this file's
+		// assertions are untouched by the change.)
 		//
 		// The C# never clears it, and this port now does — see the declaration and
 		// `StartNewGame`. Without the reset it is a one-way latch on the only loop
