@@ -8010,6 +8010,30 @@ inv.removeAllQuantity(it);
 		// and the first wait would fire an immediate catch-up burst.
 		this.m_LastGameInputAt = this.nowMs();
 
+		// Start of the player's turn: drop anything typed since the last one.
+		//
+		// The game spends real time not accepting input — the attack lunge is four
+		// frames of `DELAY_SHORT / 2`, about 500 ms, death and achievement screens
+		// block on ENTER, the advisor reset pauses a second — and the key queue was
+		// unbounded and never drained, so those presses were still queued and got
+		// spent later. Two separate reports, one cause:
+		//
+		//   - "after hitting an enemy, the sprite stays there a bit longer, and
+		//      sometimes it hits again after the kill" — the second press became a
+		//     second attack.
+		//   - "can move after the player is dead for one or two turns" — presses
+		//     made while the death sequence ran resolved once the loop came back.
+		//
+		// Flushed here, at the turn boundary, rather than inside the wait: a wait
+		// that flushed on entry would eat the key that opened a menu, since menus
+		// and the play loop both reach their first key through `UI_PeekKey`. At this
+		// point the previous turn's outcome is already on screen, so nothing queued
+		// can have been meant for this turn.
+		//
+		// `advancePlayMap` is the only caller, so this runs once per player turn and
+		// never mid-turn.
+		this.m_UI.UI_FlushQueuedKeys();
+
 		// Upkeep.
 		this.debugTrace?.("    HandlePlayerActor: UpdatePlayerFOV");
 		this.UpdatePlayerFOV(player); // make sure LOS is up to date.

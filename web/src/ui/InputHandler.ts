@@ -133,6 +133,22 @@ export class InputHandler {
     this.enqueueKey(e);
   }
 
+  /**
+   * Drop every key queued so far, so the next wait needs a *fresh* press.
+   *
+   * The queue is otherwise unbounded and nothing drains it between turns, so a
+   * keypress made while the game was busy — the ~500 ms attack lunge, an ENTER on
+   * a death screen, the one-second advisor reset — was still there to be spent
+   * several turns later. `RogueGame` calls this at the turn boundary.
+   *
+   * Only the queue is dropped, never `waiters`. A pending waiter is a promise the
+   * game is *already* blocked on, so resolving it would have to fabricate a key;
+   * that is the one thing this must not do.
+   */
+  flushQueuedKeys(): void {
+    this.keyQueue.length = 0;
+  }
+
   getMousePosition(canvas: HTMLCanvasElement): Point {
     // CSS pixels relative to the canvas's top-left corner — deliberately *not*
     // canvas coordinates. This is the browser's `MouseEvent.clientX/Y` and is

@@ -85,6 +85,35 @@ export interface IRogueUI {
   /** Inject a synthetic key event into the queue. */
   UI_PostKey(e: GameKeyEvent): void;
 
+  /**
+   * Discard every key queued so far.
+   *
+   * **This exists because the game spends real time not accepting input**, and a
+   * keypress during that time used to be banked and spent on a *later* turn. The
+   * attack lunge alone is four frames of `DELAY_SHORT / 2`, about 500 ms; the death
+   * and achievement screens block on ENTER; the advisor reset pauses a second. Any of
+   * those is long enough to type in, and a turn-based game must not carry an
+   * instruction forward from a moment when the player could not see its outcome.
+   *
+   * The reported symptom was two bugs that turned out to be this one:
+   *
+   *   - "after hitting an enemy, the sprite stays there a bit longer, and sometimes
+   *      it hits again after the kill" — the key pressed during the lunge resolved
+   *     on the next turn, as a second attack.
+   *   - "can move after the player is dead for one or two turns" — the keys pressed
+   *     while the death sequence ran resolved after the game loop restarted.
+   *
+   * Called at the **turn boundary**, not inside the wait: a wait that flushed on
+   * entry would eat the key that opened a menu, since every menu and the play loop
+   * both reach their first key through `UI_PeekKey`. At a turn boundary there is
+   * nothing pending that the player meant for *this* turn, because the previous
+   * turn's outcome is already on screen.
+   *
+   * A no-op on a UI with nothing queued, and it does not touch the mouse: a click
+   * held across a turn is a different question, and buttons are already consumed.
+   */
+  UI_FlushQueuedKeys(): void;
+
   /** Current mouse position, in CSS pixels relative to the canvas. */
   UI_GetMousePosition(): Point;
 

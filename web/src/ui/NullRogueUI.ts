@@ -153,6 +153,10 @@ export class NullRogueUI implements IRogueUI {
     this.keyQueue.push(e);
   }
 
+  UI_FlushQueuedKeys(): void {
+    this.keyQueue.length = 0;
+  }
+
   UI_GetMousePosition(): Point {
     return this.mousePos;
   }
