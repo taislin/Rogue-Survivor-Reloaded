@@ -1,17 +1,23 @@
 # Multiplayer — a design and phasing plan for the browser port
 
-> **Phase 0 is DONE and its gate is GREEN (2026-10-04).** The round-robin claim in §3
-> holds: two `PlayerController` actors on one map alternate correctly, each acts
-> exactly once, and the world advances exactly one map turn with no scheduler change.
-> **§3 through §7 are therefore not void.** `web/tests/multiplayer-phase0-roundrobin.test.ts`,
-> mutation-checked. Details and the one thing it disproved — **§7's "`NetUI` is a
-> drop-in" is wrong, because the play loop *peeks* rather than blocks** — are in §8
-> Phase 0 and §7.
+> **Phase 0 is DONE and green; Phase 1 slice 1 is DONE (2026-10-04).** The save
+> format now carries a player roster, mutation-checked, with **no `GRAPH_VERSION`
+> bump** — a deliberate divergence from §6 item 8, argued in §8 Phase 1. Nothing
+> *acts* as a second player yet; `m_Player` is still one field.
 >
-> Everything below is still **design only**: no networking code exists and Phases 1–6
-> have not begun.
+> **Phase 0: the gate is green.** Two `PlayerController` actors on one map
+> alternate correctly, each acts exactly once, and the world advances exactly one map
+> turn with no scheduler change — **so §3 through §7 are not void.**
+> `web/tests/multiplayer-phase0-roundrobin.test.ts`, mutation-checked. It also
+> disproved something: **§7's "`NetUI` is a drop-in" is wrong, because the play loop
+> *peeks* rather than blocks.** Details in §8 Phase 0 and §7.
+>
+**Everything else here is still design only.** No networking code exists and
+Phases 2–6 have not begun. What exists is Phase 0's test and Phase 1's save format —
+both engine-side, both verifiable without a socket, and neither of which is
+multiplayer yet.
 
-> **Status: design only, 2026-09-30. No code has been written.** This file
+> **Status: design study written 2026-09-30; first code landed 2026-10-04.** This file
 > records a feasibility study and a phasing plan. It is the sibling of
 > `BROWSER_PORT_PLAN.md` the same way `SUGGESTIONS.md` is: a statement
 > of what a decision *is*, so the next person does not have to rediscover it.
@@ -49,18 +55,19 @@ was never checked is indistinguishable from one that was*.
 > `RogueGame.ts` is **36,653 lines**, 845 members (756 public, 89 private), 761
 > methods, **117** reachable, of which **32 sit in the two hubs that never move**.
 >
-> **The status claim is still true, and now qualified.** Zero networking code:
+> **The networking status is still true, and now qualified.** Zero networking code:
 > `web/package.json` depends on `express` and nothing else (no `ws`, no
 > `socket.io`); `web/server/index.ts` is **28 lines** of `express.static` plus an
 > SPA fallback (re-measured 2026-10-03 — still 28); there is no `http.createServer`,
-> no `NetUI`, no `PROTOCOL_VERSION`, no `?mp=` handling in `main.ts`. **Phases 1–6
-> have not begun.** **Phase 0 has**, and it changed two things: the §7 `NetUI` premise
-> is false (the play loop peeks, so a promise-returning UI cannot answer it), and
-> the two "fire-and-forget" peeks are now the most important methods in the
-> interface. See §8.
+> no `NetUI`, no `PROTOCOL_VERSION`, no `?mp=` handling in `main.ts`. **Phases 2–6
+> have not begun. Phase 0 and Phase 1 slice 1 have**, and between them they changed
+> three things: the §7 `NetUI` premise is false (the play loop peeks, so a
+> promise-returning UI cannot answer it), the two "fire-and-forget" peeks are now the
+> most important methods in the interface, and §6 item 8's `players[]` shipped
+> **without** the version bump. See §8.
 >
-> **Re-measured 2026-10-04, 11 commits after the re-check below: 149 test files /
-> 3,074 tests passing** (was 148 / 3,072 — the new one is this Phase 0 test).
+> **Re-measured 2026-10-04: 150 test files / 3,079 tests passing** (was 148 /
+> 3,072 — the two new files are Phase 0's test and the save-roster test).
 >
 > **This pass also corrected the document's body**, not just its header. §1's
 > prerequisite, §2.1's primitive inventory, §4.1's guard table, §5.3, §7.3 and the
@@ -871,19 +878,99 @@ turns") is where repetition belongs, because it also needs the save format.
 
 ### Phase 1 — engine, no network
 
+**Started 2026-10-04. Slice 1 of 3 DONE: the save carries a roster.**
+`d2b8e43`, five cases in `web/tests/save-player-roster.test.ts`.
+
 `m_Player` becomes *the acting player*. A player list on `Session`;
-`GameLoop:1790` game-over becomes "no player left"; `RefreshPlayer` and
+`GameLoop`'s game-over becomes "no player left"; `RefreshPlayer` and
 `findPlayerActor` return lists; the save format carries `players[]` and a
-per-actor controller tag in place of the single `root.player` ref, with a
-`GRAPH_VERSION` bump (`SessionGraph.ts:56` **[v]**, currently 1). Decide shared
-vs per-player scoring here and write down the decision.
+per-actor controller tag in place of the single `root.player` ref, ~~with a
+`GRAPH_VERSION` bump~~ — **declined, see below**. Decide shared vs per-player
+scoring here and write down the decision.
 
 Expect the suite to surface reads that quietly meant "the player" rather than
 "whoever is acting". That is the point of running it, and it is why this phase
 is separate from Phase 0.
 
 **Gate:** a two-player headless run survives 50 turns, and the two-player save
-round-trips through the existing bijection test.
+round-trips through the existing bijection test. **Half of it is met** — the
+two-player save round-trips. The 50-turn run is not, because nothing *acts* as a
+second player yet (slices 2 and 3).
+
+#### Slice 1 — the save names every player (done)
+
+**What was wrong, and both halves were silent.** `Session.writeGraph` recorded
+`findPlayerActor(currentMap)`: the **first** player-controlled actor on the **one**
+map the session calls current. So two players on one map meant the second was never
+written, and two players in two districts — turn-passing's whole reason for
+existing — meant the second was not even looked for.
+
+Silent because `_controller` is `{ kind: "skip" }` in the graph spec: a restored
+actor has no controller, so `isPlayer` is false until one is attached. **A player
+missing from a save does not come back un-driven; it comes back as an ordinary
+NPC**, indistinguishable from one that never was a player. Nothing throws.
+
+Done: `findPlayerActors(world)` walks every district (in generation order, so two
+saves of one world agree and a round-trip can compare without sorting); the roster
+rides in the root beside `player`, which is untouched; `Session.load` exposes
+`loadedPlayers`; `LoadGame` reattaches the whole roster. `reattachPlayer` is
+**deleted**, not kept beside its plural — its only remaining caller was a test, and
+a function kept alive by a test is dead code with a green tick.
+
+Mutation-checked twice: `findPlayerActors` returning only the first player fails the
+round-trip, and scoping it to one district fails three cases. The first mutation I
+wrote was a no-op — it probed a field that does not exist — so it was redone rather
+than read as a pass.
+
+**The `GRAPH_VERSION` bump is declined, and this is a divergence from the plan.**
+The reason is already in this codebase for the same shape of change, on
+`Session.armyHelicopterRescueMap`:
+
+> a `Map` in the save root would need a new entry in the hand-written graph spec and
+> a `GRAPH_VERSION` bump to refuse older saves, and the pair below rides in the root's
+> plain JSON where **an absent key is simply a default — an old save restores with no
+> rescue site, which is what it had.**
+
+Bumping to 2 would refuse **every existing single-player save** to distinguish two
+formats that are byte-identical when there is one player — and multiplayer does not
+exist yet, so there is no save a bump would protect. The migration is one
+`?? [player]` on read, pinned from both sides:
+
+- a save with **no** `players` key (every save before this change) reads as a
+  one-player roster;
+- a save with an **explicitly empty** `players` reads as empty, and does *not*
+  resurrect the singular `player`. That second one is the line that stops a save
+  from a game where every player died coming back with someone alive, and it is the
+  case `??` gets wrong if written carelessly.
+
+**The bump is not deferred forever.** It becomes correct when the format has a state
+an old build would **misread** rather than merely lack — which is a question about
+the second player's *map* and *turn cursor*, not about the roster. Those are slices
+2 and 3, and the answer belongs with them.
+
+#### Slices 2 and 3 — not started
+
+Ordered by what unblocks the gate:
+
+2. **`GameLoop`'s game-over and `RefreshPlayer`.** `m_Player` is one field, so
+   `RefreshPlayer` binds whichever player it finds first and the rest are players
+   without a driver — which is exactly the state Phase 0's test leaves behind, and
+   the reason the roster slice had to stop where it did. `GameLoop`'s
+   `while (m_Player != null && !m_Player.isDead …)` becomes "no player left".
+   `RefreshPlayer` returns the list; `findPlayerActor` becomes one of several.
+   **This is where the 427 `m_Player` references start to matter**, and the plan's
+   own advice stands: run it behind the two-player test, not behind review.
+3. **`Map.m_checkNextActorIndex` and the turn cursor.** Already carried as a known
+   gap (§6 item 8, Phase 4) — it is `{ kind: "skip" }` today and safe only at a turn
+   boundary. With two players it is wrong more often, because a remote player's
+   turn can be parked mid-map-turn. **This is the item that decides whether the
+   version bump above is needed**, since an old build handed a two-player save would
+   misread the cursor rather than merely lack it.
+
+**[?]** still unanswered and now cheap to state: whether `ActionGame` grows a
+`players` accessor, or whether the list belongs on `Session` with `ActionGame`
+reading through it. Slice 2 makes this concrete and it should be settled there,
+before slice 2 starts rather than during it.
 
 **[corrected 2026-10-03] One thing this phase would now build on, which did not
 exist when the phase was written — and one caveat.** `engine/actions/ActionGame.ts`
@@ -1111,6 +1198,9 @@ Phase 4 and Phase 3 respectively; the Wave 0 one gates Phase 3's stop condition)
 - **§6.4's Wave 0 deliverables still do not exist**, so §8 Phase 3's stop condition
   is unreachable until they do — and three of §6's Wave 1 modules have landed
   *without* them, which means §6's sequencing is not a schedule.
+- **§6 item 8's `players[]` now exists**, without the version bump — see §8 Phase 1.
+  What does *not* exist yet is the per-actor controller tag alongside it, which is
+  the part that would eventually force the bump.
 
 **The `[v]` / `[d]` / `[?]` convention stays**, because it is the thing that made
 this document findable: every claim is labelled by how it was arrived at. What
