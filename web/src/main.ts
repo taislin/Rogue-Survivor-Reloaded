@@ -8,7 +8,9 @@ import { WebAudioSoundManager } from "@engine/audio/WebAudioSoundManager";
 import { loadGameFonts }        from "@ui/fonts";
 import { InputTranslator }      from "@engine/Keybindings";
 import { PlayerCommand }        from "@engine/PlayerCommand";
-import { storage }              from "@engine/storage";
+import { storage, hasNeutralino } from "@engine/storage";
+import { fireAndForget }        from "@engine/Diagnostics";
+import { startUpdateCheck }     from "@engine/Update";
 
 async function main(): Promise<void> {
   // ── Bootstrap ──────────────────────────────────────────────────────────────
@@ -23,6 +25,18 @@ async function main(): Promise<void> {
   registerStorageExitFlush();
 
   registerServiceWorker();
+
+  // Ask whether a newer desktop build exists, here rather than at the menu, so
+  // the answer has the whole first load to arrive in (the port preloads 1 009
+  // image ids before the menu appears) and the menu usually draws it settled.
+  //
+  // `hasNeutralino` is an early-out, not the desktop test: it is true in the
+  // browser build as well, because `index.html` loads the Neutralino client
+  // there too. `Update` therefore asks the server one read-only question before
+  // it fetches anything — see `nativeContainerReady`.
+  if (hasNeutralino) {
+    fireAndForget("desktop update check", startUpdateCheck());
+  }
 
   // `?debug=1` enables per-action `[render]` console logging (see
   // RogueGame.logRenderState) for diagnosing drawing reports.

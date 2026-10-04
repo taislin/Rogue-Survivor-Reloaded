@@ -47,6 +47,24 @@ describe("the version is stated once and agrees everywhere", () => {
 		expect(GAME_VERSION, "engine/GameVersion.ts vs package.json").toBe(pkg.version);
 	});
 
+	it("neutralino.config.json matches package.json", () => {
+		// The third copy of the version, and the one the desktop runtime reports as
+		// `NL_APPVERSION`. Nothing pinned it: `release.yml` only *warns* when a
+		// dispatched tag disagrees with the archives it is about to attach, and a
+		// dispatch with a blank tag takes `v<version>` from package.json while the
+		// config beside the binary keeps whatever it last said. The update checker
+		// compares against `GAME_VERSION` rather than this (a manifest that disagrees
+		// with the bundle it would replace is not an update), so the disagreement has
+		// to be impossible rather than merely unlikely.
+		const config = JSON.parse(
+			readFileSync(join(__dirname, "..", "neutralino.config.json"), "utf8"),
+		) as { version: string };
+		const pkg = JSON.parse(
+			readFileSync(join(__dirname, "..", "package.json"), "utf8"),
+		) as { version: string };
+		expect(config.version, "neutralino.config.json vs package.json").toBe(pkg.version);
+	});
+
 	it("is a plausible version string, so a typo cannot satisfy the check above", () => {
 		// The check above compares two literals, so it holds just as happily if both
 		// are wrong in the same way. This is the part that notices "0.9.2 " or

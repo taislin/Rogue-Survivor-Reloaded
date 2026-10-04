@@ -26,8 +26,21 @@
  * never a mix of two.
  *
  * The binaries are named individually rather than copied wholesale, which is
- * also what keeps `resources.neu` - the auto-update manifest, holding the update
- * URLs of whichever machine ran the build - out of the release folders.
+ * also what keeps `resources.neu` out of the release folders. That file is the
+ * Electron ASAR archive `neu build` produces - 58 MB of packed `dist/`,
+ * `neutralino.config.json` and `public/`, measured on a real build - and the
+ * runtime would serve it in preference to the loose `dist/` beside it, so
+ * shipping it would replace a directory anyone can read with one nobody can.
+ * It is not an update manifest, whatever a previous version of this comment
+ * said: the manifests that drive self-update are the two written below.
+ *
+ * Each platform's `dist/` also carries `latest.json` and `payload.json`, written
+ * by `writeUpdateManifests`. `release.yml` publishes that same folder to a
+ * `payload` branch, so an installed desktop build can fetch the files that
+ * actually changed instead of a whole 55 MB archive. Shipping them inside the
+ * zips is what makes that cheap: the build a player unpacks already knows its
+ * own baseline, so the first update diffs against a manifest instead of
+ * hashing every file on disk.
  *
  * Each folder is then zipped, named for the thing you attach to a release:
  *
@@ -46,6 +59,7 @@
  */
 
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   closeSync,
   cpSync,
@@ -57,6 +71,7 @@ import {
   readdirSync,
   rmSync,
   statSync,
+  writeFileSync,
   writeSync,
 } from "node:fs";
 import { join, dirname, basename } from "node:path";
@@ -223,7 +238,65 @@ function copyWebDist(target) {
   }
 }
 
-function assemblePlatforms() {
+/** Every file under `dir`, as sorted `/`-separated paths relative to it. */
+function payloadEntries(dir, prefix = "") {
+  const out = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) out.push(...payloadEntries(join(dir, entry.name), rel));
+    else if (entry.isFile()) out.push(rel);
+  }
+  return out.sort();
+}
+
+/**
+ * The git blob sha of a file's contents: `sha1("blob " + len + "\0" + data)`.
+ *
+ * Git's, not a hash picked here, so that the number the updater compares is the
+ * number git already stores for that blob - the payload branch *is* a git tree,
+ * and a client-side `crypto.subtle` digest of the same construction can verify
+ * what it read against it.
+ */
+function gitBlobSha(file) {
+  const data = readFileSync(file);
+  return createHash("sha1").update(`blob ${data.length}\0`).update(data).digest("hex");
+}
+
+/**
+ * Write the two manifests an installed desktop build reads to update itself.
+ *
+ * `latest.json` is the launch-time check: a few dozen bytes naming the release
+ * this payload came from, fetched once per launch to decide whether to draw a
+ * banner. `payload.json` is the delta index - every other file in this `dist/`
+ * with its blob sha - and it is what turns "there is a newer build" into "fetch
+ * these 30 files, not 55 MB".
+ *
+ * Both are written compactly and are deliberately absent from `files`: a
+ * manifest cannot contain its own hash, and `latest.json` is small enough that
+ * re-reading it during an update costs nothing.
+ *
+ * The scan is over the *copied* folder, not `web/dist`, so what is described is
+ * exactly what the zip contains - `sw.js` and the client binaries are not in
+ * it, and neither is anything else the copy lists skipped.
+ *
+ * Returns the number of files described, for the log line.
+ */
+function writeUpdateManifests(target, version, commit) {
+  const files = {};
+  for (const rel of payloadEntries(target)) {
+    if (rel === "latest.json" || rel === "payload.json") continue;
+    files[rel] = gitBlobSha(join(target, rel));
+  }
+  const { applicationId } = JSON.parse(
+    readFileSync(join(webRoot, "neutralino.config.json"), "utf8"),
+  );
+  const latest = { version, commit, applicationId };
+  writeFileSync(join(target, "latest.json"), `${JSON.stringify(latest, null, 2)}\n`);
+  writeFileSync(join(target, "payload.json"), `${JSON.stringify({ ...latest, files })}\n`);
+  return Object.keys(files).length;
+}
+
+function assemblePlatforms(version, commit) {
   for (const { dir, binaries } of PLATFORMS) {
     const platformDir = join(releaseDir, dir);
     mkdirSync(platformDir, { recursive: true });
@@ -239,9 +312,14 @@ function assemblePlatforms() {
     // inside dist/.
     copyFileSync(join(webRoot, "neutralino.config.json"), join(platformDir, "neutralino.config.json"));
 
-    copyWebDist(join(platformDir, "dist"));
+    const payloadDir = join(platformDir, "dist");
+    copyWebDist(payloadDir);
+    const described = writeUpdateManifests(payloadDir, version, commit);
 
-    console.log(`  ${dir}: ${binaries.length} binary/binaries + dist/ + neutralino.config.json`);
+    console.log(
+      `  ${dir}: ${binaries.length} binary/binaries + dist/ + neutralino.config.json` +
+        ` + update manifests (${described} files)`,
+    );
   }
 }
 
@@ -463,8 +541,14 @@ function main() {
   rmSync(releaseDir, { recursive: true, force: true });
   mkdirSync(releaseDir, { recursive: true });
 
-  assemblePlatforms();
-  archivePlatforms(readVersion(), readCommit());
+  // Read once and passed to both steps, so the version in the three archive
+  // names, the version in the three `latest.json` files and the version a player
+  // is later offered as an update all come from the same read of a file that
+  // could change between them. Same discipline as the workflow's `meta` step.
+  const version = readVersion();
+  const commit = readCommit();
+  assemblePlatforms(version, commit);
+  archivePlatforms(version, commit);
 
   console.log(`\ndone -> ${releaseDir}`);
 }

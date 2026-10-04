@@ -7,7 +7,7 @@
 # somebody merged.
 #
 # It builds and uploads exactly the three archives `npm run build:release`
-# produces, and adds nothing of its own to them:
+# produces, and adds nothing of its own to the archives themselves:
 #
 #   web/dist-release/rogue_survivor_reloaded-win-<version>-<commit>.zip
 #   web/dist-release/rogue_survivor_reloaded-linux-<version>-<commit>.zip
@@ -15,14 +15,30 @@
 #
 # `scripts/build-release.mjs` does the packaging, including the zip writer and
 # the Unix exec bits, and its header explains why those live in a script rather
-# than in a shell pipeline. This workflow's only job is to run it on Linux, then
-# attach the result to a GitHub release.
+# than in a shell pipeline. This workflow's only jobs are to run it on Linux,
+# publish what an installed build updates itself from, and attach the archives.
 #
-# WHY TWO JOBS. The build runs `npm ci` and executes a Vite + Neutralino build
-# tree; the publish step needs `contents: write` to create a tag and a release.
-# Splitting them means the job that runs third-party code holds a token that
-# cannot push a tag, and the exact bytes that get published are handed over as
-# an artifact rather than being produced by the same step that uploads them.
+# THE PAYLOAD BRANCH. Alongside the release, one archive's `dist/` is pushed to a
+# single-commit `payload` branch, force-pushed, before the release is created.
+# That is the update channel: an installed desktop build fetches `latest.json`
+# from it on launch to decide whether to offer an update, and `payload.json` —
+# which `build-release.mjs` writes into every platform folder — plus the files
+# whose sha changed when one is taken. So an update is a few megabytes rather
+# than a 50 MB archive, and the two channels cannot disagree about the version:
+# both come from one run of this workflow reading `package.json` once.
+#
+# WHY THREE JOBS. The build runs `npm ci` and executes a Vite + Neutralino build
+# tree; the other two need `contents: write` — one to push a branch, one to
+# create a tag and a release. Splitting them means the job that runs third-party
+# code holds a token that cannot push anything, and the exact bytes that get
+# published are handed over as an artifact rather than being produced by the same
+# step that uploads them.
+#
+# WHY PAYLOAD BEFORE PUBLISH. `publish` needs `payload` as well as `build`, so
+# the branch exists before the release that advertises it. The alternative — both
+# needing only `build`, so they run in parallel — opens a window in which
+# `releases/latest` names a version whose files are not on the branch yet, which
+# is exactly the state a player's update check must never observe.
 #
 # WHY NO TEST STEP. `npm run build:release` shells out to `npm run build:desktop`,
 # which runs `npm run build`, which is `tsc -p tsconfig.json && vite build` - and
@@ -63,8 +79,8 @@ on:
         type: boolean
         default: false
 
-# Read-only by default. Only the publish job is granted write, so a build that
-# goes wrong cannot push a tag as a side effect.
+# Read-only by default. Only the payload and publish jobs are granted write, so a
+# build that goes wrong cannot push a branch or a tag as a side effect.
 permissions:
   contents: read
 
@@ -197,9 +213,100 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  payload:
+    name: publish the update payload branch
+    needs: build
+    # A dry run publishes nothing at all, the branch included. Half a release is
+    # not a smaller release: a payload on the branch with no release naming it is
+    # a state no version of this project should ever be observable in.
+    if: ${{ inputs.dry_run != true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-archives
+          path: dist-release
+
+      - name: Publish the payload as a single-commit branch
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.build.outputs.version }}
+          COMMIT: ${{ needs.build.outputs.commit }}
+        run: |
+          set -euo pipefail
+
+          # One archive is enough. `build-release.mjs` copies the same web build
+          # into all three platform folders, so the payload is identical in each
+          # — which the manifest in it is the evidence for, and the reason the
+          # branch is published once rather than three times.
+          zip="$(ls dist-release/rogue_survivor_reloaded-linux-*.zip)"
+          rm -rf payload
+          mkdir payload
+          unzip -q "$zip" -d payload
+
+          # Found by the manifest rather than by folder name, so a packaging
+          # change that renames or reshapes the layout fails here instead of
+          # quietly publishing an empty branch.
+          root="$(dirname "$(find payload -maxdepth 3 -name latest.json -print -quit)")"
+          if [ ! -f "$root/payload.json" ]; then
+            echo "::error::no payload.json beside latest.json in $root"
+            exit 1
+          fi
+          if [ -f "$root/sw.js" ]; then
+            echo "::error::sw.js is in the payload; it would register over localhost and cache-first the assets the update just replaced"
+            exit 1
+          fi
+          want="$(node -p "require('./$root/latest.json').version")"
+          if [ "$want" != "$VERSION" ]; then
+            echo "::error::payload says $want but this run built $VERSION"
+            exit 1
+          fi
+          files="$(node -p "Object.keys(require('./$root/payload.json').files).length")"
+          echo "payload: $files files at $VERSION ($COMMIT)"
+
+          # A fresh repository, not an orphan branch of this checkout: nothing in
+          # the release tree should be reachable from the push, and the branch is
+          # one commit by construction. That bounds the repo at one copy of the
+          # payload instead of one per release, with the tags and the releases as
+          # the record of what has shipped — an update never needs the history.
+          work="$(mktemp -d)"
+          cp -R "$root"/. "$work"/
+          cd "$work"
+          git init -q -b payload
+          git add -A
+          git -c user.name=github-actions[bot] \
+              -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
+              commit -q -m "payload $VERSION ($COMMIT)"
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          # The token goes in a header rather than the remote URL, so it cannot
+          # end up in `.git/config`, in a `git remote -v` pasted into an issue,
+          # or in a pack file's error message.
+          auth="$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" \
+              push --force --quiet origin HEAD:refs/heads/payload
+          echo "pushed payload branch at $(git rev-parse --short HEAD)"
+
+          # And a tag on the same commit, which is how an installed build
+          # addresses the payload files. A branch name is a mutable reference, and
+          # raw caches branch tips for five minutes — fine for the 97-byte
+          # `latest.json` that has to be discovered, wrong for the 2 436 files
+          # whose bytes are compared against a manifest. The version cannot be
+          # republished (three files pinned to one string by `version.test.ts`),
+          # so the tag name is as immutable as the commit is. Force-pushed
+          # because re-running this workflow for a tag that already exists
+          # replaces its archives rather than failing, and this must agree.
+          git tag "payload-$VERSION"
+          git -c http.extraheader="AUTHORIZATION: basic $auth" \
+              push --force --quiet origin "refs/tags/payload-$VERSION"
+          echo "pushed tag payload-$VERSION"
+
   publish:
     name: create the GitHub release
-    needs: build
+    needs: [build, payload]
     if: ${{ inputs.dry_run != true }}
     runs-on: ubuntu-latest
     timeout-minutes: 10

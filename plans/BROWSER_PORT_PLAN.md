@@ -13,7 +13,8 @@
 >   **not started, including Wave 0**. Its taxonomy and wave schedule are the only
 >   record of a decision already taken.
 > - **§2 porting rules**, **§1.6 known non-bugs** — the do-not-repeat-this list.
-> - **§5.1 / §5.3 / §5.4 forward design** — touch, renderer, first-person.
+> - **§5.1 / §5.3 / §5.4 / §5.5 forward design** — touch, renderer, first-person, the
+>   desktop update checker and auto-updater (§5.5 is measured, and built).
 > - **§4.1b deploy**, **§4.2 harness**, **§4.3 test strategy** — for whoever extends them.
 >
 > The sprite-routing note below was added by `607b622` during this same merge and is
@@ -127,7 +128,7 @@
 2. [Quick Reference](#2-quick-reference) — layout, porting rules, build commands
 3. [Phase 8 — remaining](#4-phase-8--remaining)
    - [4.1b](#41b-deployment-notes) deploy · [4.1d](#41d-frame-cost) frame cost · [4.2](#42-headless-harness-design-for-whoever-extends-it) harness internals · [4.3](#43-test-strategy) test strategy
-4. [Future Plans](#5-future-plans) — [5.1](#51-mobile--touch-support) touch · [5.3](#53-renderer-and-layout) · [5.4](#54-first-person--pseudo-3d-view-mode) first-person
+4. [Future Plans](#5-future-plans) — [5.1](#51-mobile--touch-support) touch · [5.3](#53-renderer-and-layout) · [5.4](#54-first-person--pseudo-3d-view-mode) first-person · [5.5](#55-desktop-auto-update-and-the-release-checker) desktop update
 5. [`RogueGame.ts` decomposition](#6-roguegamets-decomposition) — **the overdue refactor, not started** · [6.1](#61-the-deferral-is-already-on-record) · [6.2](#62-the-real-structure-two-hubs-everything-else-a-leaf) · [6.3](#63-the-recorded-target-table-is-wrong-in-two-places) · [6.4](#64-wave-0--the-test-seam-before-anything-else) · [6.5](#65-wave-1--the-free-leaves-and-the-alias-block) · [6.6](#66-wave-2--the-render-cluster) · [6.7](#67-wave-3--the-new-game-flow) · [6.8](#68-never--the-two-hubs) · [6.9](#69-what-breaks-in-the-order-it-breaks) · [6.10](#610-sequencing-verification-and-stopping)
 
 Siblings: [`STILL_ALIVE_JOURNAL.md`](STILL_ALIVE_JOURNAL.md) (how the Still Alive port
@@ -758,6 +759,314 @@ wrong:
   byte-identical across §6 Wave 2. They are the strongest available check on that move.
 - **The 864×672 viewport and the DPR-correct canvas** are settled; the map zoom is
   1×/2×.
+
+### 5.5 Desktop auto-update and the release checker
+
+**Two features, one prerequisite — and the order is forced.** The request is a *checker*
+(when the desktop build has a connection, ask whether a newer release exists and, if so,
+draw a banner in the top right of the main menu) plus an *updater* (apply it). They are
+not siblings: **Neutralino's `updater.checkForUpdates` does not compare versions.** In the
+vendored 6.9.0 client (`web/public/js/neutralino.js`, signatures at
+`js/neutralino.d.ts:424-425`) it fetches the URL, `JSON.parse`s it, shape-checks
+`applicationId`/`version`/`resourcesURL` and resolves — the framework's own how-to
+(`neutralino.js.org/docs/how-to/auto-updater/`) then tells the caller to compare
+`manifest.version` itself. So the comparison the banner needs is the comparison the
+updater needs, and the checker is the prerequisite for the updater rather than its
+companion.
+
+**Status: built 2026-10-04**, in four steps as recorded under *Order of attack* below —
+`web/src/engine/Update.ts` (check, banner, apply), `tests/update.test.ts` (28 tests),
+`writeUpdateManifests` in `web/scripts/build-release.mjs`, and a third job in
+`.github/workflows/release.yml` that publishes the `payload` branch and the
+`payload-<version>` tag. What is verified is listed there; what is not, is a packaged
+install, and it is the first item under *what is still open*. The measurements below are
+what the design rests on and are kept as taken.
+
+**Measured 2026-10-04** — live against the published endpoints, against a real
+`npm run build:desktop` on this machine, and against the framework source at the version
+this repo pins (`neutralino.config.json:32-33`, `binaryVersion` 6.9.0) — because the repo's
+account of these artifacts is wrong in one place, and every host choice below turns on
+CORS headers nobody had checked:
+
+| Measured | Result | Why it matters |
+|---|---|---|
+| GitHub API `…/repos/taislin/Rogue-Survivor-Reloaded/releases/latest` | 200; `access-control-allow-origin: *`; `x-ratelimit-limit: 60`; `tag_name` `v0.9.2`; assets `rogue_survivor_reloaded-{win,linux,mac}-0.9.2-8d5dfc8.zip` | The checker's endpoint, and it answers the desktop's localhost origin. **60/hour/IP → one check per launch, never one per menu entry.** Today's latest equals `GAME_VERSION`, so a correct checker draws nothing right now — that is the sanity check for the whole feature. |
+| That release's asset download, both redirect hops | **no `access-control-allow-origin` on either** | `checkForUpdates`/`install` go through page `fetch` (measured in `neutralino.js`), so **release assets cannot host the manifest or the payload** — a surprise, because they are where the zips already are. |
+| `taislin.github.io`, the Pages site `pages.yml` publishes | 200, ACAO `*` (`raw.githubusercontent.com` too) | A host that *can* serve manifest and payload today. |
+| `resources.neu` from `neu build` | **58 169 447 bytes, an Electron ASAR whose root is the web project**: `dist/` (complete, **`sw.js` included**), `neutralino.config.json`, `public/js/` | `build-release.mjs:28-30` calls this file "the auto-update manifest, holding the update URLs of whichever machine ran the build". It is neither: it is the packed payload, and the manifest is a *separate JSON* you host yourself. The exclusion it justifies (never ship `.neu`) stands, visible end-to-end: the workflow runs only `build:release` and attaches its zips unchanged (`release.yml:9-19`, `:137-138`), while `copyWebDist`/`assemblePlatforms` (`build-release.mjs:212-242`) place binaries, config and the loose `assets`/`fonts`/`js` into each platform's `dist/` and never reach for the `.neu` — which sits alone beside the binaries in `neu build`'s output folder (measured). The reason written beside it does not — §1.6's *a comment asserting a fact about a tool is not a verification of it*, again. And the `.neu` packs **everything** in `web/dist`, which the `DIST_FILES` list only ever filtered out of *copies* — see blocker 3. |
+| The vendored `updater.install()` | fetch `manifest.resourcesURL` → write those bytes to `NL_PATH/resources.neu` → caller restarts with `app.restartProcess` | Payload only: **no native binary, no `neutralino.config.json`** — the archive holds `dist/` and nothing else (measured). A release that changes either has to be offered as a manual download instead. |
+| A commit identity inside the build | none — no SHA `define` in `vite.config.mts` or `web/src` (measured) | The running build identifies itself only as `GAME_VERSION` (`engine/GameVersion.ts:30`), the one version a test pins (`tests/version.test.ts:43-47`). `neutralino.config.json:4`'s twin is pinned by nothing — `release.yml:241-242` only warns on a mismatching tag — so compare against `GAME_VERSION`, never `NL_APPVERSION`. |
+
+#### The banner
+
+- **Start the check in `main.ts`, gated on `hasNeutralino`.** `storage.ts:478`'s
+  definition is already generic (a Neutralino client or `NL_OS` exists); only its doc
+  comment is storage-shaped. Started at bootstrap it has the whole first load to finish in
+  (§1.6 — the menu waits on 1 009 image ids), so it is normally settled before the first
+  paint, and `main.ts` sits outside the coverage globs (`vitest.config.mts:72`), so the
+  call costs nothing at the gate. `fireAndForget` (`Diagnostics.ts:72`), not `void` —
+  `tests/silent-failures.test.ts:121-135` forbids dropped promises and `:45-84` an
+  un-annotated empty catch; failures go through `reportSwallowed` (`Diagnostics.ts:41`).
+- **Do not gate on `navigator.onLine`.** There is none anywhere in `web/src` (measured:
+  no `navigator.onLine`, no `AbortController`), it lies on captive portals, and a failed
+  check *is* the offline signal — the exact asymmetry `TextFile.load` already encodes
+  (`TextFile.ts:22-38`: non-`ok` and thrown both → `false`). The one genuinely net-new
+  shape is the timeout, and it is `storage.ts:161`'s 5 s race rather than
+  `AbortSignal.timeout(...)` as first sketched: that is a 2023 API, and one of the three
+  webviews this game runs in — the Linux one follows its distro's WebKitGTK — can predate
+  it. A `Promise.race` needs nothing. Measured on the built payload: `latest.json` is
+  **97 bytes** and `payload.json` **248 960 bytes** over **2 436 files**.
+- **Once per process, read at draw time.** The result lives in one module-level slot with
+  an exported reset — `MenuChrome.ts:120-125` is exactly that pattern (`menuRowBands` /
+  `resetMenuRowBands`) — and §6.4's singleton list is the reason to keep it to one. The
+  menu loop already redraws on every key and mouse move (that is why it waits in
+  `WaitMenuInput` and not `UI_WaitKey`; the comment inside `HandleMainMenu` says so), so a
+  result that lands during the wait appears on the first interaction. Redrawing from the
+  promise instead would paint over whatever screen is up.
+- **Draw it from `HandleMainMenu`'s display block — `UI_Clear` … Santas … `UI_Repaint` —
+  as a free function, not a new `RogueGame` member.** `tests/roguegame-surface.test.ts:117-130`
+  pins exact member/method/visibility/external counts (`:144`, `:159`), so a new member is
+  a re-pin in the same commit for no benefit, while a free function called from the
+  existing block moves nothing. Two placements are already ruled out by assertions: **not
+  inside `drawHeader`** — `tests/menu-chrome.test.ts:227-228` requires exactly one bold
+  string out of it, `ROGUE SURVIVOR - ${GAME_VERSION}` — and **not a shared fill helper** —
+  `tests/action-menu-screen.test.ts:86-91` assumes the first fill drawn is the action
+  panel and asserts it encloses every button.
+- **Geometry, all from the code.** Canvas 1366 wide (`engine/CanvasSize.ts:29`); header at
+  (0,0), `"Main Menu"` at y=18, nine rows from y=54 at `MENU_BOLD_LINE_SPACING` 18
+  (`MenuChrome.ts:48`) ending at y=216, footnote pinned to the last line
+  (`MenuChrome.ts:396-403`). The top right is empty except the ten Santas at
+  `roll(0,1024) × roll(0,768)` — hence drawing after them. Right-align with `MENU_CHAR_WIDTH`
+  (10, `MenuChrome.ts:64`) arithmetic: that is this file's own header lesson from the
+  action menu, the budget is pixels and not label characters. `IRogueUI` exposes no text
+  measurement (the popups measure internally, `IRogueUI.ts:222`), so the primitives are
+  `UI_FillRect` (`:175`) and `UI_DrawStringBoldLarge` (`:214`) — and the banner should be
+  **filled**: the menu background is already black, so the fill is not the
+  map-through-the-gaps case the action menu had, it is what separates the banner from a
+  Santa.
+- **Clickable is cheap; a key is not.** `MenuRowAtMouse` ignores empty-space clicks
+  already, so an `os.open(release URL)` hit-test *before* that check is additive. A key
+  would mean appending a `PlayerCommand` — the append-only guard and the key-redefine
+  screen, the two tests this file's header records breaking when the action menu did
+  exactly that. v1 is a passive banner.
+- **What it says, and from where.** `v<latest> available (you have <GAME_VERSION>)` —
+  **decided 2026-10-04: `latest.json` on the payload branch, not `releases/latest`.** One
+  host for both halves of the feature (the checker and the updater read the same branch, so
+  a banner cannot promise a version the updater then fails to fetch), no API quota on the
+  launch path, and no asset-name parsing at all: `build-release.mjs` writes
+  `{version, commit, applicationId}` from the one `readVersion()`/`readCommit()` pair the
+  archive names use, so the branch and the archives cannot disagree. What is given up: the
+  API's built-in exclusion of drafts and prereleases. The branch does it structurally —
+  a draft or prerelease run never reaches the payload job, because both it and `publish`
+  are gated on `inputs.dry_run != true` and `publish` creates the release.
+  `releases/latest` stays the *human-facing* channel and keeps its measured properties.
+
+#### The updater — the blockers, in order
+
+1. **Host.** Manifest JSON plus the 58 MB `resources.neu` on a CORS-open origin: Pages
+   measured `*`, release assets measured without it. Skipping `updater.*` and unpacking
+   our own platform zip is strictly *more* work: the vendored client has **no extraction
+   method at all** (measured — `filesystem` is read/write/copy/move/chmod/stats, and the
+   `resources.*` extractors unpack the ASAR rather than a zip), so it means a JS zip
+   extractor writing through `filesystem.writeBinaryFile`, or `os.execCommand`, which is
+   not cross-platform — or the third shape below, which drops the single artifact
+   altogether: **the payload branch**.
+2. **Layout — settled from source, and the mechanism is the cheap case.** `resources.cpp`
+   at tag `v6.9.0` (the pinned `binaryVersion`, `neutralino.config.json:32-33`; the
+   vendored client agrees — `NL_CVERSION` in `js/neutralino.js`): `init()` tries embedded,
+   then `__makeBundleFileTree()`, which opens `resources.neu` beside the executable, and
+   falls back to `ResourceModeDir` only when that file is missing or unparseable; `getFile`
+   serves from the bundle whenever the mode is bundle. Today's zips ship no `.neu`, so they
+   run in directory mode by loader *failure*, and the first launch that finds one — shipped
+   there, or written by `install()` into `NL_PATH`, the same place `joinAppPath` looks — is
+   bundle-first, the loose `dist/` dead ~55 MB beside it. The paths line up for free: the
+   ASAR's root *is* the web project, so its `dist/index.html` and `dist/assets/…` are the
+   same strings the server requests in directory mode. That makes this a choice, not a
+   restructure: ship `neu build`'s output (binary + config + `.neu`) in place of the loose
+   copy, or keep today's layout and let `install()` add the `.neu`. What the choice turns
+   on is size and blocker 3 (`sw.js` rides inside the `.neu` — exclude it before
+   `neu build`, not just before the copy); one packaged-binary smoke test (§4.1b) confirms
+   the source reading.
+3. **The trap: `sw.js` comes back.** The bundle packs it (measured above),
+   `main.ts:148-155` registers it unconditionally, and Neutralino serves over localhost,
+   where a service worker will register. Its `/assets/` handler is cache-first
+   (`sw.js:9`), and `sw.js:27-32` says in so many words that without a `CACHE_VERSION`
+   bump the old sprites keep being served and the update "only lands once that handler is
+   bypassed — which reads exactly like *the fix didn't work*". The desktop build path
+   never runs `stamp-cache-version.mjs` (that is `build:pages`), so every desktop bundle
+   carries the committed `rsr-v3` (`sw.js:44`) and the cache name never changes. This is
+   the hazard `build-release.mjs:124-129` already documented for unpacking a new build
+   over an old one, arriving through a different door. Fix it by keeping the exclusion
+   inside the bundle — delete `web/dist/sw.js` between `vite build` and `neu build`, so the
+   *bundle* keeps the filter the copy-list only ever applied to copies — and not by
+   stamping: offline play is a browser feature the desktop has no use for
+   (`build-release.mjs:119-135`).
+4. **Scope, and saying so.** Payload only (measured): a release that changes the native
+   binary or `neutralino.config.json` cannot be delivered this way. Put that in the
+   manifest's `data` field — the format accepts any JSON — as a `manualDownload` flag the
+   banner renders differently, or a client-library bump will look like a successful update
+   that changed nothing.
+5. **One version axis.** Compare `manifest.version` against `GAME_VERSION` in our own code
+   (the API does not compare — top of this section), and in the same commit extend
+   `tests/version.test.ts` to pin `neutralino.config.json:4` to `package.json` as well.
+   Nothing does today, and it is the field `NL_APPVERSION` reports. The manifest's
+   `applicationId` must equal `neutralino.config.json:3` (`com.roguesurvivor.reloaded`) or
+   `checkForUpdates` rejects it (measured in `neutralino.js`).
+6. **The allow-list, re-verified rather than assumed.** The docs require
+   `filesystem.writeBinaryFile` in `nativeAllowList` for `updater.*`;
+   `neutralino.config.json` has no allow-list at all (measured: no
+   `nativeAllowList`/`nativeBlockList` key) and `storage.ts` already writes files in the
+   packaged app, so it looks moot. "Looks like" is how §4.1b's silent-green `neu build`
+   was described — check it on a packaged build before relying on it.
+
+#### The payload branch — the proposal that dissolves 1–3
+
+Publish the desktop payload — exactly the `DIST_DIRS`/`DIST_FILES` set the release copy
+already selects, `sw.js` excluded by construction — as a **single-commit `payload` branch
+plus a `payload-<version>` tag**, pushed by its own job in `release.yml` **after the
+archives build and before they are published** (so the branch can never lag the release),
+and have the updater pull *changed files only* from it. Every endpoint it needs, measured
+2026-10-04:
+
+| Endpoint | Result | Consequence |
+|---|---|---|
+| `api.github.com/…/git/trees/master?recursive=1` | 200; ACAO `*`; `x-ratelimit-limit: 60`; 1 030 812 B for the full repo tree, `truncated: false` | A delta index exists, but the quota is 60/h on the *player's* IP — keep it off the launch path; a `path → sha` manifest carried in the branch buys the same without spending API calls. |
+| `raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>` | 200; ACAO `*`; `cache-control: max-age=300`; **no rate-limit headers** | The transport. `latest.json` comes from the **branch**, because it is what has to be *discovered* and 5 minutes of staleness on a 97-byte file is nothing; every other file comes from the **tag**, because raw caching a branch tip for five minutes is a hazard when the bytes are compared against a manifest. Quota unmeasured; load-test before shipping. |
+| Git smart-HTTP (`….git/info/refs`) and the `codeload` zipball | 200 with **no `access-control-*` at all**; the zipball's ACAO names only `https://render.githubusercontent.com` | No bundled git client, and none required: from the page, the git transport and the zipball are both CORS-blocked. The delta is per-file `fetch`, not packfiles. |
+
+- **Why a tag, when the branch is one commit and force-pushed.** Because a commit cannot
+  contain its own sha: addressing `payload.json` and the files by the commit sha would
+  mean writing that sha inside the commit it names. The **version** is already immutable
+  in practice — `tests/version.test.ts` now pins `package.json`, `GameVersion.ts` *and*
+  `neutralino.config.json` to one string, so a version cannot be published twice — which
+  makes `payload-<version>` as fixed as a sha, human-readable in a URL, and force-pushed
+  on a re-dispatch so a re-run replaces rather than fails.
+- **No bundled git — measured dead, and needless.** The workflow writes the branch *with*
+  git; the app never runs git. It reads `payload.json` (version, commit, `path →` git blob
+  `sha1("blob " + len + "\0" + data)`), compares against its local copy of the same file,
+  and fetches only the mismatches: a JS-bundle-only release moves ~1 MB of the 54.8 MB.
+- **What it dissolves.** *Host (1)*: raw measured CORS-open where release assets and
+  codeload measured closed, and there is no 58 MB single artifact to serve. *Layout (2)*:
+  writes land in the loose `dist/` the runtime already serves — no `.neu`, so the loader's
+  mode never changes and bundle-vs-directory is moot by construction. *`sw.js` (3)*: the
+  branch carries the same file list as the zips, and its registration keeps 404ing
+  harmlessly, exactly as today. *Scope (4), corrected as built*: it does **not** widen.
+  `neutralino.config.json` sits beside the executable and is a file like any other, but it
+  is outside `dist/`, and putting it in the manifest means either a second root or a `..`
+  in a path that becomes a filesystem write — so v1 updates `dist/` only, and the config's
+  `version` is held in place by the new `version.test.ts` pin instead. Binaries stay manual
+  either way.
+- **What it costs — including one contradiction.** 54.8 MB of built output entering git at
+  all, against `pages.yml:8-9`'s recorded *no* for the site ("either the built output is
+  committed (36 MB of game into git — no)"). The contexts differ — that was every push,
+  this is every release — and history is bounded: `--force`, one commit per release,
+  **decided 2026-10-04**, with the tags and the releases as the record of what shipped.
+  Mechanics, all as built: a fresh `git init` in a temp directory rather than an orphan
+  branch of the checkout, so nothing in the release tree is reachable from the push and the
+  branch is one commit by construction; the token in an `http.extraheader` rather than the
+  remote URL; `payload.json` found by `find` rather than by folder name, so a packaging
+  change that reshapes the layout fails the job instead of publishing an empty branch; and
+  the job is a **third job** rather than a step in `build`, because `build` deliberately
+  holds `contents: read` (`release.yml:66-69`) and that split is the point of the file.
+- **Manifest, and torn writes.** Generate `payload.json` where every file is already
+  walked — `build-release.mjs`'s `copyWebDist` — so each zip ships its own baseline (no
+  2 436-file scan on first run) and the branch carries the identical list; fetch to
+  `*.new` beside the target, `move` each into place, write the manifest **last** and
+  **verbatim** (a manifest this build wrote itself is one more thing that can disagree with
+  the next diff). No `app.restartProcess`: the banner says installed, and the player
+  restarts when they choose — the trigger is "an update exists", which is true
+  mid-game, and restarting there discards a run. A torn write needs no repair logic
+  because the manifest is the record of what has been applied: an interrupted download
+  redoes exactly the files still wrong, and **any** failure returns the status to
+  `available` so the offer stands and the next launch tries again.
+- **The first update from a pre-payload build.** One release's players pay for this: a
+  0.9.2 install has no manifest, so its files are *measured* — hashed over loopback, which
+  is faster than downloading 55 MB and the difference between fetching everything and
+  fetching nothing. Every build after that ships its own baseline inside the zip.
+- **`updater.*` is bypassed, said plainly.** `install()` writes exactly one file —
+  `resources.neu` into `NL_PATH` (measured above) — so multi-file updates are our own
+  small fetch loop; `checkForUpdates` could still wrap the branch's `latest.json` as a shape
+  check (it demands `applicationId`/`version`/`resourcesURL`, `js/neutralino.js`), but with
+  no version comparison (top of this section) that is all it buys, and `latest.json` has no
+  `resourcesURL` to give it. One version, one truth — **decided**: both halves read
+  `latest.json`, written from the same `readVersion()`/`readCommit()` pair the archive
+  filenames use.
+
+**Order of attack — as built 2026-10-04, all four done:** (1) the `version.test.ts` pin,
+extended to `neutralino.config.json`; (2) checker + banner, desktop-gated at boot, free
+function in the menu's display block; (3) the payload channel — `writeUpdateManifests` in
+`build-release.mjs`, the `payload` job and `payload-<version>` tag in `release.yml`; (4) the
+fetch loop behind the same state the banner reads, started from the menu and applying on
+the next launch. Verification so far is a real `npm run build:release`, shas cross-checked
+against `git hash-object`, the payload job replayed locally against the built archive, and
+two deliberate mutations (dropping the sha verification; writing in place instead of staging
+through `.new`) each failing the test written for them. What is *not* verified is the
+packaged-build half, which needs a real install.
+
+#### Tests, and what is still open
+
+The comparison and parsing layer is pure and must be testable with no network: vitest runs
+`environment: "node"` with a real `fetch` and no MSW or setup hook to stop a stray call
+(`vitest.config.mts:53`), so `globalThis.fetch` is stubbed the way
+`tests/persistence.test.ts:221-237` does — and **saved against the real one at module load**,
+because a test that stubs twice (the loop over malformed manifests) otherwise restores the
+first stub and hands a fake `fetch` to everything after it.
+
+**As built: `tests/update.test.ts`, 29 tests**, and the list is the argument for each one:
+the per-segment comparison including `0.10.0 > 0.9.9`, which a lexicographic one fails; one
+`it` per rejection shape (equal version, older version, not JSON, no `version`, `version`
+not a version, thrown fetch, non-`ok`, never settles) rather than a table, because they
+fail for different reasons; once-per-process; the offline path asserted *not* to warn, which
+is the justification `silent-failures.test.ts` demands for a silent catch; geometry through
+the `ProbeUI extends NullRogueUI` pattern (`tests/menu-chrome.test.ts:212-222`) — right edge
+inside `CANVAS_WIDTH`, baseline in the gap between the header and the first row, fill
+enclosing the text and clear of the rows; `drawHeader`'s bold count unchanged with an update
+on offer (`:227`); `diffPayloads` including *removes only what this build shipped*; the
+three apply-path properties that matter — stage-then-move, verify-before-write, and a
+failure that leaves the offer standing; and the browser case below. `gitBlobSha` is pinned
+against `git hash-object`'s output for `hello\n` as a **literal**, because computing it the
+same way in the test would let a shared mistake pass.
+
+**The one thing this section got wrong before it was built.** `hasNeutralino` is **not** a
+desktop test: `index.html` loads `/js/neutralino.js` in the browser build too, so
+`Neutralino.filesystem` exists there and every native call is a message to a WebSocket
+nothing is listening on — it never resolves and never rejects. Gating on the global would
+put an update banner on the website and leave a download stuck at `0/2436` for ever. So the
+client asks the server one read-only question (`os.getPath("data")`, 2 s deadline, once per
+process, cached) and does nothing at all if it goes unanswered. `storage.ts` documents the
+same trap for the persistence backend, which is where the discovery came from; it is a
+measured instance of §1.6.
+
+`Neutralino.filesystem` is faked the way `tests/neutralino-storage.test.ts` fakes the
+client library, through `globalThis.Neutralino` and `NL_PATH`, and the absence of it is a
+test of its own: an updater that reported success while writing nothing is the failure worth
+refusing. A new `engine/` file enters the coverage denominator immediately
+(`vitest.config.mts:72`) against floors **67/55/78/68** (`:122-126`); measured after this
+work: **71.62 / 59.39 / 81.85 / 73.09** over 153 files and 3 116 tests. Per §1.5, five
+things were broken on purpose and each was caught by the test written for it: the comparison
+(caught by the `0.10.0` case), the banner's y (caught by the geometry test), the sha
+verification (caught by "writes nothing at all when a payload file does not match its sha"),
+the `.new` staging (caught by two tests), and the container probe (caught by the browser
+case).
+
+**Open, in priority order, and all of it needs a machine rather than a test:**
+1. **Blocker 6 on a real install** — whether a packaged build permits
+   `filesystem.writeBinaryFile`/`move` with no `nativeAllowList` declared, which is the one
+   claim in this section nothing here can verify. A packaged build, one update, one restart.
+2. **The banner on a real screen** — the geometry is asserted in numbers, and the one thing
+   numbers cannot say is whether a Santa lands on top of it.
+3. **The end-to-end drill** — a dispatched release, then an installed build finding it. The
+   first real release is the honest version of this; the alternative is a dev-only override
+   of the manifest URL pointing at a local static server.
+4. **Whether a prerelease channel is ever wanted.** The branch cannot express one as it
+   stands: it publishes exactly the version `publish` releases, so a prerelease would need a
+   second branch or a `channel` field in `latest.json`.
+
+Closed since this section was written: bundle-vs-directory precedence (blocker 2, from
+`resources.cpp` at the pinned version), the host question (raw measured CORS-open with
+per-file deltas; release assets and codeload measured closed), the banner's data source
+(`latest.json`), the branch history policy (`--force`, one commit), and the apply timing
+(download at the menu, applies on the next launch — no `restartProcess`).
 
 ## 6. `RogueGame.ts` decomposition
 

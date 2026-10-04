@@ -220,6 +220,7 @@ import {
 	waitMenuInput,
 	type MenuInput,
 } from "@engine/MenuChrome";
+import { beginUpdateDownloadIfAvailable, drawUpdateBanner } from "@engine/Update";
 // `CANVAS_WIDTH`/`CANVAS_HEIGHT` are re-exported from here for `OptionsScreen` and
 // the tests; imported as well, for the ~30 uses in this file.
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from "@engine/CanvasSize";
@@ -2550,6 +2551,20 @@ export class RogueGame implements ActionGame {
 			}
 
 			// repaint.
+			//
+			// The update banner is a free function rather than a member for a
+			// measured reason: `roguegame-surface.test.ts` pins this class's member
+			// count and classification, so a new method is a re-pin in the same
+			// commit, while a call inside the block that already draws this menu
+			// moves nothing. Drawn after the Santas because it fills its own
+			// background, and drawn here rather than in `DrawHeader` because a
+			// menu-chrome test requires exactly one bold string from there.
+			drawUpdateBanner(this.m_UI);
+			// And this is where the download starts, because this is the only
+			// moment it is free: the menu is up, the player is idle, and 1 009
+			// image ids are behind us. It is a no-op unless an update is on offer,
+			// and it runs once however many times the menu redraws.
+			beginUpdateDownloadIfAvailable();
 			this.m_UI.UI_Repaint();
 
 			// get menu action.
