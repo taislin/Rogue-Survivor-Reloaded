@@ -13,6 +13,7 @@ import { Session } from "@engine/Session";
 import {
   ACTION_ENTRIES,
   ACTION_MENU_COLUMNS,
+  ACTION_MENU_MARGIN,
   computeLayout,
   layoutButtons,
 } from "@ui/ActionMenu";
@@ -35,7 +36,10 @@ import {
 let game: RogueGame;
 let ui: NullRogueUI;
 
-const MARGIN = 8;
+// The screen's own inset, imported rather than retyped. See `ACTION_MENU_MARGIN`:
+// it sets both the panel's position and its column budget, so a second copy here
+// measures a layout the screen never used.
+const MARGIN = ACTION_MENU_MARGIN;
 
 beforeAll(async () => {
   Session.useSeed(4242);

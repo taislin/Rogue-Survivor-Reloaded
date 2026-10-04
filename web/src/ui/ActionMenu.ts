@@ -25,13 +25,16 @@ export interface ActionEntry {
 /**
  * The main in-game actions, and nothing else.
  *
- * **Curated, not "every command".** Three groups are deliberately absent:
+ * **Curated, not "every command".** Four groups are deliberately absent:
  *
  * - The eight movement directions. They are relative to where you are facing, so a
  *   button labelled "North" is a lie the moment you turn; there is no correct label
  *   for them.
  * - The ten `ITEM_SLOT_n`. Those are the inventory panel's job and are already
  *   clickable there.
+ * - The look and zoom commands (`LOOK_LEFT`, `LOOK_RIGHT`, `ZOOM_IN`, `ZOOM_OUT`,
+ *   `VIEW_MODE_TOGGLE`). The first four are first-person-aim controls and the last
+ *   three are display settings; neither is an action taken on the world.
  * - The meta commands — save, load, options, keybindings, help, hints, quit. Those
  *   are not "actions" in the sense of doing something to the world, and putting
  *   "Quit Game" on a grid you might click with a mouse is a good way to lose a run.
@@ -39,6 +42,11 @@ export interface ActionEntry {
  * Order is reading order down each column, because that is how a person scans a
  * grid of buttons; `layout` fills columns top-to-bottom rather than laying the
  * entries out in a row, which is the part that is easy to get subtly wrong.
+ *
+ * **Every entry here must be a command the play loop's own `switch` handles.**
+ * That is what makes clicking a button equivalent to pressing its key, and it is
+ * asserted by `action-menu.test.ts` against the loop's source rather than trusted:
+ * an entry naming a command with no `case` would compile, draw, and do nothing.
  */
 export const ACTION_ENTRIES: readonly ActionEntry[] = [
   { command: PlayerCommand.WAIT_OR_SELF, label: "Wait" },
@@ -57,6 +65,20 @@ export const ACTION_ENTRIES: readonly ActionEntry[] = [
   { command: PlayerCommand.USE_SPRAY, label: "Use Spray" },
   { command: PlayerCommand.MAKE_COOKING_FIRE, label: "Cook" },
   { command: PlayerCommand.FIRE_MODE, label: "Fire" },
+  // The second half, added after the first shipped with sixteen entries and no way
+  // to trade, lead a follower, push or pull anything — all of which have a
+  // keybinding, a handler, and are things a player reaches for mid-run. A menu
+  // that lists "Give Item" but not "Trade" is not a shorter menu, it is a menu that
+  // has quietly become the *only* way to discover those actions exist.
+  { command: PlayerCommand.NEGOCIATE_TRADE, label: "Trade" },
+  { command: PlayerCommand.PULL_MODE, label: "Pull" },
+  { command: PlayerCommand.PUSH_MODE, label: "Push" },
+  { command: PlayerCommand.SWITCH_PLACE, label: "Swap Place" },
+  { command: PlayerCommand.LEAD_MODE, label: "Take Lead" },
+  { command: PlayerCommand.ORDER_MODE, label: "Order" },
+  { command: PlayerCommand.MARK_ENEMIES_MODE, label: "Mark Enemies" },
+  { command: PlayerCommand.UNLOAD_AMMO, label: "Unload Ammo" },
+  { command: PlayerCommand.SWAP_INVENTORY, label: "Swap Bag" },
 ];
 
 export interface ActionMenuLayout {
@@ -81,6 +103,24 @@ const GAP = 2;
 const PADDING = 4;
 /** Key hints are clipped to this many characters, to fit beside a label. */
 export const MAX_KEY_CHARS = 6;
+
+/**
+ * How far the panel's right edge sits from the canvas edge, in logical pixels.
+ *
+ * Shared rather than written at the call site because it sets **two** things: where
+ * the panel sits (`rightEdgeX`) and how many columns it may use
+ * (`availableWidth`). A test that recomputes the layout with its own copy of the
+ * number is then measuring a layout the screen never used — which is exactly what
+ * happened when this was a bare `8` in `HandleActionMenu` and a second `8` in
+ * `action-menu-screen.test.ts`: the panel grew to fit its labels, the test's copy
+ * did not, and "Use Spray is not inside the panel" failed for a reason that had
+ * nothing to do with the panel.
+ *
+ * 24 rather than 8 because at 8 the panel sat within a hair of the canvas edge and
+ * read as bleeding off-screen. It is a little over two glyphs of the menu font
+ * (`2 * MENU_CHAR_WIDTH`).
+ */
+export const ACTION_MENU_MARGIN = 24;
 
 export interface LayoutOptions {
   /** Pixels per character of the bold face - `RogueGame.MENU_CHAR_WIDTH`. */

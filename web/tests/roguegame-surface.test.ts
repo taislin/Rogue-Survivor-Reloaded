@@ -101,34 +101,32 @@ describe("RogueGame's measured surface", () => {
     // §6.2 calls this "the god object", and the argument for splitting is the
     // ratio rather than the size. Pinned so the ratio has a history.
     //
-    // **844, down from 846 when this decomposition started moving code.** Until the
-    // `GetUser*` extraction nothing had actually left the class — the earlier
-    // changes all *added* members (the action menu, the character customiser) or
-    // changed none. Two private fields have now gone, and both were private for the
-    // same reason: each existed only because the methods that used it had nowhere
-    // else to live.
+    // **845, having been 846 when this decomposition started moving code.**
     //
-    //   - `m_ScreenshotCounter`, with the `GetUser*` paths -> `engine/Paths.ts`.
-    //   - `m_MenuRowBands`, with the menu chrome -> `engine/MenuChrome.ts`. That one
-    //     is the interesting removal: a frame's hit-test bands are scratch, not game
-    //     state, and putting them beside the draw that writes them and the lookup
-    //     that reads them is the only reason the coupling between those two is
-    //     visible at all.
+    // The count went *down* twice — `m_ScreenshotCounter` left with the `GetUser*`
+    // paths and `m_MenuRowBands` left with the menu chrome, both private, both
+    // existing only because the methods using them had nowhere else to live. It
+    // went back *up* by one for `updateAdvisorHintBanner`, the advisor banner
+    // branch lifted out of the play loop so the bug where ESC never closed the
+    // last hint could be tested at all.
     //
-    // Private went 91 -> 89. Public is unchanged at 755, which is the point: the
-    // methods stayed as delegations, so nothing a caller can see moved.
-    expect(m.members).toBe(844);
-    expect(m.methods).toBe(760);
+    // That trade is the honest shape of this work: a member added to the class to
+    // make a defect inside it reachable. It is a method rather than a field, it
+    // holds no state the class did not already have, and the alternative was a
+    // defect in a ~400-line turn loop that no test could reach.
+    expect(m.members).toBe(845);
+    expect(m.methods).toBe(761);
     // The *reachable* surface is 117. It has not moved for either extraction: both
     // regions kept their methods on the class, which is what keeps them pure moves.
     expect(m.external).toBe(117);
 // §6.4: "567 of 584 methods are public — only 17 are `private`. The
   // `private` boundary is effectively absent." That is still true, and the
-  // direction is worth pinning: public is unchanged at 755 while private has come
-  // down from 91 to 89. Public not falling is the point — both extractions left
+  // direction is worth pinning: private has come down from 91 to 89, while public
+  // moved by exactly one. Public barely moving is the point — both extractions left
   // delegations behind rather than deleting callers' entry points, so the ratio
-  // has not improved and is not claimed to have.
-  expect(m.public).toBe(755);
+  // has not improved much and is not claimed to have. The single addition is
+  // `updateAdvisorHintBanner`, whose reason is recorded above.
+  expect(m.public).toBe(756);
   expect(m.private).toBe(89);
 	});
 

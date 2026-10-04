@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   ACTION_ENTRIES,
   ACTION_MENU_COLUMNS,
+  ACTION_MENU_MARGIN,
   MAX_KEY_CHARS,
   computeLayout,
   layoutButtons,
@@ -10,6 +11,15 @@ import {
   longestLabel,
 } from "@ui/ActionMenu";
 import { PlayerCommand } from "@engine/PlayerCommand";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import {
+  MINIMAP_Y,
+  CANVAS_WIDTH,
+  CANVAS_HEIGHT,
+  MENU_CHAR_WIDTH,
+  MENU_BOLD_LINE_SPACING,
+} from "@engine/RogueGame";
 
 /**
  * The action menu's layout, hit-testing and keyboard navigation.
@@ -19,12 +29,25 @@ import { PlayerCommand } from "@engine/PlayerCommand";
  * while writing the screen that uses it.
  */
 
-/** `RogueGame.MENU_CHAR_WIDTH`. */
-const CHAR = 10;
-/** The canvas, and where the minimap sits vertically, at the shipped tile sizes. */
-const CANVAS_WIDTH = 1366;
-const CANVAS_HEIGHT = 768;
-const MINIMAP_Y = 187;
+/** `RogueGame.MENU_CHAR_WIDTH`, imported rather than retyped - see below. */
+const CHAR = MENU_CHAR_WIDTH;
+
+/**
+ * The canvas, and where the minimap sits vertically, **imported from
+ * `RogueGame` rather than written here**.
+ *
+ * These were literals, and `MINIMAP_Y` was wrong by 288px: 187 against a real 475,
+ * because it was transcribed from an early draft of the layout and the minimap's
+ * position is derived —
+ *
+ *     MESSAGES_Y = TILE_VIEW_HEIGHT * TILE_SIZE + 4      = 676
+ *     MINIMAP_Y  = MESSAGES_Y - MINITILE_SIZE * MAP_MAX_HEIGHT - 1 = 475
+ *
+ * so it is not a number anyone can read off the screen and copy. A wrong `topY`
+ * does not fail a layout test, it just quietly tests a layout nobody ships. Same
+ * argument as the font metric, one level up: every constant the screen derives its
+ * geometry from now comes from the module that defines it.
+ */
 
 /**
  * The layout the screen actually builds.
@@ -275,5 +298,121 @@ describe("moveSelection", () => {
 
   it("survives an empty list", () => {
     expect(moveSelection(0, "ArrowDown", 0, c)).toBe(0);
+  });
+});
+
+describe("the action list covers what a player reaches for", () => {
+  /**
+   * The menu shipped with sixteen entries and no way to trade, lead a follower,
+   * push, pull, mark enemies or unload a gun - all of which have a keybinding, a
+   * handler, and are things you do mid-run. A menu that lists "Give Item" but not
+   * "Trade" is not a shorter menu, it is the only place a player could discover
+   * those actions exist.
+   *
+   * Pinned by name rather than by count, because the failure was a *missing* action
+   * rather than a wrong number: a count would have gone from 16 to 25 silently.
+   */
+  const REQUIRED: Array<[PlayerCommand, string]> = [
+    [PlayerCommand.NEGOCIATE_TRADE, "Trade"],
+    [PlayerCommand.PULL_MODE, "Pull"],
+    [PlayerCommand.PUSH_MODE, "Push"],
+    [PlayerCommand.SWITCH_PLACE, "Swap Place"],
+    [PlayerCommand.LEAD_MODE, "Take Lead"],
+    [PlayerCommand.ORDER_MODE, "Order"],
+    [PlayerCommand.MARK_ENEMIES_MODE, "Mark Enemies"],
+    [PlayerCommand.UNLOAD_AMMO, "Unload Ammo"],
+    [PlayerCommand.SWAP_INVENTORY, "Swap Bag"],
+  ];
+
+  it.each(REQUIRED)("offers %s as %j", (command, label) => {
+    const entry = ACTION_ENTRIES.find((e) => e.command === command);
+    expect(entry, `${label} is missing from the action menu`).toBeDefined();
+    expect(entry!.label).toBe(label);
+  });
+
+  it("has no duplicate commands, so no button dispatches the same action twice", () => {
+    const seen = new Set<PlayerCommand>();
+    for (const e of ACTION_ENTRIES) {
+      expect(seen.has(e.command), `${e.label} appears twice`).toBe(false);
+      seen.add(e.command);
+    }
+  });
+
+  it("has no duplicate labels", () => {
+    const seen = new Set<string>();
+    for (const e of ACTION_ENTRIES) {
+      expect(seen.has(e.label), `"${e.label}" appears twice`).toBe(false);
+      seen.add(e.label);
+    }
+  });
+
+  /**
+   * The property that makes a button equivalent to its key: the play loop's own
+   * `switch` must have a `case` for it. An entry naming a command with no case
+   * would compile, draw, highlight, and do nothing - and there is no way to notice
+   * without pressing it in a running game.
+   *
+   * A source scan, deliberately, and narrowly: it is the only thing that can
+   * compare a list against a `switch` 8,000 lines away. It matches `case
+   * PlayerCommand.NAME:` exactly, so it cannot be satisfied by a mention in prose.
+   */
+  it("only names commands the play loop has a case for", () => {
+    const src = readFileSync(
+      join(__dirname, "..", "src", "engine", "RogueGame.ts"),
+      "utf8",
+    );
+    // `PlayerCommand[NEGOCIATE_TRADE]` rather than `${e.command}`: the enum is
+    // numeric, so interpolating the value yields the ordinal ("32"), and the
+    // pattern silently matches nothing. That is what the first version of this
+    // test did, and it reported all 25 entries as missing — which reads like a
+    // catastrophic bug rather than a broken regex.
+    const missing = ACTION_ENTRIES.filter((e) => {
+      const name = PlayerCommand[e.command];
+      expect(name, `${e.command} is not a member of PlayerCommand`).toBeTruthy();
+      return !new RegExp(`case\\s+PlayerCommand\\.${name}\\b`).test(src);
+    }).map((e) => `${e.label} (${PlayerCommand[e.command]})`);
+    expect(missing, "these buttons would draw but do nothing").toEqual([]);
+  });
+
+  it("still omits the groups that are deliberately not actions", () => {
+    const commands = ACTION_ENTRIES.map((e) => e.command);
+    // Movement is relative to facing, so a button labelled "North" is a lie the
+    // moment you turn.
+    for (const dir of [
+      PlayerCommand.MOVE_N,
+      PlayerCommand.MOVE_NE,
+      PlayerCommand.MOVE_E,
+      PlayerCommand.MOVE_S,
+      PlayerCommand.MOVE_W,
+    ] as const) {
+      expect(commands, `${dir} has no correct button label`).not.toContain(dir);
+    }
+    // The inventory panel's job, and already clickable there.
+    expect(commands).not.toContain(PlayerCommand.ITEM_SLOT_0);
+    // Meta commands. "Quit Game" on a grid you might click is a good way to lose a
+    // run.
+    expect(commands).not.toContain(PlayerCommand.QUIT_GAME);
+    expect(commands).not.toContain(PlayerCommand.SAVE_GAME);
+  });
+
+  it("fits the two-column layout with room to spare", () => {
+    // 25 entries in 2 columns is 13 rows. The panel starts at the minimap's top
+    // edge, so the grid has to clear the bottom of the canvas with the footer under
+    // it - and a longer list would silently run off the screen instead of failing.
+    const layout = computeLayout(ACTION_ENTRIES, {
+      charWidth: MENU_CHAR_WIDTH,
+      rightEdgeX: CANVAS_WIDTH - ACTION_MENU_MARGIN,
+      topY: MINIMAP_Y,
+      availableWidth: CANVAS_WIDTH - ACTION_MENU_MARGIN * 2,
+      availableHeight: CANVAS_HEIGHT - 2 * MENU_BOLD_LINE_SPACING - MINIMAP_Y,
+      preferredColumns: ACTION_MENU_COLUMNS,
+      keyChars: 6,
+    });
+    const rows = Math.ceil(ACTION_ENTRIES.length / layout.columns);
+    expect(layout.originX, "the grid runs off the left edge").toBeGreaterThan(0);
+    expect(layout.originX + layout.gridWidth, "the grid runs off the right edge")
+      .toBeLessThanOrEqual(CANVAS_WIDTH);
+    const footerY = MINIMAP_Y + rows * (layout.buttonHeight + layout.gap) + MENU_BOLD_LINE_SPACING;
+    expect(footerY, "the footer falls off the bottom of the canvas").toBeLessThan(CANVAS_HEIGHT);
   });
 });
