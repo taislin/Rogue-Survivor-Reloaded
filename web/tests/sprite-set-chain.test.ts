@@ -244,17 +244,20 @@ expect(imageRoutes("civ13")).toEqual([{ prefix: "", chain: ["civ13", "classic"] 
     }
   });
 
-  it("shares 1 107 of its 1 113 ids with classic", () => {
+  it("shares 1 107 of its 1 114 ids with classic", () => {
     const civ = idsIn("civ13");
     const classic = idsIn("classic");
-    expect(civ.size).toBe(1113);
+    expect(civ.size).toBe(1114);
     expect(classic.size).toBe(1108);
 
-    // The six civ13 has and classic does not. Three are referenced by the code
-    // (`scent_living_supressor`, `crate`, `wall_char_office`) and three are not
-    // (`personal_enemy_*`), so they are extras rather than a compatibility gap.
+    // The seven civ13 has and classic does not. Three are referenced by the code
+    // (`scent_living_supressor`, `crate`, `wall_char_office`); the other four are
+    // not (`personal_enemy_*`, `biker_shirt`), so they are extras rather than a
+    // compatibility gap. Nothing asks for `biker_shirt` by name today -- it rides
+    // along with the rest of the biker clothing set.
     const civOnly = [...civ].filter((id) => !classic.has(id)).sort();
     expect(civOnly).toEqual([
+      "Actors/Decoration/biker_shirt",
       "Icons/personal_enemy_mutual",
       "Icons/personal_enemy_other",
       "Icons/personal_enemy_self",
