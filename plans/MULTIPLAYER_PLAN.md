@@ -1,7 +1,9 @@
 # Multiplayer — a design and phasing plan for the browser port
 
-> **Phase 0 is DONE; Phase 1's GATE IS GREEN (2026-10-04).** Slices 1 and 2 are
-> in — `d2b8e43` and `25d1700` — and slice 3 (the turn cursor) is not started.
+> **Phase 0 is DONE; Phase 1 is DONE (2026-10-04), gate green across all three
+> slices.** `d2b8e43` (the save names every player), `25d1700` ("is the game over"
+> asked once), `aa635ef` (the turn cursor — **not carried, no `GRAPH_VERSION`
+> bump**, argued in §8 Slice 3 and in §6 item 8).
 >
 > - **The save carries a player roster**, mutation-checked, with **no
 >   `GRAPH_VERSION` bump**: a deliberate divergence from §6 item 8, argued in §8
@@ -624,7 +626,7 @@ This is the real work, and it is orthogonal to the network.
 | 5 | **game over is one player's life** | `GameLoop`'s `while` (`:2398`) `while (m_Player != null && !m_Player.isDead …)` **[v]**; `advancePlayDistrict` calls `HandleReincarnation` and bails on `m_Player.isDead` (`:4646`) **[v]** | becomes "no player left"; the 25-site death → post-mortem → hi-score flow becomes per-player or needs a spectator mode |
 | 6 | **one log, no filtering** | `MessageManager` has none **[d]**; `MAX_MESSAGES = 6` and `MESSAGES_HISTORY = 59` (**`RogueGame.ts:485-486` [v]**) clear the visible strip wholesale and ring-buffer the rest. **Note [corrected 2026-10-03]: these were cited as `RogueGame.ts:339-340` and are now module-level `export const`s, not fields** — the *values* are unchanged, but anything reading them off the class is wrong | fine with a current FOV; a flood without one |
 | 7 | **one score** | `Scoring` has one `turnsSurvived`, one achievement set, one hi-score entry | decide shared-vs-per-player before Phase 1; recommendation is **do not build a scoreboard yet** |
-| 8 | **the save is single-player** | `root.player` is one ref (`sessionGraphRoot.ts:74` **[v, re-verified]**); `findPlayerActor` returns the first match (`:130` **[v, re-verified]**); `reattachPlayer` attaches one controller (`:144` **[v, re-verified]**); `Actor._controller` is `skip`ped (`specs.ts:738` **[v]**, cited as `:699`); `Map.m_checkNextActorIndex` is `skip`ped as a "cache" (`specs.ts:485` **[v]**) | `players[]` + a per-actor controller tag + `GRAPH_VERSION` bump |
+| 8 | **the save is single-player** | `root.player` is one ref (`sessionGraphRoot.ts:74` **[v, re-verified]**); `findPlayerActor` returns the first match (`:130` **[v, re-verified]**); `reattachPlayer` attaches one controller (`:144` **[v, re-verified]**); `Actor._controller` is `skip`ped (`specs.ts:738` **[v]**, cited as `:699`); `Map.m_checkNextActorIndex` is `skip`ped as a "cache" (`specs.ts:485` **[v]**) | **done:** `players[]`, additive, **no bump** (§8 S1). **decided:** cursor stays `skip` (§8 S3 — carrying it *forces* the bump). **open:** per-actor controller tag, still `skip` (`specs.ts:738`), reattached on load |
 
 **Items 2, 3 and 4 are the reason turn-passing was chosen.** They are the three
 that are genuinely expensive, and turn-passing makes all three free: only the
@@ -640,8 +642,14 @@ the first session:
   the seed (`RogueGame.ts:2673` **[v]**, cited as `:26086`), so the sequence
   restarts. One `uint32` and a root field.
 - `Map.m_checkNextActorIndex` is the live turn cursor, skipped as a cache. Safe
-  at a turn boundary, wrong mid-turn **[d]**. Carry it. **Re-verified 2026-10-03:
-  still `{ kind: "skip" }` at `specs.ts:485`, and still absent from the graph.**
+  at a turn boundary, wrong mid-turn **[d]**. ~~Carry it.~~ **[corrected
+  2026-10-04, §8 Slice 3]** it is *not* carried, and that is now the decision rather
+  than an omission: the invariant "no eligible actor behind the cursor" held at every
+  one of 1,456 calls in a 30-turn run, and writing the field would **throw** for any
+  build that still reads `skip` (`assignFields`, `SessionGraph.ts:410-414`), i.e. it
+  costs a `GRAPH_VERSION` bump and every existing save. **Re-verified 2026-10-03:
+  still `{ kind: "skip" }` at `specs.ts:485`, and still absent from the graph — and
+  that is where it stays.**
 
 ---
 
@@ -889,17 +897,19 @@ turns") is where repetition belongs, because it also needs the save format.
 
 ### Phase 1 — engine, no network
 
-**Started 2026-10-04. Slices 1 and 2 of 3 DONE — and the gate is GREEN.**
-`d2b8e43` (roster, five cases in `web/tests/save-player-roster.test.ts`) and
-`25d1700` (game-over, three cases in `web/tests/multiplayer-phase1-50turns.test.ts`).
-Slice 3, the turn cursor, is not started.
+**DONE 2026-10-04. All three slices, gate GREEN.**
+`d2b8e43` (roster, five cases in `web/tests/save-player-roster.test.ts`),
+`25d1700` (game-over, three cases in `web/tests/multiplayer-phase1-50turns.test.ts`),
+`aa635ef` (turn cursor, four cases in `web/tests/turn-cursor.test.ts` — the only one
+that moved no engine code). Full suite **152 files / 3,086 tests**.
 
 `m_Player` becomes *the acting player*. A player list on `Session`;
 `GameLoop`'s game-over becomes "no player left"; `RefreshPlayer` and
 `findPlayerActor` return lists; the save format carries `players[]` and a
 per-actor controller tag in place of the single `root.player` ref, ~~with a
 `GRAPH_VERSION` bump~~ — **declined, see below**. Decide shared vs per-player
-scoring here and write down the decision.
+scoring here and write down the decision — **not settled, moved to §11 item 1**,
+whose precondition (Phase 1 settling what "the player" means) is now met.
 
 Expect the suite to surface reads that quietly meant "the player" rather than
 "whoever is acting". That is the point of running it, and it is why this phase
@@ -1041,14 +1051,68 @@ reincarnation is an open question** (§11 below), not something this slice inven
 player — view, FOV, input, messages — and `HandlePlayerActor` makes `m_Player` mean
 exactly that. The four that mattered were the ones asking about game state.
 
-#### Slice 3 — not started
+#### Slice 3 — the turn cursor stays out (done, `aa635ef`)
 
-3. **`Map.checkNextActorIndex` and the turn cursor.** Already carried as a known
-   gap (§6 item 8, Phase 4) — it is `{ kind: "skip" }` today and safe only at a turn
-   boundary. With two players it is wrong more often, because a remote player's
-   turn can be parked mid-map-turn. **This is the item that decides whether the
-   version bump above is needed**, since an old build handed a two-player save would
-   misread the cursor rather than merely lack it.
+3. **`Map.checkNextActorIndex` and the turn cursor.** Was carried as a known gap
+   (§6 item 8, Phase 4), described in this plan as "safe at a turn boundary, wrong
+   mid-turn", and flagged as **the item that decides whether the version bump is
+   needed**. It decided it: **no bump, and the cursor does not join the save.**
+   It was the only one of the three slices that changed no engine code — only
+   `turn-cursor.test.ts` and the surface pins moved.
+
+**First, it is not a cache.** `getNextActorToAct` scans `map.actors` from
+`checkNextActorIndex` for `actionPoints > 0 && !isSleeping`, parks on the first hit,
+and returns null at the end — null being what makes `NextMapTurn` run, which resets
+the cursor to 0 as it regenerates points. So within a turn it only moves forward past
+actors that were not eligible. It is where the sweep had got to, `finish()` sets it
+to 0 on load, and the question reduces to one thing: **does restarting at 0 choose a
+different actor than resuming would have?**
+
+**Three findings, each pinned by a test.** Full write-up in the commit message;
+these are the parts the plan needs to keep.
+
+1. *Carrying it would be breaking, not additive.* `assignFields`
+   (`SessionGraph.ts:410-414`) **throws** on a key whose codec says `skip` — "carries
+   `m_checkNextActorIndex`, which the format does not carry". The spec says `skip`
+   (`specs.ts:485`), so a build that starts writing it hands every older build a save
+   it **refuses**. This is the concrete mechanism behind §6 item 8's "misread rather
+   than merely lack": carrying the cursor costs `GRAPH_VERSION` 2, and a bump costs
+   every existing single-player save. Pinned by injecting the field into a real graph
+   and asserting the throw — it fails if anyone quietly makes `skip` writable.
+2. *In practice the skip never bites.* No actor behind the cursor was eligible at any
+   of **1,456 `getNextActorToAct` calls** across a 30-turn run: **zero violations**.
+   Action points only *decrease* mid-turn — a spend, three `= 0` writes, a spawn
+   initialiser that appends past any cursor — and the regen lives in `NextMapTurn`,
+   which resets the cursor itself. So restarting at 0 picks the same actor, asserted
+   as an equality rather than left implied.
+3. *`DoWakeUp` is the one mutation that can break it.* It clears the sleep flag and
+   touches neither cursor nor points: the only eligibility change `Map` does not
+   already invalidate for, since `placeActor`, `removeActor` and `moveActor` all
+   write `m_checkNextActorIndex = 0 // invalidated`. Constructed explicitly — an
+   actor behind the cursor holding points while asleep, which is the only shape that
+   can become eligible there — and the invariant flips to exactly one violation.
+
+**What (3) costs after a load:** a woken actor takes its turn **earlier in the same
+sweep** than it would have. No state lost, nothing corrupted, and arguably the fairer
+order. That is the entire cost of not carrying the field — paid against refusing
+every existing save in order to remove it.
+
+**The fix was considered and rejected:** invalidating the cursor inside `DoWakeUp`,
+which would make the `skip` exactly correct by construction. It would also change
+when a woken actor gets to act, and the C# has the same code — trading a turn-order
+rule against C# parity, to close a case that only exists if you save mid-sweep.
+[corrected 2026-10-04: this plan said "carry it"; carrying it was never an option
+that cost less than a bump, and the bump was already declined.]
+
+Mutation-checked both directions: making `assignFields` accept a skipped field fails
+finding 1; removing `NextMapTurn`'s cursor reset fails findings 1–2 with **2,760
+violations in 1,456 calls** — what the finding looks like when it is wrong.
+
+**Side effect on the measurement.** `turn-cursor.test.ts` calls `game.DoWakeUp`
+directly, so `RogueGame`'s reachable surface went 118 → **119** and the hubs 32 →
+**33** (HUB 1, 24 → 25). Reaching it *is* the assertion — the alternative was
+asserting from a source scan — so the pins moved with it, the way `DoTag` and
+`HandlePlayerTradeNegociation` did before.
 
 **[?] still unanswered, and slice 2 did not settle it as hoped.** Whether
 `ActionGame` grows a `players` accessor, or the list belongs on `Session` with
@@ -1118,9 +1182,12 @@ does). So this stop condition cannot be reached before Wave 0 lands anyway.
 
 ### Phase 4 — persistence
 
-`DiceRoller.state` into the save; carry `Map.m_checkNextActorIndex` (§6 item 8).
-Together these are the difference between "a server restart ends the run" and "a
-server restart resumes it". Join and reconnect reuse the existing whole-world
+`DiceRoller.state` into the save (§6 item 8's other half — see below for the
+third, which is now closed). Together these are the difference between "a server
+restart ends the run" and "a server restart resumes it".
+**`Map.m_checkNextActorIndex` was on this list and is no longer:** slice 3 measured it
+and decided not to carry it (§8), so a restart resumes at a map-turn boundary and the
+cursor is 0 by construction — which is where it would have been anyway. Join and reconnect reuse the existing whole-world
 `Session.save()` — 4.6 MB **[v]**, once, which is fine.
 
 **Gate:** kill the server mid-session, restart, and a client reconnects into a
@@ -1200,24 +1267,37 @@ than imports **[d]**.
 
 ## 11. Open questions
 
-1. **Shared or per-player scoring?** Not answered. The recommendation is to keep
-   one `Scoring` for the *acting* player and build no scoreboard until the
-   scheduler work in Phase 1 has settled what "the player" means. Deciding this
-   before Phase 1 means deciding it against a model that is about to change.
-2. **What happens when one player dies?** Spectate, become a ghost, or end the
-   session? This is a design question with no technical answer and it blocks
-   Phase 1's game-over condition, not Phase 0.
-3. **Does a parked player keep their followers?** `behaviorFollowActor` gates on
+1. **Shared or per-player scoring?** Not answered, but the condition this item
+   attached itself to has now been met: Phase 1 settled what "the player" means
+   (the roster is found by scanning, `anyPlayerAlive`, §8 S2), so the answer is
+   now decidable against a model that no longer moves. The recommendation stands —
+   one `Scoring` for the *acting* player, and no scoreboard until a second player
+   can finish a run.
+2. ~~**What happens when one player dies?**~~ **Partly answered by Phase 1
+   (2026-10-04).** The *session* ends when **no** player is left: `anyPlayerAlive`
+   replaced the single-`m_Player` predicate at all four stop conditions (§8 S2),
+   so a dead player's party and world keep running while anyone survives. What the
+   **dead player** does — spectate, ghost, reincarnate, leave — is still a design
+   question with no technical answer, and it is the half that has no code behind it
+   today (the engine offers only "reincarnate, and only for whoever is still the
+   remembered player", §8 S2).
+3. **Should reincarnation be per-player?** `scoring.reincarnationNumber` is a
+   **session-wide** life pool, so with two players the first to die consumes it for
+   both. Phase 1 left this as a decision made by not making one (§8 S2) because a
+   shared pool is the conservative choice — it cannot grant a life twice. Whether a
+   run with N players should have N lives, or one per player per day, is balance,
+   and it cannot be judged from a plan. **[?]**
+4. **Does a parked player keep their followers?** `behaviorFollowActor` gates on
    `isLeaderVisible` **[d]**, so followers cluster around a stationary leader.
    Whether that is desirable is a balance question **[?]**.
-4. **Is a 5,800-map-object world affordable on the server per turn, and how many
+5. **Is a 5,800-map-object world affordable on the server per turn, and how many
    concurrent sessions?** Unmeasured. One `RogueGame` is ~25 MB of live object
    graph **[d]**, so a small VPS bounds this before the CPU does.
-5. **Does the client need `Session` state outside its own map** — zones, uniques,
+6. **Does the client need `Session` state outside its own map** — zones, uniques,
    the `fireEvent` raid calendar? Probably yes for the minimap and the day
    counter, and it is not yet enumerated **[?]**. It is the most likely source of
    a Phase 3 surprise.
-6. **Does the play-loop peek block, or does the loop become an `await`?**
+7. **Does the play-loop peek block, or does the loop become an `await`?**
    **Added 2026-10-04, and it is now the first question in this list**, because
    Phase 0 showed that `NetUI` cannot be a drop-in (§7): `WaitKeyOrMouse` polls
    `UI_PeekKey()` synchronously, and a socket cannot answer a poll. The two answers
