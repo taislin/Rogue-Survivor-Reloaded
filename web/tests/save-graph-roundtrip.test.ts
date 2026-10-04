@@ -16,7 +16,7 @@ import { CLASS_SPECS, encodeScoring } from "@engine/serialization/specs";
 import {
   findPlayerActor,
   readSessionGraph,
-  reattachPlayer,
+  reattachPlayers,
   writeSessionGraph,
   type LoadedGraph,
 } from "@engine/serialization/sessionGraphRoot";
@@ -393,7 +393,7 @@ describe("the player comes back", () => {
     expect(player.controller).toBeNull();
     expect(player.isPlayer).toBe(false);
 
-    reattachPlayer(player);
+    reattachPlayers([player]);
     expect(player.isPlayer).toBe(true);
   });
 
@@ -401,7 +401,10 @@ describe("the player comes back", () => {
     // `RefreshPlayer` scans the current map for `isPlayer`, so if that scan cannot
     // find the restored player, a load succeeds and leaves nobody in charge.
     const { loaded } = roundTrip();
-    reattachPlayer(loaded.player);
+    // The roster rather than `loaded.player`: a one-player save yields a
+    // one-element array, and using the roster is what keeps this test honest if
+    // the shape ever moves.
+    reattachPlayers(loaded.players);
     const found = findPlayerActor(loaded.currentMap);
     expect(found).toBe(loaded.player);
   });

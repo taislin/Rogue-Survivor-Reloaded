@@ -20,7 +20,12 @@ import { GameOptions, Options } from "@engine/GameOptions";
 import { Scoring } from "@engine/Scoring";
 import { storage } from "@engine/storage";
 import { GRAPH_VERSION, type GraphData } from "@engine/serialization/SessionGraph";
-import { readSessionGraph, writeSessionGraph, findPlayerActor } from "@engine/serialization/sessionGraphRoot";
+import {
+  readSessionGraph,
+  writeSessionGraph,
+  findPlayerActor,
+  findPlayerActors,
+} from "@engine/serialization/sessionGraphRoot";
 import { reportSwallowed } from "@engine/Diagnostics";
 
 export enum GameMode {
@@ -496,6 +501,7 @@ export class Session {
     // alpha10.1
     this.m_NextAutoSaveTime = 0;
     this.m_LoadedPlayer = null;
+    this.m_LoadedPlayers = [];
   }
 
   // ── Events ──────────────────────────────────────────────────────────────
@@ -723,7 +729,11 @@ export class Session {
       session.scoring,
       session,
       findPlayerActor(currentMap),
-      session.m_WorldTime ? session.m_WorldTime.turnCounter : 0
+      session.m_WorldTime ? session.m_WorldTime.turnCounter : 0,
+      // The whole world, not `currentMap`: with two players in two districts the
+      // second one is not on this map, and a roster that silently missed it would
+      // restore a world where a player has vanished. See `LoadedGraph.players`.
+      findPlayerActors(world)
     );
   }
 
@@ -831,6 +841,11 @@ export class Session {
       // the graph — so the actor that was the player is recorded here and
       // `RogueGame.LoadGame` reattaches one.
       session.m_LoadedPlayer = loaded.player;
+      // …and the roster, for the same reason and with the same reattach. Read from
+      // `players` rather than from `player` because a pre-`players` save has only
+      // the latter, and `readSessionGraph` has already folded that case into an
+      // array — so this is never empty just because the save is old.
+      session.m_LoadedPlayers = loaded.players;
       session.lastLoadError = null;
 
       return true;
@@ -879,6 +894,28 @@ export class Session {
   /** The player actor restored by the last successful `load`, else null. */
   get loadedPlayer(): Actor | null {
     return this.m_LoadedPlayer;
+  }
+
+  /**
+   * Every player actor restored by the last successful `load`.
+   *
+   * Empty only when nothing was loaded, or when the save genuinely recorded no
+   * players — a save written before the `players` key existed still yields one
+   * entry, because `readSessionGraph` folds the old single `player` ref into an
+   * array. **So "non-empty" is the honest test for "a load happened",** which is
+   * why this exists beside `loadedPlayer` rather than replacing it: every existing
+   * caller wants the one actor and is single-player.
+   *
+   * `MULTIPLAYER_PLAN.md` §6 item 8 and §8 Phase 1. Nothing reads this yet — the
+   * two-player game does not exist — so it is here because the *save* has to be
+   * able to carry a second player before anything can consume one, and adding the
+   * field later would mean re-deriving it from a format that had dropped it.
+   */
+  private m_LoadedPlayers: Actor[] = [];
+
+  /** Every player actor restored by the last successful `load`. */
+  get loadedPlayers(): readonly Actor[] {
+    return this.m_LoadedPlayers;
   }
 
   /**

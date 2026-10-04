@@ -43,6 +43,28 @@ export interface LoadedGraph {
    */
   player: Actor | null;
   /**
+   * Every player-controlled actor in the world, in map order.
+   *
+   * **Additive, and deliberately not a `GRAPH_VERSION` bump.** `MULTIPLAYER_PLAN.md`
+   * §6 item 8 asks for "`players[]` … with a `GRAPH_VERSION` bump to refuse older
+   * saves". The bump is declined, for the reason `Session.armyHelicopterRescueMap`
+   * already records for the same shape of change: *"an absent key is simply a
+   * default — an old save restores with no rescue site, which is what it had."*
+   * Bumping here would refuse **every existing single-player save** to distinguish
+   * two formats that are byte-identical when there is one player, and multiplayer
+   * does not exist yet, so there is no save it would protect.
+   *
+   * So `players` is a root key riding in plain JSON: a save written before this
+   * change has no `players` key at all, and reading it falls back to wrapping
+   * `player`. That is the whole migration.
+   *
+   * World-wide rather than `currentMap`-only, which is the actual fix: two players
+   * in two districts is the case that matters, and a `currentMap` scan cannot see
+   * the second one. The walk is free next to the serialisation it accompanies — a
+   * 3x3 world is 4.6 MB of JSON and ~970 actors.
+   */
+  players: Actor[];
+  /**
    * The global clock, as a turn number.
    *
    * Returned rather than installed: the caller holds a `Session` whose
@@ -65,13 +87,23 @@ export function writeSessionGraph(
   scoring: Scoring,
   uniques: { uniqueActors: UniqueActors; uniqueItems: UniqueItems; uniqueMaps: UniqueMaps },
   player: Actor | null,
-  worldTimeTurn: number
+  worldTimeTurn: number,
+  players: readonly Actor[] = []
 ): GraphData {
   const writer = new GraphWriter(CLASS_SPECS);
   const root: Record<string, Enc> = {
     world: writer.ref(world),
     currentMap: writer.ref(currentMap),
     player: writer.ref(player),
+    // The whole roster, additive beside the single `player` above rather than
+    // replacing it. See `LoadedGraph.players` for why there is no version bump.
+    //
+    // Written even when it holds one actor, so a save from a two-player game is
+    // distinguishable from a one-player one *by inspection* — which is what makes
+    // "why did my second player vanish" a question a bug report can answer. The
+    // fallback on read means the key is never load-bearing for correctness, only
+    // for diagnosis.
+    players: players.map((a) => writer.ref(a)),
     // The global clock. Each map also carries its own `localTime`, which is a
     // different number: a district caught up in the background has turned a
     // different number of times from the world.
@@ -99,6 +131,18 @@ export function readSessionGraph(data: GraphData): LoadedGraph {
   const scoring = decodeScoring(root.scoring, reader);
   const uniques = decodeUniques(root.uniques, reader);
   const player = root.player === null ? null : (reader.resolve(root.player as RefMark) as Actor);
+  /*
+   * The roster, with the migration in one line.
+   *
+   * A save written before `players` existed has no such key, so `root.players` is
+   * `undefined` rather than `null` — and `undefined` is the whole difference
+   * between "one player, recorded the old way" and "no players at all". Reading
+   * it as `?? [player]` covers both, and an empty `players` on a save that *does*
+   * have the key is left empty rather than second-guessed, because that would
+   * resurrect a player the writer deliberately did not record.
+   */
+  const roster = (root.players as Enc[] | undefined) ?? (player === null ? [] : [root.player as Enc]);
+  const players = roster.map((enc) => reader.resolve(enc as RefMark) as Actor);
   const worldTimeTurn = root.worldTime as number;
   if (!Number.isInteger(worldTimeTurn) || worldTimeTurn < 0) {
     throw new Error(`save carries world turn ${String(worldTimeTurn)}, which is not a turn`);
@@ -109,6 +153,7 @@ export function readSessionGraph(data: GraphData): LoadedGraph {
     currentMap,
     scoring,
     player,
+    players,
     worldTimeTurn,
     uniqueActors: uniques.uniqueActors,
     uniqueItems: uniques.uniqueItems,
@@ -135,14 +180,60 @@ export function findPlayerActor(map: GameMap): Actor | null {
 }
 
 /**
- * Gives a restored actor its player controller.
+ * Every player-controlled actor in the world, in a stable order.
+ *
+ * The order is district-grid then map then actor-list, which is the order the
+ * world generates in, so two saves of the same world produce the same array — the
+ * property a round-trip test needs to compare it without sorting.
+ *
+ * `MULTIPLAYER_PLAN.md` §6 item 8. Distinct from {@link findPlayerActor}, which is
+ * kept because it answers a *different* question: "the one player", used where a
+ * caller genuinely wants a single actor and the caller is single-player. The two
+ * were one function until the player count stopped being one, and folding them
+ * back together would mean every reader had to re-derive "which one" for itself.
+ */
+export function findPlayerActors(world: World): Actor[] {
+  const out: Actor[] = [];
+  for (let x = 0; x < world.size; x++) {
+    for (let y = 0; y < world.size; y++) {
+      const district = world.getDistrict(x, y);
+      if (district === null) continue;
+      for (const map of district.maps) {
+        for (const actor of map.actors) {
+          if (actor.isPlayer) out.push(actor);
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Gives restored actors their player controllers, returning the ones it gave one
+ * to.
  *
  * Split out here so the one caller (`RogueGame.LoadGame`) and the tests agree on
  * what "put the player back" means: a `PlayerController`, which is also what
  * makes `actor.isPlayer` true and therefore what `RefreshPlayer` looks for.
+ *
+ * **Was `reattachPlayer(actor: Actor | null): Actor | null`**, singular, and it is
+ * gone rather than kept alongside: the roster call subsumes it exactly, and a
+ * second entry point with a different null-handling contract is one more thing to
+ * keep in step. Its only remaining caller was a test, and a function kept alive
+ * by a test is dead code with a green tick.
+ *
+ * The `controller == null` guard is the same one, and for the same reason: a
+ * restored actor arrives with no controller because controllers are not part of
+ * the graph, but a caller may pass an actor that already has one (a test that
+ * saved and loaded in-process), and clobbering it would be a silent behaviour
+ * change rather than a repair.
  */
-export function reattachPlayer(actor: Actor | null): Actor | null {
-  if (actor == null) return null;
-  if (actor.controller == null) actor.controller = new PlayerController();
-  return actor;
+export function reattachPlayers(actors: readonly Actor[]): Actor[] {
+  const out: Actor[] = [];
+  for (const actor of actors) {
+    if (actor == null) continue;
+    if (actor.controller == null) actor.controller = new PlayerController();
+    out.push(actor);
+  }
+  return out;
 }

@@ -188,7 +188,7 @@ import {
 	UniqueItem,
 	UniqueMap,
 } from "@engine/Session";
-import { reattachPlayer } from "@engine/serialization/sessionGraphRoot";
+import { reattachPlayers } from "@engine/serialization/sessionGraphRoot";
 import { storage, whenStorageReady } from "@engine/storage";
 import {
 	getUserBasePath,
@@ -32312,8 +32312,18 @@ async HandleActionMenu(): Promise<PlayerCommand | null> {
 		 * *which* actor the player was. `RefreshPlayer` then finds them by
 		 * `isPlayer`, which is true only once a `PlayerController` is attached, so
 		 * without this the load would succeed and leave nobody in charge.
+		 *
+		 * The roster, not just the one actor: a save can now name several players,
+		 * and reattaching only the first would restore a world where the others are
+		 * ordinary NPCs — indistinguishable from a save that never had them, which
+		 * is the failure mode Phase 1 of `plans/MULTIPLAYER_PLAN.md` is about.
+		 *
+		 * Still nothing *acts* as a second player yet: `m_Player` is one field, so
+		 * `RefreshPlayer` below binds whichever it finds first and the scheduler
+		 * treats the rest as players without a driver. That is Phase 1's next slice,
+		 * not this one's — this one is the save carrying them at all.
 		 */
-		reattachPlayer(this.m_Session.loadedPlayer);
+		reattachPlayers(this.m_Session.loadedPlayers);
 
 		this.RefreshPlayer();
 
