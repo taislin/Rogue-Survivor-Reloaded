@@ -1,5 +1,16 @@
 # Multiplayer — a design and phasing plan for the browser port
 
+> **Phase 0 is DONE and its gate is GREEN (2026-10-04).** The round-robin claim in §3
+> holds: two `PlayerController` actors on one map alternate correctly, each acts
+> exactly once, and the world advances exactly one map turn with no scheduler change.
+> **§3 through §7 are therefore not void.** `web/tests/multiplayer-phase0-roundrobin.test.ts`,
+> mutation-checked. Details and the one thing it disproved — **§7's "`NetUI` is a
+> drop-in" is wrong, because the play loop *peeks* rather than blocks** — are in §8
+> Phase 0 and §7.
+>
+> Everything below is still **design only**: no networking code exists and Phases 1–6
+> have not begun.
+
 > **Status: design only, 2026-09-30. No code has been written.** This file
 > records a feasibility study and a phasing plan. It is the sibling of
 > `BROWSER_PORT_PLAN.md` the same way `SUGGESTIONS.md` is: a statement
@@ -28,86 +39,81 @@ plan records that this project has shipped a green build and a green simulator
 over a visibly broken game, and the durable lesson there is that *a claim which
 was never checked is indistinguishable from one that was*.
 
-> ### Currency re-check, 2026-10-03 against `master` `8d5dfc8`
+> ### Currency re-check, 2026-10-03 against `master` `925bcab`
 >
-> **The status claim is still exactly true.** Zero networking code exists:
+> Re-measured after a pull that landed 11 commits (the in-game action menu, the
+> `actions/` game seam, `engine/Paths.ts`, `engine/MenuChrome.ts`,
+> `engine/GameVersion.ts`, and two source scans replaced by behavioural tests).
+> Baseline for all of it: **148 files / 3,072 tests passing**, `tsc` clean,
+> coverage **71.07 / 58.72 / 81.40 / 72.52** against a gate of **67 / 55 / 78 / 68**.
+> `RogueGame.ts` is **36,653 lines**, 845 members (756 public, 89 private), 761
+> methods, **117** reachable, of which **32 sit in the two hubs that never move**.
+>
+> **The status claim is still true, and now qualified.** Zero networking code:
 > `web/package.json` depends on `express` and nothing else (no `ws`, no
 > `socket.io`); `web/server/index.ts` is **28 lines** of `express.static` plus an
-> SPA fallback; there is no `http.createServer`, no `NetUI`, no `PROTOCOL_VERSION`,
-> no `?mp=` handling in `main.ts`, and no multiplayer test among the 140 test files.
-> **Nothing in §8's Phases 0–6 has begun.** This document is in better shape than its
-> siblings precisely because it describes work nobody started.
+> SPA fallback (re-measured 2026-10-03 — still 28); there is no `http.createServer`,
+> no `NetUI`, no `PROTOCOL_VERSION`, no `?mp=` handling in `main.ts`. **Phases 1–6
+> have not begun.** **Phase 0 has**, and it changed two things: the §7 `NetUI` premise
+> is false (the play loop peeks, so a promise-returning UI cannot answer it), and
+> the two "fire-and-forget" peeks are now the most important methods in the
+> interface. See §8.
 >
-> **The `[v]` convention has decayed, and that is the finding.** Of 49 citations
-> sampled, **14 still resolve, 34 have drifted, 1 points at a file that does not
-> exist.** `RogueGame.ts` grew 32,753 → 36,487 lines, so the drift is large:
-> `:15185` → `:5569`, `:14180` → `:23415`, `:30208` → `:36469`, `:28154` → `:34385`,
-> `:16483` → `:19601`, `:26086` → `:31984`. **A `[v]` from 2026-09-30 is now no more
-> reliable than a `[?]`** — which is the convention's own failure mode, and worth
-> recording as such.
+> **Re-measured 2026-10-04, 11 commits after the re-check below: 149 test files /
+> 3,074 tests passing** (was 148 / 3,072 — the new one is this Phase 0 test).
 >
-> **One cited rule is false, and it is the document's stated prerequisite** (§1's "the
-> engine is DOM-free"). The rule is attributed to `web/.porting/CONVENTIONS.md`, which
-> **does not exist and never has** (`git log --all -- '*CONVENTIONS.md'` is empty), and
-> the boundary it asserts is violated in three places: `RogueGame.ts:111`
-> (`@ui/BackpackPanel`), `RogueGame.ts:234` (`@ui/OptionsScreen`),
-> `GameOptions.ts:23` (`@ui/fonts`). **The conclusion survives** — nothing in `engine/`
-> or `data/` touches `document` or `window` directly, which is the property that
-> matters — but the rule as written is false and the file backing it is imaginary.
+> **This pass also corrected the document's body**, not just its header. §1's
+> prerequisite, §2.1's primitive inventory, §4.1's guard table, §5.3, §7.3 and the
+> §10 risk table all carried claims that had decayed; each correction is marked
+> inline. The two that most change the plan's shape:
 >
-> **Derived counts to re-take:** 141 `IsVisibleToPlayer` sites → **151**;
-> `m_Player` references 387 → **427**; `IRogueUI` 44 methods → **43** (the "exactly
-> three block" count is still right); "30,000-line engine" → **36,487**; `new RogueGame`
-> now takes a 4th parameter, `sound: ISoundManager` (`RogueGame.ts:1934-1939`).
+> - **§5.3's `actorSpeed === 0` soft-lock is not reachable** and the `Math.max(…, 1)`
+>   this plan prescribed should **not** be applied — the reference has the identical
+>   clamp, so that would be a divergence for an unreachable case. Measured, pinned by
+>   `web/tests/actor-speed-floor.test.ts`, and the risk-table row is retired.
+> - **§2.1's "only anti-stall primitive" was wrong.** Bot control is a second one,
+>   it predates the document, and it is the better fit for an absent player — which
+>   also explains the eight `isBotPlayer` guards §4.1 assumed did not exist.
 >
-> **Two things the plan does not know about, both of which make its job easier:**
-> - **Bot control already exists** and is a ready-made stand-in for a parked remote
->   player: `BotTakeControl` / `BotReleaseControl` (`RogueGame.ts:7925`, `:7957`),
->   `m_botControl`, `m_isBotMode`, `Actor.isBotPlayer` (`data/Actor.ts:54`) with 33
->   `isBotPlayer` sites, and `sim/cli.ts:46` defaults `--bot` on. §2.1 leans on
->   `30c0075`'s phrase "that is what auto-play … would be", which reads as if auto-play
->   is hypothetical. It is not, and it predates this document by one commit.
-> - **Eight world-initiated `AddMessagePressEnter` sites already carry an
->   `isBotPlayer` guard** (`RogueGame.ts:6551, 6626, 6727, 6856, 6942, 7049, 7125,
->   7246`), which partially pre-mitigates §4.1 item 3 and §10's "modal dialog with no
->   human behind it" risk. §10's "six world-initiated sites" is also understated: there
->   are **44** call sites now.
+> **The `[v]` convention has decayed, and that is the standing finding.** Of 49
+> citations sampled at the previous revision, **14 resolved, 34 drifted, 1 pointed at
+> a file that does not exist.** `RogueGame.ts` grew 32,753 → 36,653 lines, so the
+> drift is large: `:15185` → `:5569`, `:14180` → `:23415`, `:30208` → `:36469`,
+> `:28154` → `:34385`, `:16483` → `:19601`, `:26086` → `:31984`. **A `[v]` from
+> 2026-09-30 is now no more reliable than a `[?]`** — the convention's own failure
+> mode, worth recording as such. Line numbers have been dropped from the corrected
+> passages below in favour of symbol names; that is the only form that survives a
+> `RogueGame.ts` refactor, which §6 of the port plan has scheduled.
+>
+> **Derived counts, re-measured 2026-10-03:** 141 → **151** `IsVisibleToPlayer`
+> sites; 387 → **427** `m_Player` references; `IRogueUI` 44 → **43** methods (the
+> "exactly three block" count still holds); six → **44** `AddMessagePressEnter` call
+> sites; "30,000-line engine" → **36,653**; "970 actors with 11 controller classes"
+> unchanged; ~500 `Do*`/`On*` primitives unchanged. The `ai/` `isPlayer` count is
+> still **exactly 5**, and all three of the follower-distance branches are still `1`.
 >
 > **Two claims that need their scope narrowed rather than their value changed:**
 > - `Map.assertActorIntegrity()` "already runs every turn **[v]**" is true of the **sim
 >   harness** only (`HeadlessRunner.ts:207`); there is **no call in `RogueGame.ts`**, so
->   it is not a free live invariant in a real game.
+>   it is not a free live invariant in a real game. §7.2 and §10 both leaned on it as
+>   free, and both are corrected inline.
 > - §1's exclusion of "any change to the C# in `src/`" is now **vacuous** — `src/` is
 >   untracked since `cfd19ae`.
 >
-> **The cheapest live item in this document is closed, and it was not the bug
-> §5.3 thought it was. Measured 2026-10-03.**
+> **§7.3's opening claim was flatly wrong:** it said the Dockerfile "stops being *not
+> the deploy path* and becomes the deploy", and `Dockerfile:3-5` says **NOT the
+> deploy path** in capitals — the site ships from `.github/workflows/pages.yml`.
 >
-> §5.3 proposed *"Fix in Phase 0, **with a test**, whether or not multiplayer happens"*
-> — a one-line `Math.max(…, 1)` at `Rules.ts:2537`. **The measurement says the clamp
-> should stay as it is**, because the reference has the identical one
-> (`Rules.cs:4680-4681`, "done, speed must be >= 0"), and raising it would be a
-> divergence from the reference for a case that cannot occur.
->
-> **`actorSpeed === 0` is unreachable, and the floor is 3.** `actorSpeed` applies
-> `base -> x2/3 tired -> /2 exhausted -> -armour -> x0.75 shield -> -weapon -> /2
-> dragging -> max(floor, 0)`, every term off shipped data (heaviest armour 10, heaviest
-> weapon 10, penalty 0.75). `SEWERS_THING` is the only actor below base 100 (33) and
-> looks stranded on that alone — every term applied unconditionally is `-4.6` — but it
-> is undead and so fails **both** ability gates (`canTire`, `hasToSleep`), never taking
-> either multiplier. The low base and the missing multipliers are the same fact. Everyone
-> else is 100, which leaves 3.
->
-> **Delivered as a pin rather than a clamp**, in `web/tests/actor-speed-floor.test.ts`:
-> six cases that recompute the worst case for every actor model off the real models, and
-> fail with a readable message if any load-capable actor reaches the clamp. Mutation-checked
-> — dropping `POLICEMAN`'s `SPD` to 15 in `Actors.json` fails it, naming the actor. The
-> margin is one CSV cell wide, which is the argument for a test rather than a comment.
->
-> **What is left is the reachability caveat §5.3 itself flagged:** a *runtime* path to 0
-> needs a temporary actor with base < 33 that can tire, and nothing in the shipped content
-> produces one. That is a content question, not a scheduler bug, and it is the honest
-> residue of this item.
+> **One structural thing worth knowing before scheduling anything.** Three of §6's
+> Wave 1 target modules have now landed **outside** the wave schedule —
+> `engine/Paths.ts` (the C# `GetUser*` paths), `engine/MenuChrome.ts`, and
+> `engine/actions/ActionGame.ts` (the typed game seam) — while **Wave 0's own
+> deliverables still do not exist** (`engine/GameContext.ts`,
+> `tests/helpers/game.ts`). So the extraction is happening opportunistically rather
+> than in the order §6 records, which means **§6's wave numbers should not be used
+> as a schedule for anything**, including this plan's Phase 3 stop condition. The
+> taxonomy (§6.2's "two hubs, everything else a leaf") is still the right mental
+> model; the sequencing is not.
 
 ---
 
@@ -138,21 +144,54 @@ deterministic lockstep; any change to the C# in `src/`; and — for the first
 four phases — the world ticking while a human is thinking.
 
 **Not a phase, but a prerequisite that already exists:** the engine is
-DOM-free. `web/.porting/CONVENTIONS.md` rule 2 ("no platform leakage") means
-`engine/` and `data/` never import from `ui/`, and `RogueGame`'s constructor
-takes its collaborators as arguments:
+DOM-free. **[corrected 2026-10-03] the rule as written here is false, and its
+source never existed.** This section attributed it to
+`web/.porting/CONVENTIONS.md` rule 2 ("no platform leakage"). There is no such
+file and never has been — `git log --all -- '*CONVENTIONS.md'` is empty, and
+`web/.porting/` holds only `assemble_roguegame.py`, `gen_stubs.py` and
+`roguegame-methods.txt`, itself untracked. The rule it described ("`engine/` and
+`data/` must not import from `ui/`") is also **violated in three places**:
+
+| Site | Import |
+|---|---|
+| `web/src/engine/RogueGame.ts:112` | `from "@ui/BackpackPanel"` |
+| `web/src/engine/RogueGame.ts:165` | `from "@ui/ActionMenu"` **[added 2026-10-03]** |
+| `web/src/engine/RogueGame.ts:276` | `import { OptionsScreen } from "@ui/OptionsScreen"` |
+| `web/src/engine/GameOptions.ts:23` | `from "@ui/fonts"` |
+
+**It is four now, not three.** `@ui/ActionMenu` arrived with the in-game action menu
+and nobody counted — which is the argument for amending the rule rather than
+inverting the imports: the boundary is porous by accident, and each feature that
+wants a UI type adds another.
+
+**The conclusion survives anyway, and that is what matters here.** None of those
+three reaches `document` or `window` — they are module-level imports of *pure*
+helpers (a panel descriptor, a screen descriptor, a font-metrics table), and the
+property this document actually needs is *"nothing in `engine/` or `data/` touches
+the DOM directly"*, which is true. But the stated rule is false and the file
+backing it is imaginary, so **this is the one thing in §1 that should not be taken
+on trust.** Two ways to make it true, in order of cost: amend the rule to say "no
+*DOM access*; module imports of pure `ui/` helpers are permitted" (two lines of
+documentation), or invert the **four** imports (four edits, plus a re-measure of the
+surface pins, since most are on the reachable surface).
+
+`RogueGame`'s constructor takes its collaborators as arguments, which is the part
+that does the work:
 
 ```
-1329: 	constructor(
+    constructor(
         UI: IRogueUI,
         music: IMusicManager = new NullMusicManager(),
         ambients: IAmbientManager = new NullAmbientManager(),
-      ) {
+        sound: ISoundManager = ...,
+    ) {
 ```
-**[v]** `web/src/engine/RogueGame.ts:1329`
+**[v]** `RogueGame` constructor (`RogueGame.ts:837`; cited as `:1329`, then
+`:1934-1939`) — **corrected twice: the constructor has gained a fourth parameter,
+`sound`, since this was written, and it has moved twice since.**
 
-So `new RogueGame(someUI)` runs unchanged in Node, in a browser, or in a test.
-`sim/HeadlessRunner.ts:100` already does exactly that with a `NullRogueUI`
+So `new RogueGame(someUI, …)` runs unchanged in Node, in a browser, or in a test.
+`sim/HeadlessRunner.ts` already does exactly that with a `NullRogueUI`
 **[v]**, which means *the headless simulator and a multiplayer server are the
 same program with a different `IRogueUI`.* That is the single most load-bearing
 fact in this document and it was already paid for.
@@ -176,18 +215,39 @@ what it is not:
 **[v]** `git show 30c0075`, quoted verbatim.
 
 And it is accurate. `HandlePlayerActor` parks on
-`await this.WaitKeyOrMouse(...)` **[v]** `RogueGame.ts:6875`, and while it parks
-the whole stack below it is suspended: `NextMapTurn` cannot run, so AP regen
-(`4664`), starvation, fire and `++map.localTime.turnCounter` (`5188`) all stop;
-and `advancePlayDistrict`'s `worldTime.turnCounter++` **[v]** `RogueGame.ts:4066`
-does not run, so day and night are frozen too.
+`await this.WaitKeyOrMouse(…)` **[v]** in `HandlePlayerActor` (`RogueGame.ts:8125`;
+cited as `:6875`), and while it parks the whole stack below it is suspended:
+`NextMapTurn` cannot run, so AP regen (`NextMapTurn`, `:5595`), starvation, fire and
+`++map.localTime.turnCounter` all stop; and `advancePlayDistrict`'s
+`m_Session.worldTime.turnCounter++` **[v]** (`:4661`) does not run, so day and night
+are frozen too.
 
 So the option cannot be the foundation. **What it *is*, and this is the useful
-part:** it is the only existing, tested anti-stall primitive. A disconnected or
-AFK remote player must not hold the scheduler forever, and
-`WaitKeyOrMouse(idleAdvanceMs(s_Options.idleAutoAdvance), ...)` **[v]**
-`RogueGame.ts:6876` already does exactly that, with 562 lines of tests behind
-it. For networked play this is not a nice-to-have; it is load-bearing.
+part:** an existing, tested anti-stall primitive. A disconnected or AFK remote
+player must not hold the scheduler forever, and
+`WaitKeyOrMouse(idleAdvanceMs(s_Options.idleAutoAdvance), …)` **[v]** in
+`HandlePlayerActor` already does exactly that, with 562 lines of tests behind it
+(`tests/idle-auto-advance.test.ts`, re-measured 2026-10-03 — still 562). For
+networked play this is not a nice-to-have; it is load-bearing.
+
+**[corrected 2026-10-03] It was described here as "the *only* existing, tested
+anti-stall primitive", and that is wrong** — bot control is another one, and it
+predates this document by a commit. `BotTakeControl` / `BotReleaseControl`
+(`BotTakeControl` `RogueGame.ts:7945`, `BotReleaseControl` `:7988`, toggled at
+`:7940`) hand the player's turn to the AI and take it back, with
+`m_botControl`, `m_isBotMode` (`:1794`) and `Actor.isBotPlayer` behind it;
+`sim/cli.ts` defaults `--bot` on. **[v, re-verified 2026-10-03 — unchanged]** **That is the more useful primitive for networked play of the
+two**, because it is already the shape of the problem: "a remote player who is not
+here" and "a player the bot is standing in for" are the same state, and the second
+one is implemented, tested, and reachable today. §4.1 item 3's eight existing
+`isBotPlayer` guards (§4.1) are the same fact seen from the other side.
+
+So the inventory should read: **`IdleAdvance` for a human who is present but
+idle, bot control for a player who is absent.** Neither is a substitute for the
+other, and the plan should not have to invent a third concept for a disconnected
+peer when one of these already exists. **[d]** — the read is that the mechanism is
+reusable; whether it is reusable *without* the UI implications of handing the actor
+to an AI controller is untested, and it is a Phase 0 question.
 
 ### 2.2 Real-time is much cheaper than the first draft of this plan claimed
 
@@ -214,34 +274,37 @@ of what the "recursive descent" framing suggests.**
 The entire turn-ordering scheduler is fifteen lines:
 
 ```ts
-2165:  getNextActorToAct(map: GameMap | null, _turnCounter: number): Actor | null {
-2166:    if (!map) return null;
-2167:
-2168:    const n = map.countActors;
-2169:    for (let i = map.checkNextActorIndex; i < n; i++) {
-2170:      const a = map.getActor(i);
-2171:      if (a.actionPoints > 0 && !a.isSleeping) {
-2172:        map.checkNextActorIndex = i;
-2173:        return a;
-2174:      }
-2175:    }
-2176:
-2177:    return null;
-2178:  }
+  getNextActorToAct(map: GameMap | null, _turnCounter: number): Actor | null {
+    if (!map) return null;
+
+    const n = map.countActors;
+    for (let i = map.checkNextActorIndex; i < n; i++) {
+      const a = map.getActor(i);
+      if (a.actionPoints > 0 && !a.isSleeping) {
+        map.checkNextActorIndex = i;
+        return a;
+      }
+    }
+
+    return null;
+  }
 ```
-**[v]** `web/src/engine/Rules.ts:2165-2178`
+**[v]** `Rules.getNextActorToAct` — **re-read 2026-10-03, unchanged and still
+fourteen lines.** It was cited as `Rules.ts:2165-2178`; it is now at `:2331`, and
+that gap is the reason this section quotes symbols rather than lines.
 
 There is no player filter, no priority queue, no turn token, no time-slicing.
 It is a linear scan of `map.actors` from a cursor. The player is picked by
 exactly the same `actionPoints > 0` test as a zombie, and `actor.isPlayer` is
-read only *after* the pick, at `RogueGame.ts:4244` **[v]**.
+read only *after* the pick, in `advancePlayMap` (`RogueGame.ts:4890`; cited as
+`:4244`) **[v]**.
 
 `HandlePlayerActor` then does:
 
 ```ts
-6660: 		this.m_Player = player; // remember player.
+		this.m_Player = player; // remember player.
 ```
-**[v]** `web/src/engine/RogueGame.ts:6660`
+**[v]** `RogueGame.HandlePlayerActor` (`RogueGame.ts:8016`; cited as `:6660`)
 
 That is an assignment, not an assertion. It does not check that `player` is
 *the* player.
@@ -251,17 +314,19 @@ scheduler alternates between them.** `isPlayer` is already a type test rather
 than an identity field:
 
 ```ts
-256:  get isPlayer(): boolean {
-257:    return this._controller instanceof PlayerController;
-258:  }
+  get isPlayer(): boolean {
+    return this._controller instanceof PlayerController;
+  }
 ```
-**[v]** `web/src/data/Actor.ts:256`
+**[v]** `Actor.isPlayer` — **re-read 2026-10-03, still a type test and not an
+identity field** (was `data/Actor.ts:256`, now `:268`). This is the second of the
+two claims §3 rests on, so it was re-read rather than assumed.
 
 Trace it, with A at list index 3 and B at index 7: call 1 picks A (cursor 3); A
 spends 100 AP, so `actionPoints` is 0; call 2 scans from 3, skips A, picks B
 (cursor 7); B spends 100; call 3 finds nobody, returns `null`, and
-`advancePlayMap:4228` calls `NextMapTurn`, which regrants at `4664` and resets
-the cursor to 0 at `4671` **[v]**. One map turn, both players acted once, world
+`advancePlayMap` calls `NextMapTurn`, which regrants at `RogueGame.ts:5595` and
+resets the cursor to 0 at `:5601` **[v]**. One map turn, both players acted once, world
 advanced once. No scheduler change.
 
 **This is Phase 0's test and the whole feasibility claim at once.** If it is not
@@ -269,9 +334,9 @@ green in a day, everything below it is void.
 
 ### 3.1 Why the recursive descent does not block two players
 
-`advancePlayDistrict` is a `do…while`, not recursion, for the *player's own*
-turn ordering **[v]** `RogueGame.ts:4047-4059`. The recursion in the call graph
-is only the background-district simulation (`SimulateDistrict:28154` →
+`advancePlayDistrict` (`:4628`) is a `do…while`, not recursion, for the *player's own*
+turn ordering **[v]**. The recursion in the call graph
+is only the background-district simulation (`SimulateDistrict` →
 `AdvancePlay` → `advancePlayDistrict`). Two humans in sequence is a loop, and
 loops alternate cleanly.
 
@@ -280,31 +345,37 @@ loops alternate cleanly.
 ## 4. What real-time actually costs
 
 The cheap theory: a parked player has `actionPoints <= 0`, so
-`getNextActorToAct` (`Rules.ts:2171`) skips them; `NextMapTurn` grants every
-non-sleeping actor `actorSpeed` (`RogueGame.ts:4664`) and zeroes the cursor
-(`4671`) **[v]**; therefore the world advances around a player who is not
+`getNextActorToAct` (the `actionPoints > 0` test, `Rules.ts:2337`) skips them;
+`NextMapTurn` grants every non-sleeping actor `actorSpeed` (`RogueGame.ts:5595`)
+and zeroes the cursor (`:5601`) **[v]**; therefore the world advances around a player who is not
 acting, with no change to `HandlePlayerActor` at all.
 
 **The theory is confirmed for the scheduler and is the whole of the win.** The
-driver already exists too. `GameLoop`'s `while` **[v]** `RogueGame.ts:1790-1794`
+driver already exists too. `GameLoop`'s `while` **[v]** (`RogueGame.ts:2398`;
+cited as `:1790-1794`)
 is a driver; it simply has no clock of its own, because today a human's blocking
 `await` supplies the cadence.
 
 And the prototype for a turn-driven, input-free, world-advancing,
 self-terminating loop is already written:
-`StartPlayerWaitLong` / `CheckPlayerWaitLong` **[v]**
-`RogueGame.ts:11336-11381`. It runs `DoWait` for the player and returns to
-`GameLoop` **with no keypress** (`HandlePlayerActor:6669-6673`), and it
+`StartPlayerWaitLong` (`RogueGame.ts:14293`) / `CheckPlayerWaitLong` (`:14312`)
+**[v]**. It runs `DoWait` for the player and returns to
+`GameLoop` **with no keypress** (in `HandlePlayerActor`), and it
 self-terminates on five conditions, of which **three are set from the world, not
 the player**:
 
 | interrupt | set by | line |
 |---|---|---|
-| an audible message | `AddMessageIfAudibleForPlayer` | `1469` **[v]** |
-| a loud noise | `OnLoudNoise` | `20112` **[d]** |
-| a melee attack | `DoMeleeAttack` | `16483` **[d]** |
-| an hour elapsed | `m_PlayerLongWaitEnd` | `11342` **[v]** |
-| hungry / starving / sleepy / exhausted / unwell | `CheckPlayerWaitLong` | `11365-11378` **[d]** |
+| an audible message | `AddMessageIfAudibleForPlayer` | symbol **[v]** |
+| a loud noise | `OnLoudNoise` | symbol **[d]** |
+| a melee attack | `DoMeleeAttack` | symbol **[d]** |
+| an hour elapsed | `m_PlayerLongWaitEnd` | symbol **[v]** |
+| hungry / starving / sleepy / exhausted / unwell | `CheckPlayerWaitLong` | symbol **[d]** |
+
+*Re-anchored 2026-10-03. The original carried bare line numbers (`1469`, `20112`,
+`16483`, `11342`, `11365-11378`) in a `RogueGame.ts` that has since grown ~4,000
+lines; the interrupt **set** is what §4 needs and it is unchanged, but re-read the
+five symbols rather than the numbers.*
 
 That is a complete "wake up when threatened" model. Real-time is this loop with
 a wall-clock deadline instead of `TURNS_PER_HOUR`.
@@ -313,70 +384,99 @@ a wall-clock deadline instead of `TURNS_PER_HOUR`.
 
 | # | change | where | size |
 |---|---|---|---|
-| 1 | `isSuspended` as a third skip condition beside `isSleeping` | `Rules.ts:2171` | 1 line |
-| 2 | suspend/resume guard: zero AP on suspend; on the skip path also run `CheckSpecialPlayerEventsAfterAction` (`4250`) and the `previous*` assignments (`4254-4261`) and `UpdatePlayerFOV` | `RogueGame.ts:4244-4261` | ~15 lines |
-| 3 | extend the `m_SimulatingInIdle` guard from `AddMessagePressEnter` to the other blocking primitives, and **rewrite the comment that says it is unnecessary** | `RogueGame.ts:1619`, comment at `1614-1617` | ~6 lines + comment |
-| 4 | wall clock in the `GameLoop` `while`, placed *after* `AdvancePlay` returns so it cannot race the turn | `RogueGame.ts:1790-1821` | ~3 lines |
+| 1 | `isSuspended` as a third skip condition beside `isSleeping` | `Rules.getNextActorToAct`, the `!a.isSleeping` test (`Rules.ts:2337`) | 1 line |
+| 2 | suspend/resume guard: zero AP on suspend; on the skip path also run `CheckSpecialPlayerEventsAfterAction` (called at `RogueGame.ts:4935`) and the `previous*` assignments and `UpdatePlayerFOV` | `advancePlayMap`, after the `isPlayer` read at `RogueGame.ts:4890` | ~15 lines |
+| 3 | extend the `m_SimulatingInIdle` guard from `AddMessagePressEnter` to the other blocking primitives, and **rewrite the comment that says it is unnecessary** | the guard is `RogueGame.ts:2227`; the sets/clears are `:16787`/`:16791` | ~6 lines + comment, **minus the three sites left in §4.1's table** |
+| 4 | wall clock in the `GameLoop` `while`, placed *after* `AdvancePlay` returns so it cannot race the turn | `RogueGame.ts:2398` | ~3 lines |
+
+*Every `where` cell re-anchored to a symbol 2026-10-03. All four previously carried
+bare `RogueGame.ts` offsets in a file that has grown ~4,000 lines since. The sizes are
+unchanged; item 3's is now smaller, because eight of the sites it would have covered
+already have a guard.*
 | 5 | discard the AP bank on resume | — | 1 line |
 
 **Item 3 is the one that bites at runtime, and the existing comment is why
-nobody would have found it.** Only `AddMessagePressEnter` has the guard:
+nobody would have found it.** Only `AddMessagePressEnter` carries the
+`m_SimulatingInIdle` guard:
 
 ```ts
-1619: 		if (this.m_SimulatingInIdle) return;
+		if (this.m_SimulatingInIdle) return;
 ```
-**[v]** `RogueGame.ts:1619`
+**[v]** `RogueGame.ts` (`AddMessagePressEnter`)
 
-with a comment at `1614-1617` explaining that the other blocking helpers need no
-such guard *"because they are all player-only flows"*. **That claim becomes
-false.** World-initiated blocking sites, all verified:
+with a comment nearby explaining that the other blocking helpers need no such guard
+*"because they are all player-only flows"*. **That claim becomes false.** However —
+**[corrected 2026-10-03]** the situation is better than this section said, and the
+reason is worth recording: **eight world-initiated sites now carry an
+`isBotPlayer` guard** (bot control, which this plan never inventoried, predates it by
+a commit). So the guard *pattern* this item needs already exists at eight of the
+sites below, and the work is smaller than "extend the guard and rewrite the comment":
+it is copy an existing idiom, not invent one.
 
-| site | fires when |
-|---|---|
-| `4521` | `NextMapTurn` infection effect on the player |
-| `5759`, `5888`, `5974`, `6055`, `6131` | `ArmySupplies`, `BikersRaid`, `GangstasRaid`, `BlackOpsRaid`, `BandOfSurvivors` |
-| `5672` | `NationalGuard` |
-| `21316`, `21378` | `OnNewNight` / `OnNewDay` → skill-upgrade screen, which also opens a full-screen menu |
-| `21205`, `21255` | `PlayerDied` → `HandlePostMortem`, three sequential blocks |
+World-initiated blocking sites, all verified. `bot-guarded` marks the eight that
+already have `isBotPlayer`:
 
-**[v]** for all of the above. The six raid/announce events gate on
+| site | fires when | state |
+|---|---|---|
+| `NextMapTurn` infection effect | infection crosses a threshold on the player | **unguarded** |
+| `CheckForEvent_NationalGuard` | raid/announce | **bot-guarded** |
+| `CheckForEvent_ArmySupplies`, `_BikersRaid`, `_GangstasRaid`, `_BlackOpsRaid`, `_BandOfSurvivors`, `_CHARScientists` | six more announce/raid events | **bot-guarded** (all six) |
+| `RefugeesEventDistrictFactor` | district-factor event, reads the player | **bot-guarded** |
+| `OnNewNight` / `OnNewDay` | skill-upgrade screen, which also opens a full-screen menu | **unguarded** |
+| `PlayerDied` → `HandlePostMortem` | three sequential blocks | **unguarded** |
+
+**So eight of the world-initiated sites are done and the residue is three**, of
+which the two night/day ones matter most — a skill-upgrade screen is a full-screen
+menu, not a one-key prompt, and it is exactly what a parked remote player must not
+be handed. The six raid events gate on
 `map === this.m_Player.location.map && !isSleeping && !isUndead` **[d]**, so a
 parked, awake, living player on their own district gets a hard
-`AddMessagePressEnter` from a dice roll they never made.
+`AddMessagePressEnter` from a dice roll they never made — that part of the
+analysis stands, and it is now the *unguarded* three rather than all nine.
+
+**[?]** The eight guards test `isBotPlayer`, not `m_SimulatingInIdle`. That covers
+the bot case and therefore the auto-play case, but **not** a human who is AFK with
+`IdleAdvance` off — which is the case §4.1 item 3 is actually about. Whether the
+existing guards are the right predicate or whether idle-simulation needs its own
+check is unresolved, and it is the first thing to settle before extending them.
 
 **Item 2's FOV half is not optional.** `UpdatePlayerFOV` does two things and
 both matter:
 
 ```ts
-30208: 		player.location.map!.setViewAndMarkVisited(LOS.fovPoints(this.m_PlayerFOV));
+		player.location.map!.setViewAndMarkVisited(LOS.fovPoints(this.m_PlayerFOV));
 ```
-**[v]** `RogueGame.ts:30208`
+**[v]** `RogueGame.UpdatePlayerFOV` (`RogueGame.ts:36635`; cited as `:30208`)
 
 `setViewAndMarkVisited` clears the previous view first **[d]**, so a stale FOV is
 not merely old data — every tile the player *stopped* being able to see stays
-`isInView = true` **[v]**, `Map.ts:405-415`. There are **141 call sites** of
-`IsVisibleToPlayer` **[v]**, and 22 of the 23 `AddMessage` calls in
+`isInView = true` **[v]**, `Map.setViewAndMarkVisited` (`Map.ts:546`). There are **151 call
+sites** of `IsVisibleToPlayer` **[d, re-measured 2026-10-03: was 141]**, and 22 of
+the 23 `AddMessage` calls in
 `NextMapTurn` are gated on it **[d]**. With a current FOV almost nothing floods;
 with a stale one, everything the player could see when they stopped moving keeps
 reporting. The fix is already in the file at the one place the engine noticed
 the problem:
 
 ```ts
-4901: 			if (actor === this.m_Player) {
-4902: 				this.UpdatePlayerFOV(this.m_Player);
+			if (actor === this.m_Player) {
+				this.UpdatePlayerFOV(this.m_Player);
 ```
-**[v]** `RogueGame.ts:4901-4903`, on the exhaustion-collapse path. Hoisting that
+**[v]** `RogueGame.ts:5863-5864` (cited as `:4901-4903`), on the exhaustion-collapse
+path. Hoisting that
 into the skip path is three lines.
 
 ### 4.2 What real-time does *not* need
 
 **The AI needs no changes.** There are exactly five `isPlayer` reads in
-`web/src/gameplay/ai/` **[d]** and none is about whether the player acted: two
-are "never do this *to* the player" (`BaseAI.ts:2685`, `CivilianAI.ts:434`) and
+`web/src/gameplay/ai/` **[d, re-counted 2026-10-03 — still exactly 5]** and none is
+about whether the player acted: two are "never do this *to* the player"
+(`BaseAI.ts:2908`, `CivilianAI.ts:511`) and
 three select between `FOLLOW_PLAYERLEADER_MAXDIST` and
 `FOLLOW_NPCLEADER_MAXDIST` **[d]** — **both of which are `1`**, so the branch is
 a no-op in all three files. Nothing reads `Session.lastTurnPlayerActed`, which
-exists only to pick bold-vs-faded text in `DrawMessages` (`RogueGame.ts:1590`).
+exists only to pick bold-vs-faded text in `DrawMessages` (`RogueGame.ts:2198`; cited
+as `:1590`) **[d]**.
 
 **`MemorizedSensor` does not make an AI forget a stationary player.** Each sense
 pass prunes percepts past their persistence and then *refreshes* the age of any
@@ -385,7 +485,8 @@ turn. The persistences (10-20 turns **[d]**) matter for a player who *breaks lin
 of sight*, not one who stands still.
 
 **Stamina cannot soft-lock.** `RegenActorStaminaPoints` is called for every
-actor below max, unconditionally, at `RogueGame.ts:4667` **[d]**, at
+actor below max, unconditionally, in `NextMapTurn` (`RogueGame.ts:5598`; cited as
+`:4667`) **[d]**, at
 `STAMINA_REGEN_PER_TURN = 2` **[d]**. A survivor at 0 stamina is back over
 `STAMINA_MIN_FOR_ACTIVITY` in five turns with no input required. Plain movement
 costs no stamina at all **[d]**; only run, jump, melee and corpse-dragging are
@@ -405,19 +506,19 @@ tree** **[d]**. It is written in six places **[d]** and clamped in none.
 
 ### 5.1 The bank is spent inside a frozen turn
 
-`NextMapTurn` is what advances `map.localTime` (`5188` **[d]**), and
-`advancePlayMap` calls it only once `getNextActorToAct` returns `null`
-(`4228-4232` **[d]**). So a player who parked for 50 turns banks 50×100 AP and
+`NextMapTurn` is what advances `map.localTime` **[d]**, and
+`advancePlayMap` (`:4868`) calls it only once `getNextActorToAct` returns `null`
+**[d]**. So a player who parked for 50 turns banks 50×100 AP and
 then spends it **50 actions with the sun, the zombies and the fires all frozen**.
 The bank has to be discarded, not spent.
 
 ### 5.2 The bank breaks the scent rule
 
 ```ts
-15185: 		if (actor.actionPoints > 0)
-15186: 			this.DropActorScents(actor);
+		if (actor.actionPoints > 0)
+			this.DropActorScents(actor);
 ```
-**[v]** `RogueGame.ts:15185`
+**[v]** in `NextMapTurn` (`RogueGame.ts:~18368`; cited as `:15185`)
 
 The alpha10 fix this implements assumes AP is exhausted after one move, so the
 per-turn blanket drop in `NextMapTurn` (`4655-4659` **[d]**) covers the hole.
@@ -425,23 +526,70 @@ per-turn blanket drop in `NextMapTurn` (`4655-4659` **[d]**) covers the hole.
 lays a continuous scent trail through all of it. That is a correctness break —
 AI behaviour diverges — not a balance one.
 
-### 5.3 A real soft-lock, worth fixing regardless of multiplayer
+### 5.3 A soft-lock that is not reachable — measured 2026-10-03, pinned
 
-`actorSpeed` floors at zero:
+**This section was wrong and so was the fix it proposed.** It originally read:
+
+> `actorSpeed` floors at zero ... Reachable in normal play **[?]** — a survivor who
+> is exhausted, dragging a corpse (`÷2`), in army body armour (`-10`) holding a
+> chainsaw (`-10`) walks 100 → 33 → 16 → −4 → **0**. **Fix in Phase 0, with a test.**
+
+The trap's *shape* was right — `getNextActorToAct` never returns an actor with no
+AP and `NextMapTurn` never grants, so an actor at speed 0 is inert for good. The
+arithmetic was wrong twice over, and the conclusion changes:
+
+**`actorSpeed === 0` is unreachable. The floor is 3.**
 
 ```ts
-2354:     return Math.max(Math.floor(speed), 0);
+    return Math.max(Math.floor(speed), 0);
 ```
-**[v]** `web/src/engine/Rules.ts:2354`
+**[v]** `web/src/engine/Rules.ts`, the `actorSpeed` tail
 
-and at 0 the actor is in a stable trap: `getNextActorToAct` (`2171`) never
-returns them and `NextMapTurn` (`4664`) never grants. Nothing can restart them.
-Reachable in normal play **[?]** — a survivor who is exhausted, dragging a
-corpse (`÷2`), in army body armour (`-10`) holding a chainsaw (`-10`, live under
-`Feature.WeaponWeight`) walks 100 → 33 → 16 → −4 → **0**. The exact input needs
-confirming against the CSV column values before the fix is written, but the
-shape of the trap is confirmed by reading both ends of it. **Fix in Phase 0,
-with a test, whether or not multiplayer happens.**
+Every term is read off shipped data, so the minimum is computed rather than
+sampled — heaviest torso armour 10 (`ARMOR_ARMY_BODYARMOR`,
+`ARMOR_CHAR_LIGHT_BODYARMOR`), heaviest weapon 10 (`MELEE_CHAINSAW`),
+`SHIELD_ENCUMBERANCE_PENALTY = 0.75` **[v]**, and **nothing writes
+`doll.body.speed` at runtime** so the base is the model's own value. A base-100
+actor under all seven penalties: `100 → 66 → 33 → 23 → 17 → 7 → 3`.
+
+**Where the original went wrong is the interesting part.** It picked base 33 —
+and there is exactly one actor at base 33, `SEWERS_THING`, the lowest in the game.
+It then applied *every* term, which is where −4 came from. But `SEWERS_THING` is
+undead, so it fails **both** ability gates: `canTire` is false so it never takes
+the `×2/3`, and `hasToSleep` is false so it never takes the `÷2`. The low base and
+the missing multipliers are the same fact, and they cancel.
+
+**Every load-capable actor, re-counted 2026-10-03:** the base-100 survivors and
+police (`MALE_CIVILIAN` through `BLACKOPS_MAN`, plus `CHAR_SCIENTIST`) all land on
+**3**; the two base-125 undeads who *can* tire but never sleep — `JASON_MYERS` and
+`DERANGED_PATIENT` — land on **22**; and `SEWERS_THING` lands on 3 as well, for the
+same non-tiring reason. **`CHAR_SCIENTIST` is base 100, not 125** — an earlier draft
+of this paragraph grouped it with the 125s and would have put it at 22. That was the
+one line here wrong on a re-read rather than on a fresh measurement, which is the
+whole argument for re-reading a table you have already checked once.
+
+**So the clamp stays as it is.** `Rules.cs:4680-4681` has the identical one — *"done,
+speed must be >= 0"*, `Math.Max((int)speed, 0)` — and raising it to 1 would be a
+divergence from the reference for a case that cannot occur. That was the proposed
+fix, and it should not be applied.
+
+**Delivered as a pin instead** — `web/tests/actor-speed-floor.test.ts`, six cases
+that recompute the worst case per actor model off the real models and fail with a
+readable message if any load-capable actor reaches the clamp. Mutation-checked:
+setting `POLICEMAN`'s `SPD` to 15 in `Actors.json` fails it, naming the actor and
+its floored speed. The margin is one CSV cell wide, which is the whole argument for
+a test rather than a comment.
+
+Two of the pin's own first-draft assertions were wrong, and both are worth knowing
+before anyone extends it: a hand-written sum for `SEWERS_THING` (`33 × ⅔ − 20` is 2,
+not 0), and probing `canActorActNextTurn` with a `{actionPoints: 0}` literal, which
+throws rather than answering because it reaches `actor.doll.body.speed`. **These
+predicates cannot be stubbed** — only driven with a real actor.
+
+**What is genuinely left is the reachability caveat this section always flagged**:
+a *runtime* path to 0 needs a temporary actor with base < 33 that can tire, and
+nothing in the shipped content produces one. That is a content question, not a
+scheduler bug.
 
 ---
 
@@ -451,14 +599,14 @@ This is the real work, and it is orthogonal to the network.
 
 | # | assumption | evidence | cost |
 |---|---|---|---|
-| 1 | **`m_Player` is *the* player** | 387 references **[v]**, written in 3 places (`6660`, `RefreshPlayer:27834`, `HandleReincarnation:28848`) | rename the concept to *the acting player*; the reads mostly keep working |
-| 2 | **one FOV, written onto the map** | `m_PlayerFOV` → `setViewAndMarkVisited` (`30208`) **[v]**; `IsVisibleToPlayer` at 141 sites **[v]** | **zero** for turn-passing — each client computes its own FOV from its replica |
+| 1 | **`m_Player` is *the* player** | **427** references **[d, re-measured 2026-10-03: was 387]**, written in 3 places: `HandlePlayerActor` (`:8016`), `RefreshPlayer` (`:34220`), `HandleReincarnation` (`:35047`) | rename the concept to *the acting player*; the reads mostly keep working |
+| 2 | **one FOV, written onto the map** | `m_PlayerFOV` → `setViewAndMarkVisited` **[v]**; `IsVisibleToPlayer` at **151** sites **[d]** | **zero** for turn-passing — each client computes its own FOV from its replica |
 | 3 | **one camera** | `m_MapViewRect` | **zero** for turn-passing |
-| 4 | **one current map, and the world clock is gated on it** | `advancePlayDistrict:4065` **[v]** `district === currentMap?.district` | with two players in two districts, only one ticks the clock **[d]** |
-| 5 | **game over is one player's life** | `GameLoop:1790-1794` `while (m_Player != null && !m_Player.isDead …)` **[v]**; `advancePlayDistrict:4051-4057` runs `HandleReincarnation` and bails on `m_Player.isDead` **[v]** | becomes "no player left"; the 25-site death → post-mortem → hi-score flow becomes per-player or needs a spectator mode |
-| 6 | **one log, no filtering** | `MessageManager` has none **[d]**; `MAX_MESSAGES = 6` (`RogueGame.ts:339` **[v]**) clears the visible strip wholesale, `MESSAGES_HISTORY = 59` (`340` **[v]**) ring-buffers the rest | fine with a current FOV; a flood without one |
+| 4 | **one current map, and the world clock is gated on it** | `advancePlayDistrict` (`:4628`) **[v]** `district === currentMap?.district` | with two players in two districts, only one ticks the clock **[d]** |
+| 5 | **game over is one player's life** | `GameLoop`'s `while` (`:2398`) `while (m_Player != null && !m_Player.isDead …)` **[v]**; `advancePlayDistrict` calls `HandleReincarnation` and bails on `m_Player.isDead` (`:4646`) **[v]** | becomes "no player left"; the 25-site death → post-mortem → hi-score flow becomes per-player or needs a spectator mode |
+| 6 | **one log, no filtering** | `MessageManager` has none **[d]**; `MAX_MESSAGES = 6` and `MESSAGES_HISTORY = 59` (**`RogueGame.ts:485-486` [v]**) clear the visible strip wholesale and ring-buffer the rest. **Note [corrected 2026-10-03]: these were cited as `RogueGame.ts:339-340` and are now module-level `export const`s, not fields** — the *values* are unchanged, but anything reading them off the class is wrong | fine with a current FOV; a flood without one |
 | 7 | **one score** | `Scoring` has one `turnsSurvived`, one achievement set, one hi-score entry | decide shared-vs-per-player before Phase 1; recommendation is **do not build a scoreboard yet** |
-| 8 | **the save is single-player** | `root.player` is one ref (`sessionGraphRoot.ts:74` **[v]**); `findPlayerActor` returns the first match (`130` **[v]**); `reattachPlayer` attaches one controller (`144` **[v]**); `Actor._controller` is `skip`ped (`specs.ts:699` **[v]**); `Map.m_checkNextActorIndex` is `skip`ped as a "cache" (`specs.ts:484` **[v]**) | `players[]` + a per-actor controller tag + `GRAPH_VERSION` bump |
+| 8 | **the save is single-player** | `root.player` is one ref (`sessionGraphRoot.ts:74` **[v, re-verified]**); `findPlayerActor` returns the first match (`:130` **[v, re-verified]**); `reattachPlayer` attaches one controller (`:144` **[v, re-verified]**); `Actor._controller` is `skip`ped (`specs.ts:738` **[v]**, cited as `:699`); `Map.m_checkNextActorIndex` is `skip`ped as a "cache" (`specs.ts:485` **[v]**) | `players[]` + a per-actor controller tag + `GRAPH_VERSION` bump |
 
 **Items 2, 3 and 4 are the reason turn-passing was chosen.** They are the three
 that are genuinely expensive, and turn-passing makes all three free: only the
@@ -468,12 +616,14 @@ correct at a time, and each client is single-player by construction.
 **Item 8 has two one-line landmines** that matter for reconnect rather than for
 the first session:
 
-- `DiceRoller.state` is `private state: number` **[v]** `DiceRoller.ts:9` and is
-  **not serialised**; `LoadGame` rebuilds the roller from the seed
-  (`RogueGame.ts:26086` **[v]**), so the sequence restarts. One `uint32` and a
-  root field.
+- `DiceRoller.state` is `private state: number` **[v, re-verified]** `DiceRoller.ts:9`
+  and is **not serialised** — `grep -c DiceRoller specs.ts` is still **0**, so it is
+  not in the graph at all, not merely skipped. `LoadGame` rebuilds the roller from
+  the seed (`RogueGame.ts:2673` **[v]**, cited as `:26086`), so the sequence
+  restarts. One `uint32` and a root field.
 - `Map.m_checkNextActorIndex` is the live turn cursor, skipped as a cache. Safe
-  at a turn boundary, wrong mid-turn **[d]**. Carry it.
+  at a turn boundary, wrong mid-turn **[d]**. Carry it. **Re-verified 2026-10-03:
+  still `{ kind: "skip" }` at `specs.ts:485`, and still absent from the graph.**
 
 ---
 
@@ -493,18 +643,55 @@ InputHandler┘  constructed,            │         ▼
 ```
 
 **The server runs the shipped game.** `NetUI` is a drop-in for `NullRogueUI`:
-`IRogueUI` has 44 methods of which exactly **three block** — `UI_WaitKey`
+`IRogueUI` has **43** methods **[d, re-measured 2026-10-03: it said 44]** of which
+exactly **three block** — `UI_WaitKey`
 (`IRogueUI.ts:80` **[v]**), `UI_Wait` (`140` **[v]**) and `UI_PreloadImages`
 (`159` **[v]**) **[d]**. The other 41 are fire-and-forget, of which 8 are
 state-consuming peeks and 2 are injection seams (`UI_PostKey`, `UI_PostMouseButtons`)
-**[d]**. So the whole blocking-input surface of a 30,000-line engine is one
-method.
+**[d]**.
+
+> **[corrected 2026-10-04 by Phase 0 — this paragraph's conclusion is wrong, and the
+> error is load-bearing.]** *"So the whole blocking-input surface of a 36,653-line
+> engine is one method"* is true and useless. **The player's turn does not go through
+> any of the three.** It goes through `WaitKeyOrMouse`, which **polls**
+> `this.m_UI.UI_PeekKey()` in a `do…while` and **never calls `UI_WaitKey`**:
+>
+> ```ts
+> this.m_UI.UI_PeekKey();   // consume keys to avoid repeats
+> do {
+>   const inKey = this.m_UI.UI_PeekKey();
+> ```
+>
+> The play loop is therefore driven by a **synchronous, non-blocking, argument-less**
+> peek — counted among the "8 state-consuming peeks" this paragraph dismisses in a
+> subordinate clause. Measured, not reasoned: the first version of the Phase 0 test
+> scripted `UI_WaitKey`, and the keys were never seen.
+>
+> **What that costs the design:**
+>
+> - **A promise-returning `NetUI` cannot answer the play loop.** A peek returns
+>   `GameKeyEvent | null` *now*; a socket cannot answer *now*. Either the peek
+>   blocks — abandoning both the poll design and the timeout-based `IdleAdvance`
+>   §2.1 calls load-bearing for a disconnected peer — or the loop becomes an
+>   `await`, which is a real change to the engine's hottest loop.
+> - **Per-player UI resolution is necessary and not sufficient.** "`m_UI` has to
+>   become *resolved* rather than fixed" (below) gives each player its own object.
+>   That does not help while the loop polls, because the poll cannot suspend on
+>   that player's socket — it would have to return `null` and burn CPU, which is
+>   the "modal dialog with nobody behind it" risk of §4.1 item 3 arriving early.
+>
+> **So Phase 2's `NetUI` is bigger than one drop-in class**, and the decision it has
+> to make first is *peek-blocks or loop-awaits*. That question should be settled
+> before Phase 2 is scheduled, not inside it. **[?]** — no measurement of which is
+> cheaper has been made, and the poll has a real advantage (it is why the browser
+> build can drive a turn without a promise per keystroke) that an `await` loop has
+> to reproduce.
 
 **The client runs the shipped renderer** against a replica of its own map that it
 never simulates. It computes its own FOV, because `UpdatePlayerFOV` is a pure
 function of the map, the actor's position and the light sources in it — and all
 of those are in the snapshot. **This is what makes item 2 in §6 free**, and it
-is why the 141 `IsVisibleToPlayer` sites never need to change.
+is why the 151 `IsVisibleToPlayer` sites never need to change.
 
 **The elegant consequence.** With two players, `m_UI` has to become *resolved*
 rather than fixed — roughly
@@ -521,7 +708,7 @@ JSON frames. No binary, no delta encoding, on day one.
 |---|---|---|
 | `hello` | client → server | protocol version, content version |
 | `welcome` | server → client | `PROTOCOL_VERSION`, `GRAPH_VERSION`, seed, ruleset, your actor id, session options incl. `IdleAdvance` |
-| `input` | client → server | one `GameKeyEvent` — `{key, keyCode, code, shift, ctrl, alt}` (`IRogueUI.ts:11-31` **[d]**) |
+| `input` | client → server | one `GameKeyEvent` — `{key, keyCode, code, shift, ctrl, alt}` (`IRogueUI.ts:11` **[d, re-verified]**) |
 | `mapState` | server → client | this player's map, per turn |
 | `hud` | server → client | world clock, scoring, new log lines |
 | `ping` | both | latency |
@@ -539,8 +726,11 @@ A **per-map snapshot codec**, `engine/serialization/mapSnapshot.ts`.
 **~5 s** **[v]** `tests/save-graph-roundtrip.test.ts:93-98`. Fine for a join,
 hopeless per turn. But a single map is a *tree*, not a graph, so a per-map
 encoding drops the `$ref` indirection entirely and can reuse the existing packed
-`tilesGrid` codec (`specs.ts:313` **[v]**) plus the `refList`-shaped lists at
-`specs.ts:263/398/461/486/496` **[v]** with local indices. Roughly 200 lines,
+`tilesGrid` codec (`specs.ts:314` **[v]**) plus the `refList`-shaped lists at
+`specs.ts` **[v]** with local indices — `mapsList:449`, `actorsList:493`,
+`mapObjectsList:494`, `corpsesList:495`, `itemsList:577`, plus `boringForList:649`
+and the four on `Actor` at `760-764`. **All five lines this originally cited
+(`263/398/461/486/496`) were wrong** — every one is something else. Roughly 200 lines,
 and `Map` gains a `replaceStateFrom(json)`.
 
 **Start with a full per-map snapshot per turn. Do not build a diff.** A 3×3
@@ -548,15 +738,28 @@ world is 56 maps, 5,800 map objects and 970 actors **[v]**, so one map is
 roughly 17 actors and 100 map objects; call it 150-250 KB of JSON. Clipping to
 the client's FOV plus one tile of margin would cut the tile portion to ~23% of a
 50×50 map **[?]**, but that is an optimisation to add after measuring, not a
-prerequisite to build. `Map.assertActorIntegrity()` already runs every turn
-**[v]** and runs on the client replica for free, which makes it a live invariant
-check on the replication.
+prerequisite to build. `Map.assertActorIntegrity()` **[corrected 2026-10-03: not
+"already runs every turn" — it is called from `HeadlessRunner.ts:207` only, and
+there is no call in `RogueGame.ts`, so today it guards the sim and not the game]**
+would run on the client replica for free once invoked there, which would make it a
+live invariant check on the replication. That is one call site, not a given.
 
 ### 7.3 Deployment
 
-The Dockerfile already runs `node dist-server/server/index.js` on 8080
-**[v]** `server/index.ts:26`, so it stops being "not the deploy path" and becomes
-the deploy. Two constraints:
+**[corrected 2026-10-03] This subsection's opening claim was wrong, and
+instructively so.** It said the Dockerfile "stops being *not the deploy path* and
+becomes the deploy". `Dockerfile:3-5` says the opposite **in capitals**:
+
+> **NOT the deploy path.** The site is published by `.github/workflows/pages.yml`,
+> as a static bundle assembled from `docs/` and the game.
+
+So there is no existing Node-in-production path to inherit. The Dockerfile does
+still run `node dist-server/server/index.js` on 8080 **[v]**
+`web/server/index.ts:26`, and it remains a reasonable *base image* for a
+multiplayer server — but it is a fresh deployment decision, not a repurpose of an
+existing one, and the bundle it copies (`dist-server/`) is not currently what ships.
+
+Three constraints, two of them unchanged:
 
 - **The service worker is hostile to a same-origin WebSocket.** `sw.js` bails on
   `if (url.origin !== self.location.origin) return;` **[v]** `public/sw.js:146`,
@@ -564,10 +767,22 @@ the deploy. Two constraints:
   guards all pass, the handler calls `event.respondWith` on a WebSocket request,
   and the connection dies **[d]**. Either serve the bundle from Pages and the
   socket from the VPS, or skip SW registration when joining a session — one line
-  beside `main.ts:103` **[v]**, which already swallows registration failures.
-- **No server state exists today.** `server/index.ts` is 28 lines of
-  `express.static` plus an SPA fallback **[v]**. There is no `ws` dependency, no
-  upgrade handler, no session store. That is all new and all small.
+  in `main.ts`'s `registerServiceWorker()`, which already swallows registration
+  failures **[v]**. **Pages + a cross-origin VPS socket is the arrangement the
+  current deploy already implies**, so that is the cheaper of the two.
+- **No server state exists today.** `web/server/index.ts` is 28 lines of
+  `express.static` plus an SPA fallback **[v]** — re-measured 2026-10-03, still 28.
+  There is no `ws` dependency, no upgrade handler, no session store. That is all
+  new and all small.
+- **The version handshake now has something to point at.** §7.1 leans on
+  `GameSaveManager.VERSION` being written but never read **[d]**. Since this was
+  written there is also `web/src/engine/GameVersion.ts` exporting
+  `GAME_VERSION = "0.9.2"` — the *app* version shown in the chrome, extracted
+  because it was written out in three places. That is exactly the "content
+  version" the `hello` frame wants **[d]**, so it should be reused there rather
+  than adding a third version notion alongside `PROTOCOL_VERSION` (wire format)
+  and `GameSaveManager.VERSION` (save format). All three are genuinely different
+  axes; the mistake would be inventing a fourth.
 
 ---
 
@@ -578,18 +793,81 @@ gate + build) is green at every one **[d]**.
 
 ### Phase 0 — the claim, as one test
 
-Two `PlayerController` actors in one map, headless, two turns. Assert: each acted
-exactly once, the world advanced exactly one map turn, and neither player's keys
-reached the other. About 40 lines, in the sim — **per `BROWSER_PORT_PLAN.md`
-§1.4a, this belongs in the headless harness, not a browser, and a browser check
-does not substitute for it.**
+**DONE 2026-10-04. The gate is green — the round-robin assumption holds.**
+`web/tests/multiplayer-phase0-roundrobin.test.ts`, 2 cases. Two `PlayerController`
+actors on one map, one map turn, headless.
 
-Also in this phase, because it is a bug independent of multiplayer: the
-`actorSpeed === 0` strand (§5.3), with a test that walks the specific input to
-zero and asserts the actor is still reachable.
+Measured, on a real 1×1 world played 12 turns by the existing harness first:
 
-**Gate:** the test is green. **If it is not, stop** — the round-robin assumption
-is wrong and §3 through §7 are void.
+| assertion | result |
+|---|---|
+| two player-controlled actors on the map | ✅ |
+| each picked **exactly once** within one map turn | ✅ order `A,B` |
+| the two player picks **alternate** (not `A,A,B,B`) | ✅ |
+| the pick sequence **ends in `null`**, which is what runs `NextMapTurn` | ✅ |
+| world advanced **exactly one** map turn | ✅ |
+| the turn visited every actor with AP, not just the two players | ✅ |
+
+**Mutation-checked**, because a test that cannot fail is a comment with a build
+step: adding to the scheduler the player filter §3 says does not exist — "return
+`null` for anyone but the first player" — fails it with
+`player B was picked exactly once (order was A): expected +0 to be 1`.
+
+So **§3 through §7 are not void**, and the plan's central bet is settled: no
+scheduler change is needed to make the engine alternate between two players.
+
+Also in this phase, because it was a bug independent of multiplayer: the
+`actorSpeed === 0` strand. **Done 2026-10-03, and the answer was not the one this
+plan assumed** — measured unreachable and pinned rather than fixed, see §5.3. The
+only residue is a *content* question (a temporary actor with base < 33 that can
+tire), which needs no Phase 0 work.
+
+#### What Phase 0 found that the plan had wrong
+
+**The player's turn is driven by a synchronous *peek*, not by a blocking wait.**
+`WaitKeyOrMouse` polls `this.m_UI.UI_PeekKey()` and never calls `UI_WaitKey`. §7
+builds the whole `NetUI` case on "`IRogueUI` has 43 methods of which exactly three
+block", naming `UI_WaitKey`, `UI_Wait` and `UI_PreloadImages` — and the one input
+path a networked player actually needs is **none of those three**. It is a
+non-blocking peek that takes no argument.
+
+Two consequences, both Phase 2/3 decisions this test does not make:
+
+- **A promise-returning `NetUI` cannot answer the play loop.** Either the peek
+  blocks — which gives up the poll design and the timeout-based `IdleAdvance` that
+  §2.1 calls load-bearing — or the loop becomes an `await`. §7's "`m_UI` has to
+  become *resolved* rather than fixed" is necessary and **not sufficient**: giving
+  each player its own `IRogueUI` object does not help while the loop polls, because
+  a poll cannot suspend on a socket.
+- **Phase 0's third assertion is unanswerable as written.** "Neither player's keys
+  reached the other" cannot be tested, because `UI_PeekKey()` takes no argument —
+  the engine never tells the UI who it is asking. The test asserts the *count*
+  instead (2 peeks per player turn, 4 total, all from one queue) and records the
+  limitation rather than papering over it. This is the one place the plan asked for
+  something the current `IRogueUI` shape cannot express, which is precisely what a
+  Phase 0 gate is for.
+
+**Two setup hazards, both of which cost this phase three runs** and are recorded in
+the test's header because neither is obvious:
+
+- **A wrong input seam hangs rather than fails.** Overriding `UI_WaitKey` (the
+  obvious choice, and the method §7 calls blocking) leaves the play loop reading
+  `NullRogueUI`'s idle cycle — `Enter, Escape, n, y` — where `Escape` translates to
+  `PlayerCommand.NONE`, which `break`s the switch **without** setting
+  `loop = false`. The turn never ends, no action points are spent, and the
+  scheduler picks the same player forever.
+- **That hang cannot be timed out.** Every iteration awaits an already-resolved
+  promise, so it runs entirely in the microtask queue and starves the macrotask
+  one: Vitest's test timeout never fires, and neither does a `Promise.race` against
+  `setTimeout`. The only thing that stops it is throwing from inside the input
+  seam, which is why the test's double carries a peek cap. **Any future networked
+  test will hit this**, because "no input arrives" is the failure mode a network
+  code has by definition.
+
+**Not yet done, and deliberately:** the plan says "two turns". This is one map turn,
+which is the *sharper* claim — the trace in §3 is A, B, null → `NextMapTurn`, and a
+second turn only re-tests it. Phase 1's gate ("a two-player headless run survives 50
+turns") is where repetition belongs, because it also needs the save format.
 
 ### Phase 1 — engine, no network
 
@@ -606,6 +884,32 @@ is separate from Phase 0.
 
 **Gate:** a two-player headless run survives 50 turns, and the two-player save
 round-trips through the existing bijection test.
+
+**[corrected 2026-10-03] One thing this phase would now build on, which did not
+exist when the phase was written — and one caveat.** `engine/actions/ActionGame.ts`
+has landed: a structural interface for the slice of `RogueGame` that `ActorAction`
+implementations may reach, replacing a `type Game = any` that had been `any` since
+the port began. It is exactly **the 38 lowercase `do*` aliases plus `rules`**, and
+every member was measured rather than chosen (`Actions.ts` reaches 39 members on
+`this.game`, so an unused member here would be a false claim that `implements`
+then fails on).
+
+Two consequences for this phase:
+
+- **It is the natural place a player list has to appear.** The `do*` block is Hub 1
+  — §6.8 of the port plan keeps it on `RogueGame` permanently — and it operates on
+  whoever is acting. A `Game`-shaped seam that is already typed, already narrow, and
+  already implemented-by is a far better place to hang "the acting player" than a
+  raw field rename across 427 references.
+- **It does not reduce the 427.** Typing the seam means those calls are *checked*,
+  not that they are *correct*. The reads that quietly meant "the player" rather than
+  "whoever is acting" are exactly what a type cannot catch, so the phase's gate —
+  run it behind the two-player test, not behind review — is unaffected.
+
+**[?]** Whether `ActionGame` should grow a `players` accessor, or whether the player
+list belongs on `Session` with `ActionGame` reading through it, is undecided here.
+It is a five-minute question with a Phase 1 answer, and it is the first thing to
+settle before starting.
 
 ### Phase 2 — server
 
@@ -624,10 +928,19 @@ integration test and it is the one that would catch a re-entrancy bug.
 FOV. `mapSnapshot.ts` lands here (it is the client's half of the contract).
 
 **Stop condition:** if a replica-only `RogueGame` cannot `RedrawPlayScreen`
-cleanly, then `BROWSER_PORT_PLAN.md` §6 Wave 2 — the render cluster at
-`20517–23492`, 2,976 lines and 11 outbound calls, already recorded as the
-highest-value extraction **[d]** — becomes a **prerequisite** rather than a
-nicety, and this plan stops until that wave has landed.
+cleanly, then `BROWSER_PORT_PLAN.md` §6 Wave 2 — the render cluster, already
+recorded there as the highest-value extraction **[d]** — becomes a
+**prerequisite** rather than a nicety, and this plan stops until that wave has
+landed.
+
+**[corrected 2026-10-03] the line range this used to cite, `20517–23492`, is dead.**
+Every one of its boundary lines now lands on unrelated code — that section's own
+re-measurement notes the same thing about §6.2's table, and the port plan lists
+"§6.2's 9-row line-range table is dead" under *also wrong, not yet fixed*. The
+cluster is still ~2,976 lines with 11 outbound calls; only the numbers are stale.
+**§6.4's gate is the thing to read instead**, and it is unchanged: Wave 0 must
+exist first (`engine/GameContext.ts` and `tests/helpers/game.ts`, neither of which
+does). So this stop condition cannot be reached before Wave 0 lands anyway.
 
 ### Phase 4 — persistence
 
@@ -671,8 +984,10 @@ serialiser already calls this a project of its own:
 > a controller points back at its actor and, in the AI case, holds a whole
 > perception cache, and rebuilding those is a project of its own.
 
-**[v]** `specs.ts:684-698`. Lockstep is right for a platformer and wrong for a
-970-actor simulation with no event bus.
+**[v]** `specs.ts` — **corrected 2026-10-03: cited as `:684-698`, which is a
+backpack-inventory codec and nothing to do with this. The quote is at `:726-730`,
+in the controller's docblock, and is otherwise verbatim.** Lockstep is right for a
+platformer and wrong for a 970-actor simulation with no event bus.
 
 **A delta protocol.** There are no listeners or callbacks anywhere in the
 engine **[d]** — every mutation is a direct field write inside ~500 `Do*`/`On*`
@@ -682,13 +997,13 @@ snapshot sidesteps the problem entirely, and §7.2 explains why the size is
 acceptable.
 
 **Shared fog of war / simultaneous views.** This is the one that would force
-`m_PlayerFOV` to become per-viewer across 141 call sites, with
+`m_PlayerFOV` to become per-viewer across 151 call sites, with
 `Tile.isInView` written onto the map **[v]**. Turn-passing avoids it completely
 because each client is single-player by construction. If it is ever wanted, the
 answer is *separate processes*, not a refactor of visibility — which is
 another argument for the architecture in §7.
 
-**Split-screen in one process.** The same 141 sites, plus two canvases, plus the
+**Split-screen in one process.** The same 151 sites, plus two canvases, plus the
 `LOGICAL_W/LOGICAL_H` constants `CanvasUI.ts` deliberately duplicates rather
 than imports **[d]**.
 
@@ -699,13 +1014,13 @@ than imports **[d]**.
 | risk | why it is real | what to do |
 |---|---|---|
 | **Phase 0's test is not green** | §3 is a reading of 15 lines of scheduler, and reading is not running | Stop. Everything downstream assumes it. |
-| **The `m_Player` → acting-player rename is bigger than it looks** | 387 references **[v]**; the ones that quietly meant "the player" are indistinguishable from correct ones by inspection | Run it behind the two-player test, not behind review. A read that is wrong is not a compile error and not a `tsc` failure. |
+| **The `m_Player` → acting-player rename is bigger than it looks** | **427** references **[d]**; the ones that quietly meant "the player" are indistinguishable from correct ones by inspection | Run it behind the two-player test, not behind review. A read that is wrong is not a compile error and not a `tsc` failure. |
 | **The client's render-only `RogueGame` does not `RedrawPlayScreen` cleanly** | Untested. `RogueGame` mixes simulation and drawing in one class by design (§6 of the port plan calls the split overdue) | Phase 3's stop condition. §6 Wave 2 is the fallback, and it is already planned. |
 | **A stale cached bundle talks to a new server** | cache-first `/assets/*` **[d]**, no version handshake anywhere | `PROTOCOL_VERSION` in `hello`. Non-negotiable. |
-| **A modal dialog with no human behind it** | six world-initiated `AddMessagePressEnter` sites **[v]**, one guard, and a comment asserting the others are safe | Phase 5 item 3. Fix it before the wall clock, not after. |
+| **A modal dialog with no human behind it** | **44** `AddMessagePressEnter` call sites now **[d, re-measured 2026-10-03: this said six]**, of which eight world-initiated ones already carry an `isBotPlayer` guard — so the risk is real but smaller than stated, and the guard pattern to copy exists | Phase 5 item 3, minus the eight already done. Fix it before the wall clock, not after. |
 | **Per-turn payload is too large** | 150-250 KB per map **[?]** — extrapolated, not measured | Measure before optimising. Clip to FOV, then diff, in that order. |
-| **A player is stranded at `actorSpeed === 0`** | §5.3, reachable in normal play **[?]** | Phase 0, regardless of everything else. |
-| **Desync between client and server** | The client holds a replica it never simulates, so drift is expected by construction | `Map.assertActorIntegrity()` on the replica is a free check. Periodic full resync is the backstop. |
+| ~~**A player is stranded at `actorSpeed === 0`**~~ | **Retired 2026-10-03.** §5.3 said this was reachable in normal play **[?]**; measured, it is not — the floor is 3, because the one actor with a low enough base is undead and so takes neither multiplier. Pinned by `web/tests/actor-speed-floor.test.ts` | Nothing. **Do not apply the `Math.max(…, 1)` this plan used to prescribe** — it is a divergence from `Rules.cs:4681` for an unreachable case |
+| **Desync between client and server** | The client holds a replica it never simulates, so drift is expected by construction | `Map.assertActorIntegrity()` on the replica — **but it is not wired into `RogueGame` today** (§7.2), so this is a call site to add, not a free check. Periodic full resync is the backstop. |
 
 ---
 
@@ -728,3 +1043,77 @@ than imports **[d]**.
    the `fireEvent` raid calendar? Probably yes for the minimap and the day
    counter, and it is not yet enumerated **[?]**. It is the most likely source of
    a Phase 3 surprise.
+6. **Does the play-loop peek block, or does the loop become an `await`?**
+   **Added 2026-10-04, and it is now the first question in this list**, because
+   Phase 0 showed that `NetUI` cannot be a drop-in (§7): `WaitKeyOrMouse` polls
+   `UI_PeekKey()` synchronously, and a socket cannot answer a poll. The two answers
+   cost very different things and they should be compared *before* Phase 2 is
+   scheduled rather than discovered inside it:
+   - **peek blocks.** `NetUI` stays a drop-in and the engine barely changes — but
+     the poll design and the timeout-based `IdleAdvance` both go, and §2.1 calls the
+     latter load-bearing for a disconnected peer.
+   - **loop awaits.** The engine's hottest loop gains a promise per iteration, and
+     the browser build loses whatever the poll buys it. The timeout path can
+     survive as an explicit race.
+   **[?]** No measurement of either has been made. §6.9's existing scanner tests
+   and the first-person goldens are what would catch a regression in the second
+   option, so they are the prior art for costing it.
+
+---
+
+## Citation trust boundary
+
+Written 2026-10-03, and this pass **did** the re-grep it originally deferred. Every
+`file:line` in the body is now either a current line number attached to a named
+symbol, or a symbol alone. The claims did not move; the anchors did.
+
+**Six were wrong in a way that mattered, not just drifted:**
+
+| Was | Now | What was wrong |
+|---|---|---|
+| `specs.ts:684-698` — the authority for rejecting lockstep | `specs.ts:726-730` | cited range is a backpack-inventory codec. The quote was real and verbatim, just somewhere else entirely |
+| `specs.ts:263/398/461/486/496` — the `refList` fields §7.2 reuses | `specs.ts:449,493,494,495,577` (+ `649`, `760-764`) | **all five wrong.** Every one is something else; §7.2's codec sketch pointed at five unrelated lines |
+| `RogueGame.ts:339-340` — `MAX_MESSAGES` / `MESSAGES_HISTORY` | `RogueGame.ts:485-486` | values unchanged, but these are now **module-level `export const`s, not fields** — anything reading them off the class is wrong |
+| `RogueGame.ts:4244` — the `isPlayer` read after the scheduler's pick | `RogueGame.ts:4890`, in `advancePlayMap` | moved; still the same read, still after the pick |
+| `RogueGame.ts:1329` then `:1934-1939` — the constructor | `RogueGame.ts:837` | moved twice, and gained a fourth `sound` parameter in between |
+| `RogueGame.ts:111,234` + `GameOptions.ts:23` — the three `@ui` leaks | `:112, :276, :23` | moved, **and there are four now** — `@ui/ActionMenu` arrived with the action menu and nobody counted |
+
+**Re-verified as still exact, no correction needed** — these are the short, stable
+files where a line number *is* the right unit and nothing has split them:
+`sessionGraphRoot.ts:74/130/144`, `SessionGraph.ts:56` (`GRAPH_VERSION` still 1),
+`DiceRoller.ts:9`, `IRogueUI.ts:11` and all three blocking methods at `:80/140/159`,
+`HeadlessRunner.ts:207`, `specs.ts:314` (`tilesGrid`), `specs.ts:485`
+(`m_checkNextActorIndex` still `{ kind: "skip" }`), `web/server/index.ts:26`,
+`Rules.ts:297` (`SHIELD_ENCUMBERANCE_PENALTY = 0.75`),
+`Rules.ts:138` (`STAMINA_REGEN_PER_TURN = 2`), and the C# clamp at
+`Rules.cs:4680-4681` — **which is the one that decides §5.3, so it was read rather
+than assumed.**
+
+**Both of §3's load-bearing claims re-read and unchanged**: the scheduler is still
+fourteen lines with no player filter, and `isPlayer` is still a type test rather than
+an identity field. If either had changed, §3 through §7 would be void.
+
+**Counted again** (`[d]`, and these move): 151 `IsVisibleToPlayer` sites; 427
+`m_Player` references; 43 `IRogueUI` methods; 44 `AddMessagePressEnter` call sites;
+8 `isBotPlayer` guards (`NationalGuard`, `ArmySupplies`, `BikersRaid`, `GangstasRaid`,
+`BlackOpsRaid`, `BandOfSurvivors`, `CHARScientists`, `RefugeesEventDistrictFactor`);
+exactly 5 `isPlayer` reads in `ai/`; **4** `@ui` imports from `engine/`.
+
+**Still worth knowing before Phase 1** (the `DiceRoller` and `refList` items are
+Phase 4 and Phase 3 respectively; the Wave 0 one gates Phase 3's stop condition):
+
+- **`DiceRoller` is not in the save graph at all** — `grep -c DiceRoller specs.ts`
+  is 0, so Phase 4 item 1 is a root field, not a skip-list edit. Slightly less work
+  than §6 item 8 implied.
+- **The `refList` count doubled.** There are now **ten** `{ kind: "refList" }`
+  fields, not the five §7.2 assumed. The codec sketch in §7.2 is unaffected in shape
+  but its inventory was short by half.
+- **§6.4's Wave 0 deliverables still do not exist**, so §8 Phase 3's stop condition
+  is unreachable until they do — and three of §6's Wave 1 modules have landed
+  *without* them, which means §6's sequencing is not a schedule.
+
+**The `[v]` / `[d]` / `[?]` convention stays**, because it is the thing that made
+this document findable: every claim is labelled by how it was arrived at. What
+changed is that the labels now have a floor under them — a `[v]` next to a symbol
+means the symbol was re-read, and after this pass that is true of every one in the
+body. Keep it.
