@@ -7,8 +7,13 @@ import {
   setImageSet,
   getImageSet,
   spriteChainFor,
+  isFolderBacked,
 } from "@engine/AssetPaths";
 import { GameOptions } from "@engine/GameOptions";
+import { existsSync, readdirSync } from "node:fs";
+import { join, relative } from "node:path";
+
+const IMAGES_DIR = join(__dirname, "../public/assets/images");
 
 /**
  * Sprite-style routing.
@@ -163,7 +168,17 @@ describe("the option", () => {
   });
 
   it("is reachable, because IMAGE_SETS is what the options screen bounds against", () => {
-    expect(IMAGE_SETS).toContain("genesis_actors_on_deonapocalypse");
+    expect(IMAGE_SETS).toContain("civ13");
+    // And selecting it resolves through it, falling back to classic for the one
+    // sprite it does not ship.
+    try {
+      setImageSet("civ13");
+      expect(getImageSet()).toBe("civ13");
+      expect(imagePathIn("civ13", "Actors/zombie")).toContain("/images/civ13/");
+      expect(spriteChainFor("civ13", "menu_title")).toEqual(["civ13", "classic"]);
+    } finally {
+      setImageSet(DEFAULT_IMAGE_SET);
+    }
   });
 
   it("can be selected, and an unknown name still falls back to classic", () => {
@@ -190,5 +205,86 @@ describe("imagePathIn", () => {
     expect(imagePathIn("deonapocalypse_v9_r1", "Tiles\\Decoration\\wall")).toMatch(
       /assets\/images\/deonapocalypse_v9_r1\/Tiles\/Decoration\/wall\.webp$/,
     );
+  });
+});
+
+describe("civ13", () => {
+  /**
+   * The measurements behind civ13 being a *complete* set rather than a variant.
+   *
+   * Recorded because the decision is not obvious from the folder: Genesis shipped
+   * all seven categories and turned out to be a variant of the classic set, which
+   * is what made this a routing system at all. A set that looks like a pack can be
+   * a variant, and getting that wrong produces an option that looks right and is
+   * quietly wrong. So the numbers are pinned rather than assumed.
+   */
+  const idsIn = (set: string): Set<string> => {
+    const out = new Set<string>();
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const p = join(dir, entry.name);
+        if (entry.isDirectory()) walk(p);
+        else if (entry.name.endsWith(".db")) continue;
+        else out.add(relative(join(IMAGES_DIR, set), p).replace(/\\/g, "/").replace(/\.[^.]+$/, ""));
+      }
+    };
+    walk(join(IMAGES_DIR, set));
+    return out;
+  };
+
+it("is a folder, so the ordinary single-chain shape applies", () => {
+expect(imageRoutes("civ13")).toEqual([{ prefix: "", chain: ["civ13", "classic"] }]);
+});
+
+  it("ships all seven categories, so it needs no per-category routing", () => {
+    const civ = idsIn("civ13");
+    const categories = new Set([...civ].map((id) => id.split("/")[0]));
+    for (const cat of ["Activities", "Actors", "Effects", "Icons", "Items", "MapObjects", "Tiles"]) {
+      expect(categories.has(cat), `civ13 ships no ${cat}`).toBe(true);
+    }
+  });
+
+  it("shares 1 107 of its 1 113 ids with classic", () => {
+    const civ = idsIn("civ13");
+    const classic = idsIn("classic");
+    expect(civ.size).toBe(1113);
+    expect(classic.size).toBe(1108);
+
+    // The six civ13 has and classic does not. Three are referenced by the code
+    // (`scent_living_supressor`, `crate`, `wall_char_office`) and three are not
+    // (`personal_enemy_*`), so they are extras rather than a compatibility gap.
+    const civOnly = [...civ].filter((id) => !classic.has(id)).sort();
+    expect(civOnly).toEqual([
+      "Icons/personal_enemy_mutual",
+      "Icons/personal_enemy_other",
+      "Icons/personal_enemy_self",
+      "Icons/scent_living_supressor",
+      "MapObjects/crate",
+      "Tiles/Decoration/wall_char_office",
+    ]);
+
+    // And the one classic has that civ13 does not, which is the single sprite a
+    // civ13 player borrows from the fallback.
+    const borrowed = [...classic].filter((id) => !civ.has(id)).sort();
+    expect(borrowed).toEqual(["menu_title"]);
+  });
+
+  it("has no filename whose case differs from the id the code asks for", () => {
+    // This project has shipped two assets whose id did not match their filename's
+    // capitalisation - `farm_fence_ew` vs `farm_fence_EW`, and
+    // `ITEM_BIO_FORCE_GUN` - which 404 on a case-sensitive filesystem and work
+    // perfectly on macOS and Windows. Two of this project's own defects were that.
+    const civ = [...idsIn("civ13")];
+    const classic = idsIn("classic");
+    const classicLower = new Map([...classic].map((id) => [id.toLowerCase(), id]));
+    const wrongCase = civ.filter(
+      (id) => !classic.has(id) && classicLower.has(id.toLowerCase()),
+    );
+    expect(wrongCase, "these files differ from the classic id only in case").toEqual([]);
+  });
+
+  it("has a folder, and is folder-backed", () => {
+    expect(existsSync(join(IMAGES_DIR, "civ13"))).toBe(true);
+    expect(isFolderBacked("civ13")).toBe(true);
   });
 });

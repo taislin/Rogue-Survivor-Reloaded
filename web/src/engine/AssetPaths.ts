@@ -53,12 +53,30 @@ export const IMAGE_EXTENSION = "webp";
  * This array is the single source of truth: `GameOptions` reads the option's
  * bounds from it, so a set listed here appears in the options screen with no
  * other edit, and one missing from it is unreachable no matter what is on disk.
+ *
+ * `civ13` is a **complete** set rather than a variant, which is worth recording
+ * because Genesis — the set that made this a routing system at all — is not.
+ * Measured on the two folders: civ13 has **1 113** sprites, **1 107** of which
+ * exist in classic under the same id, and it adds six of its own
+ * (`Icons/personal_enemy_{self,other,mutual}`, `Icons/scent_living_supressor`,
+ * `MapObjects/crate`, `Tiles/Decoration/wall_char_office`). Only one classic sprite
+ * is absent — `menu_title` — so the fallback borrows exactly one file and the set
+ * ships all seven categories. That is the shape of `deonapocalypse_v9_r1` and
+ * `genesis_classic_1.4`: one catch-all, its own directory first and `classic`
+ * after it. No per-category routes are needed, and adding any would be cargo-cult
+ * from the `genesis_actors_on_deonapocalypse` case.
+ *
+ * The same measurement found **no capitalisation mismatches** between civ13's
+ * filenames and classic's ids. That is not a formality: `farm_fence_ew` versus
+ * `farm_fence_EW`, and `ITEM_BIO_FORCE_GUN`, both shipped as 404s that worked
+ * fine on macOS and Windows.
  */
 export const IMAGE_SETS = [
   "classic",
   "deonapocalypse_v9_r1",
   "genesis_classic_1.4",
   "dafttiles_b1",
+  "civ13",
   "genesis_actors_on_deonapocalypse",
 ] as const;
 export type ImageSet = (typeof IMAGE_SETS)[number];
@@ -110,6 +128,11 @@ const IMAGE_SET_ROUTES: Readonly<Record<ImageSet, readonly SpriteRoute[]>> = {
     { prefix: "", chain: ["genesis_classic_1.4", "classic"] },
   ],
   dafttiles_b1: [{ prefix: "", chain: ["dafttiles_b1", "classic"] }],
+  // A complete set: all seven categories, 1 107 of 1 113 ids shared with classic
+  // and six of its own, with `menu_title` the single sprite borrowed from the
+  // fallback. So the ordinary shape — one catch-all — rather than the per-category
+  // routing below. The measurement is in `IMAGE_SETS`'s docblock.
+  civ13: [{ prefix: "", chain: ["civ13", "classic"] }],
   // Actors from Genesis, everything else from Deonapocalypse. Not a directory —
   // there is no such folder, and there does not need to be one.
   genesis_actors_on_deonapocalypse: [
