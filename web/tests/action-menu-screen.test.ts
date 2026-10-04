@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import {
   RogueGame,
   MINIMAP_Y,
+  MESSAGES_Y,
   CANVAS_WIDTH,
   CANVAS_HEIGHT,
   MENU_CHAR_WIDTH,
@@ -12,9 +13,9 @@ import { NullMusicManager } from "@engine/audio/NullMusicManager";
 import { Session } from "@engine/Session";
 import {
   ACTION_ENTRIES,
-  ACTION_MENU_COLUMNS,
-  ACTION_MENU_MARGIN,
-  computeLayout,
+  MAX_KEY_CHARS,
+  actionMenuLayout,
+
   layoutButtons,
 } from "@ui/ActionMenu";
 
@@ -36,11 +37,6 @@ import {
 let game: RogueGame;
 let ui: NullRogueUI;
 
-// The screen's own inset, imported rather than retyped. See `ACTION_MENU_MARGIN`:
-// it sets both the panel's position and its column budget, so a second copy here
-// measures a layout the screen never used.
-const MARGIN = ACTION_MENU_MARGIN;
-
 beforeAll(async () => {
   Session.useSeed(4242);
   ui = new NullRogueUI();
@@ -49,16 +45,23 @@ beforeAll(async () => {
   await game.LoadData();
 });
 
+/**
+ * The layout the screen builds, from the same factory it uses.
+ *
+ * It used to assemble a `LayoutOptions` literal here, with its own `MARGIN` and its
+ * own idea of `keyChars` — and the two drifted, so the panel grew past what this
+ * copy thought its width was and "Use Spray is not inside the panel" failed for a
+ * reason that had nothing to do with the panel. One factory, one layout.
+ */
 function realLayout() {
-  return computeLayout(ACTION_ENTRIES, {
+  return actionMenuLayout(ACTION_ENTRIES, {
     charWidth: MENU_CHAR_WIDTH,
-    rightEdgeX: CANVAS_WIDTH - MARGIN,
+    lineHeight: MENU_BOLD_LINE_SPACING,
+    canvasWidth: CANVAS_WIDTH,
+    canvasHeight: CANVAS_HEIGHT,
     topY: MINIMAP_Y,
-    // The whole canvas, because the panel is opaque, modal and grows leftward.
-    availableWidth: CANVAS_WIDTH - MARGIN * 2,
-    availableHeight: CANVAS_HEIGHT - 2 * MENU_BOLD_LINE_SPACING - MINIMAP_Y,
-    preferredColumns: ACTION_MENU_COLUMNS,
-    keyChars: 8,
+    bottomLimitY: MESSAGES_Y,
+    keyChars: MAX_KEY_CHARS,
   });
 }
 

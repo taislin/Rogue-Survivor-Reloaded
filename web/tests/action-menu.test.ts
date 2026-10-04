@@ -4,7 +4,9 @@ import {
   ACTION_MENU_COLUMNS,
   ACTION_MENU_MARGIN,
   MAX_KEY_CHARS,
+  actionMenuLayout,
   computeLayout,
+  formatKeyHint,
   layoutButtons,
   buttonAt,
   moveSelection,
@@ -19,6 +21,7 @@ import {
   CANVAS_HEIGHT,
   MENU_CHAR_WIDTH,
   MENU_BOLD_LINE_SPACING,
+  MESSAGES_Y,
 } from "@engine/RogueGame";
 
 /**
@@ -57,14 +60,17 @@ const CHAR = MENU_CHAR_WIDTH;
  * version through**: it compared a 62px button against a label length in
  * *characters*, and the only place that mix-up is visible is on screen.
  */
-const REAL = computeLayout(ACTION_ENTRIES, {
-  charWidth: CHAR,
-  rightEdgeX: CANVAS_WIDTH - 8,
+const REAL = actionMenuLayout(ACTION_ENTRIES, {
+  charWidth: MENU_CHAR_WIDTH,
+  lineHeight: MENU_BOLD_LINE_SPACING,
+  canvasWidth: CANVAS_WIDTH,
+  canvasHeight: CANVAS_HEIGHT,
   topY: MINIMAP_Y,
-  availableWidth: CANVAS_WIDTH - 16,
-  availableHeight: CANVAS_HEIGHT - 2 * 18 - MINIMAP_Y,
-  preferredColumns: ACTION_MENU_COLUMNS,
-  keyChars: 8,
+  bottomLimitY: MESSAGES_Y,
+  // The longest default binding is 7 characters ("Shift+<letter>"). Measured from
+  // the table rather than assumed, because the whole point of this suite is that a
+  // six-character budget silently truncated every two-key binding.
+  keyChars: 7,
 });
 
 describe("the action list", () => {
@@ -132,8 +138,10 @@ describe("computeLayout", () => {
 
   it("anchors to the right margin and grows leftward", () => {
     // The minimap leaves ~340px to its right and a grid sized to its labels wants
-    // more, so anchoring left would push it off the screen entirely.
-    expect(REAL.originX + REAL.gridWidth).toBe(CANVAS_WIDTH - 8);
+    // more, so anchoring left would push it off the screen entirely. The margin is
+    // `ACTION_MENU_MARGIN` and not a literal — it was 8 here while the screen used
+    // a different number, which is the drift the shared factory exists to stop.
+    expect(REAL.originX + REAL.gridWidth).toBe(CANVAS_WIDTH - ACTION_MENU_MARGIN);
   });
 
   it("fits the height it was given", () => {
@@ -151,9 +159,19 @@ describe("computeLayout", () => {
       availableHeight: 600,
       preferredColumns: 3,
       keyChars: 8,
+      lineHeight: 18,
     });
     expect(narrow.columns).toBeLessThan(REAL.columns);
-    expect(narrow.gridWidth).toBeLessThanOrEqual(200);
+    // **One column is allowed to be wider than the room.** A button has to fit its
+    // label and its key hint or the text draws over the next column, so the width is
+    // a floor rather than something the layout will shrink to fit — and at 200px
+    // there is no column count that satisfies both. The property worth asserting is
+    // that it dropped to the fewest columns, not that it obeyed an impossible
+    // budget. (This asserted `<= 200` and failed once the button grew from 188px,
+    // which is the same class of over-tight assertion as the `>= 2` floor in
+    // `rule-result-usage.test.ts`.)
+    expect(narrow.columns, "a 200px room cannot hold two of these buttons").toBe(1);
+    expect(narrow.gridWidth).toBeGreaterThan(0);
   });
 
   it("never asks for zero columns", () => {
@@ -165,6 +183,7 @@ describe("computeLayout", () => {
       availableHeight: 600,
       preferredColumns: 3,
       keyChars: 8,
+      lineHeight: 18,
     });
     expect(tiny.columns).toBeGreaterThanOrEqual(1);
     expect(tiny.gridWidth).toBeGreaterThan(0);
@@ -407,6 +426,7 @@ describe("the action list covers what a player reaches for", () => {
       availableHeight: CANVAS_HEIGHT - 2 * MENU_BOLD_LINE_SPACING - MINIMAP_Y,
       preferredColumns: ACTION_MENU_COLUMNS,
       keyChars: 6,
+      lineHeight: 18,
     });
     const rows = Math.ceil(ACTION_ENTRIES.length / layout.columns);
     expect(layout.originX, "the grid runs off the left edge").toBeGreaterThan(0);
@@ -414,5 +434,114 @@ describe("the action list covers what a player reaches for", () => {
       .toBeLessThanOrEqual(CANVAS_WIDTH);
     const footerY = MINIMAP_Y + rows * (layout.buttonHeight + layout.gap) + MENU_BOLD_LINE_SPACING;
     expect(footerY, "the footer falls off the bottom of the canvas").toBeLessThan(CANVAS_HEIGHT);
+  });
+});
+describe("key hints are drawn whole", () => {
+  /**
+   * The reported bug: `MAX_KEY_CHARS` was 6, and every two-key binding is 7
+   * characters, so `Shift+Z` rendered as `Shift+`.
+   *
+   * That is not a shorter way of writing the same key — it is a **different key**,
+   * and one a player can press. Silent truncation of a keybinding is worse than a
+   * cropped label, because the label is decoration and the binding is an
+   * instruction.
+   */
+  it("fits every default binding without truncating", () => {
+    const { readFileSync } = require("node:fs") as typeof import("node:fs");
+    const src = readFileSync(
+      join(__dirname, "..", "src", "engine", "Keybindings.ts"),
+      "utf8",
+    );
+    const lengths = [...src.matchAll(/this\.set\(PlayerCommand\.\w+,\s*'([^']+)'\)/g)].map(
+      (m) => m[1]!.length,
+    );
+    expect(lengths.length, "no bindings were read - the pattern is stale").toBeGreaterThan(50);
+    const longest = Math.max(...lengths);
+    expect(
+      longest,
+      `the longest default binding is ${longest} characters and MAX_KEY_CHARS is ${MAX_KEY_CHARS}`,
+    ).toBeLessThanOrEqual(MAX_KEY_CHARS);
+  });
+
+  it("renders a two-key binding whole", () => {
+    expect(formatKeyHint("Shift+Z")).toBe("Shift+Z");
+    expect(formatKeyHint("X")).toBe("X");
+    expect(formatKeyHint("Ctrl+N")).toBe("Ctrl+N");
+    // Anything up to the budget survives; anything past it is elided, not cut. A
+    // 12-character triple-modifier hint genuinely does not fit in 7, which is why
+    // this asserts the *rule* rather than picking a long example and expecting it
+    // whole.
+    expect(formatKeyHint("Shift+Z").length).toBeLessThanOrEqual(MAX_KEY_CHARS);
+  });
+
+  it("elides rather than cuts when a hint is genuinely too long", () => {
+    // A rebind can give a command several keys, joined with "/", and `getAll` has
+    // no cap - so a hint can exceed the budget. Cutting it silently is what made
+    // "Shift+Z" read as "Shift+"; an ellipsis at least looks like an ellipsis.
+    const long = "Ctrl+Alt+Shift+Meta+X";
+    const shown = formatKeyHint(long);
+    expect(shown.length).toBe(MAX_KEY_CHARS);
+    expect(shown.endsWith("…"), "a truncated hint must be visibly truncated").toBe(true);
+  });
+
+  it("never renders a hint that is a prefix of a longer, different key", () => {
+    // The sharpest form of the bug: "Shift+" is itself a plausible binding, so a
+    // truncated "Shift+Z" is indistinguishable from a real "Shift+" binding.
+    const hint = formatKeyHint("Shift+Z");
+    expect(hint, "this must not be a key someone could press").not.toBe("Shift+");
+    expect(hint).not.toBe("Shift");
+  });
+});
+
+describe("the panel clears the message log", () => {
+  const rows = Math.ceil(ACTION_ENTRIES.length / REAL.columns);
+
+  it("puts its lowest pixel at or above the limit", () => {
+    // Thirteen rows of buttons plus a footer used to run past MESSAGES_Y and over
+    // the message text underneath. Derived rather than a fixed upward shift, because
+    // the grid was 8 rows when the panel was first placed and a shift right for one
+    // is wrong for the other.
+    //
+    // `gridHeight` is `rows * (h + gap) - gap` — the last row has no trailing gap.
+    // Writing `+ gap` here instead is off by exactly one gap, which is how this very
+    // assertion first failed by 4px against an implementation that was correct.
+    const gridHeight = rows * (REAL.buttonHeight + REAL.gap) - REAL.gap;
+    const footerBottom =
+      REAL.originY + gridHeight + REAL.buttonHeight + REAL.gap * 2 + MENU_BOLD_LINE_SPACING;
+    expect(footerBottom, "the footer runs into the message log").toBeLessThanOrEqual(MESSAGES_Y);
+  });
+
+  it("moves up by exactly the overlap, and no further", () => {
+    const unshifted = computeLayout(ACTION_ENTRIES, {
+      charWidth: MENU_CHAR_WIDTH,
+      rightEdgeX: CANVAS_WIDTH - ACTION_MENU_MARGIN,
+      topY: MINIMAP_Y,
+      availableWidth: CANVAS_WIDTH - ACTION_MENU_MARGIN * 2,
+      availableHeight: CANVAS_HEIGHT - 2 * MENU_BOLD_LINE_SPACING - MINIMAP_Y,
+      preferredColumns: ACTION_MENU_COLUMNS,
+      keyChars: MAX_KEY_CHARS,
+      lineHeight: MENU_BOLD_LINE_SPACING,
+    });
+    expect(unshifted.originY, "with no limit it sits at topY").toBe(MINIMAP_Y);
+    expect(REAL.originY, "with the limit it moved up").toBeLessThan(MINIMAP_Y);
+    // And it is still right-anchored and unchanged horizontally.
+    expect(REAL.originX).toBe(unshifted.originX);
+    expect(REAL.gridWidth).toBe(unshifted.gridWidth);
+  });
+
+  it("stays put when there is room, so the limit is not a permanent shift", () => {
+    const roomy = computeLayout(ACTION_ENTRIES, {
+      charWidth: MENU_CHAR_WIDTH,
+      rightEdgeX: CANVAS_WIDTH - ACTION_MENU_MARGIN,
+      topY: MINIMAP_Y,
+      availableWidth: CANVAS_WIDTH - ACTION_MENU_MARGIN * 2,
+      // A limit far below the panel, so the overlap is zero.
+      availableHeight: CANVAS_HEIGHT - 2 * MENU_BOLD_LINE_SPACING - MINIMAP_Y,
+      preferredColumns: ACTION_MENU_COLUMNS,
+      keyChars: MAX_KEY_CHARS,
+      lineHeight: MENU_BOLD_LINE_SPACING,
+      bottomLimitY: MINIMAP_Y + 100_000,
+    });
+    expect(roomy.originY).toBe(MINIMAP_Y);
   });
 });

@@ -159,9 +159,8 @@ import {
   buttonAt,
   moveSelection,
   ACTION_MENU_COLUMNS,
-  ACTION_MENU_MARGIN,
-  MAX_KEY_CHARS,
-  computeLayout,
+  formatKeyHint,
+  actionMenuLayout,
 } from "@ui/ActionMenu";
 import { type FOV, LOS } from "@engine/LOS";
 import { coordKey } from "@engine/CoordKey";
@@ -30408,28 +30407,29 @@ async HandleActionMenu(): Promise<PlayerCommand | null> {
 	// character, so a button has to be as wide as its longest label and its longest
 	// key hint together. Hardcoding a width here is what made the first version draw
 	// every column over the next one.
-	const keyHints = ACTION_ENTRIES.map((e) => s_KeyBindings.getAll(e.command).join("/"));
-	// The inset from the canvas edge. Exported from `ActionMenu.ts` rather than
-	// written here because it decides both where the panel sits and how many columns
-	// it is allowed — and a second copy of it in the test measured a layout this
-	// screen never used. See the constant for the full account.
-	const margin = ACTION_MENU_MARGIN;
+const keyHints = ACTION_ENTRIES.map((e) => s_KeyBindings.getAll(e.command).join("/"));
 	const footer = "ENTER or click to choose, ESC to close";
 	const footerWidth = footer.length * MENU_CHAR_WIDTH;
-	const layout = computeLayout(ACTION_ENTRIES, {
+	// The panel is as wide as the grid *or* the footer line, whichever is wider, so
+	// the hint text is never left hanging outside the fill.
+	const layout = actionMenuLayout(ACTION_ENTRIES, {
 		charWidth: MENU_CHAR_WIDTH,
-		// Anchored to the right margin and grown leftward by `computeLayout`: the
-		// minimap leaves only ~340px to its right and the grid wants more.
-		rightEdgeX: CANVAS_WIDTH - margin,
+		lineHeight: MENU_BOLD_LINE_SPACING,
+		canvasWidth: CANVAS_WIDTH,
+		canvasHeight: CANVAS_HEIGHT,
+		// Where the panel sits if it fits. Anchored to the right margin and grown
+		// leftward by `computeLayout`: the minimap leaves only ~340px to its right and
+		// the grid wants more than that.
 		topY: MINIMAP_Y,
-		// The **whole** canvas width, not the space right of the minimap. The panel is
-		// opaque and modal and is anchored to the right margin, so it grows leftward
-		// over the map rather than off the edge - and budgeting it only the ~340px to
-		// the minimap's right would drop it to a single column, which is the layout the
-		// screenshot showed failing.
-		availableWidth: CANVAS_WIDTH - margin * 2,
-		availableHeight: CANVAS_HEIGHT - 2 * MENU_BOLD_LINE_SPACING - MINIMAP_Y,
-		preferredColumns: ACTION_MENU_COLUMNS,
+		// Thirteen rows of buttons plus a footer ran past the top of the message log,
+		// so the panel is told where it has to stop and moves up by exactly the
+		// overlap. It stays at `MINIMAP_Y` whenever there is room, so this is not a
+		// fixed shift — the grid was 8 rows when the panel was first placed.
+		bottomLimitY: MESSAGES_Y,
+		// The measured longest hint, uncapped. The layout used to clamp this to
+		// `MAX_KEY_CHARS` as well, which is how `Shift+Z` came out as `Shift+`: the
+		// button was sized for six characters and the hint was cut to six, so the two
+		// agreed with each other and were both wrong.
 		keyChars: Math.max(...keyHints.map((h) => h.length), 1),
 	});
 	// The panel is as wide as the grid *or* the footer line, whichever is wider, so
@@ -30476,10 +30476,11 @@ async HandleActionMenu(): Promise<PlayerCommand | null> {
 		for (const b of buttons) {
 			const active = b.index === selected;
 			// The key hint is read live, so a rebind shows up here without this
-			// file being touched, and clipped to the width the layout reserved for
-			// it - a two-key binding like `Shift+U` would otherwise run into the
-			// next column.
-			const keys = keyHints[b.index]!.slice(0, MAX_KEY_CHARS);
+			// file being touched. `formatKeyHint` draws it whole when it fits and
+			// elides it when it does not — the previous `.slice(0, MAX_KEY_CHARS)`
+			// cut it silently, so a `Shift+Z` binding was shown as `Shift+`, which
+			// is a *different key* rather than a shorter way of writing the same one.
+			const keys = formatKeyHint(keyHints[b.index]!);
 			if (active) {
 				// **Filled, not outlined.** The first version drew the selected row's
 				// label in black on the theory that the colour "carried" the selection

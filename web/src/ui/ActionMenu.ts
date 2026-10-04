@@ -101,8 +101,35 @@ export interface ActionButton {
 
 const GAP = 2;
 const PADDING = 4;
-/** Key hints are clipped to this many characters, to fit beside a label. */
-export const MAX_KEY_CHARS = 6;
+
+/**
+ * Key hints are clipped to this many characters, to fit beside a label.
+ *
+ * **This was 6, which is one character short of every two-key binding.** `Shift+Z`
+ * is seven characters, so `.slice(0, 6)` rendered it as `Shift+` — which is not a
+ * shorter form of `Shift+Z`, it is a *different key*, and a player reading it would
+ * press Shift and nothing else. Six of the default bindings are three characters
+ * (`X`, `B`, `G`) and seventeen are seven (`Shift+<letter>`); nothing in the default
+ * table is longer, so 7 fits every shipped binding whole.
+ *
+ * It stays a cap because a hint is `getAll(cmd).join("/")` — every binding a command
+ * has, and a player can rebind a command to several. Past the cap the hint is
+ * elided with `…` rather than cut, because a cut hint is silently *wrong* and an
+ * elided one is visibly short. `formatKeyHint` is where that happens.
+ */
+export const MAX_KEY_CHARS = 7;
+
+/**
+ * A key hint as it will be drawn: whole if it fits, elided if it does not.
+ *
+ * Split out of the drawing code because "fit it or visibly shorten it" is a rule
+ * worth testing on its own, and because the previous version did the opposite —
+ * `.slice(0, MAX_KEY_CHARS)` with no marker, so every `Shift+<key>` looked like a
+ * binding to plain Shift.
+ */
+export function formatKeyHint(keys: string): string {
+  return keys.length <= MAX_KEY_CHARS ? keys : `${keys.slice(0, MAX_KEY_CHARS - 1)}…`;
+}
 
 /**
  * How far the panel's right edge sits from the canvas edge, in logical pixels.
@@ -132,8 +159,34 @@ export interface LayoutOptions {
   readonly availableWidth: number;
   readonly availableHeight: number;
   readonly preferredColumns?: number;
-  /** The longest key hint that will be drawn, in characters. */
+  /**
+   * The longest key hint that will be drawn, in characters.
+   *
+   * Measured by the caller from the live bindings and **not** capped to
+   * `MAX_KEY_CHARS` here, so the button is as wide as the hints it actually draws.
+   * Capping it is what made `Shift+Z` render as `Shift+`: the button was sized for
+   * six characters and the hint was cut to six, so the two agreed and both were
+   * wrong.
+   */
   readonly keyChars?: number;
+  /**
+   * The y the panel must not cross — the top of the message log.
+   *
+   * Optional, and honoured only when the grid would otherwise reach it: the panel
+   * prefers `topY` and moves up by whatever would overlap. Derived rather than a
+   * magic inset, because the grid grew from 8 rows to 13 when the action list was
+   * completed and a fixed shift that was right for one is wrong for the other.
+   */
+  readonly bottomLimitY?: number;
+  /**
+   * The menu font's line step — `RogueGame.MENU_BOLD_LINE_SPACING`.
+   *
+   * Passed in rather than derived from `charWidth`, because the two are different
+   * numbers (18 against 10) and a proxy for one made the panel stop 6px short of
+   * clearing the message log. The footer sits on this step, so the panel's lowest
+   * pixel is `originY + gridHeight + buttonHeight + 2 * gap + lineHeight`.
+   */
+  readonly lineHeight: number;
 }
 
 /**
@@ -152,12 +205,18 @@ export interface LayoutOptions {
  * edge** and grows leftward: the minimap sits with only ~340px to its right and a
  * grid sized to its labels wants more than that, and growing a little into the map
  * beats clipping off the edge of the screen.
+ *
+ * **Vertical placement is derived, not a fixed shift.** The grid grew from 8 rows to
+ * 13 when the action list was completed, and at 13 rows a panel starting at the
+ * minimap's top edge ran its footer into the message log underneath. `bottomLimitY`
+ * says where that starts; the panel moves up by exactly the overlap and no further,
+ * so it sits at `topY` whenever there is room and only moves when there is not.
  */
 export function computeLayout(
   entries: readonly ActionEntry[],
   opts: LayoutOptions,
 ): ActionMenuLayout {
-  const keyChars = Math.min(MAX_KEY_CHARS, opts.keyChars ?? MAX_KEY_CHARS);
+  const keyChars = Math.max(1, opts.keyChars ?? MAX_KEY_CHARS);
   const buttonWidth =
     Math.ceil((longestLabel(entries) + keyChars) * opts.charWidth) + PADDING * 2;
   const buttonHeight = opts.charWidth + 4;
@@ -176,15 +235,71 @@ export function computeLayout(
   while (columns < preferred && gridHeight(columns) > opts.availableHeight) columns++;
 
   const gridWidth = columns * (buttonWidth + GAP) - GAP;
+
+  // Below the grid: one footer line, on the font's own line step. Measured from the
+  // grid's bottom rather than from `topY`, so it is right for any row count.
+  const chrome = buttonHeight + GAP * 2 + opts.lineHeight;
+  let originY = opts.topY;
+  if (opts.bottomLimitY !== undefined) {
+    const lowest = originY + gridHeight(columns) + chrome;
+    if (lowest > opts.bottomLimitY) originY -= lowest - opts.bottomLimitY;
+  }
+
   return {
     originX: opts.rightEdgeX - gridWidth,
-    originY: opts.topY,
+    originY,
     buttonWidth,
     buttonHeight,
     columns,
     gap: GAP,
     gridWidth,
   };
+}
+
+/**
+ * The numbers the screen derives its layout from, in one struct.
+ *
+ * Exists so the screen and its tests cannot build the options differently. Both
+ * used to assemble a `LayoutOptions` literal by hand, which is how the test came to
+ * carry its own `MARGIN = 8` and its own `MINIMAP_Y = 187` while the screen used 24
+ * and 475: two layouts, and a test failure that named neither.
+ *
+ * `ActionMenu.ts` cannot import these from `RogueGame` — the class imports this
+ * module — so they are passed in. That is the same trade the original had, with the
+ * duplication moved out of the literals and into one named struct.
+ */
+export interface ScreenMetrics {
+  /** `RogueGame.MENU_CHAR_WIDTH`. */
+  readonly charWidth: number;
+  /** `RogueGame.MENU_BOLD_LINE_SPACING`. */
+  readonly lineHeight: number;
+  readonly canvasWidth: number;
+  readonly canvasHeight: number;
+  /** Where the panel would sit if it fitted — `RogueGame.MINIMAP_Y`. */
+  readonly topY: number;
+  /** The line it must not cross — `RogueGame.MESSAGES_Y`. */
+  readonly bottomLimitY: number;
+  /** The longest key hint that will be drawn, in characters. */
+  readonly keyChars: number;
+}
+
+/** The layout the screen builds. Both `RogueGame` and the tests go through here. */
+export function actionMenuLayout(
+  entries: readonly ActionEntry[],
+  m: ScreenMetrics,
+): ActionMenuLayout {
+  const margin = ACTION_MENU_MARGIN;
+  return computeLayout(entries, {
+    charWidth: m.charWidth,
+    rightEdgeX: m.canvasWidth - margin,
+    topY: m.topY,
+    availableWidth: m.canvasWidth - margin * 2,
+    availableHeight: m.canvasHeight - 2 * m.lineHeight - m.topY,
+    preferredColumns: ACTION_MENU_COLUMNS,
+    keyChars: m.keyChars,
+    bottomLimitY: m.bottomLimitY,
+    lineHeight: m.lineHeight,
+  });
 }
 
 /**
