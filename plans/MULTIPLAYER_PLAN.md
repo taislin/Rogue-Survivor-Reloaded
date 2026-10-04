@@ -1,11 +1,21 @@
 # Multiplayer — a design and phasing plan for the browser port
 
-> **Phase 0 is DONE and green; Phase 1 slice 1 is DONE (2026-10-04).** The save
-> format now carries a player roster, mutation-checked, with **no `GRAPH_VERSION`
-> bump** — a deliberate divergence from §6 item 8, argued in §8 Phase 1. Nothing
-> *acts* as a second player yet; `m_Player` is still one field.
+> **Phase 0 is DONE; Phase 1's GATE IS GREEN (2026-10-04).** Slices 1 and 2 are
+> in — `d2b8e43` and `25d1700` — and slice 3 (the turn cursor) is not started.
 >
-> **Phase 0: the gate is green.** Two `PlayerController` actors on one map
+> - **The save carries a player roster**, mutation-checked, with **no
+>   `GRAPH_VERSION` bump**: a deliberate divergence from §6 item 8, argued in §8
+>   Phase 1.
+> - **"Is the game over?" is asked in one place.** It was asked in **four**
+>   (`GameLoop`, `HeadlessRunner`, `advancePlayDistrict`, `advancePlayMap`), all
+>   reading `m_Player` — which is "whoever acted last", not "everybody". A second
+>   player dying used to end the game for the first.
+> - **`m_Player` did not need changing.** `HandlePlayerActor` already sets
+>   `m_Player = player` every turn, so it was already the *acting* player. The
+>   425 references read it for view, FOV and input, and that is correct for all of
+>   them; the four that mattered asked about game state instead.
+>
+> **Phase 0's own gate: green.** Two `PlayerController` actors on one map
 > alternate correctly, each acts exactly once, and the world advances exactly one map
 > turn with no scheduler change — **so §3 through §7 are not void.**
 > `web/tests/multiplayer-phase0-roundrobin.test.ts`, mutation-checked. It also
@@ -13,9 +23,10 @@
 > *peeks* rather than blocks.** Details in §8 Phase 0 and §7.
 >
 **Everything else here is still design only.** No networking code exists and
-Phases 2–6 have not begun. What exists is Phase 0's test and Phase 1's save format —
-both engine-side, both verifiable without a socket, and neither of which is
-multiplayer yet.
+Phases 2–6 have not begun. What exists is Phase 0's test and Phase 1's two slices —
+all engine-side, all verifiable without a socket, and none of it multiplayer yet:
+a save that can *name* two players and a loop that does not end when one of them
+dies. Neither is a second player you can connect from.
 
 > **Status: design study written 2026-09-30; first code landed 2026-10-04.** This file
 > records a feasibility study and a phasing plan. It is the sibling of
@@ -878,8 +889,10 @@ turns") is where repetition belongs, because it also needs the save format.
 
 ### Phase 1 — engine, no network
 
-**Started 2026-10-04. Slice 1 of 3 DONE: the save carries a roster.**
-`d2b8e43`, five cases in `web/tests/save-player-roster.test.ts`.
+**Started 2026-10-04. Slices 1 and 2 of 3 DONE — and the gate is GREEN.**
+`d2b8e43` (roster, five cases in `web/tests/save-player-roster.test.ts`) and
+`25d1700` (game-over, three cases in `web/tests/multiplayer-phase1-50turns.test.ts`).
+Slice 3, the turn cursor, is not started.
 
 `m_Player` becomes *the acting player*. A player list on `Session`;
 `GameLoop`'s game-over becomes "no player left"; `RefreshPlayer` and
@@ -892,10 +905,14 @@ Expect the suite to surface reads that quietly meant "the player" rather than
 "whoever is acting". That is the point of running it, and it is why this phase
 is separate from Phase 0.
 
-**Gate:** a two-player headless run survives 50 turns, and the two-player save
-round-trips through the existing bijection test. **Half of it is met** — the
-two-player save round-trips. The 50-turn run is not, because nothing *acts* as a
-second player yet (slices 2 and 3).
+**Gate: MET.** A two-player headless run survives 50 world turns, and the
+two-player save round-trips. Both halves are green as of `25d1700`.
+
+Meeting it did not mean what the phase expected. Nothing about *acting* as a
+second player needed changing — Phase 0's round-robin already did that — and
+`HandlePlayerActor` already sets `m_Player = player`, so `m_Player` **was**
+already "the acting player". What stood in the way was the game-over question,
+asked in four places.
 
 #### Slice 1 — the save names every player (done)
 
@@ -948,29 +965,99 @@ an old build would **misread** rather than merely lack — which is a question a
 the second player's *map* and *turn cursor*, not about the roster. Those are slices
 2 and 3, and the answer belongs with them.
 
-#### Slices 2 and 3 — not started
+#### Slice 2 — "is the game over", asked once (done)
 
-Ordered by what unblocks the gate:
+**The assumption was not one reading but four**, and that is the finding:
 
-2. **`GameLoop`'s game-over and `RefreshPlayer`.** `m_Player` is one field, so
-   `RefreshPlayer` binds whichever player it finds first and the rest are players
-   without a driver — which is exactly the state Phase 0's test leaves behind, and
-   the reason the roster slice had to stop where it did. `GameLoop`'s
-   `while (m_Player != null && !m_Player.isDead …)` becomes "no player left".
-   `RefreshPlayer` returns the list; `findPlayerActor` becomes one of several.
-   **This is where the 427 `m_Player` references start to matter**, and the plan's
-   own advice stands: run it behind the two-player test, not behind review.
-3. **`Map.m_checkNextActorIndex` and the turn cursor.** Already carried as a known
+| Site | The old reading |
+|---|---|
+| `GameLoop` | `m_Player != null && !m_Player.isDead && …` |
+| `HeadlessRunner.run` | `if (player === null \|\| player.isDead) break` |
+| `advancePlayDistrict` | `if (… \|\| m_Player.isDead) return;` — **before** `worldTime.turnCounter++` |
+| `advancePlayMap` | `if (… \|\| m_Player.isDead) return;` — **aborts the sweep mid-turn** |
+
+All four ask whether *the actor the engine last bound* died. `m_Player` is set by
+`HandlePlayerActor`, so it is "whoever acted last" — with one player that is the
+player, with two it is whoever happened to act before the death, and the four
+disagree at exactly the wrong moment. Three of them were not in §6 item 1's
+inventory either; only `GameLoop` was.
+
+They now read one predicate, **`RogueGame.anyPlayerAlive`**, which walks the world
+for a `PlayerController` that is not dead. Derived rather than stored, deliberately:
+a roster on `Session` would be one more thing to keep in step with actors dying and
+being removed from their maps, and every desynchronisation surfaces as a game that
+refuses to end or ends early.
+
+**Single-player behaviour is unchanged by construction.** With one player, dead *is*
+no players left, so every one of the four expressions evaluates identically before
+and after. `endgame-exit.test.ts` drives the real `GameLoop` through a death, a
+declined reincarnation and a return to the menu, and is untouched — which is the
+regression check that the constraint held, not an afterthought.
+
+The guards keep `m_Player.isDead` as a **short-circuit** before `anyPlayerAlive`.
+Not conservatism: `advancePlayDistrict`'s do-while runs once per actor, so scanning
+the world there unconditionally is quadratic in actors per turn. The walk happens
+only on a turn where somebody actually died.
+
+**Three findings worth keeping:**
+
+1. **The first gate test passed against the unfixed engine.** It wrote its own
+   `AdvancePlay` loop, so the stop condition under test was the *test's*. Both cases
+   went green immediately. A test cannot check a stop condition it replaces — hence
+   `HeadlessRunner.playTurns` being extracted so the test drives the real one.
+2. **On the real loop it still passed**, because it killed player A while `m_Player`
+   was bound to B. The hazard is not "a player dies" but "the player last remembered
+   dies". Killing `game.player` is what reaches the old condition; against it the run
+   advances **0 of 50** turns.
+3. **Reincarnation had to be re-keyed for correctness, not tidiness.** Removing the
+   stop-guard while leaving `if (m_Player.isDead) HandleReincarnation()` alone would
+   re-ask "Limbo" on every iteration of the sweep — nothing returns, and `m_Player` is
+   still the dead one. Keying it to `!anyPlayerAlive` fixes that *and* keeps
+   single-player identical.
+
+**A decision made by not making one:** reincarnation stays keyed to "nobody is
+left", so a player who dies while another lives is simply out and is never asked to
+reincarnate. That is defensible rather than settled — `scoring.reincarnationNumber`
+is a **session-wide** life pool, not a per-actor one, so reincarnation is the
+end-of-game continuation and belongs at the end of the game. **Per-player
+reincarnation is an open question** (§11 below), not something this slice invented.
+
+**Deliberately not done, recorded rather than left implied:**
+
+- `RefreshPlayer` still returns `void`, and `findPlayerActor` still returns one
+  actor. No caller consumes a list; a dead actor is already removed from its map
+  *before* `RefreshPlayer` scans it, so the scan cannot bind a corpse; and the
+  singular form survives only for the `root.player` ref that keeps pre-roster saves
+  loading. Returning an unused list would be speculative — the §6 item 1 wording
+  ("returns lists") was written before it was clear that `HandlePlayerActor` already
+  rebinds every turn.
+- **`GameLoop` under two players is not covered by any test.** The predicate is
+  pinned (`anyPlayerAlive` true with a player left, false with none, runner stops on
+  it) and the single-player wiring is covered by `endgame-exit.test.ts`, but the
+  two-player main-menu path is untested. One line reading a pinned predicate, and
+  recording it beats implying it.
+
+**The 425 `m_Player` references did not need touching.** They read the *acting*
+player — view, FOV, input, messages — and `HandlePlayerActor` makes `m_Player` mean
+exactly that. The four that mattered were the ones asking about game state.
+
+#### Slice 3 — not started
+
+3. **`Map.checkNextActorIndex` and the turn cursor.** Already carried as a known
    gap (§6 item 8, Phase 4) — it is `{ kind: "skip" }` today and safe only at a turn
    boundary. With two players it is wrong more often, because a remote player's
    turn can be parked mid-map-turn. **This is the item that decides whether the
    version bump above is needed**, since an old build handed a two-player save would
    misread the cursor rather than merely lack it.
 
-**[?]** still unanswered and now cheap to state: whether `ActionGame` grows a
-`players` accessor, or whether the list belongs on `Session` with `ActionGame`
-reading through it. Slice 2 makes this concrete and it should be settled there,
-before slice 2 starts rather than during it.
+**[?] still unanswered, and slice 2 did not settle it as hoped.** Whether
+`ActionGame` grows a `players` accessor, or the list belongs on `Session` with
+`ActionGame` reading through it. Slice 2 was supposed to make this concrete; it went
+the other way — the roster question turned out to be answered by *scanning* rather
+than by *storing* (`anyPlayerAlive`), so there is still no list on `Session` to
+carry. The question now reads: **is there ever a stored roster, or is every
+consumer a scan?** `save-player-roster.test.ts` stores one only for the save
+format.
 
 **[corrected 2026-10-03] One thing this phase would now build on, which did not
 exist when the phase was written — and one caveat.** `engine/actions/ActionGame.ts`
