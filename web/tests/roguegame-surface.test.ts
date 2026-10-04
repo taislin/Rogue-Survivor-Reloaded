@@ -125,11 +125,14 @@ describe("RogueGame's measured surface", () => {
     // by the measurement's rule and not an implementation detail.
     expect(m.members).toBe(846);
     expect(m.methods).toBe(762);
-    // The *reachable* surface is 118. It did not move for either extraction — both
+    // The *reachable* surface is 119. It did not move for either extraction — both
     // regions kept their methods on the class, which is what keeps them pure moves —
-    // and then moved by one for `anyPlayerAlive`, which has to be reachable because
-    // `HeadlessRunner` is not the class.
-    expect(m.external).toBe(118);
+    // then moved by one for `anyPlayerAlive`, which has to be reachable because
+    // `HeadlessRunner` is not the class, and by one more for `DoWakeUp`, which
+    // `turn-cursor.test.ts` drives directly to show it is the one mutation that
+    // creates eligibility behind the turn cursor without invalidating it. Reaching
+    // it *is* the assertion; the alternative was asserting it from a source scan.
+    expect(m.external).toBe(119);
 // §6.4: "567 of 584 methods are public — only 17 are `private`. The
   // `private` boundary is effectively absent." That is still true, and the
   // direction is worth pinning: private has come down from 91 to 89, while public
@@ -156,7 +159,7 @@ describe("RogueGame's measured surface", () => {
 		expect(m.privateReached).toBe(0);
 	});
 
-	it("the outside world depends on 118 members, and §6 assumed far fewer", () => {
+	it("the outside world depends on 119 members, and §6 assumed far fewer", () => {
 		const m = measure();
 		// §6.4's `GameContext` was to name "the 11 service fields … plus `m_Player`,
 		// `m_PlayerFOV`, `m_MapViewRect`, `m_Overlays`, `m_FirstPersonFacing`" —
@@ -165,14 +168,14 @@ describe("RogueGame's measured surface", () => {
 		// must not break.
 		//
     // The 2024 deferral said "thread a `game` reference through ~500 call
-    // sites". At 118 names the pessimistic figure is not the real one, and that
+    // sites". At 119 names the pessimistic figure is not the real one, and that
     // is the answer to the question §6.4 deferred until "the game runs and the
     // real cross-method dependencies are known".
-    expect(m.external).toBe(118);
+    expect(m.external).toBe(119);
     expect(m.external).toBeGreaterThan(83);
 	});
 
-  it("classifies all 118, with no residual", () => {
+  it("classifies all 119, with no residual", () => {
     // This is the finding that forced the re-derivation, and the number that keeps
     // it fixed. §6.2's region table left **68 of the 110** (as measured then) in no
     // region at all —
@@ -190,19 +193,23 @@ describe("RogueGame's measured surface", () => {
 		expect(m.buckets.get("STATE")?.length ?? 0).toBeLessThan(30);
 	});
 
-  it("splits the reachable surface into 32 hub and 86 movable, and the hubs stay", () => {
+  it("splits the reachable surface into 33 hub and 86 movable, and the hubs stay", () => {
     // §6.8: the two hubs "are the reason the split is worth doing rather than the
     // reason it fails". Still true, and now measured on the current file. The
     // moving side is 86 because `anyPlayerAlive` lands in a region §6 moves —
-    // it is game state, not chrome — while the hub count is untouched.
+    // it is game state, not chrome — while the hub side grew by one for
+    // `DoWakeUp`.
     const m = measure();
     expect(m.moving).toBe(86);
-    expect(m.hubs).toBe(32);
+    expect(m.hubs).toBe(33);
     expect(m.moving + m.hubs).toBe(m.external);
-    // HUB 1 is 24 of the 32. `DoTag` joined when the minimap tag test replaced a
+    // HUB 1 is 25 of the 33. `DoTag` joined when the minimap tag test replaced a
     // source scan with a real call to it; HUB 2 is 8, `HandlePlayerTradeNegociation`
-    // joining when the trusted-leader test drove the actual trade screen.
-    expect(m.buckets.get("HUB 1  Do*/On* action primitives")?.length ?? m.buckets.get("HUB 1")?.length).toBe(24);
+    // joining when the trusted-leader test drove the actual trade screen; and
+    // `DoWakeUp` joined when `turn-cursor.test.ts` drove the wake that the turn
+    // cursor does not invalidate — the members in here are exactly the ones some
+    // test found it simpler to call than to reason about.
+    expect(m.buckets.get("HUB 1  Do*/On* action primitives")?.length ?? m.buckets.get("HUB 1")?.length).toBe(25);
   });
 
   it("names 25 members GameContext has to carry, not 11", () => {
@@ -264,7 +271,10 @@ describe("RogueGame's measured surface", () => {
 		const m = measure();
     const hubs = new Set(m.buckets.get("HUB 1") ?? []);
     for (const name of m.buckets.get("HUB 2") ?? []) hubs.add(name);
-    expect(hubs.size).toBe(32);
+    // 33 = HUB 1 (25) + HUB 2 (8). Pinned as a size so that a hub losing a
+    // member — or gaining one — is a diff here rather than a silent change to
+    // what the split would move.
+    expect(hubs.size).toBe(33);
 		for (const [region, list] of m.buckets) {
 			if (region.startsWith("HUB")) continue;
 			for (const name of list) expect(hubs.has(name), `${name} is in two regions`).toBe(false);
