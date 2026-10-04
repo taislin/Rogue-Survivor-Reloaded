@@ -8,7 +8,12 @@
 > - **The save carries a player roster**, mutation-checked, with **no
 >   `GRAPH_VERSION` bump**: a deliberate divergence from §6 item 8, argued in §8
 >   Phase 1.
-> - **"Is the game over?" is asked in one place.** It was asked in **four**
+> - **Real time is the mode, not a later option** **[recorded 2026-10-04]**:
+  one map turn per second, each player's pick draining its queued move or
+  falling through to `DoWait`. §4.0 carries it, and it deletes §4.1's items 1, 2
+  and 5 and the whole of §5, moves §4.1 items 3-4 and §11 item 7 into Phase 2,
+  and re-scopes Phase 5 from "build it" to "judge it".
+- **"Is the game over?" is asked in one place.** It was asked in **four**
 >   (`GameLoop`, `HeadlessRunner`, `advancePlayDistrict`, `advancePlayMap`), all
 >   reading `m_Player` — which is "whoever acted last", not "everybody". A second
 >   player dying used to end the game for the first.
@@ -46,9 +51,16 @@ dies. Neither is a second player you can connect from.
 > [§2](#2-two-corrections) and [§4](#4-what-real-time-actually-costs) because a
 > plan whose stated cost was a guess is not a plan.
 >
-> **Chosen shape** (settled 2026-09-30): networked, separate machines;
-> **turn-passing**, each player seeing only their own field of view; a
-> **Node server on a VPS** as the authority. Real-time is Phase 5 and optional.
+> **Chosen shape** (settled 2026-09-30, **re-stated 2026-10-04**): networked,
+> separate machines; **each player seeing only their own field of view**; a
+> **Node server on a VPS** as the authority. ~~Real-time is Phase 5 and optional.~~
+> **Real-time is the mode, and it is not optional.** The server advances one map
+> turn every second; each player's pick in that turn takes their queued move or
+> falls through to `DoWait`. Turn-passing survives only as *whose view is
+> rendered* — each client draws itself and nobody else — and as the scheduler's
+> round-robin, which Phase 0 proved. The input cadence is a clock, not a human.
+> [§4.0](#40-the-design-restated-2026-10-04) carries the decision and the items
+> it deletes; [§8 Phase 2](#phase-2--server) carries the work.
 
 All `file:line` citations were read on 2026-09-30 and are marked **[v]**.
 Claims that are *derived* rather than read — a call-graph walk, a cost estimate —
@@ -142,7 +154,7 @@ was never checked is indistinguishable from one that was*.
 1. [Scope](#1-scope)
 2. [Two corrections](#2-two-corrections)
 3. [The load-bearing finding](#3-the-load-bearing-finding-the-scheduler-already-round-robins)
-4. [What real-time actually costs](#4-what-real-time-actually-costs)
+4. [What real-time actually costs](#4-what-real-time-actually-costs) — incl. [§4.0 the design](#40-the-design-restated-2026-10-04)
 5. [The two traps in the obvious design](#5-the-two-traps-in-the-obvious-design)
 6. [What is expensive: the single-player assumptions](#6-what-is-expensive-the-single-player-assumptions)
 7. [The architecture](#7-the-architecture)
@@ -160,8 +172,14 @@ each in their own browser, over a network, with one machine holding the
 authority.
 
 **Out of scope, deliberately:** split-screen in one process; shared fog of war;
-deterministic lockstep; any change to the C# in `src/`; and — for the first
-four phases — the world ticking while a human is thinking.
+deterministic lockstep; and any change to the C# in `src/`.
+
+**~~Out of scope: the world ticking while a human is thinking.~~** That clause
+read "for the first four phases" and deferred real time to Phase 5. **Struck
+2026-10-04: it is in scope from Phase 2, and it is not optional.** Multiplayer
+runs on a clock — one map turn per second, each player's pick draining their
+queued move or defaulting to `DoWait` — which is single-player's `IdleAdvance` at
+`ONE_SECOND` made server-wide. §4 carries the decision and the items it deletes.
 
 **Not a phase, but a prerequisite that already exists:** the engine is
 DOM-free. **[corrected 2026-10-03] the rule as written here is false, and its
@@ -241,6 +259,18 @@ cited as `:6875`), and while it parks the whole stack below it is suspended:
 `++map.localTime.turnCounter` all stop; and `advancePlayDistrict`'s
 `m_Session.worldTime.turnCounter++` **[v]** (`:4661`) does not run, so day and night
 are frozen too.
+
+**[clarified 2026-10-04, after §4.0] The quotation above is not contradicted by
+the real-time decision, and the distinction matters enough to write down.**
+`30c0075` rules out advancing the world *underneath* a player who has not acted —
+and §4.0 does not do that. The player remains an actor in the recursive descent
+and still takes their turn; when the queue is empty that turn resolves to
+`DoWait`, whose first act is spending `BASE_ACTION_COST`, and only then does the
+descent continue to the next actor. The world ticks **because** the player acted,
+not despite them not acting. What §4.0 adds over `IdleAdvance` is not a world that
+ignores the player — it is the *server* holding the interval and the queue being
+per-player instead of per-session. The commit's claim stands; the mechanism it
+describes is the one being reused.
 
 So the option cannot be the foundation. **What it *is*, and this is the useful
 part:** an existing, tested anti-stall primitive. A disconnected or AFK remote
@@ -364,7 +394,50 @@ loops alternate cleanly.
 
 ## 4. What real-time actually costs
 
-The cheap theory: a parked player has `actionPoints <= 0`, so
+### 4.0 The design, restated 2026-10-04
+
+**Real time is how multiplayer runs, not a later option on top of it.** One tick
+per second, held by the server:
+
+1. advance **one full map turn** — `getNextActorToAct` sweeps every actor in
+   round-robin until none has `actionPoints > 0`, then `NextMapTurn` regenerates
+   and resets the cursor;
+2. each **player** pick in that sweep takes the move queued since the previous
+   tick, or `DoWait` if the queue is empty;
+3. NPC picks resolve from the AI exactly as today.
+
+**`actorSpeed` still differentiates, and this is why the tick is a map turn and
+not an action.** `NextMapTurn` grants `actor.actionPoints += actorSpeed(actor)`
+**[v, `RogueGame.ts:5667`]** and every action costs `BASE_ACTION_COST = 100`
+**[v, `Rules.ts:120`]**. A base-100 survivor therefore acts exactly once per tick;
+a tired, encumbered or sleepy one is granted less and acts less often, exactly as
+in single-player; a fast one accumulates across ticks and earns a second pick
+inside the same tick, which drains the next queued move or waits. Ticking one
+*action* per second instead would have flattened that to a uniform rate — a
+balance change against the C#, for no gain.
+
+**The precedent is already in the file, and it is one branch.**
+`WaitKeyOrMouse` takes a timeout, `idleAdvanceMs(s_Options.idleAutoAdvance)`
+**[v, `RogueGame.ts:8198`]**, and on `ev.timedOut` the play loop runs
+`if (!(await this.TryPlayerInsanity())) this.DoWait(player)` **[v,
+`RogueGame.ts:8234-8239`]**. That is this design with one player and a local
+clock. Multiplayer is the same branch with the clock on the server and the queue
+drained per player.
+
+**What that changes inside this document**, recorded before the detail because
+three of §4.1's five items and the whole of §5 are artifacts of a *different*
+design — the one that parks a player so the world moves past them:
+
+| was | now |
+|---|---|
+| §4.1 items 1-2 — `isSuspended` and its suspend/resume guards | **deleted.** Parking existed to make an unresponsive player *skipped*. Under default-wait they are not skipped — they act, and their action is wait — so there is no third skip condition in `getNextActorToAct` and no resume path. |
+| §4.1 item 5 — discard the AP bank on resume | **deleted, premise and all.** See §5: the bank cannot form once every pick resolves to something that spends. |
+| §4.1 items 3-4 — blocking-guard, wall clock | **kept, and now Phase 2's.** Item 4 becomes the server's tick rather than a local `GameLoop` timeout; item 3 is *more* urgent, because a modal that holds one pick open now stalls every player's tick rather than one player's turn. |
+| §5 — "the two traps" | **both unreachable under default-wait.** §5's title is now a description of the design we are not building, kept because it is what reintroducing parking would buy back. |
+| §11 item 7 — peek or await? | **largely answered.** There is a hard 1-second deadline and `WaitKeyOrMouse` already has a timeout path that does the right thing, so the shape is "peek with a deadline", not an open poll. |
+
+The cheap theory, of the parking design this section was originally written for:
+a parked player has `actionPoints <= 0`, so
 `getNextActorToAct` (the `actionPoints > 0` test, `Rules.ts:2337`) skips them;
 `NextMapTurn` grants every non-sleeping actor `actorSpeed` (`RogueGame.ts:5595`)
 and zeroes the cursor (`:5601`) **[v]**; therefore the world advances around a player who is not
@@ -404,16 +477,17 @@ a wall-clock deadline instead of `TURNS_PER_HOUR`.
 
 | # | change | where | size |
 |---|---|---|---|
-| 1 | `isSuspended` as a third skip condition beside `isSleeping` | `Rules.getNextActorToAct`, the `!a.isSleeping` test (`Rules.ts:2337`) | 1 line |
-| 2 | suspend/resume guard: zero AP on suspend; on the skip path also run `CheckSpecialPlayerEventsAfterAction` (called at `RogueGame.ts:4935`) and the `previous*` assignments and `UpdatePlayerFOV` | `advancePlayMap`, after the `isPlayer` read at `RogueGame.ts:4890` | ~15 lines |
+| ~~1~~ | ~~`isSuspended` as a third skip condition beside `isSleeping`~~ | ~~`Rules.getNextActorToAct`, the `!a.isSleeping` test (`Rules.ts:2337`)~~ | ~~1 line~~ **— deleted 2026-10-04.** Parking is what `isSuspended` existed for; default-wait does not skip the player (§4.0). |
+| ~~2~~ | ~~suspend/resume guard: zero AP on suspend; on the skip path also run `CheckSpecialPlayerEventsAfterAction` and the `previous*` assignments and `UpdatePlayerFOV`~~ | ~~`advancePlayMap`, after the `isPlayer` read at `RogueGame.ts:4890`~~ | ~~~15 lines~~ **— deleted 2026-10-04.** Its premise is §5's bank, which cannot form (§5). The `UpdatePlayerFOV` half was **never about parking** and survives independently — see the FOV note under item 3. |
 | 3 | extend the `m_SimulatingInIdle` guard from `AddMessagePressEnter` to the other blocking primitives, and **rewrite the comment that says it is unnecessary** | the guard is `RogueGame.ts:2227`; the sets/clears are `:16787`/`:16791` | ~6 lines + comment, **minus the three sites left in §4.1's table** |
-| 4 | wall clock in the `GameLoop` `while`, placed *after* `AdvancePlay` returns so it cannot race the turn | `RogueGame.ts:2398` | ~3 lines |
+| 4 | wall clock — **now the server's tick**, not a local `GameLoop` timeout: one map turn per second, with each player's pick draining its queue or falling through to `DoWait` | `RogueGame.ts:2398` for the loop shape; the server owns the interval | ~3 lines in `GameLoop`, plus the queue |
+| ~~5~~ | ~~discard the AP bank on resume~~ | — | ~~1 line~~ **— deleted 2026-10-04**; survives as a reconnect concern in Phase 4, where an *absent* player is a different thing from an *idle* one. |
 
-*Every `where` cell re-anchored to a symbol 2026-10-03. All four previously carried
-bare `RogueGame.ts` offsets in a file that has grown ~4,000 lines since. The sizes are
-unchanged; item 3's is now smaller, because eight of the sites it would have covered
-already have a guard.*
-| 5 | discard the AP bank on resume | — | 1 line |
+*Every `where` cell re-anchored to a symbol 2026-10-03. The four that then existed
+carried bare `RogueGame.ts` offsets in a file that has grown ~4,000 lines since.
+**Item 3's size is the one that shrank**: eight of the sites it would have covered
+already carry an `isBotPlayer` guard.*
+
 
 **Item 3 is the one that bites at runtime, and the existing comment is why
 nobody would have found it.** Only `AddMessagePressEnter` carries the
@@ -520,6 +594,27 @@ NPC. That is a design decision, not a bug, and it should be made deliberately.
 ---
 
 ## 5. The two traps in the obvious design
+
+> **2026-10-04: neither trap can fire in the design §4.0 settled on. Both are
+> traps in *parking*, and parking is deleted.** Recorded here rather than removed,
+> because they are exactly what reintroducing a skip condition would buy back, and
+> because the mechanism of *why* they close is worth more than the conclusion.
+>
+> A bank needs `actionPoints` to **grow while the actor is not picked**. The only
+> pick-skip is `!a.isSleeping` (`Rules.ts:2337` **[v]**) — and a sleeping actor is
+> *also* withheld the regen, `if (!actor.isSleeping) actor.actionPoints += …`
+> (`RogueGame.ts:5666-5667` **[v]**), so sleep accumulates nothing either. Every
+> other actor with `actionPoints > 0` is picked, and every pick resolves to
+> something that spends — under default-wait, unconditionally `DoWait`, whose first
+> act is `SpendActorActionPoints(actor, Rules.BASE_ACTION_COST)` (`RogueGame.ts:19242`
+> **[v]**), and `SpendActorActionPoints` is a bare `-=`, unclamped, so it can even
+> drive AP *negative* rather than leave a residue.
+>
+> **Therefore: no skip, no bank.** `isSuspended` was the one construct that
+> produced a third skip while leaving regen on — which is why §4.1 items 1-2, item
+> 5 and this section all live or die together. What *can* still go wrong is a pick
+> that never resolves (a modal holding it open), which stalls the turn rather than
+> banking against it, and that is §4.1 item 3.
 
 Both come from the same place: **`actionPoints` is uncapped anywhere in the
 tree** **[d]**. It is written in six places **[d]** and clamped in none.
@@ -633,6 +728,21 @@ that are genuinely expensive, and turn-passing makes all three free: only the
 acting player is ever rendered, so only one FOV and one camera need to be
 correct at a time, and each client is single-player by construction.
 
+**[corrected 2026-10-04, after the real-time decision (§4.0): that last claim
+now holds only on the client, and item 4 becomes Phase 2 work rather than a
+note.]**
+
+| | was | now |
+|---|---|---|
+| 2 — one FOV | "zero for turn-passing" | **Still zero on the client** — each draws itself from its own replica, so `setViewAndMarkVisited` is never contended across machines. **Not zero on the server:** `m_PlayerFOV` (`RogueGame.ts:1614` **[v]**) is a single set and `IsVisibleToPlayer` reads it at **151** sites **[d]**, all of them message gating. Two players picking in the same map-turn alternate the writer, so which of them a `NextMapTurn` message is visible *to* is whoever acted last. Turn-passing never showed this because only one player ever acted. Per-player message filtering is now a Phase 2 requirement, not a nicety. |
+| 3 — one camera | "zero for turn-passing" | **Still zero.** `m_MapViewRect` is server-side rendering state and the server renders nothing; each client computes its own `ComputeViewRect`. No change. |
+| 4 — one current map, clock gated on it | "with two players in two districts, only one ticks the clock" **[d]** | **Confirmed and now blocking.** `advancePlayDistrict` advances *every map it is handed* — the `for (const map of district.maps)` loop — but only increments the shared `worldTime.turnCounter` and fires sunrise/sunset/`OnNewDay`/`OnNewNight` when `district === this.m_Session.currentMap?.district` (`RogueGame.ts:4720-4721` **[v]**). Single-player gets away with it because `simulateOneDistrictTurnWhileIdle` drives the other districts and nobody is watching their clock. Real-time cannot: **the tick must advance every district, and exactly one of them must own the world clock** — or day/night fires once for two players standing in different districts. Phase 2. |
+
+So turn-passing's saving on items 2 and 4 is what real time *spends*, and that is
+the honest price of §4.0 — it is small (a filter and a clock decision), but it is
+not zero, and §4.0's table does not list it because it belongs here with the
+assumptions it breaks.
+
 **Item 8 has two one-line landmines** that matter for reconnect rather than for
 the first session:
 
@@ -712,12 +822,30 @@ state-consuming peeks and 2 are injection seams (`UI_PostKey`, `UI_PostMouseButt
 > cheaper has been made, and the poll has a real advantage (it is why the browser
 > build can drive a turn without a promise per keystroke) that an `await` loop has
 > to reproduce.
+>
+> **[narrowed later the same day, by §4.0]** The real-time decision gives the
+> question the deadline it was missing: a pick resolves within one tick or falls
+> through to `DoWait`, so the poll never has to answer *now*, only *within the
+> second*. That is why §11 item 7 no longer reads "abandoning the timeout-based
+> `IdleAdvance`" as a cost — the timeout **is** the mechanism. What is left is one
+> measurement, recorded there: can `UI_PeekKey` answer "nothing yet" from a socket
+> without holding the event loop for the whole tick? If it can, the poll survives
+> and `NetUI` is much closer to a drop-in than this note feared. If it cannot, the
+> loop awaits and §7's conclusion stands as written.
 
 **The client runs the shipped renderer** against a replica of its own map that it
 never simulates. It computes its own FOV, because `UpdatePlayerFOV` is a pure
 function of the map, the actor's position and the light sources in it — and all
-of those are in the snapshot. **This is what makes item 2 in §6 free**, and it
-is why the 151 `IsVisibleToPlayer` sites never need to change.
+of those are in the snapshot. **This is what makes item 2 in §6 free *on the
+client***.
+
+**[corrected 2026-10-04] The last sentence this used to carry — "and it is why the
+151 `IsVisibleToPlayer` sites never need to change" — is only half true now.**
+Those 151 sites are not about drawing; they are **message gating** on the server,
+reading the single `m_PlayerFOV`. The client's own FOV is unchanged and free, but
+"which player is this message visible to" is now a question with two answers in
+one map turn, and the sites do need to change — per player, on the server. See
+§6 item 2 and Phase 2 item 4.
 
 **The elegant consequence.** With two players, `m_UI` has to become *resolved*
 rather than fixed — roughly
@@ -929,8 +1057,9 @@ asked in four places.
 **What was wrong, and both halves were silent.** `Session.writeGraph` recorded
 `findPlayerActor(currentMap)`: the **first** player-controlled actor on the **one**
 map the session calls current. So two players on one map meant the second was never
-written, and two players in two districts — turn-passing's whole reason for
-existing — meant the second was not even looked for.
+written, and two players in two districts — which real time makes ordinary
+rather than a special case (§4.0, §6 item 4) — meant the second was not even
+looked for.
 
 Silent because `_controller` is `{ kind: "skip" }` in the graph spec: a restored
 actor has no controller, so `isPlayer` is false until one is attached. **A player
@@ -1155,9 +1284,50 @@ settle before starting.
 `WebSocketServer`; `NetUI` implements `IRogueUI` with per-actor routing (§7).
 `NullRogueUI` is the existing precedent for the non-acting case.
 
-**Gate:** two `NetUI` connections can drive one `RogueGame` through 50 turns
-with no browser involved — a `HeadlessRunner` variant. This is the real
-integration test and it is the one that would catch a re-entrancy bug.
+**And the clock, because real time is the mode (§4.0) — this is the part that
+was Phase 5 and is now the front half of this phase.** In order:
+
+1. **§4.1 item 3, first and unconditionally.** Extend the `m_SimulatingInIdle`
+   guard from `AddMessagePressEnter` to the other blocking primitives and rewrite
+   the comment claiming it is unnecessary. Eight of the sites already carry an
+   `isBotPlayer` guard to copy; the residue is three, of which the two
+   `OnNewDay`/`OnNewNight` skill screens are the dangerous ones. Until this
+   lands, one world-initiated modal stalls *every* player's tick rather than one
+   player's turn — and it is the only item here that gets worse with more players.
+2. **The tick.** One second, one **map turn** (not one action — `actorSpeed` must
+   keep differentiating, §4.0), each player's pick draining its queue or falling
+   through to `DoWait`. The queue is per-player and lives on the server.
+
+   **[detail that will otherwise be discovered in production]** Each player's pick
+   still goes through `HandlePlayerActor` → `WaitKeyOrMouse`, whose timeout today
+   comes from `idleAdvanceMs(s_Options.idleAutoAdvance)`, defaulting to **OFF**.
+   Three consequences, and the third is the one that bites:
+   - the server's `idleAutoAdvance` must not be OFF, or the peek never resolves;
+   - the queue is filled by the socket *between* ticks, so at tick time it should
+     drain without waiting at all — `WaitKeyOrMouse` returning immediately is the
+     common case, and a timeout is the `DoWait` case, not a stall;
+   - **the timeout is the time remaining in the tick, not a fresh 1,000 ms per
+     pick.** With N players each waiting a full second, a tick takes N seconds and
+     the cadence drifts by construction — the exact failure a one-second design is
+     supposed not to have. A fresh interval per pick would also give a slow player
+     a longer budget than a fast one.
+   Whether `WaitKeyOrMouse` takes a caller-supplied deadline or the tick computes
+   one and pre-drains the queue is a Phase 2 choice; the invariant either way is
+   **one tick takes at most one second, whatever N is.**
+3. **All districts, one clock.** §6 item 4: advance every district per tick, and
+   decide which one owns `worldTime.turnCounter`. Record the decision.
+4. **Per-player message gating.** §6 item 2: the server's single `m_PlayerFOV`
+   cannot answer "is this visible to *that* player" at 151 call sites.
+5. **§4.1 item 4** as written: the wall clock sits *after* `AdvancePlay` returns,
+   so it cannot race a turn.
+
+**Gate:** two `NetUI` connections can drive one `RogueGame` through 50 **ticks**
+with no browser involved — a `HeadlessRunner` variant that owns the one-second
+interval, sends each player a different command on different ticks, and asserts
+(a) the world advanced 50 map turns, (b) a player who sent nothing `DoWait`ed
+every time, and (c) a player who sent two commands on one tick got both, in order.
+This is the real integration test and it is the one that would catch a
+re-entrancy bug — and with a clock in it, also a double-advance.
 
 ### Phase 3 — client
 
@@ -1194,18 +1364,30 @@ cursor is 0 by construction — which is where it would have been anyway. Join a
 world whose future rolls match the pre-restart future. That test is the only
 honest proof that the RNG state was captured.
 
-### Phase 5 — real-time, optional
+### Phase 5 — the clock, judged (was: real-time, optional)
 
-The table in [§4.1](#41-the-work), in that order. **Item 3 first**, because it is
-the one that produces a modal dialog with nobody behind it.
+**[re-scoped 2026-10-04]** This phase no longer *builds* real time — §4.0 moved
+that into Phase 2, and §4.1's items 1, 2 and 5 were deleted with it. What is left
+is the half this phase always said was the real half:
 
-Do this *after* turn-passing has been played, because the real cost is not the
-engine — it is the balance and the log, and neither can be judged from a plan.
-Add the AP-discard on resume (§5.1) in the same commit as item 1, not after.
+> the real cost is not the engine — it is the balance and the log, and neither
+> can be judged from a plan.
 
-**Gate:** park a player for 100 turns with the wall clock running; assert no
+So: play it, and judge it. Does one action per second *feel* like Rogue Survivor?
+Does the message log hold six lines when two players are producing events at
+once (§6 item 6 — fine with a current FOV, a flood without one)? Does the AI
+come looking for a player who has been standing still for thirty ticks? None of
+that has an answer in a plan, and Phase 2's gate only proves it runs.
+
+Also here: **the AP-discard on resume (§5.1's sibling)**, which §4.1 item 5 left
+behind. It is a *reconnect* concern, not an idle one — an absent player is not an
+idle player — so it belongs with the resume path, and it should land in the same
+commit as whatever Phase 4 does about `DiceRoller.state`, not before.
+
+**Gate:** park a player for 100 **ticks** with the wall clock running; assert no
 message storm, no stranded dialog, no banked actions, and that the AI has in
-fact come looking.
+fact come looking. Then read the log out loud to somebody who has played the
+game, because that is the actual gate.
 
 ### Phase 6 — deploy
 
@@ -1239,10 +1421,14 @@ acceptable.
 
 **Shared fog of war / simultaneous views.** This is the one that would force
 `m_PlayerFOV` to become per-viewer across 151 call sites, with
-`Tile.isInView` written onto the map **[v]**. Turn-passing avoids it completely
-because each client is single-player by construction. If it is ever wanted, the
-answer is *separate processes*, not a refactor of visibility — which is
-another argument for the architecture in §7.
+`Tile.isInView` written onto the map **[v]**. It stays out of scope after the
+real-time decision (§4.0) — but for a *different reason than turn-passing gave*,
+and the difference is worth one sentence: each client draws itself from its own
+replica, so visibility is separated by **architecture**, not by only one player
+being live at a time. What §4.0 does require is the server knowing *whose* log a
+message belongs in (§6 item 2), which is gating on a view, not sharing one. If
+shared views are ever wanted, the answer is still *separate processes*, not a
+refactor of visibility — which is another argument for the architecture in §7.
 
 **Split-screen in one process.** The same 151 sites, plus two canvases, plus the
 `LOGICAL_W/LOGICAL_H` constants `CanvasUI.ts` deliberately duplicates rather
@@ -1258,7 +1444,7 @@ than imports **[d]**.
 | **The `m_Player` → acting-player rename is bigger than it looks** | **427** references **[d]**; the ones that quietly meant "the player" are indistinguishable from correct ones by inspection | Run it behind the two-player test, not behind review. A read that is wrong is not a compile error and not a `tsc` failure. |
 | **The client's render-only `RogueGame` does not `RedrawPlayScreen` cleanly** | Untested. `RogueGame` mixes simulation and drawing in one class by design (§6 of the port plan calls the split overdue) | Phase 3's stop condition. §6 Wave 2 is the fallback, and it is already planned. |
 | **A stale cached bundle talks to a new server** | cache-first `/assets/*` **[d]**, no version handshake anywhere | `PROTOCOL_VERSION` in `hello`. Non-negotiable. |
-| **A modal dialog with no human behind it** | **44** `AddMessagePressEnter` call sites now **[d, re-measured 2026-10-03: this said six]**, of which eight world-initiated ones already carry an `isBotPlayer` guard — so the risk is real but smaller than stated, and the guard pattern to copy exists | Phase 5 item 3, minus the eight already done. Fix it before the wall clock, not after. |
+| **A modal dialog with no human behind it** | **44** `AddMessagePressEnter` call sites now **[d, re-measured 2026-10-03: this said six]**, of which eight world-initiated ones already carry an `isBotPlayer` guard — so the risk is real but smaller than stated, and the guard pattern to copy exists. **[re-scoped 2026-10-04] real time made this worse, not better: the tick is shared, so one unguarded modal now stalls every player's turn instead of one player's.** | **Phase 2 item 1** (was Phase 5 item 3), minus the eight already done, and **first** — before the clock, not after it. |
 | **Per-turn payload is too large** | 150-250 KB per map **[?]** — extrapolated, not measured | Measure before optimising. Clip to FOV, then diff, in that order. |
 | ~~**A player is stranded at `actorSpeed === 0`**~~ | **Retired 2026-10-03.** §5.3 said this was reachable in normal play **[?]**; measured, it is not — the floor is 3, because the one actor with a low enough base is undead and so takes neither multiplier. Pinned by `web/tests/actor-speed-floor.test.ts` | Nothing. **Do not apply the `Math.max(…, 1)` this plan used to prescribe** — it is a divergence from `Rules.cs:4681` for an unreachable case |
 | **Desync between client and server** | The client holds a replica it never simulates, so drift is expected by construction | `Map.assertActorIntegrity()` on the replica — **but it is not wired into `RogueGame` today** (§7.2), so this is a call site to add, not a free check. Periodic full resync is the backstop. |
@@ -1297,21 +1483,32 @@ than imports **[d]**.
    the `fireEvent` raid calendar? Probably yes for the minimap and the day
    counter, and it is not yet enumerated **[?]**. It is the most likely source of
    a Phase 3 surprise.
-7. **Does the play-loop peek block, or does the loop become an `await`?**
-   **Added 2026-10-04, and it is now the first question in this list**, because
-   Phase 0 showed that `NetUI` cannot be a drop-in (§7): `WaitKeyOrMouse` polls
-   `UI_PeekKey()` synchronously, and a socket cannot answer a poll. The two answers
-   cost very different things and they should be compared *before* Phase 2 is
-   scheduled rather than discovered inside it:
-   - **peek blocks.** `NetUI` stays a drop-in and the engine barely changes — but
-     the poll design and the timeout-based `IdleAdvance` both go, and §2.1 calls the
-     latter load-bearing for a disconnected peer.
-   - **loop awaits.** The engine's hottest loop gains a promise per iteration, and
-     the browser build loses whatever the poll buys it. The timeout path can
-     survive as an explicit race.
-   **[?]** No measurement of either has been made. §6.9's existing scanner tests
-   and the first-person goldens are what would catch a regression in the second
-   option, so they are the prior art for costing it.
+7. ~~**Does the play-loop peek block, or does the loop become an `await`?**~~
+   **Largely answered 2026-10-04 by the real-time decision (§4.0) — narrowed, not
+   closed.** The question had no deadline in it, which is why it was open: an
+   *unbounded* poll cannot be served by a socket. §4.0 supplies the deadline.
+   The server advances a tick every second and each player's pick resolves to
+   "queued move, or `DoWait`", so the loop never waits longer than one tick — and
+   `WaitKeyOrMouse` already takes exactly that shape, a timeout whose `ev.timedOut`
+   branch runs `DoWait` (`RogueGame.ts:8234-8239` **[v]**).
+
+   The two answers become two ways to spend the same second, so they are now
+   costed rather than guessed:
+   - **peek with a deadline.** `NetUI` stays a drop-in, the poll design survives,
+     and `IdleAdvance`'s timeout path *is* the mechanism rather than a casualty of
+     it. What has to be measured: whether `UI_PeekKey` can answer "nothing yet"
+     from a socket without blocking the event loop for the whole second, because
+     a synchronous poll that cannot is worse than no poll at all.
+   - **loop awaits.** A `Promise.race` against a one-second timer. The engine's
+     hottest loop gains a promise per iteration and the browser build loses
+     whatever the poll buys it; the timeout path survives as the race arm.
+
+   **[?] still unmeasured, and this is now the one thing Phase 2 must answer
+   before it writes `NetUI`.** The measurement is small and specific: time a
+   `UI_PeekKey` that returns `null` immediately against one that waits on a
+   socket for up to 1,000 ms, and see which the server's tick can tolerate.
+   §6.9's scanner tests and the first-person goldens are the prior art for
+   costing the regression either way.
 
 ---
 
