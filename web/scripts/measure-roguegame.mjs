@@ -67,7 +67,26 @@ const lines = raw.split("\n");
 const classStart = lines.findIndex((l) => /^export class RogueGame/.test(l));
 
 /** Every class member, with the line its declaration is on and its visibility. */
-const MEMBER = /^\t(?:(?:public|private|protected)\s+)?(?:(?:static|readonly|async|abstract|override)\s+)*(?:(?:get|set)\s+)?([A-Za-z_]\w*)\s*(?:<[^>]*>)?\s*(?:\(|[:=;])/;
+const MEMBER = /^\t(?:(?:public|private|protected)\s+)?(?:(?:static|readonly|async|override)\s+)*(?:(?:get|set)\s+)?([A-Za-z_]\w*)\s*(?:<[^>]*>)?\s*(?:\(|[:=;])/;
+
+/**
+ * Whether a declaration is a method or a field — decided by the **first**
+ * delimiter after the name, not by the presence of a `(` anywhere on the line.
+ *
+ * A field with an initialiser carries brackets of its own:
+ * `m_SpeechBubbles: globalThis.Map<Actor, SpeechBubble> = new globalThis.Map();`
+ * has a `(` from the `new`, and a whole-line `(` test counts that field as a
+ * method — putting it in both totals and quietly inflating `methods`. The name is
+ * followed by `(` in a method declaration and by `:` or `=` in a field's, so the
+ * first one of those decides it, and the type parameter list of a generic
+ * method (`foo<T>(`) cannot be mistaken for either.
+ */
+function isMethodDecl(decl, name) {
+	const afterName = decl.slice(decl.indexOf(name) + name.length);
+	const first = /[(:=;]/.exec(afterName);
+	return first !== null && first[0] === "(";
+}
+
 const members = new Map();
 for (let i = classStart; i < lines.length; i++) {
 	const m = MEMBER.exec(lines[i]);
@@ -77,7 +96,7 @@ for (let i = classStart; i < lines.length; i++) {
 	members.set(m[1], {
 		line: i + 1,
 		visibility,
-		isMethod: /\(/.test(decl),
+		isMethod: isMethodDecl(decl, m[1]),
 		decl: decl.trim(),
 	});
 }

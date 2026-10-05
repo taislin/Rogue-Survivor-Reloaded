@@ -267,7 +267,7 @@ behind the `Feature` registry.
 
 ### New options on the options screen
 
-Four of them, all marked `// browser port` in `engine/GameOptions.ts` against
+Five of them, all marked `// browser port` in `engine/GameOptions.ts` against
 the C# `GameOptions.IDs` list, which has no equivalent:
 
 | Option | Choices | Notes |
@@ -275,6 +275,7 @@ the C# `GameOptions.IDs` list, which has no equivalent:
 | **Sprite style** | classic, deonapocalypse v9 r1, genesis classic 1.4, dafttiles b1, civ13, plus "Genesis actors, Deonapocalypse world" | Swaps the whole art set from `assets/images/`. `classic` is the original and the only complete set. |
 | **Font** | JetBrains Mono (default), Iosevka Slab, Hack, IBM Plex Mono, Classic (system) | Four families vendored and subset to the glyphs the game can draw. See `src/ui/fonts.ts` for why they are bundled and subset, and for the advance width the menu layout depends on. |
 | **View mode** | Top-down, First-person | A raycast renderer over the same map and rules; anything but top-down is labelled experimental. |
+| **Speech bubbles** | Off (default), On | Draws what an actor last said in a bubble over their tile, so a line can be attributed to a person instead of scrolled past. Nothing is lost with it off — every line still reaches the message log. |
 | **Idle auto-advance** | Off (default), 1s, 2s, 5s, 10s, 30s | Takes a turn for you when you do nothing. Stops the moment you press anything, and never fires while a targeting mode is open. |
 
 The font option is the one most likely to surprise: every family is 0.6 em

@@ -125,6 +125,17 @@ export enum OptionIDs {
    * read as a fix rather than a divergence.
    */
   UI_AMBIENTSFXS_VOLUME,
+  /**
+   * Browser port. Appended, per the numeric-id rule.
+   *
+   * Draws what actors say as a bubble over their tile, instead of only in the
+   * message log. Purely visual: it adds no information the log did not already
+   * carry, and the log still gets every line. Not a `Feature`, because a
+   * `Feature` is a Still Alive behaviour switch and this is neither — it is a
+   * renderer preference, in the `(Gfx)` family with the sprite style and the
+   * typeface, and it is on or off in all three rulesets alike.
+   */
+  UI_SHOW_SPEECH_BUBBLES,
 }
 
 /**
@@ -549,6 +560,20 @@ export class GameOptions {
    * reads as load-bearing.
    */
   private m_ViewMode: ViewMode = DEFAULT_VIEW_MODE;
+
+  /**
+   * Whether an actor's last line is also drawn as a bubble over its tile.
+   *
+   * A renderer preference, not a rule: `RogueGame.SpeakOverhead` is the only
+   * reader, it decides whether to add a bubble at the moment something is said,
+   * and there is no second copy of the value for anything else to fall out of
+   * step with — hence a plain accessor with no `applyX()`, like `m_ViewMode`.
+   *
+   * Default off. Off is the faithful look, and the port's whole game is a 1:1
+   * transcription by default; a player who has never opened the options screen
+   * should be looking at Alpha 10.1, not at a decision made for them here.
+   */
+  private m_ShowSpeechBubbles = false;
 
   /**
    * Whether the game takes a turn for an idle player, and after how long.
@@ -1118,6 +1143,17 @@ export class GameOptions {
   }
 
   /**
+   * Whether actors get a bubble over their tile when they speak. Plain accessor,
+   * no side effect, for the same reason `viewMode` has none — see `m_ViewMode`.
+   */
+  get showSpeechBubbles(): boolean {
+    return this.m_ShowSpeechBubbles;
+  }
+  set showSpeechBubbles(value: boolean) {
+    this.m_ShowSpeechBubbles = value;
+  }
+
+  /**
    * Whether an idle player has a turn taken for them, and after how long.
    *
    * Plain accessor, no side effect, for the same reason `viewMode` has none: the
@@ -1227,6 +1263,7 @@ export class GameOptions {
       void this.applyFontChoice();
       this.m_ViewMode = GameOptions.DEFAULT_VIEW_MODE;
       this.m_IdleAutoAdvance = GameOptions.DEFAULT_IDLE_AUTO_ADVANCE;
+      this.m_ShowSpeechBubbles = false; // browser port; see `m_ShowSpeechBubbles`
       this.DEV_ShowActorsStats = false;
     }
     if (category === OptionsCategory.DIFFICULTY || category === OptionsCategory.ALL) {
@@ -1407,6 +1444,8 @@ export class GameOptions {
       return "  (Gfx) Font";
     case OptionIDs.UI_VIEW_MODE:
       return "  (Gfx) View Mode";
+    case OptionIDs.UI_SHOW_SPEECH_BUBBLES:
+      return "  (Gfx) Speech Bubbles";
     case OptionIDs.GAME_IDLE_AUTO_ADVANCE:
       return "  (Play) Idle Auto-Advance";
       default:
@@ -1575,6 +1614,14 @@ export class GameOptions {
         "In first person west and east change meaning:\n" +
         "Left and Right, or A and D, turn you an eighth of a circle, costing no turn;\n" +
         "Up and Down, or W and S, walk you forward and back the way you are facing."
+      );
+    case OptionIDs.UI_SHOW_SPEECH_BUBBLES:
+      return (
+        "Shows what people say in a bubble over their head, so you can tell who said it\n" +
+        "without reading down to the message log.\n" +
+        "You still get every line in the log; a bubble only shows the last thing said,\n" +
+        "and it fades once the speaker has had a few turns.\n" +
+        "Off is the original look."
       );
     case OptionIDs.GAME_IDLE_AUTO_ADVANCE:
       return (
@@ -1907,6 +1954,8 @@ export class GameOptions {
       return fontChoiceName(this.fontChoice);
     case OptionIDs.UI_VIEW_MODE:
       return GameOptions.viewModeName(this.viewMode);
+    case OptionIDs.UI_SHOW_SPEECH_BUBBLES:
+      return this.showSpeechBubbles ? "ON    (default OFF)" : "OFF   (default OFF)";
     case OptionIDs.GAME_IDLE_AUTO_ADVANCE:
       return `${GameOptions.idleAdvanceName(this.idleAutoAdvance)}   (default ${GameOptions.idleAdvanceName(
         GameOptions.DEFAULT_IDLE_AUTO_ADVANCE
@@ -2226,6 +2275,13 @@ export function stepGameOption(option: OptionIDs, dir: -1 | 1): void {
 			}
 			break;
 		}
+		case OptionIDs.UI_SHOW_SPEECH_BUBBLES:
+			// Both arrows flip it: a boolean has no order to step through, and a
+			// row that only responded to one of them reads as broken. Nothing is
+			// applied afterwards — `RogueGame` reads `s_Options.showSpeechBubbles`
+			// at the moment a line is spoken, so the next one already bubbles.
+			o.showSpeechBubbles = !o.showSpeechBubbles;
+			break;
 		default:
 			break;
 	}

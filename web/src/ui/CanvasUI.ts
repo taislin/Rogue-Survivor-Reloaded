@@ -13,6 +13,7 @@ import { SceneRenderer } from "./firstperson/SceneRenderer";
 import type { Scene } from "@engine/firstperson/SceneBuilder";
 import type { SceneRendererStats } from "@engine/firstperson/Types";
 import { fontHud, fontHudBold, fontMenu, fontMenuBold } from "./fonts";
+import { wrapToWidth } from "./textWrap";
 
 /**
  * Size of the minimap raster, in pixels *and* in tiles: one pixel per map tile
@@ -583,6 +584,15 @@ export class CanvasUI implements IRogueUI {
   /** Line height for popups and menus, matching the 12pt menu font. */
   private readonly MENU_LINE_H = 18;
 
+  /**
+   * Line height for speech bubbles, matching the 10pt HUD face.
+   *
+   * The same 1.5x ratio as `MENU_LINE_H`, so the two boxes' proportions agree —
+   * a bubble is a popup in the HUD font, and its padding is scaled down to match
+   * rather than kept at the popup's.
+   */
+  private readonly BUBBLE_LINE_H = 15;
+
   UI_DrawPopup(
     lines: string[], textColor: Color, borderColor: Color, fillColor: Color,
     gx: number, gy: number,
@@ -709,6 +719,86 @@ export class CanvasUI implements IRogueUI {
       this.ctx.fillStyle = (colors[i] ?? colors[colors.length - 1]).toCssRgba();
       this.ctx.fillText(lines[i], gx + padX, ty);
       ty += this.MENU_LINE_H;
+    }
+  }
+
+  // ── Speech bubbles ────────────────────────────────────────────────────────
+
+  /**
+   * Draws a speech bubble over a tile — see `IRogueUI.UI_DrawSpeechBubble` for
+   * why the engine hands over a tile and a wrap width instead of a position.
+   *
+   * Placed above the tile, centred on it. An actor in the top row of the map has
+   * no room above, so the bubble flips below rather than being pushed down onto
+   * the tile it is annotating — and `clampPopupBox` then pulls the whole box
+   * back on screen, which is what keeps a bubble over an actor in the last column
+   * from running off the right edge. The tail is drawn from the *clamped* box
+   * edge and its base is pulled inside the box's own width, so a clamped bubble
+   * still points at its speaker rather than at a spot off the edge of the map.
+   */
+  UI_DrawSpeechBubble(
+    text: string, textColor: Color, borderColor: Color, fillColor: Color,
+    anchorX: number, anchorY: number, anchorSize: number, maxTextWidth: number,
+  ): void {
+    this.ctx.font         = fontHudBold();
+    this.ctx.textBaseline = "top";
+
+    // The font has to be set before the measurement, not just before the draw:
+    // `wrapToWidth` asks this context how wide things are, and that answer is a
+    // property of the installed face.
+    const measure = (s: string): number => this.ctx.measureText(s).width;
+    const lines = wrapToWidth(text, Math.max(1, maxTextWidth), measure);
+    if (lines.length === 0) return;
+
+    const padX = 5, padY = 4;
+    const TAIL_H = 5;
+    const TAIL_HALF = 4;
+    const textW = lines.reduce((w, l) => Math.max(w, measure(l)), 0);
+    const boxW = textW + padX * 2;
+    const boxH = lines.length * this.BUBBLE_LINE_H + padY * 2;
+
+    const tileCx = anchorX + anchorSize / 2;
+    // Above unless the box would not fit there; the tail then points back up.
+    const below = anchorY - boxH < 0;
+    const clamped = CanvasUI.clampPopupBox(
+      tileCx - boxW / 2,
+      below ? anchorY + anchorSize : anchorY - boxH,
+      boxW, boxH, this.scaledDrawScale,
+    );
+    const gx = clamped.x;
+    const gy = clamped.y;
+
+    // Box.
+    this.ctx.fillStyle = fillColor.toCssRgba();
+    this.ctx.fillRect(gx, gy, boxW, boxH);
+    this.ctx.strokeStyle = borderColor.toCssRgba();
+    this.ctx.lineWidth   = 1;
+    this.ctx.strokeRect(gx + 0.5, gy + 0.5, boxW - 1, boxH - 1);
+
+    // Tail: a triangle on the edge facing the tile, overlapping it slightly so the
+    // two read as one shape rather than as a box with something stuck under it.
+    // The base is clamped inside the box so that a box pushed sideways by the
+    // clamp above still has its tail attached — otherwise the two separate and the
+    // bubble reads as pointing at nothing.
+    const baseY = below ? gy : gy + boxH;
+    const apexY = below ? baseY - TAIL_H : baseY + TAIL_H;
+    const tailCx = Math.min(Math.max(tileCx, gx + TAIL_HALF), gx + boxW - TAIL_HALF);
+    this.ctx.fillStyle = fillColor.toCssRgba();
+    this.ctx.beginPath();
+    this.ctx.moveTo(tailCx - TAIL_HALF, baseY);
+    this.ctx.lineTo(tailCx + TAIL_HALF, baseY);
+    this.ctx.lineTo(tileCx, apexY);
+    this.ctx.closePath();
+    this.ctx.fill();
+    this.ctx.strokeStyle = borderColor.toCssRgba();
+    this.ctx.stroke();
+
+    // Text.
+    this.ctx.fillStyle = textColor.toCssRgba();
+    let ty = gy + padY;
+    for (const line of lines) {
+      this.ctx.fillText(line, gx + padX, ty);
+      ty += this.BUBBLE_LINE_H;
     }
   }
 

@@ -328,31 +328,38 @@ describe("the rows TEST_AMBIENT is previewed from", () => {
     expect(existsSync(publicFilePath("/assets/ambients/test_ambient.ogg"))).toBe(true);
   });
 
-  it("are all four declared, and declared at the end", () => {
+  it("are all four declared, and declared as one contiguous run", () => {
     // Named as strings rather than as `OptionIDs` members, so this file keeps
     // compiling on the older enum and so the assertion is about the enum object
     // rather than about a symbol that only exists once the row does.
     const declared = Object.keys(OptionIDs);
-    for (const present of [
+    const AUDIO_ROWS = [
       "UI_SFXS",
       "UI_SFXS_VOLUME",
       "UI_AMBIENTSFXS",
       "UI_AMBIENTSFXS_VOLUME",
-    ]) {
+    ];
+    for (const present of AUDIO_ROWS) {
       expect(declared, `${present} is still missing`).toContain(present);
     }
-    // At the end, and this is the load-bearing part. The C# has them at ids 2-5,
-    // wedged between `UI_MUSIC_VOLUME` and `UI_ANIM_DELAY`
+    // Consecutive and in this order, and this is the load-bearing part. The C# has
+    // them at ids 2-5, wedged between `UI_MUSIC_VOLUME` and `UI_ANIM_DELAY`
     // (`GameOptions.cs:16-19`), but a stored options blob carries the *number*, so
     // inserting them there would silently re-point every saved value at the wrong
     // row. Appended instead — the same rule as `GAME_RESCUE_DAY` and the other
     // rows that arrived after the vanilla set.
-    expect(declared.slice(-4)).toEqual([
-      "UI_SFXS",
-      "UI_SFXS_VOLUME",
-      "UI_AMBIENTSFXS",
-      "UI_AMBIENTSFXS_VOLUME",
-    ]);
+    //
+    // *Contiguity* is the assertion, not "the last four". Contiguity is what pins
+    // these four to four consecutive numbers and leaves every id before them where
+    // it was, which is the property a stored options blob actually depends on.
+    // Being the final four was only a side effect of having been the most recent
+    // append; the first row added afterwards — `UI_SHOW_SPEECH_BUBBLES` — ended
+    // that without moving a single number. So this finds the run wherever it sits.
+    const start = AUDIO_ROWS.map((row) => declared.indexOf(row));
+    expect(start, "the four rows must all be declared").not.toContain(-1);
+    expect(start[1]).toBe(start[0]! + 1);
+    expect(start[2]).toBe(start[0]! + 2);
+    expect(start[3]).toBe(start[0]! + 3);
   });
 
   it("and the options screen drives all three buses", () => {

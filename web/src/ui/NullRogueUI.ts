@@ -334,7 +334,11 @@ export class NullRogueUI implements IRogueUI {
   private readonly recordedText: string[] = [];
 
   /** Forgets everything recorded so far, so one test can drive several screens. */
-  clearRecordedText(): void { this.recordedText.length = 0; this.recordedFills.length = 0; }
+  clearRecordedText(): void {
+    this.recordedText.length = 0;
+    this.recordedFills.length = 0;
+    this.recordedBubbles.length = 0;
+  }
 
   UI_DrawPopup(
     _lines: string[], _textColor: Color, _borderColor: Color, _fillColor: Color, _gx: number, _gy: number
@@ -358,6 +362,23 @@ export class NullRogueUI implements IRogueUI {
     _borderColor: Color, _fillColor: Color,
     _gx: number, _gy: number
   ): void { this.count("UI_DrawPopupTitleColors"); }
+
+  UI_DrawSpeechBubble(
+    text: string, _textColor: Color, _borderColor: Color, _fillColor: Color,
+    _anchorX: number, _anchorY: number, _anchorSize: number, _maxTextWidth: number,
+  ): void {
+    this.count("UI_DrawSpeechBubble");
+    // Its own list, not `drawnLines`: a bubble is wrapped before it is drawn, so
+    // what reaches the canvas is not what the engine passed in, and a test asking
+    // "what did this actor say" wants the engine's string rather than the
+    // renderer's line breaks. See `drawnBubbles`.
+    if (this.recordText) this.recordedBubbles.push(text);
+  }
+
+  /** Every string passed to a speech-bubble draw, in order. Empty unless recording. */
+  get drawnBubbles(): readonly string[] { return this.recordedBubbles; }
+
+  private readonly recordedBubbles: string[] = [];
 
   // ── Minimap ────────────────────────────────────────────────────────────────
 

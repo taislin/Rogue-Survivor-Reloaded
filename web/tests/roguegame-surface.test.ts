@@ -101,24 +101,32 @@ describe("RogueGame's measured surface", () => {
     // §6.2 calls this "the god object", and the argument for splitting is the
     // ratio rather than the size. Pinned so the ratio has a history.
     //
-    // **845, having been 846 when this decomposition started moving code.**
+    // **849, having been 846 when this decomposition started moving code.**
     //
     // The count went *down* twice — `m_ScreenshotCounter` left with the `GetUser*`
     // paths and `m_MenuRowBands` left with the menu chrome, both private, both
     // existing only because the methods using them had nowhere else to live. It
     // went back *up* by one for `updateAdvisorHintBanner`, the advisor banner
     // branch lifted out of the play loop so the bug where ESC never closed the
-    // last hint could be tested at all.
+    // last hint could be tested at all, and by four for `(Gfx) Speech Bubbles` —
+    // three methods and one field, all of which are the cost of making the feature
+    // reachable at all.
+    //
+    // These four were added on top of a file that was already **one** behind: the
+    // gender/Amo fix before it added a member without recording it here, so the
+    // reachable surface measured 118 against a pinned 117. Both counts are in the
+    // numbers below now, and the *reachable* counts here are the ones that had
+    // drifted — `members`, `methods` and `public` were all correct.
     //
     // That trade is the honest shape of this work: a member added to the class to
     // make a defect inside it reachable. It is a method rather than a field, it
     // holds no state the class did not already have, and the alternative was a
     // defect in a ~400-line turn loop that no test could reach.
-    expect(m.members).toBe(845);
-    expect(m.methods).toBe(761);
-    // The *reachable* surface is 117. It has not moved for either extraction: both
+    expect(m.members).toBe(849);
+    expect(m.methods).toBe(678);
+    // The *reachable* surface is 121. It has not moved for either extraction: both
     // regions kept their methods on the class, which is what keeps them pure moves.
-    expect(m.external).toBe(117);
+    expect(m.external).toBe(121);
 // §6.4: "567 of 584 methods are public — only 17 are `private`. The
   // `private` boundary is effectively absent." That is still true, and the
   // direction is worth pinning: private has come down from 91 to 89, while public
@@ -126,7 +134,14 @@ describe("RogueGame's measured surface", () => {
   // delegations behind rather than deleting callers' entry points, so the ratio
   // has not improved much and is not claimed to have. The single addition is
   // `updateAdvisorHintBanner`, whose reason is recorded above.
-  expect(m.public).toBe(756);
+  //
+  // **`methods` fell from 761 to 678, and no code was deleted.** The measurement
+  // decided method-or-field by asking whether the declaration line contained a `(`
+  // anywhere, and a field with an initialiser has brackets of its own —
+  // `m_SpeechBubbles: Map<...> = new Map()` among 83 of them — so those fields were
+  // counted as methods and appeared in both totals. It now asks what follows the
+  // name: `(` for a method, `:` or `=` for a field.
+  expect(m.public).toBe(760);
   expect(m.private).toBe(89);
 	});
 
@@ -144,29 +159,29 @@ describe("RogueGame's measured surface", () => {
 		expect(m.privateReached).toBe(0);
 	});
 
-	it("the outside world depends on 117 members, and §6 assumed far fewer", () => {
+it("the outside world depends on 121 members, and §6 assumed far fewer", () => {
 		const m = measure();
 		// §6.4's `GameContext` was to name "the 11 service fields … plus `m_Player`,
 		// `m_PlayerFOV`, `m_MapViewRect`, `m_Overlays`, `m_FirstPersonFacing`" —
-		// about sixteen names. The measured number is nearly seven times that, and
+		// about sixteen names. The measured number is nearly eight times that, and
 		// it is the number §6.10's gate turns on: every one is a signature a wave
 		// must not break.
 		//
     // The 2024 deferral said "thread a `game` reference through ~500 call
-    // sites". At 117 names the pessimistic figure is not the real one, and that
+    // sites". At 121 names the pessimistic figure is not the real one, and that
     // is the answer to the question §6.4 deferred until "the game runs and the
     // real cross-method dependencies are known".
-    expect(m.external).toBe(117);
+    expect(m.external).toBe(121);
     expect(m.external).toBeGreaterThan(83);
 	});
 
-  it("classifies all 117, with no residual", () => {
+  it("classifies all 121, with no residual", () => {
     // This is the finding that forced the re-derivation, and the number that keeps
     // it fixed. §6.2's region table left **68 of the 110** (as measured then) in no
     // region at all —
 		// including `AddMessage`, `KillActor`, `AdvancePlay`, `UpdatePlayerFOV` and the
-		// whole map-zoom triple — which is larger than Wave 1's entire 2,079-line budget.
-		// A wave plan whose residual is unclassified is not a plan.
+    // whole map-zoom triple — which is larger than Wave 1's entire 2,079-line budget.
+    // A wave plan whose residual is unclassified is not a plan.
 		//
 		// The taxonomy now covers the whole class and the residual is zero. Pinned as an
 		// equality rather than a ceiling: a *new* unclassified member is the regression
@@ -178,38 +193,43 @@ describe("RogueGame's measured surface", () => {
 		expect(m.buckets.get("STATE")?.length ?? 0).toBeLessThan(30);
 	});
 
-  it("splits the reachable surface into 32 hub and 85 movable, and the hubs stay", () => {
+it("splits the reachable surface into 32 hub and 89 movable, and the hubs stay", () => {
     // §6.8: the two hubs "are the reason the split is worth doing rather than the
     // reason it fails". Still true, and now measured on the current file.
     const m = measure();
-    expect(m.moving).toBe(85);
+    expect(m.moving).toBe(89);
     expect(m.hubs).toBe(32);
     expect(m.moving + m.hubs).toBe(m.external);
     // HUB 1 is 24 of the 32. `DoTag` joined when the minimap tag test replaced a
     // source scan with a real call to it; HUB 2 is 8, `HandlePlayerTradeNegociation`
     // joining when the trusted-leader test drove the actual trade screen.
+    //
+    // `(Gfx) Speech Bubbles` did not join HUB 1, and that is the interesting part:
+    // the feature hangs off the say path and is drawn from `RedrawPlayScreen`, so
+    // `DrawSpeechBubbles` routes to WAVE 2 and the two hubs are unmoved. The point
+    // of the split is that a feature this size lands in a region that moves.
     expect(m.buckets.get("HUB 1  Do*/On* action primitives")?.length ?? m.buckets.get("HUB 1")?.length).toBe(24);
   });
 
-  it("names 24 members GameContext has to carry, not 11", () => {
+  it("names 27 members GameContext has to carry, not 11", () => {
 		// §6.4 proposed naming "the 11 service fields (`m_UI`, `m_Rules`, `m_Session`,
 		// …) plus `m_Player`, `m_PlayerFOV`, `m_MapViewRect`, `m_Overlays`,
-		// `m_FirstPersonFacing`" — about sixteen. The measured figure is 24, and the
+		// `m_FirstPersonFacing`" — about sixteen. The measured figure is 27, and the
 		// list is not only fields: `TAG_MODE_TEXT`, `MAX_THROWABLE_DISTANCE` and
 		// `VERB_UNLOAD` are constants reached from the UI, and `simulateOneBehindDistrictTurn`
 		// and `stepActorsOnFire` are *methods* reached from the sim rather than state at all.
 		//
-		// That last pair is why "a context of fields" is the wrong shape and the taxonomy
-		// has a `carry` classification rather than assuming everything here is data.
-		//
-		// `CURRENT_SAVE_SLOT` is the newest, and it is there because `paths.test.ts`
-		// asserts the module's private copy of the slot number against the class's.
-		// That is a test creating a dependency rather than code needing one — worth
-		// recording, because it means this bucket counts what the *tests* reach and not
-		// only what the game does.
+    // That last pair is why "a context of fields" is the wrong shape and the taxonomy
+    // has a `carry` classification rather than assuming everything here is data.
+    //
+    // `CURRENT_SAVE_SLOT` is the newest, and it is there because `paths.test.ts`
+    // asserts the module's private copy of the slot number against the class's.
+    // That is a test creating a dependency rather than code needing one — worth
+    // recording, because it means this bucket counts what the *tests* reach and not
+    // only what the game does.
 		const m = measure();
-		const carry = m.buckets.get("STATE") ?? [];
-		expect(carry.length).toBe(24);
+    const carry = m.buckets.get("STATE") ?? [];
+    expect(carry.length).toBe(27);
 		for (const name of ["player", "session", "rules", "m_PlayerFOV", "m_CharGen", "m_IsGameRunning", "m_PlayerWasRescued", "TAG_MODE_TEXT", "simulateOneBehindDistrictTurn", "stepActorsOnFire", "CURRENT_SAVE_SLOT"]) {
 			expect(carry, `${name} should be classified as carried`).toContain(name);
 		}

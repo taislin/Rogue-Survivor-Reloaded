@@ -274,6 +274,33 @@ export interface IRogueUI {
     gx: number, gy: number
   ): void;
 
+  /**
+   * A speech bubble over a tile: a wrapped, bordered box sitting above
+   * `anchor` with a tail pointing down at it.
+   *
+   * A browser-port addition, and it is one method rather than an engine-side
+   * `UI_DrawPopup` call for the same reason `UI_DrawPopupCentered` is: the box
+   * cannot be positioned by the engine. Three of the four things that place it
+   * are only knowable where the text is measured — the wrap width, the box
+   * width, and therefore whether "above" fits at all or has to flip below. The
+   * engine has no `measureText`; guessing from a character count would be a
+   * second, driftable copy of the layout maths.
+   *
+   * `anchor`/`anchorSize` are the tile: the bubble is centred on the tile's
+   * middle x, and its bottom edge sits at the tile's top, with the tail filling
+   * the gap to the tile itself. `maxTextWidth` is the wrap width in the current
+   * transform's units.
+   *
+   * Unlike the popups this is drawn **scaled**, inside the map's zoom scope —
+   * it annotates a tile, and the `(Gfx) Speech Bubbles` option is meant to make
+   * the map easier to read, which at 2x means text you can actually read rather
+   * than 10pt type over 64px tiles.
+   */
+  UI_DrawSpeechBubble(
+    text: string, textColor: Color, borderColor: Color, fillColor: Color,
+    anchorX: number, anchorY: number, anchorSize: number, maxTextWidth: number
+  ): void;
+
   // ── Minimap ───────────────────────────────────────────────────────────────
 
   UI_ClearMinimap(color: Color): void;
