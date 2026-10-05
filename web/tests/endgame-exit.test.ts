@@ -49,6 +49,7 @@ import { RogueGame } from "@engine/RogueGame";
 import { Ruleset, Session } from "@engine/Session";
 import { SkillID } from "@gameplay/Skills";
 import { NullRogueUI } from "@ui/NullRogueUI";
+import type { GameKeyEvent } from "@engine/IRogueUI";
 
 const SEED = 4242;
 
@@ -403,11 +404,21 @@ describe("accepting reincarnation", () => {
 		// queue is empty and can only ever yield Enter/Escape/n/y, so *driving* a turn
 		// with it spins forever. Asking the cursor a question does not.
 		const map = player.location.map!;
-		const next = game.m_Rules.getNextActorToAct(map, map.localTime.turnCounter);
-		expect(next, "nobody can act on the map the player was put on").not.toBeNull();
-		if (next !== null) {
-			expect(map.actors, "the actor offered is not on that map").toContain(next);
-		}
+		// **Reachable, not next.** `getNextActorToAct` returns the *first* actor from
+		// `map.checkNextActorIndex` with action points who is not sleeping, so the
+		// first actor on a fresh map is whoever happens to be first in the list --
+		// asserting it is the player would be asserting the player's index, not
+		// anything about play. What matters is that the cursor will reach them, and it
+		// cannot if they have nothing to spend or are asleep: the map stays perfectly
+		// playable for every NPC while the player is never given a turn. That is the
+		// shape of the reported "unplayable the moment I reincarnate".
+		expect(map.actors, "the player is not on the map they were put on").toContain(player);
+		expect(
+			player.actionPoints,
+			"the reincarnated player has no action points, so the cursor skips them",
+		).toBeGreaterThan(0);
+		expect(player.isSleeping, "the reincarnated player is asleep").toBe(false);
+		expect(map.getActor(map.actors.indexOf(player)), "the player is not reachable").toBe(player);
 	}, 60_000);
 });
 /**
@@ -428,3 +439,99 @@ describe("accepting reincarnation", () => {
  * the player is on. And by `IsSuitableReincarnation`, the body is always in the same
  * district, so a district mismatch is not the mechanism either.
  */
+/**
+ * One real turn after reincarnating, with the input wait *parked*.
+ *
+ * Everything else in this file observes state; nothing drives the game forward,
+ * because driving it needs a UI that parks rather than answers. `NullRogueUI`
+ * synthesises a key whenever its queue is empty and only ever yields Enter, Escape,
+ * `n` or `y` -- so handed a real player's turn it spins forever on a wait nothing
+ * can satisfy. `idle-auto-advance.test.ts` calls that "an unbounded loop rather than a
+ * failed assertion, so it takes the whole run down instead of one test", which is
+ * exactly what an earlier version of this file did to itself.
+ *
+ * So: park the wait, run the turn, and assert it *parks* rather than returning. A turn
+ * that parks is a live turn -- the game is waiting for the player, which is what
+ * playable means. A turn that returns immediately means the game played the player
+ * without asking, and a turn that never settles means the loop.
+ */
+class ParkUI extends NullRogueUI {
+	private pendingKey: GameKeyEvent | null = null;
+
+	postKey(key: string): void {
+		this.pendingKey = {
+			key,
+			keyCode: key.length === 1 ? key.toUpperCase().charCodeAt(0) : 0,
+			shift: false,
+			ctrl: false,
+			alt: false,
+		};
+	}
+
+	override UI_WaitKey(): Promise<GameKeyEvent> {
+		const k = this.pendingKey;
+		if (k !== null) {
+			this.pendingKey = null;
+			return Promise.resolve(k);
+		}
+		// Park. Never synthesise -- that is the whole point of this class.
+		return new Promise<GameKeyEvent>(() => {});
+	}
+
+	override UI_PeekKey(): GameKeyEvent | null {
+		const k = this.pendingKey;
+		this.pendingKey = null;
+		return k;
+	}
+
+	override UI_PostKey(e: GameKeyEvent): void {
+		this.postKey(e.key);
+	}
+}
+
+describe("a turn is live after reincarnating", () => {
+	beforeEach(() => {
+		RogueGame.options.maxReincarnations = 1;
+	});
+
+	it("waits for the player instead of playing the turn for them", async () => {
+		const { game, ui } = await newGame();
+		await within(die(game), 30_000, "the death flow");
+		ui.pushKeys("y", "Enter", "Enter", "Enter");
+		await within(game.HandleReincarnation(), 20_000, "reincarnation");
+
+		const player = game.m_Player;
+		expect(player.isDead).toBe(false);
+
+		// Only now swap in a UI that parks. The modal screens above needed the real
+		// one, which is exactly why the two halves cannot share a UI.
+		const park = new ParkUI();
+		(game as unknown as { m_UI: unknown }).m_UI = park;
+
+		let settled = false;
+		const turn = game
+			.HandlePlayerActor(player)
+			.then(() => {
+				settled = true;
+			})
+			.catch(() => {
+				settled = true;
+			});
+		// Left deliberately unresolved: a parked turn is the passing outcome, and the
+		// assertion is that it never settles. `void` documents that on purpose rather
+		// than leaving a floating promise that looks like an oversight.
+		void turn;
+
+		// Give the turn long enough to reach its input wait and park there.
+		await new Promise((r) => setTimeout(r, 2_000));
+
+		expect(
+			settled,
+			"the turn ended without waiting for the player -- the game played it for them",
+		).toBe(false);
+
+		// And it was this player's turn: they are still alive and still theirs.
+		expect(player.isDead).toBe(false);
+		expect(game.m_Player).toBe(player);
+	}, 90_000);
+});
