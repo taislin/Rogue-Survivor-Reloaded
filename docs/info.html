@@ -45,7 +45,7 @@
       <p>The original needs Windows and the .NET 3.5 runtime, and its
         <code>System.Drawing</code> drawing code has no browser equivalent. Rather than
         rewrite the game, the port replaces the three things that cannot survive a
-        browser and leaves the rules alone &mdash; so the behaviour you get is the
+        browser and leaves the rules alone, so the behaviour you get is the
         behaviour the original had.
       </p>
     </div>
@@ -103,11 +103,11 @@
       <div class="card">
         <h3>Technology</h3>
         <ul class="small" style="margin-bottom:0">
-          <li>TypeScript 5, strict mode</li>
+          <li>TypeScript 5</li>
           <li>Vite 5 for the dev server and the bundle</li>
-          <li>Canvas 2D &mdash; no game framework, no UI framework</li>
+          <li>Canvas 2D</li>
           <li>Web Audio API for music and sound</li>
-          <li>Vitest for the test suite &mdash; 2,874 tests across 131 files</li>
+          <li>Vitest for the test suite</li>
           <li>Neutralino for the optional desktop build</li>
           <li>Express for the optional production server</li>
           <li>Node 20 or newer</li>
@@ -128,22 +128,6 @@
         </ul>
       </div>
     </div>
-
-    <h2 id="status">Status</h2>
-    <p>The port is at <b>alpha 10.1</b>, matching the original's version number. The game
-      content is complete: there are no unported stubs left, and all but one optional
-      polish task is done.</p>
-
-    <p>What changed most recently is fidelity rather than features. A line-by-line audit of
-      the port against the preserved C# found and fixed <b>56 behavioural bugs</b> that no
-      test, build or simulator run had caught &mdash; including one where every AI actor saw
-      1&ndash;2 tiles further than the original in rain, which was invisible from the
-      player's side because the player's own view was correct. Each fix is pinned by a test,
-      and the
-      <a href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/plans/BROWSER_PORT_PLAN.md">porting
-        plan</a> records the reasoning, including the audits that came back clean.
-    </p>
-
 
     <h2 id="credits">Credits</h2>
     <div class="card">
@@ -277,8 +261,8 @@
       </div>
 
       <p class="small muted" style="margin-top:1rem;margin-bottom:0">The three mod packs
-        incorporate further work by other people &mdash; the Daft Tiles pack says so of
-        itself &mdash; and are redistributed here as they were published.</p>
+        incorporate further work by other people - the Daft Tiles pack says so of
+        itself - and are redistributed here as they were published.</p>
     </div>
 
     <h2 id="license">License</h2>
@@ -319,9 +303,7 @@
           <ul>
             <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded">Source on GitHub</a></li>
             <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded/issues">Report an issue</a></li>
-            <li><a
-                href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/plans/BROWSER_PORT_PLAN.md">Porting
-                plan</a></li>
+
           </ul>
         </div>
         <div>
@@ -335,7 +317,7 @@
       <div class="site-footer__legal">
         <p><em>Rogue Survivor</em> was created by Jacques Ruiz (roguedjack) in 2012.
           This site and the browser port are reimplementations of that work and are
-          distributed under the GNU General Public License v3.0 &mdash; see
+          distributed under the GNU General Public License v3.0, see
           <a href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/LICENSE.txt">LICENSE.txt</a>.
         </p>
         <p>Game text, manual and artwork &copy; Jacques Ruiz. Rogue Survivor Reloaded
