@@ -32,12 +32,18 @@
   function close() {
     var overlay = openOverlay();
     if (!overlay) return false;
-    // `:target` is driven by the fragment, so removing the fragment is the close.
-    // `location.hash = ""` leaves a bare "#" in the URL and a history entry, so
-    // replace instead of assign: the lightbox should not cost a back-press to
-    // undo, or a player who opens three screenshots has to press Back three
-    // times to get out.
-    history.pushState(null, "", location.pathname + location.search);
+    // `:target` is driven by the fragment, but only a real fragment navigation
+    // re-evaluates it. `history.pushState` clears `location.hash` and updates the
+    // address bar, yet leaves `:target` matching the element that was just
+    // un-targeted -- the overlay keeps `display: grid` and nothing visibly
+    // happens, which is the same on every engine that follows the spec this way.
+    // So the close has to be an actual navigation, exactly like the no-script
+    // `href="#"` path it is standing in for.
+    location.hash = "";
+    // A navigation to "" leaves a bare "#" in the URL. Replacing afterwards keeps
+    // the address bar clean and spends no *extra* history entry, so this matches
+    // what the no-script path does rather than adding a step on top of it.
+    history.replaceState(null, "", location.pathname + location.search);
     return true;
   }
 
