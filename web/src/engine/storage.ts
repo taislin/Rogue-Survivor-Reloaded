@@ -506,10 +506,25 @@ export const storage: StorageLike = (() => {
   }
   try {
     if (typeof localStorage === "undefined") {
-      reportSwallowed(
-        "storage backend selection (no localStorage; progress will not be saved)",
-        new Error("localStorage is not defined"),
-      );
+      // Reported only where there *was* a browser to have it. `hasLocalStorage` is
+      // the machine-readable half of this and is what a caller should test; the
+      // warning is for the case a player is affected by, which is a browser that has
+      // web storage disabled or unavailable — a private window, an embedded webview.
+      //
+      // Node has no `localStorage` either, and that is not a failure: it is the
+      // documented basis of the test suite (`tests/persistence.test.ts` asserts this
+      // fallback is in use, on the grounds that naming the bare global throws outside
+      // a browser) and of the headless simulator, which is not supposed to persist
+      // anything. Reporting it there produced one identical warning from 128 of the
+      // suite's 153 files, which trains a reader to ignore the reporter entirely —
+      // and the reporter is the only thing that tells a real player their saves are
+      // not being kept. Same host check as `hasNeutralino` above.
+      if (typeof window !== "undefined") {
+        reportSwallowed(
+          "storage backend selection (no localStorage; progress will not be saved)",
+          new Error("localStorage is not defined"),
+        );
+      }
       return memory;
     }
     // Probe it: a browser with storage disabled throws on access, not on decl.
