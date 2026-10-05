@@ -21697,7 +21697,21 @@ updateAdvisorHintBanner(): void {
 			);
 
 		// trade?
-		if (this.m_Rules.canActorInitiateTradeWith(speaker, target).ok) {
+		//
+		// **Not for the human player.** This is alpha10's "fast trade": bump someone to
+		// say hello and they immediately try to trade with you. It is still very much
+		// wanted between NPCs -- `CivilianAI` bumps people to chat for exactly this --
+		// so the guard is on *who is speaking*, not on whether to trade at all.
+		//
+		// The player asks, by pressing the trade key, and gets the same screen this
+		// would have opened unasked. Bumping is how you start a fight or a
+		// conversation; having it also open a trade screen took a choice away, and the
+		// player had no way to say hello without being handed a negotiation.
+		//
+		// `isBotPlayer` is what makes this "human" rather than "isPlayer": a
+		// bot-controlled survivor is an AI for every purpose here, and trades.
+		const speakerIsHuman = speaker.isPlayer && !speaker.isBotPlayer;
+		if (!speakerIsHuman && this.m_Rules.canActorInitiateTradeWith(speaker, target).ok) {
 			await this.DoTrade(speaker, target);
 		}
 

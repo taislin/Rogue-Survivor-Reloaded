@@ -142,7 +142,7 @@ describe("RogueGame's measured surface", () => {
     // A dependency invented to assert on a colour is a real cost of the assertion,
     // and it is cheaper than the alternative -- a bubble the same colour as every
     // other box on screen, with nothing to notice it.
-    expect(m.external).toBe(124);
+    expect(m.external).toBe(126);
 // §6.4: "567 of 584 methods are public — only 17 are `private`. The
   // `private` boundary is effectively absent." That is still true, and the
   // direction is worth pinning: private has come down from 91 to 89, while public
@@ -187,11 +187,11 @@ it("the outside world depends on 121 members, and §6 assumed far fewer", () => 
     // sites". At 121 names the pessimistic figure is not the real one, and that
     // is the answer to the question §6.4 deferred until "the game runs and the
     // real cross-method dependencies are known".
-    expect(m.external).toBe(124);
+    expect(m.external).toBe(126);
     expect(m.external).toBeGreaterThan(83);
 	});
 
-  it("classifies all 124, with no residual", () => {
+  it("classifies all 126, with no residual", () => {
     // This is the finding that forced the re-derivation, and the number that keeps
     // it fixed. §6.2's region table left **68 of the 110** (as measured then) in no
     // region at all —
@@ -209,22 +209,29 @@ it("the outside world depends on 121 members, and §6 assumed far fewer", () => 
 		expect(m.buckets.get("STATE")?.length ?? 0).toBeLessThan(33);
 	});
 
-it("splits the reachable surface into 32 hub and 92 movable, and the hubs stay", () => {
+it("splits the reachable surface into 34 hub and 92 movable, and the hubs stay", () => {
     // §6.8: the two hubs "are the reason the split is worth doing rather than the
     // reason it fails". Still true, and now measured on the current file.
     const m = measure();
     expect(m.moving).toBe(92);
-    expect(m.hubs).toBe(32);
+    expect(m.hubs).toBe(34);
     expect(m.moving + m.hubs).toBe(m.external);
-    // HUB 1 is 24 of the 32. `DoTag` joined when the minimap tag test replaced a
+    // HUB 1 is 26 of the 34. `DoTag` joined when the minimap tag test replaced a
     // source scan with a real call to it; HUB 2 is 8, `HandlePlayerTradeNegociation`
     // joining when the trusted-leader test drove the actual trade screen.
+    //
+    // `DoChat` and `DoTrade` then joined HUB 1 from the fast-trade test, which drives
+    // `DoChat` to assert that it does *not* open a trade and `DoTrade` to assert the
+    // player can still open one deliberately. Both are action primitives, so they
+    // route to a hub rather than to a movable region — which is the split working:
+    // reaching them from a test enlarged the part that never moves rather than the
+    // part that does.
     //
     // `(Gfx) Speech Bubbles` did not join HUB 1, and that is the interesting part:
     // the feature hangs off the say path and is drawn from `RedrawPlayScreen`, so
     // `DrawSpeechBubbles` routes to WAVE 2 and the two hubs are unmoved. The point
     // of the split is that a feature this size lands in a region that moves.
-    expect(m.buckets.get("HUB 1  Do*/On* action primitives")?.length ?? m.buckets.get("HUB 1")?.length).toBe(24);
+    expect(m.buckets.get("HUB 1  Do*/On* action primitives")?.length ?? m.buckets.get("HUB 1")?.length).toBe(26);
   });
 
   it("names 27 members GameContext has to carry, not 11", () => {
@@ -282,7 +289,7 @@ it("splits the reachable surface into 32 hub and 92 movable, and the hubs stay",
 		const m = measure();
     const hubs = new Set(m.buckets.get("HUB 1") ?? []);
     for (const name of m.buckets.get("HUB 2") ?? []) hubs.add(name);
-    expect(hubs.size).toBe(32);
+    expect(hubs.size).toBe(34);
 		for (const [region, list] of m.buckets) {
 			if (region.startsWith("HUB")) continue;
 			for (const name of list) expect(hubs.has(name), `${name} is in two regions`).toBe(false);
