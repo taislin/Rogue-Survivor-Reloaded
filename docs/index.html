@@ -76,10 +76,11 @@
             </figure>
             <figure class="shot">
               <a class="shot__zoom" href="#shot-deon" aria-label="Expand the Deonapocalypse sprite screenshot.">
-                <img class="shot__img" src="assets/img/screens/screen_deon.webp" width="1562" height="867"
+                <img class="shot__img" src="assets/img/screens/screen_deon_genesis.webp" width="1562" height="867"
                   alt="The same game rendered with the Deonapocalypse sprite style.">
               </a>
-              <figcaption class="shot__cap">The game with Deonapocalypse sprites enabled.</figcaption>
+              <figcaption class="shot__cap">The game with Deonapocalypse/Genesis hybrid sprite set enabled, zoomed in,
+                with the actions menu open.</figcaption>
             </figure>
           </div>
         </div>
@@ -129,6 +130,54 @@
           <li>Multi-OS + Browser</li>
           <li>An old-school 3D (!) First-Person mode. VERY experimental!</li>
         </ul>
+
+        <h2 style="margin-top:2.5rem">Sprite sets</h2>
+        <p class="lede">The same scene drawn five ways. Pick one in the options screen under
+          <b>(Gfx) Sprite Style</b>; every set but the hybrid falls back to Classic for anything it
+          does not ship, so a set is never a worse choice for being smaller.</p>
+
+        <div class="shots shots--sets" style="margin-top:1.5rem">
+          <figure class="shot">
+            <a class="shot__zoom" href="#set-classic" aria-label="Expand the Classic sprite set screenshot.">
+              <img class="shot__img" src="assets/img/screens/compare_classic.webp" width="1562" height="867"
+                alt="Gameplay screenshot drawn with the Classic sprite set: the original Rogue Survivor artwork.">
+            </a>
+            <figcaption class="shot__cap"><b>Classic</b> &mdash; the original's own art, and the set everything
+              else falls back to.</figcaption>
+          </figure>
+          <figure class="shot">
+            <a class="shot__zoom" href="#set-genesis" aria-label="Expand the Genesis sprite set screenshot.">
+              <img class="shot__img" src="assets/img/screens/compare_genesis.webp" width="1562" height="867"
+                alt="Gameplay screenshot drawn with the Genesis Classic 1.4 sprite set.">
+            </a>
+            <figcaption class="shot__cap"><b>Genesis</b> &mdash; the 32x32 pack many roguelikes use.</figcaption>
+          </figure>
+          <figure class="shot">
+            <a class="shot__zoom" href="#set-deon" aria-label="Expand the Deonapocalypse sprite set screenshot.">
+              <img class="shot__img" src="assets/img/screens/compare_deon.webp" width="1562" height="867"
+                alt="Gameplay screenshot drawn with the Deonapocalypse v9 r1 sprite set.">
+            </a>
+            <figcaption class="shot__cap"><b>Deonapocalypse</b> &mdash; a hand-picked 32x32 world set.</figcaption>
+          </figure>
+          <figure class="shot">
+            <a class="shot__zoom" href="#set-dafttiles" aria-label="Expand the Daft Tiles sprite set screenshot.">
+              <img class="shot__img" src="assets/img/screens/compare_dafttiles.webp" width="1562" height="867"
+                alt="Gameplay screenshot drawn with the Daft Tiles b1 sprite set.">
+            </a>
+            <figcaption class="shot__cap"><b>Daft Tiles</b> &mdash; the smoothest of the four at this size.</figcaption>
+          </figure>
+          <figure class="shot">
+            <a class="shot__zoom" href="#set-deongenesis"
+              aria-label="Expand the Genesis actors with Deonapocalypse world screenshot.">
+              <img class="shot__img" src="assets/img/screens/compare_deongenesis.webp" width="1562" height="867"
+                alt="Gameplay screenshot with Genesis actors in a Deonapocalypse world: actors from one set, everything else from another.">
+            </a>
+            <figcaption class="shot__cap"><b>Genesis actors + Deonapocalypse world</b> &mdash; a chain rather than
+              one folder: the people from Genesis, everything else from Deonapocalypse.</figcaption>
+          </figure>
+        </div>
+        <p class="small muted" style="margin-top:0.75rem">The <b>civ13</b> set is in the options screen too, marked
+          WIP &mdash; it is work in progress and has no capture here yet.</p>
       </div>
     </section>
 
@@ -303,6 +352,66 @@
       <img class="lightbox__img" src="assets/img/screens/screen1.webp" width="1562" height="867"
         alt="Gameplay screenshot of the TypeScript browser port.">
       <figcaption class="lightbox__cap">The Reloaded browser port in TypeScript &amp; HTML5 Canvas.</figcaption>
+    </figure>
+  </div>
+
+  <!-- Sprite sets. Driven by :target like the rest, so they work with scripting off;
+       lightbox.js is generic (it queries `.lightbox:target` and finds the trigger by
+       href), so adding panels needs no JS. -->
+  <div class="lightbox" id="set-classic" role="dialog" aria-modal="true"
+    aria-label="The Classic sprite set.">
+    <a class="lightbox__backdrop" href="#" aria-label="Close"></a>
+    <a class="lightbox__close" href="#" aria-label="Close">&times;</a>
+    <figure class="lightbox__panel">
+      <img class="lightbox__img" src="assets/img/screens/compare_classic.webp" width="1562" height="867"
+        alt="Gameplay screenshot drawn with the Classic sprite set: the original Rogue Survivor artwork.">
+      <figcaption class="lightbox__cap">Classic &mdash; the original's own art, and the set everything else falls
+        back to.</figcaption>
+    </figure>
+  </div>
+
+  <div class="lightbox" id="set-genesis" role="dialog" aria-modal="true"
+    aria-label="The Genesis sprite set.">
+    <a class="lightbox__backdrop" href="#" aria-label="Close"></a>
+    <a class="lightbox__close" href="#" aria-label="Close">&times;</a>
+    <figure class="lightbox__panel">
+      <img class="lightbox__img" src="assets/img/screens/compare_genesis.webp" width="1562" height="867"
+        alt="Gameplay screenshot drawn with the Genesis Classic 1.4 sprite set.">
+      <figcaption class="lightbox__cap">Genesis &mdash; the 32x32 pack many roguelikes use.</figcaption>
+    </figure>
+  </div>
+
+  <div class="lightbox" id="set-deon" role="dialog" aria-modal="true"
+    aria-label="The Deonapocalypse sprite set.">
+    <a class="lightbox__backdrop" href="#" aria-label="Close"></a>
+    <a class="lightbox__close" href="#" aria-label="Close">&times;</a>
+    <figure class="lightbox__panel">
+      <img class="lightbox__img" src="assets/img/screens/compare_deon.webp" width="1562" height="867"
+        alt="Gameplay screenshot drawn with the Deonapocalypse v9 r1 sprite set.">
+      <figcaption class="lightbox__cap">Deonapocalypse &mdash; a hand-picked 32x32 world set.</figcaption>
+    </figure>
+  </div>
+
+  <div class="lightbox" id="set-dafttiles" role="dialog" aria-modal="true"
+    aria-label="The Daft Tiles sprite set.">
+    <a class="lightbox__backdrop" href="#" aria-label="Close"></a>
+    <a class="lightbox__close" href="#" aria-label="Close">&times;</a>
+    <figure class="lightbox__panel">
+      <img class="lightbox__img" src="assets/img/screens/compare_dafttiles.webp" width="1562" height="867"
+        alt="Gameplay screenshot drawn with the Daft Tiles b1 sprite set.">
+      <figcaption class="lightbox__cap">Daft Tiles &mdash; the smoothest of the four at this size.</figcaption>
+    </figure>
+  </div>
+
+  <div class="lightbox" id="set-deongenesis" role="dialog" aria-modal="true"
+    aria-label="Genesis actors with a Deonapocalypse world.">
+    <a class="lightbox__backdrop" href="#" aria-label="Close"></a>
+    <a class="lightbox__close" href="#" aria-label="Close">&times;</a>
+    <figure class="lightbox__panel">
+      <img class="lightbox__img" src="assets/img/screens/compare_deongenesis.webp" width="1562" height="867"
+        alt="Gameplay screenshot with Genesis actors in a Deonapocalypse world: actors from one set, everything else from another.">
+      <figcaption class="lightbox__cap">Genesis actors + Deonapocalypse world &mdash; a chain rather than one
+        folder.</figcaption>
     </figure>
   </div>
 

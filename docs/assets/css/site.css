@@ -446,6 +446,27 @@ hr {
   .shots--compare { grid-template-columns: 1fr; }
 }
 
+/* The sprite-set gallery: five captures, every one of them 1562x867.
+ *
+ * Unlike `.shots--compare` there is no scale to keep honest between the columns,
+ * because the captures are the same shape -- so equal widths are correct here and
+ * two sprites really are as big as each other, which is the whole point of the
+ * section. What the 420px floor of `.shots` is wrong for is the *count*: five
+ * images at two columns leaves an orphan on the last row. A 330px floor lays them
+ * out 3 + 2 at the wrap width and still gets three at half of it.
+ *
+ * Stacked at 700px rather than 900px, which is where two 330px tracks plus the gap
+ * stop fitting -- the narrower floor means this gallery still has two columns at the
+ * width `.shots--compare` has already collapsed to one. Stated here, next to the
+ * rule that depends on it, for the reason given above. */
+.shots--sets {
+  grid-template-columns: repeat(auto-fit, minmax(min(330px, 100%), 1fr));
+}
+
+@media (max-width: 700px) {
+  .shots--sets { grid-template-columns: 1fr; }
+}
+
 .shot {
   margin: 0;
   background: var(--bg-sunken);
