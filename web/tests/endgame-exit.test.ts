@@ -306,3 +306,89 @@ describe("m_PlayerWasRescued is a per-run flag, not a per-process one", () => {
 		expect(wouldPlay).toBe(true);
 	}, 60_000);
 });
+
+/**
+ * The *accepted* reincarnation: press Y on Limbo, pick a body, play on.
+ *
+ * This file already proved the decline is a straight line to the scores and back
+ * out. The accept arm had no behavioural coverage at all, and that is where the
+ * reported ping-pong lives: press Y and the game cycles between the score table and
+ * the Purgatory, and the run is unplayable afterwards.
+ *
+ * The property worth pinning is not "reincarnation returns" -- it is that the world
+ * is left in a state `GameLoop`'s condition will accept, and that the player is
+ * somewhere the map loop can actually reach. `GameLoop` reads
+ * `m_Player != null && !m_Player.isDead && m_IsGameRunning && !m_PlayerWasRescued`,
+ * so a player left dead, or left on a map the current district loop is not walking,
+ * produces exactly the reported symptom with no error anywhere.
+ */
+describe("accepting reincarnation", () => {
+	beforeEach(() => {
+		RogueGame.options.maxReincarnations = 1;
+	});
+
+	/** Death, then the keys that leave the score table and answer Limbo with Y. */
+	async function dieAndReincarnate(): Promise<{
+		game: RogueGame;
+		ui: NullRogueUI;
+		previous: unknown;
+	}> {
+		const { game, ui } = await newGame();
+		const previous = game.m_Player;
+		await within(die(game), 30_000, "the death flow");
+
+		// The score table leaves on ESC (NullRogueUI supplied one above), then Limbo
+		// takes the answer. Both are queued together: `NullRogueUI` serves them in
+		// order and `WaitYesOrNo` is the only thing reading at this point.
+		ui.pushKeys("y");
+		return { game, ui, previous };
+	}
+
+	it("leaves a living player behind, and not the corpse it was called on", async () => {
+		const { game, ui, previous } = await dieAndReincarnate();
+
+		// Walk the Purgatory: Y, then ENTER on the first avatar entry. Several ENTERs
+		// because an entry with no candidate leaves `choiceMade` false and the screen
+		// asks again -- which is itself worth knowing, and not something to assert on.
+		ui.pushKeys("Enter", "Enter", "Enter");
+		await within(game.HandleReincarnation(), 20_000, "reincarnation");
+
+		expect(game.m_Player.isDead).toBe(false);
+		// A new actor, not the body it died in.
+		expect(game.m_Player).not.toBe(previous);
+	}, 60_000);
+
+	it("leaves a state GameLoop's play-loop condition will accept", async () => {
+		// The bug is not "the player is dead". It is that the loop that plays the game
+		// refuses to run, and the only evidence a player gets is a screen that keeps
+		// coming back.
+		const { game, ui } = await dieAndReincarnate();
+		ui.pushKeys("Enter", "Enter", "Enter");
+		await within(game.HandleReincarnation(), 20_000, "reincarnation");
+
+		const wouldPlay =
+			game.m_Player != null &&
+			!game.m_Player.isDead &&
+			game.m_IsGameRunning &&
+			!game.m_PlayerWasRescued;
+		expect(wouldPlay).toBe(true);
+	}, 60_000);
+
+	it("puts the player somewhere the map loop can reach", async () => {
+		// `advancePlayDistrict` walks `district.maps` and hands each to
+		// `advancePlayMap`, which asks that map for the next actor. Reincarnation
+		// reassigns `m_Session.currentMap` to the avatar's map -- so if that is
+		// another district, the loop that is running is still the old one, and the
+		// player is on a map nobody is walking.
+		const { game, ui } = await dieAndReincarnate();
+		ui.pushKeys("Enter", "Enter", "Enter");
+		await within(game.HandleReincarnation(), 20_000, "reincarnation");
+
+		const player = game.m_Player;
+		expect(player.location.map).not.toBeNull();
+		// The map the player is on is the map the session thinks is current, and that
+		// map belongs to the district `GameLoop` will ask for next turn.
+		expect(game.m_Session.currentMap).toBe(player.location.map);
+		expect(player.location.map!.district).toBe(game.m_Session.currentMap!.district);
+	}, 60_000);
+});
