@@ -101,7 +101,7 @@ describe("RogueGame's measured surface", () => {
     // §6.2 calls this "the god object", and the argument for splitting is the
     // ratio rather than the size. Pinned so the ratio has a history.
     //
-    // **849, having been 846 when this decomposition started moving code.**
+    // **850, having been 846 when this decomposition started moving code.**
     //
     // The count went *down* twice — `m_ScreenshotCounter` left with the `GetUser*`
     // paths and `m_MenuRowBands` left with the menu chrome, both private, both
@@ -111,6 +111,12 @@ describe("RogueGame's measured surface", () => {
     // last hint could be tested at all, and by four for `(Gfx) Speech Bubbles` —
     // three methods and one field, all of which are the cost of making the feature
     // reachable at all.
+    //
+    // Then by one more for `SPEECH_BUBBLE_FILLCOLOR`, when the bubbles stopped
+    // sharing `POPUP_FILLCOLOR`. One public readonly field beside the one it
+    // replaces, and no method: the alternative was leaving every bubble the same
+    // colour as every other box on screen, which is the defect. A colour constant
+    // on the class is where `POPUP_FILLCOLOR` has always lived.
     //
     // These four were added on top of a file that was already **one** behind: the
     // gender/Amo fix before it added a member without recording it here, so the
@@ -122,11 +128,21 @@ describe("RogueGame's measured surface", () => {
     // make a defect inside it reachable. It is a method rather than a field, it
     // holds no state the class did not already have, and the alternative was a
     // defect in a ~400-line turn loop that no test could reach.
-    expect(m.members).toBe(849);
+    expect(m.members).toBe(850);
     expect(m.methods).toBe(678);
-    // The *reachable* surface is 121. It has not moved for either extraction: both
-    // regions kept their methods on the class, which is what keeps them pure moves.
-    expect(m.external).toBe(121);
+    // The *reachable* surface is 124, up from 121. Both extractions had left it
+    // alone -- each kept its methods on the class, which is what keeps them pure
+    // moves -- and these three moved it for the opposite reason: a test reaching
+    // further than it needs to. The speech-bubble appearance tests assert on the
+    // *colours* the bubbles are drawn with, so they name `POPUP_FILLCOLOR` and
+    // `SPEECH_BUBBLE_FILLCOLOR` from outside, and those had not been reached before.
+    //
+    // Which is the same caveat `CURRENT_SAVE_SLOT` carries in the STATE bucket
+    // below: this count is what the *tests* touch, not only what the game needs.
+    // A dependency invented to assert on a colour is a real cost of the assertion,
+    // and it is cheaper than the alternative -- a bubble the same colour as every
+    // other box on screen, with nothing to notice it.
+    expect(m.external).toBe(124);
 // §6.4: "567 of 584 methods are public — only 17 are `private`. The
   // `private` boundary is effectively absent." That is still true, and the
   // direction is worth pinning: private has come down from 91 to 89, while public
@@ -141,7 +157,7 @@ describe("RogueGame's measured surface", () => {
   // `m_SpeechBubbles: Map<...> = new Map()` among 83 of them — so those fields were
   // counted as methods and appeared in both totals. It now asks what follows the
   // name: `(` for a method, `:` or `=` for a field.
-  expect(m.public).toBe(760);
+  expect(m.public).toBe(761);
   expect(m.private).toBe(89);
 	});
 
@@ -171,11 +187,11 @@ it("the outside world depends on 121 members, and §6 assumed far fewer", () => 
     // sites". At 121 names the pessimistic figure is not the real one, and that
     // is the answer to the question §6.4 deferred until "the game runs and the
     // real cross-method dependencies are known".
-    expect(m.external).toBe(121);
+    expect(m.external).toBe(124);
     expect(m.external).toBeGreaterThan(83);
 	});
 
-  it("classifies all 121, with no residual", () => {
+  it("classifies all 124, with no residual", () => {
     // This is the finding that forced the re-derivation, and the number that keeps
     // it fixed. §6.2's region table left **68 of the 110** (as measured then) in no
     // region at all —
@@ -190,14 +206,14 @@ it("the outside world depends on 121 members, and §6 assumed far fewer", () => 
 		const m = measure();
 		const classified = [...m.buckets.values()].reduce((n, list) => n + list.length, 0);
 		expect(classified).toBe(m.external);
-		expect(m.buckets.get("STATE")?.length ?? 0).toBeLessThan(30);
+		expect(m.buckets.get("STATE")?.length ?? 0).toBeLessThan(33);
 	});
 
-it("splits the reachable surface into 32 hub and 89 movable, and the hubs stay", () => {
+it("splits the reachable surface into 32 hub and 92 movable, and the hubs stay", () => {
     // §6.8: the two hubs "are the reason the split is worth doing rather than the
     // reason it fails". Still true, and now measured on the current file.
     const m = measure();
-    expect(m.moving).toBe(89);
+    expect(m.moving).toBe(92);
     expect(m.hubs).toBe(32);
     expect(m.moving + m.hubs).toBe(m.external);
     // HUB 1 is 24 of the 32. `DoTag` joined when the minimap tag test replaced a
@@ -229,8 +245,8 @@ it("splits the reachable surface into 32 hub and 89 movable, and the hubs stay",
     // only what the game does.
 		const m = measure();
     const carry = m.buckets.get("STATE") ?? [];
-    expect(carry.length).toBe(27);
-		for (const name of ["player", "session", "rules", "m_PlayerFOV", "m_CharGen", "m_IsGameRunning", "m_PlayerWasRescued", "TAG_MODE_TEXT", "simulateOneBehindDistrictTurn", "stepActorsOnFire", "CURRENT_SAVE_SLOT"]) {
+    expect(carry.length).toBe(30);
+		for (const name of ["player", "session", "rules", "m_PlayerFOV", "m_CharGen", "m_IsGameRunning", "m_PlayerWasRescued", "TAG_MODE_TEXT", "simulateOneBehindDistrictTurn", "stepActorsOnFire", "CURRENT_SAVE_SLOT", "POPUP_FILLCOLOR", "SPEECH_BUBBLE_FILLCOLOR"]) {
 			expect(carry, `${name} should be classified as carried`).toContain(name);
 		}
 	});

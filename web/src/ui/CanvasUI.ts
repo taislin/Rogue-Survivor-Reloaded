@@ -12,7 +12,7 @@ import { InputHandler } from "./InputHandler";
 import { SceneRenderer } from "./firstperson/SceneRenderer";
 import type { Scene } from "@engine/firstperson/SceneBuilder";
 import type { SceneRendererStats } from "@engine/firstperson/Types";
-import { fontHud, fontHudBold, fontMenu, fontMenuBold } from "./fonts";
+import { fontHud, fontHudBold, fontHudBoldSized, fontMenu, fontMenuBold } from "./fonts";
 import { wrapToWidth } from "./textWrap";
 
 /**
@@ -735,27 +735,50 @@ export class CanvasUI implements IRogueUI {
    * from running off the right edge. The tail is drawn from the *clamped* box
    * edge and its base is pulled inside the box's own width, so a clamped bubble
    * still points at its speaker rather than at a spot off the edge of the map.
+   *
+   * ## Sized in screen terms, not zoom terms
+   *
+   * The bubble is drawn inside the map's zoom scope, so *everything* here would
+   * otherwise appear `scaledDrawScale` times too large at 2x — a balloon of text
+   * over one tile, covering the thing it is annotating. So the glyph is requested
+   * at a reduced size and every extent is divided to match, while **positions are
+   * left alone**.
+   *
+   * That split is what keeps the arithmetic below correct without touching it:
+   * `anchorX`/`anchorY` arrive in scope units and stay there, so the tile's centre
+   * and the flip test are unchanged; `boxW`/`boxH`/`maxTextWidth`/paddings become
+   * extents in scope units too, so `anchorY - boxH` still compares two scope-unit
+   * quantities and `clampPopupBox` still receives a coherent box. Dividing
+   * everything, or nothing, would each break one of those.
+   *
+   * The face is the 10pt HUD bold measured at `10 / scale` pt, so `measureText`
+   * reports scope units directly and no measured value needs converting after the
+   * fact. `MAP_ZOOM_LEVELS` is `[1, 2]`, so the reduced size bottoms out at 5pt.
    */
   UI_DrawSpeechBubble(
     text: string, textColor: Color, borderColor: Color, fillColor: Color,
     anchorX: number, anchorY: number, anchorSize: number, maxTextWidth: number,
   ): void {
-    this.ctx.font         = fontHudBold();
-    this.ctx.textBaseline = "top";
+    const scale = this.scaledDrawScale > 0 ? this.scaledDrawScale : 1;
+    const inv = 1 / scale;
 
     // The font has to be set before the measurement, not just before the draw:
     // `wrapToWidth` asks this context how wide things are, and that answer is a
     // property of the installed face.
+    this.ctx.font         = fontHudBoldSized(10 * inv);
+    this.ctx.textBaseline = "top";
+
     const measure = (s: string): number => this.ctx.measureText(s).width;
-    const lines = wrapToWidth(text, Math.max(1, maxTextWidth), measure);
+    const lines = wrapToWidth(text, Math.max(1, maxTextWidth * inv), measure);
     if (lines.length === 0) return;
 
-    const padX = 5, padY = 4;
-    const TAIL_H = 5;
-    const TAIL_HALF = 4;
+    const padX = 5 * inv, padY = 4 * inv;
+    const TAIL_H = 5 * inv;
+    const TAIL_HALF = 4 * inv;
+    const lineH = this.BUBBLE_LINE_H * inv;
     const textW = lines.reduce((w, l) => Math.max(w, measure(l)), 0);
     const boxW = textW + padX * 2;
-    const boxH = lines.length * this.BUBBLE_LINE_H + padY * 2;
+    const boxH = lines.length * lineH + padY * 2;
 
     const tileCx = anchorX + anchorSize / 2;
     // Above unless the box would not fit there; the tail then points back up.
@@ -798,7 +821,7 @@ export class CanvasUI implements IRogueUI {
     let ty = gy + padY;
     for (const line of lines) {
       this.ctx.fillText(line, gx + padX, ty);
-      ty += this.BUBBLE_LINE_H;
+      ty += lineH;
     }
   }
 

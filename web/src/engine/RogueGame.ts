@@ -1360,6 +1360,26 @@ export class RogueGame implements ActionGame {
 	static debugRender = false;
 
 	readonly POPUP_FILLCOLOR: Color = Color.withAlpha(192, Color.CornflowerBlue);
+
+	/**
+	 * Speech-bubble fill: green, and more transparent than the popups'.
+	 *
+	 * **Its own colour rather than `POPUP_FILLCOLOR`,** which is what it used. A
+	 * bubble and a popup were then the same blue box at the same opacity, and the
+	 * bubble is the one drawn *over the map* rather than beside it — so the two
+	 * things a player most wants to tell apart at a glance were identical, and the
+	 * one that obscures the map was the harder to place.
+	 *
+	 * Green because the bubbles are transient annotations attached to actors, and
+	 * everything else that boxes text in this game is blue; a different hue reads as
+	 * a different kind of thing without needing a legend. `SeaGreen` rather than a
+	 * brighter green because white text has to stay legible on it.
+	 *
+	 * Alpha 150 against the popups' 192: a bubble covers the tile it is about, and
+	 * the actor behind it is often the thing being looked at while reading. Low
+	 * enough that the sprite shows through, high enough to read white text against.
+	 */
+	readonly SPEECH_BUBBLE_FILLCOLOR: Color = Color.withAlpha(150, Color.SeaGreen);
 	/**
 	 * C# `START_FIRE_MODE_TEXT` -- `RogueGame.cs:100`, Release 7-6. The C#'s own
 	 * wording, including that the fire is for "cooking/light" -- it is the only hint
@@ -22212,7 +22232,8 @@ updateAdvisorHintBanner(): void {
 				bubble.text,
 				Color.White,
 				Color.White,
-				this.POPUP_FILLCOLOR,
+				// Not `POPUP_FILLCOLOR`: see `SPEECH_BUBBLE_FILLCOLOR`.
+				this.SPEECH_BUBBLE_FILLCOLOR,
 				screenPos.x,
 				screenPos.y,
 				TILE_SIZE,

@@ -544,3 +544,94 @@ describe("speech bubbles: where they are drawn", () => {
     ).not.toContain("ClearOverlays");
   });
 });
+/**
+ * The bubble's box and the text in it, as the player sees them.
+ *
+ * Both properties below are visual, and both were wrong in ways nothing throws
+ * about: a bubble the same colour as every other box on screen, and a bubble that
+ * swells to twice its size the moment the map is zoomed in. Neither fails a test
+ * that only checks a bubble was drawn, which is what every other test here does.
+ */
+describe("the bubble's appearance", () => {
+  beforeEach(() => {
+    resetOptions();
+  });
+
+  it("has its own colour, so it is not read as another popup", () => {
+    const { game } = newFixture();
+
+    // Distinct from the popups', which is the whole point: a bubble and a popup were
+    // the same blue box at the same opacity, and the bubble is the one drawn *over*
+    // the map. Green reads as a different kind of thing without needing a legend.
+    expect(game.SPEECH_BUBBLE_FILLCOLOR).not.toBe(game.POPUP_FILLCOLOR);
+
+    // Green rather than the popups' blue, asserted on the channels rather than by
+    // naming a colour: the requirement is the hue moved, and which green is a
+    // taste decision that should not fail a test.
+    const bubble = game.SPEECH_BUBBLE_FILLCOLOR;
+    const popup = game.POPUP_FILLCOLOR;
+    expect(bubble.g).toBeGreaterThan(bubble.r);
+    expect(bubble.g).toBeGreaterThan(bubble.b);
+    expect(popup.b).toBeGreaterThan(popup.r);
+
+    // And more transparent than the popups, because a bubble covers the actor it is
+    // about and that actor is often what is being read while reading it.
+    expect(bubble.a).toBeLessThan(popup.a);
+    // Still opaque enough to read white text against.
+    expect(bubble.a).toBeGreaterThanOrEqual(128);
+  });
+
+  it("passes its own colour down, rather than the popups'", () => {
+    const { game, ui, map } = newFixture();
+    const npc = npcAt(map, "speaker", new Point(30, 32));
+    // `SpeakOverhead` is where the option is honoured, so `DrawSpeechBubbles` has
+    // nothing to draw without it and the assertion below would pass on an empty
+    // list if it only checked the list.
+    setBubbles(true);
+    game.SpeakOverhead(npc, "Look at my bubbles.");
+
+    // A probe recording what the engine asked the UI to draw. `NullRogueUI` drops
+    // every painting call, so the fill colour has to be caught at the call.
+    const seen: (number | null)[] = [];
+    const spy = Object.create(ui) as NullRogueUI;
+    spy.UI_DrawSpeechBubble = (
+      _text: string,
+      _textColor: unknown,
+      _borderColor: unknown,
+      fillColor: { a: number },
+    ): void => {
+      seen.push(fillColor.a);
+    };
+    (game as unknown as { m_UI: unknown }).m_UI = spy;
+
+    game.DrawSpeechBubbles();
+
+    expect(seen.length).toBeGreaterThan(0);
+    // The alpha the engine chose is the bubble's, not the popup's.
+    expect(seen[0]).toBe(game.SPEECH_BUBBLE_FILLCOLOR.a);
+    expect(seen[0]).not.toBe(game.POPUP_FILLCOLOR.a);
+  });
+
+  it("is sized in screen terms, so zooming in does not inflate it", () => {
+    // The property, stated on the source: every *extent* is divided by the ambient
+    // scale while every *position* is left alone. Asserted here because the bug it
+    // fixes is invisible from the outside — a bubble drawn at the right place, the
+    // right colour, covering twice the tile.
+    const src = readFileSync(join(SRC, "ui", "CanvasUI.ts"), "utf-8");
+    const start = src.indexOf("UI_DrawSpeechBubble(");
+    const body = src.slice(start, src.indexOf("// ── Minimap", start));
+
+    // The scale is read and inverted once, near the top...
+    expect(body).toMatch(/const inv = 1 \/ scale;/);
+    // ...the glyph is requested at the reduced size, so `measureText` reports scope
+    // units and no measured value needs converting afterwards...
+    expect(body).toContain("fontHudBoldSized(10 * inv)");
+    // ...and the extents that place the box are divided to match.
+    expect(body).toContain("maxTextWidth * inv");
+    expect(body).toContain("this.BUBBLE_LINE_H * inv");
+
+    // The positions are NOT divided. This is the half that is easy to get wrong: if
+    // the anchor were divided too, the bubble would drift off its own tile.
+    expect(body).not.toMatch(/anchorX \* inv|anchorY \* inv|anchorSize \* inv/);
+  });
+});

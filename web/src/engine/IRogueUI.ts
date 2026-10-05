@@ -291,10 +291,17 @@ export interface IRogueUI {
    * the gap to the tile itself. `maxTextWidth` is the wrap width in the current
    * transform's units.
    *
-   * Unlike the popups this is drawn **scaled**, inside the map's zoom scope —
-   * it annotates a tile, and the `(Gfx) Speech Bubbles` option is meant to make
-   * the map easier to read, which at 2x means text you can actually read rather
-   * than 10pt type over 64px tiles.
+   * Unlike the popups this is drawn **scaled**, inside the map's zoom scope — it
+   * annotates a tile, so it follows the tile rather than the screen.
+   *
+   * But it is *sized* in screen terms, not zoom terms: at 2x the box and its text
+   * are the same apparent size as at 1x, and `CanvasUI` gets that by drawing every
+   * extent at `1 / scale`. That reverses an earlier decision, which had the whole
+   * bubble scale with the map on the grounds that 2x should mean "text you can
+   * actually read". The problem was the other half of that trade: the bubble covers
+   * the actor it is annotating, so at 2x it hid the very thing the player had
+   * zoomed in to look at. A constant size keeps the annotation readable and the
+   * subject visible at both levels.
    */
   UI_DrawSpeechBubble(
     text: string, textColor: Color, borderColor: Color, fillColor: Color,
