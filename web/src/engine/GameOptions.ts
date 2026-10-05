@@ -1748,6 +1748,20 @@ export class GameOptions {
   }
 
   /**
+   * Sprite sets that are still being finished, so the options menu can say so.
+   *
+   * **A set rather than a flag on the row, because the set looks finished.** `civ13`
+   * is a folder of 1 114 assets covering all seven categories, and from the outside
+   * there is nothing to distinguish it from a finished set — which is the entire
+   * reason it needs saying. The menu row is the only place a player can be told
+   * before they pick it, so the annotation belongs there and nowhere else; adding
+   * the next one is a single entry.
+   */
+  private static readonly WIP_IMAGE_SETS: ReadonlySet<ImageSet> = new Set<ImageSet>([
+    "civ13",
+  ]);
+
+  /**
    * The display name of a sprite set: the folder name, minus the `webp`-era
    * underscores, so `deonapocalypse_v9_r1` reads as "Deonapocalypse v9 r1".
    *
@@ -1762,7 +1776,9 @@ export class GameOptions {
     if (set === "genesis_actors_on_deonapocalypse")
       return "Genesis actors, Deonapocalypse world";
     const pretty = set.replace(/_/g, " ");
-    return set === DEFAULT_IMAGE_SET ? `${pretty}  (complete set)` : pretty;
+    if (set === DEFAULT_IMAGE_SET) return `${pretty}  (complete set)`;
+    if (GameOptions.WIP_IMAGE_SETS.has(set)) return `${pretty}  (WIP)`;
+    return pretty;
   }
 
   static zupDaysName(d: ZupDays): string {    switch (d) {

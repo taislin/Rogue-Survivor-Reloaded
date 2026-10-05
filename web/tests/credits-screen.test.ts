@@ -77,13 +77,14 @@ it("has a line naming every set in IMAGE_SETS, by its display name", () => {
     // failure this catches — a shipped style nobody credited, which nothing else
     // in the build would notice.
     //
-    // Two deliberate loosenings. The name is `spriteStyleName` *without* its
-    // "(complete set)" annotation, because that annotation is an options-screen
-    // hint about the `classic` fallback and is not part of what the style is
-    // called. And the compare is case-insensitive, because the credits carry the
-    // proper name of each piece of art in the value column — "Daft Tiles b1" is
-    // `dafttiles b1` in the options row and *Daft Tiles* to its author — and a
-    // player matches the two by eye, not by string.
+// Two deliberate loosenings. The name is `spriteStyleName` *without* its
+      // parenthetical annotation, because that is an options-screen hint -- "(complete
+      // set)" about the `classic` fallback, "(WIP)" about art still being finished --
+      // and is not part of what the style is called. And the compare is
+      // case-insensitive, because the credits carry the proper name of each piece of
+      // art in the value column - "Daft Tiles b1" is `dafttiles b1` in the options row
+      // and *Daft Tiles* to its author - and a player matches the two by eye, not by
+      // string.
     //
     // Derived from `spriteStyleName`, which is what the options row actually
     // shows, rather than from the folder name. That matters for a style with a
@@ -93,7 +94,16 @@ it("has a line naming every set in IMAGE_SETS, by its display name", () => {
     // spelled like a path.
     for (const set of IMAGE_SETS) {
       const name = spriteStyleName(set)
-        .replace("  (complete set)", "")
+        // Every parenthetical the options screen adds is a hint about that row, not
+        // part of what the style is called: "(complete set)" is about the `classic`
+        // fallback and "(WIP)" is about the art still being finished. Neither belongs
+        // in an attribution, and a credits line reading "civ13 (WIP)" credits nobody.
+        //
+        // Stripped as a shape rather than by listing the known annotations, so a
+        // third one does not have to be remembered here -- and if this ever stops
+        // matching, the failure is a credits line that failed to find its style,
+        // which is the thing worth catching.
+        .replace(/\s*\([^)]*\)\s*$/, "")
         .toLowerCase();
       expect(
         CREDITS_LINES.some((l) => l.toLowerCase().includes(name)),

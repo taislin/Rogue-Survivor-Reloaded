@@ -167,6 +167,18 @@ describe("the option", () => {
     expect(GameOptions.spriteStyleName(DEFAULT_IMAGE_SET)).toContain("(complete set)");
   });
 
+  it("says so in the menu when a set is still being finished", () => {
+    // `civ13` ships all seven categories and 1 114 assets, so nothing about the set
+    // itself distinguishes it from a finished one — the menu row is the only place
+    // a player can be told before choosing it. This is that assertion.
+    expect(GameOptions.spriteStyleName("civ13")).toContain("(WIP)");
+
+    // And it must not leak onto a set that is finished: the annotation is per-set,
+    // not a prefix on the list.
+    expect(GameOptions.spriteStyleName("deonapocalypse_v9_r1")).not.toContain("(WIP)");
+    expect(GameOptions.spriteStyleName(DEFAULT_IMAGE_SET)).not.toContain("(WIP)");
+  });
+
   it("is reachable, because IMAGE_SETS is what the options screen bounds against", () => {
     expect(IMAGE_SETS).toContain("civ13");
     // And selecting it resolves through it, falling back to classic for the one
