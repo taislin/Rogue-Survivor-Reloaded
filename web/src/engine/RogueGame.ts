@@ -237,6 +237,7 @@ import { GAME_VERSION } from "@engine/GameVersion";
     MODE_ENTRIES,
     MODE_VALUES,
     loadAppearance,
+    loadRememberedSex,
     saveAppearance,
   } from "@engine/NewGameConfig";
 import { TextFile } from "@engine/TextFile";
@@ -3149,7 +3150,16 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 		// *above* the split count rather than being renumbered when it changes.
 		let row = 0;
 		let raceIdx = 0;
-		let sexIdx = 0;
+		// Opens on the remembered sex, not on `*Random*`. The layers below are
+		// remembered, so a row that silently forgot its own answer would leave the
+		// screen showing the last character's clothes against a sex that gets
+		// re-rolled on Enter -- and those layer ids are resolved against the rolled
+		// body's catalogue at creation, so none of them would match and all six
+		// layers would fall back to random. A player who chose a woman, then made
+		// the next character without touching the row, got a random man.
+		// No stored answer (a first run) still means `*Random*`, which is what the
+		// game has always done for a character nobody has described yet.
+		let sexIdx = loadRememberedSex() ?? 0;
 		let typeIdx = 0;
 		let skillIdx = 0;
 
@@ -3159,7 +3169,9 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 
 		// Which body the catalogue is drawn from. Sex is what selects it, and it is
 		// the row above, so it is derived each frame rather than stored twice.
-		let catalogueIsMale = true;
+		// Follows the row above, so a remembered sex previews the body it will create.
+		// `0` still previews male, as a random-sex character always has.
+		let catalogueIsMale = sexIdx !== 2;
 		// Set when switching sex had to drop a choice, so the frame can say so
 		// instead of the player's hair quietly changing under the cursor.
 		let droppedNote: string[] = [];
@@ -3395,7 +3407,10 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 					// catalogue the choices were validated against is the one the
 					// player is leaving the screen on.
 					this.m_CharGen.appearance = appearance;
-					saveAppearance(appearance);
+					// The row's own answer, not the rolled `isMale`: `*Random*` has to survive
+					// as `*Random*`, or the next character rolls a sex again over the top
+					// of layers that were chosen against a specific body.
+					saveAppearance(appearance, isUndead ? null : sexIdx);
 					ok = true;
 					loop = false;
 					break;
@@ -31532,7 +31547,15 @@ const keyHints = ACTION_ENTRIES.map((e) => s_KeyBindings.getAll(e.command).join(
 			actor.currentRangedAttack.efficientRange,
 			null,
 		);
-		const rangedWeapon = actor.getEquippedWeapon() as ItemRangedWeapon | null;
+		// `getEquippedRangedWeapon`, not `getEquippedWeapon() as ItemRangedWeapon`.
+		// The cast is a lie whenever a melee weapon is in the right hand: the item is
+		// non-null, so the `!= null` guard below passed, and then `.ammo` and
+		// `.model.maxAmmo` were `undefined` -- the status line read
+		// `Amo undefined/undefined` under a correctly-drawn `Melee Atk 26 Dmg 14/14`.
+		// `getEquippedRangedWeapon` is the `instanceof` check the cast was standing in
+		// for, and it returns null for a melee weapon, so the line is skipped exactly
+		// as the C#'s `GetEquippedItem(RIGHT_HAND) as ItemRangedWeapon` skips it.
+		const rangedWeapon = actor.getEquippedRangedWeapon();
 		let ammo = 0;
 		let maxAmmo = 0;
 		if (rangedWeapon != null) {

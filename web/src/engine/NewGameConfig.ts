@@ -87,6 +87,43 @@ function loadIndices(): { rulesetIdx: number; modeIdx: number } | null {
  */
 export const LAST_APPEARANCE_KEY = "lastCharacterAppearance";
 
+/**
+ * The sex row's choice, in the same storage record as the layers.
+ *
+ * **A sibling field, not a layer.** `CharacterAppearance.fromJSON` reads only the
+ * six layer names, so this is ignored by it and cannot be mistaken for a sprite id.
+ * And it has to live in this record rather than on `CharGen`: the two are saved
+ * together on the same Enter, and they have to be *remembered* together, because
+ * they are interpreted against each other.
+ *
+ * That is the whole bug this exists to fix. The layers were remembered and the sex
+ * row was not, so the customiser reopened wearing the last character's clothes with
+ * the sex row back on `*Random*`. Pressing Enter rolled a sex, `dressPlayerFromCharGen`
+ * then resolved those remembered layer ids against the *rolled* body's catalogue,
+ * found none of them there, and fell back to random for all six -- a wholly random
+ * character, of the other gender, from a screen the player had filled in.
+ *
+ * `0` random, `1` male, `2` female -- the customiser's own row order. Stored as a
+ * number rather than a boolean because `*Random*` is a real choice, and a boolean
+ * would make it indistinguishable from never having answered the row at all.
+ */
+const REMEMBERED_SEX_FIELD = "sex";
+
+/** Loads the remembered sex row, or `null` when there is nothing remembered. */
+export function loadRememberedSex(): number | null {
+  try {
+    const raw = storage.getItem(LAST_APPEARANCE_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const v = (parsed as Record<string, unknown>)[REMEMBERED_SEX_FIELD];
+    return typeof v === "number" && (v === 0 || v === 1 || v === 2) ? v : null;
+  } catch (e) {
+    reportSwallowed("NewGameConfig.loadRememberedSex", e);
+    return null;
+  }
+}
+
 /** Loads the remembered look, or an all-random one. Never throws. */
 export function loadAppearance(): CharacterAppearance {
   try {
@@ -99,10 +136,16 @@ export function loadAppearance(): CharacterAppearance {
   }
 }
 
-/** Records the chosen look. Best-effort, like `saveNewGameConfig`. */
-export function saveAppearance(appearance: CharacterAppearance): void {
+/**
+ * Records the chosen look, and the sex row it was chosen against.
+ *
+ * `sex` is optional so an older caller still works; without it this behaves exactly
+ * as before, which is what keeps a stored record that predates the field readable.
+ */
+export function saveAppearance(appearance: CharacterAppearance, sex?: number | null): void {
   try {
-    const record = appearance.toJSON();
+    const record: Record<string, unknown> = appearance.toJSON();
+    if (sex === 0 || sex === 1 || sex === 2) record[REMEMBERED_SEX_FIELD] = sex;
     if (Object.keys(record).length === 0) storage.removeItem(LAST_APPEARANCE_KEY);
     else storage.setItem(LAST_APPEARANCE_KEY, JSON.stringify(record));
   } catch (e) {
