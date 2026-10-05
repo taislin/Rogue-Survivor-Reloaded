@@ -194,9 +194,7 @@ import {
 	getUserConfigPath,
 	getUserDocsPath,
 	getUserGraveyardPath,
-	getUserHiScoreFilePath,
 	getUserHiScorePath,
-	getUserHiScoreTextFilePath,
 	getUserManualFilePath,
 	getUserNewGraveyardName,
 	getUserNewScreenshotName,
@@ -2698,7 +2696,7 @@ export class RogueGame implements ActionGame {
 						break;
 
 					case 6:
-						await this.HandleHiScores(true);
+						await this.HandleHiScores();
 						break;
 
 					case 7:
@@ -3828,8 +3826,10 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 	}
 
 	// C# HandleHiScores — RogueGame.cs:2072
-	async HandleHiScores(saveToTextfile: boolean): Promise<void> {
-		const file = saveToTextfile ? new TextFile() : null;
+	//
+	// The C#'s `saveToTextFile` parameter is gone along with the text export; see the
+	// note below. Nothing else about this screen changed.
+	async HandleHiScores(): Promise<void> {
 
 		this.m_UI.UI_Clear(Color.Black);
 		let gy = 0;
@@ -3856,36 +3856,16 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 		);
 		gy += BOLD_LINE_SPACING;
 
-		// text.
-		if (file) {
-			file.append(`ROGUE SURVIVOR ${GAME_VERSION}`);
-			file.append("Hi Scores");
-			file.append(
-				"Rank | Name, Skills, Death       |  Score |Difficulty|Survival|  Kills |Achievm.|      Game Time | Playing time",
-			);
-		}
-
-		// text export (unaffected by display scrolling).
-		if (file) {
-			for (let i = 0; i < this.m_HiScoreTable.count; i++) {
-				const hi = this.m_HiScoreTable.get(i);
-				const line =
-					`${padLeft(i + 1, 3)}. | ${padRight(this.TruncateString(hi.name, 25), 25)} | ${padLeft(hi.totalPoints, 6)}` +
-					` |     ${padLeft(hi.difficultyPercent, 3)}% | ${padLeft(hi.survivalPoints, 6)} | ${padLeft(hi.killPoints, 6)}` +
-					` | ${padLeft(hi.achievementPoints, 6)} | ${padLeft(new WorldTime(hi.turnSurvived).toString(), 14)}` +
-					` | ${this.TimeSpanToString(hi.playingTimeSeconds)}`;
-				file.append(
-					"------------------------------------------------------------------------------------------------------------------------",
-				);
-				file.append(line);
-				file.append(`     | ${hi.skillsDescription}`);
-				file.append(`     | ${hi.death}`);
-			}
-		}
-
-		// save.
-		const textfilePath = this.GetUserHiScoreTextFilePath();
-		if (file) file.save(textfilePath);
+		// No text export.
+		//
+		// The C# wrote the table out twice -- a binary file and a `hiscores.txt` beside
+		// it -- and this used to do the same into `localStorage`, under
+		// `textfile:hiscores.txt`. Nothing ever read it: the table itself is
+		// `localStorage` via `HiScoreTable.save`/`load`, so the dump was a second copy
+		// of the scores as plain text, and the only visible effect was a leftover
+		// `hiscores.txt` in devtools from a C# build that never shipped. The parameter
+		// went with it: the two call sites both passed `true`, and both now mean the
+		// same thing the flag meant -- draw the table.
 
 		// individual entries, in a scrolling window: 12 entries x 4 lines do not
 		// fit at menu leading, so cursor/PgUp/PgDn move through them.
@@ -3957,10 +3937,11 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 				gyRows,
 			);
 			gyRows += MENU_BOLD_LINE_SPACING;
-			if (file) {
-				this.m_UI.UI_DrawStringBoldLarge(Color.White, textfilePath, 0, gyRows);
-				gyRows += MENU_BOLD_LINE_SPACING;
-			}
+			// The table no longer prints its own storage key. It used to, one line
+			// under the rules: "saves/hiscores.txt", the C# path of a file this port
+			// never wrote anywhere near. That string was `getUserHiScorePath()` plus a
+			// filename, so it named a file that does not exist in a directory that does
+			// not either.
 			if (this.m_HiScoreTable.count > pageEntries) {
 				this.m_UI.UI_DrawStringLarge(
 					Color.Gray,
@@ -26272,7 +26253,7 @@ updateAdvisorHintBanner(): void {
 		);
 		if (this.m_HiScoreTable.register(newHiScore)) {
 			this.SaveHiScoreTable();
-			await this.HandleHiScores(true);
+			await this.HandleHiScores();
 		}
 	}
 
@@ -32957,15 +32938,9 @@ const keyHints = ACTION_ENTRIES.map((e) => s_KeyBindings.getAll(e.command).join(
 		return getUserHiScorePath();
 	}
 
-	// C# GetUserHiScoreFilePath — RogueGame.cs:20137
-	GetUserHiScoreFilePath(): string {
-		return getUserHiScoreFilePath();
-	}
-
-	// C# GetUserHiScoreTextFilePath — RogueGame.cs:20142
-	GetUserHiScoreTextFilePath(): string {
-		return getUserHiScoreTextFilePath();
-	}
+	// No `GetUserHiScoreFilePath` / `GetUserHiScoreTextFilePath`. See the note in
+	// `Paths.ts`: the C#'s binary table and text dump have no counterpart here, and
+	// the table is `localStorage` under `HiScoreTable.STORAGE_KEY`.
 
 	// C# GenerateWorld — RogueGame.cs:20149
 	//

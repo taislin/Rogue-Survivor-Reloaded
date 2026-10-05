@@ -390,6 +390,24 @@ describe("accepting reincarnation", () => {
 		// map belongs to the district `GameLoop` will ask for next turn.
 		expect(game.m_Session.currentMap).toBe(player.location.map);
 		expect(player.location.map!.district).toBe(game.m_Session.currentMap!.district);
+
+		// Being *on* a map the loop walks is not the same as the loop being able to
+		// produce you from it. `getNextActorToAct` walks a cursor from
+		// `map.checkNextActorIndex` and returns the first actor with action points who
+		// is not sleeping; a stale cursor left behind by the previous occupant is the
+		// one thing that can leave a living, reachable player with nobody able to act.
+		//
+		// This is also the assertion the earlier version of this note got wrong by
+		// reasoning about instead of running. It does not drive a turn, so it needs no
+		// input probe -- which is the point: `NullRogueUI` synthesises a key when its
+		// queue is empty and can only ever yield Enter/Escape/n/y, so *driving* a turn
+		// with it spins forever. Asking the cursor a question does not.
+		const map = player.location.map!;
+		const next = game.m_Rules.getNextActorToAct(map, map.localTime.turnCounter);
+		expect(next, "nobody can act on the map the player was put on").not.toBeNull();
+		if (next !== null) {
+			expect(map.actors, "the actor offered is not on that map").toContain(next);
+		}
 	}, 60_000);
 });
 /**

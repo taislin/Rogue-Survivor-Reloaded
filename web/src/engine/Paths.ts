@@ -195,12 +195,17 @@ export function getUserHiScorePath(): string {
 	return getUserSavesPath();
 }
 
-// C# GetUserHiScoreFilePath — RogueGame.cs:20137
-export function getUserHiScoreFilePath(): string {
-	return getUserHiScorePath() + "hiscores.dat";
-}
-
-// C# GetUserHiScoreTextFilePath — RogueGame.cs:20142
-export function getUserHiScoreTextFilePath(): string {
-	return getUserHiScorePath() + "hiscores.txt";
-}
+// No `GetUserHiScoreFilePath` / `GetUserHiScoreTextFilePath`.
+//
+// The C# has both: a binary table and a text dump beside it. Neither has a reader
+// here, and neither is written any more either -- the table itself lives in
+// `localStorage` under `HiScoreTable.STORAGE_KEY` ("rogue-survivor-hiscores"), via
+// `HiScoreTable.save`/`load`, which is the port's equivalent of the C#'s binary
+// file.
+//
+// What *was* still happening is the reason these are gone rather than merely unused:
+// `HandleHiScores` built a `TextFile` dump and saved it under
+// `textfile:hiscores.txt` in the same `localStorage`. So the scores were stored
+// twice, and the second copy was a plain-text rendering nobody read -- visible to
+// the player in devtools as a leftover file from a C# build that never shipped.
+//

@@ -101,7 +101,7 @@ describe("RogueGame's measured surface", () => {
     // §6.2 calls this "the god object", and the argument for splitting is the
     // ratio rather than the size. Pinned so the ratio has a history.
     //
-    // **850, having been 846 when this decomposition started moving code.**
+    // **848, having been 846 when this decomposition started moving code.**
     //
     // The count went *down* twice — `m_ScreenshotCounter` left with the `GetUser*`
     // paths and `m_MenuRowBands` left with the menu chrome, both private, both
@@ -111,6 +111,13 @@ describe("RogueGame's measured surface", () => {
     // last hint could be tested at all, and by four for `(Gfx) Speech Bubbles` —
     // three methods and one field, all of which are the cost of making the feature
     // reachable at all.
+    //
+    // **Down two, for the hiscores text export.** The C# wrote its score table out
+    // twice -- a binary file and a `hiscores.txt` beside it -- and the port did the
+    // same into `localStorage`, which also meant the score table *drew its own
+    // storage key* on screen. Removing it dropped `GetUserHiScoreFilePath`,
+    // `GetUserHiScoreTextFilePath`, and `HandleHiScores`'s parameter. The reachable
+    // surface is unmoved: deleting members reaches nothing new from outside.
     //
     // Then by one more for `SPEECH_BUBBLE_FILLCOLOR`, when the bubbles stopped
     // sharing `POPUP_FILLCOLOR`. One public readonly field beside the one it
@@ -128,8 +135,8 @@ describe("RogueGame's measured surface", () => {
     // make a defect inside it reachable. It is a method rather than a field, it
     // holds no state the class did not already have, and the alternative was a
     // defect in a ~400-line turn loop that no test could reach.
-    expect(m.members).toBe(850);
-    expect(m.methods).toBe(678);
+    expect(m.members).toBe(848);
+    expect(m.methods).toBe(676);
     // The *reachable* surface is 124, up from 121. Both extractions had left it
     // alone -- each kept its methods on the class, which is what keeps them pure
     // moves -- and these three moved it for the opposite reason: a test reaching
@@ -157,7 +164,7 @@ describe("RogueGame's measured surface", () => {
   // `m_SpeechBubbles: Map<...> = new Map()` among 83 of them — so those fields were
   // counted as methods and appeared in both totals. It now asks what follows the
   // name: `(` for a method, `:` or `=` for a field.
-  expect(m.public).toBe(761);
+  expect(m.public).toBe(759);
   expect(m.private).toBe(89);
 	});
 
