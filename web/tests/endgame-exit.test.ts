@@ -392,3 +392,21 @@ describe("accepting reincarnation", () => {
 		expect(player.location.map!.district).toBe(game.m_Session.currentMap!.district);
 	}, 60_000);
 });
+/**
+ * OPEN: the spin is in `advancePlayMap`, not in the reincarnation.
+ *
+ * Driving `advancePlayDistrict` after an accepted reincarnation does not return. It
+ * starves the event loop hard enough that Vitest's own 25s timeout cannot fire,
+ * which is the reported "unplayable the moment I reincarnate" seen from outside a
+ * test. A bounded replica of that district loop pointed one level further down: a
+ * single `advancePlayMap` call on a map the player has just left is the thing that
+ * never returns, so `NextMapTurn` and the actor cursor are where to look next.
+ *
+ * Neither probe is committed, because both wedge the suite -- which is the same
+ * failure mode they were written to catch.
+ *
+ * Ruled out by the three tests above: `HandleReincarnation` returns a living player,
+ * a different actor, a state `GameLoop` accepts, and `currentMap` equal to the map
+ * the player is on. And by `IsSuitableReincarnation`, the body is always in the same
+ * district, so a district mismatch is not the mechanism either.
+ */
