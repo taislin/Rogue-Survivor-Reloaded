@@ -199,7 +199,7 @@ code, kbd, samp { font-family: var(--font-mono); font-size: 0.9em; }
 hr {
   border: 0;
   border-top: 1px solid var(--border);
-  margin: 2.5rem 0;
+  margin: 0;
 }
 
 :focus-visible {
