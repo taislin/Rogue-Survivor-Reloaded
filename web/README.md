@@ -7,7 +7,7 @@ contribute. This file covers setup, architecture, and project overview.**
 
 ## Running it
 
-Requires Node 20.19+ (or 22.12+) — Vite 7's floor.
+Requires Node 20.19+ (or 22.12+) — Vite 7's floor. CI and the Dockerfile use Node 22.
 
 ### Development
 

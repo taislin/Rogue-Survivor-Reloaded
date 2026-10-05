@@ -21,7 +21,10 @@
 # the context, which is what stops this from being an ~116 MB upload.
 
 # ── Stage 1: build the bundle and compile the server ──────────────────────────
-FROM node:20-bookworm-slim AS build
+# Node 22, matching the version CI builds with. Node 20 is past its upstream
+# maintenance window, and this is the base of both stages, so it is also the runtime
+# the shipped game is *served* on -- not just the one it is built with.
+FROM node:22-bookworm-slim AS build
 
 WORKDIR /app
 
@@ -41,7 +44,7 @@ RUN npm run build && npm run build:server
 RUN npm prune --omit=dev
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
-FROM node:20-bookworm-slim AS runtime
+FROM node:22-bookworm-slim AS runtime
 
 ENV NODE_ENV=production \
     PORT=8080
