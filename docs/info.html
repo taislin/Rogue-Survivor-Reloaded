@@ -45,7 +45,7 @@
       <p>The original needs Windows and the .NET 3.5 runtime, and its
         <code>System.Drawing</code> drawing code has no browser equivalent. Rather than
         rewrite the game, the port replaces the three things that cannot survive a
-        browser and leaves the rules alone &mdash; so the behaviour you get is the
+        browser and leaves the rules alone, so the behaviour you get is the
         behaviour the original had.
       </p>
     </div>
@@ -103,11 +103,11 @@
       <div class="card">
         <h3>Technology</h3>
         <ul class="small" style="margin-bottom:0">
-          <li>TypeScript 5, strict mode</li>
+          <li>TypeScript 5</li>
           <li>Vite 5 for the dev server and the bundle</li>
-          <li>Canvas 2D &mdash; no game framework, no UI framework</li>
+          <li>Canvas 2D</li>
           <li>Web Audio API for music and sound</li>
-          <li>Vitest for the test suite &mdash; 2,874 tests across 131 files</li>
+          <li>Vitest for the test suite</li>
           <li>Neutralino for the optional desktop build</li>
           <li>Express for the optional production server</li>
           <li>Node 20 or newer</li>
@@ -117,11 +117,10 @@
         <h3>Display</h3>
         <ul class="small" style="margin-bottom:0">
           <li>1366&times;768 (16:9), the original was 1024&times;768 (4:3)</li>
-          <li>27 tiles across instead of 21, and a 498&nbsp;px sidebar instead of 286
-            &mdash; the surplus width is split between them, not all spent on the map</li>
+          <li>27 tiles across instead of 21, and a 498&nbsp;px sidebar instead of 286</li>
           <li>Two text sizes: a 10&nbsp;pt HUD and 12&nbsp;pt menus, both up from the
             original's 8.25&nbsp;pt, which lands near 11 device px on a HiDPI panel</li>
-          <li>2&times; map zoom on <kbd>=</kbd> and <kbd>-</kbd>, for when 27 tiles is
+          <li>2&times; map zoom on <kbd>+</kbd> and <kbd>-</kbd>, for when 27 tiles is
             not close enough</li>
           <li>Offscreen districts keep simulating without you</li>
           <li>Installable as a PWA, and playable offline</li>
@@ -129,28 +128,10 @@
       </div>
     </div>
 
-    <h2 id="status">Status</h2>
-    <p>The port is at <b>alpha 10.1</b>, matching the original's version number. The game
-      content is complete: there are no unported stubs left, and all but one optional
-      polish task is done.</p>
-
-    <p>What changed most recently is fidelity rather than features. A line-by-line audit of
-      the port against the preserved C# found and fixed <b>56 behavioural bugs</b> that no
-      test, build or simulator run had caught &mdash; including one where every AI actor saw
-      1&ndash;2 tiles further than the original in rain, which was invisible from the
-      player's side because the player's own view was correct. Each fix is pinned by a test,
-      and the
-      <a href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/plans/BROWSER_PORT_PLAN.md">porting
-        plan</a> records the reasoning, including the audits that came back clean.
-    </p>
-
-
     <h2 id="credits">Credits</h2>
     <div class="card">
       <h3>Programming, graphics and music - the original game</h3>
-      <p>Jacques Ruiz (roguedjack), 2012&ndash;2018. The rules, the art, the music, the
-        manual, and the 195 C# source files preserved in <code>src/</code> are all his
-        work. This port exists because of it.</p>
+      <p>Jacques Ruiz (roguedjack), 2010&ndash;2018.</p>
 
       <div class="table-wrap" style="margin-top:1rem">
         <table>
@@ -193,7 +174,7 @@
         this port merges. Those files are also where a large part of the sprite and sound
         library came from, and the fork states in its own <code>CREDITS.txt</code> that
         every one of them is either public domain (CC0) or CC-BY 3.0 and every one has been
-        modified &mdash; so the artists and sound designers named there are owed the credit,
+        modified, so the artists and sound designers named there are owed the credit,
         and it is reproduced in the game's own <b>Credits</b> screen.</p>
 
       <div class="table-wrap" style="margin-top:1rem">
@@ -223,7 +204,7 @@
 
     <div class="card">
       <h3>Programming, sprite styles and fixes - this port</h3>
-      <p>Taislin. The rules engine, the browser runtime, the first-person view, the
+      <p>By Taislin. The rules engine, the browser runtime, the first-person view, the
         merged content tables and the sprite-style option are the port's own work.</p>
     </div>
 
@@ -277,8 +258,8 @@
       </div>
 
       <p class="small muted" style="margin-top:1rem;margin-bottom:0">The three mod packs
-        incorporate further work by other people &mdash; the Daft Tiles pack says so of
-        itself &mdash; and are redistributed here as they were published.</p>
+        incorporate further work by other people - the Daft Tiles pack says so of
+        itself - and are redistributed here as they were published.</p>
     </div>
 
     <h2 id="license">License</h2>
@@ -319,9 +300,7 @@
           <ul>
             <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded">Source on GitHub</a></li>
             <li><a href="https://github.com/taislin/Rogue-Survivor-Reloaded/issues">Report an issue</a></li>
-            <li><a
-                href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/plans/BROWSER_PORT_PLAN.md">Porting
-                plan</a></li>
+
           </ul>
         </div>
         <div>
@@ -335,7 +314,7 @@
       <div class="site-footer__legal">
         <p><em>Rogue Survivor</em> was created by Jacques Ruiz (roguedjack) in 2012.
           This site and the browser port are reimplementations of that work and are
-          distributed under the GNU General Public License v3.0 &mdash; see
+          distributed under the GNU General Public License v3.0, see
           <a href="https://github.com/taislin/Rogue-Survivor-Reloaded/blob/master/LICENSE.txt">LICENSE.txt</a>.
         </p>
         <p>Game text, manual and artwork &copy; Jacques Ruiz. Rogue Survivor Reloaded

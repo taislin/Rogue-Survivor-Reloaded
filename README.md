@@ -19,10 +19,29 @@ I also hate C# :( and Typescript makes it run on more systems natively, and enab
 
 For now, the game will be as close to a 1:1 port as possible; the only changes will be QOL ones, like adding zoom, larger and more readable text on the UI and menus, and so forth. I plan to add more content in the future but will always keep a legacy version available for the true original experience. with only these QOL fixes.
 
-Feel free to submit PRs/suggestions!
-
 > [!NOTE]
 > See the [web port README](./web/README.md) for setup, architecture, and technical project overview.
+
+## Contributing
+
+All contributions are welcome — bug reports, ideas, documentation fixes and pull
+requests.
+
+**Open pull requests against `dev`, not `master`.** `dev` is where development
+happens; `master` is the stable line that releases and the live website are cut
+from, so a PR aimed at it either has to be re-targeted or holds up a release.
+CI runs on both, and on every pull request.
+
+**No major gameplay changes to Still Alive or Classic 10.1.** Those two rulesets
+are the reference points — the Alpha 10.1 original, and the GPLv3 *Still Alive*
+fork — and a rule change in either of them leaves nothing to compare against. New
+gameplay goes on the **Reloaded** ruleset, the port's own, or on a **new**
+ruleset beside them: the axis is [`Session.Ruleset`](./web/src/engine/Session.ts),
+the per-mechanic switches are the registry in
+[`FeatureFlags.ts`](./web/src/engine/FeatureFlags.ts), and that is what keeps new
+mechanics additive rather than a rewrite.
+
+QOL, porting and documentation changes are welcome anywhere.
 
 ## Design docs
 

@@ -30,8 +30,7 @@
 # So the release build already type-checks the test suite, and a compile error
 # anywhere in it fails the release. Behavioural coverage is CI's job
 # (`.github/workflows/ci.yml`); re-running the full suite here would add minutes
-# to a manual run without closing a gap that is not already closed on push to the
-# default branch.
+# to a manual run without closing a gap that is not already closed on push.
 
 name: Release
 
@@ -95,14 +94,25 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
-      - name: Refuse to build a release off the default branch
+      - name: Refuse to build a release off the release branch
         # A tag is just a pointer, so without this a run dispatched from a
         # feature branch publishes a plausible-looking official build of work in
         # progress. `inputs.*` is interpolated into the shell, so the booleans
         # come in as env vars and are compared as strings rather than trusted.
+        #
+        # `RELEASE_BRANCH`, not "the default branch". Those used to be the same
+        # thing, and the guard said "the default branch" because `master` *was*
+        # the default. It no longer is: `dev` is where development happens and
+        # `master` is the stable line, so a guard on the default branch would
+        # refuse every release dispatched from `master` — the one branch a
+        # release is supposed to come from. The check now names the branch
+        # explicitly, which is what it always meant.
+        #
+        # `allow_off_default_branch` still exists and still does what it says, so
+        # a hotfix off `dev` is one tick rather than an edit to this file.
         env:
           REF: ${{ github.ref }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          RELEASE_BRANCH: master
           ALLOW_OFF: ${{ inputs.allow_off_default_branch }}
         run: |
           set -euo pipefail
@@ -110,13 +120,13 @@ jobs:
             echo "allow_off_default_branch is set; building from $REF"
             exit 0
           fi
-          if [ "$REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
+          if [ "$REF" != "refs/heads/$RELEASE_BRANCH" ]; then
             echo "::error::refusing to build a release from $REF"
-            echo "::error::the default branch is $DEFAULT_BRANCH - dispatch from there, or tick"
+            echo "::error::releases are cut from $RELEASE_BRANCH - dispatch from there, or tick"
             echo "::error::'allow_off_default_branch' if you really mean this commit"
             exit 1
           fi
-          echo "building from the default branch ($DEFAULT_BRANCH)"
+          echo "building from the release branch ($RELEASE_BRANCH)"
 
       - name: Record what is being released
         # Read once and passed on, so the tag the release gets and the tag baked
@@ -218,9 +228,9 @@ jobs:
         # otherwise never puts a `.git` on disk.
         #
         # `fetch-depth: 0` because `--target` may name a commit that a shallow
-        # checkout of the default branch does not contain: this workflow can be
-        # dispatched from a feature branch with `allow_off_default_branch`, and the
-        # archives are built from that branch's commit.
+        # checkout does not contain: this workflow can be dispatched from a branch
+        # other than `master` with `allow_off_default_branch`, and the archives are
+        # built from that branch's commit.
         with:
           fetch-depth: 0
 

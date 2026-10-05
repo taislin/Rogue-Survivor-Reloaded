@@ -237,6 +237,7 @@ import { GAME_VERSION } from "@engine/GameVersion";
     MODE_ENTRIES,
     MODE_VALUES,
     loadAppearance,
+    loadRememberedSex,
     saveAppearance,
   } from "@engine/NewGameConfig";
 import { TextFile } from "@engine/TextFile";
@@ -674,10 +675,11 @@ export const CREDITS_LINES: readonly string[] = [
 	"  deonapocalypse v9 r1 : Deon - \"DEONAPOCALYPSE\" Rogue Survivor mod 1.2",
 	"  genesis classic 1.4  : Deon - \"Genesis Classic\" Rogue Survivor mod 1.4",
 	"  dafttiles b1         : daftigod - \"Daft Tiles\", on the Rogue Survivor forum",
+	"  civ13                : the CIV13 community - \"CIV13\", on the Rogue Survivor forum",
 	"  Genesis actors, Deonapocalypse world : Deon - the two mods above, combined",
 	"",
-	"  The two Deon mods and the Daft Tiles pack are on dffd.bay12games.com and",
-	"  on roguesurvivor.proboards.com. Thanks to all of them, and to the players",
+	"  The two Deon mods, the Daft Tiles pack and CIV13 are on dffd.bay12games.com",
+	"  and on roguesurvivor.proboards.com. Thanks to all of them, and to the players",
 	"  for their feedback and eagerness to die!",
 ];
 export const NAME_SUBWAY_STATION: string = "Subway Station";
@@ -1030,6 +1032,36 @@ const s_Options = Options;
 let s_KeyBindings = new Keybindings();
 let s_Hints = new GameHintsStatus();
 
+/** Browser port: how many turns a speech bubble outlives its speaker's line. */
+const SPEECH_BUBBLE_TURNS = 6;
+/**
+ * Browser port: how wide a speech bubble's text may get before it wraps, in the
+ * same 32px tile units as `MapToScreen`.
+ *
+ * Six tiles is a deliberate reading of "over one person, not over the street":
+ * at 32px a tile is two or three characters of 10pt bold, so this is a two-line
+ * box for a short line and three for a long one. Wider than that and the bubble
+ * over a man in a doorway starts covering the doorway.
+ */
+const SPEECH_BUBBLE_MAX_WIDTH = TILE_SIZE * 6;
+
+/**
+ * Browser port: an actor's last line, waiting to be drawn over their tile.
+ *
+ * The actor is the key of `RogueGame.m_SpeechBubbles`, not a field here, so it
+ * is not repeated twice; only the parts that outlive the call that made it are
+ * kept. The tile is deliberately absent too — it is read fresh at draw time, so
+ * the bubble follows an actor who is still walking rather than staying on the
+ * tile they spoke from.
+ */
+class SpeechBubble {
+  constructor(
+    public text: string,
+    /** The actor's map's local turn, as stamped on the message log's own line. */
+    public turn: number,
+  ) {}
+}
+
 /**
  * Map zoom: 1 (C#'s fixed 32px tiles) or 2 (64px tiles, half the tiles in view).
  *
@@ -1328,6 +1360,26 @@ export class RogueGame implements ActionGame {
 	static debugRender = false;
 
 	readonly POPUP_FILLCOLOR: Color = Color.withAlpha(192, Color.CornflowerBlue);
+
+	/**
+	 * Speech-bubble fill: green, and more transparent than the popups'.
+	 *
+	 * **Its own colour rather than `POPUP_FILLCOLOR`,** which is what it used. A
+	 * bubble and a popup were then the same blue box at the same opacity, and the
+	 * bubble is the one drawn *over the map* rather than beside it — so the two
+	 * things a player most wants to tell apart at a glance were identical, and the
+	 * one that obscures the map was the harder to place.
+	 *
+	 * Green because the bubbles are transient annotations attached to actors, and
+	 * everything else that boxes text in this game is blue; a different hue reads as
+	 * a different kind of thing without needing a legend. `SeaGreen` rather than a
+	 * brighter green because white text has to stay legible on it.
+	 *
+	 * Alpha 150 against the popups' 192: a bubble covers the tile it is about, and
+	 * the actor behind it is often the thing being looked at while reading. Low
+	 * enough that the sprite shows through, high enough to read white text against.
+	 */
+	readonly SPEECH_BUBBLE_FILLCOLOR: Color = Color.withAlpha(150, Color.SeaGreen);
 	/**
 	 * C# `START_FIRE_MODE_TEXT` -- `RogueGame.cs:100`, Release 7-6. The C#'s own
 	 * wording, including that the fire is for "cooking/light" -- it is the only hint
@@ -1600,6 +1652,26 @@ export class RogueGame implements ActionGame {
 	 */
 	m_PlayerWasRescued: boolean = false;
 	m_Overlays: Overlay[] = [];
+	/**
+	 * One bubble per actor, keyed by the actor — browser port, `(Gfx) Speech
+	 * Bubbles`.
+	 *
+	 * Deliberately *not* a list of `Overlay`s, which is the obvious home for
+	 * something drawn on the map. `m_Overlays` is emptied by `ClearOverlays`, and
+	 * that is called 85 times in this file — once per mouse move, and again from
+	 * every mode handler — so a bubble pushed there would be wiped the moment the
+	 * player moved the mouse. These are drawn from the overlay pass instead, and
+	 * are never cleared by anything except their own expiry, the map changing, or
+	 * a new game.
+	 *
+	 * Keyed rather than appended so that an actor who talks every turn replaces
+	 * their own line instead of stacking a column of boxes over their own tile.
+	 *
+	 * `globalThis.Map` because this file imports the game's own `Map` class, which
+	 * is not generic — the same reason as `m_AnimOffsets` below, which is also
+	 * keyed by actor.
+	 */
+	m_SpeechBubbles: globalThis.Map<Actor, SpeechBubble> = new globalThis.Map();
 	m_Player!: Actor;
 	/**
 	 * The tiles the player can currently see, as an `LOS` FOV key set.
@@ -3148,7 +3220,16 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 		// *above* the split count rather than being renumbered when it changes.
 		let row = 0;
 		let raceIdx = 0;
-		let sexIdx = 0;
+		// Opens on the remembered sex, not on `*Random*`. The layers below are
+		// remembered, so a row that silently forgot its own answer would leave the
+		// screen showing the last character's clothes against a sex that gets
+		// re-rolled on Enter -- and those layer ids are resolved against the rolled
+		// body's catalogue at creation, so none of them would match and all six
+		// layers would fall back to random. A player who chose a woman, then made
+		// the next character without touching the row, got a random man.
+		// No stored answer (a first run) still means `*Random*`, which is what the
+		// game has always done for a character nobody has described yet.
+		let sexIdx = loadRememberedSex() ?? 0;
 		let typeIdx = 0;
 		let skillIdx = 0;
 
@@ -3158,7 +3239,9 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 
 		// Which body the catalogue is drawn from. Sex is what selects it, and it is
 		// the row above, so it is derived each frame rather than stored twice.
-		let catalogueIsMale = true;
+		// Follows the row above, so a remembered sex previews the body it will create.
+		// `0` still previews male, as a random-sex character always has.
+		let catalogueIsMale = sexIdx !== 2;
 		// Set when switching sex had to drop a choice, so the frame can say so
 		// instead of the player's hair quietly changing under the cursor.
 		let droppedNote: string[] = [];
@@ -3394,7 +3477,10 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 					// catalogue the choices were validated against is the one the
 					// player is leaving the screen on.
 					this.m_CharGen.appearance = appearance;
-					saveAppearance(appearance);
+					// The row's own answer, not the rolled `isMale`: `*Random*` has to survive
+					// as `*Random*`, or the next character rolls a sex again over the top
+					// of layers that were chosen against a specific body.
+					saveAppearance(appearance, isUndead ? null : sexIdx);
 					ok = true;
 					loop = false;
 					break;
@@ -4047,6 +4133,12 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 		// after it in this process — unplayable. See its declaration.
 		this.m_FirstPersonFacing = Direction.N;
 		this.m_PlayerWasRescued = false;
+		// Browser port: same reason, and the same kind of leak. A speech bubble
+		// is keyed by actor and pruned by turn rather than by new game, so a run
+		// started inside `SPEECH_BUBBLE_TURNS` of the last one would inherit the
+		// previous run's actors' last words — visible, attributed to whoever
+		// happened to be standing on that tile now.
+		this.ClearSpeechBubbles();
 
 		// generate world.
 		//
@@ -8008,6 +8100,30 @@ inv.removeAllQuantity(it);
 		// Starting it at construction would mean world generation counts as idling,
 		// and the first wait would fire an immediate catch-up burst.
 		this.m_LastGameInputAt = this.nowMs();
+
+		// Start of the player's turn: drop anything typed since the last one.
+		//
+		// The game spends real time not accepting input — the attack lunge is four
+		// frames of `DELAY_SHORT / 2`, about 500 ms, death and achievement screens
+		// block on ENTER, the advisor reset pauses a second — and the key queue was
+		// unbounded and never drained, so those presses were still queued and got
+		// spent later. Two separate reports, one cause:
+		//
+		//   - "after hitting an enemy, the sprite stays there a bit longer, and
+		//      sometimes it hits again after the kill" — the second press became a
+		//     second attack.
+		//   - "can move after the player is dead for one or two turns" — presses
+		//     made while the death sequence ran resolved once the loop came back.
+		//
+		// Flushed here, at the turn boundary, rather than inside the wait: a wait
+		// that flushed on entry would eat the key that opened a menu, since menus
+		// and the play loop both reach their first key through `UI_PeekKey`. At this
+		// point the previous turn's outcome is already on screen, so nothing queued
+		// can have been meant for this turn.
+		//
+		// `advancePlayMap` is the only caller, so this runs once per player turn and
+		// never mid-turn.
+		this.m_UI.UI_FlushQueuedKeys();
 
 		// Upkeep.
 		this.debugTrace?.("    HandlePlayerActor: UpdatePlayerFOV");
@@ -21888,6 +22004,10 @@ updateAdvisorHintBanner(): void {
 				this.MakeMessage(speaker, `to ${target.theName} : `, sayColor),
 			);
 			this.AddMessage(this.MakeMessage(speaker, `"${text}"`, sayColor));
+			// Browser port: `DoSay` writes to the log itself rather than routing
+			// through `DoEmote`, so a bubble needs asking for here too — this is
+			// the NPC-to-NPC conversation line, and the attribution is the point.
+			this.SpeakOverhead(speaker, text);
 			if (isPlayer && isImportant && !isBot) {
 				// Slice 8 is ported, so MapToScreen no longer throws; the try/catch is
 				// now redundant (kept for Phase 8 cleanup).
@@ -22003,7 +22123,7 @@ updateAdvisorHintBanner(): void {
 
 	// C# DoEmote — RogueGame.cs:14868
 	DoEmote(actor: Actor, text: string, isDanger = false): void {
-		if (this.IsVisibleToPlayer(actor))
+		if (this.IsVisibleToPlayer(actor)) {
 			this.AddMessage(
 				new Message(
 					`${actor.name} : ${text}`,
@@ -22013,6 +22133,118 @@ updateAdvisorHintBanner(): void {
 						: this.SAYOREMOTE_NORMAL_COLOR,
 				),
 			);
+			this.SpeakOverhead(actor, text);
+		}
+	}
+
+	// ── Browser port: speech bubbles (`(Gfx) Speech Bubbles`) ──────────────────
+
+	/**
+	 * Shows `text` in a bubble over `actor`'s tile.
+	 *
+	 * The log already got this line; a bubble is the same line attached to the
+	 * person who said it, which is the one thing the log cannot show. In a crowd
+	 * of six `NAME : HELP` lines, six of them scroll past and the player is left
+	 * guessing who to walk to — the attribution is the whole feature, and the
+	 * words were never the problem.
+	 *
+	 * Three guards, each about not drawing something misleading:
+	 *
+	 * - the option, because this is opt-in and `SpeakOverhead` is called from the
+	 *   say path rather than from the draw pass, so the line has to be dropped at
+	 *   the source or it would be remembered for actors nobody can see;
+	 * - `IsVisibleToPlayer`, matching `DoEmote`'s own gate — a bubble is a piece
+	 *   of what the player can see, not a transcript of the district;
+	 * - non-empty text, since a box with nothing in it is worse than no box.
+	 *
+	 * `turn` is stamped from the *actor's* map, which is what `DoEmote` stamps
+	 * its own message with, so a bubble and its log line expire together.
+	 */
+	SpeakOverhead(actor: Actor, text: string): void {
+		if (!s_Options.showSpeechBubbles) return;
+		if (!this.IsVisibleToPlayer(actor)) return;
+		const trimmed = text.trim();
+		if (trimmed.length === 0) return;
+		this.m_SpeechBubbles.set(
+			actor,
+			new SpeechBubble(
+				trimmed,
+				actor.location.map!.localTime.turnCounter,
+			),
+		);
+	}
+
+	/**
+	 * Draws the live bubbles, over the map and inside its zoom scope.
+	 *
+	 * Browser port. Called from the overlay pass rather than being added to
+	 * `m_Overlays`, for the reason on that field; being *in* that pass is what
+	 * puts the bubble in the map's scaled scope, so it grows with the tiles it
+	 * annotates instead of staying 10pt over 64px ones.
+	 *
+	 * White text on the game's standard popup fill, like every other popup in the
+	 * game (the hover tooltip, the trade dialog). The log's say colours —
+	 * `SAYOREMOTE_NORMAL_COLOR` and its danger counterpart — are deliberately not
+	 * reused here: both are dark, chosen to sit on the log's black background, and
+	 * the bubble's whole job is to be read at a glance over a busy map. The
+	 * danger/normaldistinction is not lost — it is in the words ("A SHOUT",
+	 * "UGGH...") and still in colour in the log underneath.
+	 */
+	DrawSpeechBubbles(): void {
+		if (this.m_SpeechBubbles.size === 0) return;
+		// First person has no tile grid: `DrawMap` returns early into a projected
+		// 3D scene, and the tile coordinate `MapToScreen` hands back below is
+		// meaningless in it. The overlay pass still *runs* here — it is not inside
+		// the branch `DrawMap` takes — so without this a bubble would be drawn at a
+		// plausible-looking spot in the corner of the screen. Not drawn beats drawn
+		// wrong; the log still has every line. (The damage-number overlays have the
+		// same problem and are not this feature's to fix.)
+		if (GameOptions.isFirstPersonView(s_Options.viewMode)) return;
+		const map = this.m_Session.currentMap;
+		// No current map: the game loop is not playing. The bubbles are not
+		// touched, so a run that is merely paused keeps them.
+		if (map == null) return;
+
+		const now = map.localTime.turnCounter;
+		// Snapshot the entries: the loop deletes as it goes, and iterating a Map
+		// while deleting from it is not a thing to rely on.
+		for (const [actor, bubble] of [...this.m_SpeechBubbles]) {
+			if (
+				now - bubble.turn >= SPEECH_BUBBLE_TURNS ||
+				// The speaker left this map — went down the stairs, was dragged
+				// into a hold. Their tile now belongs to a map that is not on
+				// screen, and reading it against `map` would hang their last words
+				// over an unrelated tile here.
+				actor.location.map !== map ||
+				actor.isDead
+			) {
+				this.m_SpeechBubbles.delete(actor);
+				continue;
+			}
+			// Off-panel is a skip, not a prune, unlike the three above: the actor
+			// is still here and still mid-sentence, and the view rect moves when
+			// the player does. Drawn anyway it would land on the side panel, which
+			// is the one case where a bubble is both ugly and unmissable.
+			if (!this.IsInViewRect(actor.location.position)) continue;
+
+			const screenPos = this.MapToScreen(actor.location.position);
+			this.m_UI.UI_DrawSpeechBubble(
+				bubble.text,
+				Color.White,
+				Color.White,
+				// Not `POPUP_FILLCOLOR`: see `SPEECH_BUBBLE_FILLCOLOR`.
+				this.SPEECH_BUBBLE_FILLCOLOR,
+				screenPos.x,
+				screenPos.y,
+				TILE_SIZE,
+				SPEECH_BUBBLE_MAX_WIDTH,
+			);
+		}
+	}
+
+	/** Drops every bubble. Browser port; see `m_SpeechBubbles`. */
+	ClearSpeechBubbles(): void {
+		this.m_SpeechBubbles.clear();
 	}
 
 	// C# DoTakeFromContainer — RogueGame.cs:14876
@@ -29205,6 +29437,10 @@ updateAdvisorHintBanner(): void {
 			for (const o of this.m_Overlays) {
 				if (o.zoomsWithMap && !(o instanceof PopupOverlay)) o.draw(this.m_UI);
 			}
+			// Browser port: speech bubbles, last so they land over the actors and
+			// over any damage number. Inside the zoom scope with the rest — they
+			// annotate tiles and should scale with them.
+			this.DrawSpeechBubbles();
 		}, false);
 		for (const o of this.m_Overlays) {
 			if (o instanceof PopupOverlay)
@@ -31507,7 +31743,15 @@ const keyHints = ACTION_ENTRIES.map((e) => s_KeyBindings.getAll(e.command).join(
 			actor.currentRangedAttack.efficientRange,
 			null,
 		);
-		const rangedWeapon = actor.getEquippedWeapon() as ItemRangedWeapon | null;
+		// `getEquippedRangedWeapon`, not `getEquippedWeapon() as ItemRangedWeapon`.
+		// The cast is a lie whenever a melee weapon is in the right hand: the item is
+		// non-null, so the `!= null` guard below passed, and then `.ammo` and
+		// `.model.maxAmmo` were `undefined` -- the status line read
+		// `Amo undefined/undefined` under a correctly-drawn `Melee Atk 26 Dmg 14/14`.
+		// `getEquippedRangedWeapon` is the `instanceof` check the cast was standing in
+		// for, and it returns null for a melee weapon, so the line is skipped exactly
+		// as the C#'s `GetEquippedItem(RIGHT_HAND) as ItemRangedWeapon` skips it.
+		const rangedWeapon = actor.getEquippedRangedWeapon();
 		let ammo = 0;
 		let maxAmmo = 0;
 		if (rangedWeapon != null) {

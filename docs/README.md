@@ -15,14 +15,16 @@ Static site for **Rogue Survivor Reloaded**, published with GitHub Pages.
 
 ## Publishing
 
-This is the **"deploy from a branch"** layout: `docs/` on `master` is the site root.
-To turn it on, in the repository settings set **Pages → Source → Deploy from a
-branch**, branch `master`, folder `/docs`. No workflow and no build step is
-involved — GitHub serves the files as they are committed.
+Deployed by [`.github/workflows/pages.yml`](../.github/workflows/pages.yml), not
+from a branch: **Settings → Pages → Source** has to be **GitHub Actions**. It runs
+on a push to `master` and on demand, builds an artifact — `docs/` at the root plus
+the built game under `game/` — and hands that to Pages. Work on `dev` is checked by
+CI but never published.
 
-`.nojekyll` is present, so Jekyll is bypassed entirely. That matters: without it,
-Jekyll would ignore any path beginning with an underscore and refuse to process
-files it does not recognise.
+There is no Jekyll in that path, which is why `docs/.nojekyll` is excluded from the
+assembled site: it was needed back when Pages served this directory directly. See
+[web/README.md](../web/README.md#deploying) for the base path, the deploy gates,
+and how to reproduce the build locally.
 
 ## Regenerating the manual
 
@@ -33,8 +35,10 @@ original manual, which is the single source of truth for that text:
 node docs/tools/build-manual.mjs
 ```
 
-Source: `src/Resources/Manual/RS Manual.txt`
-(an identical copy ships to the game as `web/public/assets/manual.txt`).
+Source: `src/Resources/Manual/RS Manual.txt`, in the original C# tree — which is
+not in this repository, so the generator only runs for someone who has restored
+that reference. A copy of the same text ships to the game as
+`web/public/assets/manual.txt`.
 
 The script only reformats. It recognises the plain-text conventions the manual
 uses — `<SECTION>` markers, underlined titles, `>` and `*` headings, `-` bullets,

@@ -271,7 +271,23 @@ export function fontHud(): string {
 
 /** Bold 10pt: status labels and the like. */
 export function fontHudBold(): string {
-  return `bold 10pt ${currentStack}`;
+  return fontHudBoldSized(10);
+}
+
+/**
+ * Bold HUD face at an explicit size.
+ *
+ * Exists for text drawn inside a scaled scope that must **not** grow with the
+ * scale — a speech bubble, which is placed by the map's zoom but read at a fixed
+ * size. Passing the scaled size here and drawing at the reduced one gives a glyph
+ * that measures in scope units, so every box metric that follows is already in the
+ * space the surrounding code is working in.
+ *
+ * Not a general-purpose knob: `10` is the HUD size and `fontHudBold` is what the
+ * rest of the UI should call.
+ */
+export function fontHudBoldSized(pt: number): string {
+  return `bold ${pt}pt ${currentStack}`;
 }
 
 /** 12pt reading face: popups and every full-screen menu. */

@@ -15,6 +15,7 @@ import {
   type ImageSet,
 } from "@engine/AssetPaths";
 import { GameOptions, OptionIDs } from "@engine/GameOptions";
+import { allImageIds } from "@gameplay/GameImages";
 import { storage } from "@engine/storage";
 import { BASE } from "./helpers/assetPath";
 
@@ -29,11 +30,6 @@ const IMAGES_DIR = join(__dirname, "../public/assets/images");
  * held to the sharper property that every set it names has a folder.
  */
 const FOLDER_BACKED = folderBackedSets();
-
-/** Every file under `dir`, recursively. Sprites are nested by category. */
-function countFiles(dir: string): number {
-  return listFiles(dir).length;
-}
 
 /**
  * Every sprite under `dir`, as paths relative to it, recursively.
@@ -91,6 +87,7 @@ describe("the sprite sets on disk", () => {
       "deonapocalypse_v9_r1",
       "genesis_classic_1.4",
       "dafttiles_b1",
+      "civ13",
       "genesis_actors_on_deonapocalypse",
     ]);
     expect(DEFAULT_IMAGE_SET).toBe("classic");
@@ -150,17 +147,41 @@ describe("the sprite sets on disk", () => {
     }
   });
 
-  it("is the fallback because it is the biggest set, not just the first", () => {
-    // The fallback is only sound if `classic` actually has the sprites the
-    // others lack. If a future set were *larger*, the fallback would silently
-    // become the wrong direction and this assertion is what would notice.
-      const count = (set: ImageSet): number => countFiles(join(IMAGES_DIR, set));
-      // Folder-backed only, for the same reason as the folder assertions: a routed
-      // style has no directory to count, and counting one would either be zero or
-      // measure the wrong thing.
-      const sizes = FOLDER_BACKED.map((set) => [set, count(set)] as const);
-    const largest = sizes.reduce((a, b) => (b[1] > a[1] ? b : a));
-    expect(largest[0], `the biggest set is "${largest[0]}", not the fallback`).toBe(DEFAULT_IMAGE_SET);
+  it("is the fallback because it can supply what the others lack", () => {
+    // The fallback is only sound if `classic` can actually serve a sprite a
+    // selected set does not have. This used to assert that by proxy — "`classic`
+    // is the biggest set" — which civ13 broke by shipping 1 113 sprites against
+    // classic's 1 108. The proxy was never the property: a set can be smaller and
+    // still complete, and two sets can each hold things the other lacks, in which
+    // case neither is "the biggest" and neither is obviously the fallback.
+    //
+    // So the property is asserted directly: **every id the game can ask for
+    // resolves in its own set or in the fallback.** That is what "the fallback"
+    // has to mean for the chain `["<set>", "classic"]` to be sound, and it holds
+    // regardless of which set is larger.
+    //
+    // The ids come from `allImageIds()` — the manifest `RogueGame.Run` preloads —
+    // rather than from the folders, because a folder can hold art nothing
+    // references (`civ13` ships six) and the manifest is what the player can
+    // actually be asked to draw.
+    const idsIn = (set: ImageSet): Set<string> =>
+      new Set(
+        listFiles(join(IMAGES_DIR, set)).map((p) =>
+          p.replace(/\\/g, "/").replace(/\.[^.]+$/, ""),
+        ),
+      );
+    const fallbackIds = idsIn(DEFAULT_IMAGE_SET);
+
+    for (const set of FOLDER_BACKED) {
+      const own = idsIn(set);
+      const holes = allImageIds().filter(
+        (id) => !own.has(id.replace(/\\/g, "/")) && !fallbackIds.has(id.replace(/\\/g, "/")),
+      );
+      expect(
+        holes,
+        `assets/images/${set} has no copy of these and neither does ${DEFAULT_IMAGE_SET}`,
+      ).toEqual([]);
+    }
   });
 
   it("resolves an image against the current set, and against a named one", () => {

@@ -85,6 +85,35 @@ export interface IRogueUI {
   /** Inject a synthetic key event into the queue. */
   UI_PostKey(e: GameKeyEvent): void;
 
+  /**
+   * Discard every key queued so far.
+   *
+   * **This exists because the game spends real time not accepting input**, and a
+   * keypress during that time used to be banked and spent on a *later* turn. The
+   * attack lunge alone is four frames of `DELAY_SHORT / 2`, about 500 ms; the death
+   * and achievement screens block on ENTER; the advisor reset pauses a second. Any of
+   * those is long enough to type in, and a turn-based game must not carry an
+   * instruction forward from a moment when the player could not see its outcome.
+   *
+   * The reported symptom was two bugs that turned out to be this one:
+   *
+   *   - "after hitting an enemy, the sprite stays there a bit longer, and sometimes
+   *      it hits again after the kill" — the key pressed during the lunge resolved
+   *     on the next turn, as a second attack.
+   *   - "can move after the player is dead for one or two turns" — the keys pressed
+   *     while the death sequence ran resolved after the game loop restarted.
+   *
+   * Called at the **turn boundary**, not inside the wait: a wait that flushed on
+   * entry would eat the key that opened a menu, since every menu and the play loop
+   * both reach their first key through `UI_PeekKey`. At a turn boundary there is
+   * nothing pending that the player meant for *this* turn, because the previous
+   * turn's outcome is already on screen.
+   *
+   * A no-op on a UI with nothing queued, and it does not touch the mouse: a click
+   * held across a turn is a different question, and buttons are already consumed.
+   */
+  UI_FlushQueuedKeys(): void;
+
   /** Current mouse position, in CSS pixels relative to the canvas. */
   UI_GetMousePosition(): Point;
 
@@ -243,6 +272,40 @@ export interface IRogueUI {
     lines: string[], colors: Color[],
     borderColor: Color, fillColor: Color,
     gx: number, gy: number
+  ): void;
+
+  /**
+   * A speech bubble over a tile: a wrapped, bordered box sitting above
+   * `anchor` with a tail pointing down at it.
+   *
+   * A browser-port addition, and it is one method rather than an engine-side
+   * `UI_DrawPopup` call for the same reason `UI_DrawPopupCentered` is: the box
+   * cannot be positioned by the engine. Three of the four things that place it
+   * are only knowable where the text is measured — the wrap width, the box
+   * width, and therefore whether "above" fits at all or has to flip below. The
+   * engine has no `measureText`; guessing from a character count would be a
+   * second, driftable copy of the layout maths.
+   *
+   * `anchor`/`anchorSize` are the tile: the bubble is centred on the tile's
+   * middle x, and its bottom edge sits at the tile's top, with the tail filling
+   * the gap to the tile itself. `maxTextWidth` is the wrap width in the current
+   * transform's units.
+   *
+   * Unlike the popups this is drawn **scaled**, inside the map's zoom scope — it
+   * annotates a tile, so it follows the tile rather than the screen.
+   *
+   * But it is *sized* in screen terms, not zoom terms: at 2x the box and its text
+   * are the same apparent size as at 1x, and `CanvasUI` gets that by drawing every
+   * extent at `1 / scale`. That reverses an earlier decision, which had the whole
+   * bubble scale with the map on the grounds that 2x should mean "text you can
+   * actually read". The problem was the other half of that trade: the bubble covers
+   * the actor it is annotating, so at 2x it hid the very thing the player had
+   * zoomed in to look at. A constant size keeps the annotation readable and the
+   * subject visible at both levels.
+   */
+  UI_DrawSpeechBubble(
+    text: string, textColor: Color, borderColor: Color, fillColor: Color,
+    anchorX: number, anchorY: number, anchorSize: number, maxTextWidth: number
   ): void;
 
   // ── Minimap ───────────────────────────────────────────────────────────────

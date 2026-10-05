@@ -22,7 +22,10 @@ name: CI
 
 on:
   push:
-    branches: [master, main]
+    # `dev` is where development happens; `master` is the stable line. Both need
+    # CI, and dropping `dev` here is the failure mode where the branch you actually
+    # work on is the one branch with no green tick on it.
+    branches: [dev, master, main]
   pull_request:
   workflow_dispatch:
 

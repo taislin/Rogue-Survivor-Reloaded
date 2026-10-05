@@ -116,6 +116,9 @@ export class OptionsScreen {
 		OptionIDs.UI_FONT_CHOICE,
 		// view
 		OptionIDs.UI_VIEW_MODE,
+		// speech bubbles — a renderer preference, so it is a plain row in every
+		// ruleset rather than a feature-gated one. See `GameOptions.m_ShowSpeechBubbles`.
+		OptionIDs.UI_SHOW_SPEECH_BUBBLES,
 		// helpers
 		OptionIDs.UI_ADVISOR,
 		OptionIDs.UI_COMBAT_ASSISTANT,
