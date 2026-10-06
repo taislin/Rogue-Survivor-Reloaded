@@ -62,7 +62,13 @@ export enum OptionIDs {
   GAME_REINCARNATE_TO_SEWERS,
   GAME_REINC_LIVING_RESTRICTED,
   GAME_PERMADEATH,
-  GAME_DEATH_SCREENSHOT,
+  // `GAME_DEATH_SCREENSHOT` is gone, and the slot is kept open rather than closed
+  // up. This enum is the game's option vocabulary and the numbers are the C#'s;
+  // renumbering it would move every later option for no benefit, and the port has
+  // never persisted a number (see `save` — options are stored by field name), so a
+  // gap costs nothing and keeps the remaining ids aligned with the C# for whoever
+  // reads them side by side.
+  GAME_DEATH_SCREENSHOT_REMOVED,
   GAME_AGGRESSIVE_HUNGRY_CIVILIANS,
   GAME_NATGUARD_FACTOR,
   GAME_SUPPLIESDROP_FACTOR,
@@ -498,13 +504,6 @@ export class GameOptions {
   private m_CanReincarnateToSewers = false;
   private m_IsLivingReincRestricted = false;
   private m_Permadeath = false;
-  /**
-   * C# defaults this to true (a silent file write). The browser has no silent
-   * files: saving means a download prompt, so an automatic download on every
-   * death is hostile. Default off here; the option screen still offers it, and
-   * turning it on is an explicit choice to get that download.
-   */
-  private m_DeathScreenshot = false;
   private m_AggressiveHungryCivilians = false;
   private m_NatGuardFactor = 0;
   private m_SuppliesDropFactor = 0;
@@ -884,13 +883,6 @@ export class GameOptions {
     this.m_Permadeath = value;
   }
 
-  get isDeathScreenshotOn(): boolean {
-    return this.m_DeathScreenshot;
-  }
-  set isDeathScreenshotOn(value: boolean) {
-    this.m_DeathScreenshot = value;
-  }
-
   get isAggressiveHungryCiviliansOn(): boolean {
     return this.m_AggressiveHungryCivilians;
   }
@@ -1239,7 +1231,6 @@ export class GameOptions {
       this.m_RevealStartingDistrict = true;
       this.m_DistrictSize = GameOptions.DEFAULT_DISTRICT_SIZE;
       this.m_Permadeath = false;
-      this.m_DeathScreenshot = false; // browser default off; C# default is true.
       this.m_ShowTargets = true;
       this.m_ShowPlayerTargets = true;
       this.m_CanReincarnateAsRat = false;
@@ -1336,8 +1327,6 @@ export class GameOptions {
         return "   (Map) City Size";
       case OptionIDs.GAME_DAY_ZERO_UNDEADS_PERCENT:
         return "(Undead) Day 0 Undeads";
-      case OptionIDs.GAME_DEATH_SCREENSHOT:
-        return " (Death) Death Screenshot";
       case OptionIDs.GAME_DISTRICT_SIZE:
         return "   (Map) District Map Size";
       case OptionIDs.GAME_MAX_CIVILIANS:
@@ -1467,8 +1456,6 @@ export class GameOptions {
         );
       case OptionIDs.GAME_DAY_ZERO_UNDEADS_PERCENT:
         return "Percentage of max undeads spawned when the game starts.";
-      case OptionIDs.GAME_DEATH_SCREENSHOT:
-        return "Takes a screenshot when you die and save it to the game Config\\Screenshot folder.";
       case OptionIDs.GAME_DISTRICT_SIZE:
         return "How large are the maps in tiles. Larger maps are more fun but increase game saves size and loading time.";
       case OptionIDs.GAME_MAX_CIVILIANS:
@@ -1850,8 +1837,6 @@ export class GameOptions {
           GameOptions.DEFAULT_DAY_ZERO_UNDEADS_PERCENT,
           3
         )})`;
-      case OptionIDs.GAME_DEATH_SCREENSHOT:
-        return this.isDeathScreenshotOn ? "YES   (default NO)" : "NO    (default NO)";
       case OptionIDs.GAME_DISTRICT_SIZE:
         return `${pad(this.districtSize, 2)}*   (default ${pad(GameOptions.DEFAULT_DISTRICT_SIZE, 2)})`;
       case OptionIDs.GAME_MAX_CIVILIANS:
@@ -2215,9 +2200,6 @@ export function stepGameOption(option: OptionIDs, dir: -1 | 1): void {
 			break;
 		case OptionIDs.GAME_PERMADEATH:
 			o.isPermadeathOn = !o.isPermadeathOn;
-			break;
-		case OptionIDs.GAME_DEATH_SCREENSHOT:
-			o.isDeathScreenshotOn = !o.isDeathScreenshotOn;
 			break;
 		case OptionIDs.GAME_AGGRESSIVE_HUNGRY_CIVILIANS:
 			o.isAggressiveHungryCiviliansOn = !o.isAggressiveHungryCiviliansOn;

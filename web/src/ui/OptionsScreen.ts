@@ -131,7 +131,6 @@ export class OptionsScreen {
 		// pacing
 		OptionIDs.GAME_IDLE_AUTO_ADVANCE,
 		// death
-		OptionIDs.GAME_DEATH_SCREENSHOT,
 		OptionIDs.GAME_PERMADEATH,
 		// maps
 		OptionIDs.GAME_CITY_SIZE,

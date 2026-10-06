@@ -279,12 +279,19 @@ type TimeSpan = number;
 /**
  * C# `SetupConfig.GAME_VERSION` — now `engine/GameVersion.ts`, imported above.
  *
- * The user-facing version: the window title, the options screen's heading, the
- * graveyard lines, and the header of the high-score *text export*. That last one
- * is the only place this string reaches storage-adjacent state, and it is
- * write-only -- `HiScoreTable.load()` reads JSON and never parses the header, so
- * bumping this cannot orphan anyone's scores. The C# also builds a docs path
- * from it (`RogueGame.cs:2531`), which has no equivalent in a browser port.
+ * The user-facing version: the window title, the options screen's heading, and
+ * the graveyard lines. None of those reaches storage at all.
+ *
+ * It used to also claim to head "the high-score *text export*", and to say that
+ * string was write-only. Both died with d34cde2: that export was a `TextFile`
+ * dump of the score table under a `textfile:` key, it had no reader, and the
+ * table itself now lives under `rogue-survivor-hiscores` as JSON that carries no
+ * header. So there is no score state a version bump can orphan. (The dump's
+ * filename is named in `Paths.ts`, which is the module that removed it — and
+ * `hiscores-storage.test.ts` scans for it in executable code, so it is kept out
+ * of this file deliberately.) The
+ * C# also builds a docs path from this string (`RogueGame.cs:2531`), which has no
+ * equivalent in a browser port.
  *
  * It used to be declared here as well as in `ui/OptionsScreen.ts`, each with a
  * comment saying the other must agree and nothing checking it — so a release could
@@ -25638,24 +25645,6 @@ updateAdvisorHintBanner(): void {
 		if (s_Options.isPermadeathOn)
 			await this.DeleteSavedGame(this.GetUserSave());
 
-		// screenshot.
-		if (s_Options.isDeathScreenshotOn) {
-			this.RedrawPlayScreen();
-			const shotname = this.DoTakeScreenshot();
-			if (shotname === null)
-				this.AddMessage(
-					this.MakeErrorMessage("could not save death screenshot."),
-				);
-			else
-				this.AddMessage(
-					new Message(
-						`Death screenshot saved : ${shotname}.`,
-						this.m_Session.worldTime.turnCounter,
-						Color.Red,
-					),
-				);
-		}
-
 		await this.AddMessagePressEnter();
 
 		// post mortem.
@@ -25685,9 +25674,10 @@ updateAdvisorHintBanner(): void {
 	 *   without an audio-assets pass that re-encodes the music folder. The music is
 	 *   stopped and nothing is played in its place, which is the honest half
 	 *   rather than the wrong cue.
-	 * - **The death screenshot.** `s_Options.isDeathScreenshotOn` is checked by
-	 *   `PlayerDied` and by the C#'s `PlayerWasRescued` (`:7437`); it is not
-	 *   checked here, so a rescued run takes no screenshot.
+	 * - **The death screenshot.** The C# checks its death-screenshot option here
+	 *   (`:7437`) as well as in `PlayerDied`. The option is gone from the port
+	 *   entirely — see `GameOptions.GAME_DEATH_SCREENSHOT_REMOVED` — so there is
+	 *   nothing to check, and no screenshot is taken on either ending.
 	 */
 	async PlayerWasRescued(): Promise<void> {
 		// Stop sim thread.
@@ -26174,9 +26164,28 @@ updateAdvisorHintBanner(): void {
 			);
 			gy += MENU_BOLD_LINE_SPACING;
 		} else {
+			// The heading is the C#'s, and `endgame-exit.test.ts` pins it as the
+			// marker for this screen in the death sequence — so it stays.
+			//
+			// What changed is the line under it. The C# drew `graveFile`, a real path
+			// in a real graveyard directory. Here `graveFile` is only the *name* half
+			// of a `localStorage` key: `TextFile.save` writes `textfile:grave_000.txt`
+			// (`TextFile.ts:43`), and nothing anywhere writes a file called
+			// `grave_000.txt`. So drawing it bare told the player a file had been
+			// written when none had — the same defect d34cde2 fixed on the hiscores
+			// screen, which drew `saves/hiscores.txt`.
+			//
+			// Drawing the full key is the fix that keeps the promise instead of
+			// dropping it: this is genuinely where the grave went, and it is the same
+			// string `GetUserNewGraveyardName` reads back to find a free name
+			// (`Paths.ts:134`), so a player can tell where their own graves are.
+			//
+			// The grave text itself is paged immediately below, so nothing is hidden
+			// by not naming a file — and nothing could be read back by this screen
+			// even in the C#, where the graveyard was equally write-only.
 			this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Grave saved to :", 0, gy);
 			gy += MENU_BOLD_LINE_SPACING;
-			this.m_UI.UI_DrawStringLarge(Color.White, graveFile, 0, gy);
+			this.m_UI.UI_DrawStringLarge(Color.White, `textfile:${graveFile}`, 0, gy);
 			gy += MENU_LINE_SPACING;
 		}
 		this.DrawFootnote(Color.White, "press ENTER");
