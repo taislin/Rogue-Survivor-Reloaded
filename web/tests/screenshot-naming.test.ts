@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import { HeadlessRunner } from "../src/sim/HeadlessRunner";
 import { NullRogueUI } from "@ui/NullRogueUI";
 import { CanvasUI } from "@ui/CanvasUI";
-import { GameOptions } from "@engine/GameOptions";
+import { OptionsScreen } from "@ui/OptionsScreen";
+import { GameOptions, OptionIDs } from "@engine/GameOptions";
 import { getUserNewScreenshotName, resetScreenshotCounter } from "@engine/Paths";
 
 /**
@@ -91,21 +92,49 @@ describe("screenshot name generation", () => {
   });
 });
 
-describe("the death screenshot option", () => {
-  it("defaults OFF in the browser, against the C# default of on", () => {
-    // Worth pinning: the C# defaults it on (it writes a file to a folder it
-    // owns), while in a browser it is a *download* — intrusive, and blocked by
-    // many setups. The port deliberately defaults it off.
-    expect(new GameOptions().isDeathScreenshotOn).toBe(false);
+describe("the death screenshot option is gone", () => {
+  it("has no field left to restore from storage", () => {
+    // It was `isDeathScreenshotOn`, defaulting off because a browser cannot write
+    // a file silently — a screenshot is a *download* — and an automatic one on
+    // every death is a prompt on every death.
+    //
+    // Both halves of that are now moot: the option, the field, and the
+    // `PlayerDied` branch that read it are gone. What matters is that a
+    // `localStorage` blob from a session played before the removal cannot bring it
+    // back. `GameOptions.load` adopts a stored key only when `key in options`, and
+    // the field is not there, so a stale `m_DeathScreenshot: true` is dropped
+    // rather than silently re-enabling a removed feature.
+    const options = GameOptions.load();
+    expect("isDeathScreenshotOn" in options).toBe(false);
+    expect("m_DeathScreenshot" in options).toBe(false);
   });
 
-  it("is a stored option, so a value saved before the default changed persists", () => {
-    // Explains "why is it still taking screenshots": the option lives in
-    // localStorage under `rogue-survivor-options`, and a stored `true` from a
-    // session played before the default was flipped will survive every reload.
-    // The Options screen entry is " (Death) Death Screenshot"; turning it off
-    // there and saving is the fix, or clear that one key.
-    const options = GameOptions.load();
-    expect(typeof options.isDeathScreenshotOn).toBe("boolean");
+  it("leaves the enum slot reserved rather than renumbering later options", () => {
+    // `OptionIDs` is the C#'s vocabulary, so closing the gap would move every
+    // option after it for no gain — and nothing persists a number anyway, since
+    // `GameOptions.save` stores by field name.
+    expect(OptionIDs.GAME_DEATH_SCREENSHOT_REMOVED).toBeGreaterThan(0);
+    expect((OptionIDs as Record<string, unknown>).GAME_DEATH_SCREENSHOT).toBeUndefined();
+  });
+
+  it("is off the options screen", () => {
+    // The row was " (Death) Death Screenshot", grouped under a `// death`
+    // comment next to permadeath. Permadeath stays; the screenshot row does not.
+    expect(OptionsScreenRows()).not.toContain(" (Death) Death Screenshot");
   });
 });
+
+/**
+ * The rows the options screen can show, as their `optionName` strings.
+ *
+ * Read through the screen's own public list rather than by scanning source, so this
+ * fails if the row is still listed even if every `case` that drew it was removed —
+ * which is the shape the bug would take, since a listed row with no text takes the
+ * options screen down when selected (see `options-coverage.test.ts`).
+ */
+function OptionsScreenRows(): readonly string[] {
+  const screen = new OptionsScreen(new NullRogueUI()) as unknown as {
+    list: OptionIDs[];
+  };
+  return screen.list.map((id) => GameOptions.optionName(id));
+}
