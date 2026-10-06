@@ -2,7 +2,7 @@
 /**
  * Assemble the published site: the docs at the root, the game beneath them.
  *
- *   npm run build && node scripts/stamp-cache-version.mjs && node scripts/build-site.mjs
+ *   npm run build && node scripts/build-site.mjs
  *
  * GitHub Pages serves one directory per site, and the two halves of this project
  * have to be in the same one:
@@ -140,9 +140,11 @@ if (existsSync(join(gameOut, "sw.js"))) {
   const stamped = /const CACHE_VERSION = "(rsr-[0-9a-f]{12})";/.exec(sw);
   if (!stamped) {
     problems.push(
-      "the game's sw.js still has its committed CACHE_VERSION.\n" +
-        "    Run node scripts/stamp-cache-version.mjs after npm run build and\n" +
-        "    before this script, or returning players keep the previous build.",
+      "the game's sw.js still has its committed CACHE_VERSION, so the stamping\n" +
+        "    step did not run - 'npm run build' ends with it, so this means an older\n" +
+        "    dist/ was copied in. Run npm run build again (or node\n" +
+        "    scripts/stamp-cache-version.mjs by hand), or returning players keep the\n" +
+        "    previous build.",
     );
   } else {
     console.log(`  cache version: ${stamped[1]}`);

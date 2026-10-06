@@ -108,3 +108,25 @@ export function sfxGain(soundId: string): number {
   const file = SOUND_FILES[soundId];
   return (file === undefined ? undefined : SFX_GAINS[file]) ?? 1.0;
 }
+
+/**
+ * Loudness correction for **any** audio id, music or sound - the twin of
+ * `AssetPaths.audioPath`.
+ *
+ * `audioPath` picks the *file* out of either table, so a caller that resolves
+ * the URL through it must resolve the gain through this or the two disagree
+ * about what is playing. That is exactly what `WebAudioMusicManager` does: the
+ * C# hands it three sound effects alongside the tracks, `audioPath` sends each
+ * of them to `assets/sfx/`, and `musicGain` answered **1.0** because none of
+ * them is in `MUSIC_FILES`. `sfx - undead eat` is the one that showed - a
+ * measured gain of 2.446 to lift a peak of 0.39 into range, applied to the
+ * path and silently dropped on the way to the gain stage.
+ *
+ * Unknown ids fall back to `musicGain`, matching `audioPath`'s fall back to
+ * `musicPath`, so an id neither table knows resolves the same way twice.
+ */
+export function audioGain(id: string): number {
+  if (MUSIC_FILES[id] != null) return musicGain(id);
+  if (SOUND_FILES[id] != null) return sfxGain(id);
+  return musicGain(id);
+}

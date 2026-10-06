@@ -454,6 +454,20 @@ export class GameActors implements ActorModelDB {
             "canTire", "canRun", "canUseItems", "hasToSleep", "hasSanity",
             "canTalk", "canPush", "canBarricade", "isIntelligent");
         break;
+
+      default:
+        // Every `ActorID` member has a case above - the build loop walks
+        // `0.._COUNT-1` and `tests/actor-abilities.test.ts` pins the count to
+        // `_COUNT` - so this is unreachable for a declared id and reachable only
+        // for an out-of-range one, a cast, or a member added to the enum
+        // without a case.
+        //
+        // It used to fall through to `return a`, handing back the
+        // default-constructed `Abilities`: every flag false, which reads as
+        // "this actor can do nothing" and is indistinguishable from an actor
+        // the design deliberately gave no abilities. A blank sheet is a
+        // plausible answer, so nothing noticed; a throw names the id.
+        throw new Error(`unhandled ActorID in abilitiesFor: ${String(id)}`);
     }
     return a;
   }
@@ -530,6 +544,16 @@ export class GameActors implements ActorModelDB {
         return InsaneHumanAI;
 
       default:
+        // `null` here is a real answer, not a blank one, and that is the whole
+        // difference from `abilitiesFor`'s default. `ActorModel` declares the
+        // field `(new () => ActorController) | null` and `ActorModel.create`
+        // already branches on it, so "no default controller" is a state the
+        // model layer models and handles. A default-constructed `Abilities`
+        // has no such reading: all-false flags look exactly like a deliberate
+        // no-abilities actor. Unreachable all the same - the build loop passes
+        // `0.._COUNT-1` and every one of them is named above - so a throw
+        // would also be defensible, but it would be throwing to protect a
+        // branch nothing can reach.
         return null;
     }
   }

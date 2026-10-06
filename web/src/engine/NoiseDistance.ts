@@ -60,20 +60,27 @@
  *
  * ## Why the radii are here and not on `Rules`
  *
- * `Rules.LOUD_NOISE_RADIUS` already exists, and it is **5, not 14** — the
- * vanilla RS value, from before the fork raised it (Release 5-3, cited at
- * `Rules.cs:227`). The port's copy is load-bearing: `RogueGame.OnLoudNoise`
- * (`RogueGame.ts:20064-20081`) uses it to bound the square it scans for sleepers
- * to wake, and `Rules.actorLoudNoiseWakeupChance` (`Rules.ts:3014`) uses it in
- * the distance bonus. Raising it to the fork's 14 is a real gameplay change —
- * more sleepers within earshot of a gunshot, a bigger scan every noise — and it
- * is not this model. So the two same-named numbers are kept apart deliberately,
- * and a test asserts they are still apart. The divergence that leaves is worth
- * stating plainly rather than in a report: **gunfire wakes sleepers on a 5-tile
- * radius in the port and a 14-tile radius in the C#**, so a survivor asleep in
- * the next district sleeps through a firefight the fork would have woken them
- * for. That is a real bug, and it is `Rules.LOUD_NOISE_RADIUS`'s to own, not
- * this module's to fix silently.
+ * They were, and the two copies disagreed. `Rules.LOUD_NOISE_RADIUS` is the
+ * same name the C# gives its "Far" radius, and the **fork's** value is 14
+ * (`Rules.cs:227` - raised from 5 in Release 5-3, through 7 in 5-4). The port
+ * had copied the *vanilla* number instead: 5, from `src/`, where the constant
+ * was never raised. Both copies are load-bearing and they were used for
+ * different things - `Rules.LOUD_NOISE_RADIUS` bounds the square
+ * `RogueGame.OnLoudNoise` scans for sleepers to wake *and* gates each sleeper
+ * past it, while the ladder below reads `NOISE_RADII.LOUD` to pick a tier - so
+ * **gunfire was waking sleepers on a 5-tile radius in the port and a 14-tile
+ * one in the C#**, a survivor asleep in the next district sleeping through a
+ * firefight the fork woke them for, while the tier ladder had been on 14 all
+ * along and therefore agreed with the C# about the sound and disagreed about
+ * the wake.
+ *
+ * `Rules.LOUD_NOISE_RADIUS` is now 14, and `tests/noise-distance.test.ts` pins
+ * the two to each other rather than apart. Exactly one number stays
+ * deliberately separate: the wakeup *bonus* is scaled by the **quiet** radius
+ * (5), which fork `Rules.cs:5230` switched to in Release 6-6 because the
+ * formula was written when `Loud` was still 5 - so
+ * `Rules.actorLoudNoiseWakeupChance` reads `NOISE_RADII.QUIET` and not the loud
+ * radius, and importing this module is what keeps the two in step.
  *
  * ## Pure by construction
  *

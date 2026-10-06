@@ -630,11 +630,16 @@ constants it was waiting on have landed. The asset payload grew
 by 324 KB, not the ~20 MB this section originally estimated. One consequence to
 plan for rather than discover:
 
-- **`public/sw.js`'s committed `CACHE_VERSION` must be bumped.** The `/assets/*`
-  handler is cache-first, so a deploy that adds 711 sprites without a bump keeps
-  serving the old set to anyone who has played, and the new ids 404 from cache
-  forever. `npm run build:pages` runs `scripts/stamp-cache-version.mjs`; `npm run
-  build` and `npm run build:release` do not.
+- ~~**`public/sw.js`'s committed `CACHE_VERSION` must be bumped.**~~ **[fixed
+  2026-10-06]** The `/assets/*` handler is cache-first, so a deploy that adds
+  711 sprites without a bump keeps serving the old set to anyone who has played,
+  and the new ids 404 from cache forever. The defect was that `npm run
+  build:pages` ran `scripts/stamp-cache-version.mjs` while `npm run build` and
+  `npm run build:release` did not. `build` now runs the stamp as its final step,
+  and `build:release` reaches it through `build:desktop` → `build`, so there is
+  no build path left that ships `rsr-v3`. `build-site.mjs` still fails the
+  build on an unstamped worker, so the two checks are independent of each other
+  and of whoever remembers to run them.
 - **A sprite on disk with no `GameImages` constant is unreferenceable, not just
   undrawn** — as `classic/blank_texture.webp` and `Actors/CHAR_guard` are today.
   Every reference goes through a constant, so this is the cheapest place to save

@@ -1,6 +1,6 @@
 import { IMusicManager, MusicPriority, type MusicPriorityValue } from './IMusicManager';
 import { audioPath } from '@engine/AssetPaths';
-import { musicGain } from '@gameplay/AudioLevels';
+import { audioGain } from '@gameplay/AudioLevels';
 
 /**
  * Music playback over an `<audio>` element, with per-track loudness correction.
@@ -125,12 +125,18 @@ export class WebAudioMusicManager implements IMusicManager {
       void this.ctx.resume();
     }
 
-    this.trackGain = musicGain(musicId);
+    // `audioGain`, not `musicGain`, for the same reason the `src` below uses
+    // `audioPath` rather than `musicPath`: the C# hands this manager three
+    // *sound effects* as well as the tracks. The path half of that was fixed
+    // first and left the gain half behind it, so those three fetched the right
+    // file and then played it at unity gain - `sfx - undead eat` carries a
+    // measured 2.446 and was playing a sixth too quietly. The two lookups are a
+    // matched pair; see `AudioLevels.audioGain`.
+    this.trackGain = audioGain(musicId);
     this.audioElement.loop = loop;
-    // `audioPath`, not `musicPath`: the C# hands this manager three *sound
-    // effects* as well as the tracks, and `musicPath` resolves only the music
-    // table — so those three 404'd and, because `src` is assigned before the
-    // request resolves, silenced the current track on the way. See `audioPath`.
+    // `audioPath`, not `musicPath`: those three 404'd and, because `src` is
+    // assigned before the request resolves, silenced the current track on the
+    // way. See `audioPath`.
     this.audioElement.src = audioPath(musicId);
     this.applyVolume();
 

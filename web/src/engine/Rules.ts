@@ -36,6 +36,7 @@ import {
 import { DiceRoller } from "@engine/DiceRoller";
 import { Direction } from "@engine/Direction";
 import { LOS, type FOV } from "@engine/LOS";
+import { NOISE_RADII } from "@engine/NoiseDistance";
 import { Color } from "@engine/Color";
 import { Point } from "@engine/Point";
 import { GameMode } from "@engine/Session";
@@ -336,7 +337,20 @@ export class Rules {
   static readonly SLEEP_HEAL_HITPOINTS = 2;
 
   // Loud noises
-  static readonly LOUD_NOISE_RADIUS = 5;
+  //
+  // Fork `Rules.cs:227`: **14**, not the vanilla5. Release 5-3 raised it (5-4
+  // had it at 7), and the port's original copy was taken from vanilla `src/`,
+  // where it is still 5 - so gunfire woke sleepers on a 5-tile square here and
+  // a 14-tile one in the C#. This constant is load-bearing in both directions:
+  // `RogueGame.OnLoudNoise` bounds the square it scans with it *and* skips any
+  // sleeper past it, so 5 was suppressing both the scan and the wake.
+  //
+  // It is now the same number `NoiseDistance.NOISE_RADII.LOUD` holds, which is
+  // the point: two constants, one name, one value.
+  //
+  // **Not** the radius the wakeup *bonus* is scaled by - that stays on the
+  // quiet radius, per fork `Rules.cs:5230`; see `actorLoudNoiseWakeupChance`.
+  static readonly LOUD_NOISE_RADIUS = 14;
   private static readonly LOUD_NOISE_BASE_WAKEUP_CHANCE = 10;
   private static readonly LOUD_NOISE_DISTANCE_BONUS = 10;
 
@@ -3321,7 +3335,13 @@ export class Rules {
     const skillBonus =
       Rules.SKILL_LIGHT_SLEEPER_WAKEUP_CHANCE_BONUS *
       actor.sheet.skillTable.getSkillLevel(SkillID.LIGHT_SLEEPER);
-    const distBonus = Math.max(0, (Rules.LOUD_NOISE_RADIUS - noiseDistance) * Rules.LOUD_NOISE_DISTANCE_BONUS);
+    // The **quiet** radius, not the loud one. Fork `Rules.cs:5230` switched this
+    // from `Loud` to `Quiet` in Release 6-6 with the note that Loud "was 5 when
+    // this method was designed" - the formula was written against a 5-tile
+    // window, and when the loud radius moved to 14 the bonus deliberately stayed
+    // on 5. Reading `Rules.LOUD_NOISE_RADIUS` here instead would stretch a
+    // gunshot's wake bonus across 14 tiles rather than 5.
+    const distBonus = Math.max(0, (NOISE_RADII.QUIET - noiseDistance) * Rules.LOUD_NOISE_DISTANCE_BONUS);
 
     return baseChance + skillBonus + distBonus;
   }

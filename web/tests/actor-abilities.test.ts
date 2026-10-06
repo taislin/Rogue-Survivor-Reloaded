@@ -221,4 +221,23 @@ describe("per-actor abilities match the C#", () => {
       expect(actors.get(i).abilities.isUndeadMaster, `${ActorID[i]}`).toBe(expectMaster);
     }
   });
+
+  it("refuses an ActorID outside the enum instead of returning a blank sheet", () => {
+    // The `EXPECTED` length assertion above covers the members; this covers the
+    // ids that are not members. `abilitiesFor` had no `default` arm, so an
+    // out-of-range id fell through to the default-constructed `Abilities` -
+    // every flag false, which reads exactly like an actor the design
+    // deliberately gave no abilities and is therefore indistinguishable from
+    // one. Nothing crashed and nothing looked wrong, which is the failure mode
+    // the rest of this file exists to rule out.
+    const gen = GameActors as unknown as { abilitiesFor(id: ActorID): Abilities };
+
+    expect(() => gen.abilitiesFor((ActorID._COUNT + 1) as ActorID)).toThrow(/unhandled ActorID/);
+    expect(() => gen.abilitiesFor((-1) as ActorID)).toThrow(/unhandled ActorID/);
+
+    // And a declared id still answers, so the guard is not simply everything.
+    expect(granted(gen.abilitiesFor(ActorID.MALE_CIVILIAN))).toEqual(
+      granted(actors.get(ActorID.MALE_CIVILIAN).abilities),
+    );
+  });
 });

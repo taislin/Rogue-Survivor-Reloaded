@@ -49,6 +49,7 @@ import { makeFarmBuilding } from './buildings/makeFarmBuilding';
 import { makeJunkyard } from './buildings/makeJunkyard';
 import { makeAnimalShelterBuilding } from './buildings/makeAnimalShelterBuilding';
 import { makeClinicBuilding } from './buildings/makeClinicBuilding';
+import { makeMechanicWorkshop } from './buildings/makeMechanicWorkshop';
 import { makeMallBlocks, makeShoppingMall } from './buildings/makeShoppingMall';
 import { TOWN_BUILDING_PASSES, runTownBuildingPasses } from './TownBuilding';
 import { makeChurchBuilding } from './buildings/makeChurchBuilding';
@@ -302,6 +303,7 @@ export class BaseTownGenerator extends BaseMapGenerator {
       makeUniqueZone: (basename, rect) => this.makeUniqueZone(basename, rect),
       makeWalkwayZones: (map, b) => this.makeWalkwayZones(map, b),
       makeShopGeneralItem: () => this.makeShopGeneralItem(),
+  makeShopConstructionItem: () => this.makeShopConstructionItem(),
       addExit: (from, fromPosition, to, toPosition, exitImageID, isAnAIExit) =>
         this.addExit(from, fromPosition, to, toPosition, exitImageID, isAnAIExit),
       barricadeDoors: (map, rect, barricadeLevel) => this.barricadeDoors(map, rect, barricadeLevel),
@@ -509,7 +511,8 @@ export class BaseTownGenerator extends BaseMapGenerator {
     const cascadeEnabled =
       hasFeature(Session.get().ruleset, Feature.Bar) ||
       hasFeature(Session.get().ruleset, Feature.Bank) ||
-      hasFeature(Session.get().ruleset, Feature.Clinic);
+      hasFeature(Session.get().ruleset, Feature.Clinic) ||
+      hasFeature(Session.get().ruleset, Feature.MechanicWorkshop);
 
     completedBlocks.length = 0;
     let charOfficesCount = 0;
@@ -556,16 +559,23 @@ export class BaseTownGenerator extends BaseMapGenerator {
           if (this.tryMakeLibrary(map, b)) {
             placed = true;
           } else {
-            // `:508-515`. **One die, four arms.** The bar, bank and clinic are
-            // `Feature.Bar` / `Feature.Bank` / `Feature.Clinic`; case 3 is the
-            // mechanic workshop, which is vanilla and not part of this port's set, so
-            // that arm is left empty rather than transliterated — and an empty arm is
-            // a *fall-through to the store and then the office*, which is why leaving
-            // it out is not the same as declining.
+            // `:508-515`. **One die, four arms,** each behind its own feature:
+            // `Feature.Bar`, `Feature.Bank`, `Feature.Clinic` and
+            // `Feature.MechanicWorkshop`. The die is spent here, ahead of every arm's
+            // own size and cap check, because that is the order the C# consumed it and
+            // what makes the four mutually exclusive.
+            //
+            // Case 3 used to be an empty arm — the comment here said the workshop was
+            // "vanilla and not part of this port's set", which it is not: vanilla
+            // `src\` has no `MakeMechanicWorkshop` at all, and the fork added it in
+            // Release 4. An empty arm is a *fall-through to the store and then the
+            // office*, so filling it costs only the blocks the workshop declines for
+            // itself.
             const roll2 = this.m_DiceRoller.roll(0, 4);
             if (roll2 === 0) placed = makeBarBuilding(ctx, roll2);
             else if (roll2 === 1) placed = makeBankBuilding(ctx, roll2);
             else if (roll2 === 2) placed = makeClinicBuilding(ctx, roll2);
+            else if (roll2 === 3) placed = makeMechanicWorkshop(ctx, roll2);
 
             // `:519-526`, Release 7-3: "we've got enough of the standard biz types,
             // fill in a couple of gaps with General stores before we resort to

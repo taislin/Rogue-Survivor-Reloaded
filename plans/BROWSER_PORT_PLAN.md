@@ -361,8 +361,10 @@ over an empty set and passing.
 - **The first load is slow** (the whole image set before the menu appears —
   1 009 ids today, ~395 when this was written). That is
   correct — C# preloads too — and the service worker caches them so later loads
-  are instant. Bump `CACHE_VERSION` in `web/public/sw.js` when releasing, or
-  clients keep the old bundle and the update only lands on the *next* load.
+  are instant. No manual bump: `npm run build` stamps `CACHE_VERSION` in
+  `dist/sw.js` with a hash of the built output as its last step, so the version
+  moves exactly when the cached content does — and `build-site.mjs` fails the
+  build if a worker ever reaches Pages still carrying the committed value.
 - ~~**A raw NUL byte in `web/src/ui/CanvasUI.ts` made the file invisible to
   `grep`.**~~ **Fixed 2026-09-28.** `CanvasUI.downloadName` built a
   filename-sanitising regex with *literal* `0x00` and `0x1F` bytes instead of the

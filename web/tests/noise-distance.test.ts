@@ -110,23 +110,23 @@ describe("the C#'s radii", () => {
     }
   });
 
-  it("does not reuse the port's older, same-named LOUD_NOISE_RADIUS", () => {
-    // `Rules.LOUD_NOISE_RADIUS` is 5 — the vanilla RS value, from before the
-    // fork raised it to 14 (Release 5-3, cited at `Rules.cs:227`). The port's
-    // copy is load-bearing: `OnLoudNoise` bounds the square it scans for sleepers
-    // to wake by it, and `actorLoudNoiseWakeupChance` uses it in the distance
-    // bonus. So the two numbers are deliberately *not* reconciled here, and this
-    // is the tripwire that says so out loud.
+  it("keeps Rules.LOUD_NOISE_RADIUS in step with the ladder's LOUD", () => {
+    // These were deliberately *apart*, and that was the bug. The port had
+    // copied the vanilla `src/` value (5) where the fork raised it to 14
+    // (`Rules.cs:227`, Release 5-3, after a stop at 7 in 5-4), so `OnLoudNoise`
+    // bounded its sleeper scan at 5 tiles while the ladder above had been
+    // answering for 14 the whole time: gunfire woke sleepers on a 5-tile square
+    // here and a 14-tile one in the C#. The C# spells this one name in both
+    // places, so it is one number here, and this assertion is the tripwire for
+    // it drifting back.
     //
-    // They are 9 apart, and the trap is the coincidence: the C#'s
-    // `QUIET_NOISE_RADIUS` is *also* 5, the number the port's
-    // `LOUD_NOISE_RADIUS` holds. So a reader who assumes the port's constant is
-    // the fork's silently gets the quiet radius for every gunshot tier, and the
-    // three `_far` ids would answer to a gun five tiles away.
-    expect(Rules.LOUD_NOISE_RADIUS).toBe(5);
-    expect(NOISE_RADII.QUIET).toBe(Rules.LOUD_NOISE_RADIUS);
-    expect(NOISE_RADII.LOUD).not.toBe(Rules.LOUD_NOISE_RADIUS);
-    expect(NOISE_RADII.LOUD).toBeGreaterThan(Rules.LOUD_NOISE_RADIUS);
+    // `QUIET` stays pinned at 5 because it is the *other* half of the picture:
+    // the coincidence that made the old value look correct, and the radius the
+    // wakeup bonus still runs on (fork `Rules.cs:5230`).
+    expect(Rules.LOUD_NOISE_RADIUS).toBe(14);
+    expect(NOISE_RADII.LOUD).toBe(Rules.LOUD_NOISE_RADIUS);
+    expect(NOISE_RADII.QUIET).toBe(5);
+    expect(NOISE_RADII.QUIET).not.toBe(Rules.LOUD_NOISE_RADIUS);
   });
 });
 

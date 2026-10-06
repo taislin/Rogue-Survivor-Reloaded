@@ -239,6 +239,8 @@ export class GameImages {
   static readonly DECO_SHOP_PHARMACY = "Tiles/Decoration/shop_pharmacy";
   static readonly DECO_SHOP_SPORTSWEAR = "Tiles/Decoration/shop_sportswear";
   static readonly DECO_SHOP_HUNTING = "Tiles/Decoration/shop_hunting";
+  /** `Feature.MechanicWorkshop`. The workshop's sign, next to its roller doors. */
+  static readonly DECO_MECHANIC = "Tiles/Decoration/shop_mechanic";
   /** `Feature.FuelStation`. C# `GameImages.cs`, the two `midX +/- 2` signboards. */
   static readonly DECO_SHOP_FUEL_STATION = "Tiles/Decoration/shop_fuel_station";
   static readonly DECO_CHAR_OFFICE = "Tiles/Decoration/char_office";

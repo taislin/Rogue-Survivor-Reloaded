@@ -1995,14 +1995,20 @@ export class RogueGame implements ActionGame {
 		//
 		// **This was the last thing `Feature.ExtendedAudio` was missing, and it was
 		// not cosmetic.** Every effect the port played went through
-		// `m_MusicManager.play`, which applies `musicGain(id)` -- a lookup that
-		// returns 1.0 for anything not in `MUSIC_FILES`. So all 180 fork effects, and
-		// the three vanilla ones, were playing at unity gain while their measured
-		// levels sat unused in `AudioLevels.SFX_GAINS`: `sfx - undead eat` was
-		// measured at a peak of 0.39 against 1.0 for "nightmare" and given a gain of
-		// **2.446** precisely so it would be audible at all, and the port was playing
-		// it a sixth too quietly. `WebAudioSoundManager` applies `sfxGain` correctly
-		// and nothing was constructing it.
+		// `m_MusicManager.play`, whose gain lookup was `musicGain(id)` -- a
+		// function that returns 1.0 for anything not in `MUSIC_FILES`. So all 180
+		// fork effects, and the three vanilla ones, were playing at unity gain while
+		// their measured levels sat unused in `AudioLevels.SFX_GAINS`: `sfx - undead
+		// eat` was measured at a peak of 0.39 against 1.0 for "nightmare" and given a
+		// gain of **2.446** precisely so it would be audible at all, and the port was
+		// playing it a sixth too quietly. `WebAudioSoundManager` applies `sfxGain`
+		// correctly and nothing was constructing it.
+		//
+		// Routing the effects here fixed the channel and half of the level; the other
+		// half was the mismatched pair of lookups in `WebAudioMusicManager`, which
+		// resolved the URL through `audioPath` (both tables) but the gain through
+		// `musicGain` (music only). `AudioLevels.audioGain` is now the twin of
+		// `audioPath`, so the two agree whatever the C# hands this manager.
 		this.m_SoundManager = sound;
 
 		logInit("creating Ambient Sound Manager");
