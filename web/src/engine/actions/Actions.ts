@@ -97,8 +97,8 @@ export class ActionMoveStep extends ActorAction {
     return result.ok;
   }
 
-  perform(): void {
-    this.game.doMoveActor(this.actor, this.newLocation);
+  async perform(): Promise<void> {
+    await this.game.doMoveActor(this.actor, this.newLocation);
   }
 }
 
@@ -125,8 +125,8 @@ export class ActionBump extends ActorAction {
     return this.concreteAction.isLegal();
   }
 
-  perform(): void {
-    this.concreteAction?.perform();
+  async perform(): Promise<void> {
+    await this.concreteAction?.perform();
   }
 }
 
@@ -146,8 +146,8 @@ export class ActionMeleeAttack extends ActorAction {
     return true; // handled upstream in rules
   }
 
-  perform(): void {
-    this.game.doMeleeAttack(this.actor, this.target);
+  async perform(): Promise<void> {
+    await this.game.doMeleeAttack(this.actor, this.target);
   }
 }
 
@@ -176,8 +176,8 @@ export class ActionRangedAttack extends ActorAction {
     return result.ok;
   }
 
-  perform(): void {
-    this.game.doRangedAttack(this.actor, this.target, this.lof, this.mode);
+  async perform(): Promise<void> {
+    await this.game.doRangedAttack(this.actor, this.target, this.lof, this.mode);
   }
 }
 
@@ -199,12 +199,12 @@ export class ActionThrowGrenade extends ActorAction {
     return result.ok;
   }
 
-  perform(): void {
+  async perform(): Promise<void> {
     const grenade = this.actor.getEquippedWeapon();
     if (grenade instanceof ItemPrimedExplosive) {
-      this.game.doThrowGrenadePrimed(this.actor, this.throwPos);
+      await this.game.doThrowGrenadePrimed(this.actor, this.throwPos);
     } else {
-      this.game.doThrowGrenadeUnprimed(this.actor, this.throwPos);
+      await this.game.doThrowGrenadeUnprimed(this.actor, this.throwPos);
     }
   }
 }
@@ -283,8 +283,8 @@ export class ActionBashDoor extends ActorAction {
     return result.ok;
   }
 
-  perform(): void {
-    this.game.doBreak(this.actor, this.door);
+  async perform(): Promise<void> {
+    await this.game.doBreak(this.actor, this.door);
   }
 }
 
@@ -329,8 +329,8 @@ export class ActionBreak extends ActorAction {
     return result.ok;
   }
 
-  perform(): void {
-    this.game.doBreak(this.actor, this.mapObject);
+  async perform(): Promise<void> {
+    await this.game.doBreak(this.actor, this.mapObject);
   }
 }
 
@@ -352,8 +352,8 @@ export class ActionBuildFortification extends ActorAction {
     return this.game.rules.canActorBuildFortification(this.actor, this.buildPos, this.isLarge).ok;
   }
 
-  perform(): void {
-    this.game.doBuildFortification(this.actor, this.buildPos, this.isLarge);
+  async perform(): Promise<void> {
+    await this.game.doBuildFortification(this.actor, this.buildPos, this.isLarge);
   }
 }
 
@@ -398,8 +398,8 @@ export class ActionSwitchPowerGenerator extends ActorAction {
     return result.ok;
   }
 
-  perform(): void {
-    this.game.doSwitchPowerGenerator(this.actor, this.powGen);
+  async perform(): Promise<void> {
+    await this.game.doSwitchPowerGenerator(this.actor, this.powGen);
   }
 }
 
@@ -426,8 +426,8 @@ export class ActionPush extends ActorAction {
     return r1.ok && r2.ok;
   }
 
-  perform(): void {
-    this.game.doPush(this.actor, this.obj, this.to);
+  async perform(): Promise<void> {
+    await this.game.doPush(this.actor, this.obj, this.to);
   }
 }
 
@@ -453,8 +453,8 @@ export class ActionPull extends ActorAction {
     return result.ok;
   }
 
-  perform(): void {
-    this.game.doPull(this.actor, this.obj, this.moveActorTo);
+  async perform(): Promise<void> {
+    await this.game.doPull(this.actor, this.obj, this.moveActorTo);
   }
 }
 
@@ -476,8 +476,8 @@ export class ActionUseItem extends ActorAction {
     return result.ok;
   }
 
-  perform(): void {
-    this.game.doUseItem(this.actor, this.item);
+  async perform(): Promise<void> {
+    await this.game.doUseItem(this.actor, this.item);
   }
 }
 
@@ -499,8 +499,8 @@ export class ActionDropItem extends ActorAction {
     return result.ok;
   }
 
-  perform(): void {
-    this.game.doDropItem(this.actor, this.item);
+  async perform(): Promise<void> {
+    await this.game.doDropItem(this.actor, this.item);
   }
 }
 
@@ -757,8 +757,8 @@ export class ActionChat extends ActorAction {
     return true;
   }
 
-  perform(): void {
-    this.game.doChat(this.actor, this.target);
+  async perform(): Promise<void> {
+    await this.game.doChat(this.actor, this.target);
   }
 }
 
@@ -794,8 +794,8 @@ export class ActionSay extends ActorAction {
     return true;
   }
 
-  perform(): void {
-    this.game.doSay(this.actor, this.target, this.text, this.flags);
+  async perform(): Promise<void> {
+    await this.game.doSay(this.actor, this.target, this.text, this.flags);
   }
 }
 
@@ -817,8 +817,8 @@ export class ActionShout extends ActorAction {
     return result.ok;
   }
 
-  perform(): void {
-    this.game.doShout(this.actor, this.text);
+  async perform(): Promise<void> {
+    await this.game.doShout(this.actor, this.text);
   }
 }
 
@@ -838,8 +838,8 @@ export class ActionTrade extends ActorAction {
     return this.game.rules.canActorInitiateTradeWith(this.actor, this.target).ok;
   }
 
-  perform(): void {
-    this.game.doTrade(this.actor, this.target);
+  async perform(): Promise<void> {
+    await this.game.doTrade(this.actor, this.target);
   }
 }
 
@@ -880,11 +880,11 @@ export class ActionTakeLead extends ActorAction {
     return this.game.rules.canActorTakeLead(this.actor, this.target).ok;
   }
 
-  perform(): void {
+  async perform(): Promise<void> {
     if (this.target.hasLeader) {
-      this.game.doStealLead(this.actor, this.target);
+      await this.game.doStealLead(this.actor, this.target);
     } else {
-      this.game.doTakeLead(this.actor, this.target);
+      await this.game.doTakeLead(this.actor, this.target);
     }
   }
 }
@@ -907,8 +907,8 @@ export class ActionLeaveMap extends ActorAction {
     return result.ok;
   }
 
-  perform(): void {
-    this.game.doLeaveMap(this.actor, this.exitPoint, true);
+  async perform(): Promise<void> {
+    await this.game.doLeaveMap(this.actor, this.exitPoint, true);
   }
 }
 
@@ -930,8 +930,8 @@ export class ActionUseExit extends ActorAction {
     return result.ok;
   }
 
-  perform(): void {
-    this.game.doUseExit(this.actor, this.exitPoint);
+  async perform(): Promise<void> {
+    await this.game.doUseExit(this.actor, this.exitPoint);
   }
 }
 

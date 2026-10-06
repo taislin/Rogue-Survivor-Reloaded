@@ -8183,7 +8183,7 @@ inv.removeAllQuantity(it);
 						botAction = new ActionWait(player, this);
 					}
 					this.debugTrace?.("    bot: perform...");
-					botAction.perform();
+					await botAction.perform();
 					this.debugTrace?.("    bot: performed");
 					// copy-paste is bad
 					this.UpdatePlayerFOV(player);
@@ -8905,7 +8905,7 @@ inv.removeAllQuantity(it);
 		);
 		if (!this.m_Player.isBotPlayer) await this.AddMessagePressEnter();
 
-		insaneAction.perform();
+		await insaneAction.perform();
 
 		return true;
 	}
@@ -15608,7 +15608,7 @@ inv.removeAllQuantity(it);
 		return actionDone;
 	}
 	// C# HandleAiActor — RogueGame.cs:10255
-	HandleAiActor(aiActor: Actor): void {
+	async HandleAiActor(aiActor: Actor): Promise<void> {
 		let desiredAction = aiActor.controller!.getAction(this);
 
 		if (
@@ -15621,7 +15621,7 @@ inv.removeAllQuantity(it);
 		}
 
 		if (desiredAction != null) {
-			if (desiredAction.isLegal()) desiredAction.perform();
+			if (desiredAction.isLegal()) await desiredAction.perform();
 			else {
 				this.SpendActorActionPoints(aiActor, Rules.BASE_ACTION_COST);
 				this.DoWait(aiActor);
@@ -19430,7 +19430,7 @@ updateAdvisorHintBanner(): void {
 		if (bump === null) return false;
 
 		if (bump.isLegal()) {
-			bump.perform();
+			await bump.perform();
 			return true;
 		}
 
@@ -27598,7 +27598,7 @@ updateAdvisorHintBanner(): void {
 						),
 					);
 				}
-				this.KillActor(null, actor, "died in flames", true);
+				await this.KillActor(null, actor, "died in flames", true);
 			}
 		}
 
@@ -27758,7 +27758,7 @@ updateAdvisorHintBanner(): void {
 					),
 				);
 			}
-			this.KillActor(null, actor, "burned alive", true);
+			await this.KillActor(null, actor, "burned alive", true);
 			if (!actor.model.abilities.isUndead) {
 				this.SeeingCauseInsanity(
 					actor,

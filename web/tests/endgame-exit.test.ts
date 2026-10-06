@@ -49,6 +49,7 @@ import { RogueGame } from "@engine/RogueGame";
 import { Ruleset, Session } from "@engine/Session";
 import { SkillID } from "@gameplay/Skills";
 import { NullRogueUI } from "@ui/NullRogueUI";
+import { ActionMeleeAttack } from "@engine/actions/Actions";
 import type { GameKeyEvent } from "@engine/IRogueUI";
 
 const SEED = 4242;
@@ -534,4 +535,33 @@ describe("a turn is live after reincarnating", () => {
 		expect(player.isDead).toBe(false);
 		expect(game.m_Player).toBe(player);
 	}, 90_000);
+
+	it("HandleAiActor killing the player awaits the post-mortem so N at Limbo is not swallowed", async () => {
+		const { game, ui } = await newGame();
+		const player = game.m_Player;
+		player.hitPoints = 1;
+		player.isSleeping = true;
+
+		const map = player.location.map!;
+		const attacker = map.actors.find((a) => a !== player)!;
+		expect(attacker).toBeDefined();
+
+		attacker.currentMeleeAttack.hitValue = 100;
+		attacker.currentMeleeAttack.damageValue = 10;
+		attacker.controller!.getAction = () => new ActionMeleeAttack(attacker, game, player);
+
+		// When the attack kills the player, PlayerDied runs (AddMessagePressEnter + HandlePostMortem).
+		// NullRogueUI answers Enter and Esc for the post-mortem and hiscores.
+		// Awaiting HandleAiActor ensures PlayerDied's WaitEnter is completely settled.
+		await within(game.HandleAiActor(attacker), 30_000, "AI attack killing player");
+
+		expect(player.isDead).toBe(true);
+
+		// Now Limbo is entered cleanly. Pressing 'n' must decline reincarnation without
+		// being intercepted by any background WaitEnter.
+		ui.pushKeys("n");
+		await within(game.HandleReincarnation(), 10_000, "declining reincarnation with N");
+
+		expect(game.m_Player.isDead).toBe(true);
+	}, 60_000);
 });
