@@ -149,7 +149,16 @@ describe("RogueGame's measured surface", () => {
     // A dependency invented to assert on a colour is a real cost of the assertion,
     // and it is cheaper than the alternative -- a bubble the same colour as every
     // other box on screen, with nothing to notice it.
-    expect(m.external).toBe(126);
+    //
+    // **One more, for `HandleAiActor`, and it is the same story as `DoChat` in the
+    // hub below.** `b0a72c4` made it async — the post-mortem's `WaitEnter` has to
+    // settle before the caller resumes, or the `n` typed at Limbo lands in a
+    // background prompt — and `endgame-exit.test.ts` now awaits it directly to
+    // assert that ordering. It was already public and already only reached from
+    // within the class, so nothing about the game's own shape changed: a test
+    // reached one further than it had before, which is exactly the caveat this
+    // count exists to record.
+    expect(m.external).toBe(127);
 // §6.4: "567 of 584 methods are public — only 17 are `private`. The
   // `private` boundary is effectively absent." That is still true, and the
   // direction is worth pinning: private has come down from 91 to 89, while public
@@ -194,7 +203,7 @@ it("the outside world depends on 121 members, and §6 assumed far fewer", () => 
     // sites". At 121 names the pessimistic figure is not the real one, and that
     // is the answer to the question §6.4 deferred until "the game runs and the
     // real cross-method dependencies are known".
-    expect(m.external).toBe(126);
+    expect(m.external).toBe(127);
     expect(m.external).toBeGreaterThan(83);
 	});
 
@@ -220,7 +229,10 @@ it("splits the reachable surface into 34 hub and 92 movable, and the hubs stay",
     // §6.8: the two hubs "are the reason the split is worth doing rather than the
     // reason it fails". Still true, and now measured on the current file.
     const m = measure();
-    expect(m.moving).toBe(92);
+    // `HandleAiActor` is why movable is 93 rather than 92. It is not an action
+    // primitive, so the test that now awaits it enlarges the half that moves rather
+    // than the hubs -- the split classifying it the right way round.
+    expect(m.moving).toBe(93);
     expect(m.hubs).toBe(34);
     expect(m.moving + m.hubs).toBe(m.external);
     // HUB 1 is 26 of the 34. `DoTag` joined when the minimap tag test replaced a
@@ -259,7 +271,10 @@ it("splits the reachable surface into 34 hub and 92 movable, and the hubs stay",
     // only what the game does.
 		const m = measure();
     const carry = m.buckets.get("STATE") ?? [];
-    expect(carry.length).toBe(30);
+    // `HandleAiActor` is the 31st, and it is a *method*, which is the point of a
+    // `carry` classification rather than a list of fields. Same caveat as the two
+    // above: a test reached it, so this bucket counts what the tests touch too.
+    expect(carry.length).toBe(31);
 		for (const name of ["player", "session", "rules", "m_PlayerFOV", "m_CharGen", "m_IsGameRunning", "m_PlayerWasRescued", "TAG_MODE_TEXT", "simulateOneBehindDistrictTurn", "stepActorsOnFire", "CURRENT_SAVE_SLOT", "POPUP_FILLCOLOR", "SPEECH_BUBBLE_FILLCOLOR"]) {
 			expect(carry, `${name} should be classified as carried`).toContain(name);
 		}

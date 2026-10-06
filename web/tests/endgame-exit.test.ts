@@ -44,6 +44,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { SimRatio } from "@engine/GameOptions";
+import { Attack } from "@data/Attack";
 import { NullMusicManager } from "@engine/audio/NullMusicManager";
 import { RogueGame } from "@engine/RogueGame";
 import { Ruleset, Session } from "@engine/Session";
@@ -546,8 +547,19 @@ describe("a turn is live after reincarnating", () => {
 		const attacker = map.actors.find((a) => a !== player)!;
 		expect(attacker).toBeDefined();
 
-		attacker.currentMeleeAttack.hitValue = 100;
-		attacker.currentMeleeAttack.damageValue = 10;
+		// Attack's fields are readonly, so rebuild rather than assign in place.
+		const strike = attacker.currentMeleeAttack;
+		attacker.currentMeleeAttack = new Attack(
+			strike.kind,
+			strike.verb,
+			100,
+			100,
+			100,
+			10,
+			strike.staminaPenalty,
+			strike.disarmChance,
+			strike.range,
+		);
 		attacker.controller!.getAction = () => new ActionMeleeAttack(attacker, game, player);
 
 		// When the attack kills the player, PlayerDied runs (AddMessagePressEnter + HandlePostMortem).
