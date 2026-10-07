@@ -267,9 +267,8 @@
               <code>docker run -p 8080:8080 rogue-survivor-web</code></p>
             <p class="small muted" style="margin-bottom:0">Not the deploy path &mdash; the site ships
               via GitHub Pages. This exists to run a production build locally, and for CI to prove the
-              bundle is shippable. Note it skips the cache-version step, so its service worker
-              carries the committed <code>CACHE_VERSION</code>: serve it locally and returning players
-              will not pick up a new build.</p>
+              bundle is shippable. The build stamps the cache version from the bundle's own bytes, so
+              serving it locally hands returning players a new build the same way GitHub Pages does.</p>
           </div>
         </div>
       </div>

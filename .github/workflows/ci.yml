@@ -104,9 +104,10 @@ jobs:
         # The same command the Pages deploy runs, which is the point: a broken
         # assembly fails here rather than in a deploy. `build:pages` and not
         # `build:site` — build:site only assembles whatever is already in dist/,
-        # and the step above left an unstamped build there, so it correctly
-        # refused to publish a worker that would never evict. That guard firing
-        # on this step is how the mistake was found.
+        # and it refuses an unstamped worker (see the guard in build-site.mjs).
+        # `npm run build` above stamps dist/ now, so that guard passes; it fired
+        # back when stamping was a build:pages-only step, which is how the
+        # mistake was found.
         env:
           BASE_PATH: /Rogue-Survivor-Reloaded/game/
         run: |

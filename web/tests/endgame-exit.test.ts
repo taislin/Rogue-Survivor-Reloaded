@@ -456,9 +456,16 @@ describe("accepting reincarnation", () => {
  * that parks is a live turn -- the game is waiting for the player, which is what
  * playable means. A turn that returns immediately means the game played the player
  * without asking, and a turn that never settles means the loop.
+ *
+ * The wait is detected rather than slept into: `whenParked` resolves on the first
+ * `UI_PeekKey`, which is the input wait itself. A fixed sleep is a guess at how long
+ * a busy machine needs, and the test's job here is exactly the thing a too-short guess
+ * would get wrong.
  */
 class ParkUI extends NullRogueUI {
 	private pendingKey: GameKeyEvent | null = null;
+	private parkedResolve: (() => void) | null = null;
+	private hasParked = false;
 
 	postKey(key: string): void {
 		this.pendingKey = {
@@ -468,6 +475,21 @@ class ParkUI extends NullRogueUI {
 			ctrl: false,
 			alt: false,
 		};
+	}
+
+	/** Resolves once the game has polled for input -- that is, it is parked. */
+	whenParked(): Promise<void> {
+		if (this.hasParked) return Promise.resolve();
+		return new Promise<void>((resolve) => {
+			this.parkedResolve = resolve;
+		});
+	}
+
+	private noteParked(): void {
+		if (this.hasParked) return;
+		this.hasParked = true;
+		this.parkedResolve?.();
+		this.parkedResolve = null;
 	}
 
 	override UI_WaitKey(): Promise<GameKeyEvent> {
@@ -481,6 +503,7 @@ class ParkUI extends NullRogueUI {
 	}
 
 	override UI_PeekKey(): GameKeyEvent | null {
+		this.noteParked();
 		const k = this.pendingKey;
 		this.pendingKey = null;
 		return k;
@@ -509,6 +532,10 @@ describe("a turn is live after reincarnating", () => {
 		// one, which is exactly why the two halves cannot share a UI.
 		const park = new ParkUI();
 		(game as unknown as { m_UI: unknown }).m_UI = park;
+		// Registered before the turn starts: `HandlePlayerActor` reaches its first
+		// `UI_PeekKey` without necessarily yielding first, so waiting to subscribe
+		// afterwards could miss the signal entirely and wait for one that has gone.
+		const parked = park.whenParked();
 
 		let settled = false;
 		const turn = game
@@ -519,13 +546,8 @@ describe("a turn is live after reincarnating", () => {
 			.catch(() => {
 				settled = true;
 			});
-		// Left deliberately unresolved: a parked turn is the passing outcome, and the
-		// assertion is that it never settles. `void` documents that on purpose rather
-		// than leaving a floating promise that looks like an oversight.
-		void turn;
 
-		// Give the turn long enough to reach its input wait and park there.
-		await new Promise((r) => setTimeout(r, 2_000));
+		await within(parked, 20_000, "the turn to reach its input wait");
 
 		expect(
 			settled,
@@ -535,6 +557,11 @@ describe("a turn is live after reincarnating", () => {
 		// And it was this player's turn: they are still alive and still theirs.
 		expect(player.isDead).toBe(false);
 		expect(game.m_Player).toBe(player);
+
+		// Hand the wait its key and let the loop drain, so the polling for input does
+		// not outlive the test and carry on into whatever runs next.
+		park.postKey(".");
+		await within(turn, 20_000, "the parked turn to finish during cleanup");
 	}, 90_000);
 
 	it("HandleAiActor killing the player awaits the post-mortem so N at Limbo is not swallowed", async () => {

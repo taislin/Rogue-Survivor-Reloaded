@@ -702,10 +702,10 @@ See the Options sections for more information.
 Takes a screenshot of the game.
 Screenshots are downloaded by your browser, which decides where they are saved - usually your
 Downloads folder. There is no game folder to put them in, so nothing is written silently in the
-background; the browser asks, the same as any other download. Each screenshot gets its own numbered
-name, so taking a second one never overwrites the first.
+background; like any other download, your browser may ask where to save it or simply save it to
+its default folder. Each screenshot gets its own numbered name, so a second never overwrites the first.
 There is no automatic screenshot on death. The C# had one, and it wrote a file quietly into the
-game folder; a browser cannot do that quietly, and a download prompt on every death is not worth
+game folder; a browser cannot do that quietly, and an extra download on every death is not worth
 the feature.
 
 

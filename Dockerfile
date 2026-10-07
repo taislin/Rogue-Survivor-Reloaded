@@ -6,10 +6,10 @@
 # bundle is shippable, which is worth having: it is the only check that exercises
 # the Express server and a cold container start.
 #
-# One consequence of not being the deploy path, worth knowing before deploying it
-# anyway: there is no stamp-cache-version step here, so this image's sw.js
-# carries the committed CACHE_VERSION. Serving it means returning players never
-# get the new build. `npm run build:pages` is what the real deploy uses.
+# One difference from the deploy path, worth knowing before deploying it anyway:
+# the pages workflow runs `npm run build:pages`, which stamps sw.js a second time
+# (a no-op over this build's stamp) and then copies docs/ into dist/. This image
+# stops at `npm run build`, whose own stamp already covers dist/.
 #
 # Build from the REPOSITORY ROOT (not web/):
 #     docker build -t rogue-survivor-web .
@@ -34,9 +34,10 @@ RUN npm ci
 
 COPY web/ ./
 
-# `npm run build` is `tsc -p tsconfig.json && vite build`. The tsc pass is not
-# redundant: it type-checks tests/ as well as src/ (both are in the include
-# list), so a type error fails the image build rather than shipping.
+# `npm run build` is `tsc -p tsconfig.json && vite build` followed by
+# `node scripts/stamp-cache-version.mjs`, which hashes dist/ into sw.js. The tsc
+# pass is not redundant: it type-checks tests/ as well as src/ (both are in the
+# include list), so a type error fails the image build rather than shipping.
 RUN npm run build && npm run build:server
 
 # Drop dev dependencies from the tree we are about to copy, so the runtime

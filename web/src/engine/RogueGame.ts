@@ -16491,9 +16491,7 @@ updateAdvisorHintBanner(): void {
 					"You can TRADE with an actor next to you.",
 					"Actor that can trade with you have a $ icon on the map.",
 					"Trading means exhanging items.",
-					"To ask for a TRADE offer, just try to MOVE into the actor and accept or refuse the offer.",
-					"You can also initiate a more detailled trade negociation.",
-					`To NEGOCIATE A TRADE : press ${key(PlayerCommand.NEGOCIATE_TRADE)} and select an npc with the directions.`,
+					`To ask for a TRADE offer : press ${key(PlayerCommand.NEGOCIATE_TRADE)} and select an npc with the directions.`,
 				];
 				break;
 
