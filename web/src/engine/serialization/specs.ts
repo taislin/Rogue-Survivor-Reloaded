@@ -732,8 +732,10 @@ const actorSpec: ClassSpec = {
      * What has to survive is *which* actor the player was, so the writer records
      * that in the root and `RogueGame.LoadGame` hands it a fresh
      * `PlayerController` — the same call `HandlePlayerActor` makes when the player
-     * takes control. Every other actor's controller is rebuilt by the game's own
-     * setup, as it is for a newly spawned one.
+     * takes control. Every other actor's controller is rebuilt from its model's
+     * `defaultControllerCtor` by `reattachControllers`, in the same `LoadGame`
+     * call — nothing else in the game ever assigns one, so if that pass is
+     * skipped the whole world comes back frozen rather than obviously broken.
      */
     _controller: { kind: "skip" },
     /*

@@ -146,3 +146,45 @@ export function reattachPlayer(actor: Actor | null): Actor | null {
   if (actor.controller == null) actor.controller = new PlayerController();
   return actor;
 }
+
+/**
+ * Gives every *other* restored actor the controller its model says it should have.
+ *
+ * `_controller` is skipped for every actor in the graph, not only the player's
+ * (see `specs.ts`), so a save read back is a world of actors and no controllers
+ * at all — the probe that found this measured 0 of 881. `RogueGame.LoadGame`
+ * runs `reattachPlayer` first and passes the player in here so it is left alone;
+ * everyone else is picked up from `ActorModel.defaultControllerCtor`, which is
+ * the same call `ActorModel.create` makes for a newly spawned one.
+ *
+ * Without it a load silently freezes the world: `advancePlayMap` gives a
+ * controller-less actor a free action instead of a turn, so every NPC alive when
+ * the save was written stops acting for the rest of the session. It is also what
+ * made `DoTrade` throw `Cannot read properties of null (reading 'rateTradeOffer')`
+ * — the first AI that *does* have a controller chats with one of the frozen ones
+ * and reads a mind that is not there.
+ *
+ * Returns how many it rebuilt, so a caller (and a test) can tell a real pass from
+ * an empty one.
+ */
+export function reattachControllers(world: World, player: Actor | null): number {
+  let rebuilt = 0;
+  for (let x = 0; x < world.size; x++) {
+    for (let y = 0; y < world.size; y++) {
+      const district = world.getDistrict(x, y);
+      if (district === null) continue;
+      for (const map of district.maps) {
+        for (const actor of map.actors) {
+          if (actor === player || actor.controller !== null) continue;
+          // A model with no default controller is a real answer and is left as
+          // it is: `advancePlayMap`'s null branch is the designed home for one.
+          const ctor = actor.model.defaultControllerCtor;
+          if (ctor === null) continue;
+          actor.controller = new ctor();
+          rebuilt++;
+        }
+      }
+    }
+  }
+  return rebuilt;
+}

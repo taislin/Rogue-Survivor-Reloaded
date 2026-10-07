@@ -16,6 +16,7 @@ import { CLASS_SPECS, encodeScoring } from "@engine/serialization/specs";
 import {
   findPlayerActor,
   readSessionGraph,
+  reattachControllers,
   reattachPlayer,
   writeSessionGraph,
   type LoadedGraph,
@@ -404,6 +405,44 @@ describe("the player comes back", () => {
     reattachPlayer(loaded.player);
     const found = findPlayerActor(loaded.currentMap);
     expect(found).toBe(loaded.player);
+  });
+});
+
+describe("the NPCs come back", () => {
+  it("with the controller their model gives a newly spawned one", () => {
+    // `_controller` is skipped for *every* actor, not only the player's, so a
+    // graph read back hands over a world of actors and no controllers at all.
+    // The probe that found the bug measured 0 of 881.
+    //
+    // What that costs is not cosmetic. `advancePlayMap` gives a controller-less
+    // actor a free action instead of a turn, so every NPC alive when the save was
+    // written stops acting for the rest of the session — and the first AI that
+    // does have one and chats with a frozen neighbour sends `DoTrade` into a null
+    // mind, reported as `Cannot read properties of null (reading 'rateTradeOffer')`.
+    //
+    // Its own graph, so nothing here can be rescued by the live session: the
+    // assertions are on what a load actually starts from.
+    const { loaded } = freshRoundTrip();
+    reattachPlayer(loaded.player);
+    expect(reattachControllers(loaded.world, loaded.player)).toBeGreaterThan(0);
+    expect(loaded.player!.isPlayer).toBe(true);
+
+    let seen = 0;
+    for (let x = 0; x < loaded.world.size; x++) {
+      for (let y = 0; y < loaded.world.size; y++) {
+        const district = loaded.world.getDistrict(x, y);
+        if (district === null) continue;
+        for (const map of district.maps) {
+          for (const actor of map.actors) {
+            if (actor === loaded.player) continue;
+            seen++;
+            expect(actor.controller, `${actor.theName} came back controller-less`).not.toBeNull();
+            expect(actor.isPlayer, `${actor.theName} must not be the player`).toBe(false);
+          }
+        }
+      }
+    }
+    expect(seen, "the world has nobody in it to restore").toBeGreaterThan(0);
   });
 });
 

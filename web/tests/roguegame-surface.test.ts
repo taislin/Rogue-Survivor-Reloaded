@@ -158,7 +158,15 @@ describe("RogueGame's measured surface", () => {
     // within the class, so nothing about the game's own shape changed: a test
     // reached one further than it had before, which is exactly the caveat this
     // count exists to record.
-    expect(m.external).toBe(127);
+    //
+    // **One more, for `DoSaveGame`, and it is the same caveat for the third time.**
+    // `load-game-controllers.test.ts` proves `LoadGame` rebuilds the NPC
+    // controllers the save graph does not carry, and the only way to get a real
+    // save into the game is to ask the game for one: `DoSaveGame(slot)` then
+    // `LoadGame(slot)`. It is a `Do*` action primitive, so it lands in HUB 1
+    // rather than in a region that moves -- a test reaching the save path, which
+    // is the split classifying it the right way round.
+    expect(m.external).toBe(128);
 // §6.4: "567 of 584 methods are public — only 17 are `private`. The
   // `private` boundary is effectively absent." That is still true, and the
   // direction is worth pinning: private has come down from 91 to 89, while public
@@ -191,7 +199,7 @@ describe("RogueGame's measured surface", () => {
 		expect(m.privateReached).toBe(0);
 	});
 
-it("the outside world depends on 121 members, and §6 assumed far fewer", () => {
+it("the outside world depends on 128 members, and §6 assumed far fewer", () => {
 		const m = measure();
 		// §6.4's `GameContext` was to name "the 11 service fields … plus `m_Player`,
 		// `m_PlayerFOV`, `m_MapViewRect`, `m_Overlays`, `m_FirstPersonFacing`" —
@@ -203,7 +211,7 @@ it("the outside world depends on 121 members, and §6 assumed far fewer", () => 
     // sites". At 121 names the pessimistic figure is not the real one, and that
     // is the answer to the question §6.4 deferred until "the game runs and the
     // real cross-method dependencies are known".
-    expect(m.external).toBe(127);
+    expect(m.external).toBe(128);
     expect(m.external).toBeGreaterThan(83);
 	});
 
@@ -225,7 +233,7 @@ it("the outside world depends on 121 members, and §6 assumed far fewer", () => 
 		expect(m.buckets.get("STATE")?.length ?? 0).toBeLessThan(33);
 	});
 
-it("splits the reachable surface into 34 hub and 92 movable, and the hubs stay", () => {
+it("splits the reachable surface into 35 hub and 93 movable, and the hubs stay", () => {
     // §6.8: the two hubs "are the reason the split is worth doing rather than the
     // reason it fails". Still true, and now measured on the current file.
     const m = measure();
@@ -233,9 +241,9 @@ it("splits the reachable surface into 34 hub and 92 movable, and the hubs stay",
     // primitive, so the test that now awaits it enlarges the half that moves rather
     // than the hubs -- the split classifying it the right way round.
     expect(m.moving).toBe(93);
-    expect(m.hubs).toBe(34);
+    expect(m.hubs).toBe(35);
     expect(m.moving + m.hubs).toBe(m.external);
-    // HUB 1 is 26 of the 34. `DoTag` joined when the minimap tag test replaced a
+    // HUB 1 is 27 of the 35. `DoTag` joined when the minimap tag test replaced a
     // source scan with a real call to it; HUB 2 is 8, `HandlePlayerTradeNegociation`
     // joining when the trusted-leader test drove the actual trade screen.
     //
@@ -250,7 +258,11 @@ it("splits the reachable surface into 34 hub and 92 movable, and the hubs stay",
     // the feature hangs off the say path and is drawn from `RedrawPlayScreen`, so
     // `DrawSpeechBubbles` routes to WAVE 2 and the two hubs are unmoved. The point
     // of the split is that a feature this size lands in a region that moves.
-    expect(m.buckets.get("HUB 1  Do*/On* action primitives")?.length ?? m.buckets.get("HUB 1")?.length).toBe(26);
+    //
+    // `DoSaveGame` is the newest, for `load-game-controllers.test.ts`: writing a
+    // save is the first half of reading one back, so that test reaches the save
+    // primitive before the load primitive it is actually about.
+    expect(m.buckets.get("HUB 1  Do*/On* action primitives")?.length ?? m.buckets.get("HUB 1")?.length).toBe(27);
   });
 
   it("names 27 members GameContext has to carry, not 11", () => {
@@ -311,7 +323,7 @@ it("splits the reachable surface into 34 hub and 92 movable, and the hubs stay",
 		const m = measure();
     const hubs = new Set(m.buckets.get("HUB 1") ?? []);
     for (const name of m.buckets.get("HUB 2") ?? []) hubs.add(name);
-    expect(hubs.size).toBe(34);
+    expect(hubs.size).toBe(35);
 		for (const [region, list] of m.buckets) {
 			if (region.startsWith("HUB")) continue;
 			for (const name of list) expect(hubs.has(name), `${name} is in two regions`).toBe(false);

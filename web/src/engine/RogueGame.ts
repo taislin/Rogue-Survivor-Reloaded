@@ -187,7 +187,7 @@ import {
 	UniqueItem,
 	UniqueMap,
 } from "@engine/Session";
-import { reattachPlayer } from "@engine/serialization/sessionGraphRoot";
+import { reattachPlayer, reattachControllers } from "@engine/serialization/sessionGraphRoot";
 import { storage, whenStorageReady } from "@engine/storage";
 import {
 	getUserBasePath,
@@ -21785,6 +21785,18 @@ updateAdvisorHintBanner(): void {
 			speakerAI = speaker.controller as BaseAI | null;
 		}
 
+		// Both halves of a trade are read out of a controller: the speaker rates
+		// what it wants and the target rates what it is offered, through
+		// `speakerAI!` and `targetAI!` below. A controller-less actor has no mind
+		// to read — a model with no default controller, or an actor restored from
+		// a save before `reattachControllers` rebuilt them — and the crash that
+		// reports is `Cannot read properties of null (reading 'rateTradeOffer')`
+		// thrown out of the NPC chat that opened this. Bail instead: with no mind
+		// to read there is no pair to propose. The player's own half of the swap
+		// is exempt, because `target.isPlayer` routes it to the prompt below and
+		// the speaker's AI is the one being read there.
+		if (speakerAI === null || (targetAI === null && !target.isPlayer)) return;
+
 		// get an item the speaker would like from target inventory.
 		const pickAskedItem = (): { item: Item | null; rating: ItemRating } => {
 			// pick an item in target inventory the speaker wants, or any item if target
@@ -32567,6 +32579,14 @@ const keyHints = ACTION_ENTRIES.map((e) => s_KeyBindings.getAll(e.command).join(
 		 * without this the load would succeed and leave nobody in charge.
 		 */
 		reattachPlayer(this.m_Session.loadedPlayer);
+
+		// Everyone else comes back controller-less for the same reason —
+		// `_controller` is skipped for every actor, not only the player's — so
+		// the rest of the world is rebuilt from its models before anything is
+		// allowed to act. `reattachPlayer` goes first so the player is skipped
+		// by identity rather than by `isPlayer`, which is false until it runs.
+		if (this.m_Session.world != null)
+			reattachControllers(this.m_Session.world, this.m_Session.loadedPlayer);
 
 		this.RefreshPlayer();
 
