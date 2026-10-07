@@ -1,4 +1,8 @@
 # Rogue Survivor: Reloaded
+![Static Badge](https://img.shields.io/badge/Play_in_Browser-Online?style=for-the-badge&labelColor=%23f08a3d&color=%23f08a3d&link=https%3A%2F%2Ftaislin.github.io%2FRogue-Survivor-Reloaded%2Fgame%2Findex.html)
+![Static Badge](https://img.shields.io/badge/Website-Online?style=for-the-badge&labelColor=%23f08a3d&color=%23f08a3d&link=https%3A%2F%2Ftaislin.github.io%2FRogue-Survivor-Reloaded)
+![Static Badge](https://img.shields.io/badge/Download-Game?style=for-the-badge&labelColor=%23f08a3d&color=%23f08a3d&link=https%3A%2F%2Fgithub.com%2Ftaislin%2FRogue-Survivor-Reloaded%2Freleases%2Flatest)
+
 
 A browser-playable TypeScript port of **Rogue Survivor** by [Jacques Ruiz (roguedjack)](http://roguesurvivor.blogspot.com/), whose original 2012 C#/Windows Forms source can be found [here](https://github.com/roguedjack/Rogue-Survivor-Alpha-9) and was used as the reference for every line of the port (version 10.1).
 
