@@ -1,5 +1,9 @@
 # Rogue Survivor: Reloaded
 
+<a href="https://taislin.github.io/Rogue-Survivor-Reloaded/game/index.html"><img src="https://img.shields.io/badge/Play_in_Browser-Online?style=for-the-badge&labelColor=%23dd564e&color=%23dd564e&link=https%3A%2F%2Ftaislin.github.io%2FRogue-Survivor-Reloaded%2Fgame%2Findex.html"></img></a>
+<a href="https://taislin.github.io/Rogue-Survivor-Reloaded"><img src="https://img.shields.io/badge/Website-Online?style=for-the-badge&labelColor=%23dd564e&color=%23dd564e"></img></a>
+<a href="https://github.com/taislin/Rogue-Survivor-Reloaded/releases/latest"><img src="https://img.shields.io/badge/Download-Game?style=for-the-badge&labelColor=%23dd564e&color=%23dd564e"></img></a>
+
 A browser-playable TypeScript port of **Rogue Survivor** by [Jacques Ruiz (roguedjack)](http://roguesurvivor.blogspot.com/), whose original 2012 C#/Windows Forms source can be found [here](https://github.com/roguedjack/Rogue-Survivor-Alpha-9) and was used as the reference for every line of the port (version 10.1).
 
 The game is a turn-based, real-time survival roguelike: you play a survivor (or an undead) in a procedurally generated city, scavenging while the district behind you floods with the dead. Survive the nights.
