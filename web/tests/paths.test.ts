@@ -5,9 +5,7 @@ import {
 	getUserConfigPath,
 	getUserDocsPath,
 	getUserGraveyardPath,
-	getUserHiScoreFilePath,
-	getUserHiScorePath,
-	getUserHiScoreTextFilePath,
+getUserHiScorePath,
 	getUserManualFilePath,
 	getUserNewGraveyardName,
 	getUserNewScreenshotName,
@@ -72,8 +70,11 @@ describe("Paths: the browser has no filesystem, so these are keys", () => {
 
 	it("keys hi-scores off the saves path, as the C# does", () => {
 		expect(getUserHiScorePath()).toBe(getUserSavesPath());
-		expect(getUserHiScoreFilePath()).toBe("hiscores.dat");
-		expect(getUserHiScoreTextFilePath()).toBe("hiscores.txt");
+		// Deliberately no assertion for a hiscores *file* name. The C# has a binary
+		// table and a text dump beside it; neither exists here. The table is
+		// `localStorage` under `HiScoreTable.STORAGE_KEY`, written by
+		// `HiScoreTable.save`, and the text dump had no reader and was removed rather
+		// than left as a second copy of the scores nobody could see the point of.
 	});
 
 	it("drops the directory from a grave path, because TextFile keys by name alone", () => {

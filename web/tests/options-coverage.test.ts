@@ -20,9 +20,22 @@ import { Session } from "@engine/Session";
  *    below by name, so a *new* option has to be added to the list to be exempt
  *    rather than inheriting an exemption nobody chose.
  */
+/**
+ * Every id the enum currently defines, minus the reserved holes.
+ *
+ * A `_REMOVED` member is a gap left where an option used to be. The numbers are the
+ * C#'s and nothing here persists them — `GameOptions.save` writes `m_*` field names
+ * — so the slot is kept only to stop every later id moving. It is deliberately not
+ * given a label, description or value: those are what put an option on the options
+ * screen, and a hole that has them is a row that does nothing when selected.
+ *
+ * Excluded here rather than made to satisfy the three checks below, because those
+ * exist to catch a *shown* option missing its text — which is what took the game down
+ * with "unhandled option" — and a reserved slot is never shown.
+ */
 const ALL_IDS = Object.values(OptionIDs).filter(
   (id): id is OptionIDs => typeof id === "number"
-) as OptionIDs[];
+).filter((id) => !/REMOVED$/.test(OptionIDs[id])) as OptionIDs[];
 
 /**
  * Options with no value string.
@@ -89,6 +102,23 @@ describe("every option has the text the options screen needs", () => {
     // `undefined` rather than as an option.
     for (const id of NO_VALUE_ROW) {
       expect(OptionIDs[id], `"${String(id)}" is listed but is not an option`).toBeTruthy();
+    }
+  });
+
+  it("has no text anywhere for a reserved slot", () => {
+    // The other half of the `ALL_IDS` filter, asserted rather than assumed: a
+    // reserved member that acquired a label, a description or a value would put a
+    // row back on the options screen that cannot do anything, and the only symptom
+    // would be a player arrowing onto a setting that has no effect.
+    for (const id of Object.values(OptionIDs).filter((v): v is number => typeof v === "number")) {
+      const name = OptionIDs[id];
+      if (!/REMOVED$/.test(name)) continue;
+      expect(() => GameOptions.optionName(id as OptionIDs)).toThrow();
+      expect(() => GameOptions.describe(id as OptionIDs)).toThrow();
+      expect(
+        options.describeValue(Session.get().gameMode, id as OptionIDs),
+        `${name} has a value string, so it looks like a live option`,
+      ).toBe("???");
     }
   });
 });

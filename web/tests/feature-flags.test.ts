@@ -124,6 +124,24 @@ describe("Feature registry is total", () => {
     expect(() => featureCount(99 as Ruleset)).toThrow(/unhandled ruleset/);
   });
 
+  it("an unrecognised feature id throws rather than reading as off", () => {
+    // The twin of the assertion above, and the reason it is worth having: the
+    // ruleset guard threw but the *feature* half did not, and `Set.has` answers
+    // `false` for anything outside it. So an id the registry had never declared
+    // was indistinguishable at the call site from "this ruleset does not have
+    // it" — a `Feature` member added to the enum and left out of `ALL_FEATURES`
+    // would read as a feature that is off everywhere, and every
+    // `if (!hasFeature(...))` would take the off branch without a word. The
+    // enum-vs-registry test catches that in CI; this is the runtime half.
+    expect(() => hasFeature(Ruleset.STILL_ALIVE, 999 as Feature)).toThrow(/unhandled feature/);
+    expect(() => hasFeature(Ruleset.CLASSIC, 999 as Feature)).toThrow(/unhandled feature/);
+
+    // And the guard is not simply rejecting everything: a declared member still
+    // answers normally under both rulesets.
+    expect(hasFeature(Ruleset.CLASSIC, Feature.Alcohol)).toBe(false);
+    expect(hasFeature(Ruleset.STILL_ALIVE, Feature.Alcohol)).toBe(true);
+  });
+
   it("withholding a feature requires a reason", () => {
     // "Off" is allowed to be a decision, but not an undocumented one: a feature
     // that is simply absent from STILL_ALIVE has to say why it is not there.
@@ -183,23 +201,23 @@ describe("Feature registry is wired", () => {
     expect(sites.map((s) => s.feature).sort())
       .toEqual([
 "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "AmbientAudio", "AmbientAudio", "AmbientAudio",
-   "AmbientAudio", "AmbientAudio", "AmbientAudio", "AnimalShelter", "AnimalShelter", "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank",                                                                              
-   "Bar", "Bar", "BlackOpsRaid", "Butchering", "Butchering", "CHARResearchRaid", "Church", "Clinic", "Clinic", "Cooking",                                                                                                
-   "Cooking", "Cooking", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov",                                                                         
-   "DarknessGating", "DerangedPatient", "DerangedPatient", "DifficultyAtCreation", "DifficultyAtCreation", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                          
-   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                             
-   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                             
-   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                             
-   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "Farm", "Farm",                                                               
-   "Farm", "FireBarrels", "FireBarrels", "FireBarrels", "FireExtinguishers", "FireStation", "Fishing", "Fishing", "Fishing", "Fishing",                                                                                  
-   "Fishing", "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FuelStation",                                                                 
-   "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "ItemDespawn", "ItemDespawn", "Junkyard",                                               
-   "Junkyard", "Library", "LightPriority", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability",
-   "ResourcesAvailability", "ResourcesAvailability", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",     
-   "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShoppingMall", "ShoppingMall", "ShoppingMall", "SiphonFuel", "SiphonFuel",                                       
-   "SportsCourts", "SportsCourts", "TileFires", "TileFires", "TileFires", "TileFires", "TileFires", "WeaponWeight",
+   "AmbientAudio", "AmbientAudio", "AmbientAudio", "AnimalShelter", "AnimalShelter", "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank",                                                                                   
+   "Bar", "Bar", "BlackOpsRaid", "Butchering", "Butchering", "CHARResearchRaid", "Church", "Clinic", "Clinic", "Cooking",                                                                                                     
+   "Cooking", "Cooking", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov",                                                                              
+   "DarknessGating", "DerangedPatient", "DerangedPatient", "DifficultyAtCreation", "DifficultyAtCreation", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                               
+   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                  
+   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                  
+   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                  
+   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "Farm", "Farm",                                                                    
+   "Farm", "FireBarrels", "FireBarrels", "FireBarrels", "FireExtinguishers", "FireStation", "Fishing", "Fishing", "Fishing", "Fishing",                                                                                       
+   "Fishing", "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FuelStation",                                                                      
+   "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "ItemDespawn", "ItemDespawn", "Junkyard",                                                    
+   "Junkyard", "Library", "LightPriority", "MechanicWorkshop", "MechanicWorkshop", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability",               
+   "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
+   "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShoppingMall", "ShoppingMall", "ShoppingMall",                                
+   "SiphonFuel", "SiphonFuel", "SportsCourts", "SportsCourts", "TileFires", "TileFires", "TileFires", "TileFires", "TileFires", "WeaponWeight",
       ]);
-      // 158 call sites across 38 features
+      // 160 call sites across 39 features
 
 
 
@@ -231,6 +249,16 @@ describe("Feature registry is wired", () => {
     const poison = sites.filter((s) => s.feature === "FoodPoisoning");
     expect(poison.filter((s) => /Rules\.ts/.test(s.at))).toHaveLength(2);
     expect(poison.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(4);
+
+    // The workshop is two, and both halves are load-bearing: the gate at the top
+    // of its own generator is what stops a Classic district laying one, and the
+    // `||` in `BaseTownGenerator` is what stops Classic spending a `roll(0, 4)` per
+    // block on an arm that would then decline. Asserted by file because the count
+    // alone would still pass if either reader moved into a log line somewhere else.
+    const mech = sites.filter((s) => s.feature === "MechanicWorkshop");
+    expect(mech).toHaveLength(2);
+    expect(mech.filter((s) => /buildings\/makeMechanicWorkshop\.ts/.test(s.at))).toHaveLength(1);
+    expect(mech.filter((s) => /generators\/BaseTownGenerator\.ts/.test(s.at))).toHaveLength(1);
 
     // Alcohol has six, in three files, which is the most spread-out feature so
     // far -- the decay, the drink effect, the two accuracy penalties, the control

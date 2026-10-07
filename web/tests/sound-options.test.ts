@@ -167,10 +167,12 @@ describe("ApplyOptions pushes all three buses", () => {
 		(game as never as Record<string, unknown>).m_SoundManager = sfx.stub;
 		(game as never as Record<string, unknown>).m_AmbientSFXManager = ambient.stub;
 
+		const playMusicBefore = Options.playMusic;
 		Options.sfxVolume = 40;
 		Options.playSFXs = false;
 		Options.ambientSFXVolume = 20;
 		Options.playAmbientSFXs = false;
+		Options.playMusic = false;
 
 		try {
 			game.ApplyOptions(false);
@@ -179,6 +181,7 @@ describe("ApplyOptions pushes all three buses", () => {
 			Options.playSFXs = true;
 			Options.ambientSFXVolume = 75;
 			Options.playAmbientSFXs = true;
+			Options.playMusic = playMusicBefore;
 		}
 
 		// 0..100 in the options, 0..1 at the manager — the C#'s own conversion, and
@@ -190,6 +193,15 @@ describe("ApplyOptions pushes all three buses", () => {
 		// The music bus too, so this test fails if the new lines are added *instead*
 		// of the existing one rather than alongside it.
 		expect(music.calls.some((c) => c.startsWith("music.setVolume("))).toBe(true);
+		// The enable flag, which is the one line the C# had and the port had
+		// commented out (`RogueGame.cs:19857`). Without it `ApplyOptions` stopped
+		// the track playing now and every other `play()` started a new one, so the
+		// row read OFF over audible music. The stop below it is the C#'s
+		// `StopAll`; it only sticks because this comes first.
+		expect(music.calls).toContain("music.setEnabled(false)");
+		expect(music.calls.indexOf("music.setEnabled(false)")).toBeLessThan(
+			music.calls.indexOf("music.stop()"),
+		);
 	});
 });
 

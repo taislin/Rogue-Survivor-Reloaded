@@ -37,7 +37,7 @@ concurrency:
 jobs:
   verify:
     name: type-check, test, build, sim
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     # Scoped to this job on purpose, NOT set workflow-wide. The npm scripts all
@@ -50,11 +50,11 @@ jobs:
         working-directory: web
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
           cache-dependency-path: web/package-lock.json
 
@@ -104,9 +104,10 @@ jobs:
         # The same command the Pages deploy runs, which is the point: a broken
         # assembly fails here rather than in a deploy. `build:pages` and not
         # `build:site` — build:site only assembles whatever is already in dist/,
-        # and the step above left an unstamped build there, so it correctly
-        # refused to publish a worker that would never evict. That guard firing
-        # on this step is how the mistake was found.
+        # and it refuses an unstamped worker (see the guard in build-site.mjs).
+        # `npm run build` above stamps dist/ now, so that guard passes; it fired
+        # back when stamping was a build:pages-only step, which is how the
+        # mistake was found.
         env:
           BASE_PATH: /Rogue-Survivor-Reloaded/game/
         run: |
@@ -115,7 +116,7 @@ jobs:
 
       - name: Upload coverage report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-lcov
           path: web/coverage/lcov.info
@@ -123,7 +124,7 @@ jobs:
 
   docker:
     name: docker image builds
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     # No working-directory override, so these steps run at the repository root.
@@ -133,7 +134,7 @@ jobs:
     # fails with "no such file or directory", so keep this job off the web/
     # default that the verify job sets.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Build image
         run: docker build -t rogue-survivor-web:ci .

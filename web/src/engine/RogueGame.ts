@@ -194,9 +194,7 @@ import {
 	getUserConfigPath,
 	getUserDocsPath,
 	getUserGraveyardPath,
-	getUserHiScoreFilePath,
 	getUserHiScorePath,
-	getUserHiScoreTextFilePath,
 	getUserManualFilePath,
 	getUserNewGraveyardName,
 	getUserNewScreenshotName,
@@ -281,12 +279,19 @@ type TimeSpan = number;
 /**
  * C# `SetupConfig.GAME_VERSION` — now `engine/GameVersion.ts`, imported above.
  *
- * The user-facing version: the window title, the options screen's heading, the
- * graveyard lines, and the header of the high-score *text export*. That last one
- * is the only place this string reaches storage-adjacent state, and it is
- * write-only -- `HiScoreTable.load()` reads JSON and never parses the header, so
- * bumping this cannot orphan anyone's scores. The C# also builds a docs path
- * from it (`RogueGame.cs:2531`), which has no equivalent in a browser port.
+ * The user-facing version: the window title, the options screen's heading, and
+ * the graveyard lines. None of those reaches storage at all.
+ *
+ * It used to also claim to head "the high-score *text export*", and to say that
+ * string was write-only. Both died with d34cde2: that export was a `TextFile`
+ * dump of the score table under a `textfile:` key, it had no reader, and the
+ * table itself now lives under `rogue-survivor-hiscores` as JSON that carries no
+ * header. So there is no score state a version bump can orphan. (The dump's
+ * filename is named in `Paths.ts`, which is the module that removed it — and
+ * `hiscores-storage.test.ts` scans for it in executable code, so it is kept out
+ * of this file deliberately.) The
+ * C# also builds a docs path from this string (`RogueGame.cs:2531`), which has no
+ * equivalent in a browser port.
  *
  * It used to be declared here as well as in `ui/OptionsScreen.ts`, each with a
  * comment saying the other must agree and nothing checking it — so a release could
@@ -1990,14 +1995,20 @@ export class RogueGame implements ActionGame {
 		//
 		// **This was the last thing `Feature.ExtendedAudio` was missing, and it was
 		// not cosmetic.** Every effect the port played went through
-		// `m_MusicManager.play`, which applies `musicGain(id)` -- a lookup that
-		// returns 1.0 for anything not in `MUSIC_FILES`. So all 180 fork effects, and
-		// the three vanilla ones, were playing at unity gain while their measured
-		// levels sat unused in `AudioLevels.SFX_GAINS`: `sfx - undead eat` was
-		// measured at a peak of 0.39 against 1.0 for "nightmare" and given a gain of
-		// **2.446** precisely so it would be audible at all, and the port was playing
-		// it a sixth too quietly. `WebAudioSoundManager` applies `sfxGain` correctly
-		// and nothing was constructing it.
+		// `m_MusicManager.play`, whose gain lookup was `musicGain(id)` -- a
+		// function that returns 1.0 for anything not in `MUSIC_FILES`. So all 180
+		// fork effects, and the three vanilla ones, were playing at unity gain while
+		// their measured levels sat unused in `AudioLevels.SFX_GAINS`: `sfx - undead
+		// eat` was measured at a peak of 0.39 against 1.0 for "nightmare" and given a
+		// gain of **2.446** precisely so it would be audible at all, and the port was
+		// playing it a sixth too quietly. `WebAudioSoundManager` applies `sfxGain`
+		// correctly and nothing was constructing it.
+		//
+		// Routing the effects here fixed the channel and half of the level; the other
+		// half was the mismatched pair of lookups in `WebAudioMusicManager`, which
+		// resolved the URL through `audioPath` (both tables) but the gain through
+		// `musicGain` (music only). `AudioLevels.audioGain` is now the twin of
+		// `audioPath`, so the two agree whatever the C# hands this manager.
 		this.m_SoundManager = sound;
 
 		logInit("creating Ambient Sound Manager");
@@ -2698,7 +2709,7 @@ export class RogueGame implements ActionGame {
 						break;
 
 					case 6:
-						await this.HandleHiScores(true);
+						await this.HandleHiScores();
 						break;
 
 					case 7:
@@ -3828,8 +3839,10 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 	}
 
 	// C# HandleHiScores — RogueGame.cs:2072
-	async HandleHiScores(saveToTextfile: boolean): Promise<void> {
-		const file = saveToTextfile ? new TextFile() : null;
+	//
+	// The C#'s `saveToTextFile` parameter is gone along with the text export; see the
+	// note below. Nothing else about this screen changed.
+	async HandleHiScores(): Promise<void> {
 
 		this.m_UI.UI_Clear(Color.Black);
 		let gy = 0;
@@ -3856,36 +3869,16 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 		);
 		gy += BOLD_LINE_SPACING;
 
-		// text.
-		if (file) {
-			file.append(`ROGUE SURVIVOR ${GAME_VERSION}`);
-			file.append("Hi Scores");
-			file.append(
-				"Rank | Name, Skills, Death       |  Score |Difficulty|Survival|  Kills |Achievm.|      Game Time | Playing time",
-			);
-		}
-
-		// text export (unaffected by display scrolling).
-		if (file) {
-			for (let i = 0; i < this.m_HiScoreTable.count; i++) {
-				const hi = this.m_HiScoreTable.get(i);
-				const line =
-					`${padLeft(i + 1, 3)}. | ${padRight(this.TruncateString(hi.name, 25), 25)} | ${padLeft(hi.totalPoints, 6)}` +
-					` |     ${padLeft(hi.difficultyPercent, 3)}% | ${padLeft(hi.survivalPoints, 6)} | ${padLeft(hi.killPoints, 6)}` +
-					` | ${padLeft(hi.achievementPoints, 6)} | ${padLeft(new WorldTime(hi.turnSurvived).toString(), 14)}` +
-					` | ${this.TimeSpanToString(hi.playingTimeSeconds)}`;
-				file.append(
-					"------------------------------------------------------------------------------------------------------------------------",
-				);
-				file.append(line);
-				file.append(`     | ${hi.skillsDescription}`);
-				file.append(`     | ${hi.death}`);
-			}
-		}
-
-		// save.
-		const textfilePath = this.GetUserHiScoreTextFilePath();
-		if (file) file.save(textfilePath);
+		// No text export.
+		//
+		// The C# wrote the table out twice -- a binary file and a `hiscores.txt` beside
+		// it -- and this used to do the same into `localStorage`, under
+		// `textfile:hiscores.txt`. Nothing ever read it: the table itself is
+		// `localStorage` via `HiScoreTable.save`/`load`, so the dump was a second copy
+		// of the scores as plain text, and the only visible effect was a leftover
+		// `hiscores.txt` in devtools from a C# build that never shipped. The parameter
+		// went with it: the two call sites both passed `true`, and both now mean the
+		// same thing the flag meant -- draw the table.
 
 		// individual entries, in a scrolling window: 12 entries x 4 lines do not
 		// fit at menu leading, so cursor/PgUp/PgDn move through them.
@@ -3957,10 +3950,11 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 				gyRows,
 			);
 			gyRows += MENU_BOLD_LINE_SPACING;
-			if (file) {
-				this.m_UI.UI_DrawStringBoldLarge(Color.White, textfilePath, 0, gyRows);
-				gyRows += MENU_BOLD_LINE_SPACING;
-			}
+			// The table no longer prints its own storage key. It used to, one line
+			// under the rules: "saves/hiscores.txt", the C# path of a file this port
+			// never wrote anywhere near. That string was `getUserHiScorePath()` plus a
+			// filename, so it named a file that does not exist in a directory that does
+			// not either.
 			if (this.m_HiScoreTable.count > pageEntries) {
 				this.m_UI.UI_DrawStringLarge(
 					Color.Gray,
@@ -8202,7 +8196,7 @@ inv.removeAllQuantity(it);
 						botAction = new ActionWait(player, this);
 					}
 					this.debugTrace?.("    bot: perform...");
-					botAction.perform();
+					await botAction.perform();
 					this.debugTrace?.("    bot: performed");
 					// copy-paste is bad
 					this.UpdatePlayerFOV(player);
@@ -8924,7 +8918,7 @@ inv.removeAllQuantity(it);
 		);
 		if (!this.m_Player.isBotPlayer) await this.AddMessagePressEnter();
 
-		insaneAction.perform();
+		await insaneAction.perform();
 
 		return true;
 	}
@@ -15627,7 +15621,7 @@ inv.removeAllQuantity(it);
 		return actionDone;
 	}
 	// C# HandleAiActor — RogueGame.cs:10255
-	HandleAiActor(aiActor: Actor): void {
+	async HandleAiActor(aiActor: Actor): Promise<void> {
 		let desiredAction = aiActor.controller!.getAction(this);
 
 		if (
@@ -15640,7 +15634,7 @@ inv.removeAllQuantity(it);
 		}
 
 		if (desiredAction != null) {
-			if (desiredAction.isLegal()) desiredAction.perform();
+			if (desiredAction.isLegal()) await desiredAction.perform();
 			else {
 				this.SpendActorActionPoints(aiActor, Rules.BASE_ACTION_COST);
 				this.DoWait(aiActor);
@@ -16497,9 +16491,7 @@ updateAdvisorHintBanner(): void {
 					"You can TRADE with an actor next to you.",
 					"Actor that can trade with you have a $ icon on the map.",
 					"Trading means exhanging items.",
-					"To ask for a TRADE offer, just try to MOVE into the actor and accept or refuse the offer.",
-					"You can also initiate a more detailled trade negociation.",
-					`To NEGOCIATE A TRADE : press ${key(PlayerCommand.NEGOCIATE_TRADE)} and select an npc with the directions.`,
+					`To ask for a TRADE offer : press ${key(PlayerCommand.NEGOCIATE_TRADE)} and select an npc with the directions.`,
 				];
 				break;
 
@@ -19449,7 +19441,7 @@ updateAdvisorHintBanner(): void {
 		if (bump === null) return false;
 
 		if (bump.isLegal()) {
-			bump.perform();
+			await bump.perform();
 			return true;
 		}
 
@@ -21697,7 +21689,21 @@ updateAdvisorHintBanner(): void {
 			);
 
 		// trade?
-		if (this.m_Rules.canActorInitiateTradeWith(speaker, target).ok) {
+		//
+		// **Not for the human player.** This is alpha10's "fast trade": bump someone to
+		// say hello and they immediately try to trade with you. It is still very much
+		// wanted between NPCs -- `CivilianAI` bumps people to chat for exactly this --
+		// so the guard is on *who is speaking*, not on whether to trade at all.
+		//
+		// The player asks, by pressing the trade key, and gets the same screen this
+		// would have opened unasked. Bumping is how you start a fight or a
+		// conversation; having it also open a trade screen took a choice away, and the
+		// player had no way to say hello without being handed a negotiation.
+		//
+		// `isBotPlayer` is what makes this "human" rather than "isPlayer": a
+		// bot-controlled survivor is an AI for every purpose here, and trades.
+		const speakerIsHuman = speaker.isPlayer && !speaker.isBotPlayer;
+		if (!speakerIsHuman && this.m_Rules.canActorInitiateTradeWith(speaker, target).ok) {
 			await this.DoTrade(speaker, target);
 		}
 
@@ -25643,24 +25649,6 @@ updateAdvisorHintBanner(): void {
 		if (s_Options.isPermadeathOn)
 			await this.DeleteSavedGame(this.GetUserSave());
 
-		// screenshot.
-		if (s_Options.isDeathScreenshotOn) {
-			this.RedrawPlayScreen();
-			const shotname = this.DoTakeScreenshot();
-			if (shotname === null)
-				this.AddMessage(
-					this.MakeErrorMessage("could not save death screenshot."),
-				);
-			else
-				this.AddMessage(
-					new Message(
-						`Death screenshot saved : ${shotname}.`,
-						this.m_Session.worldTime.turnCounter,
-						Color.Red,
-					),
-				);
-		}
-
 		await this.AddMessagePressEnter();
 
 		// post mortem.
@@ -25690,9 +25678,10 @@ updateAdvisorHintBanner(): void {
 	 *   without an audio-assets pass that re-encodes the music folder. The music is
 	 *   stopped and nothing is played in its place, which is the honest half
 	 *   rather than the wrong cue.
-	 * - **The death screenshot.** `s_Options.isDeathScreenshotOn` is checked by
-	 *   `PlayerDied` and by the C#'s `PlayerWasRescued` (`:7437`); it is not
-	 *   checked here, so a rescued run takes no screenshot.
+	 * - **The death screenshot.** The C# checks its death-screenshot option here
+	 *   (`:7437`) as well as in `PlayerDied`. The option is gone from the port
+	 *   entirely — see `GameOptions.GAME_DEATH_SCREENSHOT_REMOVED` — so there is
+	 *   nothing to check, and no screenshot is taken on either ending.
 	 */
 	async PlayerWasRescued(): Promise<void> {
 		// Stop sim thread.
@@ -26179,9 +26168,28 @@ updateAdvisorHintBanner(): void {
 			);
 			gy += MENU_BOLD_LINE_SPACING;
 		} else {
+			// The heading is the C#'s, and `endgame-exit.test.ts` pins it as the
+			// marker for this screen in the death sequence — so it stays.
+			//
+			// What changed is the line under it. The C# drew `graveFile`, a real path
+			// in a real graveyard directory. Here `graveFile` is only the *name* half
+			// of a `localStorage` key: `TextFile.save` writes `textfile:grave_000.txt`
+			// (`TextFile.ts:43`), and nothing anywhere writes a file called
+			// `grave_000.txt`. So drawing it bare told the player a file had been
+			// written when none had — the same defect d34cde2 fixed on the hiscores
+			// screen, which drew `saves/hiscores.txt`.
+			//
+			// Drawing the full key is the fix that keeps the promise instead of
+			// dropping it: this is genuinely where the grave went, and it is the same
+			// string `GetUserNewGraveyardName` reads back to find a free name
+			// (`Paths.ts:134`), so a player can tell where their own graves are.
+			//
+			// The grave text itself is paged immediately below, so nothing is hidden
+			// by not naming a file — and nothing could be read back by this screen
+			// even in the C#, where the graveyard was equally write-only.
 			this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Grave saved to :", 0, gy);
 			gy += MENU_BOLD_LINE_SPACING;
-			this.m_UI.UI_DrawStringLarge(Color.White, graveFile, 0, gy);
+			this.m_UI.UI_DrawStringLarge(Color.White, `textfile:${graveFile}`, 0, gy);
 			gy += MENU_LINE_SPACING;
 		}
 		this.DrawFootnote(Color.White, "press ENTER");
@@ -26258,7 +26266,7 @@ updateAdvisorHintBanner(): void {
 		);
 		if (this.m_HiScoreTable.register(newHiScore)) {
 			this.SaveHiScoreTable();
-			await this.HandleHiScores(true);
+			await this.HandleHiScores();
 		}
 	}
 
@@ -27603,7 +27611,7 @@ updateAdvisorHintBanner(): void {
 						),
 					);
 				}
-				this.KillActor(null, actor, "died in flames", true);
+				await this.KillActor(null, actor, "died in flames", true);
 			}
 		}
 
@@ -27763,7 +27771,7 @@ updateAdvisorHintBanner(): void {
 					),
 				);
 			}
-			this.KillActor(null, actor, "burned alive", true);
+			await this.KillActor(null, actor, "burned alive", true);
 			if (!actor.model.abilities.isUndead) {
 				this.SeeingCauseInsanity(
 					actor,
@@ -32608,8 +32616,9 @@ const keyHints = ACTION_ENTRIES.map((e) => s_KeyBindings.getAll(e.command).join(
 
 	// C# ApplyOptions — RogueGame.cs:19855
 	ApplyOptions(_ingame: boolean): void {
-		// m_MusicManager.IsMusicEnabled = Options.PlayMusic;
+		// m_MusicManager.IsMusicEnabled = Options.PlayMusic;  (the fork's `IsAudioEnabled`)
 		// m_MusicManager.Volume = Options.MusicVolume;   (C# volume is 0..100, WebAudio is 0..1)
+		this.m_MusicManager.setEnabled(s_Options.playMusic);
 		this.m_MusicManager.setVolume(s_Options.musicVolume / 100);
 
 		/**
@@ -32943,15 +32952,9 @@ const keyHints = ACTION_ENTRIES.map((e) => s_KeyBindings.getAll(e.command).join(
 		return getUserHiScorePath();
 	}
 
-	// C# GetUserHiScoreFilePath — RogueGame.cs:20137
-	GetUserHiScoreFilePath(): string {
-		return getUserHiScoreFilePath();
-	}
-
-	// C# GetUserHiScoreTextFilePath — RogueGame.cs:20142
-	GetUserHiScoreTextFilePath(): string {
-		return getUserHiScoreTextFilePath();
-	}
+	// No `GetUserHiScoreFilePath` / `GetUserHiScoreTextFilePath`. See the note in
+	// `Paths.ts`: the C#'s binary table and text dump have no counterpart here, and
+	// the table is `localStorage` under `HiScoreTable.STORAGE_KEY`.
 
 	// C# GenerateWorld — RogueGame.cs:20149
 	//

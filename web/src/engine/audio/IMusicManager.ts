@@ -63,4 +63,22 @@ export interface IMusicManager {
   getPriority(): MusicPriorityValue;
   setVolume(vol: number): void;
   getVolume(): number;
+  /**
+   * C# `IMusicManager.IsMusicEnabled` (`src/Engine/IMusicManager.cs:32`) — the
+   * fork renamed it `IsAudioEnabled` in Release 2 and keeps the same contract
+   * (`RogueGame.cs:2697`, `SFMLSoundManager.cs:106` and its three twins).
+   *
+   * Every start in the C# opens with `if (!m_IsMusicEnabled) return;` before it
+   * looks the id up, so "off" is a *state the manager holds*, not a one-off stop.
+   * The port had the setter commented out at both call sites and no gate on the
+   * manager at all: turning music off stopped the track that was playing and
+   * nothing more — `UpdateBgMusic` was the only reader of the option, so the
+   * next event theme, sleep cue, fight sting or ending started it again, and
+   * the options row read OFF over audible music.
+   *
+   * Same distinction `ISoundManager.setEnabled` draws: a disabled bus and a
+   * silent one are different states, and this row is the one that means
+   * disabled.
+   */
+  setEnabled(on: boolean): void;
 }

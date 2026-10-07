@@ -2,7 +2,17 @@
 /**
  * Stamp the service worker's CACHE_VERSION with a hash of the built output.
  *
- *   npm run build && node scripts/stamp-cache-version.mjs
+ *   npm run build
+ *
+ * `build` runs this as its final step, so that one command is the whole
+ * pipeline; `build:pages` runs it a second time after the build, where it is a
+ * no-op (see the idempotence note below). Invoke it directly only when `dist/`
+ * was changed by something other than a build.
+ *
+ * It used to be a separate step that only `build:pages` ran, which meant
+ * `npm run build` and `npm run build:release` shipped the committed fallback
+ * `rsr-v3` - a deploy that added hundreds of sprites and evicted nothing, for
+ * exactly the reason the next paragraph gives.
  *
  * CACHE_VERSION namespaces every cache the worker owns, and the activate
  * handler deletes every cache whose name does not start with it. So this is

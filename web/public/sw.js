@@ -31,12 +31,13 @@
  * update only lands once that handler is bypassed — which reads exactly like
  * "the fix didn't work".
  *
- * This is the committed fallback, used for local `npm run build` and for any
- * build that does not run the stamping step. Deployment does not edit it by
- * hand — `scripts/stamp-cache-version.mjs` rewrites this line in the built
- * output to a hash of the built files, so the version changes exactly when the
- * cached content does and not when an unrelated file does. See that script for
- * why the input is the built output rather than the commit SHA.
+ * This is the committed fallback. `npm run build` stamps the copy in `dist/`
+ * as its last step - `scripts/stamp-cache-version.mjs` rewrites that line to a
+ * hash of the built files, so the version changes exactly when the cached
+ * content does and not when an unrelated file does. See that script for why
+ * the input is the built output rather than the commit SHA. Nothing deploys
+ * this value: `build-site.mjs` fails the build if `dist/sw.js` still carries
+ * it.
  *
  * If you change this constant, change the committed value and nothing else;
  * the stamping step overwrites it per build.

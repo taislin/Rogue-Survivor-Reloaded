@@ -24,5 +24,5 @@ export abstract class ActorAction {
   }
 
   abstract isLegal(): boolean;
-  abstract perform(): void;
+  abstract perform(): void | Promise<void>;
 }

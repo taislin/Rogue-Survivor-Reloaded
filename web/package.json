@@ -1,11 +1,11 @@
 {
   "name": "rogue-survivor-reloaded-web",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "description": "Rogue Survivor Reloaded - Browser port (TypeScript)",
   "private": true,
   "scripts": {
     "dev": "vite",
-    "build": "tsc -p tsconfig.json && vite build",
+    "build": "tsc -p tsconfig.json && vite build && node scripts/stamp-cache-version.mjs",
     "type-check": "tsc --noEmit",
     "preview": "vite preview",
     "serve": "node dist-server/server/index.js",

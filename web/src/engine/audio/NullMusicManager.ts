@@ -19,4 +19,5 @@ export class NullMusicManager implements IMusicManager {
   getPriority(): MusicPriorityValue { return MusicPriority.NULL; }
   setVolume(_vol: number): void {}
   getVolume(): number { return 0; }
+  setEnabled(_on: boolean): void {}
 }

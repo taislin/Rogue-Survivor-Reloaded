@@ -101,7 +101,7 @@ describe("RogueGame's measured surface", () => {
     // §6.2 calls this "the god object", and the argument for splitting is the
     // ratio rather than the size. Pinned so the ratio has a history.
     //
-    // **850, having been 846 when this decomposition started moving code.**
+    // **848, having been 846 when this decomposition started moving code.**
     //
     // The count went *down* twice — `m_ScreenshotCounter` left with the `GetUser*`
     // paths and `m_MenuRowBands` left with the menu chrome, both private, both
@@ -111,6 +111,13 @@ describe("RogueGame's measured surface", () => {
     // last hint could be tested at all, and by four for `(Gfx) Speech Bubbles` —
     // three methods and one field, all of which are the cost of making the feature
     // reachable at all.
+    //
+    // **Down two, for the hiscores text export.** The C# wrote its score table out
+    // twice -- a binary file and a `hiscores.txt` beside it -- and the port did the
+    // same into `localStorage`, which also meant the score table *drew its own
+    // storage key* on screen. Removing it dropped `GetUserHiScoreFilePath`,
+    // `GetUserHiScoreTextFilePath`, and `HandleHiScores`'s parameter. The reachable
+    // surface is unmoved: deleting members reaches nothing new from outside.
     //
     // Then by one more for `SPEECH_BUBBLE_FILLCOLOR`, when the bubbles stopped
     // sharing `POPUP_FILLCOLOR`. One public readonly field beside the one it
@@ -128,8 +135,8 @@ describe("RogueGame's measured surface", () => {
     // make a defect inside it reachable. It is a method rather than a field, it
     // holds no state the class did not already have, and the alternative was a
     // defect in a ~400-line turn loop that no test could reach.
-    expect(m.members).toBe(850);
-    expect(m.methods).toBe(678);
+    expect(m.members).toBe(848);
+    expect(m.methods).toBe(676);
     // The *reachable* surface is 124, up from 121. Both extractions had left it
     // alone -- each kept its methods on the class, which is what keeps them pure
     // moves -- and these three moved it for the opposite reason: a test reaching
@@ -142,7 +149,16 @@ describe("RogueGame's measured surface", () => {
     // A dependency invented to assert on a colour is a real cost of the assertion,
     // and it is cheaper than the alternative -- a bubble the same colour as every
     // other box on screen, with nothing to notice it.
-    expect(m.external).toBe(124);
+    //
+    // **One more, for `HandleAiActor`, and it is the same story as `DoChat` in the
+    // hub below.** `b0a72c4` made it async — the post-mortem's `WaitEnter` has to
+    // settle before the caller resumes, or the `n` typed at Limbo lands in a
+    // background prompt — and `endgame-exit.test.ts` now awaits it directly to
+    // assert that ordering. It was already public and already only reached from
+    // within the class, so nothing about the game's own shape changed: a test
+    // reached one further than it had before, which is exactly the caveat this
+    // count exists to record.
+    expect(m.external).toBe(127);
 // §6.4: "567 of 584 methods are public — only 17 are `private`. The
   // `private` boundary is effectively absent." That is still true, and the
   // direction is worth pinning: private has come down from 91 to 89, while public
@@ -157,7 +173,7 @@ describe("RogueGame's measured surface", () => {
   // `m_SpeechBubbles: Map<...> = new Map()` among 83 of them — so those fields were
   // counted as methods and appeared in both totals. It now asks what follows the
   // name: `(` for a method, `:` or `=` for a field.
-  expect(m.public).toBe(761);
+  expect(m.public).toBe(759);
   expect(m.private).toBe(89);
 	});
 
@@ -187,11 +203,11 @@ it("the outside world depends on 121 members, and §6 assumed far fewer", () => 
     // sites". At 121 names the pessimistic figure is not the real one, and that
     // is the answer to the question §6.4 deferred until "the game runs and the
     // real cross-method dependencies are known".
-    expect(m.external).toBe(124);
+    expect(m.external).toBe(127);
     expect(m.external).toBeGreaterThan(83);
 	});
 
-  it("classifies all 124, with no residual", () => {
+  it("classifies all 126, with no residual", () => {
     // This is the finding that forced the re-derivation, and the number that keeps
     // it fixed. §6.2's region table left **68 of the 110** (as measured then) in no
     // region at all —
@@ -209,22 +225,32 @@ it("the outside world depends on 121 members, and §6 assumed far fewer", () => 
 		expect(m.buckets.get("STATE")?.length ?? 0).toBeLessThan(33);
 	});
 
-it("splits the reachable surface into 32 hub and 92 movable, and the hubs stay", () => {
+it("splits the reachable surface into 34 hub and 92 movable, and the hubs stay", () => {
     // §6.8: the two hubs "are the reason the split is worth doing rather than the
     // reason it fails". Still true, and now measured on the current file.
     const m = measure();
-    expect(m.moving).toBe(92);
-    expect(m.hubs).toBe(32);
+    // `HandleAiActor` is why movable is 93 rather than 92. It is not an action
+    // primitive, so the test that now awaits it enlarges the half that moves rather
+    // than the hubs -- the split classifying it the right way round.
+    expect(m.moving).toBe(93);
+    expect(m.hubs).toBe(34);
     expect(m.moving + m.hubs).toBe(m.external);
-    // HUB 1 is 24 of the 32. `DoTag` joined when the minimap tag test replaced a
+    // HUB 1 is 26 of the 34. `DoTag` joined when the minimap tag test replaced a
     // source scan with a real call to it; HUB 2 is 8, `HandlePlayerTradeNegociation`
     // joining when the trusted-leader test drove the actual trade screen.
+    //
+    // `DoChat` and `DoTrade` then joined HUB 1 from the fast-trade test, which drives
+    // `DoChat` to assert that it does *not* open a trade and `DoTrade` to assert the
+    // player can still open one deliberately. Both are action primitives, so they
+    // route to a hub rather than to a movable region — which is the split working:
+    // reaching them from a test enlarged the part that never moves rather than the
+    // part that does.
     //
     // `(Gfx) Speech Bubbles` did not join HUB 1, and that is the interesting part:
     // the feature hangs off the say path and is drawn from `RedrawPlayScreen`, so
     // `DrawSpeechBubbles` routes to WAVE 2 and the two hubs are unmoved. The point
     // of the split is that a feature this size lands in a region that moves.
-    expect(m.buckets.get("HUB 1  Do*/On* action primitives")?.length ?? m.buckets.get("HUB 1")?.length).toBe(24);
+    expect(m.buckets.get("HUB 1  Do*/On* action primitives")?.length ?? m.buckets.get("HUB 1")?.length).toBe(26);
   });
 
   it("names 27 members GameContext has to carry, not 11", () => {
@@ -245,7 +271,10 @@ it("splits the reachable surface into 32 hub and 92 movable, and the hubs stay",
     // only what the game does.
 		const m = measure();
     const carry = m.buckets.get("STATE") ?? [];
-    expect(carry.length).toBe(30);
+    // `HandleAiActor` is the 31st, and it is a *method*, which is the point of a
+    // `carry` classification rather than a list of fields. Same caveat as the two
+    // above: a test reached it, so this bucket counts what the tests touch too.
+    expect(carry.length).toBe(31);
 		for (const name of ["player", "session", "rules", "m_PlayerFOV", "m_CharGen", "m_IsGameRunning", "m_PlayerWasRescued", "TAG_MODE_TEXT", "simulateOneBehindDistrictTurn", "stepActorsOnFire", "CURRENT_SAVE_SLOT", "POPUP_FILLCOLOR", "SPEECH_BUBBLE_FILLCOLOR"]) {
 			expect(carry, `${name} should be classified as carried`).toContain(name);
 		}
@@ -282,7 +311,7 @@ it("splits the reachable surface into 32 hub and 92 movable, and the hubs stay",
 		const m = measure();
     const hubs = new Set(m.buckets.get("HUB 1") ?? []);
     for (const name of m.buckets.get("HUB 2") ?? []) hubs.add(name);
-    expect(hubs.size).toBe(32);
+    expect(hubs.size).toBe(34);
 		for (const [region, list] of m.buckets) {
 			if (region.startsWith("HUB")) continue;
 			for (const name of list) expect(hubs.has(name), `${name} is in two regions`).toBe(false);

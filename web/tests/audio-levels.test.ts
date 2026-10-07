@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { MUSIC_GAINS, SFX_GAINS, AUDIO_MEASUREMENTS, musicGain, sfxGain } from "@gameplay/AudioLevels";
+import { MUSIC_GAINS, SFX_GAINS, AUDIO_MEASUREMENTS, musicGain, sfxGain, audioGain } from "@gameplay/AudioLevels";
 import { MUSIC_FILES, SOUND_FILES, GameMusics, GameSounds } from "@gameplay/GameSounds";
+import { audioPath } from "@engine/AssetPaths";
 
 /**
  * The generated loudness-correction table.
@@ -89,6 +90,41 @@ describe("AudioLevels lookup", () => {
   it("returns a finite number for a known GameMusics constant", () => {
     expect(Number.isFinite(musicGain(GameMusics.LIMBO))).toBe(true);
     expect(Number.isFinite(sfxGain(GameSounds.UNDEAD_EAT))).toBe(true);
+  });
+});
+
+describe("audioGain - the lookup the music manager pairs with audioPath", () => {
+  it("gives the three music-manager effects their measured gain, not 1.0", () => {
+    // The whole point. `WebAudioMusicManager` resolved the *file* through
+    // `audioPath` (both tables) and the *gain* through `musicGain` (music
+    // only), so these fetched the right `.ogg` and then played it uncorrected:
+    // `sfx - undead eat` measured a peak of 0.39 and was handed 2.446 precisely
+    // so it would be audible, and was playing at unity.
+    expect(musicGain(GameSounds.UNDEAD_EAT), "the lookup that was in use").toBe(1.0);
+    expect(audioGain(GameSounds.UNDEAD_EAT)).toBe(SFX_GAINS[SOUND_FILES[GameSounds.UNDEAD_EAT]]);
+    expect(audioGain(GameSounds.UNDEAD_EAT)).toBeGreaterThan(1);
+  });
+
+  it("agrees with audioPath about which table an id lives in", () => {
+    // Not a tautology: the bug was precisely these two disagreeing. Any id whose
+    // URL comes from one table and whose gain comes from the other is a silent
+    // level error at play time - nothing reports it, the effect is just wrong.
+    const byPath = (id: string): number =>
+      audioPath(id).includes("/sfx/") ? sfxGain(id) : musicGain(id);
+    const ids = [...Object.keys(MUSIC_FILES), ...Object.keys(SOUND_FILES)];
+    for (const id of ids) {
+      expect(audioGain(id), `${id} resolves file and gain from different tables`).toBe(byPath(id));
+    }
+  });
+
+  it("resolves every id the game can hand either manager", () => {
+    for (const id of [...Object.keys(MUSIC_FILES), ...Object.keys(SOUND_FILES)]) {
+      expect(audioGain(id), `no gain for ${id}`).toBeGreaterThan(0);
+    }
+  });
+
+  it("falls back to 1.0 for an unknown id, as audioPath falls back to musicPath", () => {
+    expect(audioGain("no such track")).toBe(1.0);
   });
 });
 

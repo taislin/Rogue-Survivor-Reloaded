@@ -6,10 +6,10 @@
 # bundle is shippable, which is worth having: it is the only check that exercises
 # the Express server and a cold container start.
 #
-# One consequence of not being the deploy path, worth knowing before deploying it
-# anyway: there is no stamp-cache-version step here, so this image's sw.js
-# carries the committed CACHE_VERSION. Serving it means returning players never
-# get the new build. `npm run build:pages` is what the real deploy uses.
+# One difference from the deploy path, worth knowing before deploying it anyway:
+# the pages workflow runs `npm run build:pages`, which stamps sw.js a second time
+# (a no-op over this build's stamp) and then copies docs/ into dist/. This image
+# stops at `npm run build`, whose own stamp already covers dist/.
 #
 # Build from the REPOSITORY ROOT (not web/):
 #     docker build -t rogue-survivor-web .
@@ -21,7 +21,10 @@
 # the context, which is what stops this from being an ~116 MB upload.
 
 # ── Stage 1: build the bundle and compile the server ──────────────────────────
-FROM node:20-bookworm-slim AS build
+# Node 22, matching the version CI builds with. Node 20 is past its upstream
+# maintenance window, and this is the base of both stages, so it is also the runtime
+# the shipped game is *served* on -- not just the one it is built with.
+FROM node:22-bookworm-slim AS build
 
 WORKDIR /app
 
@@ -31,9 +34,10 @@ RUN npm ci
 
 COPY web/ ./
 
-# `npm run build` is `tsc -p tsconfig.json && vite build`. The tsc pass is not
-# redundant: it type-checks tests/ as well as src/ (both are in the include
-# list), so a type error fails the image build rather than shipping.
+# `npm run build` is `tsc -p tsconfig.json && vite build` followed by
+# `node scripts/stamp-cache-version.mjs`, which hashes dist/ into sw.js. The tsc
+# pass is not redundant: it type-checks tests/ as well as src/ (both are in the
+# include list), so a type error fails the image build rather than shipping.
 RUN npm run build && npm run build:server
 
 # Drop dev dependencies from the tree we are about to copy, so the runtime
@@ -41,7 +45,7 @@ RUN npm run build && npm run build:server
 RUN npm prune --omit=dev
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
-FROM node:20-bookworm-slim AS runtime
+FROM node:22-bookworm-slim AS runtime
 
 ENV NODE_ENV=production \
     PORT=8080

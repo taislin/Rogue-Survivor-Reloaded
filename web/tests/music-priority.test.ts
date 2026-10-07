@@ -100,8 +100,19 @@ describe("every id the music manager is given resolves to a real file", () => {
     expect(code, "WebAudioMusicManager must resolve ids with audioPath").toContain("audioPath(");
     expect(
       code,
-      "WebAudioMusicManager must not resolve ids with musicPath — sound effects live in the sfx table",
+      "WebAudioMusicManager must not resolve ids with musicPath - sound effects live in the sfx table",
     ).not.toMatch(/[^a-zA-Z]musicPath\(/);
+
+    // The gain half of the same pair. `audioPath` was fixed first and left the
+    // lookup beside it behind, so those three fetched the correct `.ogg` and
+    // then played it at unity gain - `sfx - undead eat` carries a measured
+    // 2.446 and is the one that made it visible. Two helpers, one caller, and
+    // they have to agree about which table an id is in.
+    expect(code, "WebAudioMusicManager must resolve gains with audioGain").toContain("audioGain(");
+    expect(
+      code,
+      "WebAudioMusicManager must not resolve gains with musicGain - it consults only MUSIC_FILES",
+    ).not.toMatch(/[^a-zA-Z]musicGain\(/);
   });
 });
 

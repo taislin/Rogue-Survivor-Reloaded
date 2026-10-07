@@ -80,9 +80,9 @@ const MAP = 50;
 const SWEEP = 300;
 /**
  * Width-100 seeds that build the maximum three general stores — the whole population,
- * from a 1200-district sweep. See "reaches the cap" below.
+ * from a 3000-district sweep. See "reaches the cap" below.
  */
-const CAP_SEEDS = [529, 1170, 1187];
+const CAP_SEEDS = [529, 1170, 1640, 1877];
 
 /** The C#'s own cap: `Math.Round(((double)(map.Width / 10)) / 3)`, integer division. */
 function storeCap(width: number): number {
@@ -193,16 +193,23 @@ describe("the business region's interior: BaseTownGenerator.cs:496-536", () => {
     // it, which is the usual fate of an assertion about a rare path. So: the cap
     // **is** reached, and by a known set of districts.
     //
-    // **These three seeds are the whole population.** A 1200-district sweep at width
-    // 100 -- cap 3 -- produces 191 districts with one general store, 38 with two and
-    // exactly three with three: seeds 529, 1170 and 1187. That is the entire evidence
-    // that the cap binds, and it is why the seeds are pinned rather than swept: the
-    // alternative is a 1200-district sweep inside a unit test, which is minutes of
-    // wall clock to check three integers.
+    // **These four seeds are the whole population.** A 3000-district sweep at width
+    // 100 -- cap 3 -- produces 2515 districts with no general store, 413 with one,
+    // 68 with two and exactly four with three: seeds 529, 1170, 1640 and 1877. That
+    // is the entire evidence that the cap binds, and it is why the seeds are pinned
+    // rather than swept: the alternative is a 3000-district sweep inside a unit test,
+    // which is a minute and a half of wall clock to check four integers.
     //
-    // 3 in 1200 is also the honest measure of how rare this arm is, and it is worth
+    // **The set moved when `Feature.MechanicWorkshop` was wired into `case 3`.** An
+    // empty arm fell through to the general store at `:519`, so a block the workshop
+    // now takes is a block the store no longer gets: seed 1187 reached the cap
+    // before and stops at two now. Nothing about the cap or the die behind it
+    // changed -- `roll2` was spent either way -- only where the block ended up.
+    //
+    // 4 in 3000 is also the honest measure of how rare this arm is, and it is worth
     // being explicit about that: at the reference's own minimum district size, a
-    // general store appears in roughly 2% of districts. See the header -- the
+    // district gets at least one general store roughly one time in six (485 of the
+    // 3000), and only one district in 750 gets all three. See the header -- the
     // interior is entered ~21 times per 300 districts at 50x50.
     for (const seed of CAP_SEEDS) {
       const spy = newSpy(newParams(100));

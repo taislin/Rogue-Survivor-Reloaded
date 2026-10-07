@@ -373,6 +373,29 @@ export interface TownBuildingContext {
    * copying it would mean copying six more factories with it.
    */
   makeShopGeneralItem(): Item;
+  /**
+   * `MakeShopConstructionItem` `BaseTownGenerator.cs:7485`; 1 port call site, the
+   * mechanic workshop's `MapObjectFill` (`:2769`).
+   *
+   * Seamed for the reason its sibling is: the port's copy is a `public` method on
+   * `BaseTownGenerator` that spends the generator's own roller, and a building
+   * file has a context and no `this`. Its own six-plus factories are therefore
+   * not copied along with it.
+   *
+   * **The port's copy is vanilla's and not the fork's.** Reference
+   * `BaseTownGenerator.cs:7485-7506` split the table into fourteen single rolls
+   * in Release 3 (`roll(0, 13)`, over axes, wrenches, pickaxes, nail guns and a
+   * chainsaw the vanilla table has never heard of); the port still carries the
+   * twenty-five-way `roll(0, 24)` of vanilla `src\...\BaseTownGenerator.cs:3300`
+   * and so has no axe, wrench, pickaxe, spray paint, nail gun, chainsaw or paint
+   * thinner on a construction shelf. It is one shared method — the subway
+   * (`:1379`), the general store (`:3527`) and the office (`:4197`) drop the same
+   * roll — so bringing it in line moves the dice stream at every one of them,
+   * which is a change with its own fingerprints rather than a detail of this
+   * building. Recorded here because the workshop is the call site that makes the
+   * divergence visible.
+   */
+  makeShopConstructionItem(): Item;
   /** 20 call sites; 2 in the C# buildings (the animal shelter's stairs). */
   addExit(
     from: GameMap,

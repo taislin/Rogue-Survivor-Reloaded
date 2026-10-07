@@ -83,6 +83,8 @@ export enum Feature {
   Bank,
   Bar,
   Clinic,
+  /** The roller-door garage of `MakeMechanicWorkshop`, Release 4. */
+  MechanicWorkshop,
   Library,
   Junkyard,
   Graveyard,
@@ -148,6 +150,7 @@ const ALL_FEATURES: readonly Feature[] = [
   Feature.Bank,
   Feature.Bar,
   Feature.Clinic,
+  Feature.MechanicWorkshop,
   Feature.Library,
   Feature.Junkyard,
   Feature.Graveyard,
@@ -238,13 +241,38 @@ const STILL_ALIVE_FEATURES: ReadonlySet<Feature> = new Set(
 );
 
 /**
+ * Every feature `ALL_FEATURES` declares, for the guard below.
+ *
+ * The counterpart of the `featuresFor` switch: that one refuses an unrecognised
+ * *ruleset*, this refuses an unrecognised *feature id*. The symmetry is the
+ * point, because `Set.has` answers `false` for anything it does not contain -
+ * so without it an id the registry has never heard of is indistinguishable at
+ * the call site from "this ruleset does not have it". A `Feature` member added
+ * to the enum and left out of `ALL_FEATURES` would read as a feature that is
+ * off everywhere, and every `if (!hasFeature(...))` would take the off branch
+ * without a word. The registry test catches that in CI; this catches it in any
+ * build the test does not run, and the message names the id.
+ */
+const FEATURE_IDS: ReadonlySet<Feature> = new Set(ALL_FEATURES);
+
+/**
  * Is `feature` on for this ruleset?
  *
  * A module function rather than a method on `Session` so the engine, the AI and
  * the generators can all ask without holding a session, and so the two
  * pre-computed sets above are the only allocation that ever happens.
+ *
+ * Throws on an id outside `ALL_FEATURES`, for the same reason `featuresFor`
+ * throws on a ruleset outside the two it knows: a wrong answer that looks like
+ * a right one is worse than a crash.
  */
 export function hasFeature(ruleset: Ruleset, feature: Feature): boolean {
+  if (!FEATURE_IDS.has(feature)) {
+    // Reverse lookup is optional because the whole case for throwing is that
+    // the id may not be a `Feature` member at all.
+    const name = (Feature as unknown as Record<number, string | undefined>)[feature];
+    throw new Error(`unhandled feature: ${name ?? String(feature)}`);
+  }
   return featuresFor(ruleset).has(feature);
 }
 

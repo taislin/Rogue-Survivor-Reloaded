@@ -194,10 +194,28 @@ Z C           SW    SE</pre>
         </thead>
         <tbody>
           <tr>
-            <td><kbd>1</kbd>&hellip;<kbd>0</kbd></td>
-            <td>Item slot 1&ndash;10</td>
-            <td>Use, equip or unequip the item in that slot. Hold <kbd>Ctrl</kbd>/<kbd>Shift</kbd>/<kbd>Alt</kbd> for
-              the modified slot bindings.</td>
+            <td><kbd>Ctrl</kbd><span class="h-plus">+</span><kbd>1</kbd>&hellip;<kbd>0</kbd></td>
+            <td>Use / equip / unequip</td>
+            <td>The item in that slot <em>of your pack</em>. Equipping is free &mdash; only
+              <em>using</em> an item costs the turn.</td>
+          </tr>
+          <tr>
+            <td><kbd>Shift</kbd><span class="h-plus">+</span><kbd>1</kbd>&hellip;<kbd>0</kbd></td>
+            <td>Take from the ground</td>
+            <td>Slot N of the ground <em>under you</em> &mdash; the same numbering, a different
+              inventory. Ends your turn.</td>
+          </tr>
+          <tr>
+            <td><kbd>Alt</kbd><span class="h-plus">+</span><kbd>1</kbd>&hellip;<kbd>0</kbd></td>
+            <td>Drop</td>
+            <td>Slot N of your pack, straight onto the ground. Ends your turn.</td>
+          </tr>
+          <tr>
+            <td><kbd>1</kbd>&hellip;<kbd>0</kbd><br><span class="small muted">on their own</span></td>
+            <td>Nothing</td>
+            <td>The number row exists only to carry those three modifiers &mdash; pressed by itself it
+              does nothing at all, not even spend the turn. Use the <b>left mouse button</b> for the
+              plain action.</td>
           </tr>
           <tr>
             <td><b>Left-click</b></td>
@@ -362,8 +380,8 @@ Z C           SW    SE</pre>
     <div class="callout callout--note" style="margin-top:1.5rem">
       <span class="callout__label">Browser notes</span>
       <p>Screenshots are downloaded by the browser rather than written silently to a
-        folder, so death screenshots are off by default &mdash; turn them on in the options
-        if you want them. The game is keyboard and mouse only; there is no touch support.
+        folder, and there is no automatic screenshot on death. The game is keyboard and
+        mouse only; there is no touch support.
         Append <code>?debug=1</code> to the URL for per-action <code>[render]</code> and
         per-frame <code>[draw]</code> logging in the console.</p>
     </div>

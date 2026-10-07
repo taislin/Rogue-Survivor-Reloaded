@@ -27,4 +27,4 @@
  */
 
 /** Must equal `package.json`'s `version`. Asserted by `tests/version.test.ts`. */
-export const GAME_VERSION = "0.9.3";
+export const GAME_VERSION = "0.9.4";
