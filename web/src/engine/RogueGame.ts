@@ -1037,7 +1037,18 @@ const s_Options = Options;
 let s_KeyBindings = new Keybindings();
 let s_Hints = new GameHintsStatus();
 
-/** Browser port: how many turns a speech bubble outlives its speaker's line. */
+/**
+ * Browser port: how many turns a speech bubble stays up, counted from the turn
+ * the box first opened.
+ *
+ * Anchored to the first line rather than the last on purpose. Every line used
+ * to restamp this, so an actor who spoke again inside the window pushed their
+ * own expiry forward indefinitely — a busy NPC never lost their box at all, and
+ * that is the bug this constant now guards against. The *text* still moves on
+ * with the speaker's latest line (see `SpeakOverhead`); only the clock stays
+ * where it started, so every bubble clears even over someone who never stops
+ * talking.
+ */
 const SPEECH_BUBBLE_TURNS = 6;
 /**
  * Browser port: how wide a speech bubble's text may get before it wraps, in the
@@ -1062,7 +1073,11 @@ const SPEECH_BUBBLE_MAX_WIDTH = TILE_SIZE * 6;
 class SpeechBubble {
   constructor(
     public text: string,
-    /** The actor's map's local turn, as stamped on the message log's own line. */
+    /**
+     * The actor's map's local turn when the box first opened. Read against it
+     * for the whole life of the bubble and never moved, so a later line cannot
+     * buy the box more time — see `SPEECH_BUBBLE_TURNS`.
+     */
     public turn: number,
   ) {}
 }
@@ -22176,13 +22191,24 @@ updateAdvisorHintBanner(): void {
 	 * - non-empty text, since a box with nothing in it is worse than no box.
 	 *
 	 * `turn` is stamped from the *actor's* map, which is what `DoEmote` stamps
-	 * its own message with, so a bubble and its log line expire together.
+	 * its own message with — and it is stamped **once**, when the box opens.
+	 * A second line inside the window overwrites `text` and leaves the turn
+	 * alone, so the box clears `SPEECH_BUBBLE_TURNS` after it first appeared
+	 * instead of being held up forever by someone who keeps talking. The log
+	 * line keeps its own stamp and expires on its own terms.
 	 */
 	SpeakOverhead(actor: Actor, text: string): void {
 		if (!s_Options.showSpeechBubbles) return;
 		if (!this.IsVisibleToPlayer(actor)) return;
 		const trimmed = text.trim();
 		if (trimmed.length === 0) return;
+		// The box takes the new line and keeps its original turn: the text is
+		// the speaker's last word, the clock is not.
+		const held = this.m_SpeechBubbles.get(actor);
+		if (held !== undefined) {
+			held.text = trimmed;
+			return;
+		}
 		this.m_SpeechBubbles.set(
 			actor,
 			new SpeechBubble(
@@ -22240,9 +22266,10 @@ updateAdvisorHintBanner(): void {
 				continue;
 			}
 			// Off-panel is a skip, not a prune, unlike the three above: the actor
-			// is still here and still mid-sentence, and the view rect moves when
-			// the player does. Drawn anyway it would land on the side panel, which
-			// is the one case where a bubble is both ugly and unmissable.
+			// is still here and their box has not run out its window, and the view
+			// rect moves when the player does. Drawn anyway it would land on the
+			// side panel, which is the one case where a bubble is both ugly and
+			// unmissable.
 			if (!this.IsInViewRect(actor.location.position)) continue;
 
 			const screenPos = this.MapToScreen(actor.location.position);
