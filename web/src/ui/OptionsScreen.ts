@@ -740,9 +740,13 @@ export class OptionsScreen {
 
 	/** `RogueGame.ApplyOptions(bool ingame)` — RogueGame.cs ≈ line 19857. */
 	private applyOptions(): void {
-		// m_MusicManager.IsMusicEnabled = Options.PlayMusic;
+		// m_MusicManager.IsMusicEnabled = Options.PlayMusic;  (the fork's `IsAudioEnabled`)
 		// m_MusicManager.Volume = Options.MusicVolume;   (C# volume is 0..100, WebAudio is 0..1)
 		if (this.music) {
+			// Enabled first: `stop()` below is the C#'s `StopAll`, and it only sticks
+			// if the manager's own gate is already off. Without it the row reads OFF
+			// and the next event theme starts the music again.
+			this.music.setEnabled(Options.playMusic);
 			this.music.setVolume(Options.musicVolume / 100);
 			if (!Options.playMusic) this.music.stop();
 		}

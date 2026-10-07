@@ -23,6 +23,15 @@ export class WebAudioMusicManager implements IMusicManager {
   private audioElement: HTMLAudioElement | null = null;
   private currentMusicId: string | null = null;
   private volume: number = 0.5;
+  /**
+   * C# `m_IsMusicEnabled` — the fork's `m_IsAudioEnabled`.
+   *
+   * Defaults on, like `WebAudioSoundManager.enabled`, because the C#'s `false`
+   * default is never observed: `RogueGame.ApplyOptions` writes the option into
+   * it before anything can play, and starting from off would mean a fresh
+   * session with no music until the player opened the options menu.
+   */
+  private enabled: boolean = true;
   private isPlayingState: boolean = false;
   /** C# `IMusicManager.Priority` — what the current track was started at. */
   private currentPriority: MusicPriorityValue = MusicPriority.NULL;
@@ -117,6 +126,11 @@ export class WebAudioMusicManager implements IMusicManager {
 
   private start(musicId: string, priority: MusicPriorityValue, loop: boolean): void {
     if (!this.audioElement) return;
+    // C# `SFMLSoundManager.cs:114`, `:133`, `:155`: every entry point checks the
+    // flag before it does anything at all — including before the short-circuit
+    // below, so a disabled manager answers the same to a repeat id as to a new
+    // one. See `IMusicManager.setEnabled`.
+    if (!this.enabled) return;
     if (this.currentMusicId === musicId && this.isPlayingState) return;
 
     this.ensureGainStage();
@@ -174,6 +188,8 @@ export class WebAudioMusicManager implements IMusicManager {
   }
 
   public resume(): void {
+    // C# `ResumeLooping` (`SFMLSoundManager.cs:168`) opens with the same test.
+    if (!this.enabled) return;
     if (this.audioElement && !this.isPlayingState && this.currentMusicId) {
       this.audioElement
         .play()
@@ -206,6 +222,23 @@ export class WebAudioMusicManager implements IMusicManager {
 
   public getVolume(): number {
     return this.volume;
+  }
+
+  /**
+   * C# `IMusicManager.IsMusicEnabled` / the fork's `IsAudioEnabled`.
+   *
+   * Writes the flag and nothing else: stopping the track that is already
+   * sounding is the caller's job, and both call sites do it —
+   * `RogueGame.ApplyOptions` behind its own `if (!playMusic)` and
+   * `OptionsScreen.applyOptions` behind its own, which is the C# `StopAll` pair
+   * (`RogueGame.cs:32789`). Setting the flag is what makes those stops stick.
+   */
+  public setEnabled(on: boolean): void {
+    this.enabled = on;
+  }
+
+  public isEnabled(): boolean {
+    return this.enabled;
   }
 
   /** The correction being applied to the current track; 1.0 before any plays. */

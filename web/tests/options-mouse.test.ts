@@ -199,6 +199,7 @@ const music: IMusicManager = {
   getPriority(): MusicPriorityValue { return MusicPriority.NULL; },
   setVolume(): void {},
   getVolume(): number { return 0; },
+  setEnabled(): void {},
 };
 
 /** Runs the screen, then the scripted Escape, and leaves the last frame drawn. */

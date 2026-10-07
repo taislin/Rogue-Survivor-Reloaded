@@ -32618,8 +32618,9 @@ const keyHints = ACTION_ENTRIES.map((e) => s_KeyBindings.getAll(e.command).join(
 
 	// C# ApplyOptions — RogueGame.cs:19855
 	ApplyOptions(_ingame: boolean): void {
-		// m_MusicManager.IsMusicEnabled = Options.PlayMusic;
+		// m_MusicManager.IsMusicEnabled = Options.PlayMusic;  (the fork's `IsAudioEnabled`)
 		// m_MusicManager.Volume = Options.MusicVolume;   (C# volume is 0..100, WebAudio is 0..1)
+		this.m_MusicManager.setEnabled(s_Options.playMusic);
 		this.m_MusicManager.setVolume(s_Options.musicVolume / 100);
 
 		/**
