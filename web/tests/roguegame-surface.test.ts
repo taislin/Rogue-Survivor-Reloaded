@@ -180,8 +180,17 @@ describe("RogueGame's measured surface", () => {
     // Both are public and both were already called from within the class; the new
     // reach is a test asserting what a screen puts on it -- the same caveat as
     // `DoSaveGame` above, moved for the same reason.
-    expect(m.external).toBe(130);
-// §6.4: "567 of 584 methods are public — only 17 are `private`. The
+    //
+    // **One more, for `hiscores-screen.test.ts`.** That test drives the scores
+    // screen through `HandleHiScores` with real keys, because what it asserts is
+    // which of the two text faces each of the screen's lines reaches the canvas
+    // with and at what y — neither of which a call to a draw method by hand
+    // would show. The method was public and called from nowhere outside the
+    // class before (the endgame test only names it in a comment), so this is the
+    // caveat again: a test reached a public screen method, and the game's own
+    // shape did not change.
+    expect(m.external).toBe(131);
+  // §6.4: "567 of 584 methods are public — only 17 are `private`. The
   // `private` boundary is effectively absent." That is still true, and the
   // direction is worth pinning: private has come down from 91 to 89, and is 90
   // again only because `mapDrawScale` was added (above); public moved by exactly
@@ -214,7 +223,7 @@ describe("RogueGame's measured surface", () => {
 		expect(m.privateReached).toBe(0);
 	});
 
-	it("the outside world depends on 130 members, and §6 assumed far fewer", () => {
+	it("the outside world depends on 131 members, and §6 assumed far fewer", () => {
 		const m = measure();
 		// §6.4's `GameContext` was to name "the 11 service fields … plus `m_Player`,
 		// `m_PlayerFOV`, `m_MapViewRect`, `m_Overlays`, `m_FirstPersonFacing`" —
@@ -226,7 +235,7 @@ describe("RogueGame's measured surface", () => {
     // sites". At 121 names the pessimistic figure is not the real one, and that
     // is the answer to the question §6.4 deferred until "the game runs and the
     // real cross-method dependencies are known".
-    expect(m.external).toBe(130);
+    expect(m.external).toBe(131);
     expect(m.external).toBeGreaterThan(83);
 	});
 
@@ -248,7 +257,7 @@ describe("RogueGame's measured surface", () => {
 		expect(m.buckets.get("STATE")?.length ?? 0).toBeLessThan(33);
 	});
 
-it("splits the reachable surface into 35 hub and 95 movable, and the hubs stay", () => {
+it("splits the reachable surface into 35 hub and 96 movable, and the hubs stay", () => {
     // §6.8: the two hubs "are the reason the split is worth doing rather than the
     // reason it fails". Still true, and now measured on the current file.
     const m = measure();
@@ -260,7 +269,13 @@ it("splits the reachable surface into 35 hub and 95 movable, and the hubs stay",
     // (WAVE 3) joined when `customiser-skill-row.test.ts` reached them, both
     // movable leaves of a screen test -- again the split classifying the reach the
     // right way round, and again the hubs unmoved at 35.
-    expect(m.moving).toBe(95);
+    //
+    // **96 now**: `HandleHiScores` joined when `hiscores-screen.test.ts` drove the
+    // scores screen with real keys to assert which face its header is drawn with
+    // and where. It classifies as STATE rather than as an action primitive, so it
+    // lands in the movable half and the hubs stay at 35 -- a screen method
+    // reached from a test, which is the shape this split wants to move.
+    expect(m.moving).toBe(96);
     expect(m.hubs).toBe(35);
     expect(m.moving + m.hubs).toBe(m.external);
     // HUB 1 is 27 of the 35. `DoTag` joined when the minimap tag test replaced a
@@ -306,7 +321,10 @@ it("splits the reachable surface into 35 hub and 95 movable, and the hubs stay",
     // `HandleAiActor` is the 31st, and it is a *method*, which is the point of a
     // `carry` classification rather than a list of fields. Same caveat as the two
     // above: a test reached it, so this bucket counts what the tests touch too.
-    expect(carry.length).toBe(31);
+    //
+    // `HandleHiScores` is the 32nd, and the same in kind: a screen method, not
+    // state, put here by `hiscores-screen.test.ts` driving it with real keys.
+    expect(carry.length).toBe(32);
 		for (const name of ["player", "session", "rules", "m_PlayerFOV", "m_CharGen", "m_IsGameRunning", "m_PlayerWasRescued", "TAG_MODE_TEXT", "simulateOneBehindDistrictTurn", "stepActorsOnFire", "CURRENT_SAVE_SLOT", "POPUP_FILLCOLOR", "SPEECH_BUBBLE_FILLCOLOR"]) {
 			expect(carry, `${name} should be classified as carried`).toContain(name);
 		}

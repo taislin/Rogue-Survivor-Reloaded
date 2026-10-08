@@ -3996,24 +3996,32 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 		gy += MENU_BOLD_LINE_SPACING;
 		this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Hi Scores", 0, gy);
 		gy += MENU_BOLD_LINE_SPACING;
-		this.m_UI.UI_DrawStringBold(
+		this.m_UI.UI_DrawStringBoldLarge(
 			Color.White,
 			"---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+",
 			0,
 			gy,
 		);
-		gy += BOLD_LINE_SPACING;
+		gy += MENU_BOLD_LINE_SPACING;
 
 		// display.
-		// Table body stays at the standard size: 12 entries x 4 lines only fit at
-		// 14px leading. Title and header above carry the larger size.
-		this.m_UI.UI_DrawStringBold(
+		//
+		// The rule and the column header are drawn with the same `BoldLarge` call
+		// as the table body below, and stepped at the same leading. The header is
+		// a row of that table: its `|` sit at the same *character* indices as the
+		// values' (5, 33, 42, 53, 62, 71, 80, 97), so on a monospace face they
+		// line up only while both are drawn at the same advance. They were not --
+		// `UI_DrawStringBold` is the 10pt HUD face (8px a character) against the
+		// body's 12pt menu face (9.6px), which put the labels 1.6px left per
+		// column, ~155px out by the last one. The C# had a single bold font for
+		// the whole screen (RogueForm.cs:57), so it could not diverge.
+		this.m_UI.UI_DrawStringBoldLarge(
 			Color.White,
 			"Rank | Name, Skills, Death       |  Score |Difficulty|Survival|  Kills |Achievm.|      Game Time | Playing time",
 			0,
 			gy,
 		);
-		gy += BOLD_LINE_SPACING;
+		gy += MENU_BOLD_LINE_SPACING;
 
 		// No text export.
 		//
@@ -4146,6 +4154,16 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 				this.DrawHeader();
 				gyHead += MENU_BOLD_LINE_SPACING;
 				this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Hi Scores", 0, gyHead);
+				gyHead += MENU_BOLD_LINE_SPACING;
+				// The rule is part of the header, and this block is the whole
+				// screen redrawn rather than only the rows: without it a scroll
+				// key made the rule disappear and the table jump up under it.
+				this.m_UI.UI_DrawStringBoldLarge(
+					Color.White,
+					"---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+",
+					0,
+					gyHead,
+				);
 				gyHead += MENU_BOLD_LINE_SPACING;
 				this.m_UI.UI_DrawStringBoldLarge(
 					Color.White,
