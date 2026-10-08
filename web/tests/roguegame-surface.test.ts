@@ -135,8 +135,14 @@ describe("RogueGame's measured surface", () => {
     // make a defect inside it reachable. It is a method rather than a field, it
     // holds no state the class did not already have, and the alternative was a
     // defect in a ~400-line turn loop that no test could reach.
-    expect(m.members).toBe(848);
-    expect(m.methods).toBe(676);
+    // **849, for `mapDrawScale`.** The overlay pass has to test an effect's
+    // anchor against the map panel at the scale `withMapZoom` draws it, and the
+    // two early-outs that decide that scale (first person, zoom 1) now live in
+    // one method so a gate cannot measure at one scale while the drawing happens
+    // at another. Private, stateless, and reached by nothing -- the count moves
+    // because the class grew, not because a test reached further into it.
+    expect(m.members).toBe(849);
+    expect(m.methods).toBe(677);
     // The *reachable* surface is 124, up from 121. Both extractions had left it
     // alone -- each kept its methods on the class, which is what keeps them pure
     // moves -- and these three moved it for the opposite reason: a test reaching
@@ -177,8 +183,9 @@ describe("RogueGame's measured surface", () => {
     expect(m.external).toBe(130);
 // §6.4: "567 of 584 methods are public — only 17 are `private`. The
   // `private` boundary is effectively absent." That is still true, and the
-  // direction is worth pinning: private has come down from 91 to 89, while public
-  // moved by exactly one. Public barely moving is the point — both extractions left
+  // direction is worth pinning: private has come down from 91 to 89, and is 90
+  // again only because `mapDrawScale` was added (above); public moved by exactly
+  // one. Public barely moving is the point — both extractions left
   // delegations behind rather than deleting callers' entry points, so the ratio
   // has not improved much and is not claimed to have. The single addition is
   // `updateAdvisorHintBanner`, whose reason is recorded above.
@@ -190,7 +197,7 @@ describe("RogueGame's measured surface", () => {
   // counted as methods and appeared in both totals. It now asks what follows the
   // name: `(` for a method, `:` or `=` for a field.
   expect(m.public).toBe(759);
-  expect(m.private).toBe(89);
+  expect(m.private).toBe(90);
 	});
 
 	it("§6's stop condition is not met: nothing private is reached from outside", () => {

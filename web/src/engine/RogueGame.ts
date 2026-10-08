@@ -1084,6 +1084,58 @@ export class OverlayPopupTitleColors extends PopupOverlay {
 	}
 }
 
+/**
+ * Whether a map-anchored overlay's anchor still lands on the map panel, asked
+ * in the coordinates `withMapZoom` draws it at.
+ *
+ * Every effect in this group — the blast icon and its damage number, the yellow
+ * and red boxes around a throw or a fire-through, the target rings, the event
+ * highlight — is added on `IsVisibleToPlayer`, which reads the tile's `isView`,
+ * i.e. the *FOV*. Nothing asks `IsInViewRect`. That difference is invisible on
+ * the C# (a 31-tile camera, no zoom: the view covers the FOV) and is not here:
+ * the panel is 27 tiles wide at zoom 1 and 14 at zoom 2, against an FOV that
+ * reaches 16 with a light and the night bonuses, so the box for something the
+ * player can see but the camera does not cover computes to `MapToScreen`
+ * coordinates past `MAP_PANEL_WIDTH` — and `RedrawPlayScreen` draws overlays
+ * *after* the side panel, so it lands over the inventory.
+ *
+ * Skipped rather than clipped, for the reason `DrawSpeechBubbles` skips: half a
+ * box cut off by the panel edge reads as a rendering bug just as loudly as a
+ * whole one in the wrong place. `scale` is `withMapZoom`'s own
+ * (`RogueGame.mapDrawScale`), because the panel edge is at `MAP_PANEL_WIDTH`
+ * *displayed* pixels and a tile coordinate means nothing without the zoom it is
+ * drawn at.
+ *
+ * An overlay this cannot classify answers true. This is a gate on what the port
+ * already draws, not a licence to hide an overlay nobody has put a shape to.
+ */
+export function overlayOnMapPanel(overlay: Overlay, scale: number): boolean {
+	const onPanel = (x: number, y: number): boolean =>
+		x * scale >= 0 &&
+		x * scale < MAP_PANEL_WIDTH &&
+		y * scale >= 0 &&
+		y * scale < MAP_PANEL_HEIGHT;
+
+	if (overlay instanceof OverlayRect) {
+		const r = overlay.rectangle;
+		return (
+			r.x * scale < MAP_PANEL_WIDTH &&
+			(r.x + r.width) * scale > 0 &&
+			r.y * scale < MAP_PANEL_HEIGHT &&
+			(r.y + r.height) * scale > 0
+		);
+	}
+	const anchor = (overlay as Overlay & { screenPosition?: Point }).screenPosition;
+	if (anchor != null) return onPanel(anchor.x, anchor.y);
+	const line = overlay as Overlay & { screenFrom?: Point; screenTo?: Point };
+	if (line.screenFrom != null && line.screenTo != null)
+		return (
+			onPanel(line.screenFrom.x, line.screenFrom.y) ||
+			onPanel(line.screenTo.x, line.screenTo.y)
+		);
+	return true;
+}
+
 /** C# `static GameOptions s_Options` / `s_KeyBindings` / `s_Hints`. */
 const s_Options = Options;
 let s_KeyBindings = new Keybindings();
@@ -29222,6 +29274,27 @@ updateAdvisorHintBanner(): void {
 	}
 
 	/**
+	 * The scale a map-anchored draw is shown at: the map's zoom, or 1 when the
+	 * scope does not scale at all.
+	 *
+	 * First person has no tile grid and no zoom: the scene is already projected
+	 * into viewport pixels by the camera. Applying the top-down scale on top
+	 * would double it, which looks like a picture drawn at the wrong size rather
+	 * than like a scale that should not have been applied — so it is skipped
+	 * here, at the one place the zoom is installed, rather than at every call
+	 * site.
+	 *
+	 * Two callers share it deliberately: `withMapZoom` decides whether to open a
+	 * scaled scope from it, and the overlay pass tests an overlay's anchor
+	 * against the panel (`overlayOnMapPanel`) with it. Duplicating the two
+	 * early-outs would let an overlay be measured against one scale and drawn at
+	 * another.
+	 */
+	private mapDrawScale(): number {
+		return GameOptions.isFirstPersonView(s_Options.viewMode) ? 1 : s_MapZoom;
+	}
+
+	/**
 	 * Runs `draw` in the map's zoomed space: every sprite, bar and popup twice
 	 * its size, at its position computed for 32px tiles.
 	 *
@@ -29238,24 +29311,17 @@ updateAdvisorHintBanner(): void {
 	 * — a mode prompt at the top-left corner is text that must not be cut in half.
 	 */
 	private withMapZoom(draw: () => void, clip: boolean = true): void {
-		// First person has no tile grid and no zoom: the scene is already projected
-		// into viewport pixels by the camera. Applying the top-down scale on top
-		// would double it, which looks like a picture drawn at the wrong size rather
-		// than like a scale that should not have been applied — so it is skipped
-		// here, at the one place the zoom is installed, rather than at every call
-		// site.
-		if (GameOptions.isFirstPersonView(s_Options.viewMode)) {
-			draw();
-			return;
-		}
-		if (s_MapZoom === 1) {
+		const scale = this.mapDrawScale();
+		// No scale, no scope: at zoom 1 — and always in first person — the draw
+		// is already in panel pixels, so a save/clip/restore would buy nothing.
+		if (scale === 1) {
 			draw();
 			return;
 		}
 		const clipRect = clip
 			? new Rect(0, 0, MAP_PANEL_WIDTH, MAP_PANEL_HEIGHT)
 			: undefined;
-		this.m_UI.UI_BeginScaledDraw(s_MapZoom, clipRect);
+		this.m_UI.UI_BeginScaledDraw(scale, clipRect);
 		draw();
 		this.m_UI.UI_EndScaledDraw();
 	}
@@ -29559,9 +29625,19 @@ updateAdvisorHintBanner(): void {
 		// it does), and screen-anchored overlays, which the zoom must not move at
 		// all -- the side panel's item and corpse highlights and descriptions,
 		// and the give-mode and skill-upgrade prompts.
+		//
+		// The map-anchored group is *skipped*, not clipped, when its anchor is past
+		// the panel edge: every effect in it is added on `IsVisibleToPlayer`, which
+		// reads the tile's FOV, not on `IsInViewRect`, so at zoom 2 the box for
+		// something the player can see but the camera does not cover computes to
+		// coordinates over the side panel -- and overlays are drawn *after* the side
+		// panel, so it lands on the inventory. Cutting the box at the edge instead
+		// would be the same bug in a quieter key, which is why the clip flag below
+		// stays false. See `overlayOnMapPanel`.
+		const overlayScale = this.mapDrawScale();
 		this.withMapZoom(() => {
 			for (const o of this.m_Overlays) {
-				if (o.zoomsWithMap && !(o instanceof PopupOverlay)) o.draw(this.m_UI);
+				if (o.zoomsWithMap && !(o instanceof PopupOverlay) && overlayOnMapPanel(o, overlayScale)) o.draw(this.m_UI);
 			}
 			// Browser port: speech bubbles, last so they land over the actors and
 			// over any damage number. Inside the zoom scope with the rest — they
