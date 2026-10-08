@@ -166,7 +166,15 @@ describe("RogueGame's measured surface", () => {
     // `LoadGame(slot)`. It is a `Do*` action primitive, so it lands in HUB 1
     // rather than in a region that moves -- a test reaching the save path, which
     // is the split classifying it the right way round.
-    expect(m.external).toBe(128);
+    //
+    // **Two more, for `customiser-skill-row.test.ts`.** That test drives the
+    // character details screen with real keys to assert what the skill row
+    // describes and what Enter commits, which reaches `HandleNewCharacterDetails`
+    // (WAVE 3) and `DescribeSkillShort` (WAVE 1) from outside for the first time.
+    // Both are public and both were already called from within the class; the new
+    // reach is a test asserting what a screen puts on it -- the same caveat as
+    // `DoSaveGame` above, moved for the same reason.
+    expect(m.external).toBe(130);
 // §6.4: "567 of 584 methods are public — only 17 are `private`. The
   // `private` boundary is effectively absent." That is still true, and the
   // direction is worth pinning: private has come down from 91 to 89, while public
@@ -199,7 +207,7 @@ describe("RogueGame's measured surface", () => {
 		expect(m.privateReached).toBe(0);
 	});
 
-it("the outside world depends on 128 members, and §6 assumed far fewer", () => {
+	it("the outside world depends on 130 members, and §6 assumed far fewer", () => {
 		const m = measure();
 		// §6.4's `GameContext` was to name "the 11 service fields … plus `m_Player`,
 		// `m_PlayerFOV`, `m_MapViewRect`, `m_Overlays`, `m_FirstPersonFacing`" —
@@ -211,7 +219,7 @@ it("the outside world depends on 128 members, and §6 assumed far fewer", () => 
     // sites". At 121 names the pessimistic figure is not the real one, and that
     // is the answer to the question §6.4 deferred until "the game runs and the
     // real cross-method dependencies are known".
-    expect(m.external).toBe(128);
+    expect(m.external).toBe(130);
     expect(m.external).toBeGreaterThan(83);
 	});
 
@@ -233,14 +241,19 @@ it("the outside world depends on 128 members, and §6 assumed far fewer", () => 
 		expect(m.buckets.get("STATE")?.length ?? 0).toBeLessThan(33);
 	});
 
-it("splits the reachable surface into 35 hub and 93 movable, and the hubs stay", () => {
+it("splits the reachable surface into 35 hub and 95 movable, and the hubs stay", () => {
     // §6.8: the two hubs "are the reason the split is worth doing rather than the
     // reason it fails". Still true, and now measured on the current file.
     const m = measure();
     // `HandleAiActor` is why movable is 93 rather than 92. It is not an action
     // primitive, so the test that now awaits it enlarges the half that moves rather
     // than the hubs -- the split classifying it the right way round.
-    expect(m.moving).toBe(93);
+    //
+    // **95 now**: `DescribeSkillShort` (WAVE 1) and `HandleNewCharacterDetails`
+    // (WAVE 3) joined when `customiser-skill-row.test.ts` reached them, both
+    // movable leaves of a screen test -- again the split classifying the reach the
+    // right way round, and again the hubs unmoved at 35.
+    expect(m.moving).toBe(95);
     expect(m.hubs).toBe(35);
     expect(m.moving + m.hubs).toBe(m.external);
     // HUB 1 is 27 of the 35. `DoTag` joined when the minimap tag test replaced a
@@ -292,13 +305,15 @@ it("splits the reachable surface into 35 hub and 93 movable, and the hubs stay",
 		}
 	});
 
-	it("finds six reachable leaves, which is the whole of Wave 1's seam", () => {
+	it("finds seven reachable leaves, which is the whole of Wave 1's seam", () => {
 		// `DescribeActorActivity`, `DescribeItemLong`, `GetUserNewScreenshotName`,
-		// `MapToScreen`, `ScreenToMap`, `doEquipItem`. Six, against §6.5's 2,079-line
-		// Wave 1 — the wave is much bigger than its *externally reached* part, which is
-		// worth knowing before scheduling it.
+		// `MapToScreen`, `ScreenToMap`, `doEquipItem`, and now `DescribeSkillShort`
+		// -- reached by `customiser-skill-row.test.ts` describing the skill the
+		// row's entry stands for. Seven, against §6.5's 2,079-line Wave 1 -- the
+		// wave is much bigger than its *externally reached* part, which is worth
+		// knowing before scheduling it.
 		const m = measure();
-		expect(m.buckets.get("WAVE 1")?.length).toBe(6);
+		expect(m.buckets.get("WAVE 1")?.length).toBe(7);
 	});
 
 	it("routes the three regions §6 never named, by extractability", () => {

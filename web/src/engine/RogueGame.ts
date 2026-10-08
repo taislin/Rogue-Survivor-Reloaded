@@ -348,14 +348,15 @@ export const ACTOR_SIZE: number = 32;
 /**
  * Where the customiser's preview sits, and how big it is.
  *
- * **Below the rows, not beside them.** Every option row on this screen spans the
- * full 1366px canvas — the skill list alone runs to its right edge — so there is no
- * column to put a preview in, and the first attempt at a two-column layout drew it
- * straight over the text. The lower half of the screen is empty, so it goes there,
- * horizontally centred.
+ * **Below the rows, not beside them.** Every option row on this screen is laid
+ * out across the full 1366px canvas -- the skill list alone needs three lines
+ * of it -- so there is no column to put a preview in, and the first attempt at a
+ * two-column layout drew it straight over the text. The lower half of the screen
+ * is empty, so it goes there, horizontally centred.
  *
- * `PREVIEW_TOP_Y` clears the longest screen: title, hint, race, sex/type, skill,
- * six appearance rows, the `*Random*` note and up to three detail lines.
+ * `PREVIEW_TOP_Y` clears the longest screen: title, hint, race, sex/type, the
+ * three-line skill row, six appearance rows, the `*Random*` note and up to three
+ * detail lines. That worst case ends at y=360, eighteen short of here.
  */
 export const PREVIEW_TOP_Y: number = 378;
 /** 3x. Enough to read a face; 4x starts to show the sprite's own pixel grid. */
@@ -527,6 +528,57 @@ export {
 	menuEntryWidth,
 } from "@engine/MenuChrome";
 export type { MenuRowBand } from "@engine/MenuChrome";
+
+/**
+ * One cell of an option row: which entry it is, and where it is drawn.
+ *
+ * `x` is absolute, so a caller lays a row out by drawing each cell where it
+ * says rather than accumulating its own advance.
+ */
+export interface OptionRowCell {
+	index: number;
+	x: number;
+}
+
+/**
+ * Splits one option row into the lines it needs to stay inside `rightEdge`.
+ *
+ * A row is conceptually a single line -- label, then every entry in sequence --
+ * and the skill row on the character screen is 2720 px of it against a 1366 px
+ * canvas: nine entries were drawn past the right edge, where `CanvasUI` clips
+ * them, while LEFT/RIGHT could still move the selection onto them. So the row
+ * is broken at the canvas edge and its continuation lines are drawn under the
+ * first, aligned to the same entry column as the label.
+ *
+ * Cell width is `entry length + 4` either way round (`< Agile >` and
+ * `  Agile  ` are the same length), so a row breaks in the same places whatever
+ * is selected -- otherwise moving the cursor would re-flow the line under it.
+ */
+export function optionRowLines(
+	label: string,
+	options: readonly string[],
+	gx: number,
+	rightEdge: number = CANVAS_WIDTH,
+): OptionRowCell[][] {
+	const entryX = gx + (label.length + 3) * MENU_CHAR_WIDTH;
+	const lines: OptionRowCell[][] = [];
+	let line: OptionRowCell[] = [];
+	let x = entryX;
+	for (let i = 0; i < options.length; i++) {
+		const w = (options[i].length + 4) * MENU_CHAR_WIDTH;
+		// Only once the line has something on it: a single entry wider than the
+		// canvas gets a line of its own rather than looping here forever.
+		if (line.length > 0 && x + w > rightEdge) {
+			lines.push(line);
+			line = [];
+			x = entryX;
+		}
+		line.push({ index: i, x });
+		x += w;
+	}
+	lines.push(line);
+	return lines;
+}
 
 /**
  * Rows a single wheel notch moves the selection in a `DrawMenuOrOptions` menu.
@@ -2804,7 +2856,7 @@ export class RogueGame implements ActionGame {
 		return true;
 	}
 
-/**
+	/**
 	 * One horizontal row of mutually exclusive options: `Label :  a  < b >  c`.
 	 *
 	 * Every other menu screen in the game is a vertical list drawn by
@@ -2818,6 +2870,10 @@ export class RogueGame implements ActionGame {
 	 * The selected entry is bracketed as well as coloured. `active` and inactive
 	 * are close enough shades on a black canvas that colour alone would be the
 	 * only cue for which row the left/right keys are about to affect.
+	 *
+	 * Returns the number of lines the row needed, so the caller advances `gy` by
+	 * that many rather than by one: a row too wide for the canvas is drawn on
+	 * continuation lines instead of running off the edge (see `optionRowLines`).
 	 */
 	private DrawOptionRow(
 		label: string,
@@ -2826,27 +2882,35 @@ export class RogueGame implements ActionGame {
 		gx: number,
 		gy: number,
 		active: boolean,
-	): void {
-		this.m_UI.UI_DrawStringBoldLarge(
-			active ? Color.White : Color.LightGray,
-			`${label} :`,
-			gx,
-			gy,
-		);
-		let x = gx + (label.length + 3) * MENU_CHAR_WIDTH;
-		for (let i = 0; i < options.length; i++) {
-			const text = i === selected ? `< ${options[i]} >` : `  ${options[i]}  `;
-			const color =
-				i === selected
-					? active
-						? Color.Yellow
-						: Color.White
-					: active
-						? Color.LightGray
-						: Color.Gray;
-			this.m_UI.UI_DrawStringBoldLarge(color, text, x, gy);
-			x += text.length * MENU_CHAR_WIDTH;
+	): number {
+		const lines = optionRowLines(label, options, gx);
+		for (let l = 0; l < lines.length; l++) {
+			const y = gy + l * MENU_BOLD_LINE_SPACING;
+			if (l === 0) {
+				this.m_UI.UI_DrawStringBoldLarge(
+					active ? Color.White : Color.LightGray,
+					`${label} :`,
+					gx,
+					y,
+				);
+			}
+			for (const cell of lines[l]) {
+				const text =
+					cell.index === selected
+						? `< ${options[cell.index]} >`
+						: `  ${options[cell.index]}  `;
+				const color =
+					cell.index === selected
+						? active
+							? Color.Yellow
+							: Color.White
+						: active
+							? Color.LightGray
+							: Color.Gray;
+				this.m_UI.UI_DrawStringBoldLarge(color, text, cell.x, y);
+			}
 		}
+		return lines.length;
 	}
 
 	/**
@@ -2913,10 +2977,13 @@ export class RogueGame implements ActionGame {
 			);
 			gy += 2 * MENU_BOLD_LINE_SPACING;
 
-			this.DrawOptionRow("Ruleset  ", rulesetEntries, rulesetIdx, 0, gy, row === 0);
+			gy +=
+				this.DrawOptionRow("Ruleset  ", rulesetEntries, rulesetIdx, 0, gy, row === 0) *
+				MENU_BOLD_LINE_SPACING;
+			gy +=
+				this.DrawOptionRow("Game mode", modeEntries, modeIdx, 0, gy, row === 1) *
+				MENU_BOLD_LINE_SPACING;
 			gy += MENU_BOLD_LINE_SPACING;
-			this.DrawOptionRow("Game mode", modeEntries, modeIdx, 0, gy, row === 1);
-			gy += 2 * MENU_BOLD_LINE_SPACING;
 
 			// Only the active row's text. Both blocks are long -- the mode one is
 			// twenty lines -- and printing both overflowed the canvas.
@@ -3077,9 +3144,6 @@ export class RogueGame implements ActionGame {
 					"  fire stations, animal shelters, junkyards and more.",
 					"- Alcohol, cooking, fishing and butchering.",
 					"- Darker nights, and fire that spreads.",
-					"",
-					"Most of this is not implemented yet. Choosing it today",
-					"plays the same game as Classic - see the project plan.",
 				]
 			: [
 					"Classic - Rogue Survivor Alpha 10.1.",
@@ -3323,16 +3387,21 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 			);
 			gy += 2 * MENU_BOLD_LINE_SPACING;
 
-			this.DrawOptionRow("Race  ", raceEntries, raceIdx, 0, gy, row === 0);
-			gy += MENU_BOLD_LINE_SPACING;
+			gy +=
+				this.DrawOptionRow("Race  ", raceEntries, raceIdx, 0, gy, row === 0) *
+				MENU_BOLD_LINE_SPACING;
 			if (isUndead) {
-				this.DrawOptionRow("Type  ", typeEntries, typeIdx, 0, gy, row === 1);
+				gy +=
+					this.DrawOptionRow("Type  ", typeEntries, typeIdx, 0, gy, row === 1) *
+					MENU_BOLD_LINE_SPACING;
 			} else {
-				this.DrawOptionRow("Sex   ", sexEntries, sexIdx, 0, gy, row === 1);
-				gy += MENU_BOLD_LINE_SPACING;
-				this.DrawOptionRow("Skill ", skillEntries, skillIdx, 0, gy, row === 2);
+				gy +=
+					this.DrawOptionRow("Sex   ", sexEntries, sexIdx, 0, gy, row === 1) *
+					MENU_BOLD_LINE_SPACING;
+				gy +=
+					this.DrawOptionRow("Skill ", skillEntries, skillIdx, 0, gy, row === 2) *
+					MENU_BOLD_LINE_SPACING;
 			}
-			gy += MENU_BOLD_LINE_SPACING;
 
 			// All six appearance rows at once, as asked: the point of a customiser is
 			// seeing the whole look, and hiding half of it behind a sub-screen is what
@@ -3346,15 +3415,15 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 				const entries = ["*Random*", ...catalogue.map(describeAppearanceImage)];
 				const chosen = appearance[layer];
 				const idx = chosen === null ? 0 : catalogue.indexOf(chosen) + 1;
-				this.DrawOptionRow(
-					APPEARANCE_LAYER_LABELS[layer],
-					entries,
-					idx,
-					0,
-					gy,
-					layer === activeLayer,
-				);
-				gy += MENU_BOLD_LINE_SPACING;
+				gy +=
+					this.DrawOptionRow(
+						APPEARANCE_LAYER_LABELS[layer],
+						entries,
+						idx,
+						0,
+						gy,
+						layer === activeLayer,
+					) * MENU_BOLD_LINE_SPACING;
 			}
 
 			if (!isUndead) {
@@ -3391,7 +3460,11 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 			} else if (!isUndead && row === 2) {
 				if (skillIdx === 0) details.push("(a skill will be picked at random)");
 				else {
-					const sk = skillIdx as SkillID;
+					// The row's index, converted the way the C# converts it
+					// (`RogueGame.cs:2011`): entry 0 is `*Random*`, so entry `i` is
+					// living skill `i - 1 + FIRST_LIVING`. Casting the index straight
+					// through described the entry to the *right* of the one selected.
+					const sk = (skillIdx - 1 + Skills.FIRST_LIVING) as SkillID;
 					details.push(
 						`${Skills.maxSkillLevel(sk)} max - ${this.DescribeSkillShort(sk)}`,
 					);
@@ -3494,7 +3567,13 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 					} else {
 						this.m_CharGen.isUndead = false;
 						this.m_CharGen.isMale = sexIdx === 0 ? roller.rollChance(50) : sexIdx === 1;
-						const skID = skillIdx === 0 ? Skills.rollLiving(roller) : (skillIdx as SkillID);
+						// Same index-to-id conversion as the description above, and it
+						// matters more here: as a bare cast, picking Unsuspicious
+						// committed `Z_AGILE`, a zombie skill, to a living character.
+						const skID =
+							skillIdx === 0
+								? Skills.rollLiving(roller)
+								: ((skillIdx - 1 + Skills.FIRST_LIVING) as SkillID);
 						this.m_CharGen.startingSkill = skID;
 						// scoring : starting skill.
 						this.m_Session.scoring.startingSkill = skID;
