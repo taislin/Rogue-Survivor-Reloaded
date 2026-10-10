@@ -141,8 +141,8 @@ describe("RogueGame's measured surface", () => {
     // one method so a gate cannot measure at one scale while the drawing happens
     // at another. Private, stateless, and reached by nothing -- the count moves
     // because the class grew, not because a test reached further into it.
-    expect(m.members).toBe(849);
-    expect(m.methods).toBe(677);
+    expect(m.members).toBe(856);
+    expect(m.methods).toBe(682);
     // The *reachable* surface is 124, up from 121. Both extractions had left it
     // alone -- each kept its methods on the class, which is what keeps them pure
     // moves -- and these three moved it for the opposite reason: a test reaching
@@ -189,7 +189,24 @@ describe("RogueGame's measured surface", () => {
     // class before (the endgame test only names it in a comment), so this is the
     // caveat again: a test reached a public screen method, and the game's own
     // shape did not change.
-    expect(m.external).toBe(131);
+    //
+    // **One more, for `seed-selection.test.ts` — and this one is a new member,
+    // not a new reach.** A seed was always rolled and never chosen, so the
+    // screen that offers it (`HandleSelectSeed`, between the ruleset picker and
+    // the character screens) is a method the class did not have. It is public and
+    // it is on the new-game flow, so it lands in WAVE 3 beside the picker above
+    // it rather than in a hub: a screen the flow owns, which is the shape this
+    // split wants to move.
+    //
+    // **Three more, for `cook-and-destroy.test.ts` and the swap prompt in
+    // `shelter-backpacks.test.ts`.** `HandlePlayerDestroyItem` and
+    // `HandlePlayerCookFood` (Release 7-6's two inventory-key commands) and
+    // `HandlePlayerSwapItemInventory` (Release 8-2, whose modal slot prompt
+    // landed with them) are each driven by a test for the first time, and all
+    // three classify as HUB 2 — `Handle*` player handlers that never move. So
+    // the reach grew by three and every one of them went into a hub, which is
+    // the split saying these are handlers, not a region worth extracting.
+    expect(m.external).toBe(135);
   // §6.4: "567 of 584 methods are public — only 17 are `private`. The
   // `private` boundary is effectively absent." That is still true, and the
   // direction is worth pinning: private has come down from 91 to 89, and is 90
@@ -205,8 +222,22 @@ describe("RogueGame's measured surface", () => {
   // `m_SpeechBubbles: Map<...> = new Map()` among 83 of them — so those fields were
   // counted as methods and appeared in both totals. It now asks what follows the
   // name: `(` for a method, `:` or `=` for a field.
-  expect(m.public).toBe(759);
-  expect(m.private).toBe(90);
+  //
+  // **`HandleSelectSeed` is the one addition since**, and it is the only member
+  // added by the seed-selection feature: one public screen method, no state the
+  // class did not already hold — the seed it edits has been a session field since
+  // the port began, which is why only `public` and `methods` moved and `private`
+  // is still 90.
+  //
+  // **Six for the inventory commands, `private` back to 91 because of one of
+  // them.** `HandlePlayerDestroyItem`, `HandlePlayerCookFood`, `DoCookFood`,
+  // the private `promptForSwap`, and the two `SWAP_ITEM_*_MODE_TEXT` captions.
+  // `promptForSwap` is private for the reason `mapDrawScale` is: it is a modal
+  // key loop the play loop reaches and nothing else, and the C# had it inline in
+  // `HandlePlayerSwapItemInventory`. The captions are two `readonly string[]`
+  // fields, exactly like every other mode banner on the class.
+  expect(m.public).toBe(765);
+  expect(m.private).toBe(91);
 	});
 
 	it("§6's stop condition is not met: nothing private is reached from outside", () => {
@@ -223,7 +254,7 @@ describe("RogueGame's measured surface", () => {
 		expect(m.privateReached).toBe(0);
 	});
 
-	it("the outside world depends on 131 members, and §6 assumed far fewer", () => {
+	it("the outside world depends on 135 members, and §6 assumed far fewer", () => {
 		const m = measure();
 		// §6.4's `GameContext` was to name "the 11 service fields … plus `m_Player`,
 		// `m_PlayerFOV`, `m_MapViewRect`, `m_Overlays`, `m_FirstPersonFacing`" —
@@ -235,11 +266,20 @@ describe("RogueGame's measured surface", () => {
     // sites". At 121 names the pessimistic figure is not the real one, and that
     // is the answer to the question §6.4 deferred until "the game runs and the
     // real cross-method dependencies are known".
-    expect(m.external).toBe(131);
+    //
+    // **132 now**, and it is the only addition since: `HandleSelectSeed`, a new
+    // screen in the new-game flow, driven by `seed-selection.test.ts` the way
+    // `hiscores-screen.test.ts` drives `HandleHiScores`.
+    //
+    // **135 now**: the two Release 7-6 inventory commands and the Release 8-2
+    // swap prompt add three more handlers, and they are all `Handle*` player
+    // handlers -- so they land in a hub rather than in a region, which is the
+    // split classifying a reach the cheap way.
+    expect(m.external).toBe(135);
     expect(m.external).toBeGreaterThan(83);
 	});
 
-  it("classifies all 126, with no residual", () => {
+  it("classifies all 127, with no residual", () => {
     // This is the finding that forced the re-derivation, and the number that keeps
     // it fixed. §6.2's region table left **68 of the 110** (as measured then) in no
     // region at all —
@@ -257,7 +297,7 @@ describe("RogueGame's measured surface", () => {
 		expect(m.buckets.get("STATE")?.length ?? 0).toBeLessThan(33);
 	});
 
-it("splits the reachable surface into 35 hub and 96 movable, and the hubs stay", () => {
+it("splits the reachable surface into 38 hub and 97 movable, and the hubs stay", () => {
     // §6.8: the two hubs "are the reason the split is worth doing rather than the
     // reason it fails". Still true, and now measured on the current file.
     const m = measure();
@@ -275,8 +315,20 @@ it("splits the reachable surface into 35 hub and 96 movable, and the hubs stay",
     // and where. It classifies as STATE rather than as an action primitive, so it
     // lands in the movable half and the hubs stay at 35 -- a screen method
     // reached from a test, which is the shape this split wants to move.
-    expect(m.moving).toBe(96);
-    expect(m.hubs).toBe(35);
+    //
+    // **97 now**: `HandleSelectSeed`, and this one is a *new member* rather than a
+    // new reach -- the seed screen is the only thing seed selection added to the
+    // class. It is named on the Wave 3 list, so it lands beside the picker above
+    // it: a screen the new-game flow owns, which is the region that moves.
+    //
+    // **Still 97, with the hubs up to 38.** The next three reaches went the other
+    // way: `HandlePlayerDestroyItem`, `HandlePlayerCookFood` and
+    // `HandlePlayerSwapItemInventory` are all `Handle*` player handlers, so they
+    // classify as HUB 2 and the movable half does not move at all. That is the
+    // split working -- a test reaching a handler enlarges the part of the class
+    // that never has to move, which is the cheapest place for a reach to land.
+    expect(m.moving).toBe(97);
+    expect(m.hubs).toBe(38);
     expect(m.moving + m.hubs).toBe(m.external);
     // HUB 1 is 27 of the 35. `DoTag` joined when the minimap tag test replaced a
     // source scan with a real call to it; HUB 2 is 8, `HandlePlayerTradeNegociation`
@@ -324,6 +376,11 @@ it("splits the reachable surface into 35 hub and 96 movable, and the hubs stay",
     //
     // `HandleHiScores` is the 32nd, and the same in kind: a screen method, not
     // state, put here by `hiscores-screen.test.ts` driving it with real keys.
+    //
+    // **Still 32.** `HandleSelectSeed` looks like the 33rd and is not: it is
+    // named on the Wave 3 list in `measure-roguegame.mjs`, so a screen that is
+    // squarely part of the new-game flow does not land in the bucket of things
+    // `GameContext` carries. The STATE bucket holding still is the point.
     expect(carry.length).toBe(32);
 		for (const name of ["player", "session", "rules", "m_PlayerFOV", "m_CharGen", "m_IsGameRunning", "m_PlayerWasRescued", "TAG_MODE_TEXT", "simulateOneBehindDistrictTurn", "stepActorsOnFire", "CURRENT_SAVE_SLOT", "POPUP_FILLCOLOR", "SPEECH_BUBBLE_FILLCOLOR"]) {
 			expect(carry, `${name} should be classified as carried`).toContain(name);
@@ -363,7 +420,7 @@ it("splits the reachable surface into 35 hub and 96 movable, and the hubs stay",
 		const m = measure();
     const hubs = new Set(m.buckets.get("HUB 1") ?? []);
     for (const name of m.buckets.get("HUB 2") ?? []) hubs.add(name);
-    expect(hubs.size).toBe(35);
+    expect(hubs.size).toBe(38);
 		for (const [region, list] of m.buckets) {
 			if (region.startsWith("HUB")) continue;
 			for (const name of list) expect(hubs.has(name), `${name} is in two regions`).toBe(false);

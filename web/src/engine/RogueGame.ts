@@ -101,6 +101,7 @@ import {
 	moveItemToBackpack,
 	moveItemToInventory,
 	moveRefusalMessage,
+	NO_BACKPACK_REASON,
 	openBackpack,
 } from "@gameplay/Backpacks";
 import { ItemBackpack } from "@engine/items/ItemBackpack";
@@ -1515,6 +1516,17 @@ export class RogueGame implements ActionGame {
 	readonly CLOSE_DOOR_MODE_TEXT: string[] = [
 		"CLOSE MODE - directions to close, ESC cancels",
 	];
+	// Still Alive, Release 8-2. C# `RogueGame.cs:118-119`. The two captions the
+	// swap prompt shows: the item is picked first and the *other* one second, so
+	// each caption names the panel the digit refers to. Both say "SWAP INVENTORY
+	// MODE" in the reference, which reads as a copy-paste and is kept anyway --
+	// a caption is text the player matches against the panel in front of them.
+	readonly SWAP_ITEM_INVENTORY_MODE_TEXT: string[] = [
+		"SWAP INVENTORY MODE - key for Inventory slot number, ESC cancels",
+	];
+	readonly SWAP_ITEM_BACKPACK_MODE_TEXT: string[] = [
+		"SWAP INVENTORY MODE - key for Backpack slot number, ESC cancels",
+	];
 	readonly BARRICADE_MODE_TEXT: string[] = [
 		"BARRICADE/REPAIR MODE - directions to barricade/repair, ESC cancels",
 	];
@@ -2871,13 +2883,28 @@ export class RogueGame implements ActionGame {
 		// which rolls off the clock. We seed it from the session instead so a run
 		// is reproducible; the session reset above has to come first for that seed
 		// to be the one the roller uses.
-		const roller = new DiceRoller(this.m_Session.seed);
+		//
+		// **Allocated after the two screens below, not before them.** It used to
+		// sit here, which was harmless while nothing could change the seed. Now
+		// that the player can, the roller has to be built from the seed the player
+		// confirmed: allocated early, a run started on seed 4242 would roll its
+		// character — and every `*Random*` layer with it — off the seed `reset()`
+		// threw away, so the same seed would stop replaying the same character.
+		// Neither screen below reads the roller, so moving it costs nothing.
 
 		// Ruleset and game mode on one screen. They compose, and the ruleset is the
 		// coarser question, so putting them on one screen answers both without
 		// sending the player away and back to change the first after realising the
 		// second is wrong.
 		if (!(await this.HandleSelectRulesetAndMode())) return false;
+
+		// The world seed, before anything spends a roll from it. Not skipped by
+		// the quick start above: the shortcut is "these settings, random
+		// *character*", and a seed the player typed is a setting — the one thing
+		// on this screen worth the extra keypress.
+		if (!(await this.HandleSelectSeed())) return false;
+
+		const roller = new DiceRoller(this.m_Session.seed);
 
 		// Character details on one screen too, or a quick start. This replaced three
 		// screens (race, then sex-or-undead-type, then skill) whose row set depended
@@ -3084,6 +3111,193 @@ export class RogueGame implements ActionGame {
 					ok = true;
 					loop = false;
 					break;
+			}
+		} while (loop);
+
+		return ok;
+	}
+
+	/**
+	 * The world seed: the one number the whole city is generated from.
+	 *
+	 * ## Why a screen and not a row on the one above
+	 *
+	 * A seed is digits the player may want to replace wholesale, and a row of
+	 * left/right options cannot express that: it can step a value, never let one
+	 * be typed. It is also the only choice in the new-game flow that is not a
+	 * menu of named alternatives, so it gets the only screen here that reads the
+	 * keyboard as text.
+	 *
+	 * ## What it opens on
+	 *
+	 * The roll `Session.reset()` already made for this run. `HandleNewCharacter`
+	 * resets the session before the first screen, so the number on screen is a
+	 * genuine clock-derived roll and pressing ENTER straight through keeps
+	 * exactly the behaviour there has always been: nobody has to know what a seed
+	 * is in order to start a game.
+	 *
+	 * ## What the confirm is worth
+	 *
+	 * Setting the session seed is not enough on its own, and the reason is the one
+	 * `Session.useSeed` documents: `m_Rules` was built from the session seed when
+	 * the game object was constructed, so a seed chosen *here* would reseed world
+	 * generation while the gameplay rolls stayed on the previous run's roller —
+	 * half a deterministic run, which is worse than none. The confirm therefore
+	 * rebuilds it, exactly as `LoadGame` does after `Session.load()` restores a
+	 * seed. `StartNewGame`'s retry loop has to preserve the chosen seed across its
+	 * own `reset()` for the same reason, which is the other half of this.
+	 *
+	 * No C# original: the C# has no seed input at all (`RogueGame.cs:1417`
+	 * allocates an unseeded `new DiceRoller()` and lets the clock decide).
+	 */
+	async HandleSelectSeed(): Promise<boolean> {
+		// Digits only, and at most nine of them. The roller's state is a 32-bit
+		// unsigned integer, so a ten-digit number can exceed what fits and would be
+		// silently taken modulo 2^32 — nine digits cannot, which keeps the number
+		// on screen the number the run gets. (`reset()` can still roll a ten-digit
+		// seed, up to `Date.now() % 0x7fffffff`; that is a *generated* value, and
+		// nothing here caps those.)
+		const MAX_SEED_DIGITS = 9;
+
+		// The row's label, padded the way `DrawOptionRow`'s callers pad theirs
+		// ("Race  ", "Skill "), so this row lines up with the ones around it.
+		const SEED_LABEL = "Seed  ";
+
+		// The field, and whether what is in it was *generated* rather than typed.
+		// That one bit decides what the first keystroke does, and it is what makes
+		// a pre-filled field usable at all: the field opens selected, so the first
+		// digit replaces the roll and BACKSPACE clears it. Without it, typing "42"
+		// over a nine-digit roll would append and produce a number nobody typed.
+		let text = String(this.m_Session.seed);
+		let generated = true;
+
+		let loop = true;
+		let ok = false;
+		do {
+			this.m_UI.UI_Clear(Color.Black);
+			let gy = 0;
+			this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "New Game", 0, gy);
+			gy += 2 * MENU_BOLD_LINE_SPACING;
+
+			// Hand-wrapped rather than measured: the menu face is ~120 glyphs wide
+			// and every other screen on this flow states its business in a few
+			// short lines of its own, so this does the same rather than being the
+			// one screen with a paragraph on it.
+			for (const line of [
+				"Every run rolls a seed, and the whole city is generated from it.",
+				"The same seed makes the same world, so it is one you can replay",
+				"or hand to somebody else. Type your own, or keep this run's roll.",
+			]) {
+				this.m_UI.UI_DrawStringBoldLarge(Color.LightGray, line, 0, gy);
+				gy += MENU_BOLD_LINE_SPACING;
+			}
+			gy += MENU_BOLD_LINE_SPACING;
+
+			// The row, in the shape `DrawOptionRow` gives every other row on the
+			// screens around it: the label, then the value two label-widths in.
+			// Yellow while the field holds a roll (nothing typed yet, nothing at
+			// risk) and green once it holds one, so the state is visible without
+			// reading the line under it.
+			this.m_UI.UI_DrawStringBoldLarge(Color.White, `${SEED_LABEL} :`, 0, gy);
+			this.m_UI.UI_DrawStringBoldLarge(
+				generated ? Color.Yellow : Color.LightGreen,
+				`[ ${text}_ ]`,
+				(SEED_LABEL.length + 3) * MENU_CHAR_WIDTH,
+				gy,
+			);
+			gy += 2 * MENU_BOLD_LINE_SPACING;
+
+			// What the caret is standing in, and what an emptied field means.
+			// Neither is guessable and both are one keystroke away.
+			this.m_UI.UI_DrawStringBoldLarge(
+				Color.Gray,
+				generated
+					? "(a fresh roll: the first digit you type replaces it)"
+					: text.length === 0
+						? "(empty: keeping this run's roll)"
+						: "(your own seed)",
+				0,
+				gy,
+			);
+
+			this.DrawFootnote(
+				Color.White,
+				"digits type your own, BACKSPACE trims, R rolls another, ENTER starts, ESC cancels",
+			);
+			this.m_UI.UI_Repaint();
+
+			const key = await this.m_UI.UI_WaitKey();
+
+			// Escape before anything else, and it *cancels* rather than falling
+			// back to the roll: a player who backs out of the new-game flow
+			// halfway through expects to be back at the main menu, and a screen
+			// that swallowed Escape would make the key do nothing here and
+			// something everywhere else.
+			if (key.key === "Escape") {
+				ok = false;
+				loop = false;
+				continue;
+			}
+
+			if (key.key === "Enter") {
+				// An empty field is not a seed of 0, it is "I changed my mind":
+				// `Number("")` is 0, so the length check is what keeps a player
+				// who trimmed the field from starting a zero-seeded run.
+				//
+				// Only digits can reach the field, so the parse always succeeds;
+				// the finite check is the belt to that braces, and a parse that
+				// nonetheless failed leaves the roll — and the roller built from
+				// it — exactly as they were.
+				if (text.length > 0) {
+					const seed = Number(text);
+					if (Number.isFinite(seed)) {
+						this.m_Session.seed = seed >>> 0;
+						// The rules roller, rebuilt from the confirmed seed. See the
+						// comment above: without this, "the same seed replays the same
+						// run" would be true of the map and false of the gameplay.
+						this.m_Rules = new Rules(new DiceRoller(this.m_Session.seed));
+					}
+				}
+				ok = true;
+				loop = false;
+				continue;
+			}
+
+			if (key.key === "Backspace") {
+				// One press clears a field that still holds its roll, which is what
+				// "selected" means; after that it trims a character at a time.
+				if (generated) {
+					text = "";
+					generated = false;
+				} else {
+					text = text.slice(0, -1);
+				}
+				continue;
+			}
+
+			// `R` for another roll, and off the run's own dice on purpose: the
+			// seed screen runs *before* the character roller exists, and spending
+			// that roller here would shift every roll the run then makes, so two
+			// runs on the same confirmed seed would differ. `Math.random` costs
+			// the run nothing it can observe.
+			if (key.key === "r" || key.key === "R") {
+				text = String(Math.floor(Math.random() * 0x7fffffff));
+				generated = true;
+				continue;
+			}
+
+			// Digits, and only digits. Everything else — arrows, letters, the
+			// action-menu hotkeys — is swallowed rather than acted on, because a
+			// text field that answered to `h` by opening the manual would be a
+			// field nobody could type in.
+			if (key.key.length === 1 && key.key >= "0" && key.key <= "9") {
+				if (generated) {
+					text = key.key;
+					generated = false;
+				} else if (text.length < MAX_SEED_DIGITS) {
+					text += key.key;
+				}
+				continue;
 			}
 		} while (loop);
 
@@ -4333,9 +4547,20 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 				// the whole field from `reset()` (`load()` restores it from the save
 				// over the top, and a run that has not chosen one must still get the
 				// default).
+				//
+				// **And the seed, for the same reason and with more at stake.**
+				// `reset()` re-derives the seed from the clock, so a retry used to
+				// throw away the seed the run had — which was invisible when the
+				// seed was always a clock roll anyway, and is not now that
+				// `HandleSelectSeed` lets a player type one: a player on seed 4242
+				// whose city needed a second attempt would get a *random* world and
+				// never be told. Preserved the same way, so a chosen seed survives
+				// the retry loop that exists to find a world it can generate.
 				const rescueDay = this.m_Session.armyHelicopterRescueDay;
+				const seed = this.m_Session.seed;
 				this.m_Session.reset();
 				this.m_Session.armyHelicopterRescueDay = rescueDay;
+				this.m_Session.seed = seed;
 			}
 			worldMade = this.GenerateWorld(true, s_Options.citySize);
 			if (!worldMade && attempt >= MAX_WORLD_GEN_ATTEMPTS) {
@@ -4664,8 +4889,12 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 				command: PlayerCommand.BUILD_SMALL_FORTIFICATION,
 			},
 			{ label: "City Info", command: PlayerCommand.CITY_INFO },
-			{ label: "Close", command: PlayerCommand.CLOSE_DOOR },
-			{ label: "Eat Corpse", command: PlayerCommand.EAT_CORPSE },
+		{ label: "Close", command: PlayerCommand.CLOSE_DOOR },
+		// Release 7-6's cooking pair, alphabetical where the list is: Cook then
+		// Destroy, before Eat Corpse.
+		{ label: "Cook food", command: PlayerCommand.COOK_FOOD },
+		{ label: "Destroy item", command: PlayerCommand.DESTROY_ITEM },
+		{ label: "Eat Corpse", command: PlayerCommand.EAT_CORPSE },
 			{ label: "Fire", command: PlayerCommand.FIRE_MODE },
 			{ label: "Give", command: PlayerCommand.GIVE_ITEM },
 			{ label: "Help", command: PlayerCommand.HELP_MODE },
@@ -8827,7 +9056,7 @@ inv.removeAllQuantity(it);
 									loop = false;
 									break;
 								}
-								loop = !this.HandlePlayerSwapItemInventory(player, mousePos);
+								loop = !(await this.HandlePlayerSwapItemInventory(player, mousePos));
 								break;
 
 							case PlayerCommand.MAKE_COOKING_FIRE: //@@MP (Release 7-6)
@@ -8844,6 +9073,42 @@ inv.removeAllQuantity(it);
 									break;
 								}
 								loop = !this.HandlePlayerUnloadAmmo(player);
+								break;
+
+							// C# `RogueGame.cs:11067-11071`, Release 7-6.
+							//
+							// Guarded like every command around it, which is a
+							// divergence from the reference on one point only: the
+							// C# calls `BlockAction(checkBackpack)` first, and here
+							// that is `TryPlayerUnwell`'s own first line
+							// (`autoCloseBackpack`, `@gameplay/Backpacks`), so an
+							// open bag closes rather than being cooked into.
+							case PlayerCommand.COOK_FOOD: //@@MP (Release 7-6)
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.HandlePlayerCookFood(player, mousePos));
+								break;
+
+							// C# `RogueGame.cs:11063-11065`, Release 7-6, and the
+							// one command in the chain the reference dispatches with
+							// no guard at all -- no `BlockAction`, no
+							// `TryPlayerControlAlteringEffects`. Kept, and kept
+							// deliberately: the handler asks "Permanently destroy
+							// X?" and waits for a yes, so the "did I mean that"
+							// question is answered inside it.
+							//
+							// `HandlePlayerDestroyItem` is async here for one reason:
+							// `WaitYesOrNo` is a promise in this port
+							// (`RogueGame.ts:9304`).
+							//
+							// `loop` is left alone, which is the C#'s: the command
+							// costs no AP and does not end the turn, so the player
+							// keeps acting afterwards -- exactly as `SCREENSHOT`
+							// and the zoom keys above behave.
+							case PlayerCommand.DESTROY_ITEM: //@@MP (Release 7-6)
+								await this.HandlePlayerDestroyItem(player, mousePos);
 								break;
 
 							case PlayerCommand.LEAD_MODE:
@@ -10076,15 +10341,12 @@ inv.removeAllQuantity(it);
 			// An item *in the open backpack* is described by the panel, not by
 			// `DescribeItemLong`: it is not in the player's inventory, so the generic
 			// path would offer "to equip" and "to give" for something that is two
-			// rows away in a bag. `destroy` is passed as "" because
-			// `PlayerCommand.DESTROY_ITEM` is Release 7-6 and not ported, and a
-			// description that names a key the player cannot press is worse than one
-			// that omits it.
+			// rows away in a bag.
 			const packInv = firstBackpack(this.m_Player)?.backpackInventory;
 			const inBackpack = packInv != null && inv === packInv;
 			const lines = inBackpack
-				? describeItemInBackpack(it, "", {
-						destroy: "",
+				? describeItemInBackpack(it, this.DescribeItemShort(it), {
+						destroy: `<${s_KeyBindings.get(PlayerCommand.DESTROY_ITEM) ?? ""}>`,
 						moveToInventory: `<${s_KeyBindings.get(PlayerCommand.SWAP_INVENTORY) ?? ""}>`,
 					})
 				: this.DescribeItemLong(it, isPlayerInventory, hit.iSlot);
@@ -10123,12 +10385,11 @@ inv.removeAllQuantity(it);
 	 * only judgement in it is *which* of the two directions to move in, which is
 	 * "where did the click land" rather than anything the C# decides for us.
 	 *
-	 * The C# follows a refusal with a modal prompt offering to swap into a free
-	 * slot instead. That prompt is **not** ported -- see `moveItemToBackpack` for
-	 * why nothing is silently dropped without it. The guard around it is ported
-	 * verbatim, so a move into a full bag is refused with the C#'s own string.
+	 * When the destination has no room the C# falls into a modal prompt that asks
+	 * which slot to swap with (`RogueGame.cs:13930-13962`); the guard around it
+	 * is the port's existing refusal, and the prompt is `promptForSwap` below.
 	 */
-	HandlePlayerSwapItemInventory(player: Actor, mousePos: Point): boolean {
+	async HandlePlayerSwapItemInventory(player: Actor, mousePos: Point): Promise<boolean> {
 		const hit = this.MouseToInventoryItem(mousePos);
 		const it = hit.result;
 		if (hit.inv == null || it == null) return false;
@@ -10136,18 +10397,276 @@ inv.removeAllQuantity(it);
 		const pack = firstBackpack(player);
 		const inBackpack = pack != null && hit.inv === pack.backpackInventory;
 		if (!inBackpack && hit.inv !== player.inventory) return false;
+		// C# `:13864-13868`: the swap needs a bag, and this is where the C# says
+		// so -- not at the top of the method, because the mouse hit is what tells
+		// it whether the click was even about a bag.
+		if (pack == null) {
+			this.AddMessage(this.MakeErrorMessage(NO_BACKPACK_REASON));
+			return false;
+		}
 
 		const verdict = inBackpack
 			? moveItemToInventory(player, it)
 			: moveItemToBackpack(this.m_Rules, player, it);
 		if (verdict.ok) return true;
 
-		this.AddMessage(
-			this.MakeErrorMessage(
-				pack != null ? moveRefusalMessage(it, pack, verdict.reason) : verdict.reason,
+		// The refusal names the two full-refusals the C# answers with the prompt
+		// -- a destination with no room for this item at all. A refusal for any
+		// other reason (an item the bag may not hold) is reported as-is: swapping
+		// would offer to move the very item that cannot move.
+		if (inBackpack ? verdict.reason !== "your inventory is full" : verdict.reason !== "backpack is full") {
+			this.AddMessage(
+				this.MakeErrorMessage(
+					moveRefusalMessage(it, pack, verdict.reason),
+				),
+			);
+			return false;
+		}
+
+		// The prompt does the swap, and it spends the AP the move would have.
+		const swapped = await this.promptForSwap(player, it, inBackpack);
+		return swapped;
+	}
+
+	/**
+	 * The C#'s `promptForSwap` block -- `RogueGame.cs:13939-14035`.
+	 *
+	 * A destination with no room is not a refusal the player can act on: the item
+	 * they want to move *can* go in the bag, there is just nowhere to put it. So
+	 * the C# asks which slot to swap with, over a popup, and the answer is a
+	 * digit key -- the slot, not the letter the rebind screen uses.
+	 *
+	 * **The exchange itself is the port's, and it is cleaner than the
+	 * reference's.** The fork's version shuffles the quantity through a
+	 * one-slot temporary inventory (`:13981-13990`), leaves a `TODO` at `:13941`
+	 * admitting the whole arm is unfinished, and can duplicate a stack into the
+	 * bag: it removes the chosen item from the player, adds the bag's item to the
+	 * player, removes it from the bag, and then adds the chosen item *back* to
+	 * the bag without ever taking it out of the player's pack. Ported as written
+	 * that is an item duplicator.
+	 *
+	 * So the port does the exchange the prompt describes: both items leave their
+	 * inventories first, then each lands in the other one. That is exact
+	 * whenever the two stacks cross whole, which is the case the prompt exists
+	 * for -- the destination was full *of this item's kind*, so one unit of room
+	 * is what is needed and removing the swap partner frees a whole slot. A
+	 * partial crossing (a twelve-round stack into a bag holding eight, limit
+	 * ten) is refused with the rule's own reason rather than split, which is the
+	 * fork's TODO rather than a behaviour it ever had.
+	 */
+	private async promptForSwap(
+		player: Actor,
+		it: Item,
+		inBackpack: boolean,
+	): Promise<boolean> {
+		const pack = firstBackpack(player)!;
+		const from = inBackpack ? player.inventory! : pack.backpackInventory;
+		const to = inBackpack ? pack.backpackInventory : player.inventory!;
+
+		this.ClearOverlays();
+		// The caption names the panel the *other* item is chosen from, which is
+		// the C#'s own mapping and the only thing on screen that explains the
+		// digits being the opposite panel's slots: the item under the cursor is
+		// in the bag, so the digit names an inventory slot, and vice versa.
+		// (`RogueGame.cs:13945-13949`.)
+		this.AddOverlay(
+			new OverlayPopup(
+				inBackpack ? this.SWAP_ITEM_INVENTORY_MODE_TEXT : this.SWAP_ITEM_BACKPACK_MODE_TEXT,
+				this.MODE_TEXTCOLOR,
+				this.MODE_BORDERCOLOR,
+				this.MODE_FILLCOLOR,
+				new Point(0, 0),
 			),
 		);
-		return false;
+		this.RedrawPlayScreen();
+
+		let actionDone = false;
+		let loop = true;
+		while (loop) {
+			const key = await this.m_UI.UI_WaitKey();
+			if (key.key === "Escape") {
+				loop = false;
+			} else {
+				const choice = this.KeyToChoiceNumber(key);
+				if (choice >= 0) {
+					// `KeyToChoiceNumber` answers 1-based, and the C# maps that to
+					// a 0-based slot with 10 wrapping to 0 (`:13960-13962`).
+					const slot = choice === 0 ? 9 : choice - 1;
+					const swapItem = from.getItem(slot);
+					if (swapItem != null) {
+						if (swapItem instanceof ItemBackpack) {
+							// The bag itself is a slot of the player's own pack, and
+							// swapping with it is not a thing.
+							this.AddMessage(
+								this.MakeErrorMessage("That's your backpack. Choose a different item."),
+							);
+						} else {
+							const verdict = this.m_Rules.canActorMoveItemToBackpack(player, swapItem, pack, false);
+							if (!verdict.ok) {
+								this.AddMessage(
+									this.MakeErrorMessage(moveRefusalMessage(swapItem, pack, verdict.reason)),
+								);
+							} else {
+								// The exchange: out first, then in. Both directions, so
+								// no quantity is ever in two places at once.
+								from.removeAllQuantity(swapItem);
+								to.removeAllQuantity(it);
+								from.addAll(it);
+								to.addAll(swapItem);
+								actionDone = true;
+								loop = false;
+							}
+						}
+					}
+				}
+			}
+			this.RedrawPlayScreen();
+		}
+
+		this.ClearOverlays();
+		if (actionDone) this.SpendActorActionPoints(player, Rules.BASE_ACTION_COST);
+		return actionDone;
+	}
+
+	/**
+	 * C# `HandlePlayerDestroyItem` -- `RogueGame.cs:13185-13206`, Release 7-6.
+	 *
+	 * The one inventory-key command that needs a *confirm*: it removes the item
+	 * from the world for good, so the C# asks `MakeYesNoMessage` and waits. The
+	 * answer and the removal are the whole handler.
+	 *
+	 * The target is whatever slot the cursor is over -- the player's own pack,
+	 * or an open backpack (`isBackpack` in the C#), which is the arm
+	 * `MouseToInventoryItem` cannot answer on its own: it reports which
+	 * inventory the hit was in, and the backpack's own inventory object is what
+	 * identifies it.
+	 *
+	 * **No AP and no turn spent**, matching the reference: the C# returns void
+	 * and its dispatch site leaves `loop` alone. It is async here only because
+	 * `WaitYesOrNo` is a promise.
+	 */
+	async HandlePlayerDestroyItem(player: Actor, mousePos: Point): Promise<void> {
+		const hit = this.MouseToInventoryItem(mousePos);
+		const it = hit.result;
+		if (hit.inv == null || it == null) return;
+
+		const pack = firstBackpack(player);
+		const inBackpack = pack != null && hit.inv === pack.backpackInventory;
+		if (!inBackpack && hit.inv !== player.inventory) return;
+
+		this.AddMessage(this.MakeYesNoMessage(`Permanently destroy ${it.theName}`));
+		this.RedrawPlayScreen();
+		if (await this.WaitYesOrNo()) {
+			hit.inv.removeAllQuantity(it);
+		}
+		this.ClearMessages();
+		this.RedrawPlayScreen();
+	}
+
+	/**
+	 * C# `HandlePlayerCookFood` -- `RogueGame.cs:13126-13183`, Release 7-6, with
+	 * `DoCookFood` at `:21692-21753`.
+	 *
+	 * The player-facing half of `Feature.Cooking`. What it does is narrower than
+	 * "cooks the food": it moves **one quantity** of the raw stack off the player
+	 * and onto the burning tile beside them, and `CookFoodOnFires`
+	 * (`RogueGame.ts:5749`) does the cooking on later turns -- which is the C#'s
+	 * "for the player though, cooking takes 3 turns on the fire" and why the
+	 * handler itself never produces a cooked item.
+	 *
+	 * Two delibrate narrowings against the reference, both in the C#'s own
+	 * favour and both recorded here rather than silently kept:
+	 *
+	 *  - **The fire search stops at the first free burning tile.** The C# walks
+	 *    `Direction.COMPASS` and breaks out early on a `Barrel` or `Campfire`
+	 *    (its "prefer receptacles and campfires over cars" comment), which this
+	 *    keeps; what it does not copy is the C#'s free-space test, which reads
+	 *    `inv.IsEmpty` -- the *player's* inventory -- rather than the fire's.
+	 *    That is a bug in the reference (an empty inventory is not an empty
+	 *    fire), so the port asks the fire whether it has room instead and gets
+	 *    the same answer the C# means to give.
+	 *  - **An NPC never reaches this method.** `DoCookFood` handles "not the
+	 *    player" by cooking the meat immediately, and the only caller that arm
+	 *    has is the fork's NPC cooking AI, which the port does not have. So the
+	 *    immediate branch is written for the actor it is called on and the
+	 *    player path is the one that is reachable.
+	 */
+	async HandlePlayerCookFood(player: Actor, mousePos: Point): Promise<boolean> {
+		const hit = this.MouseToInventoryItem(mousePos);
+		// C# `:13134`: the cook handler wants the player's own pack -- the
+		// backpack's items are two rows away in a bag and the C# excludes them,
+		// unlike the destroy handler above.
+		if (hit.inv !== player.inventory) return false;
+		const it = hit.result;
+		if (it == null) return false;
+
+		if (!(it instanceof ItemFood)) return false;
+		const verdict = this.m_Rules.canActorCookFoodItem(player, it);
+		if (!verdict.can) {
+			this.AddMessage(this.MakeErrorMessage(`Cannot cook ${it.theName} : ${verdict.reason}.`));
+			return false;
+		}
+
+		// Find the fire: the first burning neighbour with room for the piece,
+		// preferring a barrel or a campfire over a burning car.
+		const map = player.location.map!;
+		let cookingFire: Point | null = null;
+		for (const dir of Direction.COMPASS) {
+			const pt = dir.applyTo(player.location.position);
+			if (!map.isInBoundsPoint(pt)) continue;
+			const mapObj = map.getMapObjectAt(pt.x, pt.y);
+			if (mapObj === null || !mapObj.isOnFire) continue;
+			if (cookingFire === null) cookingFire = pt;
+			if (mapObj instanceof Barrel || mapObj instanceof Campfire) {
+				cookingFire = pt;
+				break;
+			}
+		}
+		if (cookingFire === null) {
+			this.AddMessage(
+				this.MakeErrorMessage("Cannot cook : no space left on the fire for the raw meat."),
+			);
+			return false;
+		}
+
+		this.DoCookFood(player, it, cookingFire);
+		return true;
+	}
+
+	/**
+	 * C# `DoCookFood` -- `RogueGame.cs:21692-21753`, Release 7-6.
+	 *
+	 * One quantity of raw meat becomes one piece cooking on a fire. The AP is
+	 * spent here rather than in the handler because the C# spends it here too,
+	 * and because `DoCookFood` is the fork's shared entry point for both the
+	 * player's command and the NPC arm.
+	 *
+	 * The piece dropped is a fresh instance of the same model rather than the
+	 * stack itself, so a stack of six raw rabbits is not consumed whole, and
+	 * `isForbiddenToAI` keeps an NPC from walking off with the player's dinner
+	 * while it cooks -- the C#'s "lazy workaround", kept with its own comment
+	 * attached.
+	 */
+	DoCookFood(actor: Actor, food: ItemFood, chosenFire: Point): void {
+		this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+		const cookingPiece = new ItemFood(food.model, food.bestBefore?.turnCounter);
+		cookingPiece.quantity = 1;
+		actor.location.map!.dropItemAt(cookingPiece, chosenFire);
+		cookingPiece.isForbiddenToAI = true;
+
+		actor.inventory!.consume(food);
+
+		// The sizzle. Both tiers use `playIfNotAlreadyPlaying` in the C# and so
+		// they do here: a fire already hissing should not gain a second hiss
+		// from one piece of meat.
+		if (actor.isPlayer) {
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.COOKING_SIZZLE_PLAYER);
+		} else if (this.isAudibleToPlayer(actor.location, NOISE_RADII.QUIET)) {
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.COOKING_SIZZLE_NEARBY);
+		}
 	}
 
 	MouseToInventoryItem(screen: Point): {
@@ -17739,6 +18258,13 @@ updateAdvisorHintBanner(): void {
 			}
 		} else if (it instanceof ItemFood) {
 			lines.push(...this.DescribeItemFood(it));
+			// C# `RogueGame.cs:32026-32030`, Release 7-6: the "to cook" hint, and
+			// only for a piece of meat that wants cooking. It lands in
+			// `inInvAdditionalDesc`, which is emitted *last* of the special keys
+			// below.
+			if (it.canBeCooked && hasFeature(this.m_Session.ruleset, Feature.Cooking)) {
+				inInvAdditionalDesc = `to cook : <${key(PlayerCommand.COOK_FOOD)}>`;
+			}
 		} else if (it instanceof ItemMedicine) {
 			lines.push(...this.DescribeItemMedicine(it));
 		} else if (it instanceof ItemBarricadeMaterial) {
@@ -17832,6 +18358,11 @@ updateAdvisorHintBanner(): void {
 				lines.push(`to use : <LMB> or <Ctrl-${iSlot + 1}>`);
 			if (!it.isEquipped) lines.push("to drop : <RMB>");
 			lines.push(`to give : <${key(PlayerCommand.GIVE_ITEM)}>`);
+			// C# `RogueGame.cs:32125`, Release 7-6. Unconditional for anything in
+			// the player's own pack: the command exists for every item, and
+			// `HandlePlayerDestroyItem` refuses a target it cannot reach rather
+			// than a target that "cannot be destroyed".
+			lines.push(`to destroy : <${key(PlayerCommand.DESTROY_ITEM)}>`);
 			if (inInvAdditionalDesc != null) lines.push(inInvAdditionalDesc);
 		} else {
 			lines.push(" ");

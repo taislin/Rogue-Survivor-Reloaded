@@ -201,23 +201,24 @@ describe("Feature registry is wired", () => {
     expect(sites.map((s) => s.feature).sort())
       .toEqual([
 "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "AmbientAudio", "AmbientAudio", "AmbientAudio",
-   "AmbientAudio", "AmbientAudio", "AmbientAudio", "AnimalShelter", "AnimalShelter", "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank",                                                                                   
-   "Bar", "Bar", "BlackOpsRaid", "Butchering", "Butchering", "CHARResearchRaid", "Church", "Clinic", "Clinic", "Cooking",                                                                                                     
-   "Cooking", "Cooking", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov",                                                                              
-   "DarknessGating", "DerangedPatient", "DerangedPatient", "DifficultyAtCreation", "DifficultyAtCreation", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                               
-   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                  
-   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                  
-   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                  
-   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "Farm", "Farm",                                                                    
-   "Farm", "FireBarrels", "FireBarrels", "FireBarrels", "FireExtinguishers", "FireStation", "Fishing", "Fishing", "Fishing", "Fishing",                                                                                       
-   "Fishing", "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FuelStation",                                                                      
-   "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "ItemDespawn", "ItemDespawn", "Junkyard",                                                    
-   "Junkyard", "Library", "LightPriority", "MechanicWorkshop", "MechanicWorkshop", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability",               
-   "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
-   "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShoppingMall", "ShoppingMall", "ShoppingMall",                                
-   "SiphonFuel", "SiphonFuel", "SportsCourts", "SportsCourts", "TileFires", "TileFires", "TileFires", "TileFires", "TileFires", "WeaponWeight",
+   "AmbientAudio", "AmbientAudio", "AmbientAudio", "AnimalShelter", "AnimalShelter", "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank",                                                                                                  
+   "Bar", "Bar", "BlackOpsRaid", "Butchering", "Butchering", "CHARResearchRaid", "Church", "Clinic", "Clinic", "Cooking",                                                                                                                    
+   "Cooking", "Cooking", "Cooking", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov",                                                                                                 
+   "DarknessFov", "DarknessGating", "DerangedPatient", "DerangedPatient", "DifficultyAtCreation", "DifficultyAtCreation", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                
+   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                                 
+   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                                 
+   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                                 
+   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                                 
+   "ExtendedAudio", "Farm", "Farm", "Farm", "FireBarrels", "FireBarrels", "FireBarrels", "FireExtinguishers", "FireStation", "Fishing",                                                                                                      
+   "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",                                                                                                     
+   "FoodPoisoning", "FoodPoisoning", "FuelStation", "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue",                                                            
+   "ItemDespawn", "ItemDespawn", "Junkyard", "Junkyard", "Library", "LightPriority", "MechanicWorkshop", "MechanicWorkshop", "ResourcesAvailability", "ResourcesAvailability",                                                               
+   "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
+   "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",                                   
+   "ShoppingMall", "ShoppingMall", "ShoppingMall", "SiphonFuel", "SiphonFuel", "SportsCourts", "SportsCourts", "TileFires", "TileFires", "TileFires",                                                                                        
+    "TileFires", "TileFires", "WeaponWeight",
       ]);
-      // 160 call sites across 39 features
+      // 163 call sites across 39 features
 
 
 
@@ -229,14 +230,18 @@ describe("Feature registry is wired", () => {
     expect(sites.some((s) => s.feature === "Alcohol" && /HeadlessRunner\.ts/.test(s.at))).toBe(true);
     expect(at("WeaponWeight")).toMatch(/Rules\.ts:\d+$/);
     expect(at("ArmorResist")).toMatch(/Rules\.ts:\d+$/);
-    // `Cooking` is three, like `FoodPoisoning`: the predicate in `Rules` beside the
-    // other "can this actor" questions, the per-turn tick in `RogueGame`, which
-    // guards its own loop over map objects for the same reason `FoodPoisoning`'s
-    // sweep does, and `DoMakeFireForCooking` -- the command that made both of the
-    // other two reachable, since before it a fire could only come from an explosion.
+    // `Cooking` is four now: the predicate in `Rules` beside the other "can this
+    // actor" questions, the per-turn tick in `RogueGame`, which guards its own
+    // loop over map objects for the same reason `FoodPoisoning`'s sweep does,
+    // `DoMakeFireForCooking` -- the command that made both of the other two
+    // reachable, since before it a fire could only come from an explosion -- and
+    // the fourth in `DescribeItemLong`, which prints the "to cook" hint only when
+    // the ruleset has cooking at all. A hint for a key that does nothing is worse
+    // than no hint, so that one is gated on the feature rather than on the
+    // command's own keybinding.
     const cook = sites.filter((s) => s.feature === "Cooking");
     expect(cook.filter((s) => /Rules\.ts/.test(s.at))).toHaveLength(1);
-    expect(cook.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(2);
+    expect(cook.filter((s) => /RogueGame\.ts/.test(s.at))).toHaveLength(3);
 
     // The food-poisoning readers are split two-and-two, so the file is asserted
     // per site rather than per feature.
@@ -750,7 +755,7 @@ describe("Feature registry is wired", () => {
     // the port did not have -- player-centric, because the player cannot see who is
     // hammering. A sound port that only added the sound would have left the player
     // hearing construction with nothing explaining it.
-    expect(extended).toHaveLength(43);
+    expect(extended).toHaveLength(45);
     expect(extended.every((s) => /RogueGame\.ts/.test(s.at))).toBe(true);
   });
 

@@ -137,4 +137,40 @@ export enum PlayerCommand {
    * hands it back to the same `switch` the keybinding would have reached.
    */
   ACTION_MENU,
+
+  /**
+   * C# `DESTROY_ITEM` -- `PlayerCommand.cs:41`, Release 7-6, bound to `Ctrl+D`
+   * (`Keybindings.cs:56`).
+   *
+   * Appended after the port-only entries for the reason the header gives at
+   * length: a stored `Keybindings` pair is `[commandNumber, key]`, so a
+   * command's number is part of the save format and inserting one silently
+   * re-points every binding above it.
+   *
+   * It is the only inventory-key command in the fork that takes no target of
+   * its own beyond the mouse: `HandlePlayerDestroyItem` asks
+   * `MouseToInventoryItem` which slot the cursor is over and destroys that, in
+   * the player's pack or in an open backpack. The C# dispatches it with *no*
+   * `BlockAction` and no `TryPlayerControlAlteringEffects` guard
+   * (`RogueGame.cs:11063-11065`) -- the one command in the chain without either
+   * -- and the port keeps that, because a confirm dialog already covers the
+   * "did I mean that" case and a stunned player destroying their own gear is
+   * the fork's own behaviour.
+   */
+  DESTROY_ITEM,
+
+  /**
+   * C# `COOK_FOOD` -- `PlayerCommand.cs:40`, Release 7-6, bound to `Ctrl+C`
+   * (`Keybindings.cs:55`).
+   *
+   * Appended for the save-format reason `DESTROY_ITEM` gives above.
+   *
+   * The player-facing half of `Feature.Cooking`: the automatic half
+   * (`CookFoodOnFires`, which advances a piece of raw meat on a fire once per
+   * turn) shipped without it, so cooking was reachable only by dropping meat
+   * on a fire and waiting. `HandlePlayerCookFood` is the fork's own path: one
+   * quantity of the raw stack leaves the pack and lands on the fire beside the
+   * player, and the per-turn tick does the rest.
+   */
+  COOK_FOOD,
 }

@@ -96,8 +96,9 @@ const down = (n: number): string[] => new Array<string>(n).fill("ArrowDown");
 /**
  * The keys that walk the whole of `HandleNewCharacter` to the difficulty screen.
  *
- * **Two keys, where it used to be nine**, because the new-game screens were merged
- * into two:
+ * **Three keys, where it used to be two — and nine before that**, because the
+ * new-game screens were merged into two and the seed screen was then added
+ * between them and the character:
  *
  * 1. `Enter` — commits the ruleset and game-mode rows. **No arrow first**, which is
  *    the part worth reading: `runFlow` presets `Session.ruleset`, and the screen
@@ -105,7 +106,12 @@ const down = (n: number): string[] => new Array<string>(n).fill("ArrowDown");
  *    used to walk the ruleset *off* Still Alive and on to Classic, which gates the
  *    difficulty screen off — so the flow reported "never reached" for a screen it
  *    had skipped by accident.
- * 2. `Enter` — character details at their defaults: Human, `*Random*` sex,
+ * 2. `Enter` — keeps the seed `reset()` rolled. The seed screen
+ *    (`HandleSelectSeed`) is new, and it is deliberate that it is *not* skipped
+ *    here: the difficulty tests care about the flow's tail, and pressing through
+ *    the seed screen is exactly what a player who does not care about seeds
+ *    does. Its own behaviour is `tests/seed-selection.test.ts`'s business.
+ * 3. `Enter` — character details at their defaults: Human, `*Random*` sex,
  *    `*Random*` skill. The old flow spent three screens and a `y` to reach the same
  *    place, because the race screen's `*Random*` row asked Y/N and the sex and
  *    skill screens each wanted their own Enter.
@@ -115,18 +121,17 @@ const down = (n: number): string[] => new Array<string>(n).fill("ArrowDown");
  * "unattended" run never reaches the difficulty screen at all, and a test
  * asserting that it does would be asserting nothing.
  */
-const FLOW_TO_DIFFICULTY: string[] = ["Enter", "Enter"];
+const FLOW_TO_DIFFICULTY: string[] = ["Enter", "Enter", "Enter"];
 
 /**
  * The same keys for classic, and they are the same keys.
- *
  * They used to differ: classic took `Enter` at the ruleset screen and then the
  * *rest* of the still-alive sequence, because the two rulesets needed different
  * arrow counts. Now that both rows are seeded from the session, the only
  * difference between the two flows is the session field `runFlow` sets before it
  * starts — and that is the point being tested, not something the keys express.
  */
-const FLOW_CLASSIC: string[] = ["Enter", "Enter"];
+const FLOW_CLASSIC: string[] = ["Enter", "Enter", "Enter"];
 
 /**
  * Runs the whole flow, counting how many times the difficulty screen was reached.

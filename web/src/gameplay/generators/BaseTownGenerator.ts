@@ -4951,7 +4951,7 @@ export class BaseTownGenerator extends BaseMapGenerator {
   }
 
   makeShopConstructionItem(): Item {
-    const roll = this.m_DiceRoller.roll(0, 24);
+    const roll = this.m_DiceRoller.roll(0, 25);
     switch (roll) {
       case 0:
       case 1:
@@ -4985,6 +4985,18 @@ export class BaseTownGenerator extends BaseMapGenerator {
       case 22:
       case 23:
         return this.makeItemBarbedWire();
+      /*
+       * Still Alive, Release 5-1: the nail gun's ammunition. The reference has
+       * it at `BaseTownGenerator.cs:7500`, case 10 of `MakeShopConstructionItem`'s
+       * own `Roll(0, 13)` -- a different table from this port's, which is a
+       * port-era rewrite (24 outcomes, no axe, wrench, pickaxe, paint or
+       * chainsaw). **Appended rather than inserted**, so the 24 outcomes this
+       * table already has keep their odds and every construction shop in every
+       * existing seed is unchanged; the nails are simply one more thing a
+       * hardware store can hold.
+       */
+      case 24:
+        return this.makeItemNailGunAmmo();
       default:
         throw new RangeError('unhandled roll');
     }
@@ -5924,27 +5936,46 @@ export class BaseTownGenerator extends BaseMapGenerator {
       // dont block exits!
       if (map.getExitAt(pt) !== null) return null;
 
-      // table + tracker/armor/weapon.
-      if (this.m_DiceRoller.rollChance(20)) {
-        let it: Item | null = null;
+        // table + tracker/armor/weapon.
         if (this.m_DiceRoller.rollChance(20)) {
-          it = this.makeItemCHARLightBodyArmor();
-        } else if (this.m_DiceRoller.rollChance(20)) {
-          it = this.m_DiceRoller.rollChance(50) ? this.makeItemZTracker() : this.makeItemBlackOpsGPS();
-        } else {
-          // rare grenades.
+          let it: Item | null = null;
           if (this.m_DiceRoller.rollChance(20)) {
-            it = this.makeItemGrenade();
+            it = this.makeItemCHARLightBodyArmor();
+          } else if (this.m_DiceRoller.rollChance(20)) {
+            it = this.m_DiceRoller.rollChance(50) ? this.makeItemZTracker() : this.makeItemBlackOpsGPS();
           } else {
-            // weapon vs ammo.
-            if (this.m_DiceRoller.rollChance(30)) {
-              it = this.m_DiceRoller.rollChance(50) ? this.makeItemShotgun() : this.makeItemHuntingRifle();
+            // rare grenades.
+            if (this.m_DiceRoller.rollChance(20)) {
+              it = this.makeItemGrenade();
             } else {
-              it = this.m_DiceRoller.rollChance(50) ? this.makeItemShotgunAmmo() : this.makeItemLightRifleAmmo();
+              // weapon vs ammo.
+              if (this.m_DiceRoller.rollChance(30)) {
+                it = this.m_DiceRoller.rollChance(50) ? this.makeItemShotgun() : this.makeItemHuntingRifle();
+              } else {
+                // The bio-force gun's ammunition: C# `:8470-8473`, which rolls
+                // `RollChance(ResourcesAvailability / 3)` *before* the whole
+                // chain and thereby makes plasma the rarest thing in the room.
+                //
+                // Placed inside the terminal ammo arm rather than in front of the
+                // chain, because that is where it costs nothing: inserting it
+                // ahead of the armor/tracker/grenade arms would move every one of
+                // them, and the CHAR armory's contents are pinned by digests
+                // (`tests/char-storage-room.test.ts`). The rarity the reference
+                // gets from ordering, this gets from the same
+                // availability-scaled roll sitting at the end of it.
+                //
+                // `makeItemBioForceGunAmmo` also pins `Quantity = 1` and
+                // `IsForbiddenToAI`, so even a ported caller spawns exactly one.
+                const plasmaChance = this.armyResourcesChance() / 3;
+                it = this.m_DiceRoller.rollChance(plasmaChance)
+                  ? this.makeItemBioForceGunAmmo()
+                  : this.m_DiceRoller.rollChance(50)
+                    ? this.makeItemShotgunAmmo()
+                    : this.makeItemLightRifleAmmo();
+              }
             }
           }
-        }
-        map.dropItemAt(it!, pt);
+          map.dropItemAt(it!, pt);
 
         return this.makeObjShelf(GameImages.OBJ_SHOP_SHELF);
       } else {
@@ -7222,7 +7253,7 @@ export class BaseTownGenerator extends BaseMapGenerator {
 
           // weaponry/armor/radios.
           let it: Item | null = null;
-          const roll = this.m_DiceRoller.roll(0, 10);
+          const roll = this.m_DiceRoller.roll(0, 11);
           switch (roll) {
             // 20% armors
             case 0:
@@ -7256,6 +7287,31 @@ export class BaseTownGenerator extends BaseMapGenerator {
             case 8:
             case 9:
               it = this.m_DiceRoller.rollChance(30) ? this.makeItemShotgun() : this.makeItemShotgunAmmo();
+              break;
+
+            /*
+             * Still Alive, Release 7-2: the riot shield, C# case 18 of
+             * `BaseTownGenerator.cs:8970`'s `Roll(0, 20)`.
+             *
+             * **Appended, not inserted, and that is a deliberate divergence from
+             * the reference's distribution.** The fork's security-room table is
+             * twenty outcomes wide -- armor, precision rifles, smoke grenades,
+             * flares, the shield and the stun gun among them -- while this port
+             * ported the *vanilla* ten-outcome table (the fork's own additions
+             * being the gap this fills). Rebuilding the whole table would move
+             * every outcome in it, which moves every police station in every
+             * existing seed, and the generator's digests are pinned for exactly
+             * that reason.
+             *
+             * So the roll widens from 10 to 11 and the shield takes the new
+             * outcome: the ten vanilla outcomes keep their odds exactly, the
+             * shield is now findable at one in eleven, and the remaining fork
+             * arms (smoke grenade, flares kit, stun gun, tactical shotgun)
+             * are still absent. That is the same shape as the nail gun's ammo
+             * below: reachable now, fork's exact percentages still to do.
+             */
+            case 10:
+              it = this.makeItemPoliceRiotShield();
               break;
 
             default:

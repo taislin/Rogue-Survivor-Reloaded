@@ -49,7 +49,7 @@ import { Feature, hasFeature } from "@engine/FeatureFlags";
 import { Keybindings } from "@engine/Keybindings";
 import { Point } from "@engine/Point";
 import { PlayerCommand } from "@engine/PlayerCommand";
-import { GROUNDINVENTORYPANEL_Y } from "@engine/RogueGame";
+import { GROUNDINVENTORYPANEL_Y, INVENTORYPANEL_X, INVENTORYPANEL_Y, OverlayPopup, RogueGame } from "@engine/RogueGame";
 import { Rules } from "@engine/Rules";
 import { Ruleset, Session } from "@engine/Session";
 import { CLASS_SPECS } from "@engine/serialization/specs";
@@ -75,6 +75,7 @@ import {
 } from "@gameplay/Backpacks";
 import { GameItems, ItemID } from "@gameplay/GameItems";
 import { SkillID } from "@gameplay/Skills";
+import { NullRogueUI } from "@ui/NullRogueUI";
 import {
   BACKPACK_PANEL_TITLE,
   BACKPACK_PANEL_Y,
@@ -925,3 +926,187 @@ describe("Feature.ShelterBackpacks: under CLASSIC", () => {
 function openTheBagSilent(pack: ItemBackpack): void {
   pack.equippedPart = DollPart.BACK;
 }
+
+// ── The interactive swap prompt ───────────────────────────────────────────────
+
+describe("Feature.ShelterBackpacks: the interactive swap prompt", () => {
+  let game: RogueGame;
+  let ui: NullRogueUI;
+  let pack: ItemBackpack;
+  /** The item in the bag's slot 0, and the one in the pack's slot 1. */
+  let inBag: Item;
+  let kit: Item;
+  /** Every popup caption the redraw saw, in order. */
+  let captions: string[][];
+
+  /**
+   * The handler's redraw, stubbed.
+   *
+   * A real `RedrawPlayScreen` needs a whole session -- world, weather, current
+   * map, view rect -- which is what an integration test builds. The prompt is
+   * about the key loop and the exchange, and the only thing the redraw is wanted
+   * for is the caption it puts on screen, so the stub records the overlays the
+   * prompt installed and stops there.
+   */
+  const stubRedraw = (): void => {
+    game.RedrawPlayScreen = () => {
+      for (const overlay of (game as unknown as { m_Overlays: OverlayPopup[] }).m_Overlays) {
+        if (overlay instanceof OverlayPopup && overlay.lines != null) captions.push(overlay.lines);
+      }
+    };
+  };
+
+  /** The centre of a slot of `inv`'s panel, in canvas coordinates. */
+  const slotCentre = (inv: "bag" | "pack", slot: number): Point => {
+    // `BACKPACK_PANEL_Y` is a function -- the bag takes the ground panel's row,
+    // and whether the ground panel is hidden is answered at draw time. The
+    // player's own pack sits above that row, at `INVENTORYPANEL_Y`.
+    const y = inv === "bag" ? BACKPACK_PANEL_Y() : INVENTORYPANEL_Y;
+    const topLeft = game.InventorySlotToScreen(INVENTORYPANEL_X, y, slot, 0);
+    return new Point(topLeft.x + 16, topLeft.y + 16);
+  };
+
+  /**
+   * The key for a slot, as the prompt reads it.
+   *
+   * `KeyToChoiceNumber` answers the digit, and the prompt maps it to a slot with
+   * 0 wrapping to 9 and everything else stepping down one (C# `:13960-13962`),
+   * so slot 0 is digit 1 and slot 9 is digit 0.
+   */
+  const digitFor = (slot: number): string => String((slot + 1) % 10);
+
+  beforeEach(() => {
+    game = new RogueGame(new NullRogueUI());
+    ui = game.m_UI as NullRogueUI;
+    game.m_Player = player;
+    game.session.currentMap = player.location.map;
+    game.ComputeViewRect(new Point(10, 10));
+    captions = [];
+    stubRedraw();
+
+    // A full bag holding one packable in slot 0, and a full pack holding the bag
+    // in slot 0 and a siphon kit in slot 1 -- so the item under the cursor cannot
+    // move without a swap, and slot 0 of the pack is the bag itself.
+    pack = new ItemBackpack(Models.items.get(ItemID.BACKPACK_DAYPACK));
+    player.inventory!.addAll(pack);
+    openTheBag(pack);
+    inBag = packable();
+    pack.backpackInventory.addAll(inBag);
+    fillUp(pack.backpackInventory);
+    expect(pack.backpackInventory.canAddAtLeastOne(packable())).toBe(false);
+
+    kit = carry(new Item(Models.items.get(ItemID.SIPHON_KIT)));
+    expect(player.inventory!.getItem(0)).toBe(pack);
+    expect(player.inventory!.getItem(1)).toBe(kit);
+    fillUp(player.inventory!);
+    expect(player.inventory!.canAddAtLeastOne(packable())).toBe(false);
+  });
+
+  it("swaps the two items when a digit names the slot to swap with", async () => {
+    const bagSlot = pack.backpackInventory.getItem(1)!;
+
+    // Cursor over the bag's slot 0 -- the item that cannot come out alone.
+    // The kit is at slot 1, so digit 2.
+    ui.pushKeys(digitFor(1));
+    const acted = await game.HandlePlayerSwapItemInventory(player, slotCentre("bag", 0));
+    expect(acted, "the swap is an action, so the turn ends").toBe(true);
+
+    // Out first, then in: each item is in exactly one place afterwards.
+    expect(player.inventory!.contains(inBag), "the bag's item came out").toBe(true);
+    expect(pack.backpackInventory.contains(inBag)).toBe(false);
+    expect(pack.backpackInventory.contains(kit), "the kit went in").toBe(true);
+    expect(player.inventory!.contains(kit)).toBe(false);
+    // And the third item never moved, which is what a duplicating exchange would
+    // break.
+    expect(pack.backpackInventory.contains(bagSlot)).toBe(true);
+    expect(bagSlot.quantity, "nothing gained a quantity").toBe(1);
+  });
+
+  it("shows a caption naming the panel the digit refers to", async () => {
+    // The caption is the only thing on screen explaining why the digits are the
+    // *other* panel's slots, and it is the C#'s own wording: the item under the
+    // cursor is in the bag, so the digit names an inventory slot.
+    ui.pushKeys(digitFor(1));
+    await game.HandlePlayerSwapItemInventory(player, slotCentre("bag", 0));
+    expect(captions[0]).toEqual([
+      "SWAP INVENTORY MODE - key for Inventory slot number, ESC cancels",
+    ]);
+  });
+
+  it("offers to swap the other way too, from the pack into the bag", async () => {
+    // The mirror image: the cursor is over an item in the player's *own* pack,
+    // the bag has no room for it, and the caption reads the bag's slots -- which
+    // is the C#'s mapping the other way round (`RogueGame.cs:13949`).
+    const inPack = player.inventory!.getItem(1)!;
+    const chosen = pack.backpackInventory.getItem(1)!;
+    expect(moveItemToBackpack(rules, player, inPack).reason).toBe("backpack is full");
+
+    // Digit 2 names the bag's second slot, which is `chosen`.
+    ui.pushKeys(digitFor(1));
+    const acted = await game.HandlePlayerSwapItemInventory(player, slotCentre("pack", 1));
+    expect(acted, "the swap is an action, so the turn ends").toBe(true);
+    expect(captions[0]).toEqual([
+      "SWAP INVENTORY MODE - key for Backpack slot number, ESC cancels",
+    ]);
+    // Out first, then in, in this direction too.
+    expect(player.inventory!.contains(chosen), "the bag's item came out").toBe(true);
+    expect(pack.backpackInventory.contains(chosen)).toBe(false);
+    expect(pack.backpackInventory.contains(inPack), "the pack's item went in").toBe(true);
+    expect(player.inventory!.contains(inPack)).toBe(false);
+  });
+
+  it("leaves both items where they were when the player cancels", async () => {
+    ui.pushKeys("Escape");
+    const acted = await game.HandlePlayerSwapItemInventory(player, slotCentre("bag", 0));
+    expect(acted).toBe(false);
+    expect(player.inventory!.contains(kit)).toBe(true);
+    expect(pack.backpackInventory.contains(inBag)).toBe(true);
+  });
+
+  it("refuses the bag itself, and keeps the prompt open for another choice", async () => {
+    // The pack's slot 0 *is* the bag, and swapping with it is not a thing
+    // (C# `:13976`). The prompt stays open -- one bad key is not a refusal.
+    ui.pushKeys(digitFor(0), digitFor(1));
+    await game.HandlePlayerSwapItemInventory(player, slotCentre("bag", 0));
+    expect(player.inventory!.contains(kit), "the second key still swapped").toBe(false);
+    expect(pack.backpackInventory.contains(kit)).toBe(true);
+  });
+
+  it("refuses an item the bag may not hold, and keeps the prompt open", async () => {
+    // C# `:13978`: the chosen slot has to pass `CanActorMoveItemToBackpack` too,
+    // or the exchange would put a rifle into a waist pouch.
+    const crowbar = new Item(Models.items.get(ItemID.MELEE_CROWBAR));
+    player.inventory!.removeAllQuantity(kit);
+    player.inventory!.addAll(crowbar);
+    const crowbarSlot = player.inventory!.items.indexOf(crowbar);
+    expect(crowbarSlot).toBeGreaterThan(0);
+
+    ui.pushKeys(digitFor(crowbarSlot), digitFor(1));
+    const acted = await game.HandlePlayerSwapItemInventory(player, slotCentre("bag", 0));
+    expect(player.inventory!.contains(crowbar), "it stayed in the pack").toBe(true);
+    expect(pack.backpackInventory.contains(crowbar)).toBe(false);
+    // And the second key -- the kit's old slot, now holding an ordinary
+    // packable -- completed the swap, which is the point of the prompt staying
+    // open.
+    expect(acted).toBe(true);
+    expect(player.inventory!.contains(inBag)).toBe(true);
+  });
+
+  it("says 'You aren't carrying a backpack.' rather than prompting", async () => {
+    // C# `:13864-13868` -- the check is before the move, not inside it.
+    player.inventory!.removeAllQuantity(pack);
+    ui.pushKeys(digitFor(1));
+    const acted = await game.HandlePlayerSwapItemInventory(player, slotCentre("pack", 1));
+    expect(acted).toBe(false);
+    expect(captions, "no prompt without a bag").toEqual([]);
+  });
+
+  it("does nothing at all for a slot that is empty", async () => {
+    // A digit past the end of the panel: no item, no message, no exit.
+    ui.pushKeys(digitFor(9), "Escape");
+    const acted = await game.HandlePlayerSwapItemInventory(player, slotCentre("bag", 0));
+    expect(acted).toBe(false);
+    expect(player.inventory!.contains(kit)).toBe(true);
+    expect(pack.backpackInventory.contains(inBag)).toBe(true);
+  });
+});

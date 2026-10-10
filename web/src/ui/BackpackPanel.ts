@@ -98,12 +98,12 @@ export function backpackPanelRows(backPack: ItemBackpack, slotsPerLine = INVENTO
 /**
  * The keys the panel's description offers for an item sitting in a bag.
  *
- * `DESTROY_ITEM` is a Release 7-6 command the port has not added, so the string is
- * a parameter rather than a lookup: a caller that has the command passes
- * `s_KeyBindings.get(PlayerCommand.DESTROY_ITEM)`, and one that does not passes
- * `""` and the line is dropped rather than printed with an empty bracket. The one
- * command this feature owns, `SWAP_INVENTORY`, is in the port's `PlayerCommand` and
- * is bound to `Y`.
+ * `destroy` is `PlayerCommand.DESTROY_ITEM` (Release 7-6, `Ctrl+D`), and the
+ * string is a parameter rather than a lookup because this module is not allowed
+ * to know about `Keybindings`: a caller passes the bound key formatted for
+ * display, or `""` and the line is dropped rather than printed with an empty
+ * bracket. The one command this feature owns, `SWAP_INVENTORY`, is in the
+ * port's `PlayerCommand` and is bound to `Y`.
  */
 export interface BackpackDescriptionKeys {
   destroy: string;
