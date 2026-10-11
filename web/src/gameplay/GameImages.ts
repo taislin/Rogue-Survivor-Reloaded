@@ -43,6 +43,8 @@ export class GameImages {
   static readonly ICON_ROT_ALMOST_HUNGRY = "Icons/rot_almost_hungry";
   static readonly ICON_ROT_HUNGRY = "Icons/rot_hungry";
   static readonly ICON_ROT_STARVING = "Icons/rot_starving";
+  /** Still Alive, Release 7-2: the stunned/flashbanged status icon. */
+  static readonly ICON_INCAPACITATED = "Icons/incapacitated";
   static readonly ICON_SLEEP_ALMOST_SLEEPY = "Icons/sleep_almost_sleepy";
   static readonly ICON_SLEEP_EXHAUSTED = "Icons/sleep_exhausted";
   static readonly ICON_SLEEP_SLEEPY = "Icons/sleep_sleepy";
@@ -1571,6 +1573,14 @@ export class GameImages {
   // ── Effects & Misc ────────────────────────────────────────────────────────
   static readonly EFFECT_BARRICADED = "Effects/barricaded";
   static readonly EFFECT_ONFIRE = "Effects/onFire";
+  /** Still Alive, Release 7-2: the five full-screen flashbang tints. */
+  static readonly EFFECT_FLASHBANG_020 = "Effects/flashbang_effect_020";
+  static readonly EFFECT_FLASHBANG_040 = "Effects/flashbang_effect_040";
+  static readonly EFFECT_FLASHBANG_060 = "Effects/flashbang_effect_060";
+  static readonly EFFECT_FLASHBANG_080 = "Effects/flashbang_effect_080";
+  static readonly EFFECT_FLASHBANG_100 = "Effects/flashbang_effect_100";
+  /** Still Alive, Release 7-2: the smoke grenade's cloud. */
+  static readonly EFFECT_SMOKE_SCREEN = "Effects/smoke_screen";
   static readonly UNDEF = "undef";
   static readonly MAP_EXIT = "map_exit";
   static readonly MINI_PLAYER_POSITION = "mini_player_position";

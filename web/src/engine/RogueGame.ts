@@ -18113,7 +18113,12 @@ updateAdvisorHintBanner(): void {
 		if (activityLine != null) lines.push(activityLine);
 		else lines.push(" "); // blank activity line
 		if (actor.model.abilities.hasToSleep) {
-			if (rules.isActorExhausted(actor)) lines.push("Exhausted!");
+			// C# `:31454`, Release 7-2. The order matters as little as the
+			// icons' -- the statuses are mutually exclusive -- but the line has
+			// to be here rather than after `Sleepy.`, or a stunned actor reads
+			// as merely tired.
+			if (actor.isIncapacitated) lines.push("Stunned!");
+			else if (rules.isActorExhausted(actor)) lines.push("Exhausted!");
 			else if (rules.isActorSleepy(actor)) lines.push("Sleepy.");
 		}
 		if (actor.model.abilities.hasToEat) {
@@ -22045,19 +22050,16 @@ updateAdvisorHintBanner(): void {
 	// tile-fire seeding at `:20036`. The port had two parameters, so its blast path
 	// could not know *what* had exploded and the seeding was unreachable.
 	//
-	// **Only the tile-fire half of the C#'s `itemModel` use is ported here, and that
-	// is a deliberate narrowing rather than an oversight.** `DoBlast` also reads the
-	// model for a three-way SFX switch on the primed id (`:19580`, `:19636`,
-	// `:19662`), the BFG plasma icon (`:19693`), and the smoke screen and flashbang
-	// deployments (`:19697`, `:19699`); `ApplyExplosionDamage` additionally uses it
-	// for the plasma charge's four special cases (`:19871`, `:19902`, `:19922`,
-	// `:20006`, `:20028`). None of that is reachable in the port today --
-	// `DeploySmokeScreen` and `DetonateFlashbang` do not exist here, the BFG and the
-	// grenade launcher are unported, and no code path primes a plasma charge -- so
-	// porting it would be ~200 lines of unreachable transcription. What *is* ported
-	// is exactly equivalent for every explosive the port can detonate: see the
-	// seeding note in `ApplyExplosionDamage` for why gating on `causesTileFires`
-	// alone matches the C#'s `IsFlameWeapon || CausesTileFires`.
+	// **Only the plasma-charge half of the C#'s `itemModel` use is unported
+	// here, and that is now the deliberate narrowing rather than an oversight.**
+	// `DoBlast` reads the model for the SFX switch on the primed id, for the
+	// smoke screen and flashbang deployments, and for the plasma icon; the
+	// first three are ported below. What remains unported is the plasma
+	// charge's four special cases in `ApplyExplosionDamage`, because no code
+	// path in the port primes one -- so it would be unreachable transcription.
+	// What *is* ported is exactly equivalent for every explosive the port can
+	// detonate: see the seeding note in `ApplyExplosionDamage` for why gating on
+	// `causesTileFires` alone matches the C#'s `IsFlameWeapon || CausesTileFires`.
 	async DoBlast(location: Location, blastAttack: BlastAttack, itemModel: ItemModel): Promise<void> {
 		// noise.
 		this.OnLoudNoise(location.map!, location.position, "A loud EXPLOSION");
@@ -22106,7 +22108,9 @@ updateAdvisorHintBanner(): void {
 					this.m_SoundManager.play(GameSounds.FUEL_PUMP_VISIBLE);
 					break;
 				case ItemID.EXPLOSIVE_SMOKE_GRENADE_PRIMED:
+					// C# `:19697-19698`: the smoke cloud itself, now ported.
 					this.m_SoundManager.play(GameSounds.SMOKE_GRENADE);
+					this.DeploySmokeScreen(location.map!, location.position);
 					break;
 				case ItemID.EXPLOSIVE_FLASHBANG_PRIMED:
 					// The flashbang's *flash* is the half that stuns, and it is
@@ -22202,6 +22206,51 @@ DetonateFlashbang(map: Map, pt: Point): void {
 	}
 }
 
+/**
+ * C# `DeploySmokeScreen` -- `RogueGame.cs:20234-20270`, Release 7-2.
+ *
+ * A smoke grenade's effect: a smoke-screen map object on the tile for two hours
+ * (which blocks sight -- the object is what does the work, not this method),
+ * plus three side effects the C# applies whether or not the object is placed.
+ *
+ * The two-hours timer is the C#'s `TaskRemoveMapObject`; the port's `addTimer`
+ * takes a `TaskRemoveDecoration`, so the cloud goes on as a tile decoration and
+ * comes off with the task the port already has. That is a divergence in kind --
+ * a decoration is drawn under the actor rather than as an object on the tile --
+ * and it is the same shape the fire decoration already uses, so it is the shape
+ * this port knows how to time.
+ */
+DeploySmokeScreen(map: Map, pt: Point): void {
+	const tile = map.getTileAt(pt.x, pt.y);
+
+	// put smoke down, unless something is already there or the tile cannot hold it.
+	if (map.getMapObjectAtPoint(pt) === null) {
+		if (
+			map.getTileAt(pt.x, pt.y)?.model.isWalkable &&
+			map.getExitAt(pt) === null
+		) {
+			tile?.addDecoration(GameImages.EFFECT_SMOKE_SCREEN);
+			map.addTimer(
+				new TaskRemoveDecoration(
+					WorldTime.TURNS_PER_HOUR * 2,
+					pt.x,
+					pt.y,
+					GameImages.EFFECT_SMOKE_SCREEN,
+				),
+			);
+		}
+	}
+
+	// smother tile fires.
+	if (tile !== null && tile.isOnFire) this.extinguishOnFireTile(tile);
+
+	// clear any and all scents.
+	for (const odor of [Odor.LIVING, Odor.SUPPRESSOR, Odor.UNDEAD_MASTER]) {
+		const scent = map.getScentByOdor(odor, pt);
+		if (scent != null) map.removeScent(scent);
+	}
+}
+
 // C# ApplyExplosionWave — RogueGame.cs:14240
 	// async: C# blocks on ApplyExplosionWaveSub.
 	async ApplyExplosionWave(
@@ -22291,16 +22340,16 @@ DetonateFlashbang(map: Map, pt: Point): void {
 		blast: BlastAttack,
 		itemModel: ItemModel,
 	): Promise<boolean> {
-		// C# `:19795-19808`: the flashbang's wave arm, and it is a *separate* arm
-		// from the damage one -- the flashbang does no damage, so
-		// `ApplyExplosionDamage` would be a no-op on every tile. What it does
-		// instead is stun whoever is standing on it, which is the whole point of
-		// the weapon and the reason the wave loop has to reach it.
-		//
-		// The smoke grenade's arm (`:19795-19797`) is not ported: `DeploySmokeScreen`
-		// does not exist in the port, and the smoke grenade's own blast has no
-		// damage to apply, so a smoke wave is silent and harmless -- which is the
-		// behaviour it has today.
+		// C# `:19795-19808`: two arms the damage one hides behind, and the
+		// smoke grenade's is the first. Both are *separate* from the damage
+		// check because neither explosive does any -- `ApplyExplosionDamage`
+		// would be a no-op on every tile of both waves.
+		if (itemModel.id === ItemID.EXPLOSIVE_SMOKE_GRENADE_PRIMED) {
+			this.DeploySmokeScreen(blastCenter.map!, pt);
+			// Show if visible, which is what makes the wave loop redraw.
+			if (this.IsVisibleToPlayer(blastCenter.map!, pt)) return true;
+			return false;
+		}
 		if (itemModel.id === ItemID.EXPLOSIVE_FLASHBANG_PRIMED) {
 			this.DetonateFlashbang(blastCenter.map!, pt);
 			// Show if visible, which is what makes the wave loop redraw.
@@ -29969,12 +30018,11 @@ DetonateFlashbang(map: Map, pt: Point): void {
 	 * arm used to say the three did not exist and to drop the exclusion. They exist
 	 * now, so the exclusion is there.
 	 *
-	 * **The incapacitated AI's copy of this arm is still not ported**, and it is the
-	 * other half of what the brief calls out. `GenerateIncapacitatedAction`
-	 * (`RogueGame.cs:25042-25076`, Release 7-2) has no counterpart in this port at
-	 * all -- its three other arms need `DeploySmokeScreen` and `DetonateFlashbang`,
-	 * which `RogueGame.ts:20161` records as absent -- so there is nothing to add the
-	 * `:25068` carve-out to. It arrives with that method.
+	 * **The incapacitated AI's copy of this arm is ported** alongside
+	 * `GenerateIncapacitatedAction`, and this same `DAMN IT!!!` is the catch-all
+	 * both arms fall to. Its siblings -- `DeploySmokeScreen` and
+	 * `DetonateFlashbang` -- are ported too, so the carve-out has something to
+	 * exclude.
 	 */
 	GenerateDrunkAction(actor: Actor): ActorAction | null {
 		switch (this.m_Rules.roll(0, 6)) {
@@ -31248,7 +31296,49 @@ DetonateFlashbang(map: Map, pt: Point): void {
 				) {
 					this.m_UI.UI_DrawImage(weatherImage, toScreen.x, toScreen.y);
 				}
+
+				// 8. flashbang full-screen tint. Still Alive, Release 7-2. C#
+				// `:25668-25682`, applied last because it has to overlay
+				// everything else -- a flashbang that only dims the tiles the
+				// player was looking at is not a flash.
+				//
+				// The C# throws on a turn count above five; the port's counters
+				// are clamped to `Rules.MAXIMUM_INCAPACITATED_TURNS` at their two
+				// write sites, so the default arm is unreachable and the fallback
+				// is "no tint" rather than a crash -- an actor stunned on the same
+				// turn the counter is set still has to be drawn.
+				if (isVisible && this.m_Player.isFlashbanged) {
+					const flashImage = this.flashbangImage(this.m_Player.flashbangedTurns);
+					if (flashImage !== null)
+						this.m_UI.UI_DrawImage(flashImage, toScreen.x, toScreen.y);
+				}
 			}
+		}
+	}
+
+	/**
+	 * The flashbang tint for a turn count. C#'s `:25673-25681`, Release 7-2.
+	 *
+	 * Five tints at 20% steps: the player sees *less* as the counter runs down,
+	 * which reads as the flash fading. A count of zero or below five-plus is
+	 * null, and null means no tint -- the C# would have thrown, but the port's
+	 * counters are clamped at write time, so the case it guarded against cannot
+	 * arrive here.
+	 */
+	private flashbangImage(flashbangedTurns: number): string | null {
+		switch (flashbangedTurns) {
+			case 1:
+				return GameImages.EFFECT_FLASHBANG_020;
+			case 2:
+				return GameImages.EFFECT_FLASHBANG_040;
+			case 3:
+				return GameImages.EFFECT_FLASHBANG_060;
+			case 4:
+				return GameImages.EFFECT_FLASHBANG_080;
+			case 5:
+				return GameImages.EFFECT_FLASHBANG_100;
+			default:
+				return null;
 		}
 	}
 
@@ -31656,7 +31746,18 @@ DetonateFlashbang(map: Map, pt: Point): void {
 
 		// sleepy, hungry & insane icons.
 		if (actor.model.abilities.hasToSleep) {
-			if (this.m_Rules.isActorExhausted(actor)) {
+			// C# `:26050`: a stunned or flashbanged actor shows that rather than
+			// the sleep status. Without it a survivor who has just been hit by a
+			// stun gun looks exhausted, which is the one reading the icon must
+			// not give -- exhaustion is a resource, this is a state.
+			if (actor.isIncapacitated) {
+				this.m_UI.UI_DrawImageTinted(
+					GameImages.ICON_INCAPACITATED,
+					gx,
+					gy,
+					tint,
+				);
+			} else if (this.m_Rules.isActorExhausted(actor)) {
 				this.m_UI.UI_DrawImageTinted(
 					GameImages.ICON_SLEEP_EXHAUSTED,
 					gx,

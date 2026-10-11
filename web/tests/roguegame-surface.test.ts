@@ -158,8 +158,8 @@ describe("RogueGame's measured surface", () => {
     // `STUN_WEAPON_EFFECT_TURNS`, read by both the stun gun and the flashbang.
     // The `Actor` fields the counters live in are in `data/Actor.ts`, so they
     // are not part of this class's count.
-    expect(m.members).toBe(863);
-    expect(m.methods).toBe(688);
+    expect(m.members).toBe(864);
+    expect(m.methods).toBe(689);
     // The *reachable* surface is 124, up from 121. Both extractions had left it
     // alone -- each kept its methods on the class, which is what keeps them pure
     // moves -- and these three moved it for the opposite reason: a test reaching
@@ -223,7 +223,7 @@ describe("RogueGame's measured surface", () => {
     // three classify as HUB 2 — `Handle*` player handlers that never move. So
     // the reach grew by three and every one of them went into a hub, which is
     // the split saying these are handlers, not a region worth extracting.
-    expect(m.external).toBe(136);
+    expect(m.external).toBe(137);
   // §6.4: "567 of 584 methods are public — only 17 are `private`. The
   // `private` boundary is effectively absent." That is still true, and the
   // direction is worth pinning: private has come down from 91 to 89, and is 90
@@ -254,7 +254,7 @@ describe("RogueGame's measured surface", () => {
   // `HandlePlayerSwapItemInventory`. The captions are two `readonly string[]`
   // fields, exactly like every other mode banner on the class.
   expect(m.public).toBe(771);
-  expect(m.private).toBe(92);
+  expect(m.private).toBe(93);
 	});
 
 	it("§6's stop condition is not met: nothing private is reached from outside", () => {
@@ -297,7 +297,7 @@ describe("RogueGame's measured surface", () => {
     // action primitive, so it lands in HUB 1 beside `DoMeleeAttack` and the rest
     // -- the hub a wave must never move, reached by a test that checks which of
     // three call sites inside it fires.
-    expect(m.external).toBe(136);
+    expect(m.external).toBe(137);
     expect(m.external).toBeGreaterThan(83);
 	});
 
@@ -319,7 +319,7 @@ describe("RogueGame's measured surface", () => {
 		expect(m.buckets.get("STATE")?.length ?? 0).toBeLessThan(33);
 	});
 
-it("splits the reachable surface into 39 hub and 97 movable, and the hubs stay", () => {
+it("splits the reachable surface into 39 hub and 98 movable, and the hubs stay", () => {
     // §6.8: the two hubs "are the reason the split is worth doing rather than the
     // reason it fails". Still true, and now measured on the current file.
     const m = measure();
@@ -354,7 +354,7 @@ it("splits the reachable surface into 39 hub and 97 movable, and the hubs stay",
     // cheap way: the bash/break sound tests drive it directly, and a `Do*` action
     // primitive classifies as a hub rather than a region, so the movable half is
     // unchanged again and the hub grew by one.
-    expect(m.moving).toBe(97);
+    expect(m.moving).toBe(98);
     expect(m.hubs).toBe(39);
     expect(m.moving + m.hubs).toBe(m.external);
     // HUB 1 is 28 of the 39. `DoTag` joined when the minimap tag test replaced a
@@ -417,7 +417,7 @@ it("splits the reachable surface into 39 hub and 97 movable, and the hubs stay",
 		}
 	});
 
-	it("finds seven reachable leaves, which is the whole of Wave 1's seam", () => {
+	it("finds eight reachable leaves, which is the whole of Wave 1's seam", () => {
 		// `DescribeActorActivity`, `DescribeItemLong`, `GetUserNewScreenshotName`,
 		// `MapToScreen`, `ScreenToMap`, `doEquipItem`, and now `DescribeSkillShort`
 		// -- reached by `customiser-skill-row.test.ts` describing the skill the
@@ -425,7 +425,7 @@ it("splits the reachable surface into 39 hub and 97 movable, and the hubs stay",
 		// wave is much bigger than its *externally reached* part, which is worth
 		// knowing before scheduling it.
 		const m = measure();
-		expect(m.buckets.get("WAVE 1")?.length).toBe(7);
+		expect(m.buckets.get("WAVE 1")?.length).toBe(8);
 	});
 
 	it("routes the three regions §6 never named, by extractability", () => {
