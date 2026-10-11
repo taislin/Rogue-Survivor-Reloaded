@@ -124,6 +124,23 @@ export class Actor {
    */
   previousBloodAlcohol: number = 0;
 
+  /**
+   * Still Alive, Release 7-2. C#'s `StunnedTurns` / `FlashbangedTurns`
+   * (`Actor.cs:70-71`).
+   *
+   * Two counters rather than one because the C# has two: a stun gun adds to
+   * the first, a flashbang to the second, and `isIncapacitated` is their
+   * logical OR. An actor can be both.
+   *
+   * The C#'s setters clamp to `Rules.MAXIMUM_INCAPACITATED_TURNS`
+   * (`Actor.cs:416-426`); the port clamps at the two `+=` call sites in
+   * `RogueGame` instead, because `Rules` imports this file and an import back
+   * would be a cycle. Both sites use the same constant, so the effect is
+   * identical.
+   */
+  stunnedTurns: number = 0;
+  flashbangedTurns: number = 0;
+
   previousFoodPoints: number = 0;
   previousSleepPoints: number = 0;
   previousSanity: number = 0;
@@ -311,6 +328,13 @@ export class Actor {
    */
   get isOnFire(): boolean { return (this.flags & ActorFlags.IS_ON_FIRE) !== 0; }
   set isOnFire(v: boolean) { this.setFlag(ActorFlags.IS_ON_FIRE, v); }
+
+  /** Still Alive, Release 7-2. C#'s `IsStunned` (`Actor.cs:258`). */
+  get isStunned(): boolean { return this.stunnedTurns > 0; }
+  /** C#'s `IsFlashbanged` (`Actor.cs:264`). */
+  get isFlashbanged(): boolean { return this.flashbangedTurns > 0; }
+  /** C#'s `IsIncapacitated` (`Actor.cs:271`): stunned and/or flashbanged. */
+  get isIncapacitated(): boolean { return this.stunnedTurns > 0 || this.flashbangedTurns > 0; }
 
   /** Still Alive, Release 6-1. Water is a hard block on being set alight. */
   get isInWater(): boolean { return (this.flags & ActorFlags.IS_IN_WATER) !== 0; }

@@ -201,24 +201,25 @@ describe("Feature registry is wired", () => {
     expect(sites.map((s) => s.feature).sort())
       .toEqual([
 "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "AmbientAudio", "AmbientAudio", "AmbientAudio",
-   "AmbientAudio", "AmbientAudio", "AmbientAudio", "AnimalShelter", "AnimalShelter", "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank",                                                                                                  
-   "Bar", "Bar", "BlackOpsRaid", "Butchering", "Butchering", "CHARResearchRaid", "Church", "Clinic", "Clinic", "Cooking",                                                                                                                    
-   "Cooking", "Cooking", "Cooking", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov",                                                                                                 
-   "DarknessFov", "DarknessGating", "DerangedPatient", "DerangedPatient", "DifficultyAtCreation", "DifficultyAtCreation", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                
-   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                                 
-   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                                 
-   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                                 
-   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                                 
-   "ExtendedAudio", "Farm", "Farm", "Farm", "FireBarrels", "FireBarrels", "FireBarrels", "FireExtinguishers", "FireStation", "Fishing",                                                                                                      
-   "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",                                                                                                     
-   "FoodPoisoning", "FoodPoisoning", "FuelStation", "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue",                                                            
-   "ItemDespawn", "ItemDespawn", "Junkyard", "Junkyard", "Library", "LightPriority", "MechanicWorkshop", "MechanicWorkshop", "ResourcesAvailability", "ResourcesAvailability",                                                               
-   "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
-   "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",                                   
-   "ShoppingMall", "ShoppingMall", "ShoppingMall", "SiphonFuel", "SiphonFuel", "SportsCourts", "SportsCourts", "TileFires", "TileFires", "TileFires",                                                                                        
-    "TileFires", "TileFires", "WeaponWeight",
+   "AmbientAudio", "AmbientAudio", "AmbientAudio", "AnimalShelter", "AnimalShelter", "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank",                                                                                             
+   "Bar", "Bar", "BlackOpsRaid", "Butchering", "Butchering", "CHARResearchRaid", "Church", "Clinic", "Clinic", "Cooking",                                                                                                               
+   "Cooking", "Cooking", "Cooking", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov",                                                                                            
+   "DarknessFov", "DarknessGating", "DerangedPatient", "DerangedPatient", "DifficultyAtCreation", "DifficultyAtCreation", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                           
+   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                            
+   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                            
+   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                            
+   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                            
+   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                            
+   "Farm", "Farm", "Farm", "FireBarrels", "FireBarrels", "FireBarrels", "FireExtinguishers", "FireStation", "Fishing", "Fishing",                                                                                                       
+   "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",                                                                                          
+   "FoodPoisoning", "FuelStation", "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "ItemDespawn",                                                         
+   "ItemDespawn", "Junkyard", "Junkyard", "Library", "LightPriority", "MechanicWorkshop", "MechanicWorkshop", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability",                                                
+   "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
+   "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShoppingMall",                                  
+   "ShoppingMall", "ShoppingMall", "SiphonFuel", "SiphonFuel", "SportsCourts", "SportsCourts", "TileFires", "TileFires", "TileFires", "TileFires",                                                                                      
+   "TileFires", "TileFires", "WeaponWeight",
       ]);
-      // 163 call sites across 39 features
+      // 173 call sites across 39 features
 
 
 
@@ -397,9 +398,27 @@ describe("Feature registry is wired", () => {
     // entry point, exactly as `stepTileFires`'s early return guards its own — so
     // they are counted here rather than collapsed, because a gate nobody counts is
     // a gate nobody notices deleting.
-    expect(sites.filter((s) => s.feature === "TileFires")).toHaveLength(5);
+    // **The four sites below were five, and are six: `CivilianAI`'s on-fire arm
+    // reads the flag.** That arm (`CivilianAI.ts`'s "0.2 extinguish self") is the
+    // first `hasFeature` read in the whole `gameplay/ai` tree, and it is the one
+    // that matters for this count: it is the reader of `map.hasWaterTiles`, a
+    // flag the generators set and which nothing read before. Gating it on
+    // `TileFires` follows the port's own convention for fire features — a
+    // CLASSIC survivor burns silently rather than seeking a pond.
+    expect(sites.filter((s) => s.feature === "TileFires")).toHaveLength(6);
     const tileFires = sites.filter((s) => s.feature === "TileFires");
-    expect(tileFires.every((s) => /RogueGame\.ts/.test(s.at))).toBe(true);
+    // Five of the six stay inside `RogueGame.ts`; the sixth is the new
+    // `CivilianAI` gate. The claim is "they are all in a source file" — `at` is
+    // `path:line`, so the test is a `.ts` *contains*, not a suffix.
+    expect(tileFires.every((s) => /\.ts/.test(s.at))).toBe(true);
+    expect(
+    	tileFires.filter((s) => s.at.includes("RogueGame.ts")),
+    	"only the on-fire arm moved outside RogueGame.ts",
+    ).toHaveLength(5);
+    expect(
+    	tileFires.some((s) => s.at.includes("CivilianAI.ts")),
+    	"the on-fire arm's gate is the one that reads `hasWaterTiles`",
+    ).toBe(true);
     // Two of the four are inside `DoWait` (the message guard and the
     // stop-drop-and-roll guard); the other two are the early returns in
     // `stepActorsOnFire` and `stepTileFires`. Pinned so that "somebody added a
@@ -416,9 +435,17 @@ describe("Feature registry is wired", () => {
     // The fifth is *not* in that sequence: it is in `DoUseItem`, which is declared
     // after both step functions, so it sorts last by line number and by file position
     // alike. That is why only the first three are asserted as ordered.
-    const tileFireLines = tileFires.map((s) => Number(/RogueGame\.ts:(\d+)/.exec(s.at)![1]));
+    // The sixth is *not* in the `RogueGame.ts` sequence: it is the `CivilianAI`
+    // on-fire arm, whose file path does not carry a line number the regex below
+    // reads -- so the ordering claim is over the five `RogueGame.ts` sites only.
+    // The first three are asserted as ordered because `DoWait` is declared before
+    // both step functions and `DoUseItem` after them; the `CivilianAI` site sorts
+    // outside that sequence entirely rather than into a fourth position.
+    const tileFireLines = tileFires
+    	.filter((s) => s.at.includes("RogueGame.ts"))
+    	.map((s) => Number(/RogueGame\.ts:(\d+)/.exec(s.at)![1]));
     expect(tileFireLines.every((n) => Number.isInteger(n))).toBe(true);
-    expect(tileFireLines.length, "all five are in RogueGame.ts").toBe(5);
+    expect(tileFireLines.length, "five of the six are in RogueGame.ts").toBe(5);
     expect(tileFireLines[0] < tileFireLines[1] && tileFireLines[1] < tileFireLines[2], "declared in order")
       .toBe(true);
 
@@ -755,7 +782,7 @@ describe("Feature registry is wired", () => {
     // the port did not have -- player-centric, because the player cannot see who is
     // hammering. A sound port that only added the sound would have left the player
     // hearing construction with nothing explaining it.
-    expect(extended).toHaveLength(45);
+    expect(extended).toHaveLength(54);
     expect(extended.every((s) => /RogueGame\.ts/.test(s.at))).toBe(true);
   });
 

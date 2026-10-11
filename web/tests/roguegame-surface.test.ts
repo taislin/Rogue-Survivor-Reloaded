@@ -141,8 +141,25 @@ describe("RogueGame's measured surface", () => {
     // one method so a gate cannot measure at one scale while the drawing happens
     // at another. Private, stateless, and reached by nothing -- the count moves
     // because the class grew, not because a test reached further into it.
-    expect(m.members).toBe(856);
-    expect(m.methods).toBe(682);
+    //
+    // **857, for `DoScream`.** The fork's scream -- gendered, situational, two
+    // distance bands -- is the last member out of the audio work: four tables of
+    // ids live at module scope beside the bash ladder's, and this is the one
+    // *method* they are read through. It classifies as a `Do*` alias-free hub
+    // entry rather than a region, because it is called from the move, fire,
+    // death and trap paths alike.
+    //
+    // **863, for the rest of the fork's audio and the flashbang.** Six more
+    // methods and one constant: `PlayNonHumanVocalAudio` (the animal
+    // vocalisation the fork centralised), `GenerateIncapacitatedAction` (private)
+    // and `TryPlayerIncapacitated` for the stun/flashbang chain,
+    // `SpawnNewFeralDog` and `FireEvent_RescueWave` for the rescue wave, and
+    // `DetonateFlashbang` for the flash itself. The constant is
+    // `STUN_WEAPON_EFFECT_TURNS`, read by both the stun gun and the flashbang.
+    // The `Actor` fields the counters live in are in `data/Actor.ts`, so they
+    // are not part of this class's count.
+    expect(m.members).toBe(863);
+    expect(m.methods).toBe(688);
     // The *reachable* surface is 124, up from 121. Both extractions had left it
     // alone -- each kept its methods on the class, which is what keeps them pure
     // moves -- and these three moved it for the opposite reason: a test reaching
@@ -206,7 +223,7 @@ describe("RogueGame's measured surface", () => {
     // three classify as HUB 2 — `Handle*` player handlers that never move. So
     // the reach grew by three and every one of them went into a hub, which is
     // the split saying these are handlers, not a region worth extracting.
-    expect(m.external).toBe(135);
+    expect(m.external).toBe(136);
   // §6.4: "567 of 584 methods are public — only 17 are `private`. The
   // `private` boundary is effectively absent." That is still true, and the
   // direction is worth pinning: private has come down from 91 to 89, and is 90
@@ -236,8 +253,8 @@ describe("RogueGame's measured surface", () => {
   // key loop the play loop reaches and nothing else, and the C# had it inline in
   // `HandlePlayerSwapItemInventory`. The captions are two `readonly string[]`
   // fields, exactly like every other mode banner on the class.
-  expect(m.public).toBe(765);
-  expect(m.private).toBe(91);
+  expect(m.public).toBe(771);
+  expect(m.private).toBe(92);
 	});
 
 	it("§6's stop condition is not met: nothing private is reached from outside", () => {
@@ -254,7 +271,7 @@ describe("RogueGame's measured surface", () => {
 		expect(m.privateReached).toBe(0);
 	});
 
-	it("the outside world depends on 135 members, and §6 assumed far fewer", () => {
+	it("the outside world depends on 136 members, and §6 assumed far fewer", () => {
 		const m = measure();
 		// §6.4's `GameContext` was to name "the 11 service fields … plus `m_Player`,
 		// `m_PlayerFOV`, `m_MapViewRect`, `m_Overlays`, `m_FirstPersonFacing`" —
@@ -275,7 +292,12 @@ describe("RogueGame's measured surface", () => {
     // swap prompt add three more handlers, and they are all `Handle*` player
     // handlers -- so they land in a hub rather than in a region, which is the
     // split classifying a reach the cheap way.
-    expect(m.external).toBe(135);
+    //
+    // **136 now**: `DoBreak`, which the bash-sound tests call directly. It is an
+    // action primitive, so it lands in HUB 1 beside `DoMeleeAttack` and the rest
+    // -- the hub a wave must never move, reached by a test that checks which of
+    // three call sites inside it fires.
+    expect(m.external).toBe(136);
     expect(m.external).toBeGreaterThan(83);
 	});
 
@@ -297,7 +319,7 @@ describe("RogueGame's measured surface", () => {
 		expect(m.buckets.get("STATE")?.length ?? 0).toBeLessThan(33);
 	});
 
-it("splits the reachable surface into 38 hub and 97 movable, and the hubs stay", () => {
+it("splits the reachable surface into 39 hub and 97 movable, and the hubs stay", () => {
     // §6.8: the two hubs "are the reason the split is worth doing rather than the
     // reason it fails". Still true, and now measured on the current file.
     const m = measure();
@@ -327,12 +349,20 @@ it("splits the reachable surface into 38 hub and 97 movable, and the hubs stay",
     // classify as HUB 2 and the movable half does not move at all. That is the
     // split working -- a test reaching a handler enlarges the part of the class
     // that never has to move, which is the cheapest place for a reach to land.
+    //
+    // **Still 97, with HUB 1 up to 28.** `DoBreak` is the reach that went the same
+    // cheap way: the bash/break sound tests drive it directly, and a `Do*` action
+    // primitive classifies as a hub rather than a region, so the movable half is
+    // unchanged again and the hub grew by one.
     expect(m.moving).toBe(97);
-    expect(m.hubs).toBe(38);
+    expect(m.hubs).toBe(39);
     expect(m.moving + m.hubs).toBe(m.external);
-    // HUB 1 is 27 of the 35. `DoTag` joined when the minimap tag test replaced a
-    // source scan with a real call to it; HUB 2 is 8, `HandlePlayerTradeNegociation`
-    // joining when the trusted-leader test drove the actual trade screen.
+    // HUB 1 is 28 of the 39. `DoTag` joined when the minimap tag test replaced a
+    // source scan with a real call to it; HUB 2 is 11, `HandlePlayerTradeNegociation`
+    // joining when the trusted-leader test drove the actual trade screen, and
+    // `HandlePlayerCookFood`/`HandlePlayerDestroyItem`/`HandlePlayerSwapItemInventory`
+    // when the Release 7-6 inventory commands and the Release 8-2 swap prompt
+    // landed.
     //
     // `DoChat` and `DoTrade` then joined HUB 1 from the fast-trade test, which drives
     // `DoChat` to assert that it does *not* open a trade and `DoTrade` to assert the
@@ -349,7 +379,7 @@ it("splits the reachable surface into 38 hub and 97 movable, and the hubs stay",
     // `DoSaveGame` is the newest, for `load-game-controllers.test.ts`: writing a
     // save is the first half of reading one back, so that test reaches the save
     // primitive before the load primitive it is actually about.
-    expect(m.buckets.get("HUB 1  Do*/On* action primitives")?.length ?? m.buckets.get("HUB 1")?.length).toBe(27);
+    expect(m.buckets.get("HUB 1  Do*/On* action primitives")?.length ?? m.buckets.get("HUB 1")?.length).toBe(28);
   });
 
   it("names 27 members GameContext has to carry, not 11", () => {
@@ -420,7 +450,7 @@ it("splits the reachable surface into 38 hub and 97 movable, and the hubs stay",
 		const m = measure();
     const hubs = new Set(m.buckets.get("HUB 1") ?? []);
     for (const name of m.buckets.get("HUB 2") ?? []) hubs.add(name);
-    expect(hubs.size).toBe(38);
+    expect(hubs.size).toBe(39);
 		for (const [region, list] of m.buckets) {
 			if (region.startsWith("HUB")) continue;
 			for (const name of list) expect(hubs.has(name), `${name} is in two regions`).toBe(false);

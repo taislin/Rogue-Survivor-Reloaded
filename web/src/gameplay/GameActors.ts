@@ -583,6 +583,11 @@ export class GameActors implements ActorModelDB {
    * `Feature.AnimalShelter` is the consumer -- the C# tests this before letting
    * an actor in, which is how a shelter refuses a dog.
    */
+  /** Still Alive Release 7-3: GameActors.IsDog -- the one animal with three fight recordings. */
+  static isDogBranch(m: ActorModel): boolean {
+    return m.id === ActorID.FERAL_DOG;
+  }
+
   static isUnintelligentAnimal(m: ActorModel): boolean {
     return m.id === ActorID.RABBIT || m.id === ActorID.CHICKEN;
   }

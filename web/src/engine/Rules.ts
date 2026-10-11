@@ -192,6 +192,9 @@ export class Rules {
   /** Percent chance per action that drunkenness costs the actor control. */
   static readonly DRUNK_AFFECTED_ACTION_CHANCE = 5;
 
+  /** Still Alive, Release 7-2. C#'s `MAXIMUM_INCAPACITATED_TURNS` (`Rules.cs:167`). */
+  static readonly MAXIMUM_INCAPACITATED_TURNS = 5;
+
   // Ranged accuracy multipliers, by band. Note the *names* do not line up with
   // the numbers: 0.66 is "HAMMERED" for 80-99%, and 0.95 is "TIPSY" for 40-59%.
   // Both spellings are the C#'s, and the mismatch is a trap for anyone who
@@ -3138,8 +3141,9 @@ export class Rules {
       Rules.SKILL_ZAGILE_DEF_BONUS * actor.sheet.skillTable.getSkillLevel(SkillID.Z_AGILE);
     let def = baseDefence.value + defBonus;
 
-    // Sleepy effect.
-    if (this.isActorExhausted(actor)) def /= 2;
+    // Sleepy effect. Incapacitated halves too (`Rules.cs:5038`): a stunned
+    // defender does not dodge, and the C# rolls the same half as exhaustion.
+    if (this.isActorExhausted(actor) || actor.isIncapacitated) def /= 2;
     else if (this.isActorSleepy(actor)) def *= 3 / 4;
 
     // done.

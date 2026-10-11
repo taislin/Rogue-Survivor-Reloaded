@@ -259,6 +259,7 @@ import {
 import { OrderableAI } from "@gameplay/ai/OrderableAI";
 import { ActorID, GameActors } from "@gameplay/GameActors";
 import { FactionID, GameFactions } from "@gameplay/GameFactions";
+import { FeralDogAI } from "@gameplay/ai/FeralDogAI";
 import { GameGangs, type GangID } from "@gameplay/GameGangs";
 import { GameAmbients } from "@gameplay/GameAmbients";
 import { allImageIds, GameImages } from "@gameplay/GameImages";
@@ -1456,6 +1457,89 @@ const BASH_DEFAULT: BashSound = {
   audible: GameSounds.BASH_OTHER_OBJECTS_NEARBY,
 };
 
+/**
+ * The trap sounds, by the trap's own name -- C# `DoTriggerTrap`
+ * (`RogueGame.cs:17645-17704`).
+ *
+ * Three tables rather than one keyed by band because the C# has three
+ * `switch (trap.TheName)` blocks in a row, and the two silent kinds are silent
+ * in *all three*: the spike uses the vanilla `SPIKE_TRAP` in both the near band
+ * and the far band -- it is felt rather than heard -- and the barbed wire plays
+ * nothing at all. A missing key is therefore a real answer, not a gap, which is
+ * why the lookups are `Map.get` and not `?? default`.
+ *
+ * The names are the C#'s own `TheName` strings, which is what makes them
+ * load-bearing: they are derived from the model's plural/singular pair, so a
+ * renamed trap row would silently fall out of every band.
+ */
+const TRAP_PLAYER_SOUND: Readonly<Record<string, string>> = {
+  "the empty can": GameSounds.CAN_TRAP_PLAYER,
+  "the bear trap": GameSounds.BEAR_TRAP_PLAYER,
+  "the spike": GameSounds.SPIKE_TRAP,
+  "the barbed wire": GameSounds.BARBED_WIRE_TRAP_PLAYER,
+};
+const TRAP_NEAR_SOUND: Readonly<Record<string, string>> = {
+  "the empty can": GameSounds.CAN_TRAP_NEARBY,
+  "the bear trap": GameSounds.BEAR_TRAP_NEARBY,
+  "the spike": GameSounds.SPIKE_TRAP,
+};
+const TRAP_FAR_SOUND: Readonly<Record<string, string>> = {
+  "the empty can": GameSounds.CAN_TRAP_FAR,
+  "the bear trap": GameSounds.BEAR_TRAP_FAR,
+  "the spike": GameSounds.SPIKE_TRAP,
+};
+
+/**
+ * The four `Roll(0, 3)` outcomes of `DoScream`, per band and per sex --
+ * C# `RogueGame.cs:20658-20668` (male, near), `:20703-20711` (male, far), and the
+ * two female switches at `:20679-20688` and `:20723-20732`.
+ *
+ * The pairs are deliberately not contiguous: a man's terrified near scream is
+ * 01/02/07 and his dying near scream is 09, while a woman's terrified near
+ * scream is 03/05/08 and her dying one is 04. The numbering is the fork's
+ * recordings, not a table someone lay out for us, and reordering it would move
+ * which recording a given roll picks.
+ *
+ * `_06` and `_10` do not exist in the fork's set, which is why these are fours
+ * and sixes rather than a range.
+ */
+const SCREAM_NEARBY_MALE: readonly string[] = [
+  GameSounds.SCREAM_NEARBY_01,
+  GameSounds.SCREAM_NEARBY_02,
+  GameSounds.SCREAM_NEARBY_07,
+];
+const SCREAM_NEARBY_FEMALE: readonly string[] = [
+  GameSounds.SCREAM_NEARBY_03,
+  GameSounds.SCREAM_NEARBY_05,
+  GameSounds.SCREAM_NEARBY_08,
+];
+const SCREAM_FAR_MALE: readonly string[] = [
+  GameSounds.SCREAM_FAR_01,
+  GameSounds.SCREAM_FAR_02,
+  GameSounds.SCREAM_FAR_07,
+];
+const SCREAM_FAR_FEMALE: readonly string[] = [
+  GameSounds.SCREAM_FAR_03,
+  GameSounds.SCREAM_FAR_05,
+  GameSounds.SCREAM_FAR_08,
+];
+
+/** C#'s `PLAYER_HEAR_SCREAMS_CHANCE` (`RogueGame.cs:368`): 10%. */
+const SCREAM_CHANCE_PERCENT = 10;
+
+/**
+ * C#'s `DEFAULT_UI_AI_VOCALISATION_CHANCE` (`GameOptions.cs:184`): 20%.
+ *
+ * The fork made this an *option* (`UI_AI_VOCALISATION_CHANCE`, Release 7-6)
+ * with the options-screen row "(Sfx) Undead likelihood to growl"; the port has
+ * no such option yet, so the default is used as a constant rather than read
+ * from `GameOptions`. The chance is what stops every AI turn for every undead
+ * and every dog from reaching `PlayNonHumanVocalAudio` -- which itself already
+ * gates on `ExtendedAudio` and on distance, so this is the third of the three
+ * filters and not a fourth.
+ */
+const AIVOCALISATION_CHANCE_PERCENT = 20;
+
 export class RogueGame implements ActionGame {
 	/** Browser save slot used by the C# "current save file" (`GetUserSave`). */
 	static readonly CURRENT_SAVE_SLOT = 0;
@@ -1473,6 +1557,19 @@ export class RogueGame implements ActionGame {
 	 * throw skill would be a stronger throw at higher skill than the C# allows.
 	 */
 	static readonly MAX_THROWABLE_DISTANCE = 5;
+
+	/**
+	 * C#'s `STUN_WEAPON_EFFECT_TURNS` -- `RogueGame.cs:391`, Release 7-2.
+	 *
+	 * "actually makes 4 turns, because the first turn is when they get hit." The
+	 * constant is 5 and the counter is decremented at the top of every turn, so
+	 * an actor stunned on their own turn loses four *full* turns after it and
+	 * the fifth is the one they were stunned in. Both the stun gun and the
+	 * flashbang add this many turns; the actor's setter clamps to
+	 * `Rules.MAXIMUM_INCAPACITATED_TURNS`, so being hit twice does not stack
+	 * past five.
+	 */
+	static readonly STUN_WEAPON_EFFECT_TURNS = 5;
 
 	/**
 	 * Render-state console logging, enabled with `?debug=1` in the page URL.
@@ -5456,23 +5553,16 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 	 * first and clearing after would delete the helicopter, and notifying first
 	 * would have orderables path to a tile that is then occupied.
 	 *
-	 * ## What is NOT here
-	 *
-	 * - **`CheckLandedHelicopterSFX` and the flyover** (`RogueGame.cs:28869-28877`)
-	 *   are the `Feature.AmbientAudio` follow-up's, not this feature's: they read
-	 *   `m_AmbientSFXManager`, and the five helicopter tracks are gated on that
-	 *   feature so the gates stay separate. `NoiseDistance` now has the four radii
-	 *   those calls need, and `armyHelicopterRescueMap` /
-	 *   `armyHelicopterRescueCoordinates` now exist for them, so that work is
-	 *   unblocked — but it is not done here.
-	 * - **`FireEvent_RescueWave`** (`RogueGame.cs:28132-28158`) is not ported. It
-	 *   tops the district back up to `MaxCivilians` / `MaxAnimals` / `MaxUndeads`,
-	 *   and the port has no `GAME_MAX_ANIMALS` option (`Options.maxAnimals`) and
-	 *   no `SpawnNewFeralDog`, so its middle leg — the feral dogs — cannot be
-	 *   written at all. Two thirds of a wave is not a wave, and the two messages it
-	 *   announces ("The number of undead seems to be increasing!") would be
-	 *   announcing nothing.
-	 */
+ * ## What is NOT here
+ *
+ * - **`CheckLandedHelicopterSFX` and the flyover** (`RogueGame.cs:28869-28877`)
+ *   are the `Feature.AmbientAudio` follow-up's, not this feature's: they read
+ *   `m_AmbientSFXManager`, and the five helicopter tracks are gated on that
+ *   feature so the gates stay separate. `NoiseDistance` now has the four radii
+ *   those calls need, and `armyHelicopterRescueMap` /
+ *   `armyHelicopterRescueCoordinates` now exist for them, so that work is
+ *   unblocked — but it is not done here.
+ */
 	async SpawnArmyHelicopterOnMap(map: Map): Promise<void> {
 		// The heli is a 3x1 tile, so clear its designated space of actors and
 		// objects. C# `:28811-28858`.
@@ -5581,6 +5671,12 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 			RaidType.HELICOPTER_RESCUE,
 			heli1,
 		);
+
+		// The rescue attracts a wave. C# `:28880-28881`, the last thing the spawn
+		// does -- after the audio and the AI notification, so the announcements
+		// land in the right order on screen. The heli map always belongs to a
+		// district: it is either the entry map or one of the sewers/subway.
+		this.FireEvent_RescueWave(map.district!);
 	}
 
 	/**
@@ -6115,6 +6211,19 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 				for (const actor of map.actors) {
 					if (--actor.bloodAlcohol < 0) actor.bloodAlcohol = 0;
 				}
+			}
+
+			// 3.3.7 Incapactiation wears off (Still Alive, Release 7-2). C#
+			// `RogueGame.cs:6564-6569`.
+			//
+			// Ungated, unlike the alcohol above: the two counters only exist when a
+			// stun gun or a flashbang has been used, so an actor who has never been
+			// stunned has nothing to decrement. The C# gates neither, and the two
+			// decrements are the same shape as blood alcohol's -- one turn per turn,
+			// floored at 0.
+			for (const actor of map.actors) {
+				if (actor.stunnedTurns > 0) --actor.stunnedTurns;
+				if (actor.flashbangedTurns > 0) --actor.flashbangedTurns;
 			}
 
 			// Food poisoning clears itself (Still Alive, Release 7-6). Ahead of the
@@ -8108,6 +8217,94 @@ inv.removeAllQuantity(it);
 		);
 	}
 
+	/**
+	 * C# `SpawnNewFeralDog` -- `RogueGame.cs:29433-29447`, Release 7-3.
+	 *
+	 * The dogs-only spawner, which the rescue wave needs and which nothing else
+	 * did: `createNewFeralDog` has exactly one caller outside this class (the
+	 * animal shelter's kennel), and that one places dogs through
+	 * `TownBuildingContext.placement` rather than spawning them at runtime.
+	 *
+	 * A feral dog is not a refugee: no items, no name template of its own beyond
+	 * the model's, and `SpawnActorOnMapBorder`'s `makeGameStart` argument is
+	 * `true` in the C# exactly as it is for a refugee, which is what keeps a
+	 * dog from materialising next to the player.
+	 */
+	SpawnNewFeralDog(map: Map): Actor | null {
+		const newDog = this.m_TownGenerator.createNewFeralDog(map.localTime.turnCounter);
+		return this.SpawnActorOnMapBorder(map, newDog, SPAWN_DISTANCE_TO_PLAYER, true)
+			? newDog
+			: null;
+	}
+
+	/**
+	 * C# `FireEvent_RescueWave` -- `RogueGame.cs:28132-28166`, Release 7-3, called
+	 * from the tail of `SpawnArmyHelicopterOnMap` (`:28881`).
+	 *
+	 * The helicopter is loud, and the fork's answer is a **wave**: the district
+	 * tops itself back up to the option caps on the surface map -- civilians,
+	 * then dogs, then undead -- so a rescue is also an invasion. It is announced
+	 * only to a living, awake player in the same district, because those two
+	 * messages are the whole point and a sleeping survivor misses both.
+	 *
+	 * Three legs, and the two the port lacked are now here: the animal leg spent
+	 * months blocked on a `GAME_MAX_ANIMALS` option the port names `GAME_MAX_DOGS`
+	 * (`Options.maxDogs`) and on a runtime dog spawner, both of which exist.
+	 * That leaves the port using its own option name, which is a divergence worth
+	 * naming rather than hiding: the cap is read the same way the other two legs
+	 * read theirs.
+	 */
+	FireEvent_RescueWave(district: District): void {
+		// announce.
+		if (
+			district === this.m_Player.location.map?.district &&
+			!this.m_Player.isSleeping &&
+			!this.m_Player.model.abilities.isUndead
+		) {
+			this.AddMessage(
+				new Message(
+					"A surge of people are rushing about excitingly!",
+					this.m_Session.worldTime.turnCounter,
+					Color.Pink,
+				),
+			);
+			this.AddMessage(
+				new Message(
+					"The number of undead seems to be increasing!",
+					this.m_Session.worldTime.turnCounter,
+					Color.Crimson,
+				),
+			);
+			this.RedrawPlayScreen();
+		}
+
+		// Civilians and police, back up to the cap, surface only.
+		const entry = district.entryMap!;
+		const civilians = this.CountActors(
+			entry,
+			(a) =>
+				a.faction === this.gameFactions.get(FactionID.TheCivilians) ||
+				a.faction === this.gameFactions.get(FactionID.ThePolice),
+		);
+		const civiliansToSpawn = s_Options.maxCivilians - civilians;
+		for (let i = 0; i < civiliansToSpawn; i++) this.SpawnNewRefugee(entry);
+
+		// Feral dogs, back up to the cap -- the port's `maxDogs` is the fork's
+		// `MaxAnimals`, renamed before the port carried this leg.
+		const dogs = this.CountActors(
+			entry,
+			(a) => a.faction === this.gameFactions.get(FactionID.TheFerals),
+		);
+		const dogsToSpawn = s_Options.maxDogs - dogs;
+		for (let i = 0; i < dogsToSpawn; i++) this.SpawnNewFeralDog(entry);
+
+		// Undead, back up to the cap.
+		const undeads = this.CountActors(entry, (a) => a.model.abilities.isUndead);
+		const undeadsToSpawn = s_Options.maxUndeads - undeads;
+		for (let i = 0; i < undeadsToSpawn; i++)
+			this.SpawnNewUndead(entry, entry.localTime.day);
+	}
+
 	// C# SpawnNewSurvivor — RogueGame.cs:5151
 	SpawnNewSurvivor(map: Map, bandPos?: Point): Actor | null {
 		const newSurvivor = this.m_TownGenerator.createNewSurvivor(
@@ -9272,6 +9469,57 @@ inv.removeAllQuantity(it);
 	}
 
 	/**
+	 * C# `GenerateIncapacitatedAction` -- `RogueGame.cs:25042-25076`, Release 7-2.
+	 *
+	 * What a stunned or flashbanged actor does instead of what their controller
+	 * wanted: a random, uncontrolled action. Four outcomes off one `Roll(0, 3)` --
+	 * shout, bash a neighbouring object, unequip or drop a random inventory item,
+	 * or shout again -- and the point of the shape is that none of them is
+	 * *useful*: the actor is still taking their turn, but not for themselves.
+	 *
+	 * The C# has one subtle detail worth keeping: case 2 picks an item out of the
+	 * inventory by index, and the three box-of-lights items (`CANDLES_BOX`,
+		* `FLARES_KIT`, `GLOWSTICKS_BOX`) are excluded from the drop because the
+	 * C#'s `DoDropItem` would prompt the actor for one-or-all, and an
+	 * incapacitated actor cannot answer a prompt. The C#'s `:25068` comment says
+	 * so in as many words. The shout is its substitute.
+	 */
+	private GenerateIncapacitatedAction(actor: Actor): ActorAction | null {
+		const roll = this.m_Rules.roll(0, 4);
+		switch (roll) {
+			// shout
+			case 0:
+				return new ActionShout(actor, this, "GAAHHH!!!");
+			// random bash.
+			case 1: {
+				const map = actor.location.map!;
+				for (const d of Direction.COMPASS) {
+					const mobj = map.getMapObjectAtPoint(d.applyTo(actor.location.position));
+					if (mobj !== null) return new ActionBreak(actor, this, mobj);
+				}
+				return new ActionShout(actor, this, "OWWWWW!!!");
+			}
+			// random unequip-drop
+			case 2: {
+				const inv = actor.inventory;
+				if (inv == null || inv.countItems === 0) return null;
+				const it = inv.getItem(this.m_Rules.roll(0, inv.countItems));
+				if (it == null) return null;
+				if (it.isEquipped) return new ActionUnequipItem(actor, this, it);
+				else if (
+					it.model.id !== ItemID.CANDLES_BOX &&
+					it.model.id !== ItemID.FLARES_KIT &&
+					it.model.id !== ItemID.GLOWSTICKS_BOX
+				)
+					return new ActionDropItem(actor, this, it);
+				else return new ActionShout(actor, this, "DAMN IT!!!");
+			}
+			default:
+				return new ActionShout(actor, this, "DAMN IT!!!");
+		}
+	}
+
+	/**
 	 * Being food poisoned can cost the player their action. Still Alive,
 	 * Release 7-6.
 	 *
@@ -9304,7 +9552,8 @@ inv.removeAllQuantity(it);
 	}
 
 	/**
-	 * The fork's unwell chain: insanity first, then food poisoning.
+	 * The fork's unwell chain: incapactitated first, then insanity, then food
+	 * poisoning.
 	 *
 	 * There is no drunkenness arm yet — `Feature.Alcohol` has no implementation,
 	 * so `TryPlayerDrunkenness` would be a stub returning false forever. It is
@@ -9323,9 +9572,47 @@ inv.removeAllQuantity(it);
 		// answers "no backpack" rather than "not in this ruleset"; the *command* is
 		// gated below, because under CLASSIC there is no `Y` binding to press.
 		autoCloseBackpack(this.m_Player);
+		// C# `:24114`: incapactitated is the head of the chain, and it is the only
+		// arm that is *not* rolled for -- if you are stunned you are stunned, and
+		// the 20% chance the other arms use would let a flashbanged survivor
+		// occasionally act normally.
+		if (await this.TryPlayerIncapacitated()) return true;
 		if (await this.TryPlayerInsanity()) return true;
 		if (await this.TryPlayerDrunkenness()) return true;
 		return this.TryPlayerFoodPoisoning();
+	}
+
+	/**
+	 * C# `TryPlayerIncapacitated` -- `RogueGame.cs:24154-24170`, Release 7-2.
+	 *
+	 * Flashbanged or stun-gunned. The one arm of the unwell chain that is not
+	 * dice-rolled: the C# checks `IsIncapacitated` and, if true, generates a
+	 * random action, checks it is legal, and performs it. No `rollChance`, no
+	 * `SANITY_INSANE_ACTION_CHANCE` -- the counter is the gate.
+	 *
+	 * The message is the C#'s own, and the player also gets a press-ENTER so the
+	 * line cannot be lost in a burst of messages, which is what every other arm
+	 * in the chain does for the same reason.
+	 */
+	async TryPlayerIncapacitated(): Promise<boolean> {
+		if (!this.m_Player.isIncapacitated) return false;
+
+		const incapacitatedAction = this.GenerateIncapacitatedAction(this.m_Player);
+		if (incapacitatedAction == null) return false;
+		if (!incapacitatedAction.isLegal()) return false;
+
+		this.ClearMessages();
+		this.AddMessage(
+			new Message(
+				"(you were stunned/flashbanged. you lose control for a moment)",
+				this.m_Player.location.map!.localTime.turnCounter,
+				Color.Orange,
+			),
+		);
+		if (!this.m_Player.isBotPlayer) await this.AddMessagePressEnter();
+
+		await incapacitatedAction.perform();
+		return true;
 	}
 
 	async TryPlayerInsanity(): Promise<boolean> {
@@ -11224,21 +11511,38 @@ inv.removeAllQuantity(it);
 				),
 			);
 			this.m_MusicManager.stop();
-			// The third `Feature.ExtendedAudio` reader, and the one that is a
-			// *choice* rather than an addition. The fork replaced the vanilla
-			// `UNDEAD_EAT` with a distance-tiered pair and plays the player tier
-			// here (`RogueGame.cs:21582`); the port still plays the vanilla id. So
-			// the gate is over the id, not over whether to make a noise: under
-			// CLASSIC a feast is exactly as loud as it has always been, and under
-			// STILL_ALIVE it is the file the fork shipped for it.
-			//
-			// **Not ported: the NPC arm** (`RogueGame.cs:21584`,
-			// `UNDEAD_EAT_NEARBY` at `QUIET_NOISE_RADIUS`) for the same reason as
-			// the fishing cast's: the port has no radius-bearing audibility
-			// predicate to test.
+		}
+
+		// Sound effect, C# `:11832-11836`: two independent `if`s, and both are
+		// outside the visible check, because hearing a feast and seeing one are
+		// different questions. The player's own arm is the third
+		// `Feature.ExtendedAudio` reader, and it is a *choice* rather than an
+		// addition: the fork replaced the vanilla `UNDEAD_EAT` with a
+		// distance-tiered pair, so under CLASSIC a feast is exactly as loud as it
+		// has always been, and under STILL_ALIVE it is the file the fork shipped
+		// for it. The gate is over the id, not over whether to make a noise.
+		//
+		// The second arm is the NPC one -- `UNDEAD_EAT_NEARBY` at
+		// `QUIET_NOISE_RADIUS`, so a zombie eating a corpse is heard by everyone
+		// else on the map. A player eating their own corpse satisfies both `if`s
+		// and plays both tiers, which is the reference's own arrangement.
+		//
+		// The comment this replaces said the NPC arm was unportable "for the same
+		// reason as the fishing cast's: the port has no radius-bearing audibility
+		// predicate". That was true when it was written and is not any more --
+		// `isAudibleToPlayer(location, radius)` has been on the class since the
+		// fork's sound work began, and three other arms in this file use it.
+		if (a.isPlayer) {
 			this.m_SoundManager.play(
 				hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio)
 					? GameSounds.UNDEAD_EAT_PLAYER
+					: GameSounds.UNDEAD_EAT,
+			);
+		}
+		if (this.isAudibleToPlayer(a.location, NOISE_RADII.QUIET)) {
+			this.m_SoundManager.playIfNotAlreadyPlaying(
+				hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio)
+					? GameSounds.UNDEAD_EAT_NEARBY
 					: GameSounds.UNDEAD_EAT,
 			);
 		}
@@ -16307,7 +16611,17 @@ inv.removeAllQuantity(it);
 	async HandleAiActor(aiActor: Actor): Promise<void> {
 		let desiredAction = aiActor.controller!.getAction(this);
 
-		if (
+		// C# `:11155-11168`: incapactitated is the first arm in the chain, and it
+		// is the only one that is not dice-rolled. If the generated action is
+		// legal it overrides the controller's choice; either way the actor spends
+		// its turn, because the C# calls `SpendActorActionPoints` unconditionally
+		// after the arm -- the actor is *acting*, just not usefully.
+		if (aiActor.isIncapacitated) {
+			const incapacitatedAction = this.GenerateIncapacitatedAction(aiActor);
+			if (incapacitatedAction != null && incapacitatedAction.isLegal())
+				desiredAction = incapacitatedAction;
+			this.SpendActorActionPoints(aiActor, Rules.BASE_ACTION_COST);
+		} else if (
 			this.m_Rules.isActorInsane(aiActor) &&
 			this.m_Rules.rollChance(Rules.SANITY_INSANE_ACTION_CHANCE)
 		) {
@@ -16317,6 +16631,15 @@ inv.removeAllQuantity(it);
 		}
 
 		if (desiredAction != null) {
+			// C# `:11182-11183`: the random undead/dog vocalisation, gated on the
+			// fork's `AIVocalisationChance` option so a district of zombies is not
+			// a wall of growls. The dog's *emote* barks come through `DoSay`'s
+			// own call, so this is the one that fires on an ordinary AI turn.
+			if (
+				(aiActor.model.abilities.isUndead || GameActors.isDogBranch(aiActor.model)) &&
+				this.m_Rules.rollChance(AIVOCALISATION_CHANCE_PERCENT)
+			)
+				this.PlayNonHumanVocalAudio(aiActor);
 			if (desiredAction.isLegal()) await desiredAction.perform();
 			else {
 				this.SpendActorActionPoints(aiActor, Rules.BASE_ACTION_COST);
@@ -19182,7 +19505,20 @@ updateAdvisorHintBanner(): void {
 			// loud noise.
 			this.OnLoudNoise(newLocation.map!, newLocation.position, "A loud SCREAM");
 
+			// C# `:17369-17376` -- the scream itself, which the message-only arm
+			// below used to stand in for. The fork rolled its own chance inside
+			// `DoScream` (`rollForIt: true`, 10%) and the port rolled one here and
+			// gated the message on it, so the two are the same roll *and* the
+			// message now waits on the sound's own gate.
+			this.DoScream(actor, false, true);
+
 			// player hears?
+			// C# `:20667` -- the terrfied message, which the fork plays *inside*
+			// `DoScream` and only on the near band. The port's copy of it is older
+			// than the fork's and ran on its own 10% roll, so the text arrived
+			// without the sound and the sound without the text. Kept rather than
+			// deleted: the message and the sound are now the same event, and a
+			// distant fleeing survivor is heard *and* described.
 			if (
 				this.m_Rules.rollChance(PLAYER_HEAR_SCREAMS_CHANCE) &&
 				!this.IsVisibleToPlayer(actor)
@@ -19450,6 +19786,43 @@ updateAdvisorHintBanner(): void {
 
 		// flag.
 		trap.isTriggered = true;
+
+		/*
+		 * audio, C# `:17645-17704`. A tier for each trap kind -- the *player*
+		 * stepping on it (`*_PLAYER`), an NPC within earshot (`*_NEARBY`), and
+		 * further out (`*_FAR`) -- with the spike playing the *same* id in both
+		 * near bands rather than a pair, and barbed wire playing nothing here at
+		 * all: three tiers rather than the usual two because a trap is something
+		 * the player is often standing next to while it goes off elsewhere.
+		 *
+		 * The fork's screams ride along: a bear trap or a spike that catches an
+		 * NPC is followed by `DoScream` (`:17679`, `:17682`, `:17696`, `:17699`).
+		 */
+		if (victim !== null && hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio)) {
+			const trapName = trap.theName;
+			const location = new Location(map, pos);
+			if (victim.isPlayer) {
+				const id = TRAP_PLAYER_SOUND[trapName];
+				if (id !== undefined) this.m_SoundManager.play(id);
+			} else if (this.isAudibleToPlayer(location, NOISE_RADII.QUIET)) {
+				const id = TRAP_NEAR_SOUND[trapName];
+				if (id !== undefined) {
+					this.m_SoundManager.play(id);
+					// C# `:17678`, `:17682`: a bear trap or a spike that catches an
+					// NPC is followed by the victim's scream, and the barbed wire
+					// and the can are not -- which is the same shape as the id
+					// tables above, so the lookup answering `undefined` is what
+					// silences it.
+					this.DoScream(victim);
+				}
+			} else if (this.isAudibleToPlayer(location, NOISE_RADII.MODERATE)) {
+				const id = TRAP_FAR_SOUND[trapName];
+				if (id !== undefined) {
+					this.m_SoundManager.play(id);
+					this.DoScream(victim);
+				}
+			}
+		}
 
 		// effect: damage on victim? (actor)
 		const damage = model.damage * trap.quantity;
@@ -20062,19 +20435,28 @@ updateAdvisorHintBanner(): void {
 					// and `IMusicManager` has no per-id `stop()` -- `stop()` is global,
 					// so using it would silence the soundtrack. The overlap is audible
 					// and harmless; silencing the music is neither.
-					if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
-						this.m_SoundManager.play(
-							GameSounds.FISHING_REEL_PLAYER,
-						);
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.play(
+					GameSounds.FISHING_REEL_PLAYER,
+				);
 
-					// `AddMessageIfAudibleForPlayer` rather than `AddMessage`: the C# says
-					// this particular message is what interrupts a long wait, so a bite
-					// during one is the intended way to be interrupted.
-					this.AddMessageIfAudibleForPlayer(
-						actor.location,
-						this.MakeMessage(actor, "caught a fish!"),
-					);
-				}
+			// `AddMessageIfAudibleForPlayer` rather than `AddMessage`: the C# says
+			// this particular message is what interrupts a long wait, so a bite
+			// during one is the intended way to be interrupted.
+			this.AddMessageIfAudibleForPlayer(
+				actor.location,
+				this.MakeMessage(actor, "caught a fish!"),
+			);
+			} else if (this.isAudibleToPlayer(actor.location, NOISE_RADII.QUIET)) {
+				// The NPC arm, C# `:23113-23117`: a survivor listening hears
+				// someone else land a fish. The C# pairs it with a "caught a fish."
+				// message gated on visibility, because an NPC who is heard but not
+				// seen is a fish that arrived with no explanation.
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.FISHING_REEL_NEARBY);
+				if (this.IsVisibleToPlayer(actor))
+					this.AddMessage(this.MakeMessage(actor, "caught a fish."));
+			}
 
 				const rawFish = Models.items.get(ItemID.FOOD_RAW_FISH) as ItemFoodModel;
 				const bestBefore =
@@ -21384,6 +21766,42 @@ updateAdvisorHintBanner(): void {
 						await this.AnimDelay(isPlayer ? DELAY_NORMAL : DELAY_SHORT);
 					}
 				}
+			} else if (
+				weapon.model.id === ItemID.RANGED_STUN_GUN &&
+				!defender.model.abilities.isUndead
+			) {
+				// C# `:18888-18898`, Release 7-2. A stun gun does no damage, so
+				// this is the `else` arm of the damage check: the shot lands, the
+				// damage is zero, and instead the defender is stunned for
+				// `STUN_WEAPON_EFFECT_TURNS` turns. The C# adds the turns to the
+				// *actor's* clamped setter, so a second stun within the window
+				// does not extend it past `Rules.MAXIMUM_INCAPACITATED_TURNS`.
+				defender.stunnedTurns = Math.min(
+					defender.stunnedTurns + RogueGame.STUN_WEAPON_EFFECT_TURNS,
+					Rules.MAXIMUM_INCAPACITATED_TURNS,
+				);
+				if (isDefVisible) {
+					this.AddMessage(
+						this.MakeMessage(
+							attacker,
+							this.Conjugate(attacker, attack.verb),
+							defender,
+							" with a stun gun.",
+						),
+					);
+					try {
+						this.AddOverlay(
+							new OverlayImage(
+								this.MapToScreen(defender.location.position),
+								GameImages.ICON_RANGED_MISS,
+							),
+						);
+					} catch (e) {
+						reportSwallowed("DoSingleRangedAttack", e);
+					}
+					this.RedrawPlayScreen();
+					await this.AnimDelay(isPlayer ? DELAY_NORMAL : DELAY_SHORT);
+				}
 			} else {
 				if (isDefVisible) {
 					this.AddMessage(
@@ -21646,6 +22064,68 @@ updateAdvisorHintBanner(): void {
 
 		// blast icon vs audio.
 		let isVisible = this.IsVisibleToPlayer(location);
+		// SFX, C# `:19576-19628`. The fork replaced the vanilla "explosion is an
+		// explosion" with a switch on the *primed id* -- a fuel can, a grenade, a
+		// molotov, dynamite, a fuel pump, a smoke grenade, a flashbang and the
+		// plasma charge each get their own recording, and three of them (fuel can,
+		// molotov, flashbang, plasma) also switch on whether the player can *see*
+		// the blast, because a distant one is a different recording from a
+		// near one.
+		//
+		// Gated on `ExtendedAudio` at the top, exactly like the other four arms
+		// this feature added: under CLASSIC an explosion is as loud as it has
+		// always been.
+		if (
+			(isVisible || this.isAudibleToPlayer(location, NOISE_RADII.LOUD)) &&
+			hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio)
+		) {
+			const id = itemModel.id;
+			switch (id) {
+				case ItemID.EXPLOSIVE_FUEL_CAN_PRIMED:
+					this.m_SoundManager.play(
+						isVisible ? GameSounds.FUEL_CAN_VISIBLE : GameSounds.FUEL_CAN_AUDIBLE,
+					);
+					break;
+				case ItemID.EXPLOSIVE_GRENADE_PRIMED:
+				case ItemID.EXPLOSIVE_HOLY_HAND_GRENADE_PRIMED:
+					this.m_SoundManager.play(GameSounds.GRENADE_VISIBLE);
+					break;
+				case ItemID.EXPLOSIVE_MOLOTOV_PRIMED:
+					this.m_SoundManager.play(
+						isVisible ? GameSounds.MOLOTOV_VISIBLE : GameSounds.MOLOTOV_AUDIBLE,
+					);
+					break;
+				case ItemID.EXPLOSIVE_DYNAMITE_PRIMED:
+				case ItemID.EXPLOSIVE_C4_PRIMED:
+					this.m_SoundManager.play(GameSounds.DYNAMITE_VISIBLE);
+					break;
+				// `:19607-19611`: no visible/audible pair here, unlike the fuel
+				// can. The pump is the bigger of the two explosions and the fork
+				// plays the same recording at any distance it can be heard.
+				case ItemID.EXPLOSIVE_FUEL_PUMP_PRIMED:
+					this.m_SoundManager.play(GameSounds.FUEL_PUMP_VISIBLE);
+					break;
+				case ItemID.EXPLOSIVE_SMOKE_GRENADE_PRIMED:
+					this.m_SoundManager.play(GameSounds.SMOKE_GRENADE);
+					break;
+				case ItemID.EXPLOSIVE_FLASHBANG_PRIMED:
+					// The flashbang's *flash* is the half that stuns, and it is
+					// `DetonateFlashbang` (`:20272`): the bang and the flash are
+					// one event and the C# plays them from the same place.
+					this.m_SoundManager.play(
+						isVisible ? GameSounds.FLASHBANG_VISIBLE : GameSounds.FLASHBANG_AUDIBLE,
+					);
+					this.DetonateFlashbang(location.map!, location.position);
+					break;
+				case ItemID.EXPLOSIVE_PLASMA_CHARGE_PRIMED:
+					this.m_SoundManager.play(
+						isVisible ? GameSounds.PLASMA_BURST_VISIBLE : GameSounds.PLASMA_BURST_AUDIBLE,
+					);
+					break;
+				default:
+					break;
+			}
+		}
 		if (isVisible) {
 			// Slice 8 is ported, so MapToScreen no longer throws; the try/catch is
 			// now redundant (kept for Phase 8 cleanup).
@@ -21696,11 +22176,33 @@ updateAdvisorHintBanner(): void {
 			}
 		}
 
-		// alpha10 bug fix; clear overlays only if action is visible
-		if (isVisible) this.ClearOverlays();
-	}
+	// alpha10 bug fix; clear overlays only if action is visible
+	if (isVisible) this.ClearOverlays();
+}
 
-	// C# ApplyExplosionWave — RogueGame.cs:14240
+/**
+ * C# `DetonateFlashbang` -- `RogueGame.cs:20272-20281`, Release 7-2.
+ *
+ * The flash half of a flashbang: the actor at the blast's tile is stunned for
+ * `RogueGame.STUN_WEAPON_EFFECT_TURNS` turns, unless they are undead -- a
+ * zombie does not blink. This is called from the blast SFX switch
+ * (`DoBlast`'s `EXPLOSIVE_FLASHBANG_PRIMED` case) and from the wave application
+ * (`:19802-19804`), so every tile the blast reaches gets its own call.
+ */
+DetonateFlashbang(map: Map, pt: Point): void {
+	const actor = map.getActorAtPoint(pt);
+	if (actor != null && !actor.model.abilities.isUndead) {
+		actor.flashbangedTurns = Math.min(
+			actor.flashbangedTurns + RogueGame.STUN_WEAPON_EFFECT_TURNS,
+			Rules.MAXIMUM_INCAPACITATED_TURNS,
+		);
+		if (this.IsVisibleToPlayer(actor)) {
+			this.AddMessage(this.MakeMessage(actor, "is stunned by a flashbang"));
+		}
+	}
+}
+
+// C# ApplyExplosionWave — RogueGame.cs:14240
 	// async: C# blocks on ApplyExplosionWaveSub.
 	async ApplyExplosionWave(
 		center: Location,
@@ -21789,6 +22291,23 @@ updateAdvisorHintBanner(): void {
 		blast: BlastAttack,
 		itemModel: ItemModel,
 	): Promise<boolean> {
+		// C# `:19795-19808`: the flashbang's wave arm, and it is a *separate* arm
+		// from the damage one -- the flashbang does no damage, so
+		// `ApplyExplosionDamage` would be a no-op on every tile. What it does
+		// instead is stun whoever is standing on it, which is the whole point of
+		// the weapon and the reason the wave loop has to reach it.
+		//
+		// The smoke grenade's arm (`:19795-19797`) is not ported: `DeploySmokeScreen`
+		// does not exist in the port, and the smoke grenade's own blast has no
+		// damage to apply, so a smoke wave is silent and harmless -- which is the
+		// behaviour it has today.
+		if (itemModel.id === ItemID.EXPLOSIVE_FLASHBANG_PRIMED) {
+			this.DetonateFlashbang(blastCenter.map!, pt);
+			// Show if visible, which is what makes the wave loop redraw.
+			if (this.IsVisibleToPlayer(blastCenter.map!, pt)) return true;
+			return false;
+		}
+
 		if (
 			blastCenter.map!.isInBoundsPoint(pt) &&
 			LOS.canTraceFireLine(
@@ -22741,6 +23260,12 @@ updateAdvisorHintBanner(): void {
 				this.RedrawPlayScreen();
 			}
 		}
+
+		// C# `:20578`, the last line of `DoSay`: the speaker's animal noise, if
+		// it has one. A dog that "says" GRRRRR WAF WAF barks; a dog that says waf
+		// yips. The text is the contract, which is why `FeralDogAI.FIGHT_EMOTES`
+		// is public.
+		this.PlayNonHumanVocalAudio(speaker, text);
 	}
 
 	// C# DoShout — RogueGame.cs:14835
@@ -22848,10 +23373,134 @@ updateAdvisorHintBanner(): void {
 			);
 			this.SpeakOverhead(actor, text);
 		}
+		// C# `:20634`, **outside** the visible arm: a dog's bark is not something
+		// the player has to be looking at, and the method's own distance test
+		// decides whether it is heard.
+		this.PlayNonHumanVocalAudio(actor, text);
+	}
+
+	/**
+	 * C# `PlayNonHumanVocalAudio` -- `RogueGame.cs:20744-20792`, Release 7-3.
+	 *
+	 * One method for every animal that makes a noise: dogs bark/growl/yip, the
+	 * undead branches growl, rats screech, the Sewers Thing growls. The fork's
+	 * reason for centralising it is the same as its reason for centralising the
+	 * ranged-weapon and bash ladders -- the call sites were each deciding for
+	 * themselves, and a caller that forgot left an animal silent.
+	 *
+	 * Two distance bands rather than the usual three, and the asymmetry is
+	 * deliberate: the *near* band (`QUIET`) carries six ids, the *far* band
+	 * (`LOUD`) carries exactly one -- a dog's `DOG_BARK_FAR`, played with a plain
+	 * `Play` rather than `PlayIfNotAlreadyPlaying` because a bark is short enough
+	 * that two in a row is a dog that barked twice.
+	 *
+	 * `fightEmotes` is what picks between the dog's three recordings: the caller
+	 * passes the *text* the dog just "said", and `FeralDogAI.FIGHT_EMOTES` holds
+	 * the three strings the AI emotes with. That is the fork's own mechanism and
+	 * it is kept -- a string compare on an emote is brittle, but it is the
+	 * contract between the AI and the sound, and changing it to an enum would
+	 * move the emotes' text with it.
+	 */
+	PlayNonHumanVocalAudio(actor: Actor, fightEmotes = ""): void {
+		if (!hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio)) return;
+		const isDog = GameActors.isDogBranch(actor.model);
+		if (this.isAudibleToPlayer(actor.location, NOISE_RADII.QUIET)) {
+			if (isDog) {
+				if (fightEmotes === FeralDogAI.FIGHT_EMOTES[0]) {
+					this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.DOG_FLEE);
+				} else if (fightEmotes === FeralDogAI.FIGHT_EMOTES[1]) {
+					this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.DOG_GROWL);
+				} else {
+					this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.DOG_BARK_NEARBY);
+				}
+			} else if (GameActors.isSkeletonBranch(actor.model)) {
+				this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.SKELETON_GROWL);
+			} else if (GameActors.isShamblerBranch(actor.model)) {
+				this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.SHAMBLER_GROWL);
+			} else if (GameActors.isRatBranch(actor.model)) {
+				this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.RAT_SCREECH);
+			} else if (actor.model === Models.actors.get(ActorID.SEWERS_THING)) {
+				this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.SEWERS_THING_GROWL);
+			}
+		} else if (
+			isDog &&
+			fightEmotes === FeralDogAI.FIGHT_EMOTES[2] &&
+			this.isAudibleToPlayer(actor.location, NOISE_RADII.LOUD)
+		) {
+			this.m_SoundManager.play(GameSounds.DOG_BARK_FAR);
+		}
+	}
+
+	/**
+	 * C# `DoScream` -- `RogueGame.cs:20642-20737`, Release 5-7.
+	 *
+	 * The fork's scream, which is both gendered and situational: a *dying* man
+	 * screams differently from a *terrified* one, and a woman differently from a
+	 * man, and the two are crossed into eight ids of which only four per sex are
+	 * reachable from the `Roll(0, 3)` -- the reference has one `switch` per band
+	 * and three `case`s each.
+	 *
+	 * Gated on `ExtendedAudio` rather than on a feature of its own, and gated at
+	 * the top of the method rather than at each call site: the fork's whole point
+	 * with this method was to stop every caller deciding for itself, so the gate
+	 * belongs where the decision is made.
+	 *
+	 * `rollForIt` is the third of the fork's hearing-chance gates
+	 * (`PLAYER_HEAR_SCREAMS_CHANCE`, 10%): a fleeing survivor screams on every
+	 * step, so without it the same 10% chance is rolled every turn and the player
+	 * either hears it constantly or never. Death and fire pass `false`, because
+	 * those are one-off events worth always hearing if in range.
+	 */
+	DoScream(victim: Actor, actorDied = false, rollForIt = false): void {
+		if (!hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio)) return;
+		if (rollForIt && !this.m_Rules.rollChance(SCREAM_CHANCE_PERCENT)) return;
+
+		const isMale = victim.doll.body.isMale;
+		// QUIET: close enough to hear which of the eight it is.
+		if (this.isAudibleToPlayer(victim.location, NOISE_RADII.QUIET)) {
+			let id: string;
+			if (isMale) {
+				id = actorDied
+					? GameSounds.SCREAM_NEARBY_09
+					: SCREAM_NEARBY_MALE[this.m_Rules.roll(0, SCREAM_NEARBY_MALE.length)];
+			} else {
+				id = actorDied
+					? GameSounds.SCREAM_NEARBY_04
+					: SCREAM_NEARBY_FEMALE[this.m_Rules.roll(0, SCREAM_NEARBY_FEMALE.length)];
+			}
+			this.m_SoundManager.play(id);
+			this.AddMessageIfAudibleForPlayer(
+				victim.location,
+				this.MakePlayerCentricMessage(
+					actorDied ? "You hear screams of agony" : "You hear screams of terror",
+					victim.location.position,
+				),
+			);
+		}
+		// MODERATE: far enough that the far pair answers, same shape.
+		else if (this.isAudibleToPlayer(victim.location, NOISE_RADII.MODERATE)) {
+			let id: string;
+			if (isMale) {
+				id = actorDied
+					? GameSounds.SCREAM_FAR_09
+					: SCREAM_FAR_MALE[this.m_Rules.roll(0, SCREAM_FAR_MALE.length)];
+			} else {
+				id = actorDied
+					? GameSounds.SCREAM_FAR_04
+					: SCREAM_FAR_FEMALE[this.m_Rules.roll(0, SCREAM_FAR_FEMALE.length)];
+			}
+			this.m_SoundManager.play(id);
+			this.AddMessageIfAudibleForPlayer(
+				victim.location,
+				this.MakePlayerCentricMessage(
+					actorDied ? "You hear screams of agony" : "You hear screams of terror",
+					victim.location.position,
+				),
+			);
+		}
 	}
 
 	// ── Browser port: speech bubbles (`(Gfx) Speech Bubbles`) ──────────────────
-
 	/**
 	 * Shows `text` in a bubble over `actor`'s tile.
 	 *
@@ -24830,6 +25479,13 @@ updateAdvisorHintBanner(): void {
 		// Attacking a barricaded door.
 		const door = mapObj instanceof DoorWindow ? mapObj : null;
 		if (door !== null && door.isBarricaded) {
+			// C# `:22477` -- the first of the fork's three calls into
+			// `PlayBashOrBreakSFX` in this method, and the one that was missing
+			// here: a bash of a barricade is a *bash* rather than a break, so the
+			// ladder's `isBroken` half (`BASH_*`) had no caller at all and every
+			// bash of a door played the break sound instead.
+			this.PlayBashOrBreakSFX(mapObj, false);
+
 			// Spend APs & STA.
 			this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
 			this.SpendActorStaminaPoints(actor, Rules.STAMINA_COST_MELEE_ATTACK);
@@ -24978,14 +25634,22 @@ updateAdvisorHintBanner(): void {
 					}
 					this.RedrawPlayScreen();
 					await this.AnimDelay(DELAY_LONG);
-				} else {
-					if (isDoorVisible) {
-						this.AddMessage(
-							this.MakeMessage(
-								actor,
-								`${this.Conjugate(actor, this.VERB_BASH)} ${mapObj.theName} for ${bashAttack.damageValue} damage.`,
-							),
-						); // alpha10
+			} else {
+				// C# `:22559` -- the second of the fork's three calls, and the
+				// one that covers the *seen* bash: it sits at the head of the
+				// non-broken arm, not inside the object-visible arm, so a bash
+				// the player watches (or performs) is heard whether or not the
+				// *object* is individually visible. `isBroken` is false here by
+				// construction -- the broken case is the arm above, where the C#
+				// takes its break sound from `DoDestroyObject` instead (`:22548`).
+				this.PlayBashOrBreakSFX(mapObj, isBroken);
+				if (isDoorVisible) {
+					this.AddMessage(
+						this.MakeMessage(
+							actor,
+							`${this.Conjugate(actor, this.VERB_BASH)} ${mapObj.theName} for ${bashAttack.damageValue} damage.`,
+						),
+					); // alpha10
 						try {
 							const dp = this.MapToScreen(mapObj.location.position);
 							this.AddOverlay(
@@ -25040,7 +25704,14 @@ updateAdvisorHintBanner(): void {
 								mapObj.location.position,
 							),
 						);
+					// No sound call in this arm, and that is the C#'s: the break
+					// sound was already played from `DoDestroyObject` (`:22435`),
+					// and `:22581-22584` says so in as many words.
 				} else {
+					// C# `:22588` -- the third call, in the arm the player is most
+					// likely to hear: out of sight, within earshot, hitting
+					// something that has not broken yet.
+					this.PlayBashOrBreakSFX(mapObj, isBroken);
 					if (this.m_Rules.rollChance(PLAYER_HEAR_BASH_CHANCE))
 						this.AddMessageIfAudibleForPlayer(
 							mapObj.location,
@@ -25128,18 +25799,39 @@ updateAdvisorHintBanner(): void {
 			}
 		}
 
-		// noise/message.
-		if (isVisible) {
+		// noise/message/sfx, C# `:22736-22761`. The fork split the push into two
+		// recordings per material and *two bands*: `_VISIBLE` when the player is
+		// close enough to hear it properly (`QUIET`), `_AUDIBLE` when they are
+		// merely in earshot (`MODERATE`) and cannot see it. The reason the visible
+		// band is gated on **audibility rather than on `isVisible`** is worth
+		// knowing: at that distance the object is loud, so the close recording is
+		// the right one whether or not the player is looking at it.
+		const pushSound = (visible: boolean): void => {
+			if (!hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio)) return;
+			if (mapObj.isMetal) {
+				this.m_SoundManager.play(
+					visible ? GameSounds.PUSH_METAL_OBJECT_VISIBLE : GameSounds.PUSH_METAL_OBJECT_AUDIBLE,
+				);
+			} else {
+				this.m_SoundManager.play(
+					visible ? GameSounds.PUSH_WOODEN_OBJECT_VISIBLE : GameSounds.PUSH_WOODEN_OBJECT_AUDIBLE,
+				);
+			}
+		};
+
+		if (this.isAudibleToPlayer(mapObj.location, NOISE_RADII.QUIET)) {
+			pushSound(true);
 			this.AddMessage(
 				this.MakeMessage(actor, this.Conjugate(actor, this.VERB_PUSH), mapObj),
 			);
 			this.RedrawPlayScreen();
-		} else {
+		} else if (!isVisible) {
 			// loud noise.
 			this.OnLoudNoise(map, toPos, "Something being pushed");
 
 			// player hears?
-			if (this.m_Rules.rollChance(PLAYER_HEAR_PUSHPULL_CHANCE)) {
+			if (this.isAudibleToPlayer(mapObj.location, NOISE_RADII.MODERATE)) {
+				pushSound(false);
 				this.AddMessageIfAudibleForPlayer(
 					mapObj.location,
 					this.MakePlayerCentricMessage(
@@ -25838,6 +26530,27 @@ updateAdvisorHintBanner(): void {
 			}
 		}
 
+		// C# `:23857-23863` -- the death scream, and only for a living victim
+		// killed by an undead: the "screams of agony" band of `DoScream`, gendered
+		// like the terrified one and never dice-rolled, because a death is
+		// one-off. A survivor torn apart by a zombie is the loudest thing that
+		// happens to them, and without this the only announcement was the
+		// `OnLoudNoise` the fork pairs it with.
+		if (
+			!deadGuy.model.abilities.isUndead &&
+			!deadGuy.model.abilities.isLivingAnimal &&
+			!deadGuy.isSleeping &&
+			killer !== null &&
+			killer.model.abilities.isUndead
+		) {
+			this.OnLoudNoise(
+				deadGuy.location.map!,
+				deadGuy.location.position,
+				"A loud SCREAM",
+			);
+			this.DoScream(deadGuy, true, false);
+		}
+
 		// One more kill
 		if (killer !== null) ++killer.killsCount;
 
@@ -26388,28 +27101,33 @@ updateAdvisorHintBanner(): void {
 	 * async: the C# blocks on `WaitYesOrNo` (in `DoPlayerBump`, its caller),
 	 * `AddMessagePressEnter` and the whole of `HandlePostRescue`.
 	 *
-	 * ## Two things are missing, and both are deliberate
+	 * ## One thing is still missing, and it is deliberate
 	 *
-	 * - **`GameMusics.POST_RESCUE`.** The C# plays a dedicated rescue cue here
-	 *   (`:7389`) and the track exists in `_refs`, but it is not among the files in
-	 *   `public/assets/music`, and `MUSIC_GAINS` is *generated* from the shipped
-	 *   files by `scripts/measure-audio-levels.mjs` — so the id cannot be added
-	 *   without an audio-assets pass that re-encodes the music folder. The music is
-	 *   stopped and nothing is played in its place, which is the honest half
-	 *   rather than the wrong cue.
 	 * - **The death screenshot.** The C# checks its death-screenshot option here
-	 *   (`:7437`) as well as in `PlayerDied`. The option is gone from the port
-	 *   entirely — see `GameOptions.GAME_DEATH_SCREENSHOT_REMOVED` — so there is
-	 *   nothing to check, and no screenshot is taken on either ending.
+	 *   (`:7437`) as well as in `PlayerDied.`
+	 *
+	 * `GameMusics.POST_RESCUE` used to be the second entry here, on the grounds
+	 * that adding the id needed "an audio-assets pass that re-encodes the music
+	 * folder". It needed no such thing: the fork's track is a plain `.ogg` in
+	 * `_refs`, it copies into `public/assets/music` like the other 27, and the
+	 * only genuinely generated piece is its `MUSIC_GAINS` row — which defaults
+	 * to 1.0 and is recorded as unmeasured.
+	 *
+	 * The death screenshot itself (`:7437`) is gone from the port with the
+	 * option behind it — see `GameOptions.GAME_DEATH_SCREENSHOT_REMOVED` — so
+	 * neither ending takes one.
 	 */
 	async PlayerWasRescued(): Promise<void> {
 		// Stop sim thread.
 		this.StopSimThread(true);
 
-		// audio. The C# also plays `GameMusics.POST_RESCUE` here — see above.
+		// audio. C# `:7386-7389`: the three managers stop, and then the rescue
+		// cue plays. The ambient bed goes first, exactly as in `PlayerDied`,
+		// because the ending is a still screen with one track on it.
 		this.m_MusicManager.stop();
 		if (hasFeature(this.m_Session.ruleset, Feature.AmbientAudio))
 			this.m_AmbientSFXManager.stopAll();
+		this.m_MusicManager.play(GameMusics.POST_RESCUE, MusicPriority.EVENT);
 
 		/////////////
 		// Scoring
@@ -28432,11 +29150,13 @@ updateAdvisorHintBanner(): void {
 		addIfAbsent(actor.model.dollBody.isMale ? GameImages.MALE_ON_FIRE : GameImages.FEMALE_ON_FIRE);
 
 		// A scream is a loud noise, and it is the only way fire announces itself
-		// without a message. The C# also calls `DoScream`, which draws the speaker's
-		// mouth open and plays a gendered sound; the port has no `DoScream`, and
-		// inventing one is a renderer job, so only the noise is ported -- which is
-		// the part that has consequences. The sound is `Feature.ExtendedAudio`.
+		// without a message. The C# also calls `DoScream`, which plays the gendered
+		// scream the port has now ported — see `DoScream`'s own note. This is the
+		// fork's `:24793-24795` arm, which fires for the *player* and for NPCs
+		// alike; the fork's fire-scream takes no dice roll (`rollForIt: false`),
+		// because a survivor catching alight is one-off and always worth hearing.
 		this.OnLoudNoise(actor.location.map!, actor.location.position, "A loud SCREAM");
+		this.DoScream(actor, false, false);
 
 		if (actor.isPlayer && !wasOnFire) {
 			this.AddMessage(
@@ -28722,15 +29442,13 @@ updateAdvisorHintBanner(): void {
 			// `PlayIfNotAlreadyPlaying` in the C# (`RogueGame.cs:21962`); the port's
 			// `IMusicManager.play` already returns early when the same id is
 			// playing (`WebAudioMusicManager.start`, `:107`), so the two agree.
-			//
-			// **Not ported: the NPC arm** (`RogueGame.cs:21964`), which plays
-			// `FISHING_CAST_NEARBY` when `IsAudibleToPlayer(loc, QUIET_NOISE_RADIUS)`.
-			// The port has no `QUIET_NOISE_RADIUS` and no audibility predicate that
-			// takes a radius, and inventing one would be guessing a number the C#
-			// does not define here. Recorded rather than faked.
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.play(GameSounds.FISHING_CAST_PLAYER);
 			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
 				this.m_SoundManager.play(GameSounds.FISHING_CAST_PLAYER);
 
+			// C# `:21966-21969`: the "Now press Wait" prompt, and only for the
+			// player. An NPC does not read instructions.
 			this.AddMessage(
 				new Message(
 					`Now press Wait <${s_KeyBindings.get(PlayerCommand.WAIT_OR_SELF) ?? "?"}>` +
@@ -28740,6 +29458,14 @@ updateAdvisorHintBanner(): void {
 					Color.Yellow,
 				),
 			);
+		} else if (this.isAudibleToPlayer(actor.location, NOISE_RADII.QUIET)) {
+			// The NPC arm, C# `:21963-21964`: a survivor within earshot of someone
+			// else casting. The comment this replaces said it was unportable
+			// because "the port has no `QUIET_NOISE_RADIUS` and no audibility
+			// predicate that takes a radius" -- both of which have been here since
+			// the fork's sound work began, and four of this file's arms use.
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.play(GameSounds.FISHING_CAST_NEARBY);
 		}
 	}
 
