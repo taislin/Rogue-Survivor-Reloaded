@@ -46,6 +46,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { SimRatio } from "@engine/GameOptions";
 import { Attack } from "@data/Attack";
 import { NullMusicManager } from "@engine/audio/NullMusicManager";
+import { HiScoreTable } from "@engine/HiScoreTable";
 import { RogueGame } from "@engine/RogueGame";
 import { Ruleset, Session } from "@engine/Session";
 import { SkillID } from "@gameplay/Skills";
@@ -186,6 +187,24 @@ describe("leaving the game: death, the reincarnation prompt, and the main menu",
 		expect(drawn).toContain("<press ESC to leave>");
 		// And it ends: the scores screen was left rather than redrawn forever.
 		expect(ui.idleKeysServed).toBeGreaterThan(0);
+	}, 60_000);
+
+	it("the score it registers carries the run's seed", async () => {
+		// The seed column on the scores table is only as good as this wiring:
+		// `HandlePostMortem` builds the entry from the session, and a seed that
+		// never reaches it leaves every row on the table a dash.
+		//
+		// Read back through the table's own `load`, which is what a restart
+		// would see — the game saved the table on register, so this is the
+		// stored entry rather than the one still in memory. `SEED` is the one
+		// `newGame` pinned before the constructor, and the session carried it
+		// into the run.
+		const { game } = await newGame();
+		await within(die(game), 30_000, "the death flow");
+
+		const saved = HiScoreTable.load()!;
+		expect(saved.count).toBeGreaterThan(0);
+		expect(saved.get(0).seed).toBe(SEED);
 	}, 60_000);
 
 	it("declining reincarnation leaves the player dead, and the scores screen is behind us", async () => {

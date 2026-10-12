@@ -158,8 +158,19 @@ describe("RogueGame's measured surface", () => {
     // `STUN_WEAPON_EFFECT_TURNS`, read by both the stun gun and the flashbang.
     // The `Actor` fields the counters live in are in `data/Actor.ts`, so they
     // are not part of this class's count.
-    expect(m.members).toBe(864);
-    expect(m.methods).toBe(689);
+    //
+    // **864, for `flashbangImage`.** The full-screen tint the flashbang throws
+    // up, stepped across the counter as it runs down. Stateless, drawn by the
+    // tile pass, reached by nothing outside the draw.
+    //
+    // **865, for the hi-scores seed column's `formatHiScoreSeed`** (private).
+    // This port added the column after the fork gave it a seed screen, so a
+    // score row can name the world it was played in; the method right-aligns
+    // the value under the header and draws an unrecorded entry as a dash. It is
+    // reached only by the row formatter, so the count moves for the class
+    // growing rather than for the outside world reaching further in.
+    expect(m.members).toBe(865);
+    expect(m.methods).toBe(690);
     // The *reachable* surface is 124, up from 121. Both extractions had left it
     // alone -- each kept its methods on the class, which is what keeps them pure
     // moves -- and these three moved it for the opposite reason: a test reaching
@@ -253,8 +264,13 @@ describe("RogueGame's measured surface", () => {
   // key loop the play loop reaches and nothing else, and the C# had it inline in
   // `HandlePlayerSwapItemInventory`. The captions are two `readonly string[]`
   // fields, exactly like every other mode banner on the class.
+  //
+  // **94, three on from the audio work's `GenerateIncapacitatedAction`, and one
+  // for `formatHiScoreSeed`** — the hi-scores seed column's formatter, private
+  // for the same reason `promptForSwap` is: one screen's key loop reaches it and
+  // nothing else does.
   expect(m.public).toBe(771);
-  expect(m.private).toBe(93);
+  expect(m.private).toBe(94);
 	});
 
 	it("§6's stop condition is not met: nothing private is reached from outside", () => {

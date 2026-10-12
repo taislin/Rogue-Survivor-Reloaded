@@ -19,8 +19,30 @@ export class HiScore {
   playingTimeSeconds = 0;
   skillsDescription = "";
   death = "";
+  /**
+   * The RNG seed the run used, or null for an entry written before this field
+   * existed.
+   *
+   * C# `Session.seed` is what makes a run reproducible, and the fork gives a
+   * player a seed screen to pin one before character creation. A scores table
+   * without the seed cannot answer "which world was that", which is the one
+   * question a table of scores gets asked afterwards -- so the entry carries it.
+   *
+   * Null rather than zero because zero is a seed: the clock-derived default
+   * path can legitimately roll one, and "no seed recorded" has to be
+   * distinguishable from "this seed". The table is JSON in `localStorage` and
+   * `load` builds each entry with `Object.assign` over a default-constructed
+   * `HiScore`, so an entry written before this field simply never gets the key
+   * and reads back as null -- which is exactly the "older entry" case.
+   */
+  seed: number | null = null;
 
-  static fromScoring(name: string, sc: Scoring, skillsDescription: string): HiScore {
+  static fromScoring(
+    name: string,
+    sc: Scoring,
+    skillsDescription: string,
+    seed: number | null,
+  ): HiScore {
     if (!sc) throw new Error("scoring");
 
     const hi = new HiScore();
@@ -30,6 +52,7 @@ export class HiScore {
     hi.killPoints = sc.killPoints;
     hi.name = name;
     hi.playingTimeSeconds = sc.realLifePlayingTimeSeconds;
+    hi.seed = seed;
     hi.skillsDescription = skillsDescription;
     hi.survivalPoints = sc.survivalPoints;
     hi.totalPoints = sc.totalPoints;

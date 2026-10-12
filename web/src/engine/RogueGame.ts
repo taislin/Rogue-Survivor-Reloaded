@@ -4325,9 +4325,15 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 		// body's 12pt menu face (9.6px), which put the labels 1.6px left per
 		// column, ~155px out by the last one. The C# had a single bold font for
 		// the whole screen (RogueForm.cs:57), so it could not diverge.
+		//
+		// The `Seed` column appended below is this port's own: the fork has no
+		// seed column here, but it does have a seed screen -- and a scores row
+		// with no seed in it cannot answer "which world was that", which is the
+		// one question a table of scores gets asked afterwards. It goes last, so
+		// it costs the columns the C# did have nothing.
 		this.m_UI.UI_DrawStringBoldLarge(
 			Color.White,
-			"Rank | Name, Skills, Death       |  Score |Difficulty|Survival|  Kills |Achievm.|      Game Time | Playing time",
+			"Rank | Name, Skills, Death       |  Score |Difficulty|Survival|  Kills |Achievm.|      Game Time | Playing time |   Seed",
 			0,
 			gy,
 		);
@@ -4387,7 +4393,16 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 					`${padLeft(i + 1, 3)}. | ${padRight(this.TruncateString(hi.name, 25), 25)} | ${padLeft(hi.totalPoints, 6)}` +
 					` |     ${padLeft(hi.difficultyPercent, 3)}% | ${padLeft(hi.survivalPoints, 6)} | ${padLeft(hi.killPoints, 6)}` +
 					` | ${padLeft(hi.achievementPoints, 6)} | ${padLeft(new WorldTime(hi.turnSurvived).toString(), 14)}` +
-					` | ${this.TimeSpanToString(hi.playingTimeSeconds)}`;
+					// The playing time is padded to the width of the `Playing
+					// time` label over it, which the seed column makes
+					// load-bearing: with nothing after it, a variable-width
+					// time could not put a pipe anywhere. It is right-aligned,
+					// like every other number in the row.
+					//
+					// The seed column: this port's own, and last so it costs the
+					// C#'s columns nothing. `formatHiScoreSeed` pads to a fixed
+					// width and renders an unrecorded entry as a dash.
+					` | ${padLeft(this.TimeSpanToString(hi.playingTimeSeconds), 12)} | ${this.formatHiScoreSeed(hi.seed)}`;
 				this.m_UI.UI_DrawStringBoldLarge(rankColor, line, 0, gyRows);
 				gyRows += MENU_BOLD_LINE_SPACING;
 				this.m_UI.UI_DrawStringBoldLarge(
@@ -4477,13 +4492,31 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 				gyHead += MENU_BOLD_LINE_SPACING;
 				this.m_UI.UI_DrawStringBoldLarge(
 					Color.White,
-					"Rank | Name, Skills, Death       |  Score |Difficulty|Survival|  Kills |Achievm.|      Game Time | Playing time",
+					"Rank | Name, Skills, Death       |  Score |Difficulty|Survival|  Kills |Achievm.|      Game Time | Playing time |   Seed",
 					0,
 					gyHead,
 				);
 				gy = gyHead + MENU_BOLD_LINE_SPACING;
 			}
 		}
+	}
+
+	/**
+	 * A score row's seed column -- this port's own, not the C#'s.
+	 *
+	 * The value is right-aligned in a six-wide field, so it sits under the
+	 * `Seed` header, which is the same six characters right-aligned. A
+	 * five-digit forced seed therefore leaves a leading space and a larger one
+	 * grows the line rather than sliding the columns of the C#'s fields.
+	 *
+	 * An unrecorded seed draws as a dash rather than a zero, because zero is a
+	 * seed -- the clock-derived default path can roll one, and "this run had no
+	 * seed written" has to read differently from "this run was seed 0". The
+	 * entries it applies to are the ones saved before the field existed.
+	 */
+	private formatHiScoreSeed(seed: number | null): string {
+		if (seed == null) return "     -";
+		return padLeft(seed, 6);
 	}
 
 	// C# LoadHiScoreTable — RogueGame.cs:2146
@@ -27748,6 +27781,7 @@ DeploySmokeScreen(map: Map, pt: Point): void {
 			name,
 			this.m_Session.scoring,
 			skillsDesc,
+			this.m_Session.seed,
 		);
 		if (this.m_HiScoreTable.register(newHiScore)) {
 			this.SaveHiScoreTable();

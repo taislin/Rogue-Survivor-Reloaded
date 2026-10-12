@@ -27,6 +27,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 
 import { HiScore, HiScoreTable } from "@engine/HiScoreTable";
 import { NullMusicManager } from "@engine/audio/NullMusicManager";
+import { storage } from "@engine/storage";
 import {
 	CANVAS_HEIGHT,
 	CANVAS_WIDTH,
@@ -48,7 +49,11 @@ interface Draw {
 }
 
 const RULE = "---------+".repeat(12);
-const HEADER = "Rank | Name, Skills, Death       |  Score |Difficulty|Survival|  Kills |Achievm.|      Game Time | Playing time";
+const HEADER =
+	"Rank | Name, Skills, Death       |  Score |Difficulty|Survival|  Kills |Achievm.|      Game Time | Playing time |   Seed";
+
+/** The seed column's own label, in the six characters the values use. */
+const SEED_HEADER = "  Seed";
 
 /** Indexes of every `|` in a line — the columns, as characters. */
 function pipes(text: string): number[] {
@@ -114,6 +119,9 @@ function recordDraws(ui: NullRogueUI): Draw[] {
 /**
  * The screen with a table under it: enough entries to page, so the scroll
  * redraw is reached rather than only the first paint.
+ *
+ * Every entry records a seed, so the seed column has something in it and the
+ * row the pipe test compares against really is the row the screen draws.
  */
 async function openScores(entries: number): Promise<{
 	game: RogueGame;
@@ -137,6 +145,7 @@ async function openScores(entries: number): Promise<{
 		hi.playingTimeSeconds = 408;
 		hi.skillsDescription = "Agile";
 		hi.death = "killed by a zombie";
+		hi.seed = 1000 + i;
 		table.register(hi);
 	}
 	// Through the screen's own entry point rather than by assigning
@@ -150,6 +159,48 @@ async function openScores(entries: number): Promise<{
 	// Attached after the load: `LoadHiScoreTable` clears the screen twice, and
 	// the recorder counts those as frames — frame 0 has to be the scores
 	// screen's own first paint.
+	const draws = recordDraws(ui);
+	return { game, ui, draws };
+}
+
+/**
+ * The screen over a table saved before the seed existed: one entry, in the
+ * shape `JSON.stringify` wrote when `HiScore` had no `seed` key at all.
+ *
+ * Written to storage directly rather than by saving a constructed table, so
+ * what is under test is the older file rather than this code's current one.
+ */
+async function openOldScores(): Promise<{
+	game: RogueGame;
+	ui: NullRogueUI;
+	draws: Draw[];
+}> {
+	Session.useSeed(4242);
+	const ui = new NullRogueUI();
+	const game = new RogueGame(ui, new NullMusicManager());
+
+	const hi = new HiScore();
+	hi.name = "Old Player";
+	hi.totalPoints = 900;
+	hi.difficultyPercent = 100;
+	hi.survivalPoints = 2026;
+	hi.killPoints = 150;
+	hi.achievementPoints = 1000;
+	hi.turnSurvived = 144;
+	hi.playingTimeSeconds = 408;
+	hi.skillsDescription = "Agile";
+	hi.death = "killed by a zombie";
+	// The older file's shape: every field `HiScore` had at the time, and no
+	// `seed` key at all — not a null one, which is the difference between a
+	// table that never recorded seeds and one that recorded them as missing.
+	const withoutSeed = JSON.parse(JSON.stringify(hi)) as Record<string, unknown>;
+	delete withoutSeed.seed;
+	storage.setItem(
+		HiScoreTable.STORAGE_KEY,
+		JSON.stringify({ maxEntries: HiScoreTable.DEFAULT_MAX_ENTRIES, entries: [withoutSeed] }),
+	);
+	await game.LoadHiScoreTable();
+
 	const draws = recordDraws(ui);
 	return { game, ui, draws };
 }
@@ -289,5 +340,65 @@ describe("the hi-scores header block fits the canvas", () => {
 		for (const d of footnotes) {
 			expect(d.gy).toBe(CANVAS_HEIGHT - MENU_BOLD_LINE_SPACING);
 		}
+	});
+});
+
+describe("the hi-scores seed column", () => {
+	it("heads the seed column in the same six characters the values use", () => {
+		// The column is this port's own addition, so nothing else pins its
+		// width: the invariant is the one the rest of the header has, that the
+		// label sits over the field it labels. Six characters, right-aligned,
+		// against a right-aligned value.
+		const header = headerIn(draws, 0)!;
+		expect(header.text.endsWith(`| ${SEED_HEADER}`)).toBe(true);
+		for (const row of rowsIn(draws, 0)) {
+			// After the last pipe: one space, then the six-character field
+			// right-aligned, which for these four-digit seeds is two more.
+			expect(row.text).toMatch(/\| {3}\d+$/);
+		}
+	});
+
+	it("shows the seed a run recorded, in the column the header heads", () => {
+		// The row for entry 1 is the one `openScores` gave seed 1000: the value
+		// is right-aligned in six characters under the `Seed` label, so the
+		// leading is two and the digits are the entry's own seed.
+		const row = rowsIn(draws, 0)[0]!;
+		expect(row.text.endsWith("|   1000")).toBe(true);
+		// Player 9's row, which the scroll redraw draws rather than the first
+		// paint: the column is on both paths, not only the one that opened.
+		const scrolled = rowsIn(draws, 1).find((d) => d.text.includes("Player 9"))!;
+		expect(scrolled.text.endsWith("|   1008")).toBe(true);
+	});
+
+	it("round-trips a seed through the table's own save and load", () => {
+		// The screen only draws what `LoadHiScoreTable` gave it, so the value
+		// being on the row at all is the save having written it. This asserts
+		// the table half directly: a constructed entry's seed is the loaded
+		// entry's seed, and not this code's.
+		const table = new HiScoreTable(HiScoreTable.DEFAULT_MAX_ENTRIES);
+		const hi = new HiScore();
+		hi.name = "Round Tripper";
+		hi.totalPoints = 1;
+		hi.seed = 42424242;
+		table.register(hi);
+		HiScoreTable.save(table);
+		const loaded = HiScoreTable.load()!;
+		expect(loaded.get(0).seed).toBe(42424242);
+	});
+
+	it("draws a dash for an entry saved before the field existed", async () => {
+		// The older-entry half of the report: a table written when `HiScore`
+		// had no `seed` key reads back as null, and the row shows a dash rather
+		// than a zero — zero is a seed, and the two cases have to read
+		// differently. The entry is loaded through the screen's own path, so
+		// this is the shape a player's real older table takes.
+		const { game, ui, draws: oldDraws } = await openOldScores();
+		ui.pushKeys("Escape");
+		await game.HandleHiScores();
+
+		const row = oldDraws.find((d) => isRow(d.text))!;
+		expect(row).toBeDefined();
+		expect(row.text.endsWith("|      -")).toBe(true);
+		expect(row.text).not.toMatch(/\| +0$/);
 	});
 });
