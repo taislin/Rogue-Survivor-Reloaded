@@ -1,7 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { describe, it, expect, vi } from "vitest";
 import {
+  RogueGame,
   overlayOnMapPanel,
   Overlay,
   OverlayImage,
@@ -16,6 +15,12 @@ import {
 import { Point } from "@engine/Point";
 import { Rect } from "@engine/Rect";
 import { Color } from "@engine/Color";
+import { Session } from "@engine/Session";
+import { NullRogueUI } from "@ui/NullRogueUI";
+import { Actor } from "@data/Actor";
+import { Faction } from "@data/Faction";
+import { Lighting, Map as GameMap } from "@data/Map";
+import { GameActors, ActorID } from "@gameplay/GameActors";
 
 /**
  * The overlay pass's gate on the map panel.
@@ -32,10 +37,9 @@ import { Color } from "@engine/Color";
  * `RedrawPlayScreen` draws overlays *after* the side panel, so it lands on the
  * inventory.
  *
- * The gate skips rather than clips, for the reason speech bubbles skip: half a
- * box cut off by the panel edge reads as a rendering bug just as loudly as a
- * whole one in the wrong place. `scale` is the pass's own, because the panel
- * edge is at `MAP_PANEL_WIDTH` *displayed* pixels and a tile coordinate means
+ * The gate skips off-panel effects and keeps partially intersecting shapes,
+ * whose overflow is clipped by the drawing scope. `scale` is the pass's own:
+ * the panel edge is at `MAP_PANEL_WIDTH` *displayed* pixels, and a tile coordinate means
  * nothing without the zoom it is drawn at — `mapDrawScale` is shared with
  * `withMapZoom` for exactly that reason, which the last test here pins.
  */
@@ -164,32 +168,64 @@ describe("overlayOnMapPanel: shapes it does not know", () => {
   });
 });
 
-/**
- * The wiring, asserted on the source: driving a real `RedrawPlayScreen` needs a
- * whole played game, and the two things that can silently undo the gate are both
- * text — a call dropped from the pass, and the pass measuring at one scale while
- * `withMapZoom` draws at another.
- */
-describe("the overlay pass uses the gate, at the scale it draws", () => {
-  const src = readFileSync(join(__dirname, "..", "src", "engine", "RogueGame.ts"), "utf-8");
+describe("the overlay drawing scopes", () => {
+  it.each([1, 2] as const)("clips edge overlays at zoom %s and leaves speech bubbles unclipped", (zoom) => {
+    const ui = new NullRogueUI();
+    const game = new RogueGame(ui);
+    const session = Session.get();
+    const oldMap = session.currentMap;
+    const oldZoom = game.MapZoom;
+    game.SetMapZoom(zoom);
+    const map = new GameMap(1234, "overlays", 30, 30);
+    map.lighting = Lighting.LIT;
+    const player = new Actor(new GameActors().get(ActorID.MALE_CIVILIAN), new Faction("Test", "test"), "you");
+    map.placeActor(player, new Point(15, 15));
+    game.m_Player = player;
+    session.currentMap = map;
 
-  it("tests every map-anchored overlay before drawing it", () => {
-    const pass = src.slice(
-      src.indexOf("withMapZoom(() => {\n\t\t\tfor (const o of this.m_Overlays)"),
-    );
-    expect(pass.length).toBeGreaterThan(0);
-    const gate = pass.indexOf("overlayOnMapPanel(o, overlayScale)");
-    expect(gate, "the pass should gate each overlay on the panel").toBeGreaterThan(-1);
-    expect(gate).toBeLessThan(pass.indexOf("}, false);"));
-  });
+    // Exercise the real redraw's overlay pass without rendering unrelated HUD/map content.
+    for (const method of ["DrawMap", "DrawMiniMap", "DrawMessages", "DrawActorStatus", "DrawInventory", "DrawCorpsesList"] as const) {
+      vi.spyOn(game, method).mockImplementation(() => {});
+    }
+    const scopes: { scale: number; clipRect?: Rect }[] = [];
+    vi.spyOn(ui, "UI_BeginScaledDraw").mockImplementation((scale, clipRect) => {
+      scopes.push({ scale, clipRect });
+    });
+    vi.spyOn(ui, "UI_EndScaledDraw").mockImplementation(() => { scopes.pop(); });
+    const images: { id: string; scope?: typeof scopes[number] }[] = [];
+    vi.spyOn(ui, "UI_DrawImage").mockImplementation((id) => {
+      images.push({ id, scope: scopes[scopes.length - 1] });
+    });
+    const bubbles = vi.spyOn(game, "DrawSpeechBubbles").mockImplementation(() => {
+      expect(scopes[scopes.length - 1]?.clipRect).toBeUndefined();
+      expect(scopes[scopes.length - 1]?.scale ?? 1).toBe(zoom);
+    });
 
-  it("takes the scale from the same place the drawing does", () => {
-    const withMapZoom = src.slice(
-      src.indexOf("\tprivate withMapZoom(draw: () => void"),
-      src.indexOf("\tprivate DrawMapMarker("),
-    );
-    expect(withMapZoom).toContain("this.mapDrawScale()");
-    const pass = src.slice(src.indexOf("// overlays"), src.indexOf("}, false);"));
-    expect(pass).toContain("this.mapDrawScale()");
+    // At zoom 2, column 13's reachable 32px image spans displayed x=832..896.
+    // At zoom 1, use a non-tile-aligned anchor to check the clip at scale 1 too.
+    const right = Math.floor((MAP_PANEL_WIDTH - 1) / (TILE_SIZE * zoom)) * TILE_SIZE;
+    game.AddOverlay(new OverlayImage(new Point(zoom === 2 ? right : MAP_PANEL_WIDTH - 1, TILE_SIZE), "right"));
+    game.AddOverlay(new OverlayImage(new Point(TILE_SIZE, MAP_PANEL_HEIGHT / zoom - 1), "bottom"));
+    game.AddOverlay(new OverlayImage(new Point(MAP_PANEL_WIDTH / zoom, TILE_SIZE), "off-panel"));
+    const screen = new OverlayImage(new Point(MAP_PANEL_WIDTH, TILE_SIZE), "screen");
+    screen.zoomsWithMap = false;
+    game.AddOverlay(screen);
+
+    try {
+      game.RedrawPlayScreen();
+      const clipped = { scale: zoom, clipRect: new Rect(0, 0, MAP_PANEL_WIDTH, MAP_PANEL_HEIGHT) };
+      expect(images).toEqual([
+        { id: "right", scope: clipped },
+        { id: "bottom", scope: clipped },
+        { id: "screen", scope: undefined },
+      ]);
+      expect(bubbles).toHaveBeenCalledOnce();
+      expect(scopes).toHaveLength(0);
+    } finally {
+      vi.spyOn(game, "RedrawPlayScreen").mockImplementation(() => {});
+      game.SetMapZoom(oldZoom);
+      session.currentMap = oldMap;
+      vi.restoreAllMocks();
+    }
   });
 });

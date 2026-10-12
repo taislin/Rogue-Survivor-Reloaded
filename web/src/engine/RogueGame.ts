@@ -1101,9 +1101,8 @@ export class OverlayPopupTitleColors extends PopupOverlay {
  * coordinates past `MAP_PANEL_WIDTH` — and `RedrawPlayScreen` draws overlays
  * *after* the side panel, so it lands over the inventory.
  *
- * Skipped rather than clipped, for the reason `DrawSpeechBubbles` skips: half a
- * box cut off by the panel edge reads as a rendering bug just as loudly as a
- * whole one in the wrong place. `scale` is `withMapZoom`'s own
+ * Overlays outside the panel are skipped; partially intersecting shapes are
+ * kept and clipped by the drawing scope. `scale` is `withMapZoom`'s own
  * (`RogueGame.mapDrawScale`), because the panel edge is at `MAP_PANEL_WIDTH`
  * *displayed* pixels and a tile coordinate means nothing without the zoom it is
  * drawn at.
@@ -30625,19 +30624,17 @@ DeploySmokeScreen(map: Map, pt: Point): void {
 	 * has no destination size — a sprite is blitted at its authored 32px, so
 	 * magnifying it means scaling the surface it is blitted to. That in turn means
 	 * everything drawn through `MapToScreen` must be inside one of these scopes,
-	 * or it would land at an unscaled position. The three callers are the map
-	 * itself, the overlays, and the markers `DrawMiniMap` puts on the map (as
-	 * opposed to on the minimap).
+	 * or it would land at an unscaled position. Callers include the map itself,
+	 * overlays, speech bubbles, and the markers `DrawMiniMap` puts on the map
+	 * (as opposed to on the minimap).
 	 *
-	 * `clip` is for the map proper: a magnified map would otherwise paint over the
-	 * side panel. Overlays pass false and may spill, exactly as they do at zoom 1
-	 * — a mode prompt at the top-left corner is text that must not be cut in half.
+	 * The map and its overlays are clipped to the panel. Speech bubbles pass
+	 * false so their text can extend past the edge.
 	 */
 	private withMapZoom(draw: () => void, clip: boolean = true): void {
 		const scale = this.mapDrawScale();
-		// No scale, no scope: at zoom 1 — and always in first person — the draw
-		// is already in panel pixels, so a save/clip/restore would buy nothing.
-		if (scale === 1) {
+		// An unscaled draw still needs a scope when clipping is requested.
+		if (scale === 1 && !clip) {
 			draw();
 			return;
 		}
@@ -30941,30 +30938,29 @@ DeploySmokeScreen(map: Map, pt: Point): void {
 		// overlays
 		// Overlays that belong *on* the map -- damage icons, target rings, the
 		// lines joining them -- are drawn inside the map's zoom scope so they
-		// scale with the map they annotate; unclipped, since a prompt pinned in
-		// the map's top left must never be cut in half by the panel's edge.
+		// scale with the map they annotate and are clipped to its panel.
 		// Everything else is drawn unscaled, in two groups: popups, whose anchor
 		// is the only part that follows the zoom (`zoomsWithMap` decides whether
 		// it does), and screen-anchored overlays, which the zoom must not move at
 		// all -- the side panel's item and corpse highlights and descriptions,
 		// and the give-mode and skill-upgrade prompts.
 		//
-		// The map-anchored group is *skipped*, not clipped, when its anchor is past
+		// The map-anchored group is skipped when its anchor is past
 		// the panel edge: every effect in it is added on `IsVisibleToPlayer`, which
 		// reads the tile's FOV, not on `IsInViewRect`, so at zoom 2 the box for
 		// something the player can see but the camera does not cover computes to
 		// coordinates over the side panel -- and overlays are drawn *after* the side
-		// panel, so it lands on the inventory. Cutting the box at the edge instead
-		// would be the same bug in a quieter key, which is why the clip flag below
-		// stays false. See `overlayOnMapPanel`.
+		// panel, so it lands on the inventory. Partially intersecting overlays
+		// remain drawable, with their overflow clipped. See `overlayOnMapPanel`.
 		const overlayScale = this.mapDrawScale();
 		this.withMapZoom(() => {
 			for (const o of this.m_Overlays) {
 				if (o.zoomsWithMap && !(o instanceof PopupOverlay) && overlayOnMapPanel(o, overlayScale)) o.draw(this.m_UI);
 			}
+		});
+		this.withMapZoom(() => {
 			// Browser port: speech bubbles, last so they land over the actors and
-			// over any damage number. Inside the zoom scope with the rest — they
-			// annotate tiles and should scale with them.
+			// over any damage number. They scale with the map in an unclipped scope.
 			this.DrawSpeechBubbles();
 		}, false);
 		for (const o of this.m_Overlays) {

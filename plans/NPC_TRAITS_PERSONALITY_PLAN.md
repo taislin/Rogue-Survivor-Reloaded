@@ -50,7 +50,7 @@
 9. [Action Planning & Execution (`NpcGoalPlanner`)](#9-action-planning--execution-npcgoalplanner)
    - [9.1 Bounded Uniform-Cost Search (UCS)](#91-bounded-uniform-cost-search-ucs)
    - [9.2 Facts, Operators & Cost Biases](#92-facts-operators--cost-biases)
-   - [9.3 Concrete Execution Rules (Food, Barter, Medicine, Departure)](#93-concrete-execution-rules-food-barter-medicine-departure)
+   - [9.3 Concrete Execution Rules (Food, Barter, Medicine, Departure)](#93-concrete-execution-rules)
 10. [Social Interactions, Stories & The Director](#10-social-interactions-stories--the-director)
     - [10.1 Spoken Promises & Boundary Management](#101-spoken-promises--boundary-management)
     - [10.2 Resource Contention & Claim Disputes](#102-resource-contention--claim-disputes)
