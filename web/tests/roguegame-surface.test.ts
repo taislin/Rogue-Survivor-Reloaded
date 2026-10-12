@@ -234,7 +234,13 @@ describe("RogueGame's measured surface", () => {
     // three classify as HUB 2 — `Handle*` player handlers that never move. So
     // the reach grew by three and every one of them went into a hub, which is
     // the split saying these are handlers, not a region worth extracting.
-    expect(m.external).toBe(137);
+    //
+    // **138, for `AddOverlay`.** The overlay-clipping work's rendering tests
+    // drive the real screen redraw, and adding an overlay to it is the first
+    // time a test has reached that method. It classifies as STATE — it mutates
+    // the overlay list the screen draws from — so it lands in the movable half
+    // rather than a hub, which is a reach enlarging the part that moves.
+    expect(m.external).toBe(138);
   // §6.4: "567 of 584 methods are public — only 17 are `private`. The
   // `private` boundary is effectively absent." That is still true, and the
   // direction is worth pinning: private has come down from 91 to 89, and is 90
@@ -313,7 +319,10 @@ describe("RogueGame's measured surface", () => {
     // action primitive, so it lands in HUB 1 beside `DoMeleeAttack` and the rest
     // -- the hub a wave must never move, reached by a test that checks which of
     // three call sites inside it fires.
-    expect(m.external).toBe(137);
+    //
+    // **138 now**: `AddOverlay`, reached by the overlay-clipping work's
+    // rendering tests driving the real screen redraw. STATE, so movable.
+    expect(m.external).toBe(138);
     expect(m.external).toBeGreaterThan(83);
 	});
 
@@ -332,10 +341,13 @@ describe("RogueGame's measured surface", () => {
 		const m = measure();
 		const classified = [...m.buckets.values()].reduce((n, list) => n + list.length, 0);
 		expect(classified).toBe(m.external);
-		expect(m.buckets.get("STATE")?.length ?? 0).toBeLessThan(33);
+		// 33, with `AddOverlay` the newest: the overlay-clipping rendering tests
+		// reach it, and it classifies as STATE — the overlay list the screen
+		// draws from, which is exactly the sort of thing a context carries.
+		expect(m.buckets.get("STATE")?.length ?? 0).toBeLessThan(34);
 	});
 
-it("splits the reachable surface into 39 hub and 98 movable, and the hubs stay", () => {
+it("splits the reachable surface into 39 hub and 99 movable, and the hubs stay", () => {
     // §6.8: the two hubs "are the reason the split is worth doing rather than the
     // reason it fails". Still true, and now measured on the current file.
     const m = measure();
@@ -370,7 +382,12 @@ it("splits the reachable surface into 39 hub and 98 movable, and the hubs stay",
     // cheap way: the bash/break sound tests drive it directly, and a `Do*` action
     // primitive classifies as a hub rather than a region, so the movable half is
     // unchanged again and the hub grew by one.
-    expect(m.moving).toBe(98);
+    //
+    // **99 now**: `AddOverlay`, from the overlay-clipping work's rendering tests
+    // driving the real screen redraw. It mutates the overlay list the screen
+    // draws from, so STATE classifies it movable rather than a hub -- a reach
+    // enlarging the half that moves, not the half that cannot.
+    expect(m.moving).toBe(99);
     expect(m.hubs).toBe(39);
     expect(m.moving + m.hubs).toBe(m.external);
     // HUB 1 is 28 of the 39. `DoTag` joined when the minimap tag test replaced a
@@ -427,7 +444,13 @@ it("splits the reachable surface into 39 hub and 98 movable, and the hubs stay",
     // named on the Wave 3 list in `measure-roguegame.mjs`, so a screen that is
     // squarely part of the new-game flow does not land in the bucket of things
     // `GameContext` carries. The STATE bucket holding still is the point.
-    expect(carry.length).toBe(32);
+    //
+    // **33, and `AddOverlay` is the one.** The overlay-clipping work's rendering
+    // tests reach it for the first time, and it belongs: the overlay list it
+    // appends to is state the screen carries, and it is a method rather than a
+    // field — which is why the bucket is a `carry` classification and not a
+    // list of data.
+    expect(carry.length).toBe(33);
 		for (const name of ["player", "session", "rules", "m_PlayerFOV", "m_CharGen", "m_IsGameRunning", "m_PlayerWasRescued", "TAG_MODE_TEXT", "simulateOneBehindDistrictTurn", "stepActorsOnFire", "CURRENT_SAVE_SLOT", "POPUP_FILLCOLOR", "SPEECH_BUBBLE_FILLCOLOR"]) {
 			expect(carry, `${name} should be classified as carried`).toContain(name);
 		}
