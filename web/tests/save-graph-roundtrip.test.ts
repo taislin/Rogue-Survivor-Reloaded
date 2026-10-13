@@ -604,6 +604,38 @@ describe("a field with no codec stops the save", () => {
   });
 });
 
+describe("a save from before the stun counters existed", () => {
+  it("reads the missing keys as not stunned, so the first stun write is a number", () => {
+    // `d60a8e6` added `Actor.stunnedTurns`/`flashbangedTurns`. A save written
+    // before that carries neither key, and a shell made with `Object.create`
+    // has no field initialisers, so without the spec's `finish` the field is
+    // `undefined` and the first stun write computes `Math.min(undefined + n,
+    // MAX)` — NaN, which never incapacitates and never unwinds. The same shape
+    // as the absent `backpackInventory` the backpack spec defends against
+    // (`tests/shelter-backpacks.test.ts:705-728`).
+    const { data } = freshRoundTrip();
+    const playerId = (data.root as { player: { $: number } }).player.$;
+    const record = data.objs[playerId - 1]!;
+    expect(record.k, "the root's player ref resolves to an Actor record").toBe("Actor");
+    expect(record.f.stunnedTurns, "the key is there to begin with").toBeDefined();
+    expect(record.f.flashbangedTurns, "the key is there to begin with").toBeDefined();
+
+    // A copy, so the cached graph the comparison suite reads stays whole.
+    const aged = structuredClone(data) as typeof data;
+    const agedRecord = (aged.objs as readonly { f: Record<string, unknown> }[])[playerId - 1]!;
+    delete agedRecord.f.stunnedTurns;
+    delete agedRecord.f.flashbangedTurns;
+
+    const restored = readSessionGraph(aged).player!;
+    expect(restored.stunnedTurns, "an absent counter reads as not stunned").toBe(0);
+    expect(restored.flashbangedTurns, "an absent counter reads as not stunned").toBe(0);
+    expect(restored.isIncapacitated).toBe(false);
+    // The write the defaults exist for: a number in, a stunned actor out.
+    restored.stunnedTurns = Math.min(restored.stunnedTurns + 3, 99);
+    expect(restored.isStunned).toBe(true);
+  });
+});
+
 // ── The comparison ──────────────────────────────────────────────────────────
 
 /** The spec for a value, or null if the format carries it inline. */

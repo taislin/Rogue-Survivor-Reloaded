@@ -184,6 +184,14 @@ describe("DrawMap actually draws the label for a boundary exit", () => {
   });
 
   it("does not invent a label where there is no exit", () => {
-    expect(drawMapCentredOn(new Point(map.width, 40))).toBe(false);
+    // The cell is probed for rather than hard-coded: gating the armory's
+    // plasma die under CLASSIC (`BaseTownGenerator.ts:5982`) restored the A9
+    // roll stream, and this seed's world gained a *real* exit on the right
+    // edge — a label drawn for a real exit is not an invented one. What the
+    // test holds is the intent: an empty boundary cell draws nothing.
+    let y = 0;
+    while (map.getExitAt(new Point(map.width, y)) !== null) y++;
+    expect(map.getExitAt(new Point(map.width, y)), "the probe cell carries no exit").toBeNull();
+    expect(drawMapCentredOn(new Point(map.width, y))).toBe(false);
   });
 });

@@ -20,19 +20,22 @@
  * where the next batch of this work goes; this file is the town generators.
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { Item } from "@data/Item";
 import { Map as GameMap } from "@data/Map";
+import { MapObject } from "@data/MapObject";
 import { Models } from "@data/Models";
 import { Point } from "@engine/Point";
 import { Rect } from "@engine/Rect";
+import { DiceRoller } from "@engine/DiceRoller";
 import { Options, Resources } from "@engine/GameOptions";
 import { Ruleset, Session } from "@engine/Session";
 import { ItemID } from "@gameplay/GameItems";
+import { GameImages } from "@gameplay/GameImages";
 import { GameTiles, TileID } from "@gameplay/GameTiles";
 import { Parameters } from "@gameplay/generators/BaseTownGenerator";
 import { StdTownGenerator } from "@gameplay/generators/StdTownGenerator";
@@ -52,7 +55,14 @@ const mapGenSource = readFileSync(
 
 function freshGenerator(seed = 4242): StdTownGenerator {
   const runner = new HeadlessRunner(seed);
-  return new StdTownGenerator(runner.rogueGame, new Parameters());
+  const gen = new StdTownGenerator(runner.rogueGame, new Parameters());
+  // The constructor's roller is unseeded (`new DiceRoller()` is Date.now-seeded,
+  // `BaseTownGenerator.ts:262`), and none of these tests calls `generate(seed)`
+  // — without this the SEEDS table below does nothing and every run samples a
+  // different table. The same cast the CHAR storage-room suite uses
+  // (`tests/char-storage-room.test.ts:92`).
+  (gen as unknown as { m_DiceRoller: DiceRoller }).m_DiceRoller = new DiceRoller(seed);
+  return gen;
 }
 
 /** The model ids `makeShopConstructionItem` returns, over `seeds` seeded rollers. */
@@ -174,5 +184,92 @@ describe("the shield's factory", () => {
     expect(it.model.id).toBe(ItemID.POLICE_RIOT_SHIELD);
     expect(it.isForbiddenToAI).toBe(false);
     expect(it.quantity).toBe(1);
+  });
+});
+
+// ── The Classic die ─────────────────────────────────────────────────────────
+
+/** The protected members the A9 transcription below needs, and nothing else. */
+interface VanillaArmory {
+  m_DiceRoller: DiceRoller;
+  mapObjectFill(map: GameMap, rect: Rect, createFn: (p: Point) => MapObject | null): void;
+  countAdjWalls(map: GameMap, x: number, y: number): number;
+  makeItemCHARLightBodyArmor(): Item;
+  makeItemZTracker(): Item;
+  makeItemBlackOpsGPS(): Item;
+  makeItemGrenade(): Item;
+  makeItemShotgun(): Item;
+  makeItemHuntingRifle(): Item;
+  makeItemShotgunAmmo(): Item;
+  makeItemLightRifleAmmo(): Item;
+  makeObjShelf(imageId: string): MapObject;
+}
+
+/**
+ * A9's `MakeCHARArmoryRoom` (`BaseTownGenerator.cs:4104-4153`), which has no
+ * plasma arm at all: the terminal ammo is the plain 50/50. The port's chain is
+ * the same one with the fork's plasma roll appended at the end
+ * (`BaseTownGenerator.ts:5955-5986`), and that roll must not be *spent* under
+ * CLASSIC, where the resources feature is off (`FeatureFlags.ts:197`) and the
+ * chance is 0: `rollChance` delegates to `roll` and spends a die even at 0%
+ * (`DiceRoller.ts:40-42`), and a die spent here shifts every worldgen roll after
+ * it. The same measuring stick as the storage room's transcription
+ * (`tests/char-storage-room.test.ts:346-366`), which holds the same line one
+ * room over.
+ */
+function armoryTranscription(gen: StdTownGenerator, map: GameMap, room: Rect): void {
+  const self = gen as unknown as VanillaArmory;
+  self.mapObjectFill(map, room, (pt) => {
+    if (self.countAdjWalls(map, pt.x, pt.y) < 3) return null;
+    if (map.getExitAt(pt) !== null) return null;
+
+    if (self.m_DiceRoller.rollChance(20)) {
+      let it: Item | null = null;
+      if (self.m_DiceRoller.rollChance(20)) {
+        it = self.makeItemCHARLightBodyArmor();
+      } else if (self.m_DiceRoller.rollChance(20)) {
+        it = self.m_DiceRoller.rollChance(50) ? self.makeItemZTracker() : self.makeItemBlackOpsGPS();
+      } else if (self.m_DiceRoller.rollChance(20)) {
+        it = self.makeItemGrenade();
+      } else if (self.m_DiceRoller.rollChance(30)) {
+        it = self.m_DiceRoller.rollChance(50) ? self.makeItemShotgun() : self.makeItemHuntingRifle();
+      } else {
+        it = self.m_DiceRoller.rollChance(50) ? self.makeItemShotgunAmmo() : self.makeItemLightRifleAmmo();
+      }
+      map.dropItemAt(it!, pt);
+      return self.makeObjShelf(GameImages.OBJ_SHOP_SHELF);
+    }
+    return null;
+  });
+}
+
+/** Rolls spent by one armory build. The item factories are die-free. */
+function armoryRolls(seed: number, build: (gen: StdTownGenerator, map: GameMap, room: Rect) => void): number {
+  Session.get().ruleset = Ruleset.CLASSIC;
+  const { map, room } = armoryMap();
+  const gen = freshGenerator(seed);
+  const spy = vi.spyOn((gen as unknown as VanillaArmory).m_DiceRoller, "roll");
+  try {
+    build(gen, map, room);
+    return spy.mock.calls.length;
+  } finally {
+    spy.mockRestore();
+  }
+}
+
+describe("the armory's Classic die, which the plasma arm would shift", () => {
+  it("spends exactly what an A9 transcription spends when the resources feature is off", () => {
+    // Measured rather than argued, the same way the storage-room suite holds
+    // its own Classic count: if the plasma roll happened before its chance was
+    // consulted — as it did before the gate at `BaseTownGenerator.ts:5979` —
+    // every terminal-ammo shelf would spend one die more than the transcription
+    // and this would fail on the first seed that reaches the arm.
+    for (const seed of [1, 2, 3, 4242, 20250929, 31337]) {
+      const port = armoryRolls(seed, (gen, map, room) =>
+        (gen as unknown as { makeCHARArmoryRoom(map: GameMap, room: Rect): void }).makeCHARArmoryRoom(map, room),
+      );
+      const vanilla = armoryRolls(seed, armoryTranscription);
+      expect(port, `seed ${seed}: no die is spent on a gated-off plasma arm`).toBe(vanilla);
+    }
   });
 });

@@ -5966,12 +5966,24 @@ export class BaseTownGenerator extends BaseMapGenerator {
                 //
                 // `makeItemBioForceGunAmmo` also pins `Quantity = 1` and
                 // `IsForbiddenToAI`, so even a ported caller spawns exactly one.
+                //
+                // Skipped, not rolled at zero: `rollChance` delegates to `roll`
+                // and spends a die even at 0% (`DiceRoller.ts:40-42`), and under
+                // CLASSIC the resources feature is off, so the chance is 0 and
+                // the reference — which has no plasma arm at all — would go
+                // straight to the 50/50. A die spent here would shift every
+                // worldgen roll after it, the same trade `armyResourcesChance`'s
+                // own gate (`:6918-6931`), the business region's `rolled`
+                // (`:500-510`) and `tests/char-storage-room.test.ts` hold the
+                // line on. Still Alive always rolls: the availability values are
+                // 33, 54 and 75, so the chance is 11, 18 or 25 and never zero.
                 const plasmaChance = this.armyResourcesChance() / 3;
-                it = this.m_DiceRoller.rollChance(plasmaChance)
-                  ? this.makeItemBioForceGunAmmo()
-                  : this.m_DiceRoller.rollChance(50)
-                    ? this.makeItemShotgunAmmo()
-                    : this.makeItemLightRifleAmmo();
+                it =
+                  plasmaChance > 0 && this.m_DiceRoller.rollChance(plasmaChance)
+                    ? this.makeItemBioForceGunAmmo()
+                    : this.m_DiceRoller.rollChance(50)
+                      ? this.makeItemShotgunAmmo()
+                      : this.makeItemLightRifleAmmo();
               }
             }
           }
