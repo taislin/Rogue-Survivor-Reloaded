@@ -4951,7 +4951,7 @@ export class BaseTownGenerator extends BaseMapGenerator {
   }
 
   makeShopConstructionItem(): Item {
-    const roll = this.m_DiceRoller.roll(0, 25);
+    const roll = this.m_DiceRoller.roll(0, hasFeature(Session.get().ruleset, Feature.ResourcesAvailability) ? 25 : 24);
     switch (roll) {
       case 0:
       case 1:
@@ -4990,10 +4990,8 @@ export class BaseTownGenerator extends BaseMapGenerator {
        * it at `BaseTownGenerator.cs:7500`, case 10 of `MakeShopConstructionItem`'s
        * own `Roll(0, 13)` -- a different table from this port's, which is a
        * port-era rewrite (24 outcomes, no axe, wrench, pickaxe, paint or
-       * chainsaw). **Appended rather than inserted**, so the 24 outcomes this
-       * table already has keep their odds and every construction shop in every
-       * existing seed is unchanged; the nails are simply one more thing a
-       * hardware store can hold.
+       * chainsaw). Still Alive adds a 25th outcome; Classic keeps its original
+       * range so its seeded construction loot is unchanged.
        */
       case 24:
         return this.makeItemNailGunAmmo();
@@ -5952,22 +5950,12 @@ export class BaseTownGenerator extends BaseMapGenerator {
               if (this.m_DiceRoller.rollChance(30)) {
                 it = this.m_DiceRoller.rollChance(50) ? this.makeItemShotgun() : this.makeItemHuntingRifle();
               } else {
-                // The bio-force gun's ammunition: C# `:8470-8473`, which rolls
-                // `RollChance(ResourcesAvailability / 3)` *before* the whole
-                // chain and thereby makes plasma the rarest thing in the room.
-                //
-                // Placed inside the terminal ammo arm rather than in front of the
-                // chain, because that is where it costs nothing: inserting it
-                // ahead of the armor/tracker/grenade arms would move every one of
-                // them, and the CHAR armory's contents are pinned by digests
-                // (`tests/char-storage-room.test.ts`). The rarity the reference
-                // gets from ordering, this gets from the same
-                // availability-scaled roll sitting at the end of it.
-                //
-                // `makeItemBioForceGunAmmo` also pins `Quantity = 1` and
-                // `IsForbiddenToAI`, so even a ported caller spawns exactly one.
-                const plasmaChance = this.armyResourcesChance() / 3;
-                it = this.m_DiceRoller.rollChance(plasmaChance)
+                // Only 0.8 * 0.8 * 0.8 * 0.7 of stocked shelves reach ammo.
+                // Compensate to keep plasma at roughly ResourcesAvailability / 3
+                // percent of stocked shelves (25% at HIGH) without reordering.
+                const plasmaChance = this.armyResourcesChance() / (3 * 0.8 * 0.8 * 0.8 * 0.7);
+                // Classic must not spend a die on the Still Alive plasma arm.
+                it = hasFeature(Session.get().ruleset, Feature.ResourcesAvailability) && this.m_DiceRoller.rollChance(plasmaChance)
                   ? this.makeItemBioForceGunAmmo()
                   : this.m_DiceRoller.rollChance(50)
                     ? this.makeItemShotgunAmmo()
@@ -7253,7 +7241,7 @@ export class BaseTownGenerator extends BaseMapGenerator {
 
           // weaponry/armor/radios.
           let it: Item | null = null;
-          const roll = this.m_DiceRoller.roll(0, 11);
+          const roll = this.m_DiceRoller.roll(0, hasFeature(Session.get().ruleset, Feature.ResourcesAvailability) ? 11 : 10);
           switch (roll) {
             // 20% armors
             case 0:
@@ -7303,9 +7291,8 @@ export class BaseTownGenerator extends BaseMapGenerator {
              * existing seed, and the generator's digests are pinned for exactly
              * that reason.
              *
-             * So the roll widens from 10 to 11 and the shield takes the new
-             * outcome: the ten vanilla outcomes keep their odds exactly, the
-             * shield is now findable at one in eleven, and the remaining fork
+             * Still Alive widens the roll from 10 to 11 for the shield; Classic
+             * keeps its original range and seeded loot. The remaining fork
              * arms (smoke grenade, flares kit, stun gun, tactical shotgun)
              * are still absent. That is the same shape as the nail gun's ammo
              * below: reachable now, fork's exact percentages still to do.
