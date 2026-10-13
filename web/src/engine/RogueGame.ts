@@ -20022,10 +20022,6 @@ updateAdvisorHintBanner(): void {
 		// what kept it: harmless for a *bot*, a free action for a person.
 		this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
 
-		// spend AP. Not "if AI" as the C# has it (RogueGame.cs:13140-13142) --
-		// see below.
-		this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
-
 		// 1. If spot not available, cancel.
 		//
 		// Moved ahead of `BeforePlayerEnterDistrict`, which is where the C# has
@@ -20041,31 +20037,34 @@ updateAdvisorHintBanner(): void {
 		// inside it, leaving background district simulation dead for the rest of
 		// the run. The port stubs the thread, so only the stall applied here.
 		//
-		// The AP spend in these two branches is a divergence from the C#, which
+		// Ahead of the prepare is an optimization, not a replacement for the
+		// C#'s position: the prepare runs the destination district's catch-up,
+		// and an actor in it can walk onto the entry tile while that runs. So
+		// the same test runs again below, after the prepare -- this site exists
+		// to skip the expensive catch-up when the tile is *already* blocked,
+		// that one to catch it when the catch-up is what blocked it.
+		//
+		// The AP spend in these branches is a divergence from the C#, which
 		// returns bare. The fix is the idiom the C# itself uses a few lines above
 		// for a failed `TryActorLeaveTile`: spend, then return.
-		const other = exit.toMap!.getActorAtPoint(exit.toPosition);
-		if (other !== null) {
-			if (isPlayer)
-				this.AddMessage(
-					this.MakeErrorMessage(`${other.name} is blocking your way.`),
-				);
+		const exitBlockedMessage = (): string | null => {
+			const other = exit.toMap!.getActorAtPoint(exit.toPosition);
+			if (other !== null) return `${other.name} is blocking your way.`;
+			const blockingObj = exit.toMap!.getMapObjectAtPoint(exit.toPosition);
+			if (blockingObj !== null) {
+				const canJump =
+					blockingObj.isJumpable && this.m_Rules.hasActorJumpAbility(actor);
+				const ignoreIt = blockingObj.isCouch;
+				if (!canJump && !ignoreIt)
+					return `${blockingObj.aName} is blocking your way.`;
+			}
+			return null;
+		};
+		const blockedEarly = exitBlockedMessage();
+		if (blockedEarly !== null) {
+			if (isPlayer) this.AddMessage(this.MakeErrorMessage(blockedEarly));
 			this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
 			return true;
-		}
-		const blockingObj = exit.toMap!.getMapObjectAtPoint(exit.toPosition);
-		if (blockingObj !== null) {
-			const canJump =
-				blockingObj.isJumpable && this.m_Rules.hasActorJumpAbility(actor);
-			const ignoreIt = blockingObj.isCouch;
-			if (!canJump && !ignoreIt) {
-				if (isPlayer)
-					this.AddMessage(
-						this.MakeErrorMessage(`${blockingObj.aName} is blocking your way.`),
-					);
-				this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
-				return true;
-			}
 		}
 
 		// if player is leaving and changing district, prepare district.
@@ -20079,14 +20078,45 @@ updateAdvisorHintBanner(): void {
 			await this.BeforePlayerEnterDistrict(exit.toMap!.district!);
 		}
 
+		// 1b. Re-check the destination now that the prepare has run.
+		//
+		// The catch-up above simulated the destination district for every turn
+		// it was behind, and an actor in it can have walked onto the entry tile
+		// at any point during that -- the window the check above cannot see.
+		// `placeActor` throws on an occupied tile ("another actor already at
+		// position"), which is how this site was found: a reported crash on a
+		// district stair whose far side was occupied *after* the interlude ran,
+		// not before.
+		//
+		// Only when the prepare ran: otherwise there is no `await` between the
+		// check above and the placement below, and single-threaded execution
+		// keeps that answer authoritative.
+		if (playerChangedDistrict) {
+			const lateBlocked = exitBlockedMessage();
+			if (lateBlocked !== null) {
+				if (isPlayer) this.AddMessage(this.MakeErrorMessage(lateBlocked));
+				this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+				// The prepare cleared the player's view and stopped the music,
+				// expecting the move to complete and `AfterPlayerEnterDistrict`
+				// (at the end of this method) to rebuild the view. The move is
+				// not completing, so run that rebuild here; with the player
+				// still on the origin map it rebuilds the origin view, which is
+				// what is wanted. Music self-heals on the next `UpdateBgMusic`
+				// tick, as it does for every event track.
+				this.AfterPlayerEnterDistrict();
+				return true;
+			}
+		}
+
 		/////////////////////////////////////
 		// 2. Remove from previous map (+ corpse)
 		// 3. Enter map (+corpse).
 		// 4. Handle followers.
 		/////////////////////////////////////
 
-		// The "is the destination free?" checks are above, before the district
-		// prepare, for the reason given there.
+		// The "is the destination free?" checks are both above the removal: the
+		// fast path before the district prepare, the authoritative one after
+		// it, for the reasons given there.
 
 		// 2. Remove from previous map (+corpse)
 		if (this.IsVisibleToPlayer(actor))

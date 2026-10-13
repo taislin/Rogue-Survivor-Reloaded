@@ -240,7 +240,15 @@ describe("RogueGame's measured surface", () => {
     // time a test has reached that method. It classifies as STATE — it mutates
     // the overlay list the screen draws from — so it lands in the movable half
     // rather than a hub, which is a reach enlarging the part that moves.
-    expect(m.external).toBe(138);
+    //
+    // **139, for `doLeaveMap`.** The district-exit race test calls the camelCase
+    // alias directly, because the crash it pins is inside `DoLeaveMap` and
+    // driving it through a bump and an action would test the callers rather than
+    // the window. No prior test reached the alias: `Actions.ts` is outside the
+    // consumer scan, and the headless bot plays through `AdvancePlay`. WAVE 1,
+    // and movable — a method a wave can reorganise, reached the same way the
+    // other screen-driving tests reach the class.
+    expect(m.external).toBe(139);
   // §6.4: "567 of 584 methods are public — only 17 are `private`. The
   // `private` boundary is effectively absent." That is still true, and the
   // direction is worth pinning: private has come down from 91 to 89, and is 90
@@ -322,7 +330,11 @@ describe("RogueGame's measured surface", () => {
     //
     // **138 now**: `AddOverlay`, reached by the overlay-clipping work's
     // rendering tests driving the real screen redraw. STATE, so movable.
-    expect(m.external).toBe(138);
+    //
+    // **139 now**: `doLeaveMap`, reached by the district-exit race test calling
+    // it directly. WAVE 1, so movable; the reason for the reach is recorded at
+    // the other pin of this number.
+    expect(m.external).toBe(139);
     expect(m.external).toBeGreaterThan(83);
 	});
 
@@ -387,7 +399,11 @@ it("splits the reachable surface into 39 hub and 99 movable, and the hubs stay",
     // driving the real screen redraw. It mutates the overlay list the screen
     // draws from, so STATE classifies it movable rather than a hub -- a reach
     // enlarging the half that moves, not the half that cannot.
-    expect(m.moving).toBe(99);
+    //
+    // **100 now**: `doLeaveMap`, from the district-exit race test. WAVE 1, so
+    // movable, and the hubs stay at 39 -- an exit traversal is a region method,
+    // not an action primitive, and the split puts it where a wave could move it.
+    expect(m.moving).toBe(100);
     expect(m.hubs).toBe(39);
     expect(m.moving + m.hubs).toBe(m.external);
     // HUB 1 is 28 of the 39. `DoTag` joined when the minimap tag test replaced a
@@ -456,15 +472,18 @@ it("splits the reachable surface into 39 hub and 99 movable, and the hubs stay",
 		}
 	});
 
-	it("finds eight reachable leaves, which is the whole of Wave 1's seam", () => {
-		// `DescribeActorActivity`, `DescribeItemLong`, `GetUserNewScreenshotName`,
-		// `MapToScreen`, `ScreenToMap`, `doEquipItem`, and now `DescribeSkillShort`
-		// -- reached by `customiser-skill-row.test.ts` describing the skill the
-		// row's entry stands for. Seven, against §6.5's 2,079-line Wave 1 -- the
-		// wave is much bigger than its *externally reached* part, which is worth
-		// knowing before scheduling it.
+	it("finds nine reachable leaves, which is the whole of Wave 1's seam", () => {
+		// `DescribeActor`, `DescribeActorActivity`, `DescribeItemLong`,
+		// `GetUserNewScreenshotName`, `MapToScreen`, `ScreenToMap`, `doEquipItem`,
+		// `DescribeSkillShort` -- reached by `customiser-skill-row.test.ts`
+		// describing the skill the row's entry stands for -- and now `doLeaveMap`,
+		// called directly by the district-exit race test because the window it
+		// pins lives inside that method and its callers would test the callers.
+		// Nine, against §6.5's 2,079-line Wave 1 -- the wave is much bigger than
+		// its *externally reached* part, which is worth knowing before scheduling
+		// it.
 		const m = measure();
-		expect(m.buckets.get("WAVE 1")?.length).toBe(8);
+		expect(m.buckets.get("WAVE 1")?.length).toBe(9);
 	});
 
 	it("routes the three regions §6 never named, by extractability", () => {
