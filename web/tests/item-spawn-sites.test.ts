@@ -65,6 +65,19 @@ function freshGenerator(seed = 4242): StdTownGenerator {
   return gen;
 }
 
+let previousRuleset: Ruleset;
+let previousResources: Resources;
+beforeEach(() => {
+  previousRuleset = Session.get().ruleset;
+  previousResources = Options.resourcesAvailability;
+  Session.get().ruleset = Ruleset.STILL_ALIVE;
+});
+afterEach(() => {
+  Session.get().ruleset = previousRuleset;
+  Options.resourcesAvailability = previousResources;
+  vi.restoreAllMocks();
+});
+
 /** The model ids `makeShopConstructionItem` returns, over `seeds` seeded rollers. */
 function constructionModels(seeds: number[]): Set<number> {
   const seen = new Set<number>();
@@ -150,27 +163,55 @@ describe("the spawn sites that had no caller", () => {
       townSource.indexOf("// Police Security Room."),
       townSource.indexOf("// Police Office Room."),
     );
-    expect(securityRoom).toContain("roll(0, 11)");
+    expect(securityRoom).toContain("Feature.ResourcesAvailability) ? 11 : 10");
     expect(securityRoom).toMatch(/case 10:\s*it = this\.makeItemPoliceRiotShield\(\);/);
     expect(mapGenSource).toContain("makeItemPoliceRiotShield(): Item {");
   });
 
   it("drops plasma in the CHAR armory, and more of it the richer the world", () => {
-    // C# `BaseTownGenerator.cs:8470-8473`: `RollChance(ResourcesAvailability / 3)`
-    // in front of the whole chain, which is what makes plasma the rarest thing in
-    // the room. The port puts the same roll at the end of the terminal ammo arm,
-    // so it gets the scarcity without moving the arms above it.
-    const high = armoryDrops(SEEDS, Resources.HIGH);
+    // The terminal roll compensates for earlier branches: at HIGH, plasma
+    // occupies roughly 25% of stocked shelves, as the reference's leading roll did.
+    const high = armoryDrops(Array.from({ length: 80 }, (_, i) => i + 1), Resources.HIGH);
     const low = armoryDrops(SEEDS, Resources.LOW);
     expect(
       high.get(ItemID.AMMO_PLASMA) ?? 0,
       "a rich world's armory holds no plasma at all",
     ).toBeGreaterThan(0);
-    expect(
-      high.get(ItemID.AMMO_PLASMA) ?? 0,
-      "plasma must stay rarer than the ammo it sits beside",
-    ).toBeLessThan((high.get(ItemID.AMMO_SHOTGUN) ?? 0) + (high.get(ItemID.AMMO_LIGHT_RIFLE) ?? 0));
-    expect(low.get(ItemID.AMMO_PLASMA) ?? 0).toBeLessThan(high.get(ItemID.AMMO_PLASMA) ?? 0);
+    const share = (counts: Map<number, number>): number =>
+      (counts.get(ItemID.AMMO_PLASMA) ?? 0) / [...counts.values()].reduce((sum, count) => sum + count, 0);
+    expect(share(high)).toBeGreaterThan(0.21);
+    expect(share(high)).toBeLessThan(0.29);
+    expect(share(low)).toBeLessThan(share(high));
+  });
+
+  it("keeps Classic construction rolls at 24 outcomes", () => {
+    Session.get().ruleset = Ruleset.CLASSIC;
+    const generator = freshGenerator();
+    const roller = (generator as unknown as { m_DiceRoller: DiceRoller }).m_DiceRoller;
+    const roll = vi.spyOn(roller, "roll");
+    for (let i = 0; i < 40; i++) {
+      expect(generator.makeShopConstructionItem().model.id).not.toBe(ItemID.AMMO_NAILS);
+    }
+    expect(roll).toHaveBeenCalledWith(0, 24);
+    expect(roll).not.toHaveBeenCalledWith(0, 25);
+  });
+
+  it("spends no plasma die in a Classic armory's terminal ammo branch", () => {
+    Session.get().ruleset = Ruleset.CLASSIC;
+    const generator = freshGenerator();
+    const roller = (generator as unknown as { m_DiceRoller: DiceRoller }).m_DiceRoller;
+    const chance = vi.spyOn(roller, "rollChance")
+      .mockReturnValueOnce(true) // stocked shelf
+      .mockReturnValueOnce(false) // armor
+      .mockReturnValueOnce(false) // tracker
+      .mockReturnValueOnce(false) // grenade
+      .mockReturnValueOnce(false) // weapon
+      .mockReturnValueOnce(true); // shotgun ammo
+    const { map } = armoryMap();
+    const room = new Rect(1, 1, 1, 1);
+    generator.makeCHARArmoryRoom(map, room);
+    expect(chance.mock.calls.map(([percent]) => percent)).toEqual([20, 20, 20, 20, 30, 50]);
+    expect(itemsIn(map, room).map((item) => item.model.id)).toEqual([ItemID.AMMO_SHOTGUN]);
   });
 });
 

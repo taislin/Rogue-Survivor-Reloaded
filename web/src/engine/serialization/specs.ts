@@ -786,7 +786,10 @@ const actorSpec: ClassSpec = {
   ],
   finish: (a: Actor) => {
     const self = a as any;
-    // Only the sheet is built here. Everything else came out of the record, and
+    // Graph shells bypass field initializers, including for older saves.
+    a.stunnedTurns ??= 0;
+    a.flashbangedTurns ??= 0;
+    // Rebuild the sheet from the saved skills. Other state came from the record;
     // calling `onModelSet()` would overwrite the restored hit points, action
     // points, doll and inventory with fresh values from the model.
     const skills = (self.$skills ?? []) as number[][];
