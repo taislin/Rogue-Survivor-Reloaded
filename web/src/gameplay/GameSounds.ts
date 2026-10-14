@@ -348,7 +348,8 @@ export class GameSounds {
   static readonly PUSH_WOODEN_OBJECT_AUDIBLE_FILE = `${GameSounds.PATH}push_wooden_object_audible`;
 
   // @@MP relocated from music to sfx (Release 6-1) (GameSounds.cs:306)
-  static readonly REINCARNATE = "reincarnate";
+  
+static readonly REINCARNATE = "reincarnate";
   static readonly REINCARNATE_FILE = `${GameSounds.PATH}RS - Reincarnate`;
 
   // @@MP (Release 6-2) (GameSounds.cs:310)
@@ -549,6 +550,15 @@ export class GameMusics {
   // C# GameMusics.cs spells it "RS - Post Mortem"; the shipped file is "RS - Post mortem".
   static readonly PLAYER_DEATH_FILE = `${GameMusics.PATH}RS - Post mortem`;
 
+  /**
+   * Still Alive, Release 6-4: the rescue cue. `RogueGame.cs:7389`.
+   *
+   * No "RS - " prefix, like `BLACK_OPS` and `SHOPPING_MALL`: the fork ships it
+   * under its bare name and the port copies it in as-is.
+   */
+  static readonly POST_RESCUE = "post-rescue";
+  static readonly POST_RESCUE_FILE = `${GameMusics.PATH}Post-rescue`;
+
   static readonly REINCARNATE = "reincarnate";
   static readonly REINCARNATE_FILE = `${GameMusics.PATH}RS - Reincarnate`;
 
@@ -615,7 +625,8 @@ export const MUSIC_FILES: Readonly<Record<string, string>> = {
   [GameMusics.INTRO]: "RS - Intro",
   [GameMusics.LIMBO]: "RS - Limbo",
   [GameMusics.PLAYER_DEATH]: "RS - Post mortem",
-  [GameMusics.REINCARNATE]: "RS - Reincarnate",
+
+  [GameMusics.POST_RESCUE]: "Post-rescue",  [GameMusics.REINCARNATE]: "RS - Reincarnate",
   [GameMusics.ROGUEDJACK_THEME_SONG]: "RS - Roguedjack Theme Song",
   [GameMusics.SANTAMAN_THEME_SONG]: "RS - Santaman Theme Song",
   [GameMusics.SEWERS]: "RS - Sewers",

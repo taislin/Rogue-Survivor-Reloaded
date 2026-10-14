@@ -1987,6 +1987,23 @@ doll.removeAllDecorations();
     return new ItemAmmo(Models.items.get(ItemID.AMMO_NAILS));
   }
 
+  /**
+   * The police riot shield. C# `BaseMapGenerator.cs:1986-1990`, Release 7-2.
+   *
+   * A plain `new Item` on the model, exactly like the C#: there is no
+   * `ItemShieldModel` in the fork, so the shield is an ordinary item whose
+   * `EquipmentPart` is `LEFT_ARM`. The one place that shape matters is
+   * `Actor.getEquippedShield` (`Actor.ts:585`).
+   *
+   * With this, the item stops being unobtainable: the only spawn site in the
+   * reference is the police station's security room
+   * (`BaseTownGenerator.cs:8970`), which the security room in this file's
+   * sibling now rolls.
+   */
+  makeItemPoliceRiotShield(): Item {
+    return new Item(Models.items.get(ItemID.POLICE_RIOT_SHIELD));
+  }
+
   makeItemNightVisionGoggles(): Item {
     const item = new ItemLight(Models.items.get(ItemID.LIGHT_NIGHT_VISION));
     return item;

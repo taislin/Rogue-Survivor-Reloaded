@@ -176,4 +176,37 @@ describe("fast trade", () => {
       ]),
     ).resolves.toBeUndefined();
   });
+
+  it("does not throw when the neighbour has no controller to read", async () => {
+    // `_controller` is skipped for every actor in the save graph, and before
+    // `reattachControllers` was wired into `LoadGame` nothing rebuilt it — so a
+    // loaded world was 881 actors and zero controllers, and the first AI that
+    // still had one and chatted with a frozen neighbour sent `DoChat` into
+    // `DoTrade`, which read `targetAI!` on null:
+    //
+    //   TypeError: Cannot read properties of null (reading 'rateTradeOffer')
+    //
+    // The stack is the whole test: `HandleAiActor` -> `doChat` -> `DoChat` ->
+    // `DoTrade`, with a speaker that has an AI and a target that has none. The
+    // stub is dropped so the real `DoTrade` runs; `npcA` is given the controller a
+    // freshly spawned civilian would have and `npcB` is left as a save restores
+    // one.
+    //
+    // The second item is what makes this the crash rather than an early return:
+    // `pickOfferedItem` drops any item with the same model as the one asked for
+    // *before* it reads a mind, and the fixture stocks both NPCs with
+    // `FOOD_GROCERIES` — so one identical item apiece leaves `offerables` empty
+    // and `DoTrade` returns on "no deal" without ever touching `targetAI`.
+    delete (f.game as unknown as { DoTrade?: unknown }).DoTrade;
+    const items = new GameItems();
+    const ctor = Models.actors.get(ActorID.MALE_CIVILIAN).defaultControllerCtor;
+    if (ctor === null) throw new Error("civilian model has no default controller");
+    f.npcA.controller = new ctor();
+    f.npcA.inventory!.addAll(new ItemFood(items.get(ItemID.FOOD_CANNED_FOOD)));
+    f.npcB.controller = null;
+
+    expect(f.game.m_Rules.canActorInitiateTradeWith(f.npcA, f.npcB).ok).toBe(true);
+
+    await expect(f.game.DoChat(f.npcA, f.npcB)).resolves.toBeUndefined();
+  });
 });

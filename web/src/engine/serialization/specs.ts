@@ -732,8 +732,10 @@ const actorSpec: ClassSpec = {
      * What has to survive is *which* actor the player was, so the writer records
      * that in the root and `RogueGame.LoadGame` hands it a fresh
      * `PlayerController` — the same call `HandlePlayerActor` makes when the player
-     * takes control. Every other actor's controller is rebuilt by the game's own
-     * setup, as it is for a newly spawned one.
+     * takes control. Every other actor's controller is rebuilt from its model's
+     * `defaultControllerCtor` by `reattachControllers`, in the same `LoadGame`
+     * call — nothing else in the game ever assigns one, so if that pass is
+     * skipped the whole world comes back frozen rather than obviously broken.
      */
     _controller: { kind: "skip" },
     /*
@@ -796,6 +798,16 @@ const actorSpec: ClassSpec = {
     // changes type depending on how the object was built is the kind of thing
     // that bites later.
     self._controller = null;
+    // `stunnedTurns` and `flashbangedTurns` came with the smoke screen work
+    // (`d60a8e6`). A save written before that carries neither key, and a shell
+    // made with `Object.create` has no field initialisers, so without the
+    // defaults below the field is `undefined` and the first stun write computes
+    // `Math.min(undefined + n, MAX)` — NaN, which never incapacitates and never
+    // unwinds. An absent key can only mean the save predates the counter, which
+    // reads as "not stunned" — the same way an absent `backpackInventory` reads
+    // as "empty" (see `backpackItemSpec` above).
+    if (self.stunnedTurns === undefined) self.stunnedTurns = 0;
+    if (self.flashbangedTurns === undefined) self.flashbangedTurns = 0;
   },
 };
 

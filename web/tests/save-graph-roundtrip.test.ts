@@ -16,6 +16,7 @@ import { CLASS_SPECS, encodeScoring } from "@engine/serialization/specs";
 import {
   findPlayerActor,
   readSessionGraph,
+  reattachControllers,
   reattachPlayer,
   writeSessionGraph,
   type LoadedGraph,
@@ -407,6 +408,44 @@ describe("the player comes back", () => {
   });
 });
 
+describe("the NPCs come back", () => {
+  it("with the controller their model gives a newly spawned one", () => {
+    // `_controller` is skipped for *every* actor, not only the player's, so a
+    // graph read back hands over a world of actors and no controllers at all.
+    // The probe that found the bug measured 0 of 881.
+    //
+    // What that costs is not cosmetic. `advancePlayMap` gives a controller-less
+    // actor a free action instead of a turn, so every NPC alive when the save was
+    // written stops acting for the rest of the session — and the first AI that
+    // does have one and chats with a frozen neighbour sends `DoTrade` into a null
+    // mind, reported as `Cannot read properties of null (reading 'rateTradeOffer')`.
+    //
+    // Its own graph, so nothing here can be rescued by the live session: the
+    // assertions are on what a load actually starts from.
+    const { loaded } = freshRoundTrip();
+    reattachPlayer(loaded.player);
+    expect(reattachControllers(loaded.world, loaded.player)).toBeGreaterThan(0);
+    expect(loaded.player!.isPlayer).toBe(true);
+
+    let seen = 0;
+    for (let x = 0; x < loaded.world.size; x++) {
+      for (let y = 0; y < loaded.world.size; y++) {
+        const district = loaded.world.getDistrict(x, y);
+        if (district === null) continue;
+        for (const map of district.maps) {
+          for (const actor of map.actors) {
+            if (actor === loaded.player) continue;
+            seen++;
+            expect(actor.controller, `${actor.theName} came back controller-less`).not.toBeNull();
+            expect(actor.isPlayer, `${actor.theName} must not be the player`).toBe(false);
+          }
+        }
+      }
+    }
+    expect(seen, "the world has nobody in it to restore").toBeGreaterThan(0);
+  });
+});
+
 describe("the scoring survives", () => {
   it("round-trips every scoring field, including the containers", () => {
     // `Scoring` is flattened rather than recorded, and half of it lives in JS
@@ -562,6 +601,38 @@ describe("a field with no codec stops the save", () => {
     } finally {
       delete (zone as unknown as Record<string, unknown>).smuggled;
     }
+  });
+});
+
+describe("a save from before the stun counters existed", () => {
+  it("reads the missing keys as not stunned, so the first stun write is a number", () => {
+    // `d60a8e6` added `Actor.stunnedTurns`/`flashbangedTurns`. A save written
+    // before that carries neither key, and a shell made with `Object.create`
+    // has no field initialisers, so without the spec's `finish` the field is
+    // `undefined` and the first stun write computes `Math.min(undefined + n,
+    // MAX)` — NaN, which never incapacitates and never unwinds. The same shape
+    // as the absent `backpackInventory` the backpack spec defends against
+    // (`tests/shelter-backpacks.test.ts:705-728`).
+    const { data } = freshRoundTrip();
+    const playerId = (data.root as { player: { $: number } }).player.$;
+    const record = data.objs[playerId - 1]!;
+    expect(record.k, "the root's player ref resolves to an Actor record").toBe("Actor");
+    expect(record.f.stunnedTurns, "the key is there to begin with").toBeDefined();
+    expect(record.f.flashbangedTurns, "the key is there to begin with").toBeDefined();
+
+    // A copy, so the cached graph the comparison suite reads stays whole.
+    const aged = structuredClone(data) as typeof data;
+    const agedRecord = (aged.objs as readonly { f: Record<string, unknown> }[])[playerId - 1]!;
+    delete agedRecord.f.stunnedTurns;
+    delete agedRecord.f.flashbangedTurns;
+
+    const restored = readSessionGraph(aged).player!;
+    expect(restored.stunnedTurns, "an absent counter reads as not stunned").toBe(0);
+    expect(restored.flashbangedTurns, "an absent counter reads as not stunned").toBe(0);
+    expect(restored.isIncapacitated).toBe(false);
+    // The write the defaults exist for: a number in, a stunned actor out.
+    restored.stunnedTurns = Math.min(restored.stunnedTurns + 3, 99);
+    expect(restored.isStunned).toBe(true);
   });
 });
 

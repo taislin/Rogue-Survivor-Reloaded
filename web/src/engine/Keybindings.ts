@@ -311,6 +311,20 @@ export class Keybindings {
     this.set(PlayerCommand.ACTION_MENU, 'Tab');
 
     /*
+     * Still Alive, Release 7-6. C# `Keybindings.cs:55-56` binds the cooking pair
+     * `COOK_FOOD` to `Ctrl+C` and `DESTROY_ITEM` to `Ctrl+D`, both modifiers
+     * because the bare letters are the movement grid's (`C` is MOVE_SE and `D`
+     * is MOVE_E) -- the same reason the C# picked a modifier for
+     * `MAKE_COOKING_FIRE` over the plain `F`.
+     *
+     * Both chords are free in this table: `Ctrl+C` and `Ctrl+D` were bound to
+     * nothing before this, checked rather than assumed, since a second command
+     * on one key would be a conflict the rebind screen refuses to clear.
+     */
+    this.set(PlayerCommand.COOK_FOOD, 'Ctrl+C');
+    this.set(PlayerCommand.DESTROY_ITEM, 'Ctrl+D');
+
+    /*
      * Still Alive, Release 8-2. C# `Keybindings.cs:88` binds
      * `SWAP_INVENTORY` to `Keys.Y`, and the port takes the letter rather than a
      * physical key code because `Keybindings` is a browser table throughout.

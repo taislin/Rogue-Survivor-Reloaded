@@ -6,6 +6,7 @@ import { Actor } from "@data/Actor";
 import { Corpse } from "@data/Corpse";
 import { Faction } from "@data/Faction";
 import { Location } from "@data/Location";
+import { Point } from "@engine/Point";
 import { Map as GameMap } from "@data/Map";
 import { Models } from "@data/Models";
 import { PlayerController } from "@data/PlayerController";
@@ -424,6 +425,20 @@ describe("the gate", () => {
     return corpse;
   };
 
+  /** An undead feaster `dx`, `dy` tiles from the player. */
+  const distantZombie = (dx: number, dy: number): Actor => {
+    const zombie = new Actor(
+      Models.actors.get(ActorID.UNDEAD_ZOMBIE),
+      survivors,
+      "zombie",
+    );
+    zombie.location = new Location(
+      map,
+      new Point(player.location.position.x + dx, player.location.position.y + dy),
+    );
+    return zombie;
+  };
+
   it("is on for Still Alive and off for classic", () => {
     expect(hasFeature(Ruleset.STILL_ALIVE, Feature.ExtendedAudio)).toBe(true);
     expect(hasFeature(Ruleset.CLASSIC, Feature.ExtendedAudio)).toBe(false);
@@ -457,14 +472,36 @@ describe("the gate", () => {
     // vanilla `UNDEAD_EAT` with a distance-tiered pair and plays the player tier
     // at this site (`RogueGame.cs:21582`); Classic must keep the file it has
     // always played.
+    //
+    // **Two ids and not one**, because the reference's two sound `if`s are
+    // independent rather than an `else if` (`:11833`, `:11835`): a player eating
+    // a corpse satisfies both -- they *are* the player, and their own location
+    // is within `QUIET` of themselves -- so the fork plays the player tier and
+    // the nearby tier for the same feast. What the browser actually hears is one
+    // sound, because the player's tier is a plain `play` and the nearby tier is a
+    // `playIfNotAlreadyPlaying` that the manager dedupes against itself; what is
+    // recorded here is the pair of calls, which is the fork's shape.
     Session.get().ruleset = Ruleset.CLASSIC;
     game.DoEatCorpse(player, kill());
-    expect(sfx.played).toEqual([GameSounds.UNDEAD_EAT]);
+    expect(sfx.played).toEqual([GameSounds.UNDEAD_EAT, GameSounds.UNDEAD_EAT]);
 
     sfx.played.length = 0;
     Session.get().ruleset = Ruleset.STILL_ALIVE;
     game.DoEatCorpse(player, kill());
-    expect(sfx.played).toEqual([GameSounds.UNDEAD_EAT_PLAYER]);
+    expect(sfx.played).toEqual([GameSounds.UNDEAD_EAT_PLAYER, GameSounds.UNDEAD_EAT_NEARBY]);
+  });
+
+  it("plays the nearby tier for a zombie feasting, and nothing when out of earshot", () => {
+    // The arm that was missing for the reason this file records: the comment in
+    // `DoEatCorpse` said a radius-bearing audibility predicate did not exist, and
+    // it had, for as long as the fork's other sound arms had been using it.
+    Session.get().ruleset = Ruleset.STILL_ALIVE;
+    game.DoEatCorpse(distantZombie(1, 0), kill());
+    expect(sfx.played).toEqual([GameSounds.UNDEAD_EAT_NEARBY]);
+
+    sfx.played.length = 0;
+    game.DoEatCorpse(distantZombie(40, 0), kill());
+    expect(sfx.played, "out of earshot, and no _PLAYER either -- it is not the player").toEqual([]);
   });
 
   it("plays a vanilla id under CLASSIC and a fork id under STILL_ALIVE, never the other way round", () => {
@@ -520,6 +557,20 @@ describe("the gate", () => {
       { name: "BASH_BY_MATERIAL", from: "The bash/break sound ladder" },
       { name: "BREAK_DEFAULT", from: "The bash/break sound ladder" },
       { name: "BASH_DEFAULT", from: "The bash/break sound ladder" },
+      // The screams: four `Roll(0, 3)` tables, gated by the one
+      // `Feature.ExtendedAudio` read at the top of `DoScream` rather than by a
+      // gate on each row -- the same shape as the bash ladder, and for the same
+      // reason: twenty-four rows of gate would be twenty-four ways to forget one.
+      { name: "SCREAM_NEARBY_MALE", from: "The four `Roll(0, 3)` outcomes of `DoScream`" },
+      { name: "SCREAM_NEARBY_FEMALE", from: "The four `Roll(0, 3)` outcomes of `DoScream`" },
+      { name: "SCREAM_FAR_MALE", from: "The four `Roll(0, 3)` outcomes of `DoScream`" },
+      { name: "SCREAM_FAR_FEMALE", from: "The four `Roll(0, 3)` outcomes of `DoScream`" },
+      // The trap sounds: three tables, one per band, keyed by the trap's own
+      // name. Same shape again, and the trap arm's gate is the one in
+      // `DoTriggerTrap`.
+      { name: "TRAP_PLAYER_SOUND", from: "The trap sounds, by the trap's own name" },
+      { name: "TRAP_NEAR_SOUND", from: "The trap sounds, by the trap's own name" },
+      { name: "TRAP_FAR_SOUND", from: "The trap sounds, by the trap's own name" },
     ];
     /**
      * Every `GameSounds` id the ranged-weapon table can name, read out of the table
@@ -551,9 +602,17 @@ describe("the gate", () => {
         const at = text.indexOf(`const ${name}`);
         const docFrom = text.indexOf(from);
         if (at === -1) continue;
-        const end = text.indexOf("\n};", at);
+        // **Both closers, not just `};`.** A table of ids is a `Record` or an
+        // array, and only one of those ends in a brace: the scream tables are
+        // `readonly string[]` and close with `];`. Looking for one closer only
+        // gave those tables a span running to the end of the file, which
+        // quietly absorbed every *standalone* reader in it into the bulk set --
+        // and the list below then came back empty while still passing the
+        // "every table id is gated" half above.
+        const closes = [text.indexOf("\n};", at), text.indexOf("\n]);", at)].filter((n) => n !== -1);
+        const end = closes.length === 0 ? -1 : Math.min(...closes);
         const fromAt = docFrom === -1 ? at : docFrom;
-        const to = end === -1 ? text.length : Math.max(end, fromAt);
+        const to = end === -1 ? at : Math.max(end, fromAt);
         for (const m of text.slice(fromAt, to).matchAll(/GameSounds\.([A-Z][A-Z0-9_]+)/g)) {
           const id = m[1]!;
           if (FORK_IDS.has(DECLARED[id] ?? "")) BULK_SOUND_IDS.add(id);
@@ -754,17 +813,37 @@ const bulkSpans = BULK_TABLES.map(({ name, from }) => {
       // - the four `*_SHOUT_*` ids are one call site in `DoShout`, chosen by a
       //   sex-major ternary crossed with audibility -- so four ids, not two, and the
       //   list is per *site* while these are per *id*.
-      // - the four `*_DOOR_*` ids are the material ladder in `DoCloseDoor`, which the
-      //   port had as a single vanilla `IsVisibleToPlayer` message with no sound at all.
-      //   `ROLLER_DOOR` and `GLASS_DOOR` are the two ends of a four-way branch that has
-      //   no flags of its own -- the roller case is a string compare on the door's name.
-      //   Four ids for one door is the fork's granularity, not a mistake here.
+       // - the four `*_DOOR_*` ids are the material ladder in `DoCloseDoor`, which the
+       //   port had as a single vanilla `IsVisibleToPlayer` message with no sound at all.
+       //   `ROLLER_DOOR` and `GLASS_DOOR` are the two ends of a four-way branch that has
+       //   no flags of its own -- the roller case is a string compare on the door's name.
+       //   Four ids for one door is the fork's granularity, not a mistake here.
+       //
+       // - both `COOKING_SIZZLE` ids are here twice, because `COOK_FOOD` joined
+       //   `MAKE_COOKING_FIRE` as a second reader of each: the sizzle of a match
+       //   lighting a fire and the sizzle of a piece of meat landing on one are two
+       //   events, and `DoCookFood` (`RogueGame.cs:21749-21752`) keeps both halves
+       //   gated for the same reason its sibling's are -- one feature owns the
+       //   fire, the other owns the fork's recordings of it.
+       //
+       // - the seven `SCREAM_*` **agony** ids are standalone rather than bulk for a
+       //   structural reason: the terrified scream is a `Roll(0, 3)` and so lives in
+       //   a table, but the dying one is one fixed recording per band per sex
+       //   (`:20653`, `:20674`, `:20698`, `:20719`) and the C# spells it inline.
+       //   The list is per *site*, and `DoScream` has one site per band.
+       //
+       // - `UNDEAD_EAT_NEARBY` is the zombie's feast -- the arm whose comment used
+       //   to say it was unportable because "the port has no radius-bearing
+       //   audibility predicate", which had been on the class since the fork's
+       //   first distance-tiered sound.
     ).toEqual([
       "BUILDING_NEARBY","BUILDING_PLAYER","CHAINSAW_FAR","CHAINSAW_NEARBY","CHAINSAW_PLAYER","CLIMB_CAR_NEARBY","CLIMB_CAR_PLAYER","COOKING_SIZZLE_NEARBY",
-      "COOKING_SIZZLE_PLAYER","EQUIP","EQUIP","EQUIP_GUN_PLAYER","FEMALE_SHOUT_NEARBY","FEMALE_SHOUT_PLAYER","FIRE_EXTINGUISHER_NEARBY","FIRE_EXTINGUISHER_PLAYER",
-      "FISHING_CAST_PLAYER","FISHING_REEL_PLAYER","FLARE","GLASS_DOOR","GLOWSTICK","MAKE_MOLOTOV","MALE_SHOUT_NEARBY","MALE_SHOUT_PLAYER",
-      "MATCH_STRIKE_START_FIRE_PLAYER","MELEE_ATTACK_MISS_NEARBY","MELEE_ATTACK_MISS_PLAYER","MELEE_ATTACK_NEARBY","MELEE_ATTACK_PLAYER","METAL_DOOR_CLOSE","NIGHT_VISION","ROLLER_DOOR",
-      "SHIELD_BLOCK_NEARBY","SHIELD_BLOCK_PLAYER","SHOVE_NEARBY","SHOVE_PLAYER","TORCH_CLICK_PLAYER","UNDEAD_EAT_PLAYER","VOMIT_NEARBY","VOMIT_PLAYER",
+      "COOKING_SIZZLE_NEARBY","COOKING_SIZZLE_PLAYER","COOKING_SIZZLE_PLAYER","DOG_BARK_FAR","DOG_BARK_NEARBY","DOG_FLEE","DOG_GROWL","DYNAMITE_VISIBLE","EQUIP","EQUIP","EQUIP_GUN_PLAYER","FEMALE_SHOUT_NEARBY","FEMALE_SHOUT_PLAYER",
+      "FIRE_EXTINGUISHER_NEARBY","FIRE_EXTINGUISHER_PLAYER","FISHING_CAST_NEARBY","FISHING_CAST_PLAYER","FISHING_CAST_PLAYER","FISHING_REEL_NEARBY","FISHING_REEL_PLAYER","FLARE","FLASHBANG_AUDIBLE","FLASHBANG_VISIBLE","FUEL_CAN_AUDIBLE","FUEL_CAN_VISIBLE","FUEL_PUMP_VISIBLE",
+      "GLASS_DOOR","GLOWSTICK","GRENADE_VISIBLE","MAKE_MOLOTOV","MALE_SHOUT_NEARBY","MALE_SHOUT_PLAYER","MATCH_STRIKE_START_FIRE_PLAYER","MELEE_ATTACK_MISS_NEARBY","MELEE_ATTACK_MISS_PLAYER","MELEE_ATTACK_NEARBY","MELEE_ATTACK_PLAYER","METAL_DOOR_CLOSE","MOLOTOV_AUDIBLE","MOLOTOV_VISIBLE","NIGHT_VISION",
+      "PLASMA_BURST_AUDIBLE","PLASMA_BURST_VISIBLE","PUSH_METAL_OBJECT_AUDIBLE","PUSH_METAL_OBJECT_VISIBLE","PUSH_WOODEN_OBJECT_AUDIBLE","PUSH_WOODEN_OBJECT_VISIBLE","RAT_SCREECH","ROLLER_DOOR",
+      "SCREAM_FAR_03","SCREAM_FAR_04","SCREAM_FAR_05","SCREAM_FAR_08","SCREAM_FAR_09","SCREAM_NEARBY_04","SCREAM_NEARBY_09","SEWERS_THING_GROWL","SHAMBLER_GROWL",
+      "SHIELD_BLOCK_NEARBY","SHIELD_BLOCK_PLAYER","SHOVE_NEARBY","SHOVE_PLAYER","SKELETON_GROWL","SMOKE_GRENADE","TORCH_CLICK_PLAYER","UNDEAD_EAT_NEARBY","UNDEAD_EAT_PLAYER","VOMIT_NEARBY","VOMIT_PLAYER",
       "WOODEN_DOOR_CLOSE",
     ]);
   });

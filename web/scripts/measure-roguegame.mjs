@@ -149,7 +149,12 @@ function classify(name) {
 	// method out of Wave 3 entirely and into `STATE` below — which reads as a
 	// one-member wobble in a bucket it does not belong to rather than as a
 	// classifier that has lost track of the file.
-	if (/^(Run|GameLoop|HandleMainMenu|HandleNewCharacter|HandleSelectRulesetAndMode|HandleNewCharacterDetails|StartNewGame|InitDirectories|LoadData|LoadOptions|SaveOptions|LoadKeybindings|SaveKeybindings|LoadHiScoreTable|SaveHiScoreTable|HandleHelpMode|HandleHintsScreen|HandleCredits)$/.test(name)) {
+	//
+	// `HandleSelectSeed` is the newest: the world-seed screen that sits between
+	// the picker and the character screens, added when a seed became something a
+	// player can choose rather than something the clock chooses. It is on this
+	// list for the same reason the picker is — it is one screen of the same flow.
+	if (/^(Run|GameLoop|HandleMainMenu|HandleNewCharacter|HandleSelectRulesetAndMode|HandleSelectSeed|HandleNewCharacterDetails|StartNewGame|InitDirectories|LoadData|LoadOptions|SaveOptions|LoadKeybindings|SaveKeybindings|LoadHiScoreTable|SaveHiScoreTable|HandleHelpMode|HandleHintsScreen|HandleCredits)$/.test(name)) {
 		return { region: "WAVE 3", extract: "engine", note: "new-game flow" };
 	}
 

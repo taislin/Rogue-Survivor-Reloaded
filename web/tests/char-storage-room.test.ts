@@ -142,15 +142,15 @@ function itemsWithId(map: GameMap, id: ItemID): number {
 }
 
 /**
- * The ten models `makeShopConstructionItem` (`BaseTownGenerator.ts:4382-4420`) can
+ * The eleven models `makeShopConstructionItem` (`BaseTownGenerator.ts:4953`) can
  * return, and nothing else.
  *
  * Needed because under Still Alive the room's floor carries two kinds of item --
  * construction items from the loop at `:8539` and canned food from `:8531` -- so
  * "items on the floor" cannot measure the gate the loop carries. The list is spelled
  * out rather than derived because the C#'s own `roll(0, 24)` ladder is the
- * definition, and a test that recomputed it from the generator would be testing the
- * generator against itself.
+ * definition, and a test that recomputed it from the generator would be testing
+ * the generator against itself.
  */
 const CONSTRUCTION_ITEM_IDS: readonly ItemID[] = [
   ItemID.MELEE_SHOVEL,
@@ -163,6 +163,10 @@ const CONSTRUCTION_ITEM_IDS: readonly ItemID[] = [
   ItemID.LIGHT_BIG_FLASHLIGHT,
   ItemID.TRAP_SPIKES,
   ItemID.TRAP_BARBED_WIRE,
+  // Eleven with the nail gun's ammunition: `makeShopConstructionItem` grew a
+  // case when Release 5-1's nails became something a hardware store can hold.
+  // The list is the ladder's definition either way -- see above.
+  ItemID.AMMO_NAILS,
 ];
 
 function constructionItemsIn(map: GameMap): number {

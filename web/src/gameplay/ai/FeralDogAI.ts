@@ -26,7 +26,8 @@ export class FeralDogAI extends BaseAI {
   /** dogs run to their target when close enough */
   private static readonly RUN_TO_TARGET_DISTANCE = 3;
 
-  private static readonly FIGHT_EMOTES = [
+  /** Public: RogueGame.PlayNonHumanVocalAudio reads these to pick a recording. */
+  static readonly FIGHT_EMOTES = [
     'waf', // flee
     'waf!?', // trapped
     'GRRRRR WAF WAF', // fight

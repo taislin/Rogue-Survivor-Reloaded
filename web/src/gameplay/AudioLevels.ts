@@ -39,6 +39,12 @@ export const MUSIC_GAINS: Readonly<Record<string, number>> = {
   "RS - Intro": 1.482,
   "RS - Limbo": 0.581,
   "RS - Post mortem": 1.25,
+
+  // Post-rescue is the one entry not measured by scripts/measure-audio-levels.mjs:
+  // the track was added after that script's last run and the port has no sox to run it
+  // with. 1.0 is the no-op gain -- it cannot clip, so it is safe, and it is wrong only in
+  // that a loud track stays loud. Regenerate with the script when it can run.
+  "Post-rescue": 1.0,
   "RS - Reincarnate": 1.135,
   "RS - Roguedjack Theme Song": 2.736,
   "RS - Santaman Theme Song": 0.707,

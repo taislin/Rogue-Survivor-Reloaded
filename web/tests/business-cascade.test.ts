@@ -81,8 +81,18 @@ const SWEEP = 300;
 /**
  * Width-100 seeds that build the maximum three general stores — the whole population,
  * from a 3000-district sweep. See "reaches the cap" below.
+ *
+ * **`[1170, 1528, 1640]`, and this set moved when two fork item drops entered
+ * vanilla rolls.** A riot shield was appended to the police station's security
+ * room (`roll(0, 10)` -> `roll(0, 11)`) and the nail gun's ammunition to the
+ * construction shop (`roll(0, 24)` -> `roll(0, 25)`); both widen a flat roll,
+ * which re-maps a band of it and shifts a die for every ruleset that walks the
+ * same table. Seeds 529 and 1877 stopped reaching the cap and 1528 started, out
+ * of the whole 3000 — the same kind of move `Feature.MechanicWorkshop` made when
+ * it was wired into `case 3`, and for the same reason: a new arm in a shared
+ * generator. The cap and the die behind it are untouched.
  */
-const CAP_SEEDS = [529, 1170, 1640, 1877];
+const CAP_SEEDS = [1170, 1528, 1640];
 
 /** The C#'s own cap: `Math.Round(((double)(map.Width / 10)) / 3)`, integer division. */
 function storeCap(width: number): number {

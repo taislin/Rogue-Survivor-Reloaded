@@ -87,6 +87,12 @@ beforeEach(() => {
   player.controller = new PlayerController();
   map.placeActor(player, new Point(1, 1));
   game.m_Player = player;
+  // `SetActorOnFire` reaches `DoScream`, whose message goes through
+  // `AddMessageIfAudibleForPlayer` -> `RedrawPlayScreen`, and that reads
+  // `m_MapViewRect` -- which only exists once a turn has run. Stubbed for the
+  // same reason `bash-sounds.test.ts` stubs it: the draw is not what is under
+  // test, and the C# calls it unconditionally.
+  (game as unknown as { RedrawPlayScreen(): void }).RedrawPlayScreen = () => {};
 });
 
 /** Fill a rectangle with one tile model, so a fire has something to spread over. */

@@ -101,6 +101,7 @@ import {
 	moveItemToBackpack,
 	moveItemToInventory,
 	moveRefusalMessage,
+	NO_BACKPACK_REASON,
 	openBackpack,
 } from "@gameplay/Backpacks";
 import { ItemBackpack } from "@engine/items/ItemBackpack";
@@ -187,7 +188,7 @@ import {
 	UniqueItem,
 	UniqueMap,
 } from "@engine/Session";
-import { reattachPlayer } from "@engine/serialization/sessionGraphRoot";
+import { reattachPlayer, reattachControllers } from "@engine/serialization/sessionGraphRoot";
 import { storage, whenStorageReady } from "@engine/storage";
 import {
 	getUserBasePath,
@@ -258,6 +259,7 @@ import {
 import { OrderableAI } from "@gameplay/ai/OrderableAI";
 import { ActorID, GameActors } from "@gameplay/GameActors";
 import { FactionID, GameFactions } from "@gameplay/GameFactions";
+import { FeralDogAI } from "@gameplay/ai/FeralDogAI";
 import { GameGangs, type GangID } from "@gameplay/GameGangs";
 import { GameAmbients } from "@gameplay/GameAmbients";
 import { allImageIds, GameImages } from "@gameplay/GameImages";
@@ -348,14 +350,15 @@ export const ACTOR_SIZE: number = 32;
 /**
  * Where the customiser's preview sits, and how big it is.
  *
- * **Below the rows, not beside them.** Every option row on this screen spans the
- * full 1366px canvas — the skill list alone runs to its right edge — so there is no
- * column to put a preview in, and the first attempt at a two-column layout drew it
- * straight over the text. The lower half of the screen is empty, so it goes there,
- * horizontally centred.
+ * **Below the rows, not beside them.** Every option row on this screen is laid
+ * out across the full 1366px canvas -- the skill list alone needs three lines
+ * of it -- so there is no column to put a preview in, and the first attempt at a
+ * two-column layout drew it straight over the text. The lower half of the screen
+ * is empty, so it goes there, horizontally centred.
  *
- * `PREVIEW_TOP_Y` clears the longest screen: title, hint, race, sex/type, skill,
- * six appearance rows, the `*Random*` note and up to three detail lines.
+ * `PREVIEW_TOP_Y` clears the longest screen: title, hint, race, sex/type, the
+ * three-line skill row, six appearance rows, the `*Random*` note and up to three
+ * detail lines. That worst case ends at y=360, eighteen short of here.
  */
 export const PREVIEW_TOP_Y: number = 378;
 /** 3x. Enough to read a face; 4x starts to show the sprite's own pixel grid. */
@@ -527,6 +530,57 @@ export {
 	menuEntryWidth,
 } from "@engine/MenuChrome";
 export type { MenuRowBand } from "@engine/MenuChrome";
+
+/**
+ * One cell of an option row: which entry it is, and where it is drawn.
+ *
+ * `x` is absolute, so a caller lays a row out by drawing each cell where it
+ * says rather than accumulating its own advance.
+ */
+export interface OptionRowCell {
+	index: number;
+	x: number;
+}
+
+/**
+ * Splits one option row into the lines it needs to stay inside `rightEdge`.
+ *
+ * A row is conceptually a single line -- label, then every entry in sequence --
+ * and the skill row on the character screen is 2720 px of it against a 1366 px
+ * canvas: nine entries were drawn past the right edge, where `CanvasUI` clips
+ * them, while LEFT/RIGHT could still move the selection onto them. So the row
+ * is broken at the canvas edge and its continuation lines are drawn under the
+ * first, aligned to the same entry column as the label.
+ *
+ * Cell width is `entry length + 4` either way round (`< Agile >` and
+ * `  Agile  ` are the same length), so a row breaks in the same places whatever
+ * is selected -- otherwise moving the cursor would re-flow the line under it.
+ */
+export function optionRowLines(
+	label: string,
+	options: readonly string[],
+	gx: number,
+	rightEdge: number = CANVAS_WIDTH,
+): OptionRowCell[][] {
+	const entryX = gx + (label.length + 3) * MENU_CHAR_WIDTH;
+	const lines: OptionRowCell[][] = [];
+	let line: OptionRowCell[] = [];
+	let x = entryX;
+	for (let i = 0; i < options.length; i++) {
+		const w = (options[i].length + 4) * MENU_CHAR_WIDTH;
+		// Only once the line has something on it: a single entry wider than the
+		// canvas gets a line of its own rather than looping here forever.
+		if (line.length > 0 && x + w > rightEdge) {
+			lines.push(line);
+			line = [];
+			x = entryX;
+		}
+		line.push({ index: i, x });
+		x += w;
+	}
+	lines.push(line);
+	return lines;
+}
 
 /**
  * Rows a single wheel notch moves the selection in a `DrawMenuOrOptions` menu.
@@ -1032,12 +1086,74 @@ export class OverlayPopupTitleColors extends PopupOverlay {
 	}
 }
 
+/**
+ * Whether a map-anchored overlay's anchor still lands on the map panel, asked
+ * in the coordinates `withMapZoom` draws it at.
+ *
+ * Every effect in this group — the blast icon and its damage number, the yellow
+ * and red boxes around a throw or a fire-through, the target rings, the event
+ * highlight — is added on `IsVisibleToPlayer`, which reads the tile's `isView`,
+ * i.e. the *FOV*. Nothing asks `IsInViewRect`. That difference is invisible on
+ * the C# (a 31-tile camera, no zoom: the view covers the FOV) and is not here:
+ * the panel is 27 tiles wide at zoom 1 and 14 at zoom 2, against an FOV that
+ * reaches 16 with a light and the night bonuses, so the box for something the
+ * player can see but the camera does not cover computes to `MapToScreen`
+ * coordinates past `MAP_PANEL_WIDTH` — and `RedrawPlayScreen` draws overlays
+ * *after* the side panel, so it lands over the inventory.
+ *
+ * Overlays outside the panel are skipped; partially intersecting shapes are
+ * kept and clipped by the drawing scope. `scale` is `withMapZoom`'s own
+ * (`RogueGame.mapDrawScale`), because the panel edge is at `MAP_PANEL_WIDTH`
+ * *displayed* pixels and a tile coordinate means nothing without the zoom it is
+ * drawn at.
+ *
+ * An overlay this cannot classify answers true. This is a gate on what the port
+ * already draws, not a licence to hide an overlay nobody has put a shape to.
+ */
+export function overlayOnMapPanel(overlay: Overlay, scale: number): boolean {
+	const onPanel = (x: number, y: number): boolean =>
+		x * scale >= 0 &&
+		x * scale < MAP_PANEL_WIDTH &&
+		y * scale >= 0 &&
+		y * scale < MAP_PANEL_HEIGHT;
+
+	if (overlay instanceof OverlayRect) {
+		const r = overlay.rectangle;
+		return (
+			r.x * scale < MAP_PANEL_WIDTH &&
+			(r.x + r.width) * scale > 0 &&
+			r.y * scale < MAP_PANEL_HEIGHT &&
+			(r.y + r.height) * scale > 0
+		);
+	}
+	const anchor = (overlay as Overlay & { screenPosition?: Point }).screenPosition;
+	if (anchor != null) return onPanel(anchor.x, anchor.y);
+	const line = overlay as Overlay & { screenFrom?: Point; screenTo?: Point };
+	if (line.screenFrom != null && line.screenTo != null)
+		return (
+			onPanel(line.screenFrom.x, line.screenFrom.y) ||
+			onPanel(line.screenTo.x, line.screenTo.y)
+		);
+	return true;
+}
+
 /** C# `static GameOptions s_Options` / `s_KeyBindings` / `s_Hints`. */
 const s_Options = Options;
 let s_KeyBindings = new Keybindings();
 let s_Hints = new GameHintsStatus();
 
-/** Browser port: how many turns a speech bubble outlives its speaker's line. */
+/**
+ * Browser port: how many turns a speech bubble stays up, counted from the turn
+ * the box first opened.
+ *
+ * Anchored to the first line rather than the last on purpose. Every line used
+ * to restamp this, so an actor who spoke again inside the window pushed their
+ * own expiry forward indefinitely — a busy NPC never lost their box at all, and
+ * that is the bug this constant now guards against. The *text* still moves on
+ * with the speaker's latest line (see `SpeakOverhead`); only the clock stays
+ * where it started, so every bubble clears even over someone who never stops
+ * talking.
+ */
 const SPEECH_BUBBLE_TURNS = 6;
 /**
  * Browser port: how wide a speech bubble's text may get before it wraps, in the
@@ -1062,7 +1178,11 @@ const SPEECH_BUBBLE_MAX_WIDTH = TILE_SIZE * 6;
 class SpeechBubble {
   constructor(
     public text: string,
-    /** The actor's map's local turn, as stamped on the message log's own line. */
+    /**
+     * The actor's map's local turn when the box first opened. Read against it
+     * for the whole life of the bubble and never moved, so a later line cannot
+     * buy the box more time — see `SPEECH_BUBBLE_TURNS`.
+     */
     public turn: number,
   ) {}
 }
@@ -1336,6 +1456,89 @@ const BASH_DEFAULT: BashSound = {
   audible: GameSounds.BASH_OTHER_OBJECTS_NEARBY,
 };
 
+/**
+ * The trap sounds, by the trap's own name -- C# `DoTriggerTrap`
+ * (`RogueGame.cs:17645-17704`).
+ *
+ * Three tables rather than one keyed by band because the C# has three
+ * `switch (trap.TheName)` blocks in a row, and the two silent kinds are silent
+ * in *all three*: the spike uses the vanilla `SPIKE_TRAP` in both the near band
+ * and the far band -- it is felt rather than heard -- and the barbed wire plays
+ * nothing at all. A missing key is therefore a real answer, not a gap, which is
+ * why the lookups are `Map.get` and not `?? default`.
+ *
+ * The names are the C#'s own `TheName` strings, which is what makes them
+ * load-bearing: they are derived from the model's plural/singular pair, so a
+ * renamed trap row would silently fall out of every band.
+ */
+const TRAP_PLAYER_SOUND: Readonly<Record<string, string>> = {
+  "the empty can": GameSounds.CAN_TRAP_PLAYER,
+  "the bear trap": GameSounds.BEAR_TRAP_PLAYER,
+  "the spike": GameSounds.SPIKE_TRAP,
+  "the barbed wire": GameSounds.BARBED_WIRE_TRAP_PLAYER,
+};
+const TRAP_NEAR_SOUND: Readonly<Record<string, string>> = {
+  "the empty can": GameSounds.CAN_TRAP_NEARBY,
+  "the bear trap": GameSounds.BEAR_TRAP_NEARBY,
+  "the spike": GameSounds.SPIKE_TRAP,
+};
+const TRAP_FAR_SOUND: Readonly<Record<string, string>> = {
+  "the empty can": GameSounds.CAN_TRAP_FAR,
+  "the bear trap": GameSounds.BEAR_TRAP_FAR,
+  "the spike": GameSounds.SPIKE_TRAP,
+};
+
+/**
+ * The four `Roll(0, 3)` outcomes of `DoScream`, per band and per sex --
+ * C# `RogueGame.cs:20658-20668` (male, near), `:20703-20711` (male, far), and the
+ * two female switches at `:20679-20688` and `:20723-20732`.
+ *
+ * The pairs are deliberately not contiguous: a man's terrified near scream is
+ * 01/02/07 and his dying near scream is 09, while a woman's terrified near
+ * scream is 03/05/08 and her dying one is 04. The numbering is the fork's
+ * recordings, not a table someone lay out for us, and reordering it would move
+ * which recording a given roll picks.
+ *
+ * `_06` and `_10` do not exist in the fork's set, which is why these are fours
+ * and sixes rather than a range.
+ */
+const SCREAM_NEARBY_MALE: readonly string[] = [
+  GameSounds.SCREAM_NEARBY_01,
+  GameSounds.SCREAM_NEARBY_02,
+  GameSounds.SCREAM_NEARBY_07,
+];
+const SCREAM_NEARBY_FEMALE: readonly string[] = [
+  GameSounds.SCREAM_NEARBY_03,
+  GameSounds.SCREAM_NEARBY_05,
+  GameSounds.SCREAM_NEARBY_08,
+];
+const SCREAM_FAR_MALE: readonly string[] = [
+  GameSounds.SCREAM_FAR_01,
+  GameSounds.SCREAM_FAR_02,
+  GameSounds.SCREAM_FAR_07,
+];
+const SCREAM_FAR_FEMALE: readonly string[] = [
+  GameSounds.SCREAM_FAR_03,
+  GameSounds.SCREAM_FAR_05,
+  GameSounds.SCREAM_FAR_08,
+];
+
+/** C#'s `PLAYER_HEAR_SCREAMS_CHANCE` (`RogueGame.cs:368`): 10%. */
+const SCREAM_CHANCE_PERCENT = 10;
+
+/**
+ * C#'s `DEFAULT_UI_AI_VOCALISATION_CHANCE` (`GameOptions.cs:184`): 20%.
+ *
+ * The fork made this an *option* (`UI_AI_VOCALISATION_CHANCE`, Release 7-6)
+ * with the options-screen row "(Sfx) Undead likelihood to growl"; the port has
+ * no such option yet, so the default is used as a constant rather than read
+ * from `GameOptions`. The chance is what stops every AI turn for every undead
+ * and every dog from reaching `PlayNonHumanVocalAudio` -- which itself already
+ * gates on `ExtendedAudio` and on distance, so this is the third of the three
+ * filters and not a fourth.
+ */
+const AIVOCALISATION_CHANCE_PERCENT = 20;
+
 export class RogueGame implements ActionGame {
 	/** Browser save slot used by the C# "current save file" (`GetUserSave`). */
 	static readonly CURRENT_SAVE_SLOT = 0;
@@ -1353,6 +1556,19 @@ export class RogueGame implements ActionGame {
 	 * throw skill would be a stronger throw at higher skill than the C# allows.
 	 */
 	static readonly MAX_THROWABLE_DISTANCE = 5;
+
+	/**
+	 * C#'s `STUN_WEAPON_EFFECT_TURNS` -- `RogueGame.cs:391`, Release 7-2.
+	 *
+	 * "actually makes 4 turns, because the first turn is when they get hit." The
+	 * constant is 5 and the counter is decremented at the top of every turn, so
+	 * an actor stunned on their own turn loses four *full* turns after it and
+	 * the fifth is the one they were stunned in. Both the stun gun and the
+	 * flashbang add this many turns; the actor's setter clamps to
+	 * `Rules.MAXIMUM_INCAPACITATED_TURNS`, so being hit twice does not stack
+	 * past five.
+	 */
+	static readonly STUN_WEAPON_EFFECT_TURNS = 5;
 
 	/**
 	 * Render-state console logging, enabled with `?debug=1` in the page URL.
@@ -1395,6 +1611,17 @@ export class RogueGame implements ActionGame {
 	];
 	readonly CLOSE_DOOR_MODE_TEXT: string[] = [
 		"CLOSE MODE - directions to close, ESC cancels",
+	];
+	// Still Alive, Release 8-2. C# `RogueGame.cs:118-119`. The two captions the
+	// swap prompt shows: the item is picked first and the *other* one second, so
+	// each caption names the panel the digit refers to. Both say "SWAP INVENTORY
+	// MODE" in the reference, which reads as a copy-paste and is kept anyway --
+	// a caption is text the player matches against the panel in front of them.
+	readonly SWAP_ITEM_INVENTORY_MODE_TEXT: string[] = [
+		"SWAP INVENTORY MODE - key for Inventory slot number, ESC cancels",
+	];
+	readonly SWAP_ITEM_BACKPACK_MODE_TEXT: string[] = [
+		"SWAP INVENTORY MODE - key for Backpack slot number, ESC cancels",
 	];
 	readonly BARRICADE_MODE_TEXT: string[] = [
 		"BARRICADE/REPAIR MODE - directions to barricade/repair, ESC cancels",
@@ -2752,13 +2979,28 @@ export class RogueGame implements ActionGame {
 		// which rolls off the clock. We seed it from the session instead so a run
 		// is reproducible; the session reset above has to come first for that seed
 		// to be the one the roller uses.
-		const roller = new DiceRoller(this.m_Session.seed);
+		//
+		// **Allocated after the two screens below, not before them.** It used to
+		// sit here, which was harmless while nothing could change the seed. Now
+		// that the player can, the roller has to be built from the seed the player
+		// confirmed: allocated early, a run started on seed 4242 would roll its
+		// character — and every `*Random*` layer with it — off the seed `reset()`
+		// threw away, so the same seed would stop replaying the same character.
+		// Neither screen below reads the roller, so moving it costs nothing.
 
 		// Ruleset and game mode on one screen. They compose, and the ruleset is the
 		// coarser question, so putting them on one screen answers both without
 		// sending the player away and back to change the first after realising the
 		// second is wrong.
 		if (!(await this.HandleSelectRulesetAndMode())) return false;
+
+		// The world seed, before anything spends a roll from it. Not skipped by
+		// the quick start above: the shortcut is "these settings, random
+		// *character*", and a seed the player typed is a setting — the one thing
+		// on this screen worth the extra keypress.
+		if (!(await this.HandleSelectSeed())) return false;
+
+		const roller = new DiceRoller(this.m_Session.seed);
 
 		// Character details on one screen too, or a quick start. This replaced three
 		// screens (race, then sex-or-undead-type, then skill) whose row set depended
@@ -2789,7 +3031,7 @@ export class RogueGame implements ActionGame {
 		return true;
 	}
 
-/**
+	/**
 	 * One horizontal row of mutually exclusive options: `Label :  a  < b >  c`.
 	 *
 	 * Every other menu screen in the game is a vertical list drawn by
@@ -2803,6 +3045,10 @@ export class RogueGame implements ActionGame {
 	 * The selected entry is bracketed as well as coloured. `active` and inactive
 	 * are close enough shades on a black canvas that colour alone would be the
 	 * only cue for which row the left/right keys are about to affect.
+	 *
+	 * Returns the number of lines the row needed, so the caller advances `gy` by
+	 * that many rather than by one: a row too wide for the canvas is drawn on
+	 * continuation lines instead of running off the edge (see `optionRowLines`).
 	 */
 	private DrawOptionRow(
 		label: string,
@@ -2811,27 +3057,35 @@ export class RogueGame implements ActionGame {
 		gx: number,
 		gy: number,
 		active: boolean,
-	): void {
-		this.m_UI.UI_DrawStringBoldLarge(
-			active ? Color.White : Color.LightGray,
-			`${label} :`,
-			gx,
-			gy,
-		);
-		let x = gx + (label.length + 3) * MENU_CHAR_WIDTH;
-		for (let i = 0; i < options.length; i++) {
-			const text = i === selected ? `< ${options[i]} >` : `  ${options[i]}  `;
-			const color =
-				i === selected
-					? active
-						? Color.Yellow
-						: Color.White
-					: active
-						? Color.LightGray
-						: Color.Gray;
-			this.m_UI.UI_DrawStringBoldLarge(color, text, x, gy);
-			x += text.length * MENU_CHAR_WIDTH;
+	): number {
+		const lines = optionRowLines(label, options, gx);
+		for (let l = 0; l < lines.length; l++) {
+			const y = gy + l * MENU_BOLD_LINE_SPACING;
+			if (l === 0) {
+				this.m_UI.UI_DrawStringBoldLarge(
+					active ? Color.White : Color.LightGray,
+					`${label} :`,
+					gx,
+					y,
+				);
+			}
+			for (const cell of lines[l]) {
+				const text =
+					cell.index === selected
+						? `< ${options[cell.index]} >`
+						: `  ${options[cell.index]}  `;
+				const color =
+					cell.index === selected
+						? active
+							? Color.Yellow
+							: Color.White
+						: active
+							? Color.LightGray
+							: Color.Gray;
+				this.m_UI.UI_DrawStringBoldLarge(color, text, cell.x, y);
+			}
 		}
+		return lines.length;
 	}
 
 	/**
@@ -2898,10 +3152,13 @@ export class RogueGame implements ActionGame {
 			);
 			gy += 2 * MENU_BOLD_LINE_SPACING;
 
-			this.DrawOptionRow("Ruleset  ", rulesetEntries, rulesetIdx, 0, gy, row === 0);
+			gy +=
+				this.DrawOptionRow("Ruleset  ", rulesetEntries, rulesetIdx, 0, gy, row === 0) *
+				MENU_BOLD_LINE_SPACING;
+			gy +=
+				this.DrawOptionRow("Game mode", modeEntries, modeIdx, 0, gy, row === 1) *
+				MENU_BOLD_LINE_SPACING;
 			gy += MENU_BOLD_LINE_SPACING;
-			this.DrawOptionRow("Game mode", modeEntries, modeIdx, 0, gy, row === 1);
-			gy += 2 * MENU_BOLD_LINE_SPACING;
 
 			// Only the active row's text. Both blocks are long -- the mode one is
 			// twenty lines -- and printing both overflowed the canvas.
@@ -2950,6 +3207,193 @@ export class RogueGame implements ActionGame {
 					ok = true;
 					loop = false;
 					break;
+			}
+		} while (loop);
+
+		return ok;
+	}
+
+	/**
+	 * The world seed: the one number the whole city is generated from.
+	 *
+	 * ## Why a screen and not a row on the one above
+	 *
+	 * A seed is digits the player may want to replace wholesale, and a row of
+	 * left/right options cannot express that: it can step a value, never let one
+	 * be typed. It is also the only choice in the new-game flow that is not a
+	 * menu of named alternatives, so it gets the only screen here that reads the
+	 * keyboard as text.
+	 *
+	 * ## What it opens on
+	 *
+	 * The roll `Session.reset()` already made for this run. `HandleNewCharacter`
+	 * resets the session before the first screen, so the number on screen is a
+	 * genuine clock-derived roll and pressing ENTER straight through keeps
+	 * exactly the behaviour there has always been: nobody has to know what a seed
+	 * is in order to start a game.
+	 *
+	 * ## What the confirm is worth
+	 *
+	 * Setting the session seed is not enough on its own, and the reason is the one
+	 * `Session.useSeed` documents: `m_Rules` was built from the session seed when
+	 * the game object was constructed, so a seed chosen *here* would reseed world
+	 * generation while the gameplay rolls stayed on the previous run's roller —
+	 * half a deterministic run, which is worse than none. The confirm therefore
+	 * rebuilds it, exactly as `LoadGame` does after `Session.load()` restores a
+	 * seed. `StartNewGame`'s retry loop has to preserve the chosen seed across its
+	 * own `reset()` for the same reason, which is the other half of this.
+	 *
+	 * No C# original: the C# has no seed input at all (`RogueGame.cs:1417`
+	 * allocates an unseeded `new DiceRoller()` and lets the clock decide).
+	 */
+	async HandleSelectSeed(): Promise<boolean> {
+		// Digits only, and at most nine of them. The roller's state is a 32-bit
+		// unsigned integer, so a ten-digit number can exceed what fits and would be
+		// silently taken modulo 2^32 — nine digits cannot, which keeps the number
+		// on screen the number the run gets. (`reset()` can still roll a ten-digit
+		// seed, up to `Date.now() % 0x7fffffff`; that is a *generated* value, and
+		// nothing here caps those.)
+		const MAX_SEED_DIGITS = 9;
+
+		// The row's label, padded the way `DrawOptionRow`'s callers pad theirs
+		// ("Race  ", "Skill "), so this row lines up with the ones around it.
+		const SEED_LABEL = "Seed  ";
+
+		// The field, and whether what is in it was *generated* rather than typed.
+		// That one bit decides what the first keystroke does, and it is what makes
+		// a pre-filled field usable at all: the field opens selected, so the first
+		// digit replaces the roll and BACKSPACE clears it. Without it, typing "42"
+		// over a nine-digit roll would append and produce a number nobody typed.
+		let text = String(this.m_Session.seed);
+		let generated = true;
+
+		let loop = true;
+		let ok = false;
+		do {
+			this.m_UI.UI_Clear(Color.Black);
+			let gy = 0;
+			this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "New Game", 0, gy);
+			gy += 2 * MENU_BOLD_LINE_SPACING;
+
+			// Hand-wrapped rather than measured: the menu face is ~120 glyphs wide
+			// and every other screen on this flow states its business in a few
+			// short lines of its own, so this does the same rather than being the
+			// one screen with a paragraph on it.
+			for (const line of [
+				"Every run rolls a seed, and the whole city is generated from it.",
+				"The same seed makes the same world, so it is one you can replay",
+				"or hand to somebody else. Type your own, or keep this run's roll.",
+			]) {
+				this.m_UI.UI_DrawStringBoldLarge(Color.LightGray, line, 0, gy);
+				gy += MENU_BOLD_LINE_SPACING;
+			}
+			gy += MENU_BOLD_LINE_SPACING;
+
+			// The row, in the shape `DrawOptionRow` gives every other row on the
+			// screens around it: the label, then the value two label-widths in.
+			// Yellow while the field holds a roll (nothing typed yet, nothing at
+			// risk) and green once it holds one, so the state is visible without
+			// reading the line under it.
+			this.m_UI.UI_DrawStringBoldLarge(Color.White, `${SEED_LABEL} :`, 0, gy);
+			this.m_UI.UI_DrawStringBoldLarge(
+				generated ? Color.Yellow : Color.LightGreen,
+				`[ ${text}_ ]`,
+				(SEED_LABEL.length + 3) * MENU_CHAR_WIDTH,
+				gy,
+			);
+			gy += 2 * MENU_BOLD_LINE_SPACING;
+
+			// What the caret is standing in, and what an emptied field means.
+			// Neither is guessable and both are one keystroke away.
+			this.m_UI.UI_DrawStringBoldLarge(
+				Color.Gray,
+				generated
+					? "(a fresh roll: the first digit you type replaces it)"
+					: text.length === 0
+						? "(empty: keeping this run's roll)"
+						: "(your own seed)",
+				0,
+				gy,
+			);
+
+			this.DrawFootnote(
+				Color.White,
+				"digits type your own, BACKSPACE trims, R rolls another, ENTER starts, ESC cancels",
+			);
+			this.m_UI.UI_Repaint();
+
+			const key = await this.m_UI.UI_WaitKey();
+
+			// Escape before anything else, and it *cancels* rather than falling
+			// back to the roll: a player who backs out of the new-game flow
+			// halfway through expects to be back at the main menu, and a screen
+			// that swallowed Escape would make the key do nothing here and
+			// something everywhere else.
+			if (key.key === "Escape") {
+				ok = false;
+				loop = false;
+				continue;
+			}
+
+			if (key.key === "Enter") {
+				// An empty field is not a seed of 0, it is "I changed my mind":
+				// `Number("")` is 0, so the length check is what keeps a player
+				// who trimmed the field from starting a zero-seeded run.
+				//
+				// Only digits can reach the field, so the parse always succeeds;
+				// the finite check is the belt to that braces, and a parse that
+				// nonetheless failed leaves the roll — and the roller built from
+				// it — exactly as they were.
+				if (text.length > 0) {
+					const seed = Number(text);
+					if (Number.isFinite(seed)) {
+						this.m_Session.seed = seed >>> 0;
+						// The rules roller, rebuilt from the confirmed seed. See the
+						// comment above: without this, "the same seed replays the same
+						// run" would be true of the map and false of the gameplay.
+						this.m_Rules = new Rules(new DiceRoller(this.m_Session.seed));
+					}
+				}
+				ok = true;
+				loop = false;
+				continue;
+			}
+
+			if (key.key === "Backspace") {
+				// One press clears a field that still holds its roll, which is what
+				// "selected" means; after that it trims a character at a time.
+				if (generated) {
+					text = "";
+					generated = false;
+				} else {
+					text = text.slice(0, -1);
+				}
+				continue;
+			}
+
+			// `R` for another roll, and off the run's own dice on purpose: the
+			// seed screen runs *before* the character roller exists, and spending
+			// that roller here would shift every roll the run then makes, so two
+			// runs on the same confirmed seed would differ. `Math.random` costs
+			// the run nothing it can observe.
+			if (key.key === "r" || key.key === "R") {
+				text = String(Math.floor(Math.random() * 0x7fffffff));
+				generated = true;
+				continue;
+			}
+
+			// Digits, and only digits. Everything else — arrows, letters, the
+			// action-menu hotkeys — is swallowed rather than acted on, because a
+			// text field that answered to `h` by opening the manual would be a
+			// field nobody could type in.
+			if (key.key.length === 1 && key.key >= "0" && key.key <= "9") {
+				if (generated) {
+					text = key.key;
+					generated = false;
+				} else if (text.length < MAX_SEED_DIGITS) {
+					text += key.key;
+				}
+				continue;
 			}
 		} while (loop);
 
@@ -3062,9 +3506,6 @@ export class RogueGame implements ActionGame {
 					"  fire stations, animal shelters, junkyards and more.",
 					"- Alcohol, cooking, fishing and butchering.",
 					"- Darker nights, and fire that spreads.",
-					"",
-					"Most of this is not implemented yet. Choosing it today",
-					"plays the same game as Classic - see the project plan.",
 				]
 			: [
 					"Classic - Rogue Survivor Alpha 10.1.",
@@ -3308,16 +3749,21 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 			);
 			gy += 2 * MENU_BOLD_LINE_SPACING;
 
-			this.DrawOptionRow("Race  ", raceEntries, raceIdx, 0, gy, row === 0);
-			gy += MENU_BOLD_LINE_SPACING;
+			gy +=
+				this.DrawOptionRow("Race  ", raceEntries, raceIdx, 0, gy, row === 0) *
+				MENU_BOLD_LINE_SPACING;
 			if (isUndead) {
-				this.DrawOptionRow("Type  ", typeEntries, typeIdx, 0, gy, row === 1);
+				gy +=
+					this.DrawOptionRow("Type  ", typeEntries, typeIdx, 0, gy, row === 1) *
+					MENU_BOLD_LINE_SPACING;
 			} else {
-				this.DrawOptionRow("Sex   ", sexEntries, sexIdx, 0, gy, row === 1);
-				gy += MENU_BOLD_LINE_SPACING;
-				this.DrawOptionRow("Skill ", skillEntries, skillIdx, 0, gy, row === 2);
+				gy +=
+					this.DrawOptionRow("Sex   ", sexEntries, sexIdx, 0, gy, row === 1) *
+					MENU_BOLD_LINE_SPACING;
+				gy +=
+					this.DrawOptionRow("Skill ", skillEntries, skillIdx, 0, gy, row === 2) *
+					MENU_BOLD_LINE_SPACING;
 			}
-			gy += MENU_BOLD_LINE_SPACING;
 
 			// All six appearance rows at once, as asked: the point of a customiser is
 			// seeing the whole look, and hiding half of it behind a sub-screen is what
@@ -3331,15 +3777,15 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 				const entries = ["*Random*", ...catalogue.map(describeAppearanceImage)];
 				const chosen = appearance[layer];
 				const idx = chosen === null ? 0 : catalogue.indexOf(chosen) + 1;
-				this.DrawOptionRow(
-					APPEARANCE_LAYER_LABELS[layer],
-					entries,
-					idx,
-					0,
-					gy,
-					layer === activeLayer,
-				);
-				gy += MENU_BOLD_LINE_SPACING;
+				gy +=
+					this.DrawOptionRow(
+						APPEARANCE_LAYER_LABELS[layer],
+						entries,
+						idx,
+						0,
+						gy,
+						layer === activeLayer,
+					) * MENU_BOLD_LINE_SPACING;
 			}
 
 			if (!isUndead) {
@@ -3376,7 +3822,11 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 			} else if (!isUndead && row === 2) {
 				if (skillIdx === 0) details.push("(a skill will be picked at random)");
 				else {
-					const sk = skillIdx as SkillID;
+					// The row's index, converted the way the C# converts it
+					// (`RogueGame.cs:2011`): entry 0 is `*Random*`, so entry `i` is
+					// living skill `i - 1 + FIRST_LIVING`. Casting the index straight
+					// through described the entry to the *right* of the one selected.
+					const sk = (skillIdx - 1 + Skills.FIRST_LIVING) as SkillID;
 					details.push(
 						`${Skills.maxSkillLevel(sk)} max - ${this.DescribeSkillShort(sk)}`,
 					);
@@ -3479,7 +3929,13 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 					} else {
 						this.m_CharGen.isUndead = false;
 						this.m_CharGen.isMale = sexIdx === 0 ? roller.rollChance(50) : sexIdx === 1;
-						const skID = skillIdx === 0 ? Skills.rollLiving(roller) : (skillIdx as SkillID);
+						// Same index-to-id conversion as the description above, and it
+						// matters more here: as a bare cast, picking Unsuspicious
+						// committed `Z_AGILE`, a zombie skill, to a living character.
+						const skID =
+							skillIdx === 0
+								? Skills.rollLiving(roller)
+								: ((skillIdx - 1 + Skills.FIRST_LIVING) as SkillID);
 						this.m_CharGen.startingSkill = skID;
 						// scoring : starting skill.
 						this.m_Session.scoring.startingSkill = skID;
@@ -3850,24 +4306,38 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 		gy += MENU_BOLD_LINE_SPACING;
 		this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Hi Scores", 0, gy);
 		gy += MENU_BOLD_LINE_SPACING;
-		this.m_UI.UI_DrawStringBold(
+		this.m_UI.UI_DrawStringBoldLarge(
 			Color.White,
 			"---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+",
 			0,
 			gy,
 		);
-		gy += BOLD_LINE_SPACING;
+		gy += MENU_BOLD_LINE_SPACING;
 
 		// display.
-		// Table body stays at the standard size: 12 entries x 4 lines only fit at
-		// 14px leading. Title and header above carry the larger size.
-		this.m_UI.UI_DrawStringBold(
+		//
+		// The rule and the column header are drawn with the same `BoldLarge` call
+		// as the table body below, and stepped at the same leading. The header is
+		// a row of that table: its `|` sit at the same *character* indices as the
+		// values' (5, 33, 42, 53, 62, 71, 80, 97), so on a monospace face they
+		// line up only while both are drawn at the same advance. They were not --
+		// `UI_DrawStringBold` is the 10pt HUD face (8px a character) against the
+		// body's 12pt menu face (9.6px), which put the labels 1.6px left per
+		// column, ~155px out by the last one. The C# had a single bold font for
+		// the whole screen (RogueForm.cs:57), so it could not diverge.
+		//
+		// The `Seed` column appended below is this port's own: the fork has no
+		// seed column here, but it does have a seed screen -- and a scores row
+		// with no seed in it cannot answer "which world was that", which is the
+		// one question a table of scores gets asked afterwards. It goes last, so
+		// it costs the columns the C# did have nothing.
+		this.m_UI.UI_DrawStringBoldLarge(
 			Color.White,
-			"Rank | Name, Skills, Death       |  Score |Difficulty|Survival|  Kills |Achievm.|      Game Time | Playing time",
+			"Rank | Name, Skills, Death       |  Score |Difficulty|Survival|  Kills |Achievm.|      Game Time | Playing time |   Seed",
 			0,
 			gy,
 		);
-		gy += BOLD_LINE_SPACING;
+		gy += MENU_BOLD_LINE_SPACING;
 
 		// No text export.
 		//
@@ -3923,7 +4393,16 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 					`${padLeft(i + 1, 3)}. | ${padRight(this.TruncateString(hi.name, 25), 25)} | ${padLeft(hi.totalPoints, 6)}` +
 					` |     ${padLeft(hi.difficultyPercent, 3)}% | ${padLeft(hi.survivalPoints, 6)} | ${padLeft(hi.killPoints, 6)}` +
 					` | ${padLeft(hi.achievementPoints, 6)} | ${padLeft(new WorldTime(hi.turnSurvived).toString(), 14)}` +
-					` | ${this.TimeSpanToString(hi.playingTimeSeconds)}`;
+					// The playing time is padded to the width of the `Playing
+					// time` label over it, which the seed column makes
+					// load-bearing: with nothing after it, a variable-width
+					// time could not put a pipe anywhere. It is right-aligned,
+					// like every other number in the row.
+					//
+					// The seed column: this port's own, and last so it costs the
+					// C#'s columns nothing. `formatHiScoreSeed` pads to a fixed
+					// width and renders an unrecorded entry as a dash.
+					` | ${padLeft(this.TimeSpanToString(hi.playingTimeSeconds), 12)} | ${this.formatHiScoreSeed(hi.seed)}`;
 				this.m_UI.UI_DrawStringBoldLarge(rankColor, line, 0, gyRows);
 				gyRows += MENU_BOLD_LINE_SPACING;
 				this.m_UI.UI_DrawStringBoldLarge(
@@ -4001,15 +4480,43 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 				gyHead += MENU_BOLD_LINE_SPACING;
 				this.m_UI.UI_DrawStringBoldLarge(Color.Yellow, "Hi Scores", 0, gyHead);
 				gyHead += MENU_BOLD_LINE_SPACING;
+				// The rule is part of the header, and this block is the whole
+				// screen redrawn rather than only the rows: without it a scroll
+				// key made the rule disappear and the table jump up under it.
 				this.m_UI.UI_DrawStringBoldLarge(
 					Color.White,
-					"Rank | Name, Skills, Death       |  Score |Difficulty|Survival|  Kills |Achievm.|      Game Time | Playing time",
+					"---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+---------+",
+					0,
+					gyHead,
+				);
+				gyHead += MENU_BOLD_LINE_SPACING;
+				this.m_UI.UI_DrawStringBoldLarge(
+					Color.White,
+					"Rank | Name, Skills, Death       |  Score |Difficulty|Survival|  Kills |Achievm.|      Game Time | Playing time |   Seed",
 					0,
 					gyHead,
 				);
 				gy = gyHead + MENU_BOLD_LINE_SPACING;
 			}
 		}
+	}
+
+	/**
+	 * A score row's seed column -- this port's own, not the C#'s.
+	 *
+	 * The value is right-aligned in a six-wide field, so it sits under the
+	 * `Seed` header, which is the same six characters right-aligned. A
+	 * five-digit forced seed therefore leaves a leading space and a larger one
+	 * grows the line rather than sliding the columns of the C#'s fields.
+	 *
+	 * An unrecorded seed draws as a dash rather than a zero, because zero is a
+	 * seed -- the clock-derived default path can roll one, and "this run had no
+	 * seed written" has to read differently from "this run was seed 0". The
+	 * entries it applies to are the ones saved before the field existed.
+	 */
+	private formatHiScoreSeed(seed: number | null): string {
+		if (seed == null) return "     -";
+		return padLeft(seed, 6);
 	}
 
 	// C# LoadHiScoreTable — RogueGame.cs:2146
@@ -4169,9 +4676,20 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 				// the whole field from `reset()` (`load()` restores it from the save
 				// over the top, and a run that has not chosen one must still get the
 				// default).
+				//
+				// **And the seed, for the same reason and with more at stake.**
+				// `reset()` re-derives the seed from the clock, so a retry used to
+				// throw away the seed the run had — which was invisible when the
+				// seed was always a clock roll anyway, and is not now that
+				// `HandleSelectSeed` lets a player type one: a player on seed 4242
+				// whose city needed a second attempt would get a *random* world and
+				// never be told. Preserved the same way, so a chosen seed survives
+				// the retry loop that exists to find a world it can generate.
 				const rescueDay = this.m_Session.armyHelicopterRescueDay;
+				const seed = this.m_Session.seed;
 				this.m_Session.reset();
 				this.m_Session.armyHelicopterRescueDay = rescueDay;
+				this.m_Session.seed = seed;
 			}
 			worldMade = this.GenerateWorld(true, s_Options.citySize);
 			if (!worldMade && attempt >= MAX_WORLD_GEN_ATTEMPTS) {
@@ -4500,8 +5018,12 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 				command: PlayerCommand.BUILD_SMALL_FORTIFICATION,
 			},
 			{ label: "City Info", command: PlayerCommand.CITY_INFO },
-			{ label: "Close", command: PlayerCommand.CLOSE_DOOR },
-			{ label: "Eat Corpse", command: PlayerCommand.EAT_CORPSE },
+		{ label: "Close", command: PlayerCommand.CLOSE_DOOR },
+		// Release 7-6's cooking pair, alphabetical where the list is: Cook then
+		// Destroy, before Eat Corpse.
+		{ label: "Cook food", command: PlayerCommand.COOK_FOOD },
+		{ label: "Destroy item", command: PlayerCommand.DESTROY_ITEM },
+		{ label: "Eat Corpse", command: PlayerCommand.EAT_CORPSE },
 			{ label: "Fire", command: PlayerCommand.FIRE_MODE },
 			{ label: "Give", command: PlayerCommand.GIVE_ITEM },
 			{ label: "Help", command: PlayerCommand.HELP_MODE },
@@ -5063,23 +5585,16 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 	 * first and clearing after would delete the helicopter, and notifying first
 	 * would have orderables path to a tile that is then occupied.
 	 *
-	 * ## What is NOT here
-	 *
-	 * - **`CheckLandedHelicopterSFX` and the flyover** (`RogueGame.cs:28869-28877`)
-	 *   are the `Feature.AmbientAudio` follow-up's, not this feature's: they read
-	 *   `m_AmbientSFXManager`, and the five helicopter tracks are gated on that
-	 *   feature so the gates stay separate. `NoiseDistance` now has the four radii
-	 *   those calls need, and `armyHelicopterRescueMap` /
-	 *   `armyHelicopterRescueCoordinates` now exist for them, so that work is
-	 *   unblocked — but it is not done here.
-	 * - **`FireEvent_RescueWave`** (`RogueGame.cs:28132-28158`) is not ported. It
-	 *   tops the district back up to `MaxCivilians` / `MaxAnimals` / `MaxUndeads`,
-	 *   and the port has no `GAME_MAX_ANIMALS` option (`Options.maxAnimals`) and
-	 *   no `SpawnNewFeralDog`, so its middle leg — the feral dogs — cannot be
-	 *   written at all. Two thirds of a wave is not a wave, and the two messages it
-	 *   announces ("The number of undead seems to be increasing!") would be
-	 *   announcing nothing.
-	 */
+ * ## What is NOT here
+ *
+ * - **`CheckLandedHelicopterSFX` and the flyover** (`RogueGame.cs:28869-28877`)
+ *   are the `Feature.AmbientAudio` follow-up's, not this feature's: they read
+ *   `m_AmbientSFXManager`, and the five helicopter tracks are gated on that
+ *   feature so the gates stay separate. `NoiseDistance` now has the four radii
+ *   those calls need, and `armyHelicopterRescueMap` /
+ *   `armyHelicopterRescueCoordinates` now exist for them, so that work is
+ *   unblocked — but it is not done here.
+ */
 	async SpawnArmyHelicopterOnMap(map: Map): Promise<void> {
 		// The heli is a 3x1 tile, so clear its designated space of actors and
 		// objects. C# `:28811-28858`.
@@ -5188,6 +5703,12 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 			RaidType.HELICOPTER_RESCUE,
 			heli1,
 		);
+
+		// The rescue attracts a wave. C# `:28880-28881`, the last thing the spawn
+		// does -- after the audio and the AI notification, so the announcements
+		// land in the right order on screen. The heli map always belongs to a
+		// district: it is either the entry map or one of the sewers/subway.
+		this.FireEvent_RescueWave(map.district!);
 	}
 
 	/**
@@ -5722,6 +6243,19 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 				for (const actor of map.actors) {
 					if (--actor.bloodAlcohol < 0) actor.bloodAlcohol = 0;
 				}
+			}
+
+			// 3.3.7 Incapactiation wears off (Still Alive, Release 7-2). C#
+			// `RogueGame.cs:6564-6569`.
+			//
+			// Ungated, unlike the alcohol above: the two counters only exist when a
+			// stun gun or a flashbang has been used, so an actor who has never been
+			// stunned has nothing to decrement. The C# gates neither, and the two
+			// decrements are the same shape as blood alcohol's -- one turn per turn,
+			// floored at 0.
+			for (const actor of map.actors) {
+				if (actor.stunnedTurns > 0) --actor.stunnedTurns;
+				if (actor.flashbangedTurns > 0) --actor.flashbangedTurns;
 			}
 
 			// Food poisoning clears itself (Still Alive, Release 7-6). Ahead of the
@@ -7715,6 +8249,94 @@ inv.removeAllQuantity(it);
 		);
 	}
 
+	/**
+	 * C# `SpawnNewFeralDog` -- `RogueGame.cs:29433-29447`, Release 7-3.
+	 *
+	 * The dogs-only spawner, which the rescue wave needs and which nothing else
+	 * did: `createNewFeralDog` has exactly one caller outside this class (the
+	 * animal shelter's kennel), and that one places dogs through
+	 * `TownBuildingContext.placement` rather than spawning them at runtime.
+	 *
+	 * A feral dog is not a refugee: no items, no name template of its own beyond
+	 * the model's, and `SpawnActorOnMapBorder`'s `makeGameStart` argument is
+	 * `true` in the C# exactly as it is for a refugee, which is what keeps a
+	 * dog from materialising next to the player.
+	 */
+	SpawnNewFeralDog(map: Map): Actor | null {
+		const newDog = this.m_TownGenerator.createNewFeralDog(map.localTime.turnCounter);
+		return this.SpawnActorOnMapBorder(map, newDog, SPAWN_DISTANCE_TO_PLAYER, true)
+			? newDog
+			: null;
+	}
+
+	/**
+	 * C# `FireEvent_RescueWave` -- `RogueGame.cs:28132-28166`, Release 7-3, called
+	 * from the tail of `SpawnArmyHelicopterOnMap` (`:28881`).
+	 *
+	 * The helicopter is loud, and the fork's answer is a **wave**: the district
+	 * tops itself back up to the option caps on the surface map -- civilians,
+	 * then dogs, then undead -- so a rescue is also an invasion. It is announced
+	 * only to a living, awake player in the same district, because those two
+	 * messages are the whole point and a sleeping survivor misses both.
+	 *
+	 * Three legs, and the two the port lacked are now here: the animal leg spent
+	 * months blocked on a `GAME_MAX_ANIMALS` option the port names `GAME_MAX_DOGS`
+	 * (`Options.maxDogs`) and on a runtime dog spawner, both of which exist.
+	 * That leaves the port using its own option name, which is a divergence worth
+	 * naming rather than hiding: the cap is read the same way the other two legs
+	 * read theirs.
+	 */
+	FireEvent_RescueWave(district: District): void {
+		// announce.
+		if (
+			district === this.m_Player.location.map?.district &&
+			!this.m_Player.isSleeping &&
+			!this.m_Player.model.abilities.isUndead
+		) {
+			this.AddMessage(
+				new Message(
+					"A surge of people are rushing about excitingly!",
+					this.m_Session.worldTime.turnCounter,
+					Color.Pink,
+				),
+			);
+			this.AddMessage(
+				new Message(
+					"The number of undead seems to be increasing!",
+					this.m_Session.worldTime.turnCounter,
+					Color.Crimson,
+				),
+			);
+			this.RedrawPlayScreen();
+		}
+
+		// Civilians and police, back up to the cap, surface only.
+		const entry = district.entryMap!;
+		const civilians = this.CountActors(
+			entry,
+			(a) =>
+				a.faction === this.gameFactions.get(FactionID.TheCivilians) ||
+				a.faction === this.gameFactions.get(FactionID.ThePolice),
+		);
+		const civiliansToSpawn = s_Options.maxCivilians - civilians;
+		for (let i = 0; i < civiliansToSpawn; i++) this.SpawnNewRefugee(entry);
+
+		// Feral dogs, back up to the cap -- the port's `maxDogs` is the fork's
+		// `MaxAnimals`, renamed before the port carried this leg.
+		const dogs = this.CountActors(
+			entry,
+			(a) => a.faction === this.gameFactions.get(FactionID.TheFerals),
+		);
+		const dogsToSpawn = s_Options.maxDogs - dogs;
+		for (let i = 0; i < dogsToSpawn; i++) this.SpawnNewFeralDog(entry);
+
+		// Undead, back up to the cap.
+		const undeads = this.CountActors(entry, (a) => a.model.abilities.isUndead);
+		const undeadsToSpawn = s_Options.maxUndeads - undeads;
+		for (let i = 0; i < undeadsToSpawn; i++)
+			this.SpawnNewUndead(entry, entry.localTime.day);
+	}
+
 	// C# SpawnNewSurvivor — RogueGame.cs:5151
 	SpawnNewSurvivor(map: Map, bandPos?: Point): Actor | null {
 		const newSurvivor = this.m_TownGenerator.createNewSurvivor(
@@ -8663,7 +9285,7 @@ inv.removeAllQuantity(it);
 									loop = false;
 									break;
 								}
-								loop = !this.HandlePlayerSwapItemInventory(player, mousePos);
+								loop = !(await this.HandlePlayerSwapItemInventory(player, mousePos));
 								break;
 
 							case PlayerCommand.MAKE_COOKING_FIRE: //@@MP (Release 7-6)
@@ -8680,6 +9302,42 @@ inv.removeAllQuantity(it);
 									break;
 								}
 								loop = !this.HandlePlayerUnloadAmmo(player);
+								break;
+
+							// C# `RogueGame.cs:11067-11071`, Release 7-6.
+							//
+							// Guarded like every command around it, which is a
+							// divergence from the reference on one point only: the
+							// C# calls `BlockAction(checkBackpack)` first, and here
+							// that is `TryPlayerUnwell`'s own first line
+							// (`autoCloseBackpack`, `@gameplay/Backpacks`), so an
+							// open bag closes rather than being cooked into.
+							case PlayerCommand.COOK_FOOD: //@@MP (Release 7-6)
+								if (await this.TryPlayerUnwell()) {
+									loop = false;
+									break;
+								}
+								loop = !(await this.HandlePlayerCookFood(player, mousePos));
+								break;
+
+							// C# `RogueGame.cs:11063-11065`, Release 7-6, and the
+							// one command in the chain the reference dispatches with
+							// no guard at all -- no `BlockAction`, no
+							// `TryPlayerControlAlteringEffects`. Kept, and kept
+							// deliberately: the handler asks "Permanently destroy
+							// X?" and waits for a yes, so the "did I mean that"
+							// question is answered inside it.
+							//
+							// `HandlePlayerDestroyItem` is async here for one reason:
+							// `WaitYesOrNo` is a promise in this port
+							// (`RogueGame.ts:9304`).
+							//
+							// `loop` is left alone, which is the C#'s: the command
+							// costs no AP and does not end the turn, so the player
+							// keeps acting afterwards -- exactly as `SCREENSHOT`
+							// and the zoom keys above behave.
+							case PlayerCommand.DESTROY_ITEM: //@@MP (Release 7-6)
+								await this.HandlePlayerDestroyItem(player, mousePos);
 								break;
 
 							case PlayerCommand.LEAD_MODE:
@@ -8843,6 +9501,57 @@ inv.removeAllQuantity(it);
 	}
 
 	/**
+	 * C# `GenerateIncapacitatedAction` -- `RogueGame.cs:25042-25076`, Release 7-2.
+	 *
+	 * What a stunned or flashbanged actor does instead of what their controller
+	 * wanted: a random, uncontrolled action. Four outcomes off one `Roll(0, 3)` --
+	 * shout, bash a neighbouring object, unequip or drop a random inventory item,
+	 * or shout again -- and the point of the shape is that none of them is
+	 * *useful*: the actor is still taking their turn, but not for themselves.
+	 *
+	 * The C# has one subtle detail worth keeping: case 2 picks an item out of the
+	 * inventory by index, and the three box-of-lights items (`CANDLES_BOX`,
+		* `FLARES_KIT`, `GLOWSTICKS_BOX`) are excluded from the drop because the
+	 * C#'s `DoDropItem` would prompt the actor for one-or-all, and an
+	 * incapacitated actor cannot answer a prompt. The C#'s `:25068` comment says
+	 * so in as many words. The shout is its substitute.
+	 */
+	private GenerateIncapacitatedAction(actor: Actor): ActorAction | null {
+		const roll = this.m_Rules.roll(0, 4);
+		switch (roll) {
+			// shout
+			case 0:
+				return new ActionShout(actor, this, "GAAHHH!!!");
+			// random bash.
+			case 1: {
+				const map = actor.location.map!;
+				for (const d of Direction.COMPASS) {
+					const mobj = map.getMapObjectAtPoint(d.applyTo(actor.location.position));
+					if (mobj !== null) return new ActionBreak(actor, this, mobj);
+				}
+				return new ActionShout(actor, this, "OWWWWW!!!");
+			}
+			// random unequip-drop
+			case 2: {
+				const inv = actor.inventory;
+				if (inv == null || inv.countItems === 0) return null;
+				const it = inv.getItem(this.m_Rules.roll(0, inv.countItems));
+				if (it == null) return null;
+				if (it.isEquipped) return new ActionUnequipItem(actor, this, it);
+				else if (
+					it.model.id !== ItemID.CANDLES_BOX &&
+					it.model.id !== ItemID.FLARES_KIT &&
+					it.model.id !== ItemID.GLOWSTICKS_BOX
+				)
+					return new ActionDropItem(actor, this, it);
+				else return new ActionShout(actor, this, "DAMN IT!!!");
+			}
+			default:
+				return new ActionShout(actor, this, "DAMN IT!!!");
+		}
+	}
+
+	/**
 	 * Being food poisoned can cost the player their action. Still Alive,
 	 * Release 7-6.
 	 *
@@ -8875,7 +9584,8 @@ inv.removeAllQuantity(it);
 	}
 
 	/**
-	 * The fork's unwell chain: insanity first, then food poisoning.
+	 * The fork's unwell chain: incapactitated first, then insanity, then food
+	 * poisoning.
 	 *
 	 * There is no drunkenness arm yet — `Feature.Alcohol` has no implementation,
 	 * so `TryPlayerDrunkenness` would be a stub returning false forever. It is
@@ -8894,9 +9604,47 @@ inv.removeAllQuantity(it);
 		// answers "no backpack" rather than "not in this ruleset"; the *command* is
 		// gated below, because under CLASSIC there is no `Y` binding to press.
 		autoCloseBackpack(this.m_Player);
+		// C# `:24114`: incapactitated is the head of the chain, and it is the only
+		// arm that is *not* rolled for -- if you are stunned you are stunned, and
+		// the 20% chance the other arms use would let a flashbanged survivor
+		// occasionally act normally.
+		if (await this.TryPlayerIncapacitated()) return true;
 		if (await this.TryPlayerInsanity()) return true;
 		if (await this.TryPlayerDrunkenness()) return true;
 		return this.TryPlayerFoodPoisoning();
+	}
+
+	/**
+	 * C# `TryPlayerIncapacitated` -- `RogueGame.cs:24154-24170`, Release 7-2.
+	 *
+	 * Flashbanged or stun-gunned. The one arm of the unwell chain that is not
+	 * dice-rolled: the C# checks `IsIncapacitated` and, if true, generates a
+	 * random action, checks it is legal, and performs it. No `rollChance`, no
+	 * `SANITY_INSANE_ACTION_CHANCE` -- the counter is the gate.
+	 *
+	 * The message is the C#'s own, and the player also gets a press-ENTER so the
+	 * line cannot be lost in a burst of messages, which is what every other arm
+	 * in the chain does for the same reason.
+	 */
+	async TryPlayerIncapacitated(): Promise<boolean> {
+		if (!this.m_Player.isIncapacitated) return false;
+
+		const incapacitatedAction = this.GenerateIncapacitatedAction(this.m_Player);
+		if (incapacitatedAction == null) return false;
+		if (!incapacitatedAction.isLegal()) return false;
+
+		this.ClearMessages();
+		this.AddMessage(
+			new Message(
+				"(you were stunned/flashbanged. you lose control for a moment)",
+				this.m_Player.location.map!.localTime.turnCounter,
+				Color.Orange,
+			),
+		);
+		if (!this.m_Player.isBotPlayer) await this.AddMessagePressEnter();
+
+		await incapacitatedAction.perform();
+		return true;
 	}
 
 	async TryPlayerInsanity(): Promise<boolean> {
@@ -9912,15 +10660,12 @@ inv.removeAllQuantity(it);
 			// An item *in the open backpack* is described by the panel, not by
 			// `DescribeItemLong`: it is not in the player's inventory, so the generic
 			// path would offer "to equip" and "to give" for something that is two
-			// rows away in a bag. `destroy` is passed as "" because
-			// `PlayerCommand.DESTROY_ITEM` is Release 7-6 and not ported, and a
-			// description that names a key the player cannot press is worse than one
-			// that omits it.
+			// rows away in a bag.
 			const packInv = firstBackpack(this.m_Player)?.backpackInventory;
 			const inBackpack = packInv != null && inv === packInv;
 			const lines = inBackpack
-				? describeItemInBackpack(it, "", {
-						destroy: "",
+				? describeItemInBackpack(it, this.DescribeItemShort(it), {
+						destroy: `<${s_KeyBindings.get(PlayerCommand.DESTROY_ITEM) ?? ""}>`,
 						moveToInventory: `<${s_KeyBindings.get(PlayerCommand.SWAP_INVENTORY) ?? ""}>`,
 					})
 				: this.DescribeItemLong(it, isPlayerInventory, hit.iSlot);
@@ -9959,12 +10704,11 @@ inv.removeAllQuantity(it);
 	 * only judgement in it is *which* of the two directions to move in, which is
 	 * "where did the click land" rather than anything the C# decides for us.
 	 *
-	 * The C# follows a refusal with a modal prompt offering to swap into a free
-	 * slot instead. That prompt is **not** ported -- see `moveItemToBackpack` for
-	 * why nothing is silently dropped without it. The guard around it is ported
-	 * verbatim, so a move into a full bag is refused with the C#'s own string.
+	 * When the destination has no room the C# falls into a modal prompt that asks
+	 * which slot to swap with (`RogueGame.cs:13930-13962`); the guard around it
+	 * is the port's existing refusal, and the prompt is `promptForSwap` below.
 	 */
-	HandlePlayerSwapItemInventory(player: Actor, mousePos: Point): boolean {
+	async HandlePlayerSwapItemInventory(player: Actor, mousePos: Point): Promise<boolean> {
 		const hit = this.MouseToInventoryItem(mousePos);
 		const it = hit.result;
 		if (hit.inv == null || it == null) return false;
@@ -9972,18 +10716,276 @@ inv.removeAllQuantity(it);
 		const pack = firstBackpack(player);
 		const inBackpack = pack != null && hit.inv === pack.backpackInventory;
 		if (!inBackpack && hit.inv !== player.inventory) return false;
+		// C# `:13864-13868`: the swap needs a bag, and this is where the C# says
+		// so -- not at the top of the method, because the mouse hit is what tells
+		// it whether the click was even about a bag.
+		if (pack == null) {
+			this.AddMessage(this.MakeErrorMessage(NO_BACKPACK_REASON));
+			return false;
+		}
 
 		const verdict = inBackpack
 			? moveItemToInventory(player, it)
 			: moveItemToBackpack(this.m_Rules, player, it);
 		if (verdict.ok) return true;
 
-		this.AddMessage(
-			this.MakeErrorMessage(
-				pack != null ? moveRefusalMessage(it, pack, verdict.reason) : verdict.reason,
+		// The refusal names the two full-refusals the C# answers with the prompt
+		// -- a destination with no room for this item at all. A refusal for any
+		// other reason (an item the bag may not hold) is reported as-is: swapping
+		// would offer to move the very item that cannot move.
+		if (inBackpack ? verdict.reason !== "your inventory is full" : verdict.reason !== "backpack is full") {
+			this.AddMessage(
+				this.MakeErrorMessage(
+					moveRefusalMessage(it, pack, verdict.reason),
+				),
+			);
+			return false;
+		}
+
+		// The prompt does the swap, and it spends the AP the move would have.
+		const swapped = await this.promptForSwap(player, it, inBackpack);
+		return swapped;
+	}
+
+	/**
+	 * The C#'s `promptForSwap` block -- `RogueGame.cs:13939-14035`.
+	 *
+	 * A destination with no room is not a refusal the player can act on: the item
+	 * they want to move *can* go in the bag, there is just nowhere to put it. So
+	 * the C# asks which slot to swap with, over a popup, and the answer is a
+	 * digit key -- the slot, not the letter the rebind screen uses.
+	 *
+	 * **The exchange itself is the port's, and it is cleaner than the
+	 * reference's.** The fork's version shuffles the quantity through a
+	 * one-slot temporary inventory (`:13981-13990`), leaves a `TODO` at `:13941`
+	 * admitting the whole arm is unfinished, and can duplicate a stack into the
+	 * bag: it removes the chosen item from the player, adds the bag's item to the
+	 * player, removes it from the bag, and then adds the chosen item *back* to
+	 * the bag without ever taking it out of the player's pack. Ported as written
+	 * that is an item duplicator.
+	 *
+	 * So the port does the exchange the prompt describes: both items leave their
+	 * inventories first, then each lands in the other one. That is exact
+	 * whenever the two stacks cross whole, which is the case the prompt exists
+	 * for -- the destination was full *of this item's kind*, so one unit of room
+	 * is what is needed and removing the swap partner frees a whole slot. A
+	 * partial crossing (a twelve-round stack into a bag holding eight, limit
+	 * ten) is refused with the rule's own reason rather than split, which is the
+	 * fork's TODO rather than a behaviour it ever had.
+	 */
+	private async promptForSwap(
+		player: Actor,
+		it: Item,
+		inBackpack: boolean,
+	): Promise<boolean> {
+		const pack = firstBackpack(player)!;
+		const from = inBackpack ? player.inventory! : pack.backpackInventory;
+		const to = inBackpack ? pack.backpackInventory : player.inventory!;
+
+		this.ClearOverlays();
+		// The caption names the panel the *other* item is chosen from, which is
+		// the C#'s own mapping and the only thing on screen that explains the
+		// digits being the opposite panel's slots: the item under the cursor is
+		// in the bag, so the digit names an inventory slot, and vice versa.
+		// (`RogueGame.cs:13945-13949`.)
+		this.AddOverlay(
+			new OverlayPopup(
+				inBackpack ? this.SWAP_ITEM_INVENTORY_MODE_TEXT : this.SWAP_ITEM_BACKPACK_MODE_TEXT,
+				this.MODE_TEXTCOLOR,
+				this.MODE_BORDERCOLOR,
+				this.MODE_FILLCOLOR,
+				new Point(0, 0),
 			),
 		);
-		return false;
+		this.RedrawPlayScreen();
+
+		let actionDone = false;
+		let loop = true;
+		while (loop) {
+			const key = await this.m_UI.UI_WaitKey();
+			if (key.key === "Escape") {
+				loop = false;
+			} else {
+				const choice = this.KeyToChoiceNumber(key);
+				if (choice >= 0) {
+					// `KeyToChoiceNumber` answers 1-based, and the C# maps that to
+					// a 0-based slot with 10 wrapping to 0 (`:13960-13962`).
+					const slot = choice === 0 ? 9 : choice - 1;
+					const swapItem = from.getItem(slot);
+					if (swapItem != null) {
+						if (swapItem instanceof ItemBackpack) {
+							// The bag itself is a slot of the player's own pack, and
+							// swapping with it is not a thing.
+							this.AddMessage(
+								this.MakeErrorMessage("That's your backpack. Choose a different item."),
+							);
+						} else {
+							const verdict = this.m_Rules.canActorMoveItemToBackpack(player, swapItem, pack, false);
+							if (!verdict.ok) {
+								this.AddMessage(
+									this.MakeErrorMessage(moveRefusalMessage(swapItem, pack, verdict.reason)),
+								);
+							} else {
+								// The exchange: out first, then in. Both directions, so
+								// no quantity is ever in two places at once.
+								from.removeAllQuantity(swapItem);
+								to.removeAllQuantity(it);
+								from.addAll(it);
+								to.addAll(swapItem);
+								actionDone = true;
+								loop = false;
+							}
+						}
+					}
+				}
+			}
+			this.RedrawPlayScreen();
+		}
+
+		this.ClearOverlays();
+		if (actionDone) this.SpendActorActionPoints(player, Rules.BASE_ACTION_COST);
+		return actionDone;
+	}
+
+	/**
+	 * C# `HandlePlayerDestroyItem` -- `RogueGame.cs:13185-13206`, Release 7-6.
+	 *
+	 * The one inventory-key command that needs a *confirm*: it removes the item
+	 * from the world for good, so the C# asks `MakeYesNoMessage` and waits. The
+	 * answer and the removal are the whole handler.
+	 *
+	 * The target is whatever slot the cursor is over -- the player's own pack,
+	 * or an open backpack (`isBackpack` in the C#), which is the arm
+	 * `MouseToInventoryItem` cannot answer on its own: it reports which
+	 * inventory the hit was in, and the backpack's own inventory object is what
+	 * identifies it.
+	 *
+	 * **No AP and no turn spent**, matching the reference: the C# returns void
+	 * and its dispatch site leaves `loop` alone. It is async here only because
+	 * `WaitYesOrNo` is a promise.
+	 */
+	async HandlePlayerDestroyItem(player: Actor, mousePos: Point): Promise<void> {
+		const hit = this.MouseToInventoryItem(mousePos);
+		const it = hit.result;
+		if (hit.inv == null || it == null) return;
+
+		const pack = firstBackpack(player);
+		const inBackpack = pack != null && hit.inv === pack.backpackInventory;
+		if (!inBackpack && hit.inv !== player.inventory) return;
+
+		this.AddMessage(this.MakeYesNoMessage(`Permanently destroy ${it.theName}`));
+		this.RedrawPlayScreen();
+		if (await this.WaitYesOrNo()) {
+			hit.inv.removeAllQuantity(it);
+		}
+		this.ClearMessages();
+		this.RedrawPlayScreen();
+	}
+
+	/**
+	 * C# `HandlePlayerCookFood` -- `RogueGame.cs:13126-13183`, Release 7-6, with
+	 * `DoCookFood` at `:21692-21753`.
+	 *
+	 * The player-facing half of `Feature.Cooking`. What it does is narrower than
+	 * "cooks the food": it moves **one quantity** of the raw stack off the player
+	 * and onto the burning tile beside them, and `CookFoodOnFires`
+	 * (`RogueGame.ts:5749`) does the cooking on later turns -- which is the C#'s
+	 * "for the player though, cooking takes 3 turns on the fire" and why the
+	 * handler itself never produces a cooked item.
+	 *
+	 * Two delibrate narrowings against the reference, both in the C#'s own
+	 * favour and both recorded here rather than silently kept:
+	 *
+	 *  - **The fire search stops at the first free burning tile.** The C# walks
+	 *    `Direction.COMPASS` and breaks out early on a `Barrel` or `Campfire`
+	 *    (its "prefer receptacles and campfires over cars" comment), which this
+	 *    keeps; what it does not copy is the C#'s free-space test, which reads
+	 *    `inv.IsEmpty` -- the *player's* inventory -- rather than the fire's.
+	 *    That is a bug in the reference (an empty inventory is not an empty
+	 *    fire), so the port asks the fire whether it has room instead and gets
+	 *    the same answer the C# means to give.
+	 *  - **An NPC never reaches this method.** `DoCookFood` handles "not the
+	 *    player" by cooking the meat immediately, and the only caller that arm
+	 *    has is the fork's NPC cooking AI, which the port does not have. So the
+	 *    immediate branch is written for the actor it is called on and the
+	 *    player path is the one that is reachable.
+	 */
+	async HandlePlayerCookFood(player: Actor, mousePos: Point): Promise<boolean> {
+		const hit = this.MouseToInventoryItem(mousePos);
+		// C# `:13134`: the cook handler wants the player's own pack -- the
+		// backpack's items are two rows away in a bag and the C# excludes them,
+		// unlike the destroy handler above.
+		if (hit.inv !== player.inventory) return false;
+		const it = hit.result;
+		if (it == null) return false;
+
+		if (!(it instanceof ItemFood)) return false;
+		const verdict = this.m_Rules.canActorCookFoodItem(player, it);
+		if (!verdict.can) {
+			this.AddMessage(this.MakeErrorMessage(`Cannot cook ${it.theName} : ${verdict.reason}.`));
+			return false;
+		}
+
+		// Find the fire: the first burning neighbour with room for the piece,
+		// preferring a barrel or a campfire over a burning car.
+		const map = player.location.map!;
+		let cookingFire: Point | null = null;
+		for (const dir of Direction.COMPASS) {
+			const pt = dir.applyTo(player.location.position);
+			if (!map.isInBoundsPoint(pt)) continue;
+			const mapObj = map.getMapObjectAt(pt.x, pt.y);
+			if (mapObj === null || !mapObj.isOnFire) continue;
+			if (cookingFire === null) cookingFire = pt;
+			if (mapObj instanceof Barrel || mapObj instanceof Campfire) {
+				cookingFire = pt;
+				break;
+			}
+		}
+		if (cookingFire === null) {
+			this.AddMessage(
+				this.MakeErrorMessage("Cannot cook : no space left on the fire for the raw meat."),
+			);
+			return false;
+		}
+
+		this.DoCookFood(player, it, cookingFire);
+		return true;
+	}
+
+	/**
+	 * C# `DoCookFood` -- `RogueGame.cs:21692-21753`, Release 7-6.
+	 *
+	 * One quantity of raw meat becomes one piece cooking on a fire. The AP is
+	 * spent here rather than in the handler because the C# spends it here too,
+	 * and because `DoCookFood` is the fork's shared entry point for both the
+	 * player's command and the NPC arm.
+	 *
+	 * The piece dropped is a fresh instance of the same model rather than the
+	 * stack itself, so a stack of six raw rabbits is not consumed whole, and
+	 * `isForbiddenToAI` keeps an NPC from walking off with the player's dinner
+	 * while it cooks -- the C#'s "lazy workaround", kept with its own comment
+	 * attached.
+	 */
+	DoCookFood(actor: Actor, food: ItemFood, chosenFire: Point): void {
+		this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+
+		const cookingPiece = new ItemFood(food.model, food.bestBefore?.turnCounter);
+		cookingPiece.quantity = 1;
+		actor.location.map!.dropItemAt(cookingPiece, chosenFire);
+		cookingPiece.isForbiddenToAI = true;
+
+		actor.inventory!.consume(food);
+
+		// The sizzle. Both tiers use `playIfNotAlreadyPlaying` in the C# and so
+		// they do here: a fire already hissing should not gain a second hiss
+		// from one piece of meat.
+		if (actor.isPlayer) {
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.COOKING_SIZZLE_PLAYER);
+		} else if (this.isAudibleToPlayer(actor.location, NOISE_RADII.QUIET)) {
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.COOKING_SIZZLE_NEARBY);
+		}
 	}
 
 	MouseToInventoryItem(screen: Point): {
@@ -10541,21 +11543,38 @@ inv.removeAllQuantity(it);
 				),
 			);
 			this.m_MusicManager.stop();
-			// The third `Feature.ExtendedAudio` reader, and the one that is a
-			// *choice* rather than an addition. The fork replaced the vanilla
-			// `UNDEAD_EAT` with a distance-tiered pair and plays the player tier
-			// here (`RogueGame.cs:21582`); the port still plays the vanilla id. So
-			// the gate is over the id, not over whether to make a noise: under
-			// CLASSIC a feast is exactly as loud as it has always been, and under
-			// STILL_ALIVE it is the file the fork shipped for it.
-			//
-			// **Not ported: the NPC arm** (`RogueGame.cs:21584`,
-			// `UNDEAD_EAT_NEARBY` at `QUIET_NOISE_RADIUS`) for the same reason as
-			// the fishing cast's: the port has no radius-bearing audibility
-			// predicate to test.
+		}
+
+		// Sound effect, C# `:11832-11836`: two independent `if`s, and both are
+		// outside the visible check, because hearing a feast and seeing one are
+		// different questions. The player's own arm is the third
+		// `Feature.ExtendedAudio` reader, and it is a *choice* rather than an
+		// addition: the fork replaced the vanilla `UNDEAD_EAT` with a
+		// distance-tiered pair, so under CLASSIC a feast is exactly as loud as it
+		// has always been, and under STILL_ALIVE it is the file the fork shipped
+		// for it. The gate is over the id, not over whether to make a noise.
+		//
+		// The second arm is the NPC one -- `UNDEAD_EAT_NEARBY` at
+		// `QUIET_NOISE_RADIUS`, so a zombie eating a corpse is heard by everyone
+		// else on the map. A player eating their own corpse satisfies both `if`s
+		// and plays both tiers, which is the reference's own arrangement.
+		//
+		// The comment this replaces said the NPC arm was unportable "for the same
+		// reason as the fishing cast's: the port has no radius-bearing audibility
+		// predicate". That was true when it was written and is not any more --
+		// `isAudibleToPlayer(location, radius)` has been on the class since the
+		// fork's sound work began, and three other arms in this file use it.
+		if (a.isPlayer) {
 			this.m_SoundManager.play(
 				hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio)
 					? GameSounds.UNDEAD_EAT_PLAYER
+					: GameSounds.UNDEAD_EAT,
+			);
+		}
+		if (this.isAudibleToPlayer(a.location, NOISE_RADII.QUIET)) {
+			this.m_SoundManager.playIfNotAlreadyPlaying(
+				hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio)
+					? GameSounds.UNDEAD_EAT_NEARBY
 					: GameSounds.UNDEAD_EAT,
 			);
 		}
@@ -15624,7 +16643,17 @@ inv.removeAllQuantity(it);
 	async HandleAiActor(aiActor: Actor): Promise<void> {
 		let desiredAction = aiActor.controller!.getAction(this);
 
-		if (
+		// C# `:11155-11168`: incapactitated is the first arm in the chain, and it
+		// is the only one that is not dice-rolled. If the generated action is
+		// legal it overrides the controller's choice; either way the actor spends
+		// its turn, because the C# calls `SpendActorActionPoints` unconditionally
+		// after the arm -- the actor is *acting*, just not usefully.
+		if (aiActor.isIncapacitated) {
+			const incapacitatedAction = this.GenerateIncapacitatedAction(aiActor);
+			if (incapacitatedAction != null && incapacitatedAction.isLegal())
+				desiredAction = incapacitatedAction;
+			this.SpendActorActionPoints(aiActor, Rules.BASE_ACTION_COST);
+		} else if (
 			this.m_Rules.isActorInsane(aiActor) &&
 			this.m_Rules.rollChance(Rules.SANITY_INSANE_ACTION_CHANCE)
 		) {
@@ -15634,6 +16663,15 @@ inv.removeAllQuantity(it);
 		}
 
 		if (desiredAction != null) {
+			// C# `:11182-11183`: the random undead/dog vocalisation, gated on the
+			// fork's `AIVocalisationChance` option so a district of zombies is not
+			// a wall of growls. The dog's *emote* barks come through `DoSay`'s
+			// own call, so this is the one that fires on an ordinary AI turn.
+			if (
+				(aiActor.model.abilities.isUndead || GameActors.isDogBranch(aiActor.model)) &&
+				this.m_Rules.rollChance(AIVOCALISATION_CHANCE_PERCENT)
+			)
+				this.PlayNonHumanVocalAudio(aiActor);
 			if (desiredAction.isLegal()) await desiredAction.perform();
 			else {
 				this.SpendActorActionPoints(aiActor, Rules.BASE_ACTION_COST);
@@ -17107,7 +18145,12 @@ updateAdvisorHintBanner(): void {
 		if (activityLine != null) lines.push(activityLine);
 		else lines.push(" "); // blank activity line
 		if (actor.model.abilities.hasToSleep) {
-			if (rules.isActorExhausted(actor)) lines.push("Exhausted!");
+			// C# `:31454`, Release 7-2. The order matters as little as the
+			// icons' -- the statuses are mutually exclusive -- but the line has
+			// to be here rather than after `Sleepy.`, or a stunned actor reads
+			// as merely tired.
+			if (actor.isIncapacitated) lines.push("Stunned!");
+			else if (rules.isActorExhausted(actor)) lines.push("Exhausted!");
 			else if (rules.isActorSleepy(actor)) lines.push("Sleepy.");
 		}
 		if (actor.model.abilities.hasToEat) {
@@ -17575,6 +18618,13 @@ updateAdvisorHintBanner(): void {
 			}
 		} else if (it instanceof ItemFood) {
 			lines.push(...this.DescribeItemFood(it));
+			// C# `RogueGame.cs:32026-32030`, Release 7-6: the "to cook" hint, and
+			// only for a piece of meat that wants cooking. It lands in
+			// `inInvAdditionalDesc`, which is emitted *last* of the special keys
+			// below.
+			if (it.canBeCooked && hasFeature(this.m_Session.ruleset, Feature.Cooking)) {
+				inInvAdditionalDesc = `to cook : <${key(PlayerCommand.COOK_FOOD)}>`;
+			}
 		} else if (it instanceof ItemMedicine) {
 			lines.push(...this.DescribeItemMedicine(it));
 		} else if (it instanceof ItemBarricadeMaterial) {
@@ -17668,6 +18718,11 @@ updateAdvisorHintBanner(): void {
 				lines.push(`to use : <LMB> or <Ctrl-${iSlot + 1}>`);
 			if (!it.isEquipped) lines.push("to drop : <RMB>");
 			lines.push(`to give : <${key(PlayerCommand.GIVE_ITEM)}>`);
+			// C# `RogueGame.cs:32125`, Release 7-6. Unconditional for anything in
+			// the player's own pack: the command exists for every item, and
+			// `HandlePlayerDestroyItem` refuses a target it cannot reach rather
+			// than a target that "cannot be destroyed".
+			lines.push(`to destroy : <${key(PlayerCommand.DESTROY_ITEM)}>`);
 			if (inInvAdditionalDesc != null) lines.push(inInvAdditionalDesc);
 		} else {
 			lines.push(" ");
@@ -18487,7 +19542,20 @@ updateAdvisorHintBanner(): void {
 			// loud noise.
 			this.OnLoudNoise(newLocation.map!, newLocation.position, "A loud SCREAM");
 
+			// C# `:17369-17376` -- the scream itself, which the message-only arm
+			// below used to stand in for. The fork rolled its own chance inside
+			// `DoScream` (`rollForIt: true`, 10%) and the port rolled one here and
+			// gated the message on it, so the two are the same roll *and* the
+			// message now waits on the sound's own gate.
+			this.DoScream(actor, false, true);
+
 			// player hears?
+			// C# `:20667` -- the terrfied message, which the fork plays *inside*
+			// `DoScream` and only on the near band. The port's copy of it is older
+			// than the fork's and ran on its own 10% roll, so the text arrived
+			// without the sound and the sound without the text. Kept rather than
+			// deleted: the message and the sound are now the same event, and a
+			// distant fleeing survivor is heard *and* described.
 			if (
 				this.m_Rules.rollChance(PLAYER_HEAR_SCREAMS_CHANCE) &&
 				!this.IsVisibleToPlayer(actor)
@@ -18756,6 +19824,43 @@ updateAdvisorHintBanner(): void {
 		// flag.
 		trap.isTriggered = true;
 
+		/*
+		 * audio, C# `:17645-17704`. A tier for each trap kind -- the *player*
+		 * stepping on it (`*_PLAYER`), an NPC within earshot (`*_NEARBY`), and
+		 * further out (`*_FAR`) -- with the spike playing the *same* id in both
+		 * near bands rather than a pair, and barbed wire playing nothing here at
+		 * all: three tiers rather than the usual two because a trap is something
+		 * the player is often standing next to while it goes off elsewhere.
+		 *
+		 * The fork's screams ride along: a bear trap or a spike that catches an
+		 * NPC is followed by `DoScream` (`:17679`, `:17682`, `:17696`, `:17699`).
+		 */
+		if (victim !== null && hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio)) {
+			const trapName = trap.theName;
+			const location = new Location(map, pos);
+			if (victim.isPlayer) {
+				const id = TRAP_PLAYER_SOUND[trapName];
+				if (id !== undefined) this.m_SoundManager.play(id);
+			} else if (this.isAudibleToPlayer(location, NOISE_RADII.QUIET)) {
+				const id = TRAP_NEAR_SOUND[trapName];
+				if (id !== undefined) {
+					this.m_SoundManager.play(id);
+					// C# `:17678`, `:17682`: a bear trap or a spike that catches an
+					// NPC is followed by the victim's scream, and the barbed wire
+					// and the can are not -- which is the same shape as the id
+					// tables above, so the lookup answering `undefined` is what
+					// silences it.
+					this.DoScream(victim);
+				}
+			} else if (this.isAudibleToPlayer(location, NOISE_RADII.MODERATE)) {
+				const id = TRAP_FAR_SOUND[trapName];
+				if (id !== undefined) {
+					this.m_SoundManager.play(id);
+					this.DoScream(victim);
+				}
+			}
+		}
+
 		// effect: damage on victim? (actor)
 		const damage = model.damage * trap.quantity;
 		if (damage > 0 && victim !== null) {
@@ -18917,10 +20022,6 @@ updateAdvisorHintBanner(): void {
 		// what kept it: harmless for a *bot*, a free action for a person.
 		this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
 
-		// spend AP. Not "if AI" as the C# has it (RogueGame.cs:13140-13142) --
-		// see below.
-		this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
-
 		// 1. If spot not available, cancel.
 		//
 		// Moved ahead of `BeforePlayerEnterDistrict`, which is where the C# has
@@ -18936,31 +20037,34 @@ updateAdvisorHintBanner(): void {
 		// inside it, leaving background district simulation dead for the rest of
 		// the run. The port stubs the thread, so only the stall applied here.
 		//
-		// The AP spend in these two branches is a divergence from the C#, which
+		// Ahead of the prepare is an optimization, not a replacement for the
+		// C#'s position: the prepare runs the destination district's catch-up,
+		// and an actor in it can walk onto the entry tile while that runs. So
+		// the same test runs again below, after the prepare -- this site exists
+		// to skip the expensive catch-up when the tile is *already* blocked,
+		// that one to catch it when the catch-up is what blocked it.
+		//
+		// The AP spend in these branches is a divergence from the C#, which
 		// returns bare. The fix is the idiom the C# itself uses a few lines above
 		// for a failed `TryActorLeaveTile`: spend, then return.
-		const other = exit.toMap!.getActorAtPoint(exit.toPosition);
-		if (other !== null) {
-			if (isPlayer)
-				this.AddMessage(
-					this.MakeErrorMessage(`${other.name} is blocking your way.`),
-				);
+		const exitBlockedMessage = (): string | null => {
+			const other = exit.toMap!.getActorAtPoint(exit.toPosition);
+			if (other !== null) return `${other.name} is blocking your way.`;
+			const blockingObj = exit.toMap!.getMapObjectAtPoint(exit.toPosition);
+			if (blockingObj !== null) {
+				const canJump =
+					blockingObj.isJumpable && this.m_Rules.hasActorJumpAbility(actor);
+				const ignoreIt = blockingObj.isCouch;
+				if (!canJump && !ignoreIt)
+					return `${blockingObj.aName} is blocking your way.`;
+			}
+			return null;
+		};
+		const blockedEarly = exitBlockedMessage();
+		if (blockedEarly !== null) {
+			if (isPlayer) this.AddMessage(this.MakeErrorMessage(blockedEarly));
 			this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
 			return true;
-		}
-		const blockingObj = exit.toMap!.getMapObjectAtPoint(exit.toPosition);
-		if (blockingObj !== null) {
-			const canJump =
-				blockingObj.isJumpable && this.m_Rules.hasActorJumpAbility(actor);
-			const ignoreIt = blockingObj.isCouch;
-			if (!canJump && !ignoreIt) {
-				if (isPlayer)
-					this.AddMessage(
-						this.MakeErrorMessage(`${blockingObj.aName} is blocking your way.`),
-					);
-				this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
-				return true;
-			}
 		}
 
 		// if player is leaving and changing district, prepare district.
@@ -18974,14 +20078,45 @@ updateAdvisorHintBanner(): void {
 			await this.BeforePlayerEnterDistrict(exit.toMap!.district!);
 		}
 
+		// 1b. Re-check the destination now that the prepare has run.
+		//
+		// The catch-up above simulated the destination district for every turn
+		// it was behind, and an actor in it can have walked onto the entry tile
+		// at any point during that -- the window the check above cannot see.
+		// `placeActor` throws on an occupied tile ("another actor already at
+		// position"), which is how this site was found: a reported crash on a
+		// district stair whose far side was occupied *after* the interlude ran,
+		// not before.
+		//
+		// Only when the prepare ran: otherwise there is no `await` between the
+		// check above and the placement below, and single-threaded execution
+		// keeps that answer authoritative.
+		if (playerChangedDistrict) {
+			const lateBlocked = exitBlockedMessage();
+			if (lateBlocked !== null) {
+				if (isPlayer) this.AddMessage(this.MakeErrorMessage(lateBlocked));
+				this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
+				// The prepare cleared the player's view and stopped the music,
+				// expecting the move to complete and `AfterPlayerEnterDistrict`
+				// (at the end of this method) to rebuild the view. The move is
+				// not completing, so run that rebuild here; with the player
+				// still on the origin map it rebuilds the origin view, which is
+				// what is wanted. Music self-heals on the next `UpdateBgMusic`
+				// tick, as it does for every event track.
+				this.AfterPlayerEnterDistrict();
+				return true;
+			}
+		}
+
 		/////////////////////////////////////
 		// 2. Remove from previous map (+ corpse)
 		// 3. Enter map (+corpse).
 		// 4. Handle followers.
 		/////////////////////////////////////
 
-		// The "is the destination free?" checks are above, before the district
-		// prepare, for the reason given there.
+		// The "is the destination free?" checks are both above the removal: the
+		// fast path before the district prepare, the authoritative one after
+		// it, for the reasons given there.
 
 		// 2. Remove from previous map (+corpse)
 		if (this.IsVisibleToPlayer(actor))
@@ -19367,19 +20502,28 @@ updateAdvisorHintBanner(): void {
 					// and `IMusicManager` has no per-id `stop()` -- `stop()` is global,
 					// so using it would silence the soundtrack. The overlap is audible
 					// and harmless; silencing the music is neither.
-					if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
-						this.m_SoundManager.play(
-							GameSounds.FISHING_REEL_PLAYER,
-						);
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.play(
+					GameSounds.FISHING_REEL_PLAYER,
+				);
 
-					// `AddMessageIfAudibleForPlayer` rather than `AddMessage`: the C# says
-					// this particular message is what interrupts a long wait, so a bite
-					// during one is the intended way to be interrupted.
-					this.AddMessageIfAudibleForPlayer(
-						actor.location,
-						this.MakeMessage(actor, "caught a fish!"),
-					);
-				}
+			// `AddMessageIfAudibleForPlayer` rather than `AddMessage`: the C# says
+			// this particular message is what interrupts a long wait, so a bite
+			// during one is the intended way to be interrupted.
+			this.AddMessageIfAudibleForPlayer(
+				actor.location,
+				this.MakeMessage(actor, "caught a fish!"),
+			);
+			} else if (this.isAudibleToPlayer(actor.location, NOISE_RADII.QUIET)) {
+				// The NPC arm, C# `:23113-23117`: a survivor listening hears
+				// someone else land a fish. The C# pairs it with a "caught a fish."
+				// message gated on visibility, because an NPC who is heard but not
+				// seen is a fish that arrived with no explanation.
+				if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+					this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.FISHING_REEL_NEARBY);
+				if (this.IsVisibleToPlayer(actor))
+					this.AddMessage(this.MakeMessage(actor, "caught a fish."));
+			}
 
 				const rawFish = Models.items.get(ItemID.FOOD_RAW_FISH) as ItemFoodModel;
 				const bestBefore =
@@ -20689,6 +21833,42 @@ updateAdvisorHintBanner(): void {
 						await this.AnimDelay(isPlayer ? DELAY_NORMAL : DELAY_SHORT);
 					}
 				}
+			} else if (
+				weapon.model.id === ItemID.RANGED_STUN_GUN &&
+				!defender.model.abilities.isUndead
+			) {
+				// C# `:18888-18898`, Release 7-2. A stun gun does no damage, so
+				// this is the `else` arm of the damage check: the shot lands, the
+				// damage is zero, and instead the defender is stunned for
+				// `STUN_WEAPON_EFFECT_TURNS` turns. The C# adds the turns to the
+				// *actor's* clamped setter, so a second stun within the window
+				// does not extend it past `Rules.MAXIMUM_INCAPACITATED_TURNS`.
+				defender.stunnedTurns = Math.min(
+					defender.stunnedTurns + RogueGame.STUN_WEAPON_EFFECT_TURNS,
+					Rules.MAXIMUM_INCAPACITATED_TURNS,
+				);
+				if (isDefVisible) {
+					this.AddMessage(
+						this.MakeMessage(
+							attacker,
+							this.Conjugate(attacker, attack.verb),
+							defender,
+							" with a stun gun.",
+						),
+					);
+					try {
+						this.AddOverlay(
+							new OverlayImage(
+								this.MapToScreen(defender.location.position),
+								GameImages.ICON_RANGED_MISS,
+							),
+						);
+					} catch (e) {
+						reportSwallowed("DoSingleRangedAttack", e);
+					}
+					this.RedrawPlayScreen();
+					await this.AnimDelay(isPlayer ? DELAY_NORMAL : DELAY_SHORT);
+				}
 			} else {
 				if (isDefVisible) {
 					this.AddMessage(
@@ -20932,25 +22112,86 @@ updateAdvisorHintBanner(): void {
 	// tile-fire seeding at `:20036`. The port had two parameters, so its blast path
 	// could not know *what* had exploded and the seeding was unreachable.
 	//
-	// **Only the tile-fire half of the C#'s `itemModel` use is ported here, and that
-	// is a deliberate narrowing rather than an oversight.** `DoBlast` also reads the
-	// model for a three-way SFX switch on the primed id (`:19580`, `:19636`,
-	// `:19662`), the BFG plasma icon (`:19693`), and the smoke screen and flashbang
-	// deployments (`:19697`, `:19699`); `ApplyExplosionDamage` additionally uses it
-	// for the plasma charge's four special cases (`:19871`, `:19902`, `:19922`,
-	// `:20006`, `:20028`). None of that is reachable in the port today --
-	// `DeploySmokeScreen` and `DetonateFlashbang` do not exist here, the BFG and the
-	// grenade launcher are unported, and no code path primes a plasma charge -- so
-	// porting it would be ~200 lines of unreachable transcription. What *is* ported
-	// is exactly equivalent for every explosive the port can detonate: see the
-	// seeding note in `ApplyExplosionDamage` for why gating on `causesTileFires`
-	// alone matches the C#'s `IsFlameWeapon || CausesTileFires`.
+	// **Only the plasma-charge half of the C#'s `itemModel` use is unported
+	// here, and that is now the deliberate narrowing rather than an oversight.**
+	// `DoBlast` reads the model for the SFX switch on the primed id, for the
+	// smoke screen and flashbang deployments, and for the plasma icon; the
+	// first three are ported below. What remains unported is the plasma
+	// charge's four special cases in `ApplyExplosionDamage`, because no code
+	// path in the port primes one -- so it would be unreachable transcription.
+	// What *is* ported is exactly equivalent for every explosive the port can
+	// detonate: see the seeding note in `ApplyExplosionDamage` for why gating on
+	// `causesTileFires` alone matches the C#'s `IsFlameWeapon || CausesTileFires`.
 	async DoBlast(location: Location, blastAttack: BlastAttack, itemModel: ItemModel): Promise<void> {
 		// noise.
 		this.OnLoudNoise(location.map!, location.position, "A loud EXPLOSION");
 
 		// blast icon vs audio.
 		let isVisible = this.IsVisibleToPlayer(location);
+		// SFX, C# `:19576-19628`. The fork replaced the vanilla "explosion is an
+		// explosion" with a switch on the *primed id* -- a fuel can, a grenade, a
+		// molotov, dynamite, a fuel pump, a smoke grenade, a flashbang and the
+		// plasma charge each get their own recording, and three of them (fuel can,
+		// molotov, flashbang, plasma) also switch on whether the player can *see*
+		// the blast, because a distant one is a different recording from a
+		// near one.
+		//
+		// Gated on `ExtendedAudio` at the top, exactly like the other four arms
+		// this feature added: under CLASSIC an explosion is as loud as it has
+		// always been.
+		if (
+			(isVisible || this.isAudibleToPlayer(location, NOISE_RADII.LOUD)) &&
+			hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio)
+		) {
+			const id = itemModel.id;
+			switch (id) {
+				case ItemID.EXPLOSIVE_FUEL_CAN_PRIMED:
+					this.m_SoundManager.play(
+						isVisible ? GameSounds.FUEL_CAN_VISIBLE : GameSounds.FUEL_CAN_AUDIBLE,
+					);
+					break;
+				case ItemID.EXPLOSIVE_GRENADE_PRIMED:
+				case ItemID.EXPLOSIVE_HOLY_HAND_GRENADE_PRIMED:
+					this.m_SoundManager.play(GameSounds.GRENADE_VISIBLE);
+					break;
+				case ItemID.EXPLOSIVE_MOLOTOV_PRIMED:
+					this.m_SoundManager.play(
+						isVisible ? GameSounds.MOLOTOV_VISIBLE : GameSounds.MOLOTOV_AUDIBLE,
+					);
+					break;
+				case ItemID.EXPLOSIVE_DYNAMITE_PRIMED:
+				case ItemID.EXPLOSIVE_C4_PRIMED:
+					this.m_SoundManager.play(GameSounds.DYNAMITE_VISIBLE);
+					break;
+				// `:19607-19611`: no visible/audible pair here, unlike the fuel
+				// can. The pump is the bigger of the two explosions and the fork
+				// plays the same recording at any distance it can be heard.
+				case ItemID.EXPLOSIVE_FUEL_PUMP_PRIMED:
+					this.m_SoundManager.play(GameSounds.FUEL_PUMP_VISIBLE);
+					break;
+				case ItemID.EXPLOSIVE_SMOKE_GRENADE_PRIMED:
+					// C# `:19697-19698`: the smoke cloud itself, now ported.
+					this.m_SoundManager.play(GameSounds.SMOKE_GRENADE);
+					this.DeploySmokeScreen(location.map!, location.position);
+					break;
+				case ItemID.EXPLOSIVE_FLASHBANG_PRIMED:
+					// The flashbang's *flash* is the half that stuns, and it is
+					// `DetonateFlashbang` (`:20272`): the bang and the flash are
+					// one event and the C# plays them from the same place.
+					this.m_SoundManager.play(
+						isVisible ? GameSounds.FLASHBANG_VISIBLE : GameSounds.FLASHBANG_AUDIBLE,
+					);
+					this.DetonateFlashbang(location.map!, location.position);
+					break;
+				case ItemID.EXPLOSIVE_PLASMA_CHARGE_PRIMED:
+					this.m_SoundManager.play(
+						isVisible ? GameSounds.PLASMA_BURST_VISIBLE : GameSounds.PLASMA_BURST_AUDIBLE,
+					);
+					break;
+				default:
+					break;
+			}
+		}
 		if (isVisible) {
 			// Slice 8 is ported, so MapToScreen no longer throws; the try/catch is
 			// now redundant (kept for Phase 8 cleanup).
@@ -21001,11 +22242,78 @@ updateAdvisorHintBanner(): void {
 			}
 		}
 
-		// alpha10 bug fix; clear overlays only if action is visible
-		if (isVisible) this.ClearOverlays();
+	// alpha10 bug fix; clear overlays only if action is visible
+	if (isVisible) this.ClearOverlays();
+}
+
+/**
+ * C# `DetonateFlashbang` -- `RogueGame.cs:20272-20281`, Release 7-2.
+ *
+ * The flash half of a flashbang: the actor at the blast's tile is stunned for
+ * `RogueGame.STUN_WEAPON_EFFECT_TURNS` turns, unless they are undead -- a
+ * zombie does not blink. This is called from the blast SFX switch
+ * (`DoBlast`'s `EXPLOSIVE_FLASHBANG_PRIMED` case) and from the wave application
+ * (`:19802-19804`), so every tile the blast reaches gets its own call.
+ */
+DetonateFlashbang(map: Map, pt: Point): void {
+	const actor = map.getActorAtPoint(pt);
+	if (actor != null && !actor.model.abilities.isUndead) {
+		actor.flashbangedTurns = Math.min(
+			actor.flashbangedTurns + RogueGame.STUN_WEAPON_EFFECT_TURNS,
+			Rules.MAXIMUM_INCAPACITATED_TURNS,
+		);
+		if (this.IsVisibleToPlayer(actor)) {
+			this.AddMessage(this.MakeMessage(actor, "is stunned by a flashbang"));
+		}
+	}
+}
+
+/**
+ * C# `DeploySmokeScreen` -- `RogueGame.cs:20234-20270`, Release 7-2.
+ *
+ * A smoke grenade's effect: a smoke-screen map object on the tile for two hours
+ * (which blocks sight -- the object is what does the work, not this method),
+ * plus three side effects the C# applies whether or not the object is placed.
+ *
+ * The two-hours timer is the C#'s `TaskRemoveMapObject`; the port's `addTimer`
+ * takes a `TaskRemoveDecoration`, so the cloud goes on as a tile decoration and
+ * comes off with the task the port already has. That is a divergence in kind --
+ * a decoration is drawn under the actor rather than as an object on the tile --
+ * and it is the same shape the fire decoration already uses, so it is the shape
+ * this port knows how to time.
+ */
+DeploySmokeScreen(map: Map, pt: Point): void {
+	const tile = map.getTileAt(pt.x, pt.y);
+
+	// put smoke down, unless something is already there or the tile cannot hold it.
+	if (map.getMapObjectAtPoint(pt) === null) {
+		if (
+			map.getTileAt(pt.x, pt.y)?.model.isWalkable &&
+			map.getExitAt(pt) === null
+		) {
+			tile?.addDecoration(GameImages.EFFECT_SMOKE_SCREEN);
+			map.addTimer(
+				new TaskRemoveDecoration(
+					WorldTime.TURNS_PER_HOUR * 2,
+					pt.x,
+					pt.y,
+					GameImages.EFFECT_SMOKE_SCREEN,
+				),
+			);
+		}
 	}
 
-	// C# ApplyExplosionWave — RogueGame.cs:14240
+	// smother tile fires.
+	if (tile !== null && tile.isOnFire) this.extinguishOnFireTile(tile);
+
+	// clear any and all scents.
+	for (const odor of [Odor.LIVING, Odor.SUPPRESSOR, Odor.UNDEAD_MASTER]) {
+		const scent = map.getScentByOdor(odor, pt);
+		if (scent != null) map.removeScent(scent);
+	}
+}
+
+// C# ApplyExplosionWave — RogueGame.cs:14240
 	// async: C# blocks on ApplyExplosionWaveSub.
 	async ApplyExplosionWave(
 		center: Location,
@@ -21094,6 +22402,23 @@ updateAdvisorHintBanner(): void {
 		blast: BlastAttack,
 		itemModel: ItemModel,
 	): Promise<boolean> {
+		// C# `:19795-19808`: two arms the damage one hides behind, and the
+		// smoke grenade's is the first. Both are *separate* from the damage
+		// check because neither explosive does any -- `ApplyExplosionDamage`
+		// would be a no-op on every tile of both waves.
+		if (itemModel.id === ItemID.EXPLOSIVE_SMOKE_GRENADE_PRIMED) {
+			this.DeploySmokeScreen(blastCenter.map!, pt);
+			// Show if visible, which is what makes the wave loop redraw.
+			if (this.IsVisibleToPlayer(blastCenter.map!, pt)) return true;
+			return false;
+		}
+		if (itemModel.id === ItemID.EXPLOSIVE_FLASHBANG_PRIMED) {
+			this.DetonateFlashbang(blastCenter.map!, pt);
+			// Show if visible, which is what makes the wave loop redraw.
+			if (this.IsVisibleToPlayer(blastCenter.map!, pt)) return true;
+			return false;
+		}
+
 		if (
 			blastCenter.map!.isInBoundsPoint(pt) &&
 			LOS.canTraceFireLine(
@@ -21785,6 +23110,18 @@ updateAdvisorHintBanner(): void {
 			speakerAI = speaker.controller as BaseAI | null;
 		}
 
+		// Both halves of a trade are read out of a controller: the speaker rates
+		// what it wants and the target rates what it is offered, through
+		// `speakerAI!` and `targetAI!` below. A controller-less actor has no mind
+		// to read — a model with no default controller, or an actor restored from
+		// a save before `reattachControllers` rebuilt them — and the crash that
+		// reports is `Cannot read properties of null (reading 'rateTradeOffer')`
+		// thrown out of the NPC chat that opened this. Bail instead: with no mind
+		// to read there is no pair to propose. The player's own half of the swap
+		// is exempt, because `target.isPlayer` routes it to the prompt below and
+		// the speaker's AI is the one being read there.
+		if (speakerAI === null || (targetAI === null && !target.isPlayer)) return;
+
 		// get an item the speaker would like from target inventory.
 		const pickAskedItem = (): { item: Item | null; rating: ItemRating } => {
 			// pick an item in target inventory the speaker wants, or any item if target
@@ -22034,6 +23371,12 @@ updateAdvisorHintBanner(): void {
 				this.RedrawPlayScreen();
 			}
 		}
+
+		// C# `:20578`, the last line of `DoSay`: the speaker's animal noise, if
+		// it has one. A dog that "says" GRRRRR WAF WAF barks; a dog that says waf
+		// yips. The text is the contract, which is why `FeralDogAI.FIGHT_EMOTES`
+		// is public.
+		this.PlayNonHumanVocalAudio(speaker, text);
 	}
 
 	// C# DoShout — RogueGame.cs:14835
@@ -22141,10 +23484,134 @@ updateAdvisorHintBanner(): void {
 			);
 			this.SpeakOverhead(actor, text);
 		}
+		// C# `:20634`, **outside** the visible arm: a dog's bark is not something
+		// the player has to be looking at, and the method's own distance test
+		// decides whether it is heard.
+		this.PlayNonHumanVocalAudio(actor, text);
+	}
+
+	/**
+	 * C# `PlayNonHumanVocalAudio` -- `RogueGame.cs:20744-20792`, Release 7-3.
+	 *
+	 * One method for every animal that makes a noise: dogs bark/growl/yip, the
+	 * undead branches growl, rats screech, the Sewers Thing growls. The fork's
+	 * reason for centralising it is the same as its reason for centralising the
+	 * ranged-weapon and bash ladders -- the call sites were each deciding for
+	 * themselves, and a caller that forgot left an animal silent.
+	 *
+	 * Two distance bands rather than the usual three, and the asymmetry is
+	 * deliberate: the *near* band (`QUIET`) carries six ids, the *far* band
+	 * (`LOUD`) carries exactly one -- a dog's `DOG_BARK_FAR`, played with a plain
+	 * `Play` rather than `PlayIfNotAlreadyPlaying` because a bark is short enough
+	 * that two in a row is a dog that barked twice.
+	 *
+	 * `fightEmotes` is what picks between the dog's three recordings: the caller
+	 * passes the *text* the dog just "said", and `FeralDogAI.FIGHT_EMOTES` holds
+	 * the three strings the AI emotes with. That is the fork's own mechanism and
+	 * it is kept -- a string compare on an emote is brittle, but it is the
+	 * contract between the AI and the sound, and changing it to an enum would
+	 * move the emotes' text with it.
+	 */
+	PlayNonHumanVocalAudio(actor: Actor, fightEmotes = ""): void {
+		if (!hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio)) return;
+		const isDog = GameActors.isDogBranch(actor.model);
+		if (this.isAudibleToPlayer(actor.location, NOISE_RADII.QUIET)) {
+			if (isDog) {
+				if (fightEmotes === FeralDogAI.FIGHT_EMOTES[0]) {
+					this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.DOG_FLEE);
+				} else if (fightEmotes === FeralDogAI.FIGHT_EMOTES[1]) {
+					this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.DOG_GROWL);
+				} else {
+					this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.DOG_BARK_NEARBY);
+				}
+			} else if (GameActors.isSkeletonBranch(actor.model)) {
+				this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.SKELETON_GROWL);
+			} else if (GameActors.isShamblerBranch(actor.model)) {
+				this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.SHAMBLER_GROWL);
+			} else if (GameActors.isRatBranch(actor.model)) {
+				this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.RAT_SCREECH);
+			} else if (actor.model === Models.actors.get(ActorID.SEWERS_THING)) {
+				this.m_SoundManager.playIfNotAlreadyPlaying(GameSounds.SEWERS_THING_GROWL);
+			}
+		} else if (
+			isDog &&
+			fightEmotes === FeralDogAI.FIGHT_EMOTES[2] &&
+			this.isAudibleToPlayer(actor.location, NOISE_RADII.LOUD)
+		) {
+			this.m_SoundManager.play(GameSounds.DOG_BARK_FAR);
+		}
+	}
+
+	/**
+	 * C# `DoScream` -- `RogueGame.cs:20642-20737`, Release 5-7.
+	 *
+	 * The fork's scream, which is both gendered and situational: a *dying* man
+	 * screams differently from a *terrified* one, and a woman differently from a
+	 * man, and the two are crossed into eight ids of which only four per sex are
+	 * reachable from the `Roll(0, 3)` -- the reference has one `switch` per band
+	 * and three `case`s each.
+	 *
+	 * Gated on `ExtendedAudio` rather than on a feature of its own, and gated at
+	 * the top of the method rather than at each call site: the fork's whole point
+	 * with this method was to stop every caller deciding for itself, so the gate
+	 * belongs where the decision is made.
+	 *
+	 * `rollForIt` is the third of the fork's hearing-chance gates
+	 * (`PLAYER_HEAR_SCREAMS_CHANCE`, 10%): a fleeing survivor screams on every
+	 * step, so without it the same 10% chance is rolled every turn and the player
+	 * either hears it constantly or never. Death and fire pass `false`, because
+	 * those are one-off events worth always hearing if in range.
+	 */
+	DoScream(victim: Actor, actorDied = false, rollForIt = false): void {
+		if (!hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio)) return;
+		if (rollForIt && !this.m_Rules.rollChance(SCREAM_CHANCE_PERCENT)) return;
+
+		const isMale = victim.doll.body.isMale;
+		// QUIET: close enough to hear which of the eight it is.
+		if (this.isAudibleToPlayer(victim.location, NOISE_RADII.QUIET)) {
+			let id: string;
+			if (isMale) {
+				id = actorDied
+					? GameSounds.SCREAM_NEARBY_09
+					: SCREAM_NEARBY_MALE[this.m_Rules.roll(0, SCREAM_NEARBY_MALE.length)];
+			} else {
+				id = actorDied
+					? GameSounds.SCREAM_NEARBY_04
+					: SCREAM_NEARBY_FEMALE[this.m_Rules.roll(0, SCREAM_NEARBY_FEMALE.length)];
+			}
+			this.m_SoundManager.play(id);
+			this.AddMessageIfAudibleForPlayer(
+				victim.location,
+				this.MakePlayerCentricMessage(
+					actorDied ? "You hear screams of agony" : "You hear screams of terror",
+					victim.location.position,
+				),
+			);
+		}
+		// MODERATE: far enough that the far pair answers, same shape.
+		else if (this.isAudibleToPlayer(victim.location, NOISE_RADII.MODERATE)) {
+			let id: string;
+			if (isMale) {
+				id = actorDied
+					? GameSounds.SCREAM_FAR_09
+					: SCREAM_FAR_MALE[this.m_Rules.roll(0, SCREAM_FAR_MALE.length)];
+			} else {
+				id = actorDied
+					? GameSounds.SCREAM_FAR_04
+					: SCREAM_FAR_FEMALE[this.m_Rules.roll(0, SCREAM_FAR_FEMALE.length)];
+			}
+			this.m_SoundManager.play(id);
+			this.AddMessageIfAudibleForPlayer(
+				victim.location,
+				this.MakePlayerCentricMessage(
+					actorDied ? "You hear screams of agony" : "You hear screams of terror",
+					victim.location.position,
+				),
+			);
+		}
 	}
 
 	// ── Browser port: speech bubbles (`(Gfx) Speech Bubbles`) ──────────────────
-
 	/**
 	 * Shows `text` in a bubble over `actor`'s tile.
 	 *
@@ -22164,13 +23631,24 @@ updateAdvisorHintBanner(): void {
 	 * - non-empty text, since a box with nothing in it is worse than no box.
 	 *
 	 * `turn` is stamped from the *actor's* map, which is what `DoEmote` stamps
-	 * its own message with, so a bubble and its log line expire together.
+	 * its own message with — and it is stamped **once**, when the box opens.
+	 * A second line inside the window overwrites `text` and leaves the turn
+	 * alone, so the box clears `SPEECH_BUBBLE_TURNS` after it first appeared
+	 * instead of being held up forever by someone who keeps talking. The log
+	 * line keeps its own stamp and expires on its own terms.
 	 */
 	SpeakOverhead(actor: Actor, text: string): void {
 		if (!s_Options.showSpeechBubbles) return;
 		if (!this.IsVisibleToPlayer(actor)) return;
 		const trimmed = text.trim();
 		if (trimmed.length === 0) return;
+		// The box takes the new line and keeps its original turn: the text is
+		// the speaker's last word, the clock is not.
+		const held = this.m_SpeechBubbles.get(actor);
+		if (held !== undefined) {
+			held.text = trimmed;
+			return;
+		}
 		this.m_SpeechBubbles.set(
 			actor,
 			new SpeechBubble(
@@ -22228,9 +23706,10 @@ updateAdvisorHintBanner(): void {
 				continue;
 			}
 			// Off-panel is a skip, not a prune, unlike the three above: the actor
-			// is still here and still mid-sentence, and the view rect moves when
-			// the player does. Drawn anyway it would land on the side panel, which
-			// is the one case where a bubble is both ugly and unmissable.
+			// is still here and their box has not run out its window, and the view
+			// rect moves when the player does. Drawn anyway it would land on the
+			// side panel, which is the one case where a bubble is both ugly and
+			// unmissable.
 			if (!this.IsInViewRect(actor.location.position)) continue;
 
 			const screenPos = this.MapToScreen(actor.location.position);
@@ -24111,6 +25590,13 @@ updateAdvisorHintBanner(): void {
 		// Attacking a barricaded door.
 		const door = mapObj instanceof DoorWindow ? mapObj : null;
 		if (door !== null && door.isBarricaded) {
+			// C# `:22477` -- the first of the fork's three calls into
+			// `PlayBashOrBreakSFX` in this method, and the one that was missing
+			// here: a bash of a barricade is a *bash* rather than a break, so the
+			// ladder's `isBroken` half (`BASH_*`) had no caller at all and every
+			// bash of a door played the break sound instead.
+			this.PlayBashOrBreakSFX(mapObj, false);
+
 			// Spend APs & STA.
 			this.SpendActorActionPoints(actor, Rules.BASE_ACTION_COST);
 			this.SpendActorStaminaPoints(actor, Rules.STAMINA_COST_MELEE_ATTACK);
@@ -24259,14 +25745,22 @@ updateAdvisorHintBanner(): void {
 					}
 					this.RedrawPlayScreen();
 					await this.AnimDelay(DELAY_LONG);
-				} else {
-					if (isDoorVisible) {
-						this.AddMessage(
-							this.MakeMessage(
-								actor,
-								`${this.Conjugate(actor, this.VERB_BASH)} ${mapObj.theName} for ${bashAttack.damageValue} damage.`,
-							),
-						); // alpha10
+			} else {
+				// C# `:22559` -- the second of the fork's three calls, and the
+				// one that covers the *seen* bash: it sits at the head of the
+				// non-broken arm, not inside the object-visible arm, so a bash
+				// the player watches (or performs) is heard whether or not the
+				// *object* is individually visible. `isBroken` is false here by
+				// construction -- the broken case is the arm above, where the C#
+				// takes its break sound from `DoDestroyObject` instead (`:22548`).
+				this.PlayBashOrBreakSFX(mapObj, isBroken);
+				if (isDoorVisible) {
+					this.AddMessage(
+						this.MakeMessage(
+							actor,
+							`${this.Conjugate(actor, this.VERB_BASH)} ${mapObj.theName} for ${bashAttack.damageValue} damage.`,
+						),
+					); // alpha10
 						try {
 							const dp = this.MapToScreen(mapObj.location.position);
 							this.AddOverlay(
@@ -24321,7 +25815,14 @@ updateAdvisorHintBanner(): void {
 								mapObj.location.position,
 							),
 						);
+					// No sound call in this arm, and that is the C#'s: the break
+					// sound was already played from `DoDestroyObject` (`:22435`),
+					// and `:22581-22584` says so in as many words.
 				} else {
+					// C# `:22588` -- the third call, in the arm the player is most
+					// likely to hear: out of sight, within earshot, hitting
+					// something that has not broken yet.
+					this.PlayBashOrBreakSFX(mapObj, isBroken);
 					if (this.m_Rules.rollChance(PLAYER_HEAR_BASH_CHANCE))
 						this.AddMessageIfAudibleForPlayer(
 							mapObj.location,
@@ -24409,18 +25910,39 @@ updateAdvisorHintBanner(): void {
 			}
 		}
 
-		// noise/message.
-		if (isVisible) {
+		// noise/message/sfx, C# `:22736-22761`. The fork split the push into two
+		// recordings per material and *two bands*: `_VISIBLE` when the player is
+		// close enough to hear it properly (`QUIET`), `_AUDIBLE` when they are
+		// merely in earshot (`MODERATE`) and cannot see it. The reason the visible
+		// band is gated on **audibility rather than on `isVisible`** is worth
+		// knowing: at that distance the object is loud, so the close recording is
+		// the right one whether or not the player is looking at it.
+		const pushSound = (visible: boolean): void => {
+			if (!hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio)) return;
+			if (mapObj.isMetal) {
+				this.m_SoundManager.play(
+					visible ? GameSounds.PUSH_METAL_OBJECT_VISIBLE : GameSounds.PUSH_METAL_OBJECT_AUDIBLE,
+				);
+			} else {
+				this.m_SoundManager.play(
+					visible ? GameSounds.PUSH_WOODEN_OBJECT_VISIBLE : GameSounds.PUSH_WOODEN_OBJECT_AUDIBLE,
+				);
+			}
+		};
+
+		if (this.isAudibleToPlayer(mapObj.location, NOISE_RADII.QUIET)) {
+			pushSound(true);
 			this.AddMessage(
 				this.MakeMessage(actor, this.Conjugate(actor, this.VERB_PUSH), mapObj),
 			);
 			this.RedrawPlayScreen();
-		} else {
+		} else if (!isVisible) {
 			// loud noise.
 			this.OnLoudNoise(map, toPos, "Something being pushed");
 
 			// player hears?
-			if (this.m_Rules.rollChance(PLAYER_HEAR_PUSHPULL_CHANCE)) {
+			if (this.isAudibleToPlayer(mapObj.location, NOISE_RADII.MODERATE)) {
+				pushSound(false);
 				this.AddMessageIfAudibleForPlayer(
 					mapObj.location,
 					this.MakePlayerCentricMessage(
@@ -25119,6 +26641,27 @@ updateAdvisorHintBanner(): void {
 			}
 		}
 
+		// C# `:23857-23863` -- the death scream, and only for a living victim
+		// killed by an undead: the "screams of agony" band of `DoScream`, gendered
+		// like the terrified one and never dice-rolled, because a death is
+		// one-off. A survivor torn apart by a zombie is the loudest thing that
+		// happens to them, and without this the only announcement was the
+		// `OnLoudNoise` the fork pairs it with.
+		if (
+			!deadGuy.model.abilities.isUndead &&
+			!deadGuy.model.abilities.isLivingAnimal &&
+			!deadGuy.isSleeping &&
+			killer !== null &&
+			killer.model.abilities.isUndead
+		) {
+			this.OnLoudNoise(
+				deadGuy.location.map!,
+				deadGuy.location.position,
+				"A loud SCREAM",
+			);
+			this.DoScream(deadGuy, true, false);
+		}
+
 		// One more kill
 		if (killer !== null) ++killer.killsCount;
 
@@ -25669,28 +27212,33 @@ updateAdvisorHintBanner(): void {
 	 * async: the C# blocks on `WaitYesOrNo` (in `DoPlayerBump`, its caller),
 	 * `AddMessagePressEnter` and the whole of `HandlePostRescue`.
 	 *
-	 * ## Two things are missing, and both are deliberate
+	 * ## One thing is still missing, and it is deliberate
 	 *
-	 * - **`GameMusics.POST_RESCUE`.** The C# plays a dedicated rescue cue here
-	 *   (`:7389`) and the track exists in `_refs`, but it is not among the files in
-	 *   `public/assets/music`, and `MUSIC_GAINS` is *generated* from the shipped
-	 *   files by `scripts/measure-audio-levels.mjs` — so the id cannot be added
-	 *   without an audio-assets pass that re-encodes the music folder. The music is
-	 *   stopped and nothing is played in its place, which is the honest half
-	 *   rather than the wrong cue.
 	 * - **The death screenshot.** The C# checks its death-screenshot option here
-	 *   (`:7437`) as well as in `PlayerDied`. The option is gone from the port
-	 *   entirely — see `GameOptions.GAME_DEATH_SCREENSHOT_REMOVED` — so there is
-	 *   nothing to check, and no screenshot is taken on either ending.
+	 *   (`:7437`) as well as in `PlayerDied.`
+	 *
+	 * `GameMusics.POST_RESCUE` used to be the second entry here, on the grounds
+	 * that adding the id needed "an audio-assets pass that re-encodes the music
+	 * folder". It needed no such thing: the fork's track is a plain `.ogg` in
+	 * `_refs`, it copies into `public/assets/music` like the other 27, and the
+	 * only genuinely generated piece is its `MUSIC_GAINS` row — which defaults
+	 * to 1.0 and is recorded as unmeasured.
+	 *
+	 * The death screenshot itself (`:7437`) is gone from the port with the
+	 * option behind it — see `GameOptions.GAME_DEATH_SCREENSHOT_REMOVED` — so
+	 * neither ending takes one.
 	 */
 	async PlayerWasRescued(): Promise<void> {
 		// Stop sim thread.
 		this.StopSimThread(true);
 
-		// audio. The C# also plays `GameMusics.POST_RESCUE` here — see above.
+		// audio. C# `:7386-7389`: the three managers stop, and then the rescue
+		// cue plays. The ambient bed goes first, exactly as in `PlayerDied`,
+		// because the ending is a still screen with one track on it.
 		this.m_MusicManager.stop();
 		if (hasFeature(this.m_Session.ruleset, Feature.AmbientAudio))
 			this.m_AmbientSFXManager.stopAll();
+		this.m_MusicManager.play(GameMusics.POST_RESCUE, MusicPriority.EVENT);
 
 		/////////////
 		// Scoring
@@ -26263,6 +27811,7 @@ updateAdvisorHintBanner(): void {
 			name,
 			this.m_Session.scoring,
 			skillsDesc,
+			this.m_Session.seed,
 		);
 		if (this.m_HiScoreTable.register(newHiScore)) {
 			this.SaveHiScoreTable();
@@ -27713,11 +29262,13 @@ updateAdvisorHintBanner(): void {
 		addIfAbsent(actor.model.dollBody.isMale ? GameImages.MALE_ON_FIRE : GameImages.FEMALE_ON_FIRE);
 
 		// A scream is a loud noise, and it is the only way fire announces itself
-		// without a message. The C# also calls `DoScream`, which draws the speaker's
-		// mouth open and plays a gendered sound; the port has no `DoScream`, and
-		// inventing one is a renderer job, so only the noise is ported -- which is
-		// the part that has consequences. The sound is `Feature.ExtendedAudio`.
+		// without a message. The C# also calls `DoScream`, which plays the gendered
+		// scream the port has now ported — see `DoScream`'s own note. This is the
+		// fork's `:24793-24795` arm, which fires for the *player* and for NPCs
+		// alike; the fork's fire-scream takes no dice roll (`rollForIt: false`),
+		// because a survivor catching alight is one-off and always worth hearing.
 		this.OnLoudNoise(actor.location.map!, actor.location.position, "A loud SCREAM");
+		this.DoScream(actor, false, false);
 
 		if (actor.isPlayer && !wasOnFire) {
 			this.AddMessage(
@@ -28003,15 +29554,13 @@ updateAdvisorHintBanner(): void {
 			// `PlayIfNotAlreadyPlaying` in the C# (`RogueGame.cs:21962`); the port's
 			// `IMusicManager.play` already returns early when the same id is
 			// playing (`WebAudioMusicManager.start`, `:107`), so the two agree.
-			//
-			// **Not ported: the NPC arm** (`RogueGame.cs:21964`), which plays
-			// `FISHING_CAST_NEARBY` when `IsAudibleToPlayer(loc, QUIET_NOISE_RADIUS)`.
-			// The port has no `QUIET_NOISE_RADIUS` and no audibility predicate that
-			// takes a radius, and inventing one would be guessing a number the C#
-			// does not define here. Recorded rather than faked.
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.play(GameSounds.FISHING_CAST_PLAYER);
 			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
 				this.m_SoundManager.play(GameSounds.FISHING_CAST_PLAYER);
 
+			// C# `:21966-21969`: the "Now press Wait" prompt, and only for the
+			// player. An NPC does not read instructions.
 			this.AddMessage(
 				new Message(
 					`Now press Wait <${s_KeyBindings.get(PlayerCommand.WAIT_OR_SELF) ?? "?"}>` +
@@ -28021,6 +29570,14 @@ updateAdvisorHintBanner(): void {
 					Color.Yellow,
 				),
 			);
+		} else if (this.isAudibleToPlayer(actor.location, NOISE_RADII.QUIET)) {
+			// The NPC arm, C# `:21963-21964`: a survivor within earshot of someone
+			// else casting. The comment this replaces said it was unportable
+			// because "the port has no `QUIET_NOISE_RADIUS` and no audibility
+			// predicate that takes a radius" -- both of which have been here since
+			// the fork's sound work began, and four of this file's arms use.
+			if (hasFeature(this.m_Session.ruleset, Feature.ExtendedAudio))
+				this.m_SoundManager.play(GameSounds.FISHING_CAST_NEARBY);
 		}
 	}
 
@@ -28524,12 +30081,11 @@ updateAdvisorHintBanner(): void {
 	 * arm used to say the three did not exist and to drop the exclusion. They exist
 	 * now, so the exclusion is there.
 	 *
-	 * **The incapacitated AI's copy of this arm is still not ported**, and it is the
-	 * other half of what the brief calls out. `GenerateIncapacitatedAction`
-	 * (`RogueGame.cs:25042-25076`, Release 7-2) has no counterpart in this port at
-	 * all -- its three other arms need `DeploySmokeScreen` and `DetonateFlashbang`,
-	 * which `RogueGame.ts:20161` records as absent -- so there is nothing to add the
-	 * `:25068` carve-out to. It arrives with that method.
+	 * **The incapacitated AI's copy of this arm is ported** alongside
+	 * `GenerateIncapacitatedAction`, and this same `DAMN IT!!!` is the catch-all
+	 * both arms fall to. Its siblings -- `DeploySmokeScreen` and
+	 * `DetonateFlashbang` -- are ported too, so the carve-out has something to
+	 * exclude.
 	 */
 	GenerateDrunkAction(actor: Actor): ActorAction | null {
 		switch (this.m_Rules.roll(0, 6)) {
@@ -29104,6 +30660,27 @@ updateAdvisorHintBanner(): void {
 	}
 
 	/**
+	 * The scale a map-anchored draw is shown at: the map's zoom, or 1 when the
+	 * scope does not scale at all.
+	 *
+	 * First person has no tile grid and no zoom: the scene is already projected
+	 * into viewport pixels by the camera. Applying the top-down scale on top
+	 * would double it, which looks like a picture drawn at the wrong size rather
+	 * than like a scale that should not have been applied — so it is skipped
+	 * here, at the one place the zoom is installed, rather than at every call
+	 * site.
+	 *
+	 * Two callers share it deliberately: `withMapZoom` decides whether to open a
+	 * scaled scope from it, and the overlay pass tests an overlay's anchor
+	 * against the panel (`overlayOnMapPanel`) with it. Duplicating the two
+	 * early-outs would let an overlay be measured against one scale and drawn at
+	 * another.
+	 */
+	private mapDrawScale(): number {
+		return GameOptions.isFirstPersonView(s_Options.viewMode) ? 1 : s_MapZoom;
+	}
+
+	/**
 	 * Runs `draw` in the map's zoomed space: every sprite, bar and popup twice
 	 * its size, at its position computed for 32px tiles.
 	 *
@@ -29111,33 +30688,24 @@ updateAdvisorHintBanner(): void {
 	 * has no destination size — a sprite is blitted at its authored 32px, so
 	 * magnifying it means scaling the surface it is blitted to. That in turn means
 	 * everything drawn through `MapToScreen` must be inside one of these scopes,
-	 * or it would land at an unscaled position. The three callers are the map
-	 * itself, the overlays, and the markers `DrawMiniMap` puts on the map (as
-	 * opposed to on the minimap).
+	 * or it would land at an unscaled position. Callers include the map itself,
+	 * overlays, speech bubbles, and the markers `DrawMiniMap` puts on the map
+	 * (as opposed to on the minimap).
 	 *
-	 * `clip` is for the map proper: a magnified map would otherwise paint over the
-	 * side panel. Overlays pass false and may spill, exactly as they do at zoom 1
-	 * — a mode prompt at the top-left corner is text that must not be cut in half.
+	 * The map and its overlays are clipped to the panel. Speech bubbles pass
+	 * false so their text can extend past the edge.
 	 */
 	private withMapZoom(draw: () => void, clip: boolean = true): void {
-		// First person has no tile grid and no zoom: the scene is already projected
-		// into viewport pixels by the camera. Applying the top-down scale on top
-		// would double it, which looks like a picture drawn at the wrong size rather
-		// than like a scale that should not have been applied — so it is skipped
-		// here, at the one place the zoom is installed, rather than at every call
-		// site.
-		if (GameOptions.isFirstPersonView(s_Options.viewMode)) {
-			draw();
-			return;
-		}
-		if (s_MapZoom === 1) {
+		const scale = this.mapDrawScale();
+		// An unscaled draw still needs a scope when clipping is requested.
+		if (scale === 1 && !clip) {
 			draw();
 			return;
 		}
 		const clipRect = clip
 			? new Rect(0, 0, MAP_PANEL_WIDTH, MAP_PANEL_HEIGHT)
 			: undefined;
-		this.m_UI.UI_BeginScaledDraw(s_MapZoom, clipRect);
+		this.m_UI.UI_BeginScaledDraw(scale, clipRect);
 		draw();
 		this.m_UI.UI_EndScaledDraw();
 	}
@@ -29434,20 +31002,29 @@ updateAdvisorHintBanner(): void {
 		// overlays
 		// Overlays that belong *on* the map -- damage icons, target rings, the
 		// lines joining them -- are drawn inside the map's zoom scope so they
-		// scale with the map they annotate; unclipped, since a prompt pinned in
-		// the map's top left must never be cut in half by the panel's edge.
+		// scale with the map they annotate and are clipped to its panel.
 		// Everything else is drawn unscaled, in two groups: popups, whose anchor
 		// is the only part that follows the zoom (`zoomsWithMap` decides whether
 		// it does), and screen-anchored overlays, which the zoom must not move at
 		// all -- the side panel's item and corpse highlights and descriptions,
 		// and the give-mode and skill-upgrade prompts.
+		//
+		// The map-anchored group is skipped when its anchor is past
+		// the panel edge: every effect in it is added on `IsVisibleToPlayer`, which
+		// reads the tile's FOV, not on `IsInViewRect`, so at zoom 2 the box for
+		// something the player can see but the camera does not cover computes to
+		// coordinates over the side panel -- and overlays are drawn *after* the side
+		// panel, so it lands on the inventory. Partially intersecting overlays
+		// remain drawable, with their overflow clipped. See `overlayOnMapPanel`.
+		const overlayScale = this.mapDrawScale();
 		this.withMapZoom(() => {
 			for (const o of this.m_Overlays) {
-				if (o.zoomsWithMap && !(o instanceof PopupOverlay)) o.draw(this.m_UI);
+				if (o.zoomsWithMap && !(o instanceof PopupOverlay) && overlayOnMapPanel(o, overlayScale)) o.draw(this.m_UI);
 			}
+		});
+		this.withMapZoom(() => {
 			// Browser port: speech bubbles, last so they land over the actors and
-			// over any damage number. Inside the zoom scope with the rest — they
-			// annotate tiles and should scale with them.
+			// over any damage number. They scale with the map in an unclipped scope.
 			this.DrawSpeechBubbles();
 		}, false);
 		for (const o of this.m_Overlays) {
@@ -29779,7 +31356,49 @@ updateAdvisorHintBanner(): void {
 				) {
 					this.m_UI.UI_DrawImage(weatherImage, toScreen.x, toScreen.y);
 				}
+
+				// 8. flashbang full-screen tint. Still Alive, Release 7-2. C#
+				// `:25668-25682`, applied last because it has to overlay
+				// everything else -- a flashbang that only dims the tiles the
+				// player was looking at is not a flash.
+				//
+				// The C# throws on a turn count above five; the port's counters
+				// are clamped to `Rules.MAXIMUM_INCAPACITATED_TURNS` at their two
+				// write sites, so the default arm is unreachable and the fallback
+				// is "no tint" rather than a crash -- an actor stunned on the same
+				// turn the counter is set still has to be drawn.
+				if (isVisible && this.m_Player.isFlashbanged) {
+					const flashImage = this.flashbangImage(this.m_Player.flashbangedTurns);
+					if (flashImage !== null)
+						this.m_UI.UI_DrawImage(flashImage, toScreen.x, toScreen.y);
+				}
 			}
+		}
+	}
+
+	/**
+	 * The flashbang tint for a turn count. C#'s `:25673-25681`, Release 7-2.
+	 *
+	 * Five tints at 20% steps: the player sees *less* as the counter runs down,
+	 * which reads as the flash fading. A count of zero or below five-plus is
+	 * null, and null means no tint -- the C# would have thrown, but the port's
+	 * counters are clamped at write time, so the case it guarded against cannot
+	 * arrive here.
+	 */
+	private flashbangImage(flashbangedTurns: number): string | null {
+		switch (flashbangedTurns) {
+			case 1:
+				return GameImages.EFFECT_FLASHBANG_020;
+			case 2:
+				return GameImages.EFFECT_FLASHBANG_040;
+			case 3:
+				return GameImages.EFFECT_FLASHBANG_060;
+			case 4:
+				return GameImages.EFFECT_FLASHBANG_080;
+			case 5:
+				return GameImages.EFFECT_FLASHBANG_100;
+			default:
+				return null;
 		}
 	}
 
@@ -30187,7 +31806,18 @@ updateAdvisorHintBanner(): void {
 
 		// sleepy, hungry & insane icons.
 		if (actor.model.abilities.hasToSleep) {
-			if (this.m_Rules.isActorExhausted(actor)) {
+			// C# `:26050`: a stunned or flashbanged actor shows that rather than
+			// the sleep status. Without it a survivor who has just been hit by a
+			// stun gun looks exhausted, which is the one reading the icon must
+			// not give -- exhaustion is a resource, this is a state.
+			if (actor.isIncapacitated) {
+				this.m_UI.UI_DrawImageTinted(
+					GameImages.ICON_INCAPACITATED,
+					gx,
+					gy,
+					tint,
+				);
+			} else if (this.m_Rules.isActorExhausted(actor)) {
 				this.m_UI.UI_DrawImageTinted(
 					GameImages.ICON_SLEEP_EXHAUSTED,
 					gx,
@@ -32567,6 +34197,14 @@ const keyHints = ACTION_ENTRIES.map((e) => s_KeyBindings.getAll(e.command).join(
 		 * without this the load would succeed and leave nobody in charge.
 		 */
 		reattachPlayer(this.m_Session.loadedPlayer);
+
+		// Everyone else comes back controller-less for the same reason —
+		// `_controller` is skipped for every actor, not only the player's — so
+		// the rest of the world is rebuilt from its models before anything is
+		// allowed to act. `reattachPlayer` goes first so the player is skipped
+		// by identity rather than by `isPlayer`, which is false until it runs.
+		if (this.m_Session.world != null)
+			reattachControllers(this.m_Session.world, this.m_Session.loadedPlayer);
 
 		this.RefreshPlayer();
 

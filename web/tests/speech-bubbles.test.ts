@@ -309,6 +309,36 @@ describe("speech bubbles: how long they last", () => {
     expect(game.m_SpeechBubbles.size).toBe(0);
   });
 
+  it("expires six turns after the box opened, not six after the last line", () => {
+    // The clock is anchored to the first line. Every line used to restamp it, so
+    // an actor who spoke again inside the window pushed their own expiry forward
+    // indefinitely — a talkative NPC's box never cleared at all, which is the
+    // whole complaint. The text still moves on with the speaker; only the turn
+    // stays where the box opened.
+    const { game, ui, map } = newFixture();
+    setBubbles(true);
+    ui.recordText = true;
+    const npc = npcAt(map, "npc", new Point(31, 30));
+
+    game.DoEmote(npc, "first");
+    passTurns(map, 3);
+    game.DoEmote(npc, "second"); // the line that used to buy six more turns
+
+    // Five turns in: the box has taken the newer line and is still up.
+    passTurns(map, 2);
+    game.DrawSpeechBubbles();
+    expect(ui.drawnBubbles).toEqual(["second"]);
+    expect(game.m_SpeechBubbles.size).toBe(1);
+
+    // Six turns after it opened it goes — one turn after the second line, and
+    // that gap between the two clocks is the assertion restamping fails.
+    passTurns(map, 1);
+    ui.clearRecordedText();
+    game.DrawSpeechBubbles();
+    expect(ui.drawnBubbles).toEqual([]);
+    expect(game.m_SpeechBubbles.size).toBe(0);
+  });
+
   it("follows a speaker who is still walking", () => {
     // The tile is read fresh at draw time rather than stored, so a bubble tracks
     // its owner. Storing the position would leave a box on the tile somebody

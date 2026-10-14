@@ -135,8 +135,42 @@ describe("RogueGame's measured surface", () => {
     // make a defect inside it reachable. It is a method rather than a field, it
     // holds no state the class did not already have, and the alternative was a
     // defect in a ~400-line turn loop that no test could reach.
-    expect(m.members).toBe(848);
-    expect(m.methods).toBe(676);
+    // **849, for `mapDrawScale`.** The overlay pass has to test an effect's
+    // anchor against the map panel at the scale `withMapZoom` draws it, and the
+    // two early-outs that decide that scale (first person, zoom 1) now live in
+    // one method so a gate cannot measure at one scale while the drawing happens
+    // at another. Private, stateless, and reached by nothing -- the count moves
+    // because the class grew, not because a test reached further into it.
+    //
+    // **857, for `DoScream`.** The fork's scream -- gendered, situational, two
+    // distance bands -- is the last member out of the audio work: four tables of
+    // ids live at module scope beside the bash ladder's, and this is the one
+    // *method* they are read through. It classifies as a `Do*` alias-free hub
+    // entry rather than a region, because it is called from the move, fire,
+    // death and trap paths alike.
+    //
+    // **863, for the rest of the fork's audio and the flashbang.** Six more
+    // methods and one constant: `PlayNonHumanVocalAudio` (the animal
+    // vocalisation the fork centralised), `GenerateIncapacitatedAction` (private)
+    // and `TryPlayerIncapacitated` for the stun/flashbang chain,
+    // `SpawnNewFeralDog` and `FireEvent_RescueWave` for the rescue wave, and
+    // `DetonateFlashbang` for the flash itself. The constant is
+    // `STUN_WEAPON_EFFECT_TURNS`, read by both the stun gun and the flashbang.
+    // The `Actor` fields the counters live in are in `data/Actor.ts`, so they
+    // are not part of this class's count.
+    //
+    // **864, for `flashbangImage`.** The full-screen tint the flashbang throws
+    // up, stepped across the counter as it runs down. Stateless, drawn by the
+    // tile pass, reached by nothing outside the draw.
+    //
+    // **865, for the hi-scores seed column's `formatHiScoreSeed`** (private).
+    // This port added the column after the fork gave it a seed screen, so a
+    // score row can name the world it was played in; the method right-aligns
+    // the value under the header and draws an unrecorded entry as a dash. It is
+    // reached only by the row formatter, so the count moves for the class
+    // growing rather than for the outside world reaching further in.
+    expect(m.members).toBe(865);
+    expect(m.methods).toBe(690);
     // The *reachable* surface is 124, up from 121. Both extractions had left it
     // alone -- each kept its methods on the class, which is what keeps them pure
     // moves -- and these three moved it for the opposite reason: a test reaching
@@ -158,11 +192,68 @@ describe("RogueGame's measured surface", () => {
     // within the class, so nothing about the game's own shape changed: a test
     // reached one further than it had before, which is exactly the caveat this
     // count exists to record.
-    expect(m.external).toBe(127);
-// §6.4: "567 of 584 methods are public — only 17 are `private`. The
+    //
+    // **One more, for `DoSaveGame`, and it is the same caveat for the third time.**
+    // `load-game-controllers.test.ts` proves `LoadGame` rebuilds the NPC
+    // controllers the save graph does not carry, and the only way to get a real
+    // save into the game is to ask the game for one: `DoSaveGame(slot)` then
+    // `LoadGame(slot)`. It is a `Do*` action primitive, so it lands in HUB 1
+    // rather than in a region that moves -- a test reaching the save path, which
+    // is the split classifying it the right way round.
+    //
+    // **Two more, for `customiser-skill-row.test.ts`.** That test drives the
+    // character details screen with real keys to assert what the skill row
+    // describes and what Enter commits, which reaches `HandleNewCharacterDetails`
+    // (WAVE 3) and `DescribeSkillShort` (WAVE 1) from outside for the first time.
+    // Both are public and both were already called from within the class; the new
+    // reach is a test asserting what a screen puts on it -- the same caveat as
+    // `DoSaveGame` above, moved for the same reason.
+    //
+    // **One more, for `hiscores-screen.test.ts`.** That test drives the scores
+    // screen through `HandleHiScores` with real keys, because what it asserts is
+    // which of the two text faces each of the screen's lines reaches the canvas
+    // with and at what y — neither of which a call to a draw method by hand
+    // would show. The method was public and called from nowhere outside the
+    // class before (the endgame test only names it in a comment), so this is the
+    // caveat again: a test reached a public screen method, and the game's own
+    // shape did not change.
+    //
+    // **One more, for `seed-selection.test.ts` — and this one is a new member,
+    // not a new reach.** A seed was always rolled and never chosen, so the
+    // screen that offers it (`HandleSelectSeed`, between the ruleset picker and
+    // the character screens) is a method the class did not have. It is public and
+    // it is on the new-game flow, so it lands in WAVE 3 beside the picker above
+    // it rather than in a hub: a screen the flow owns, which is the shape this
+    // split wants to move.
+    //
+    // **Three more, for `cook-and-destroy.test.ts` and the swap prompt in
+    // `shelter-backpacks.test.ts`.** `HandlePlayerDestroyItem` and
+    // `HandlePlayerCookFood` (Release 7-6's two inventory-key commands) and
+    // `HandlePlayerSwapItemInventory` (Release 8-2, whose modal slot prompt
+    // landed with them) are each driven by a test for the first time, and all
+    // three classify as HUB 2 — `Handle*` player handlers that never move. So
+    // the reach grew by three and every one of them went into a hub, which is
+    // the split saying these are handlers, not a region worth extracting.
+    //
+    // **138, for `AddOverlay`.** The overlay-clipping work's rendering tests
+    // drive the real screen redraw, and adding an overlay to it is the first
+    // time a test has reached that method. It classifies as STATE — it mutates
+    // the overlay list the screen draws from — so it lands in the movable half
+    // rather than a hub, which is a reach enlarging the part that moves.
+    //
+    // **139, for `doLeaveMap`.** The district-exit race test calls the camelCase
+    // alias directly, because the crash it pins is inside `DoLeaveMap` and
+    // driving it through a bump and an action would test the callers rather than
+    // the window. No prior test reached the alias: `Actions.ts` is outside the
+    // consumer scan, and the headless bot plays through `AdvancePlay`. WAVE 1,
+    // and movable — a method a wave can reorganise, reached the same way the
+    // other screen-driving tests reach the class.
+    expect(m.external).toBe(139);
+  // §6.4: "567 of 584 methods are public — only 17 are `private`. The
   // `private` boundary is effectively absent." That is still true, and the
-  // direction is worth pinning: private has come down from 91 to 89, while public
-  // moved by exactly one. Public barely moving is the point — both extractions left
+  // direction is worth pinning: private has come down from 91 to 89, and is 90
+  // again only because `mapDrawScale` was added (above); public moved by exactly
+  // one. Public barely moving is the point — both extractions left
   // delegations behind rather than deleting callers' entry points, so the ratio
   // has not improved much and is not claimed to have. The single addition is
   // `updateAdvisorHintBanner`, whose reason is recorded above.
@@ -173,8 +264,27 @@ describe("RogueGame's measured surface", () => {
   // `m_SpeechBubbles: Map<...> = new Map()` among 83 of them — so those fields were
   // counted as methods and appeared in both totals. It now asks what follows the
   // name: `(` for a method, `:` or `=` for a field.
-  expect(m.public).toBe(759);
-  expect(m.private).toBe(89);
+  //
+  // **`HandleSelectSeed` is the one addition since**, and it is the only member
+  // added by the seed-selection feature: one public screen method, no state the
+  // class did not already hold — the seed it edits has been a session field since
+  // the port began, which is why only `public` and `methods` moved and `private`
+  // is still 90.
+  //
+  // **Six for the inventory commands, `private` back to 91 because of one of
+  // them.** `HandlePlayerDestroyItem`, `HandlePlayerCookFood`, `DoCookFood`,
+  // the private `promptForSwap`, and the two `SWAP_ITEM_*_MODE_TEXT` captions.
+  // `promptForSwap` is private for the reason `mapDrawScale` is: it is a modal
+  // key loop the play loop reaches and nothing else, and the C# had it inline in
+  // `HandlePlayerSwapItemInventory`. The captions are two `readonly string[]`
+  // fields, exactly like every other mode banner on the class.
+  //
+  // **94, three on from the audio work's `GenerateIncapacitatedAction`, and one
+  // for `formatHiScoreSeed`** — the hi-scores seed column's formatter, private
+  // for the same reason `promptForSwap` is: one screen's key loop reaches it and
+  // nothing else does.
+  expect(m.public).toBe(771);
+  expect(m.private).toBe(94);
 	});
 
 	it("§6's stop condition is not met: nothing private is reached from outside", () => {
@@ -191,7 +301,7 @@ describe("RogueGame's measured surface", () => {
 		expect(m.privateReached).toBe(0);
 	});
 
-it("the outside world depends on 121 members, and §6 assumed far fewer", () => {
+	it("the outside world depends on 136 members, and §6 assumed far fewer", () => {
 		const m = measure();
 		// §6.4's `GameContext` was to name "the 11 service fields … plus `m_Player`,
 		// `m_PlayerFOV`, `m_MapViewRect`, `m_Overlays`, `m_FirstPersonFacing`" —
@@ -203,11 +313,32 @@ it("the outside world depends on 121 members, and §6 assumed far fewer", () => 
     // sites". At 121 names the pessimistic figure is not the real one, and that
     // is the answer to the question §6.4 deferred until "the game runs and the
     // real cross-method dependencies are known".
-    expect(m.external).toBe(127);
+    //
+    // **132 now**, and it is the only addition since: `HandleSelectSeed`, a new
+    // screen in the new-game flow, driven by `seed-selection.test.ts` the way
+    // `hiscores-screen.test.ts` drives `HandleHiScores`.
+    //
+    // **135 now**: the two Release 7-6 inventory commands and the Release 8-2
+    // swap prompt add three more handlers, and they are all `Handle*` player
+    // handlers -- so they land in a hub rather than in a region, which is the
+    // split classifying a reach the cheap way.
+    //
+    // **136 now**: `DoBreak`, which the bash-sound tests call directly. It is an
+    // action primitive, so it lands in HUB 1 beside `DoMeleeAttack` and the rest
+    // -- the hub a wave must never move, reached by a test that checks which of
+    // three call sites inside it fires.
+    //
+    // **138 now**: `AddOverlay`, reached by the overlay-clipping work's
+    // rendering tests driving the real screen redraw. STATE, so movable.
+    //
+    // **139 now**: `doLeaveMap`, reached by the district-exit race test calling
+    // it directly. WAVE 1, so movable; the reason for the reach is recorded at
+    // the other pin of this number.
+    expect(m.external).toBe(139);
     expect(m.external).toBeGreaterThan(83);
 	});
 
-  it("classifies all 126, with no residual", () => {
+  it("classifies all 127, with no residual", () => {
     // This is the finding that forced the re-derivation, and the number that keeps
     // it fixed. §6.2's region table left **68 of the 110** (as measured then) in no
     // region at all —
@@ -222,22 +353,65 @@ it("the outside world depends on 121 members, and §6 assumed far fewer", () => 
 		const m = measure();
 		const classified = [...m.buckets.values()].reduce((n, list) => n + list.length, 0);
 		expect(classified).toBe(m.external);
-		expect(m.buckets.get("STATE")?.length ?? 0).toBeLessThan(33);
+		// 33, with `AddOverlay` the newest: the overlay-clipping rendering tests
+		// reach it, and it classifies as STATE — the overlay list the screen
+		// draws from, which is exactly the sort of thing a context carries.
+		expect(m.buckets.get("STATE")?.length ?? 0).toBeLessThan(34);
 	});
 
-it("splits the reachable surface into 34 hub and 92 movable, and the hubs stay", () => {
+it("splits the reachable surface into 39 hub and 99 movable, and the hubs stay", () => {
     // §6.8: the two hubs "are the reason the split is worth doing rather than the
     // reason it fails". Still true, and now measured on the current file.
     const m = measure();
     // `HandleAiActor` is why movable is 93 rather than 92. It is not an action
     // primitive, so the test that now awaits it enlarges the half that moves rather
     // than the hubs -- the split classifying it the right way round.
-    expect(m.moving).toBe(93);
-    expect(m.hubs).toBe(34);
+    //
+    // **95 now**: `DescribeSkillShort` (WAVE 1) and `HandleNewCharacterDetails`
+    // (WAVE 3) joined when `customiser-skill-row.test.ts` reached them, both
+    // movable leaves of a screen test -- again the split classifying the reach the
+    // right way round, and again the hubs unmoved at 35.
+    //
+    // **96 now**: `HandleHiScores` joined when `hiscores-screen.test.ts` drove the
+    // scores screen with real keys to assert which face its header is drawn with
+    // and where. It classifies as STATE rather than as an action primitive, so it
+    // lands in the movable half and the hubs stay at 35 -- a screen method
+    // reached from a test, which is the shape this split wants to move.
+    //
+    // **97 now**: `HandleSelectSeed`, and this one is a *new member* rather than a
+    // new reach -- the seed screen is the only thing seed selection added to the
+    // class. It is named on the Wave 3 list, so it lands beside the picker above
+    // it: a screen the new-game flow owns, which is the region that moves.
+    //
+    // **Still 97, with the hubs up to 38.** The next three reaches went the other
+    // way: `HandlePlayerDestroyItem`, `HandlePlayerCookFood` and
+    // `HandlePlayerSwapItemInventory` are all `Handle*` player handlers, so they
+    // classify as HUB 2 and the movable half does not move at all. That is the
+    // split working -- a test reaching a handler enlarges the part of the class
+    // that never has to move, which is the cheapest place for a reach to land.
+    //
+    // **Still 97, with HUB 1 up to 28.** `DoBreak` is the reach that went the same
+    // cheap way: the bash/break sound tests drive it directly, and a `Do*` action
+    // primitive classifies as a hub rather than a region, so the movable half is
+    // unchanged again and the hub grew by one.
+    //
+    // **99 now**: `AddOverlay`, from the overlay-clipping work's rendering tests
+    // driving the real screen redraw. It mutates the overlay list the screen
+    // draws from, so STATE classifies it movable rather than a hub -- a reach
+    // enlarging the half that moves, not the half that cannot.
+    //
+    // **100 now**: `doLeaveMap`, from the district-exit race test. WAVE 1, so
+    // movable, and the hubs stay at 39 -- an exit traversal is a region method,
+    // not an action primitive, and the split puts it where a wave could move it.
+    expect(m.moving).toBe(100);
+    expect(m.hubs).toBe(39);
     expect(m.moving + m.hubs).toBe(m.external);
-    // HUB 1 is 26 of the 34. `DoTag` joined when the minimap tag test replaced a
-    // source scan with a real call to it; HUB 2 is 8, `HandlePlayerTradeNegociation`
-    // joining when the trusted-leader test drove the actual trade screen.
+    // HUB 1 is 28 of the 39. `DoTag` joined when the minimap tag test replaced a
+    // source scan with a real call to it; HUB 2 is 11, `HandlePlayerTradeNegociation`
+    // joining when the trusted-leader test drove the actual trade screen, and
+    // `HandlePlayerCookFood`/`HandlePlayerDestroyItem`/`HandlePlayerSwapItemInventory`
+    // when the Release 7-6 inventory commands and the Release 8-2 swap prompt
+    // landed.
     //
     // `DoChat` and `DoTrade` then joined HUB 1 from the fast-trade test, which drives
     // `DoChat` to assert that it does *not* open a trade and `DoTrade` to assert the
@@ -250,7 +424,11 @@ it("splits the reachable surface into 34 hub and 92 movable, and the hubs stay",
     // the feature hangs off the say path and is drawn from `RedrawPlayScreen`, so
     // `DrawSpeechBubbles` routes to WAVE 2 and the two hubs are unmoved. The point
     // of the split is that a feature this size lands in a region that moves.
-    expect(m.buckets.get("HUB 1  Do*/On* action primitives")?.length ?? m.buckets.get("HUB 1")?.length).toBe(26);
+    //
+    // `DoSaveGame` is the newest, for `load-game-controllers.test.ts`: writing a
+    // save is the first half of reading one back, so that test reaches the save
+    // primitive before the load primitive it is actually about.
+    expect(m.buckets.get("HUB 1  Do*/On* action primitives")?.length ?? m.buckets.get("HUB 1")?.length).toBe(28);
   });
 
   it("names 27 members GameContext has to carry, not 11", () => {
@@ -274,19 +452,38 @@ it("splits the reachable surface into 34 hub and 92 movable, and the hubs stay",
     // `HandleAiActor` is the 31st, and it is a *method*, which is the point of a
     // `carry` classification rather than a list of fields. Same caveat as the two
     // above: a test reached it, so this bucket counts what the tests touch too.
-    expect(carry.length).toBe(31);
+    //
+    // `HandleHiScores` is the 32nd, and the same in kind: a screen method, not
+    // state, put here by `hiscores-screen.test.ts` driving it with real keys.
+    //
+    // **Still 32.** `HandleSelectSeed` looks like the 33rd and is not: it is
+    // named on the Wave 3 list in `measure-roguegame.mjs`, so a screen that is
+    // squarely part of the new-game flow does not land in the bucket of things
+    // `GameContext` carries. The STATE bucket holding still is the point.
+    //
+    // **33, and `AddOverlay` is the one.** The overlay-clipping work's rendering
+    // tests reach it for the first time, and it belongs: the overlay list it
+    // appends to is state the screen carries, and it is a method rather than a
+    // field — which is why the bucket is a `carry` classification and not a
+    // list of data.
+    expect(carry.length).toBe(33);
 		for (const name of ["player", "session", "rules", "m_PlayerFOV", "m_CharGen", "m_IsGameRunning", "m_PlayerWasRescued", "TAG_MODE_TEXT", "simulateOneBehindDistrictTurn", "stepActorsOnFire", "CURRENT_SAVE_SLOT", "POPUP_FILLCOLOR", "SPEECH_BUBBLE_FILLCOLOR"]) {
 			expect(carry, `${name} should be classified as carried`).toContain(name);
 		}
 	});
 
-	it("finds six reachable leaves, which is the whole of Wave 1's seam", () => {
-		// `DescribeActorActivity`, `DescribeItemLong`, `GetUserNewScreenshotName`,
-		// `MapToScreen`, `ScreenToMap`, `doEquipItem`. Six, against §6.5's 2,079-line
-		// Wave 1 — the wave is much bigger than its *externally reached* part, which is
-		// worth knowing before scheduling it.
+	it("finds nine reachable leaves, which is the whole of Wave 1's seam", () => {
+		// `DescribeActor`, `DescribeActorActivity`, `DescribeItemLong`,
+		// `GetUserNewScreenshotName`, `MapToScreen`, `ScreenToMap`, `doEquipItem`,
+		// `DescribeSkillShort` -- reached by `customiser-skill-row.test.ts`
+		// describing the skill the row's entry stands for -- and now `doLeaveMap`,
+		// called directly by the district-exit race test because the window it
+		// pins lives inside that method and its callers would test the callers.
+		// Nine, against §6.5's 2,079-line Wave 1 -- the wave is much bigger than
+		// its *externally reached* part, which is worth knowing before scheduling
+		// it.
 		const m = measure();
-		expect(m.buckets.get("WAVE 1")?.length).toBe(6);
+		expect(m.buckets.get("WAVE 1")?.length).toBe(9);
 	});
 
 	it("routes the three regions §6 never named, by extractability", () => {
@@ -311,7 +508,7 @@ it("splits the reachable surface into 34 hub and 92 movable, and the hubs stay",
 		const m = measure();
     const hubs = new Set(m.buckets.get("HUB 1") ?? []);
     for (const name of m.buckets.get("HUB 2") ?? []) hubs.add(name);
-    expect(hubs.size).toBe(34);
+    expect(hubs.size).toBe(39);
 		for (const [region, list] of m.buckets) {
 			if (region.startsWith("HUB")) continue;
 			for (const name of list) expect(hubs.has(name), `${name} is in two regions`).toBe(false);
