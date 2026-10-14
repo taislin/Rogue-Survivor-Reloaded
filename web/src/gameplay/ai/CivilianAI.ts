@@ -176,37 +176,6 @@ export class CivilianAI extends OrderableAI {
     // don't run by default.
     actor.isRunning = false;
 
-    // 0.2 extinguish self. Still Alive, Release 6-1; stop-drop-and-roll 7-6.
-    //
-    // A burning civilian tries water first, then waits (the C#'s
-    // stop-drop-and-roll, which is `DoWait`'s own on-fire arm). The water half
-    // reads `map.hasWaterTiles` — a flag the generators set and which had no
-    // reader before this, so a burning NPC on a map with a pond never thought
-    // about the pond. `behaviorGoToNearestVisibleWater` was already ported
-    // (`BaseAI.ts:776`) and is what the flag was waiting for.
-    if (hasFeature(Session.get().ruleset, Feature.TileFires) && actor.isOnFire) {
-      const map = actor.location.map;
-      if (map !== null && map.hasWaterTiles) {
-        // The port's `FOV` is a `ReadonlySet<number>` keyed by `coordKey`,
-        // while `behaviorGoToNearestVisibleWater` takes the `Point[]` the C#'s
-        // `HashSet<Point>` held. Decoding here rather than in the behaviour
-        // keeps the behaviour free of the encoding -- every other port caller
-        // passes an `FOV` and tests it through `LOS.fovHas`.
-        const goToWater = this.behaviorGoToNearestVisibleWater(
-          game,
-          [...fov].map(coordKeyToPoint),
-        );
-        if (goToWater) {
-          actor.isRunning = true;
-          actor.activity = Activity.FLEEING;
-          return goToWater;
-        }
-      }
-      // stop-drop-and-roll
-      actor.activity = Activity.FLEEING;
-      return new ActionWait(actor, game);
-    }
-
     // 0. Equip best item
     const bestEquip = this.behaviorEquipBestItems(game, true, true);
     if (bestEquip) {
@@ -301,6 +270,37 @@ export class CivilianAI extends OrderableAI {
     if (runFromExplosives) {
       actor.activity = Activity.FLEEING_FROM_EXPLOSIVE;
       return runFromExplosives;
+    }
+
+    // 0.2 extinguish self. Still Alive, Release 6-1; stop-drop-and-roll 7-6.
+    //
+    // A burning civilian tries water first, then waits (the C#'s
+    // stop-drop-and-roll, which is `DoWait`'s own on-fire arm). The water half
+    // reads `map.hasWaterTiles` — a flag the generators set and which had no
+    // reader before this, so a burning NPC on a map with a pond never thought
+    // about the pond. `behaviorGoToNearestVisibleWater` was already ported
+    // (`BaseAI.ts:776`) and is what the flag was waiting for.
+    if (hasFeature(Session.get().ruleset, Feature.TileFires) && actor.isOnFire) {
+      const map = actor.location.map;
+      if (map !== null && map.hasWaterTiles) {
+        // The port's `FOV` is a `ReadonlySet<number>` keyed by `coordKey`,
+        // while `behaviorGoToNearestVisibleWater` takes the `Point[]` the C#'s
+        // `HashSet<Point>` held. Decoding here rather than in the behaviour
+        // keeps the behaviour free of the encoding -- every other port caller
+        // passes an `FOV` and tests it through `LOS.fovHas`.
+        const goToWater = this.behaviorGoToNearestVisibleWater(
+          game,
+          [...fov].map(coordKeyToPoint),
+        );
+        if (goToWater) {
+          actor.isRunning = true;
+          actor.activity = Activity.FLEEING;
+          return goToWater;
+        }
+      }
+      // stop-drop-and-roll
+      actor.activity = Activity.FLEEING;
+      return new ActionWait(actor, game);
     }
 
     // 1 throw grenades at enemies.

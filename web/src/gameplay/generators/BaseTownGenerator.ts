@@ -4951,7 +4951,7 @@ export class BaseTownGenerator extends BaseMapGenerator {
   }
 
   makeShopConstructionItem(): Item {
-    const roll = this.m_DiceRoller.roll(0, hasFeature(Session.get().ruleset, Feature.ResourcesAvailability) ? 25 : 24);
+    const roll = this.m_DiceRoller.roll(0, 25);
     switch (roll) {
       case 0:
       case 1:
@@ -4990,8 +4990,10 @@ export class BaseTownGenerator extends BaseMapGenerator {
        * it at `BaseTownGenerator.cs:7500`, case 10 of `MakeShopConstructionItem`'s
        * own `Roll(0, 13)` -- a different table from this port's, which is a
        * port-era rewrite (24 outcomes, no axe, wrench, pickaxe, paint or
-       * chainsaw). Still Alive adds a 25th outcome; Classic keeps its original
-       * range so its seeded construction loot is unchanged.
+       * chainsaw). **Appended rather than inserted**, so the 24 outcomes this
+       * table already has keep their odds and every construction shop in every
+       * existing seed is unchanged; the nails are simply one more thing a
+       * hardware store can hold.
        */
       case 24:
         return this.makeItemNailGunAmmo();
@@ -7263,7 +7265,7 @@ export class BaseTownGenerator extends BaseMapGenerator {
 
           // weaponry/armor/radios.
           let it: Item | null = null;
-          const roll = this.m_DiceRoller.roll(0, hasFeature(Session.get().ruleset, Feature.ResourcesAvailability) ? 11 : 10);
+          const roll = this.m_DiceRoller.roll(0, 11);
           switch (roll) {
             // 20% armors
             case 0:
@@ -7313,8 +7315,9 @@ export class BaseTownGenerator extends BaseMapGenerator {
              * existing seed, and the generator's digests are pinned for exactly
              * that reason.
              *
-             * Still Alive widens the roll from 10 to 11 for the shield; Classic
-             * keeps its original range and seeded loot. The remaining fork
+             * So the roll widens from 10 to 11 and the shield takes the new
+             * outcome: the ten vanilla outcomes keep their odds exactly, the
+             * shield is now findable at one in eleven, and the remaining fork
              * arms (smoke grenade, flares kit, stun gun, tactical shotgun)
              * are still absent. That is the same shape as the nail gun's ammo
              * below: reachable now, fork's exact percentages still to do.

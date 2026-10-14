@@ -924,11 +924,17 @@ describe("library building under CLASSIC", () => {
     // library gate runs before the method's first roll, which is the only way a
     // Classic world can be unchanged.
     //
-    // Original fingerprint from before the Still Alive loot widened shared
-    // rolls. Those additions are now gated, preserving Classic's dice stream.
+    // **`80e0ca21800463af`, and it moved when the fork's items entered the rolls.**
+    // Two Still Alive item drops were appended to vanilla tables the CLASSIC path
+    // also walks: a riot shield in the police station's security room
+    // (`roll(0, 10)` -> `roll(0, 11)`) and the nail gun's ammunition in the
+    // construction shop (`roll(0, 24)` -> `roll(0, 25)`). A widened range re-maps
+    // a band of the flat roll, which moves a *die* downstream -- that is the whole
+    // cost of adding an arm to a seeded generator, and it is paid by every
+    // ruleset that shares the table.
     Session.get().ruleset = Ruleset.CLASSIC;
     const classic = fingerprint(newGenerator().generate(SEED));
-    expect(classic).toBe("edfe94f97003996a");
+    expect(classic).toBe("80e0ca21800463af");
 
     // The two assertions that give the committed value meaning. A fingerprint
     // that ignored the world would pass the first line for any value; one that

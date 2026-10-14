@@ -201,25 +201,25 @@ describe("Feature registry is wired", () => {
     expect(sites.map((s) => s.feature).sort())
       .toEqual([
 "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "Alcohol", "AmbientAudio", "AmbientAudio", "AmbientAudio",
-   "AmbientAudio", "AmbientAudio", "AmbientAudio", "AnimalShelter", "AnimalShelter", "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank",
-   "Bar", "Bar", "BlackOpsRaid", "Butchering", "Butchering", "CHARResearchRaid", "Church", "Clinic", "Clinic", "Cooking",
-   "Cooking", "Cooking", "Cooking", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov",
-   "DarknessFov", "DarknessGating", "DerangedPatient", "DerangedPatient", "DifficultyAtCreation", "DifficultyAtCreation", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",
-   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",
-   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",
-   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",
-   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",
-   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",
-   "Farm", "Farm", "Farm", "FireBarrels", "FireBarrels", "FireBarrels", "FireExtinguishers", "FireStation", "Fishing", "Fishing",
-   "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",
-   "FoodPoisoning", "FuelStation", "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "ItemDespawn",
-   "ItemDespawn", "Junkyard", "Junkyard", "Library", "LightPriority", "MechanicWorkshop", "MechanicWorkshop", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability",
-   "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ShelterBackpacks",
-   "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
-   "ShelterBackpacks", "ShelterBackpacks", "ShoppingMall", "ShoppingMall", "ShoppingMall", "SiphonFuel", "SiphonFuel", "SportsCourts", "SportsCourts", "TileFires",
-   "TileFires", "TileFires", "TileFires", "TileFires", "TileFires", "WeaponWeight",
+   "AmbientAudio", "AmbientAudio", "AmbientAudio", "AnimalShelter", "AnimalShelter", "ArmorResist", "ArmyBase", "ArmyBase", "Bank", "Bank",                                                                                             
+   "Bar", "Bar", "BlackOpsRaid", "Butchering", "Butchering", "CHARResearchRaid", "Church", "Clinic", "Clinic", "Cooking",                                                                                                               
+   "Cooking", "Cooking", "Cooking", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov", "DarknessFov",                                                                                            
+   "DarknessFov", "DarknessGating", "DerangedPatient", "DerangedPatient", "DifficultyAtCreation", "DifficultyAtCreation", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                           
+   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                            
+   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                            
+   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                            
+   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                            
+   "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio", "ExtendedAudio",                                                            
+   "Farm", "Farm", "Farm", "FireBarrels", "FireBarrels", "FireBarrels", "FireExtinguishers", "FireStation", "Fishing", "Fishing",                                                                                                       
+   "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",                                                                                          
+   "FoodPoisoning", "FuelStation", "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "ItemDespawn",                                                         
+   "ItemDespawn", "Junkyard", "Junkyard", "Library", "LightPriority", "MechanicWorkshop", "MechanicWorkshop", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability",                                                
+   "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
+   "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShoppingMall",                                  
+   "ShoppingMall", "ShoppingMall", "SiphonFuel", "SiphonFuel", "SportsCourts", "SportsCourts", "TileFires", "TileFires", "TileFires", "TileFires",                                                                                      
+   "TileFires", "TileFires", "WeaponWeight",
       ]);
-      // 176 call sites across 39 features
+      // 173 call sites across 39 features
 
 
 
@@ -308,8 +308,7 @@ describe("Feature registry is wired", () => {
     // army base's six rooms (`armyResourcesChance`, which is why the count grows by one
     // and not by four). A private helper the four call sites share is the difference
     // between this number growing once per feature and once per room.
-    // Construction, security-room and plasma loot each add a ruleset gate.
-    expect(res.filter((s) => /BaseTownGenerator\.ts/.test(s.at))).toHaveLength(6);
+    expect(res.filter((s) => /BaseTownGenerator\.ts/.test(s.at))).toHaveLength(3);
     expect(res.filter((s) => /ai\/BaseAI\.ts/.test(s.at))).toHaveLength(1);
 
     // DifficultyAtCreation is two readers in two files, and the split is the
