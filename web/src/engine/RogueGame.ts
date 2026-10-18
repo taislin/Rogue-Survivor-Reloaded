@@ -18838,11 +18838,32 @@ updateAdvisorHintBanner(): void {
 		return lines;
 	}
 
-	// C# DescribeAmmoType — RogueGame.cs:12156
+	/**
+	 * C# `DescribeAmmoType` — `RogueGame.cs:32263` (`:12156` in vanilla).
+	 *
+	 * **All thirteen cases, which is what the C# has.** The seven Still Alive members
+	 * were missing, so the `default: throw` below was reachable from a tooltip: the
+	 * nail gun (`AmmoType.NAIL`) and the nails themselves (`DescribeItemAmmo`) both
+	 * name their ammo type through here, and either one threw `RangeError` while the
+	 * cursor was over it rather than at any action. Every weapon from Release 5-1 on
+	 * — the flamethrower, the stun gun, the minigun, the grenade launcher, the bio
+	 * force gun — had the same hole.
+	 *
+	 * The `default: throw` stays, matching the C#'s
+	 * `ArgumentOutOfRangeException("at", "unhandled ammo type")`, because it is the
+	 * only thing standing between a future `AmmoType` member and a silent `undefined`
+	 * in a tooltip.
+	 *
+	 * Two of the six vanilla strings had also drifted from the fork and are now the
+	 * fork's: `BOLT` was `bolts` and `SHOTGUN` was `shotgun cartridge`, where `:32267`
+	 * and `:32272` say `crossbow bolts` and `shotgun shells`. Both also agree with the
+	 * *item names* the tooltip's own first line prints (`GameItems.ts:1183-1184`), so
+	 * the two lines could not contradict each other on the same screen.
+	 */
 	DescribeAmmoType(at: AmmoType): string {
 		switch (at) {
 			case AmmoType.BOLT:
-				return "bolts";
+				return "crossbow bolts";
 			case AmmoType.HEAVY_PISTOL:
 				return "heavy pistol bullets";
 			case AmmoType.HEAVY_RIFLE:
@@ -18852,7 +18873,22 @@ updateAdvisorHintBanner(): void {
 			case AmmoType.LIGHT_RIFLE:
 				return "light rifle bullets";
 			case AmmoType.SHOTGUN:
-				return "shotgun cartridge";
+				return "shotgun shells";
+			// Still Alive, in the fork's order (`RogueGame.cs:32273-32279`).
+			case AmmoType.NAIL:
+				return "nails"; //@@MP (Release 5-1-1)
+			case AmmoType.PRECISION_RIFLE:
+				return "precision rifle rounds"; //@@MP (Release 6-6)
+			case AmmoType.FUEL:
+				return "fuel"; //@@MP (Release 7-1)
+			case AmmoType.CHARGE:
+				return "charges"; //@@MP (Release 7-2)
+			case AmmoType.MINIGUN:
+				return "minigun rounds"; //@@MP (Release 7-6)
+			case AmmoType.GRENADES:
+				return "launcher grenades"; //@@MP (Release 7-6)
+			case AmmoType.PLASMA:
+				return "plasma packs"; //@@MP (Release 7-6)
 			default:
 				throw new RangeError("unhandled ammo type");
 		}

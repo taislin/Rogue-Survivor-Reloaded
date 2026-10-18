@@ -6355,21 +6355,51 @@ export class BaseTownGenerator extends BaseMapGenerator {
     // 3. Create floorplan & rooms.
     /////////////////////////
     // make 4 quarters, splitted by a crossed corridor.
+    //
+    // **These four are `Rectangle.FromLTRB`, and `FromLTRB` takes edges, not a size.**
+    // C# `BaseTownGenerator.cs:10820-10823`:
+    //
+    // ```csharp
+    // Rectangle qTopLeft  = Rectangle.FromLTRB(0, 0, underground.Width / 2 - corridorHalfWidth, underground.Height / 2 - corridorHalfWidth);
+    // Rectangle qTopRight = Rectangle.FromLTRB(underground.Width / 2 + 1 + corridorHalfWidth, 0, underground.Width, qTopLeft.Bottom);
+    // Rectangle qBotLeft  = Rectangle.FromLTRB(0, underground.Height / 2 + 1 + corridorHalfWidth, qTopLeft.Right, underground.Height);
+    // Rectangle qBotRight = Rectangle.FromLTRB(qTopRight.Left, qBotLeft.Top, underground.Width, underground.Height);
+    // ```
+    //
+    // which is `new Rect(l, t, right - l, bottom - t)`. Only `qTopLeft` survives a
+    // mistranslation, because it is the one whose left and top are both zero; the
+    // other three all quote the map's full `Width`/`Height` as their **size**, which
+    // handed `makeRoomsPlan` a quarter `mapSize` wide starting at `mapSize / 2 + 2` --
+    // running off the map. `quadSplit` then cut that oversized rect in half at *its*
+    // midpoint, so a large share of the rooms in three of the four quarters landed off
+    // the map entirely: clipped away by `tileRectangle`, by `mapObjectFill` and by
+    // the furniture passes, leaving open floor with no wall, no door and no contents,
+    // and their names still in `roomsList` because nothing checks the bounds.
+    //
+    // Same shape as the CHAR underground facility above, which got the
+    // `width - left` / `height - top` conversion right; the two are twins in the C#.
     const corridorHalfWidth = 1;
-    const qTopLeft = new Rect(0, 0, Math.floor(underground.width / 2) - corridorHalfWidth, Math.floor(underground.height / 2) - corridorHalfWidth);
+    const halfWidth = Math.floor(underground.width / 2);
+    const halfHeight = Math.floor(underground.height / 2);
+    const qTopLeft = new Rect(0, 0, halfWidth - corridorHalfWidth, halfHeight - corridorHalfWidth);
     const qTopRight = new Rect(
-      Math.floor(underground.width / 2) + 1 + corridorHalfWidth,
+      halfWidth + 1 + corridorHalfWidth,
       0,
-      underground.width,
+      underground.width - (halfWidth + 1 + corridorHalfWidth),
       qTopLeft.bottom
     );
     const qBotLeft = new Rect(
       0,
-      Math.floor(underground.height / 2) + 1 + corridorHalfWidth,
+      halfHeight + 1 + corridorHalfWidth,
       qTopLeft.right,
-      underground.height
+      underground.height - (halfHeight + 1 + corridorHalfWidth)
     );
-    const qBotRight = new Rect(qTopRight.left, qBotLeft.top, underground.width, underground.height);
+    const qBotRight = new Rect(
+      qTopRight.left,
+      qBotLeft.top,
+      underground.width - qTopRight.left,
+      underground.height - qBotLeft.top
+    );
 
     // split all the map in rooms.
     const minRoomSize = 6;

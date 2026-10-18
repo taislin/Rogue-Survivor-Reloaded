@@ -14,7 +14,7 @@ import { GameImages } from "@gameplay/GameImages";
 import { GameItems } from "@gameplay/GameItems";
 import { GameMusics } from "@gameplay/GameSounds";
 import { GameTiles, TileID } from "@gameplay/GameTiles";
-import { BaseTownGenerator, Parameters } from "@gameplay/generators/BaseTownGenerator";
+import { BaseTownGenerator, Block, Parameters } from "@gameplay/generators/BaseTownGenerator";
 
 /**
  * `Feature.ShoppingMall` — the last unwired feature, and the only generator in the C#
@@ -458,6 +458,97 @@ describe("Feature.ShoppingMall — the mall district", () => {
     expect(checkouts).toHaveLength(10);
     expect(checkouts).not.toContain(`${L + 1},${T + 9}`);
     expect(checkouts).toContain(`${L + 17},${T + 9}`);
+  });
+
+  it("puts all twenty entrance doors ON the building wall, not one tile outside it", () => {
+    Session.get().ruleset = Ruleset.STILL_ALIVE;
+    const { map } = generateMallDistrict();
+    const whiteTile = Models.tiles.get(TileID.FLOOR_WHITE_TILE);
+    const wallMall = Models.tiles.get(TileID.WALL_MALL);
+
+    // **The asymmetry that broke the south and east entrances.** C# `:9935` reads
+    //
+    //   l = InsideRect.Left - 1, t = InsideRect.Top - 1, b = InsideRect.Bottom, r = InsideRect.Right
+    //
+    // so `l`/`t` are the *building* rect's top-left corner (`InsideRect.Left - 1 ==
+    // BuildingRect.Left`, the subtraction cancelling the two insets) while `b`/`r` are
+    // the *inside* rect's bottom-right -- one tile in, which is exactly the row and
+    // column `TileRectangle(WALL_MALL, block.BuildingRect)` laid down. Reading all four
+    // off `buildingRect` put the ten south and east doors out in the walkway ring and
+    // left a solid `WALL_MALL` elevation with a glass door stuck to its outside.
+    //
+    // `Block` insets twice, so these are not the same numbers.
+    const mallBlock = new Block(MALL_RECT);
+    expect(mallBlock.insideRect.bottom, "insideRect.bottom is one inside buildingRect.bottom").toBe(
+      MALL_BUILDING_RECT.bottom - 1,
+    );
+    expect(mallBlock.insideRect.right).toBe(MALL_BUILDING_RECT.right - 1);
+    // ... and `l`/`t` are the other way round: subtracting one cancels the inset, so
+    // they *are* the building rect's corner. Which is why the bug looked like a single
+    // broken door rather than four broken edges -- two of the four numbers are right
+    // either way.
+    expect(mallBlock.insideRect.left - 1).toBe(MALL_BUILDING_RECT.left);
+    expect(mallBlock.insideRect.top - 1).toBe(MALL_BUILDING_RECT.top);
+
+    const B = MALL_BUILDING_RECT.bottom - 1; // the C#'s `b`
+    const R = MALL_BUILDING_RECT.right - 1; // the C#'s `r`
+
+    // The C#'s twenty, in `doorList` order: four per side for west/east and six for
+    // north/south, each run landing on the wall itself.
+    const doors: [number, number][] = [
+      [L, T + 21], [L, T + 22], [L, T + 23], [L, T + 24],
+      [L + 13, T], [L + 14, T], [L + 15, T], [L + 29, T], [L + 30, T], [L + 31, T],
+      [R, T + 21], [R, T + 22], [R, T + 23], [R, T + 24],
+      [L + 13, B], [L + 14, B], [L + 15, B], [L + 29, B], [L + 30, B], [L + 31, B],
+    ];
+    expect(doors).toHaveLength(20);
+
+    for (const [x, y] of doors) {
+      expect(map.getMapObjectAt(x, y)?.name, `no glass door at ${x},${y}`).toBe("glass door");
+      expect(modelAt(map, x, y), `the tile under the door at ${x},${y}`).toBe(whiteTile);
+    }
+
+    // **Whole-perimeter, which is what catches a door that is one tile out.** Every
+    // tile on the building rect's perimeter is `WALL_MALL` or a door -- and nothing
+    // else, so a stray door in the walkway would show up as an extra and a missing
+    // one as a wall in the wrong place.
+    const onPerimeter = (x: number, y: number): boolean =>
+      x === L || x === R || y === T || y === B;
+    const wantDoors = new Set(doors.map(([x, y]) => `${x},${y}`));
+    const gotDoors = new Set<string>();
+    for (let x = MALL_BUILDING_RECT.left; x < MALL_BUILDING_RECT.right; x++) {
+      for (let y = MALL_BUILDING_RECT.top; y < MALL_BUILDING_RECT.bottom; y++) {
+        if (!onPerimeter(x, y)) continue;
+        if (map.getMapObjectAt(x, y)?.name === "glass door") gotDoors.add(`${x},${y}`);
+        else expect(modelAt(map, x, y), `perimeter ${x},${y}`).toBe(wallMall);
+      }
+    }
+    expect(gotDoors, "the twenty doors, and no others").toEqual(wantDoors);
+
+    // And the *inside* of each entrance opens onto the mall: white tile, not wall.
+    for (const [x, y] of doors) {
+      const inward =
+        x === L ? [x + 1, y] : x === R ? [x - 1, y] : y === T ? [x, y + 1] : [x, y - 1];
+      expect(modelAt(map, inward[0], inward[1]), `inside of ${x},${y}`).not.toBe(wallMall);
+    }
+
+    // The six signs hang on the wall either side of the door runs, on the same three
+    // edges. `the` and `mall` at `:9950-9954`, and the east pair at `r` is the tell:
+    // at `buildingRect.right` they would be out in the walkway with nothing to hang on.
+    const signSpots: [number, number][] = [
+      [L + 12, T], [L + 28, T], [R, T + 25], [L + 12, B], [L + 28, B], [L, T + 20],
+      [L + 16, T], [L + 32, T], [R, T + 20], [L + 16, B], [L + 32, B], [L, T + 25],
+    ];
+    for (const [x, y] of signSpots) {
+      expect(modelAt(map, x, y), `sign ${x},${y} has nothing to hang on`).toBe(wallMall);
+      const tile = map.getTileAt(x, y)!;
+      expect(
+        (tile.getDecorations ?? []).some((d) =>
+          d === GameImages.DECO_MALL_SIGN_THE || d === GameImages.DECO_MALL_SIGN_MALL,
+        ),
+        `no mall sign at ${x},${y}`,
+      ).toBe(true);
+    }
   });
 
   it("fills eleven of the twelve shops with displays, and the dealership by hand", () => {

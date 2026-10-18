@@ -248,7 +248,13 @@ describe("RogueGame's measured surface", () => {
     // consumer scan, and the headless bot plays through `AdvancePlay`. WAVE 1,
     // and movable — a method a wave can reorganise, reached the same way the
     // other screen-driving tests reach the class.
-    expect(m.external).toBe(139);
+    //
+    // **140, for `DescribeAmmoType`.** The tooltip tests pin all thirteen
+    // `AmmoType`s, having found the switch carrying only the six vanilla ones
+    // and throwing on the rest. It sits in WAVE 1 immediately beside the
+    // `DescribeItemLong` that calls it, so both halves of the tooltip seam are
+    // now measured, and again it is a reach that enlarges the movable half.
+    expect(m.external).toBe(140);
   // §6.4: "567 of 584 methods are public — only 17 are `private`. The
   // `private` boundary is effectively absent." That is still true, and the
   // direction is worth pinning: private has come down from 91 to 89, and is 90
@@ -334,7 +340,13 @@ describe("RogueGame's measured surface", () => {
     // **139 now**: `doLeaveMap`, reached by the district-exit race test calling
     // it directly. WAVE 1, so movable; the reason for the reach is recorded at
     // the other pin of this number.
-    expect(m.external).toBe(139);
+    //
+    // **140 now**: `DescribeAmmoType`, reached by the tooltip tests that pin all
+    // thirteen `AmmoType`s after the switch was found to carry only the six
+    // vanilla ones and to throw on the rest. WAVE 1 beside `DescribeItemLong`,
+    // which is the method that calls it -- so a test proving the tooltip does not
+    // crash reaches both halves of the seam at once.
+    expect(m.external).toBe(140);
     expect(m.external).toBeGreaterThan(83);
 	});
 
@@ -403,7 +415,12 @@ it("splits the reachable surface into 39 hub and 99 movable, and the hubs stay",
     // **100 now**: `doLeaveMap`, from the district-exit race test. WAVE 1, so
     // movable, and the hubs stay at 39 -- an exit traversal is a region method,
     // not an action primitive, and the split puts it where a wave could move it.
-    expect(m.moving).toBe(100);
+    //
+    // **101 now**, and the hubs still 39: `DescribeAmmoType`, from the tooltip
+    // tests. WAVE 1 again, so the movable half grew and the hubs did not --
+    // which is the split working, and is why the other three pins of this
+    // number move without this one.
+    expect(m.moving).toBe(101);
     expect(m.hubs).toBe(39);
     expect(m.moving + m.hubs).toBe(m.external);
     // HUB 1 is 28 of the 39. `DoTag` joined when the minimap tag test replaced a
@@ -472,18 +489,23 @@ it("splits the reachable surface into 39 hub and 99 movable, and the hubs stay",
 		}
 	});
 
-	it("finds nine reachable leaves, which is the whole of Wave 1's seam", () => {
+	it("finds ten reachable leaves, which is the whole of Wave 1's seam", () => {
 		// `DescribeActor`, `DescribeActorActivity`, `DescribeItemLong`,
 		// `GetUserNewScreenshotName`, `MapToScreen`, `ScreenToMap`, `doEquipItem`,
 		// `DescribeSkillShort` -- reached by `customiser-skill-row.test.ts`
 		// describing the skill the row's entry stands for -- and now `doLeaveMap`,
 		// called directly by the district-exit race test because the window it
 		// pins lives inside that method and its callers would test the callers.
-		// Nine, against §6.5's 2,079-line Wave 1 -- the wave is much bigger than
+		// Ten, against §6.5's 2,079-line Wave 1 -- the wave is much bigger than
 		// its *externally reached* part, which is worth knowing before scheduling
 		// it.
+		//
+		// **Ten**: `DescribeAmmoType` is the tenth, reached by the tooltip tests
+		// that pin all thirteen `AmmoType`s. It is adjacent to `DescribeItemLong`
+		// in this bucket and is called by it, so the two halves of the tooltip
+		// seam are now both measured.
 		const m = measure();
-		expect(m.buckets.get("WAVE 1")?.length).toBe(9);
+		expect(m.buckets.get("WAVE 1")?.length).toBe(10);
 	});
 
 	it("routes the three regions §6 never named, by extractability", () => {

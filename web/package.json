@@ -1,6 +1,6 @@
 {
   "name": "rogue-survivor-reloaded-web",
-  "version": "0.9.5",
+  "version": "0.9.6",
   "description": "Rogue Survivor Reloaded - Browser port (TypeScript)",
   "private": true,
   "scripts": {
