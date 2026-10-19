@@ -72,7 +72,7 @@ import { Ruleset, Session } from "@engine/Session";
 import { WorldTime } from "@engine/WorldTime";
 import { ItemGrenade } from "@engine/items/ItemExplosive";
 import { ItemLight, ItemLightModel } from "@engine/items/ItemLight";
-import { ItemRangedWeapon } from "@engine/items/ItemWeapon";
+import { ItemAmmo, ItemAmmoModel, ItemRangedWeapon, ItemRangedWeaponModel, AmmoType } from "@engine/items/ItemWeapon";
 import { ActorID, GameActors } from "@gameplay/GameActors";
 import { GameFactions } from "@gameplay/GameFactions";
 import { GameImages } from "@gameplay/GameImages";
@@ -733,6 +733,115 @@ describe("the ammunition: unloading is the only reader any of it has", () => {
     game.HandlePlayerUnloadAmmo(player);
     // `Conjugate` picks `youForm` for the player, whose name is not a proper noun.
     expect(messages()).toContain("unload the pistol");
+  });
+});
+
+// ── 3a. DescribeAmmoType — the hover tooltip ─────────────────────────────────
+
+/**
+ * The second reader every `AmmoType` has, and the one that was missing.
+ *
+ * `DescribeAmmoType` (`RogueGame.cs:32263`) is a `switch` over thirteen members, and
+ * the port carried only the six vanilla ones with the C#'s `default: throw`. Both
+ * tooltip paths go through it -- `DescribeItemWeapon` for a gun and `DescribeItemAmmo`
+ * for a box of rounds -- so every Still Alive weapon threw `RangeError` at the moment
+ * the cursor went over it rather than at any action: the nail gun and the nails
+ * (Release 5-1) were the first pair anybody hit, and the flamethrower, stun gun,
+ * minigun, grenade launcher and bio force gun had the same hole behind them.
+ */
+describe("the hover tooltip names every ammunition type", () => {
+  /**
+   * All thirteen, C# `:32267-32279`, in the fork's order.
+   *
+   * Written out rather than iterated over `AmmoType`, so that *appending* a fourteenth
+   * member is a visible edit here instead of a silent hole: `it.each` over the enum
+   * would have agreed with a switch that forgot it, which is the bug.
+   */
+  const DESCRIBED: [AmmoType, string][] = [
+    [AmmoType.LIGHT_PISTOL, "light pistol bullets"],
+    [AmmoType.HEAVY_PISTOL, "heavy pistol bullets"],
+    [AmmoType.SHOTGUN, "shotgun shells"],
+    [AmmoType.LIGHT_RIFLE, "light rifle bullets"],
+    [AmmoType.HEAVY_RIFLE, "heavy rifle bullets"],
+    [AmmoType.BOLT, "crossbow bolts"],
+    [AmmoType.NAIL, "nails"],
+    [AmmoType.PRECISION_RIFLE, "precision rifle rounds"],
+    [AmmoType.FUEL, "fuel"],
+    [AmmoType.CHARGE, "charges"],
+    [AmmoType.MINIGUN, "minigun rounds"],
+    [AmmoType.GRENADES, "launcher grenades"],
+    [AmmoType.PLASMA, "plasma packs"],
+  ];
+
+  it("covers every member of the enum, and no more", () => {
+    expect(DESCRIBED).toHaveLength(AmmoType._COUNT);
+    expect(new Set(DESCRIBED.map(([t]) => t)).size).toBe(AmmoType._COUNT);
+  });
+
+  it.each(DESCRIBED)("AmmoType %s is '%s'", (ammoType, text) => {
+    expect(game.DescribeAmmoType(ammoType)).toBe(text);
+  });
+
+  it.each(DESCRIBED)("AmmoType %s does not throw", (ammoType) => {
+    expect(() => game.DescribeAmmoType(ammoType)).not.toThrow();
+  });
+
+  it("a gun's tooltip carries the line, for every gun in the game", () => {
+    // Driven through the *public* entry point rather than through the switch, because
+    // the bug was never in the switch -- it was in what reaches it. Every
+    // `ItemRangedWeaponModel` in `Models.items` goes through `DescribeItemLong`, which
+    // is what a hover calls.
+    const guns = Object.values(ItemID)
+      .filter((id): id is ItemID => typeof id === "number")
+      .map((id) => Models.items.get(id))
+      .filter((m): m is ItemRangedWeaponModel => m instanceof ItemRangedWeaponModel);
+    // Twenty-two in the fork, and the count is the thing worth pinning: a filter that
+    // quietly matched nothing would make every assertion below vacuous.
+    expect(guns.length).toBeGreaterThanOrEqual(22);
+    for (const model of guns) {
+      const lines = game.DescribeItemLong(new ItemRangedWeapon(model), true, 0);
+      expect(
+        lines.some((l) => l === `Type : ${game.DescribeAmmoType(model.ammoType)}`),
+        `${model.id} has no 'Type :' line`,
+      ).toBe(true);
+    }
+  });
+
+  it("a box of rounds' tooltip carries the line, for every ammunition in the game", () => {
+    const ammo = Object.values(ItemID)
+      .filter((id): id is ItemID => typeof id === "number")
+      .map((id) => Models.items.get(id))
+      .filter((m): m is ItemAmmoModel => m instanceof ItemAmmoModel);
+    // Twelve: the six vanilla rows plus fuel (7-1) and the four of Release 7-6.
+    // `AmmoType.CHARGE` is the one member with no ammunition item at all -- the stun
+    // gun charges itself -- so it is covered by the `DESCRIBED` table above and not
+    // here.
+    expect(ammo.length).toBe(12);
+    for (const model of ammo) {
+      const lines = game.DescribeItemLong(new ItemAmmo(model), true, 0);
+      expect(lines, `${model.id} has no ammo tooltip`).toContain(
+        `Type : ${game.DescribeAmmoType(model.ammoType)}`,
+      );
+    }
+  });
+
+  it("the nail gun and the nails, which is the pair that was reported", () => {
+    // The exact two objects in the bug report, so a reader who wants to see the fix
+    // has the two lines that were failing in front of them.
+    expect(game.DescribeItemLong(new ItemRangedWeapon(Models.items.get(ItemID.RANGED_NAIL_GUN)), true, 0))
+      .toContain("Type : nails");
+    expect(game.DescribeItemLong(new ItemAmmo(Models.items.get(ItemID.AMMO_NAILS)), true, 0))
+      .toContain("Type : nails");
+  });
+
+  it("still throws on a member that does not exist", () => {
+    // The C#'s `ArgumentOutOfRangeException("at", "unhandled ammo type")` is the only
+    // thing standing between a future `AmmoType` and a silent `undefined` in a
+    // tooltip, and a save stores the number -- so `13` is reachable from an old fork
+    // build and must fail loudly rather than print nothing.
+    expect(() => game.DescribeAmmoType(AmmoType._COUNT as AmmoType)).toThrow(
+      "unhandled ammo type",
+    );
   });
 });
 

@@ -522,18 +522,22 @@ describe("the play loop takes the turn", () => {
 describe("the option does not reach the targeting modes", () => {
   it("passes a timeout to exactly one caller", () => {
     // The structural guarantee, asserted on the source rather than through
-    // behaviour. `WaitKeyOrMouse` has seven callers and six of them mean "which
-    // tile?"; a timeout reaching those would raise walls and issue orders at a
-    // tile the player never looked at. Driving a real barricade and checking
-    // nothing was built is possible but fragile, and this is the property that
-    // actually matters.
+    // behaviour. `WaitKeyOrMouse` has eight callers now: the main game loop and
+    // seven targeting/modal loops (`HandleActionMenu` joined with the Tab menu).
+    // Six of the seven mean "which tile?"; a timeout reaching those would raise
+    // walls and issue orders at a tile the player never looked at. The seventh is
+    // the action menu, which waits for a key or a click and is dismissed on
+    // `timedOut` -- it never acts on a tile, so it cannot spend a turn, and it
+    // calls with no argument so it cannot fire idle-advance at all. Driving a
+    // real barricade and checking nothing was built is possible but fragile,
+    // and this is the property that actually matters.
     const src = readFileSync(
       fileURLToPath(new URL("../src/engine/RogueGame.ts", import.meta.url)),
       "utf8",
     );
     const calls = src.match(/this\.WaitKeyOrMouse\([^)]*\)/g) ?? [];
     const withArg = calls.filter((c) => !c.endsWith("()"));
-    expect(calls.length, "the call count changed — re-read this test").toBe(7);
+    expect(calls.length, "the call count changed — re-read this test").toBe(8);
     expect(withArg, "the timeout must be passed from one caller only").toHaveLength(1);
     expect(withArg[0]).toContain("idleAdvanceMs");
   });

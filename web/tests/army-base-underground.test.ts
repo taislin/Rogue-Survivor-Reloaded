@@ -203,6 +203,63 @@ describe("createUniqueMap_ArmyBase", () => {
 });
 
 describe("the base's floorplan", () => {
+	it("keeps every room inside the map", () => {
+		// **The regression this file did not have, and it is the whole "unfinished"
+		// complaint.** C# `:10820-10823` builds the four quarters with
+		// `Rectangle.FromLTRB`, which takes *edges*:
+		//
+		// ```csharp
+		// Rectangle qTopRight = Rectangle.FromLTRB(underground.Width / 2 + 1 + corridorHalfWidth, 0, underground.Width, qTopLeft.Bottom);
+		// ```
+		//
+		// i.e. `new Rect(l, t, right - l, bottom - t)`. The port passed the map's full
+		// `Width`/`Height` as the *size*, which handed `makeRoomsPlan` a quarter `MAP`
+		// wide starting at `MAP / 2 + 2` — running off the map. `quadSplit` then cut
+		// that oversized rect at *its* midpoint, so a large share of the rooms landed
+		// off the map entirely: no wall, no door, no furniture, no name on anything you
+		// could walk to — while still sitting in `roomsList`, because nothing there
+		// checks bounds.
+		//
+		// Asserted over the map's own zones rather than by re-deriving the quarters,
+		// because the zone is the thing that survived the bug: the rooms existed, by
+		// name, and could not be visited.
+		const { built } = build();
+		const base = built!.map;
+		const outside = base.zones.filter(
+			(z) =>
+				z.bounds.left < 0 ||
+				z.bounds.top < 0 ||
+				z.bounds.right > base.width ||
+				z.bounds.bottom > base.height,
+		);
+		expect(
+			outside.map((z) => `${z.name} ${z.bounds.toString()}`),
+			`${outside.length} of ${base.zones.length} rooms are off the map`,
+		).toEqual([]);
+
+		// **All four quarters are furnished, which is the other half of the same
+		// claim.** Read off the map rather than off the names: a quarter that produced
+		// no room at all would leave an un-walled, unfurnished void, and this asserts
+		// there is furniture on each side of both corridors.
+		const quarters = new Set(
+			base.zones.map((z) => {
+				const r = z.bounds.top + z.bounds.height / 2 < base.height / 2 ? "N" : "S";
+				const c = z.bounds.left + z.bounds.width / 2 < base.width / 2 ? "W" : "E";
+				return `${r}${c}`;
+			}),
+		);
+		expect([...quarters].sort(), "a quarter of the base is empty").toEqual([
+			"NE", "NW", "SE", "SW",
+		]);
+
+		// And the rooms are *rooms*: the zone is `roomRect` inset by one tile on every
+		// side (`:10886`), so a `minRoomSize = 6` room shows up here as 4x4.
+		for (const z of base.zones) {
+			expect(z.bounds.width, `${z.name} is a corridor`).toBeGreaterThanOrEqual(4);
+			expect(z.bounds.height, `${z.name} is a corridor`).toBeGreaterThanOrEqual(4);
+		}
+	});
+
 	it("puts one power room in every corner and a named room in each quarter", () => {
 		// The role dispatch at `:10903-10937`. Corner first: a corner room is a power
 		// room whichever quarter it is in, and a test that only checked "there are four

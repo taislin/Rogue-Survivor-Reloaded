@@ -1188,16 +1188,30 @@ function generateShoppingMallGroundFloor(surfaceMap: GameMap, block: Block, ctx:
     if (tile) tile.isInside = true;
   });
   //to fix jank
-  // These four are the *building* rect's edges, not the inside rect's: the C# spells
-  // them as `InsideRect.Left - 1` and friends, which is the same number twice. Kept
-  // as `buildingRect` because the port's `Block` derives all three from one rect and
-  // the arithmetic would be four chances to get `bottom` wrong. `insideRect.bottom` is
-  // `buildingRect.bottom` and `insideRect.right` is `buildingRect.right` — verified
-  // against `Block.resetRectangle`, which insets by 1 on each side and by 2 in size.
-  const l = block.buildingRect.left;
-  const t = block.buildingRect.top;
-  const b = block.buildingRect.bottom;
-  const r = block.buildingRect.right;
+  //
+  // C# `BaseTownGenerator.cs:9935`, transcribed as written:
+  //
+  // ```csharp
+  // int l = block.InsideRect.Left - 1, t = block.InsideRect.Top - 1, b = block.InsideRect.Bottom, r = block.InsideRect.Right;
+  // ```
+  //
+  // **Only `l` and `t` are the building rect's corners.** `InsideRect` is `BuildingRect`
+  // inset by one tile on every side (`Block.ResetRectangle`, `:217-222`), so its bottom
+  // and right are each *one tile inside* the building rect's — and one tile inside is
+  // the building's own perimeter, which is the row and column
+  // `TileRectangle(WALL_MALL, block.BuildingRect)` laid down three lines above. That is
+  // the whole point of the asymmetry: the doors punched through the *east* and *south*
+  // walls have to land **on** the wall, not one tile outside it.
+  //
+  // Reading `b`/`r` off `buildingRect` instead put the six south doors and the four east
+  // doors out in the walkway ring, one tile beyond the wall, leaving the mall's south
+  // and east elevations solid `WALL_MALL` with a glass door stuck to the outside of
+  // them. The north and west entrances were unaffected — `t` and `l` agree either way —
+  // which is what makes it read as one broken door rather than a half-broken building.
+  const l = block.insideRect.left - 1;
+  const t = block.insideRect.top - 1;
+  const b = block.insideRect.bottom;
+  const r = block.insideRect.right;
 
   // 1. mall entrances with signs.
   const doorList: readonly Point[] = [

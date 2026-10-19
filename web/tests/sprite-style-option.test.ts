@@ -88,6 +88,7 @@ describe("the sprite sets on disk", () => {
       "genesis_classic_1.4",
       "dafttiles_b1",
       "civ13",
+      "mshockxottoplus",
       "genesis_actors_on_deonapocalypse",
     ]);
     expect(DEFAULT_IMAGE_SET).toBe("classic");

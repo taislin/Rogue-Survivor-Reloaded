@@ -77,6 +77,7 @@ export const IMAGE_SETS = [
   "genesis_classic_1.4",
   "dafttiles_b1",
   "civ13",
+  "mshockxottoplus",
   "genesis_actors_on_deonapocalypse",
 ] as const;
 export type ImageSet = (typeof IMAGE_SETS)[number];
@@ -133,6 +134,7 @@ const IMAGE_SET_ROUTES: Readonly<Record<ImageSet, readonly SpriteRoute[]>> = {
   // fallback. So the ordinary shape — one catch-all — rather than the per-category
   // routing below. The measurement is in `IMAGE_SETS`'s docblock.
   civ13: [{ prefix: "", chain: ["civ13", "classic"] }],
+  mshockxottoplus: [{ prefix: "", chain: ["mshockxottoplus", "classic"] }],
   // Actors from Genesis, everything else from Deonapocalypse. Not a directory —
   // there is no such folder, and there does not need to be one.
   genesis_actors_on_deonapocalypse: [
