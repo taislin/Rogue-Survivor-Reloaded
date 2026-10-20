@@ -50,6 +50,21 @@ describe("CanvasUI.computeLayout", () => {
     }
   });
 
+  it("fills the viewport when fill scaling is enabled", () => {
+    // The opt-in path for large displays: no letterboxing, at the cost of
+    // uneven sprite-pixel sizes. 1920x1080 fills at ~1.4x instead of 1x.
+    for (const [w, h] of [
+      [1920, 1080],
+      [2560, 1440],
+      [3440, 1440],
+      [3840, 2160],
+    ] as const) {
+      const layout = CanvasUI.computeLayout(w, h, 1, true);
+      expect(layout.scale).toBeCloseTo(Math.min(w / LOGICAL_W, h / LOGICAL_H), 6);
+      expect(Math.max(layout.cssW / w, layout.cssH / h)).toBeCloseTo(1, 6);
+    }
+  });
+
   it("scales down proportionally when the viewport is shorter than 768", () => {
     // 1366-wide window with browser chrome: the common case.
     const layout = expectSane(1366, 700, 1);

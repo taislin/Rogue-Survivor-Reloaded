@@ -7,6 +7,7 @@
 import { GameMode, Session } from "@engine/Session";
 import { Feature, hasFeature } from "@engine/FeatureFlags";
 import { storage } from "@engine/storage";
+import { CanvasUI } from "@ui/CanvasUI";
 import {
 	DEFAULT_IMAGE_SET,
 	IMAGE_SETS,
@@ -89,6 +90,8 @@ export enum OptionIDs {
   GAME_RESOURCES_AVAILABILITY,
   UI_SPRITE_STYLE, // browser port
   UI_FONT_CHOICE, // browser port
+  UI_SCALE, // browser port
+  UI_FILL_SCREEN, // browser port
   UI_VIEW_MODE, // browser port
   GAME_IDLE_AUTO_ADVANCE, // browser port
   /**
@@ -456,6 +459,7 @@ export class GameOptions {
   static readonly DEFAULT_AUTOSAVE_PERIOD = 24; // alpha10.1
   static readonly DEFAULT_SPRITE_STYLE: ImageSet = DEFAULT_IMAGE_SET;
   static readonly DEFAULT_FONT_CHOICE: FontChoice = DEFAULT_FONT_CHOICE;
+  static readonly DEFAULT_UI_SCALE: number = 1;
   static readonly DEFAULT_VIEW_MODE: ViewMode = DEFAULT_VIEW_MODE;
   static readonly DEFAULT_IDLE_AUTO_ADVANCE: IdleAdvance = IdleAdvance.OFF;
 
@@ -538,6 +542,8 @@ export class GameOptions {
 
   /** Which typeface the canvas draws with; see `ui/fonts.ts`. */
   private m_FontChoice: FontChoice = DEFAULT_FONT_CHOICE;
+  private m_UiScale: number = GameOptions.DEFAULT_UI_SCALE;
+  private m_FillScreen: boolean = false;
 
   /**
    * Whether the play screen is drawn top-down or in first person.
@@ -1123,6 +1129,28 @@ export class GameOptions {
     return setFontChoice(this.m_FontChoice);
   }
 
+  get uiScale(): number {
+    return this.m_UiScale;
+  }
+  set uiScale(value: number) {
+    this.m_UiScale = value;
+    this.applyUiScale();
+  }
+  applyUiScale(): void {
+    CanvasUI.setUiScale(this.m_UiScale);
+  }
+
+  get fillScreen(): boolean {
+    return this.m_FillScreen;
+  }
+  set fillScreen(value: boolean) {
+    this.m_FillScreen = value;
+    this.applyFillScreen();
+  }
+  applyFillScreen(): void {
+    CanvasUI.setFillScreen(this.m_FillScreen);
+  }
+
   /**
    * The view the play screen is drawn in. Plain accessor, no side effect — see
    * `m_ViewMode` for why this option has no `applyX()`.
@@ -1252,6 +1280,10 @@ export class GameOptions {
       this.applySpriteStyle();
       this.m_FontChoice = GameOptions.DEFAULT_FONT_CHOICE;
       void this.applyFontChoice();
+      this.m_UiScale = GameOptions.DEFAULT_UI_SCALE;
+      this.applyUiScale();
+      this.m_FillScreen = false;
+      this.applyFillScreen();
       this.m_ViewMode = GameOptions.DEFAULT_VIEW_MODE;
       this.m_IdleAutoAdvance = GameOptions.DEFAULT_IDLE_AUTO_ADVANCE;
       this.m_ShowSpeechBubbles = false; // browser port; see `m_ShowSpeechBubbles`
@@ -1307,6 +1339,8 @@ export class GameOptions {
     // copied it, and it has no second copy to push into — see `m_ViewMode`.
     this.applySpriteStyle();
     void this.applyFontChoice();
+    this.applyUiScale();
+    this.applyFillScreen();
   }
 
   /** Returns a new instance holding a copy of this option set. */
@@ -1431,6 +1465,10 @@ export class GameOptions {
       return "  (Gfx) Sprite Style";
     case OptionIDs.UI_FONT_CHOICE:
       return "  (Gfx) Font";
+    case OptionIDs.UI_SCALE:
+      return "  (Gfx) UI Scale";
+    case OptionIDs.UI_FILL_SCREEN:
+      return "  (Gfx) Fill Screen";
     case OptionIDs.UI_VIEW_MODE:
       return "  (Gfx) View Mode";
     case OptionIDs.UI_SHOW_SPEECH_BUBBLES:
@@ -1594,6 +1632,10 @@ export class GameOptions {
         return "Which sprite set to draw the game with.\nNone of the sets contain every sprite, so each is a list rather than one folder: anything missing is taken from the next set in the chain, ending at classic, which is complete.\n\"Genesis actors, Deonapocalypse world\" is such a chain - actors from Genesis, everything else from Deonapocalypse - and needs no merged folder.";
     case OptionIDs.UI_FONT_CHOICE:
         return "Which typeface to draw the text with.\nFour are bundled, so they look the same everywhere and work offline: JetBrains Mono (the default), Iosevka Slab, Hack and IBM Plex Mono. Classic uses the system's own monospace font, which is what this game was drawn with before.";
+    case OptionIDs.UI_SCALE:
+        return "How large the whole interface is drawn.\n100% is the designed size. Larger values magnify everything, including text, which can help on big or high-DPI displays; very large values overflow the fixed layout.";
+    case OptionIDs.UI_FILL_SCREEN:
+        return "Scales the game to fill the window instead of showing it at a whole-number multiple of its 1366x768 design size.\nOn a 1920x1080 or 1440p display the default leaves black bars; this removes them, at the cost of slightly uneven sprite-pixel sizes.";
     case OptionIDs.UI_VIEW_MODE:
       return (
         "Draws the play screen from your own eyes rather than from above.\n" +
@@ -1953,6 +1995,10 @@ export class GameOptions {
       return GameOptions.spriteStyleName(this.spriteStyle);
     case OptionIDs.UI_FONT_CHOICE:
       return fontChoiceName(this.fontChoice);
+    case OptionIDs.UI_SCALE:
+      return `${Math.round(this.uiScale * 100)}%   (default 100%)`;
+    case OptionIDs.UI_FILL_SCREEN:
+      return this.fillScreen ? "ON    (default OFF)" : "OFF   (default OFF)";
     case OptionIDs.UI_VIEW_MODE:
       return GameOptions.viewModeName(this.viewMode);
     case OptionIDs.UI_SHOW_SPEECH_BUBBLES:
@@ -2018,6 +2064,8 @@ export class GameOptions {
     options.applySpriteStyle();
     // And the typeface, for the same reason and the same way.
     void options.applyFontChoice();
+    options.applyUiScale();
+    options.applyFillScreen();
     // The view mode needs nothing here, unlike the two above: it has no second
     // copy to push into, so `RogueGame` reading `s_Options.viewMode` is already
     // in step with the field `load` just wrote. See `m_ViewMode`.
@@ -2252,6 +2300,18 @@ export function stepGameOption(option: OptionIDs, dir: -1 | 1): void {
 			}
 			break;
 		}
+		case OptionIDs.UI_SCALE: {
+			const scales = [1, 1.25, 1.5, 2];
+			const index = scales.indexOf(o.uiScale);
+			const next = (index < 0 ? 0 : index) + dir;
+			if (next >= 0 && next < scales.length) {
+				o.uiScale = scales[next]!;
+			}
+			break;
+		}
+		case OptionIDs.UI_FILL_SCREEN:
+			o.fillScreen = !o.fillScreen;
+			break;
 		case OptionIDs.UI_VIEW_MODE: {
 			// Same bounded-index shape, over the views `firstperson/Types` offers.
 			// Unlike the two above there is nothing to apply afterwards: the view
