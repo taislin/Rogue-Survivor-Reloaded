@@ -114,6 +114,8 @@ export class OptionsScreen {
 		// sprites
 		OptionIDs.UI_SPRITE_STYLE,
 		OptionIDs.UI_FONT_CHOICE,
+		OptionIDs.UI_SCALE,
+		OptionIDs.UI_FILL_SCREEN,
 		// view
 		OptionIDs.UI_VIEW_MODE,
 		// speech bubbles — a renderer preference, so it is a plain row in every
