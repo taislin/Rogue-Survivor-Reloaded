@@ -273,6 +273,7 @@ describe("menu value columns clear their labels", () => {
     const rulesetLabels = [
       Session.descRuleset(Ruleset.CLASSIC),
       Session.descRuleset(Ruleset.STILL_ALIVE),
+      Session.descRuleset(Ruleset.RELOADED),
     ];
     const columnX = menuValueColumnX(0, rulesetLabels, RIGHT_PADDING);
     const widest = rulesetLabels.reduce((a, b) => (b.length > a.length ? b : a));

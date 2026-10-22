@@ -32,6 +32,7 @@ export const LAST_NEW_GAME_CONFIG_KEY = "lastNewGameRulesetAndMode";
 export const RULESET_VALUES: readonly Ruleset[] = [
   Ruleset.CLASSIC,
   Ruleset.STILL_ALIVE,
+  Ruleset.RELOADED,
 ];
 export const MODE_VALUES: readonly GameMode[] = [
   GameMode.GM_STANDARD,

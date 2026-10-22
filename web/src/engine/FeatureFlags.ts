@@ -188,6 +188,10 @@ function featuresFor(ruleset: Ruleset): ReadonlySet<Feature> {
       return CLASSIC_FEATURES;
     case Ruleset.STILL_ALIVE:
       return STILL_ALIVE_FEATURES;
+    case Ruleset.RELOADED:
+      // Based on Still Alive for now; new Reloaded-specific features will be
+      // added here as they are built.
+      return RELOADED_FEATURES;
     default:
       // Same reason Session.descRuleset throws.
       throw new Error(`unhandled ruleset: ${ruleset}`);
@@ -239,6 +243,12 @@ const FEATURE_NAME: ReadonlyMap<Feature, string> = new Map(
 const STILL_ALIVE_FEATURES: ReadonlySet<Feature> = new Set(
   ALL_FEATURES.filter((f) => !((FEATURE_NAME.get(f) ?? "") in WITHHELD_FROM_STILL_ALIVE))
 );
+
+/**
+ * The Reloaded set. Starts as a copy of Still Alive's; Reloaded-specific
+ * features will be added (and withheld ones removed) here as they are built.
+ */
+const RELOADED_FEATURES: ReadonlySet<Feature> = new Set(STILL_ALIVE_FEATURES);
 
 /**
  * Every feature `ALL_FEATURES` declares, for the guard below.

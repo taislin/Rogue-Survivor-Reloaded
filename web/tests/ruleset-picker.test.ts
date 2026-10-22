@@ -263,14 +263,15 @@ describe("the quick start", () => {
 });
 
 describe("what the picker can choose", () => {
-  it("has exactly two rulesets, and they are the two the plan names", () => {
-    // Guards against a third being added without the picker growing an option.
-    // The picker indexes with `rulesetIdx === 1`, so a third member would
-    // silently be unreachable — the same "a value nobody can set" failure the
-    // registry test exists to prevent, one level up.
+  it("has exactly three rulesets, and they are the three the plan names", () => {
+    // Guards against a fourth being added without the picker growing an option.
+    // The picker indexes by position in RULESET_VALUES, so a new member must be
+    // added there too — the same "a value nobody can set" failure the registry
+    // test exists to prevent, one level up.
     expect(Object.values(Ruleset).filter((v) => typeof v === "string")).toEqual([
       "CLASSIC",
       "STILL_ALIVE",
+      "RELOADED",
     ]);
   });
 
