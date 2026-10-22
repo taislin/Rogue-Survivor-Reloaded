@@ -18,3 +18,12 @@ This file tracks every change made under the Reloaded ruleset, in order.
   so business districts end up with fewer small CHAR agencies and more generic
   offices.
 - **Status:** Done.
+
+### 2. Residential room variety — houses assign distinct room roles
+
+- **Feature:** `ResidentialRoomVariety` (Reloaded only).
+- **Where:** `makeVanillaHousingBuilding` in `BaseTownGenerator.ts`.
+- **What:** Instead of each room rolling a random content role, rooms cycle through
+  living (5), kitchen (8), bedroom (0) so a house reliably contains a living room,
+  a kitchen and a bedroom rather than three of the same kind.
+- **Status:** Done.

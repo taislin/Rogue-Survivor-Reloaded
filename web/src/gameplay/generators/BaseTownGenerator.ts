@@ -3920,6 +3920,7 @@ export class BaseTownGenerator extends BaseMapGenerator {
       ) as HouseOutsideRoomType;
     }
 
+    let housingRoomIndex = 0;
     for (let i = 0; i < roomsList.length; i++) {
       let roomRect = roomsList[i];
       if (iOutsideRoom === i) {
@@ -3978,7 +3979,11 @@ export class BaseTownGenerator extends BaseMapGenerator {
         }
       } else {
         this.makeHousingRoom(map, roomRect, Models.tiles.get(TileID.FLOOR_PLANKS)!, Models.tiles.get(TileID.WALL_BRICK)!);
-        this.fillHousingRoomContents(map, roomRect);
+        const housingRole = hasFeature(Session.get().ruleset, Feature.ResidentialRoomVariety)
+          ? [5, 8, 0][housingRoomIndex % 3]
+          : undefined;
+        this.fillHousingRoomContents(map, roomRect, housingRole);
+        ++housingRoomIndex;
       }
     }
 

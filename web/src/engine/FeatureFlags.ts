@@ -118,6 +118,8 @@ export enum Feature {
   DerangedPatient,
   /** Reloaded: business districts replace small CHAR agencies with generic offices. */
   BusinessDistrictRework,
+  /** Reloaded: houses assign distinct room roles (living/kitchen/bedroom) instead of random. */
+  ResidentialRoomVariety,
 }
 
 /**
@@ -167,6 +169,7 @@ const ALL_FEATURES: readonly Feature[] = [
   Feature.ExtendedAudio,
   Feature.DerangedPatient,
   Feature.BusinessDistrictRework,
+  Feature.ResidentialRoomVariety,
 ];
 
 /**
@@ -178,6 +181,8 @@ const ALL_FEATURES: readonly Feature[] = [
 const WITHHELD_FROM_STILL_ALIVE: Readonly<Partial<Record<string, string>>> = {
   BusinessDistrictRework:
     "Reloaded-only: Still Alive keeps the original small CHAR agencies.",
+  ResidentialRoomVariety:
+    "Reloaded-only: Still Alive keeps the original random room contents.",
 };
 
 /**
@@ -257,6 +262,7 @@ const STILL_ALIVE_FEATURES: ReadonlySet<Feature> = new Set(
 const RELOADED_FEATURES: ReadonlySet<Feature> = new Set([
   ...STILL_ALIVE_FEATURES,
   Feature.BusinessDistrictRework,
+  Feature.ResidentialRoomVariety,
 ]);
 
 /**

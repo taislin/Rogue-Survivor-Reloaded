@@ -213,13 +213,13 @@ describe("Feature registry is wired", () => {
    "Farm", "Farm", "Farm", "FireBarrels", "FireBarrels", "FireBarrels", "FireExtinguishers", "FireStation", "Fishing", "Fishing",                                                                                                       
    "Fishing", "Fishing", "Fishing", "Fishing", "Fishing", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning", "FoodPoisoning",                                                                                          
    "FoodPoisoning", "FuelStation", "Graveyard", "Graveyard", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "HelicopterRescue", "ItemDespawn",                                                         
-   "ItemDespawn", "Junkyard", "Junkyard", "Library", "LightPriority", "MechanicWorkshop", "MechanicWorkshop", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability",                                                
+   "ItemDespawn", "Junkyard", "Junkyard", "Library", "LightPriority", "MechanicWorkshop", "MechanicWorkshop", "ResidentialRoomVariety", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability",                                                
    "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ResourcesAvailability", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks",
    "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShelterBackpacks", "ShoppingMall",                                  
    "ShoppingMall", "ShoppingMall", "SiphonFuel", "SiphonFuel", "SportsCourts", "SportsCourts", "TileFires", "TileFires", "TileFires", "TileFires",                                                                                      
    "TileFires", "TileFires", "WeaponWeight",
       ]);
-      // 174 call sites across 40 features
+      // 175 call sites across 40 features
 
 
 
