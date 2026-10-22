@@ -43,7 +43,7 @@ import { LOGICAL_W, LOGICAL_H } from "@engine/CanvasSize";
 
 /** What `CanvasUI.computeLayout` decided, in CSS pixels and backing-store pixels. */
 export interface CanvasLayout {
-  /** Logical pixels per CSS pixel: a whole number when the window allows one. */
+  /** Logical pixels per CSS pixel: a whole number unless `fill` scaling is on. */
   scale: number;
   /** Size of the canvas element, as CSS displays it. */
   cssW: number;
@@ -136,6 +136,7 @@ export class CanvasUI implements IRogueUI {
     this.canvas = canvas;
     this.ctx    = ctx;
     this.input  = input;
+    CanvasUI.current = this;
 
     this.minimapCanvas = new OffscreenCanvas(MINIMAP_W, MINIMAP_H);
     const mCtx = this.minimapCanvas.getContext("2d");
@@ -158,14 +159,21 @@ export class CanvasUI implements IRogueUI {
    * modes here are silent (a stretched aspect ratio, a clipped game, a resampled
    * backing store), and a canvas in Node is not something a test can look at.
    */
-  static computeLayout(availW: number, availH: number, dpr: number): CanvasLayout {
-    // A whole multiple of the logical surface keeps every sprite pixel square.
-    // Below 1:1 there is no such multiple, and the window has to be scaled
-    // fractionally rather than clipped: the common case is a 1366-wide browser
-    // window whose *viewport* is shorter than 768 once the chrome is subtracted.
-    // Scaling only one axis to fit would stretch the art.
-    const whole = Math.floor(Math.min(availW / LOGICAL_W, availH / LOGICAL_H));
-    const scale = whole >= 1 ? whole : Math.min(availW / LOGICAL_W, availH / LOGICAL_H);
+  static computeLayout(availW: number, availH: number, dpr: number, fill = false): CanvasLayout {
+    // Default: snap to a whole multiple when one fits, so every sprite pixel is
+    // the same number of device pixels and stays square. Below 1:1 there is no
+    // such multiple, and the window has to be scaled fractionally rather than
+    // clipped - the common case is a 1366-wide browser window whose *viewport*
+    // is shorter than 768 once the chrome is subtracted.
+    //
+    // `fill` opts into filling the limiting axis instead. That is what a player
+    // on a 1920x1080 or 1440p display wants, because the whole-multiple rule
+    // renders those at 1x with black bars; the art stays sharp because
+    // `image-rendering: pixelated` and the text is rasterised at the backing
+    // resolution, but sprite pixel sizes are no longer all identical.
+    const fit = Math.min(availW / LOGICAL_W, availH / LOGICAL_H);
+    const whole = Math.floor(fit);
+    const scale = fill ? fit : whole >= 1 ? whole : fit;
     const cssW = LOGICAL_W * scale;
     const cssH = LOGICAL_H * scale;
     return {
@@ -212,6 +220,7 @@ export class CanvasUI implements IRogueUI {
       window.innerWidth,
       window.innerHeight,
       CanvasUI.devicePixelRatio(),
+      CanvasUI.fillScreen,
     );
 
     this.canvas.style.width  = `${cssW}px`;
@@ -246,6 +255,25 @@ export class CanvasUI implements IRogueUI {
 
     const query = matchMedia(`(resolution: ${dpr}dppx)`);
     query.addEventListener("change", this.onViewportChange, { once: true });
+  }
+
+  /** Applies a UI scale factor to the canvas element (CSS zoom). */
+  static setUiScale(scale: number): void {
+    if (typeof document === "undefined") return;
+    const canvas = document.getElementById("gameCanvas") as HTMLCanvasElement | null;
+    if (canvas) canvas.style.zoom = String(scale);
+  }
+
+  /** The live instance, so a static option can trigger a re-layout. */
+  private static current: CanvasUI | null = null;
+
+  /** Whether layout should fill the viewport instead of snapping to a whole multiple. */
+  private static fillScreen = false;
+
+  /** Toggles fill scaling and re-lays out the live canvas immediately. */
+  static setFillScreen(fill: boolean): void {
+    CanvasUI.fillScreen = fill;
+    CanvasUI.current?.layout();
   }
 
   /** `devicePixelRatio` is undefined in a few embedded/old browsers; 1 is right there. */

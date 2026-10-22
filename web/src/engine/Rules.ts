@@ -1313,6 +1313,12 @@ export class Rules {
 
       // 3.4 Power Generator?
       if (mapObj instanceof PowerGenerator) {
+        // NPCs must not operate the police-station jail generator: toggling it
+        // opens and closes the cell gates, which leaves them stuck cycling
+        // between open and closed. (Players keep full control.)
+        if (!actor.isPlayer && map.name === "Police Station - Jails") {
+          return noAction("npcs do not operate the jail generator");
+        }
         const powGen = mapObj;
         // Recharge battery powered item?
         if (powGen.isOn) {

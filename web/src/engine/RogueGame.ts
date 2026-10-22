@@ -4555,8 +4555,8 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 		this.m_UI.UI_Repaint();
 	}
 
-	// C# SaveHiScoreTable — RogueGame.cs:2164
-	SaveHiScoreTable(): void {
+	// C# SaveHiScoreTable - RogueGame.cs:2164
+	async SaveHiScoreTable(): Promise<void> {
 		this.m_UI.UI_Clear(Color.Black);
 		this.m_UI.UI_DrawStringBoldLarge(
 			Color.White,
@@ -4567,6 +4567,9 @@ private preloadCharacterPreviewSprites(): Promise<unknown> {
 		this.m_UI.UI_Repaint();
 
 		HiScoreTable.save(this.m_HiScoreTable);
+		// On the desktop backend `setItem` only schedules a write; await the
+		// flush so the high score actually reaches storage.json before we go on.
+		await storage.flush?.();
 
 		this.m_UI.UI_Clear(Color.Black);
 		this.m_UI.UI_DrawStringBoldLarge(
@@ -18327,6 +18330,13 @@ updateAdvisorHintBanner(): void {
 			case Activity.FISHING:
 				return "Fishing.";
 
+			// Still Alive fishing-arm labels (Release 7-6), appended after FISHING.
+			case Activity.SEARCHING:
+				return "Searching for water.";
+
+			case Activity.WAITING:
+				return "Waiting for a bite.";
+
 			default:
 				throw new TypeError("unhandled activity " + actor.activity);
 		}
@@ -26216,10 +26226,16 @@ DeploySmokeScreen(map: Map, pt: Point): void {
 		}
 
 		// stop sleep music if player.
-		if (
-			actor.isPlayer &&
-			this.m_MusicManager.getCurrentMusicId() === GameMusics.SLEEP
-		) {
+		//
+		// Stopped unconditionally rather than only when the manager reports the
+		// sleep track: `playLooping` assigns `src` synchronously but resolves
+		// `currentMusicId` in a `.then`, so a quick wake-up (or an autoplay-blocked
+		// play) leaves the manager reporting the *previous* track while the sleep
+		// track is what is actually sounding - and the guard let it keep playing
+		// until something else replaced it. Waking is the one moment the audible
+		// world is re-decided, so stopping here is always right: the only track
+		// that can legitimately be sounding on wake is the sleep one.
+		if (actor.isPlayer) {
 			this.m_MusicManager.stop();
 			// C# `CheckAmbientSFX(actor.Location.Map)` — RogueGame.cs:22962, and the
 			// C#'s comment on it is the whole reason: "restart the rain sound if
@@ -27854,7 +27870,7 @@ DeploySmokeScreen(map: Map, pt: Point): void {
 			this.m_Session.seed,
 		);
 		if (this.m_HiScoreTable.register(newHiScore)) {
-			this.SaveHiScoreTable();
+			await this.SaveHiScoreTable();
 			await this.HandleHiScores();
 		}
 	}
@@ -31822,6 +31838,8 @@ DeploySmokeScreen(map: Map, pt: Point): void {
 			// shipped no activity sprite for it. Ungated for the reason given on
 			// `DescribeActorActivity`'s arm.
 			case Activity.FISHING:
+			case Activity.SEARCHING:
+			case Activity.WAITING:
 				break;
 
 			default:
