@@ -5,7 +5,7 @@ import { storage } from "@engine/storage";
 import { NullRogueUI } from "@ui/NullRogueUI";
 import { NullMusicManager } from "@engine/audio/NullMusicManager";
 import { GameMode, Ruleset, Session } from "@engine/Session";
-import { allFeatures, featureCount, hasFeature } from "@engine/FeatureFlags";
+import { allFeatures, featureCount, hasFeature, withheldFromStillAlive } from "@engine/FeatureFlags";
 
 /**
  * The ruleset + game-mode picker: `RogueGame.HandleSelectRulesetAndMode`.
@@ -280,7 +280,9 @@ describe("what the picker can choose", () => {
     // the port as it has always been, so it must enable nothing, or picking it
     // would silently hand the player a modded game.
     expect(featureCount(Ruleset.CLASSIC)).toBe(0);
-    expect(featureCount(Ruleset.STILL_ALIVE)).toBe(allFeatures().length);
+    expect(featureCount(Ruleset.STILL_ALIVE)).toBe(
+      allFeatures().length - Object.keys(withheldFromStillAlive()).length
+    );
     expect(hasFeature(Ruleset.CLASSIC, 0 as never)).toBe(false);
   });
 });

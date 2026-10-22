@@ -116,6 +116,8 @@ export enum Feature {
    * two flags would permit exactly that.
    */
   DerangedPatient,
+  /** Reloaded: business districts replace small CHAR agencies with generic offices. */
+  BusinessDistrictRework,
 }
 
 /**
@@ -164,6 +166,7 @@ const ALL_FEATURES: readonly Feature[] = [
   Feature.AmbientAudio,
   Feature.ExtendedAudio,
   Feature.DerangedPatient,
+  Feature.BusinessDistrictRework,
 ];
 
 /**
@@ -172,7 +175,10 @@ const ALL_FEATURES: readonly Feature[] = [
  * because the partition test makes withholding one a deliberate, reviewed act:
  * a non-empty reason string is required, so "off" can never be the lazy answer.
  */
-const WITHHELD_FROM_STILL_ALIVE: Readonly<Partial<Record<string, string>>> = {};
+const WITHHELD_FROM_STILL_ALIVE: Readonly<Partial<Record<string, string>>> = {
+  BusinessDistrictRework:
+    "Reloaded-only: Still Alive keeps the original small CHAR agencies.",
+};
 
 /**
  * Every feature a non-CLASSIC ruleset gets. A total function rather than a
@@ -248,7 +254,10 @@ const STILL_ALIVE_FEATURES: ReadonlySet<Feature> = new Set(
  * The Reloaded set. Starts as a copy of Still Alive's; Reloaded-specific
  * features will be added (and withheld ones removed) here as they are built.
  */
-const RELOADED_FEATURES: ReadonlySet<Feature> = new Set(STILL_ALIVE_FEATURES);
+const RELOADED_FEATURES: ReadonlySet<Feature> = new Set([
+  ...STILL_ALIVE_FEATURES,
+  Feature.BusinessDistrictRework,
+]);
 
 /**
  * Every feature `ALL_FEATURES` declares, for the guard below.

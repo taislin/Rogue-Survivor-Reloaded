@@ -210,6 +210,7 @@ export enum CHARBuildingType {
   NONE = 0,
   AGENCY,
   OFFICE,
+  GENERIC_OFFICE,
 }
 
 // alpha10
@@ -1974,6 +1975,11 @@ export class BaseTownGenerator extends BaseMapGenerator {
     // Agency are small ones.
     ///////////////////////////////
     if (b.insideRect.width < 8 || b.insideRect.height < 8) {
+      // Reloaded: replace the small CHAR agencies with generic offices.
+      if (hasFeature(Session.get().ruleset, Feature.BusinessDistrictRework)) {
+        if (this.makeOrdinaryOffice(map, b)) return CHARBuildingType.GENERIC_OFFICE;
+        else return CHARBuildingType.NONE;
+      }
       // small, make it an Agency.
       if (this.makeCHARAgency(map, b)) return CHARBuildingType.AGENCY;
       else return CHARBuildingType.NONE;
