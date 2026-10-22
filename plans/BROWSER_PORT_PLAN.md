@@ -33,8 +33,8 @@
 > | §3 Phase Status, §4.1 task list, §4.1a test index, §4.1c assets, §4.1e desktop wrapper, §5.2, §5.5 | Completion records. §4.1a's index listed 53 of what are now 141 test files |
 >
 > **Measured at `master` `8d5dfc8`, 2026-10-03:** `npm run verify` green —
-> **2,956 tests across 138 files**, type-check clean, coverage
-> **69.74 / 57.53 / 80.56 / 71.18** against a gate of **67 / 55 / 78 / 68**
+> **3,365 tests across 168 files**, type-check clean, coverage
+> **73.03 / 61.33 / 83.26 / 74.51** against a gate of **67 / 55 / 78 / 68**
 > (`web/vitest.config.mts:118-124`). ~4 min for a full suite; a coverage run writes
 > ~44 MB, so check `df -h /` first.
 >
@@ -297,7 +297,7 @@ the rest is context.
    1,000 turns, and that is *correct*, because the undead bot is shot by survivors.
 
 10. **Watch the coverage margins.** Floors are **67/55/78/68**; measured
-    **69.74/57.53/80.56/71.18**. Re-measure and re-set all four together; **do not lower
+    **73.03/61.33/83.26/74.51**. Re-measure and re-set all four together; **do not lower
     them to hide a drop.**
 
     One caution that is a coverage trap rather than a margin problem: **a test that
@@ -458,7 +458,7 @@ section stands on its own.
 |---|---|
 | `npm run verify` | type-check + coverage + build — what CI runs, in one command |
 | `npm run type-check` | `tsc --noEmit`; covers `src/`, `sim/` and `tests/` — necessary, **not sufficient** |
-| `npm run test` | Vitest — 138 files / 2,956 tests, ~4 min. Measure rather than trusting a number here |
+| `npm run test` | Vitest — 168 files / 3,365 tests, ~2 min. Measure rather than trusting a number here |
 | `npm run test:coverage` | Vitest with coverage thresholds enforced |
 | `npm run build` | Vite production build |
 | `npm run sim` | Headless engine run — the real test |
