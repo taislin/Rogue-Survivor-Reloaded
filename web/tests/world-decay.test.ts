@@ -44,18 +44,16 @@
  * asphalt is a deliberate change rather than an accident.
  */
 
-import { beforeEach, describe, expect, it } from "vitest";
-
 import { Actor } from "@data/Actor";
 import { District, DistrictKind } from "@data/District";
 import { Faction } from "@data/Faction";
-import { Lighting, Map as GameMap } from "@data/Map";
+import { Map as GameMap, Lighting } from "@data/Map";
 import { MapObject, MapObjectBreak } from "@data/MapObject";
 import { Models } from "@data/Models";
 import { PlayerController } from "@data/PlayerController";
-import { Point } from "@engine/Point";
 import { World } from "@data/World";
 import { Car } from "@engine/mapobjects/MapObjects";
+import { Point } from "@engine/Point";
 import { RogueGame } from "@engine/RogueGame";
 import { Ruleset, Session } from "@engine/Session";
 import { WorldTime } from "@engine/WorldTime";
@@ -63,6 +61,7 @@ import { ActorID, GameActors } from "@gameplay/GameActors";
 import { GameImages } from "@gameplay/GameImages";
 import { TileID } from "@gameplay/GameTiles";
 import { NullRogueUI } from "@ui/NullRogueUI";
+import { beforeEach, describe, expect, it } from "vitest";
 
 const survivors = new Faction("The Survivors", "survivor");
 
@@ -84,7 +83,8 @@ interface Decayable {
 const decay = () => game as unknown as Decayable;
 
 /** The C#'s `CheckIfWorldDecays`: the day gate and the three-phase cadence. */
-const checkIfWorldDecays = (m: GameMap = map): void => decay().CheckIfWorldDecays(m);
+const checkIfWorldDecays = (m: GameMap = map): void =>
+	decay().CheckIfWorldDecays(m);
 /** The C#'s `ApplyWorldDecayPhase`: one pass of one phase over one map. */
 const applyPhase = (phase: number, m: GameMap = map): void =>
 	decay().ApplyWorldDecayPhase(phase, m);
@@ -150,7 +150,11 @@ beforeEach(() => {
 	Session.get().ruleset = Ruleset.STILL_ALIVE;
 	map = new GameMap(1, "test", 30, 30);
 	Session.get().currentMap = map;
-	player = new Actor(Models.actors.get(ActorID.MALE_CIVILIAN), survivors, "you");
+	player = new Actor(
+		Models.actors.get(ActorID.MALE_CIVILIAN),
+		survivors,
+		"you",
+	);
 	player.controller = new PlayerController();
 	map.placeActor(player, new Point(15, 15));
 	game.m_Player = player;
@@ -227,7 +231,9 @@ describe("world decay: the guards on the tile half", () => {
 		applyPhase(3);
 
 		expect(decosAt(12, 12)).toHaveLength(1);
-		expect(decosAt(12, 12)[0]).toMatch(/^Tiles\/Decoration\/decay\/brick_wall_v\d_phase3$/);
+		expect(decosAt(12, 12)[0]).toMatch(
+			/^Tiles\/decay_overlays\/outside_walls_decay_phase3$/,
+		);
 		expect(tileAt(12, 12).decayPhase).toBe(3);
 	});
 
@@ -261,7 +267,7 @@ describe("world decay: draw order", () => {
 		applyPhase(1);
 
 		expect(decosAt(12, 12)).toEqual([
-			expect.stringMatching(/brick_wall_v\d_phase1$/),
+			expect.stringMatching(/outside_walls_decay_phase1$/),
 			GameImages.DECO_BLOODIED_WALL,
 			GameImages.DECO_SCORCH_MARK_INNER_WALL,
 		]);
@@ -317,9 +323,10 @@ describe("world decay: the subway, and everything else below ground", () => {
 		// which is the pair `ApplyWorldDecayPhase`'s ladder reads.
 		put(12, 12, TileID.WALL_SUBWAY, true);
 		map.lighting = Lighting.DARKNESS;
-		expect(Models.tiles.get(TileID.WALL_SUBWAY)!.canDecay, "the flag stays true").toBe(
-			true,
-		);
+		expect(
+			Models.tiles.get(TileID.WALL_SUBWAY)!.canDecay,
+			"the flag stays true",
+		).toBe(true);
 		expect(map.lighting, "and the map is a dark one").toBe(Lighting.DARKNESS);
 
 		applyPhase(1);
@@ -340,7 +347,9 @@ describe("world decay: the subway, and everything else below ground", () => {
 
 		// An *interior* wall, so it takes the generic whole-building drawing rather
 		// than a per-material one. That it decays at all is the point.
-		expect(decosAt(12, 12)).toEqual([GameImages.DECO_WALL_GENERIC_INTERIOR_DECAY_PHASE1]);
+		expect(decosAt(12, 12)).toEqual([
+			GameImages.DECO_WALL_GENERIC_INTERIOR_DECAY_PHASE1,
+		]);
 		expect(tileAt(12, 12).decayPhase).toBe(1);
 	});
 
@@ -349,10 +358,16 @@ describe("world decay: the subway, and everything else below ground", () => {
 		// keying the reader on `TileID` instead of `imageId`: `WALL_SUBWAY` and
 		// `WALL_POLICE_STATION` are registered with `GameImages.TILE_WALL_STONE`,
 		// so they arrive here already spelled `Tiles/wall_stone`.
-		for (const [i, wall] of [TileID.WALL_STONE, TileID.WALL_POLICE_STATION, TileID.WALL_SUBWAY].entries()) {
+		for (const [i, wall] of [
+			TileID.WALL_STONE,
+			TileID.WALL_POLICE_STATION,
+			TileID.WALL_SUBWAY,
+		].entries()) {
 			const x = 10 + i * 3;
 			put(x, 12, wall, false);
-			expect(Models.tiles.get(wall)!.imageId, TileID[wall]).toBe(GameImages.TILE_WALL_STONE);
+			expect(Models.tiles.get(wall)!.imageId, TileID[wall]).toBe(
+				GameImages.TILE_WALL_STONE,
+			);
 		}
 
 		applyPhase(1);
@@ -360,7 +375,9 @@ describe("world decay: the subway, and everything else below ground", () => {
 		for (let i = 0; i < 3; i++) {
 			const x = 10 + i * 3;
 			expect(decosAt(x, 12), `x=${x}`).toEqual([
-				expect.stringMatching(/^Tiles\/Decoration\/decay\/stone_wall_v\d_phase1$/),
+				expect.stringMatching(
+					/^Tiles\/decay_overlays\/outside_walls_decay_phase1$/,
+				),
 			]);
 		}
 	});
@@ -401,7 +418,10 @@ describe("world decay: the subway, and everything else below ground", () => {
 		applyPhase(2);
 		const afterFirst2 = phases();
 		const atPhase2 = afterFirst2.filter((p) => p === 2).length;
-		expect(atPhase2, "phase 2 reached the tiles phase 1 missed").toBeGreaterThan(0);
+		expect(
+			atPhase2,
+			"phase 2 reached the tiles phase 1 missed",
+		).toBeGreaterThan(0);
 		expect(
 			afterFirst2.filter((p) => p === 1).length,
 			"the ones it reached moved on rather than being redrawn",
@@ -444,8 +464,13 @@ describe("world decay: the cadence", () => {
 	 */
 	const setDay = (day: number): void => {
 		(game.m_Session as unknown as { m_WorldTime: WorldTime }).m_WorldTime =
-			new WorldTime(day * WorldTime.TURNS_PER_DAY + 18 * WorldTime.TURNS_PER_HOUR);
-		expect(game.m_Session.worldTime.day, `the clock really is on day ${day}`).toBe(day);
+			new WorldTime(
+				day * WorldTime.TURNS_PER_DAY + 18 * WorldTime.TURNS_PER_HOUR,
+			);
+		expect(
+			game.m_Session.worldTime.day,
+			`the clock really is on day ${day}`,
+		).toBe(day);
 	};
 
 	it("does nothing at all before the option's day", () => {
@@ -471,7 +496,7 @@ describe("world decay: the cadence", () => {
 			checkIfWorldDecays();
 			expect(tileAt(12, 12).decayPhase, `day ${day}`).toBe(phase);
 			expect(decosAt(12, 12)[0], `day ${day}`).toMatch(
-				new RegExp(`brick_wall_v\\d_phase${phase}$`),
+				new RegExp(`outside_walls_decay_phase${phase}$`),
 			);
 		}
 
@@ -504,12 +529,14 @@ describe("world decay: the cadence", () => {
 		setDay(13);
 		put(12, 12, TileID.WALL_BRICK);
 		checkIfWorldDecays();
-		expect(tileAt(12, 12).decayPhase, "day 13 is inside a 14-day window").toBe(0);
+		expect(tileAt(12, 12).decayPhase, "day 13 is inside a 14-day window").toBe(
+			0,
+		);
 
 		setDay(14);
 		checkIfWorldDecays();
 		expect(tileAt(12, 12).decayPhase).toBe(1);
-		expect(decosAt(12, 12)[0]).toMatch(/brick_wall_v\d_phase1$/);
+		expect(decosAt(12, 12)[0]).toMatch(/outside_walls_decay_phase1$/);
 
 		// Day 28 is the second pass, not a repeat of the first: a tile already at 1
 		// moves to 2 rather than being redrawn, and a fresh tile starts at 2 too --
@@ -519,9 +546,9 @@ describe("world decay: the cadence", () => {
 		checkIfWorldDecays();
 		expect(tileAt(12, 12).decayPhase).toBe(2);
 		expect(decosAt(12, 12)).toHaveLength(1);
-		expect(decosAt(12, 12)[0]).toMatch(/brick_wall_v\d_phase2$/);
+		expect(decosAt(12, 12)[0]).toMatch(/outside_walls_decay_phase2$/);
 		expect(tileAt(13, 12).decayPhase).toBe(2);
-		expect(decosAt(13, 12)[0]).toMatch(/brick_wall_v\d_phase2$/);
+		expect(decosAt(13, 12)[0]).toMatch(/outside_walls_decay_phase2$/);
 	});
 
 	it("clamps the option to 7..28 and defaults to 7", () => {
@@ -531,8 +558,10 @@ describe("world decay: the cadence", () => {
 		expect(RogueGame.Options().daysBeforeWorldDecays).toBe(7);
 		RogueGame.Options().daysBeforeWorldDecays = 99;
 		expect(RogueGame.Options().daysBeforeWorldDecays).toBe(28);
-		expect(new (Object.getPrototypeOf(RogueGame.Options()).constructor)()
-			.daysBeforeWorldDecays).toBe(7);
+		expect(
+			new (Object.getPrototypeOf(RogueGame.Options()).constructor)()
+				.daysBeforeWorldDecays,
+		).toBe(7);
 	});
 });
 
@@ -560,7 +589,10 @@ describe("world decay: which drawing a tile gets", () => {
 		let row = 4;
 		for (const [id, inside] of cases) {
 			const image = Models.tiles.get(id)!.imageId;
-			expect(PHASE1[image], `${TileID[id]} must have a phase-1 row here`).toBeDefined();
+			expect(
+				PHASE1[image],
+				`${TileID[id]} must have a phase-1 row here`,
+			).toBeDefined();
 			for (let x = 0; x < 20; x++) put(x, row, id, inside);
 			row += 2;
 		}
@@ -578,7 +610,10 @@ describe("world decay: which drawing a tile gets", () => {
 			const count = drawn.filter((d) => d.length > 0).length;
 			expect(count, `${TileID[id]}: some`).toBeGreaterThan(0);
 			if (trickled) {
-				expect(count, `${TileID[id]}: a quarter of twenty, not all`).toBeLessThan(20);
+				expect(
+					count,
+					`${TileID[id]}: a quarter of twenty, not all`,
+				).toBeLessThan(20);
 			} else {
 				expect(count, `${TileID[id]}: every one of the twenty`).toBe(20);
 			}
@@ -596,10 +631,12 @@ describe("world decay: which drawing a tile gets", () => {
 		// the C#'s `else if` puts them alongside the roads -- so a pair of tiles
 		// would usually produce nothing at all and the test would pass for the
 		// wrong reason.
-		expect(Models.tiles.get(TileID.FLOOR_BASKETBALL_COURT_18)!.imageId).toContain(
-			"basketball",
+		expect(
+			Models.tiles.get(TileID.FLOOR_BASKETBALL_COURT_18)!.imageId,
+		).toContain("basketball");
+		expect(Models.tiles.get(TileID.FLOOR_TENNIS_COURT_10)!.imageId).toContain(
+			"tennis",
 		);
-		expect(Models.tiles.get(TileID.FLOOR_TENNIS_COURT_10)!.imageId).toContain("tennis");
 		for (let x = 0; x < 20; x++) put(x, 12, TileID.FLOOR_BASKETBALL_COURT_18);
 		for (let x = 0; x < 20; x++) put(x, 14, TileID.FLOOR_TENNIS_COURT_10);
 
@@ -612,7 +649,7 @@ describe("world decay: which drawing a tile gets", () => {
 				if (decos.length === 0) continue;
 				n++;
 				expect(decos[0], `x=${x}`).toMatch(
-					new RegExp(`^Tiles/Decoration/decay/${family}_v\\d_phase1$`),
+					new RegExp(`^Tiles/decay_overlays/${family}_decay_phase1$`),
 				);
 			}
 			return n;
@@ -652,15 +689,15 @@ describe("world decay: which drawing a tile gets", () => {
 		applyPhase(3);
 
 		for (const [x, , family] of [
-			[12, TileID.FLOOR_TILES, "shop_tile"],
-			[13, TileID.FLOOR_WHITE_TILE, "white_floor_tile"],
-			[14, TileID.FLOOR_OFFICE, "office_floor"],
-			[15, TileID.FLOOR_PLANKS, "planks_floor"],
+			[12, TileID.FLOOR_TILES, "indoor_floor"],
+			[13, TileID.FLOOR_WHITE_TILE, "indoor_floor"],
+			[14, TileID.FLOOR_OFFICE, "indoor_floor"],
+			[15, TileID.FLOOR_PLANKS, "indoor_floor"],
 		] as const) {
 			expect(tileAt(x, 12).decayPhase, `x=${x}`).toBe(3);
 			expect(decosAt(x, 12), `x=${x}`).toEqual([
 				expect.stringMatching(
-					new RegExp(`^Tiles/Decoration/decay/${family}_v\\d_phase2$`),
+					new RegExp(`^Tiles/decay_overlays/${family}_decay_phase2$`),
 				),
 			]);
 		}
@@ -674,7 +711,10 @@ describe("world decay: which drawing a tile gets", () => {
 		// way to test a percentage roll.
 		for (let x = 0; x < 30; x++) put(x, 25, TileID.ROAD_ASPHALT_NS);
 		applyPhase(1);
-		const phases = Array.from({ length: 30 }, (_, x) => tileAt(x, 25).decayPhase);
+		const phases = Array.from(
+			{ length: 30 },
+			(_, x) => tileAt(x, 25).decayPhase,
+		);
 		const touched = phases.filter((p) => p === 1).length;
 		expect(touched, "some but not all of the thirty").toBeGreaterThan(0);
 		expect(touched, "the arm rolls at 25%").toBeLessThan(30);
@@ -683,7 +723,7 @@ describe("world decay: which drawing a tile gets", () => {
 			const decos = decosAt(x, 25);
 			if (decos.length === 0) continue;
 			expect(decos[0], `x=${x}`).toMatch(
-				/^Tiles\/Decoration\/decay\/road_asphalt_NS_v\d_phase1$/,
+				/^Tiles\/decay_overlays\/road_decay_phase1$/,
 			);
 		}
 	});
@@ -701,7 +741,9 @@ describe("world decay: which drawing a tile gets", () => {
 		// an accident someone notices in a bug report.
 		put(12, 12, TileID.PARKING_ASPHALT_NS);
 		expect(Models.tiles.get(TileID.PARKING_ASPHALT_NS)!.canDecay).toBe(true);
-		expect(() => applyPhase(1)).toThrow(/unexpected tile model.*parking_asphalt_ns/);
+		expect(() => applyPhase(1)).toThrow(
+			/unexpected tile model.*parking_asphalt_ns/,
+		);
 	});
 });
 
@@ -716,7 +758,10 @@ describe("world decay: the map-object half", () => {
 	];
 
 	const fenceAt = (x: number, y: number): MapObject => {
-		const obj = new MapObject("chainwire fence", GameImages.OBJ_CHAINWIRE_FENCE);
+		const obj = new MapObject(
+			"chainwire fence",
+			GameImages.OBJ_CHAINWIRE_FENCE,
+		);
 		map.placeMapObject(obj, new Point(x, y));
 		return obj;
 	};
@@ -730,12 +775,18 @@ describe("world decay: the map-object half", () => {
 		const indoor: MapObject[] = [];
 		for (let x = 0; x < 30; x++) {
 			const at = new Point(x, 28);
-			map.placeMapObject(new MapObject("fence", GameImages.OBJ_CHAINWIRE_FENCE), at);
+			map.placeMapObject(
+				new MapObject("fence", GameImages.OBJ_CHAINWIRE_FENCE),
+				at,
+			);
 			outdoor.push(map.getMapObjectAtPoint(at)!);
 		}
 		for (let x = 0; x < 10; x++) {
 			const at = new Point(x, 29);
-			map.placeMapObject(new MapObject("fence", GameImages.OBJ_CHAINWIRE_FENCE), at);
+			map.placeMapObject(
+				new MapObject("fence", GameImages.OBJ_CHAINWIRE_FENCE),
+				at,
+			);
 			// The tile under an indoor object is the tile that decides.
 			tileAt(x, 29).isInside = true;
 			indoor.push(map.getMapObjectAtPoint(at)!);
@@ -743,11 +794,21 @@ describe("world decay: the map-object half", () => {
 
 		applyPhase(1);
 
-		const changed = outdoor.filter((o) => o.imageId !== GameImages.OBJ_CHAINWIRE_FENCE);
-		expect(changed.length, "some of the thirty outdoor fences").toBeGreaterThan(0);
-		expect(changed.length, "and not all of them -- it rolls at 33%").toBeLessThan(30);
-		for (const o of changed) expect(FENCE_PHASE1, o.imageId).toContain(o.imageId);
-		for (const o of outdoor.filter((o) => o.imageId === GameImages.OBJ_CHAINWIRE_FENCE)) {
+		const changed = outdoor.filter(
+			(o) => o.imageId !== GameImages.OBJ_CHAINWIRE_FENCE,
+		);
+		expect(changed.length, "some of the thirty outdoor fences").toBeGreaterThan(
+			0,
+		);
+		expect(
+			changed.length,
+			"and not all of them -- it rolls at 33%",
+		).toBeLessThan(30);
+		for (const o of changed)
+			expect(FENCE_PHASE1, o.imageId).toContain(o.imageId);
+		for (const o of outdoor.filter(
+			(o) => o.imageId === GameImages.OBJ_CHAINWIRE_FENCE,
+		)) {
 			expect(FENCE_PHASE1).not.toContain(o.imageId);
 		}
 		for (const o of indoor) {
@@ -766,14 +827,20 @@ describe("world decay: the map-object half", () => {
 		// object in every district, and it is the one place the port's map-object
 		// half is deliberately more forgiving than the reference.
 		const strays: MapObject[] = [];
-		for (const at of [new Point(-1, 28), new Point(30, 28), new Point(12, -1), new Point(12, 30)]) {
+		for (const at of [
+			new Point(-1, 28),
+			new Point(30, 28),
+			new Point(12, -1),
+			new Point(12, 30),
+		]) {
 			const obj = new MapObject("stray fence", GameImages.OBJ_CHAINWIRE_FENCE);
 			map.placeMapObject(obj, at);
 			strays.push(obj);
 		}
 
 		expect(() => applyPhase(1)).not.toThrow();
-		for (const o of strays) expect(o.imageId).toBe(GameImages.OBJ_CHAINWIRE_FENCE);
+		for (const o of strays)
+			expect(o.imageId).toBe(GameImages.OBJ_CHAINWIRE_FENCE);
 	});
 
 	it("does not re-roll a fence that already wears the phase being applied", () => {
@@ -783,11 +850,16 @@ describe("world decay: the map-object half", () => {
 		const obj = fenceAt(12, 28);
 		const before = obj.imageId;
 		for (let i = 0; i < 5; i++) applyPhase(1);
-		expect(obj.imageId === before || FENCE_PHASE1.includes(obj.imageId)).toBe(true);
+		expect(obj.imageId === before || FENCE_PHASE1.includes(obj.imageId)).toBe(
+			true,
+		);
 
 		const settled = obj.imageId;
 		for (let i = 0; i < 5; i++) applyPhase(1);
-		expect(obj.imageId, "a phase-1 fence is stable across repeated passes").toBe(settled);
+		expect(
+			obj.imageId,
+			"a phase-1 fence is stable across repeated passes",
+		).toBe(settled);
 	});
 
 	it("renames a car by swapping its trailing digit for the phase", () => {
@@ -817,7 +889,12 @@ describe("world decay: the map-object half", () => {
 		// `3` is not behind phase 2, so only the 33% roll moves them.
 		const cars: Car[] = [];
 		for (let x = 0; x < 30; x++) {
-			const car = new Car("wrecked car", GameImages.OBJ_CAR3, MapObjectBreak.BROKEN, 0);
+			const car = new Car(
+				"wrecked car",
+				GameImages.OBJ_CAR3,
+				MapObjectBreak.BROKEN,
+				0,
+			);
 			map.placeMapObject(car, new Point(x, 26));
 			cars.push(car);
 		}
@@ -834,7 +911,10 @@ describe("world decay: the map-object half", () => {
 		// arm and its three-way direction reader are transcribed regardless, and
 		// this drives them by hand so they are not untested code -- an object whose
 		// image merely *contains* `picket_fence` is enough to reach it.
-		const obj = new MapObject("picket fence", "MapObjects/picket_fence_NS_left");
+		const obj = new MapObject(
+			"picket fence",
+			"MapObjects/picket_fence_NS_left",
+		);
 		map.placeMapObject(obj, new Point(12, 26));
 
 		applyPhase(1);
@@ -905,15 +985,18 @@ describe("world decay: the option gate in the turn loop", () => {
 	 * nothing at all, which is the failure mode to watch for here.
 	 */
 	const setClock = (day: number, hour: number): void => {
-		(game.m_Session as unknown as { m_WorldTime: WorldTime }).m_WorldTime = new WorldTime(
-			day * WorldTime.TURNS_PER_DAY +
-				hour * WorldTime.TURNS_PER_HOUR +
-				WorldTime.TURNS_PER_HOUR -
-				1,
-		);
+		(game.m_Session as unknown as { m_WorldTime: WorldTime }).m_WorldTime =
+			new WorldTime(
+				day * WorldTime.TURNS_PER_DAY +
+					hour * WorldTime.TURNS_PER_HOUR +
+					WorldTime.TURNS_PER_HOUR -
+					1,
+			);
 		expect(game.m_Session.worldTime.day, `on day ${day}`).toBe(day);
 		expect(game.m_Session.worldTime.hour, `on hour ${hour}`).toBe(hour);
-		expect(game.m_Session.worldTime.isNight, "and it starts in daylight").toBe(false);
+		expect(game.m_Session.worldTime.isNight, "and it starts in daylight").toBe(
+			false,
+		);
 	};
 
 	it("decays the world on the sunset turn once the option says so", async () => {
@@ -926,9 +1009,12 @@ describe("world decay: the option gate in the turn loop", () => {
 
 		await game.AdvancePlay(district, 0 as never);
 
-		expect(game.m_Session.worldTime.hour, "the loop advanced into the night").toBe(18);
+		expect(
+			game.m_Session.worldTime.hour,
+			"the loop advanced into the night",
+		).toBe(18);
 		expect(tileAt(12, 12).decayPhase, "phase 1 landed on day 7").toBe(1);
-		expect(decosAt(12, 12)[0]).toMatch(/brick_wall_v\d_phase1$/);
+		expect(decosAt(12, 12)[0]).toMatch(/outside_walls_decay_phase1$/);
 	});
 
 	it("decays nothing when the master switch is off, however late the game runs", async () => {
@@ -962,7 +1048,9 @@ describe("world decay: the option gate in the turn loop", () => {
 		await game.AdvancePlay(district, 0 as never);
 
 		expect(game.m_Session.worldTime.hour).toBe(18);
-		expect(tileAt(12, 12).decayPhase, "day 7 is inside a 14-day window").toBe(0);
+		expect(tileAt(12, 12).decayPhase, "day 7 is inside a 14-day window").toBe(
+			0,
+		);
 	});
 
 	it("does not run on a turn that is not a sunset", async () => {
