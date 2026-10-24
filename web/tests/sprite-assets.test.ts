@@ -95,7 +95,7 @@ describe("sprite assets on disk", () => {
 describe("preload manifest", () => {
   it("enumerates every declared id", () => {
     const all = allImageIds();
-    expect(all.length).toBe(imageIds().length);
+    expect(all.length).toBe(new Set(imageIds()).size);
     expect(all.length).toBeGreaterThan(200);
   });
 

@@ -5,7 +5,7 @@ import { storage } from "@engine/storage";
 import { NullRogueUI } from "@ui/NullRogueUI";
 import { NullMusicManager } from "@engine/audio/NullMusicManager";
 import { GameMode, Ruleset, Session } from "@engine/Session";
-import { allFeatures, featureCount, hasFeature } from "@engine/FeatureFlags";
+import { allFeatures, featureCount, hasFeature, withheldFromStillAlive } from "@engine/FeatureFlags";
 
 /**
  * The ruleset + game-mode picker: `RogueGame.HandleSelectRulesetAndMode`.
@@ -263,14 +263,15 @@ describe("the quick start", () => {
 });
 
 describe("what the picker can choose", () => {
-  it("has exactly two rulesets, and they are the two the plan names", () => {
-    // Guards against a third being added without the picker growing an option.
-    // The picker indexes with `rulesetIdx === 1`, so a third member would
-    // silently be unreachable — the same "a value nobody can set" failure the
-    // registry test exists to prevent, one level up.
+  it("has exactly three rulesets, and they are the three the plan names", () => {
+    // Guards against a fourth being added without the picker growing an option.
+    // The picker indexes by position in RULESET_VALUES, so a new member must be
+    // added there too — the same "a value nobody can set" failure the registry
+    // test exists to prevent, one level up.
     expect(Object.values(Ruleset).filter((v) => typeof v === "string")).toEqual([
       "CLASSIC",
       "STILL_ALIVE",
+      "RELOADED",
     ]);
   });
 
@@ -279,7 +280,9 @@ describe("what the picker can choose", () => {
     // the port as it has always been, so it must enable nothing, or picking it
     // would silently hand the player a modded game.
     expect(featureCount(Ruleset.CLASSIC)).toBe(0);
-    expect(featureCount(Ruleset.STILL_ALIVE)).toBe(allFeatures().length);
+    expect(featureCount(Ruleset.STILL_ALIVE)).toBe(
+      allFeatures().length - Object.keys(withheldFromStillAlive()).length
+    );
     expect(hasFeature(Ruleset.CLASSIC, 0 as never)).toBe(false);
   });
 });

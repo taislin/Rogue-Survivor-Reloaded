@@ -175,7 +175,7 @@ import {
 import { PlayerCommand } from "@engine/PlayerCommand";
 import { Point } from "@engine/Point";
 import { Rect } from "@engine/Rect";
-import { Feature, featureCount, hasFeature } from "@engine/FeatureFlags";
+import { Feature, hasFeature } from "@engine/FeatureFlags";
 import type { RuleResult } from "@engine/Rules";
 import { Rules } from "@engine/Rules";
 import { AchievementIDs, DifficultySide, Scoring } from "@engine/Scoring";
@@ -3129,7 +3129,8 @@ export class RogueGame implements ActionGame {
 		// question that stays true if a third ruleset ever appears, which a
 		// two-way comparison would not.
 		let row = 0;
-		let rulesetIdx = featureCount(this.m_Session.ruleset) > 0 ? 1 : 0;
+		let rulesetIdx = RULESET_VALUES.indexOf(this.m_Session.ruleset);
+		if (rulesetIdx < 0) rulesetIdx = 0;
 		let modeIdx =
 			this.m_Session.gameMode === GameMode.GM_CORPSES_INFECTION
 				? 1
@@ -3188,11 +3189,11 @@ export class RogueGame implements ActionGame {
 					row = 1 - row;
 					break;
 				case "ArrowLeft":
-					if (row === 0) rulesetIdx = (rulesetIdx + 1) % 2;
+					if (row === 0) rulesetIdx = (rulesetIdx + 1) % rulesetEntries.length;
 					else modeIdx = (modeIdx + modeEntries.length - 1) % modeEntries.length;
 					break;
 				case "ArrowRight":
-					if (row === 0) rulesetIdx = (rulesetIdx + 1) % 2;
+					if (row === 0) rulesetIdx = (rulesetIdx + 1) % rulesetEntries.length;
 					else modeIdx = (modeIdx + 1) % modeEntries.length;
 					break;
 				case "Escape":
@@ -3499,8 +3500,9 @@ export class RogueGame implements ActionGame {
 
 	/** The two ruleset blurbs, carried over from `HandleSelectRuleset`. */
 	private rulesetDescription(idx: number): string[] {
-		return idx === 1
-			? [
+		switch (idx) {
+			case 1:
+				return [
 					"Still Alive - the Rogue Survivor: Still Alive fork.",
 					"",
 					"More weapons, more buildings, and a harder world.",
@@ -3510,8 +3512,19 @@ export class RogueGame implements ActionGame {
 					"  fire stations, animal shelters, junkyards and more.",
 					"- Alcohol, cooking, fishing and butchering.",
 					"- Darker nights, and fire that spreads.",
-				]
-			: [
+				];
+			case 2:
+				return [
+					"Reloaded - builds on Still Alive.",
+					"",
+					"The port's own ruleset: Still Alive as the base, plus",
+					"the port's own additions on top.",
+					"",
+					"- Everything Still Alive has.",
+					"- Reloaded-specific features as they are built.",
+				];
+			default:
+				return [
 					"Classic - Rogue Survivor Alpha 10.1.",
 					"",
 					"The original rules, unchanged. This is what the port has",
@@ -3520,6 +3533,7 @@ export class RogueGame implements ActionGame {
 					"- The original weapons, items and buildings.",
 					"- The original light, sound and scoring.",
 				];
+		}
 	}
 
 	/** The three mode blurbs, carried over from `HandleNewGameMode`. */

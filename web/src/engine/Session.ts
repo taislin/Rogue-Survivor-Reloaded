@@ -44,6 +44,7 @@ export enum GameMode {
 export enum Ruleset {
   CLASSIC,
   STILL_ALIVE,
+  RELOADED,
 }
 
 export enum ScriptStage {
@@ -942,6 +943,8 @@ export class Session {
         return "Classic - Rogue Survivor Alpha 10.1";
       case Ruleset.STILL_ALIVE:
         return "Still Alive - the Still Alive fork";
+      case Ruleset.RELOADED:
+        return "Reloaded - builds on Still Alive";
       default:
         throw new Error("unhandled ruleset");
     }
@@ -953,6 +956,8 @@ export class Session {
         return "Classic";
       case Ruleset.STILL_ALIVE:
         return "Still Alive";
+      case Ruleset.RELOADED:
+        return "Reloaded";
       default:
         throw new Error("unhandled ruleset");
     }

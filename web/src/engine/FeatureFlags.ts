@@ -116,6 +116,10 @@ export enum Feature {
    * two flags would permit exactly that.
    */
   DerangedPatient,
+  /** Reloaded: business districts replace small CHAR agencies with generic offices. */
+  BusinessDistrictRework,
+  /** Reloaded: houses assign distinct room roles (living/kitchen/bedroom) instead of random. */
+  ResidentialRoomVariety,
 }
 
 /**
@@ -164,6 +168,8 @@ const ALL_FEATURES: readonly Feature[] = [
   Feature.AmbientAudio,
   Feature.ExtendedAudio,
   Feature.DerangedPatient,
+  Feature.BusinessDistrictRework,
+  Feature.ResidentialRoomVariety,
 ];
 
 /**
@@ -172,7 +178,12 @@ const ALL_FEATURES: readonly Feature[] = [
  * because the partition test makes withholding one a deliberate, reviewed act:
  * a non-empty reason string is required, so "off" can never be the lazy answer.
  */
-const WITHHELD_FROM_STILL_ALIVE: Readonly<Partial<Record<string, string>>> = {};
+const WITHHELD_FROM_STILL_ALIVE: Readonly<Partial<Record<string, string>>> = {
+  BusinessDistrictRework:
+    "Reloaded-only: Still Alive keeps the original small CHAR agencies.",
+  ResidentialRoomVariety:
+    "Reloaded-only: Still Alive keeps the original random room contents.",
+};
 
 /**
  * Every feature a non-CLASSIC ruleset gets. A total function rather than a
@@ -188,6 +199,10 @@ function featuresFor(ruleset: Ruleset): ReadonlySet<Feature> {
       return CLASSIC_FEATURES;
     case Ruleset.STILL_ALIVE:
       return STILL_ALIVE_FEATURES;
+    case Ruleset.RELOADED:
+      // Based on Still Alive for now; new Reloaded-specific features will be
+      // added here as they are built.
+      return RELOADED_FEATURES;
     default:
       // Same reason Session.descRuleset throws.
       throw new Error(`unhandled ruleset: ${ruleset}`);
@@ -239,6 +254,16 @@ const FEATURE_NAME: ReadonlyMap<Feature, string> = new Map(
 const STILL_ALIVE_FEATURES: ReadonlySet<Feature> = new Set(
   ALL_FEATURES.filter((f) => !((FEATURE_NAME.get(f) ?? "") in WITHHELD_FROM_STILL_ALIVE))
 );
+
+/**
+ * The Reloaded set. Starts as a copy of Still Alive's; Reloaded-specific
+ * features will be added (and withheld ones removed) here as they are built.
+ */
+const RELOADED_FEATURES: ReadonlySet<Feature> = new Set([
+  ...STILL_ALIVE_FEATURES,
+  Feature.BusinessDistrictRework,
+  Feature.ResidentialRoomVariety,
+]);
 
 /**
  * Every feature `ALL_FEATURES` declares, for the guard below.
